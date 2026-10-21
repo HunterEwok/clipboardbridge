@@ -142,7 +142,8 @@ any member may be switched off at any time.
   the rest of the group. `revoke` lists those members, and the user pairs them again, or stops
   clipbridge on them, before they join the network again. The user also deletes the old
   clipbridge profile on every iPhone at once and pairs the iPhones again; until then the old
-  profile still trusts the revoked member, so the button must not be used.
+  profile still trusts the revoked member, so the button must not be used. The records and
+  the list are described in "Admin phones, the devices list and revocation (planned)" below.
 
 ## Discovery and the shared address
 
@@ -413,7 +414,7 @@ and lifetimes. The installer enables what the device needs.
 | Someone guesses or intercepts the pairing code of a computer   | CPace inside TLS: one online guess per attempt, at most three per pairing window, no offline attack; the joining device spends the code on one attempt, and never takes it from the command line |
 | Someone attacks the pairing of an iPhone                       | the same attempt limits; the profile comes over a separate plain-HTTP port, so no certificate warning is ever accepted for the pairing page; the user compares the iPhone CA fingerprint before trusting it; the code and the token travel only over a connection that the trusted CA authenticates, so a relay sees neither |
 | A device impersonates a member (for example, a host that answers `clipbridge.local` on another network) | mutual TLS with the group CA; members dial discovered addresses and check the peer's certificate; the iPhone accepts only a certificate from the iPhone CA, so an impostor gets neither the token nor the text |
-| A device is lost or stolen                                     | `clipbridge revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin |
+| A device is lost or stolen                                     | `clipbridge revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin. With the apps: "Remove" on another admin phone; a lost root phone hands the root to the remaining admin without pairing anything again |
 | A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipbridge.local` and names below it, and excludes IP addresses and other name forms. The Mac never changes its system trust |
 | A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
 | A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipbridge` group; single-line injection by default with control characters removed |
@@ -460,6 +461,33 @@ The order may change.
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
     Rust member among Go members.
 12. Sync away from home; see "Sync away from home (planned)" below.
+
+### Future research (not planned)
+
+Questions to study before anything is planned for them.
+
+- **Very small and retro computers through a gateway**, for example the ZX Spectrum Next
+  (Z80 at 28 MHz, Wi-Fi through an ESP8266 driven by AT commands, programs in C with z88dk).
+  TLS 1.3 with P-256 is out of reach there, so a Linux member acts as a gateway with a
+  simpler protocol: pairing with the six-digit code derives a key shared by the gateway and
+  the device, and every text travels encrypted and authenticated with ChaCha20-Poly1305
+  over plain TCP. The gateway turns those messages into ordinary events. The same protocol
+  would serve any device too weak for the member protocol. To study: the cost of the
+  key derivation and the cipher on a Z80, the AT command TCP mode of the ESP8266, and how
+  the gateway names such devices in the devices list.
+- **A plain tier below the gateway protocol**, for devices that cannot even run
+  ChaCha20-Poly1305: texts in the clear over the home network, which is better than typing
+  them by hand. Only by an explicit choice on the gateway, per device, after a warning that
+  says plainly that anyone on the network can read and change what that device sends and
+  receives and that the user takes this risk. Such a device carries a warning mark in the
+  devices list, never receives secrets (items a password manager marked), and can be
+  limited to receiving only, or to sending only. A middle step to study: a key from the
+  pairing code used only to authenticate (a MAC, cheap even on a Z80), so that nobody else
+  can inject texts, while they still travel unencrypted.
+- **Arduino and other microcontrollers** with the same gateway protocol: AVR boards with a
+  Wi-Fi or Ethernet module, for example to show or type the clipboard. Boards built on the
+  ESP32 may manage TLS 1.3 with P-256 themselves and could become lite members instead; to
+  be measured.
 
 ## Sync away from home (planned)
 
@@ -526,9 +554,9 @@ app can do all four, and then the phone becomes the root of the group:
 - Every computer is then a member without CA keys, as a Mac is today; Linux members still
   publish, hold `clipbridge.local` and serve the app and the shortcut. A lite member (Rust)
   fits the same role.
-- Certificate renewal (every two years) and revocation need the phone. Losing it needs a
-  way back: an encrypted backup of the CA key (for example in iCloud Keychain) or a second
-  admin phone; to be designed with the apps.
+- Certificate renewal (every two years) and revocation need an admin phone. Losing one is
+  covered by a second admin phone, which is an equal admin with a key of its own; see
+  "Admin phones, the devices list and revocation (planned)" below.
 - The app syncs while it is open and through a share extension, a widget or an Android
   quick-settings tile; background sync stays impossible on iOS.
 - The current mode, with the CA on the Linux members and the phone's token as the authority,
@@ -537,6 +565,87 @@ app can do all four, and then the phone becomes the root of the group:
 
 The protocol in `docs/protocol.md` and the lite member are designed for this target, so
 neither is written twice.
+
+## Admin phones, the devices list and revocation (planned)
+
+A user may have several phones, for example an iPhone and an Android phone. All of them join
+the one group, and any of them can be an **admin**: it admits devices, renews certificates
+and revokes devices, so losing one phone loses nothing. Every app shows the whole group, and
+an admin removes a device in two taps. The wire format is in section 10 of
+[protocol.md](protocol.md).
+
+**Keys and certificates.** No key ever leaves the Secure Enclave or StrongBox where it was
+made, so two phones cannot share one CA key. Instead:
+
+- The first phone's app creates the **group root CA**, as section 9 of the protocol says,
+  but with path length 1, so it can certify one level of CAs below it.
+- Every admin phone, the first one included, has an **admin CA** of its own: a key in its
+  Secure Enclave or StrongBox, certified by the root as a CA with path length 0. Admin keys
+  sign only when the user confirms with Face ID, Touch ID, the fingerprint or the passcode,
+  so a locked phone in a thief's hand signs nothing.
+- Each phone also has a separate member key and certificate, as every member has, for its
+  everyday connections; that key needs no confirmation.
+- A member certificate comes from whichever admin admitted the device. Members present
+  their certificate with the admin CA's certificate in the TLS handshake and check peers
+  against the group root, so a certificate from any admin is valid everywhere.
+- Making a second phone an admin: the second phone joins as every device does (it scans the
+  first phone's QR code in "Add a device"), then the first phone offers "Make it an admin";
+  the second phone sends the public key of its new admin key, and the first phone signs its
+  admin CA certificate with the root key. From then on both are equal, with one exception:
+  only the root key can make further admins. If the root phone is lost, the remaining admin
+  **becomes the root** (below).
+
+**The devices list.** Every admission produces a signed **device record**: the device ID,
+its name, its role (Linux, Mac, phone, lite), the hash of its key, whether it is an admin,
+who admitted it and when. Revocations are signed **revocation records**. Both kinds form one
+set that only grows: every member keeps the set and gives it to every peer it meets, so all
+members, and every app, show the same list. Merging two sets is their union, and what the
+list says follows from the set alone, never from the order in which records arrived, so the
+group always converges. The list is small (a few hundred bytes per device) and spreads with
+the member protocol; nothing else stores it.
+
+Every app and the command line show it:
+
+- The phone apps: a **Devices** screen (see [apps.md](apps.md)) with every device, its role,
+  an admin mark, whether it is online now and when this phone last saw it; on an admin phone
+  each row has "Remove".
+- The command line on Linux and the Mac: `clipbridge devices` prints the same list;
+  `clipbridge revoke <name or ID>` removes a device where the device is an admin (a Linux
+  member in a group that a computer created) or asks a connected admin to.
+- The Windows connector and later apps show the same list from the same records.
+
+**Revoking a device.** An admin signs a revocation record naming the device's keys: its
+member key and, for an admin phone, its admin key. The record spreads to every member that
+is on, and each refuses the revoked keys at once: running connections with that device are
+closed, and new handshakes fail. A revoked admin key also voids every certificate it issued,
+except those the record lists as kept: when an admin revokes another admin, its app lists
+the devices that the revoked one admitted and keeps them, so they stay in the group, and
+renews their certificates from its own admin CA as they connect. A device the thief admits
+afterwards is not on the list and is refused. A member that was off gets the record from the
+first member it meets.
+
+**Losing a phone.** On the remaining admin phone: Devices, the lost phone, "Remove". That
+revokes both of the lost phone's keys and keeps every device it had admitted. If the lost
+phone held the root key, the remaining phone also **becomes the root**: it creates a new
+root CA, certifies its own admin CA under it, and signs a root record that hands the group
+over from the old root to the new one; members that receive the record verify it with the
+trust they have, then trust the new root alone, and the remaining admin renews their
+certificates from it. Members that were off follow when they come back, as with any record,
+so no device has to be paired again. A thief who knows the lost phone's passcode can act as
+an admin until the phone is removed; when two admins revoke each other, both lose admin
+rights (the rule depends only on the set of records), and the user starts the group anew from
+the phone in hand.
+
+**Groups that a computer created** keep working as today (the CA keys on the Linux members):
+the device records and revocation records exist there too, signed with the group CA key, so
+`clipbridge devices` shows the group and `clipbridge revoke` removes a Mac or an iPhone's
+token without replacing anything. Revoking a Linux member there still replaces both CAs, as
+"Devices and revocation" above says, because it holds the CA keys.
+
+**Order of work.** The Go side first, since it needs no phone: the records, their exchange
+in the member protocol, refusing revoked keys, `clipbridge devices` and `clipbridge revoke`
+in groups a computer created, and members that verify certificates through an admin CA. Then
+the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
 
 ## Open questions
 
@@ -594,3 +703,6 @@ These need experiments on real devices; CI cannot answer them.
 | D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |
 | D-31 | The mDNS responder does not probe its names: device IDs are random, `clipbridge.local` is never renamed, and the group's election decides who holds it; two holders for a moment are harmless, since any Linux member can serve the iPhone. |
 | D-32 | The Mac browses with clipbridge's own mDNS code instead of the Bonjour API: it shares port 5353 with mDNSResponder, and the service needs no cgo. The cost is a socket of its own on UDP 5353, which the macOS firewall may treat differently (see Open questions). D-12 still holds for Linux. |
+| D-33 | Several equal admin phones: a root CA with path length 1 certifies an admin CA per phone, each key in its own Secure Enclave or StrongBox, instead of one CA key copied between phones or backed up to a cloud. Only the root makes admins; a remaining admin becomes the root with a signed root record. |
+| D-34 | The devices list and revocations are signed records in a set that only grows and spreads through the member protocol; what it says depends on the set alone, so the group converges. Two admins that revoke each other both lose admin rights. |
+| D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |

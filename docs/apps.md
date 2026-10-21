@@ -8,8 +8,8 @@ they look, so both apps are built to the same plan.
 ## Principles
 
 - **Only what is needed.** Pair the first computer, add a computer, send and fetch the
-  clipboard, see who is connected. Nothing else: no history, no accounts, no cloud, no
-  statistics.
+  clipboard, see the group's devices and remove one. Nothing else: no history, no accounts,
+  no cloud, no statistics.
 - **As few taps as possible.** The everyday action is one tap or none: the widget, the
   Back Tap or Action button shortcut, the share sheet, the Android quick-settings tile.
   Adding a computer is "scan" and nothing more; digits are typed only when a camera cannot
@@ -30,11 +30,26 @@ they look, so both apps are built to the same plan.
    key in the Secure Enclave or StrongBox, admits the computer and goes to Home.
 2. **Home**: the one big button (send what this phone holds or fetch the computer's recent
    copy, by the same rule as the shortcut), the result in one line, and the connected
-   computers as a compact list with a live dot each. A "+" adds a computer (camera).
-3. **Add a computer**: the camera with a frame; the computer appears in the list when it
-   has joined. Fallback: type the six digits.
-4. **Settings**: theme, language, the devices of the group (rename, remove), the backup of
-   the group key, about. Nothing else.
+   computers as a compact list with a live dot each; tapping the list opens Devices. A "+"
+   adds a device (camera).
+3. **Add a device**: the camera with a frame; the device appears in the list when it has
+   joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
+   QR code on its Start screen ("Join a group") and this phone scans it.
+4. **Devices**: the whole group, one row per device: its name, an icon for the role (Linux,
+   Mac, phone, lite, iPhone shortcut), an "admin" mark, a live dot when it is online and
+   "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
+   device records (section 10 of [protocol.md](protocol.md)), so every app and
+   `clipbridge devices` show the same. On an admin phone, a row opens the device: rename,
+   "Make it an admin" (phones only, on the root phone), and "Remove", which asks once, then
+   needs Face ID, the fingerprint or the passcode, and is done; removing an admin phone shows
+   the devices it had admitted, which stay. If the removed phone held the root, this phone
+   takes it over in the same step. A phone that is not an admin shows the list without
+   actions and says which phones are admins.
+5. **Settings**: theme, language, about. Nothing else.
+
+The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
+Devices on your other phone and remove it." When the group has a single admin, Devices
+suggests making a second phone an admin.
 
 Errors are one line in plain words with the next step ("Turn on the computer that holds
 the group", not a status code), never a dialog that must be dismissed.
