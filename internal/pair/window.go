@@ -27,7 +27,6 @@ type Options struct {
 	// cannot admit devices: the welcome of a group whose root is the phone.
 	NoCAKeys bool
 
-
 	Now       func() time.Time                        // for the certificates; time.Now if nil
 	Uptime    func() time.Duration                    // for the window's lifetime; uptime.Now if nil
 	AfterFunc func(time.Duration, func()) func() bool // the expiry timer, returning its Stop; time.AfterFunc if nil
@@ -38,8 +37,8 @@ type Window struct {
 	admin    *group.Identity
 	code     []byte
 	noCAKeys bool
-	now    func() time.Time
-	uptime func() time.Duration
+	now      func() time.Time
+	uptime   func() time.Duration
 
 	mu        sync.Mutex
 	expires   time.Duration // on the uptime clock
