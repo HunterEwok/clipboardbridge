@@ -31,8 +31,10 @@ All notable changes to clipbridge are documented in this file. The format follow
   generated from the code and signed on a Mac, asks for the six-digit code on its first run
   and keeps its token.
 - The phone as the main device: `clipbridge pair -phone` on a Linux machine in no group
-  creates the group, and `clipbridge join` shows a QR code that the shortcut
-  "clipbridge: add a computer" scans to admit the computer. `clipbridge join -code` keeps
-  the code from `clipbridge pair`.
+  creates the group, and `clipbridge join` shows a QR code (a `clipbridge://join` URL) that
+  the shortcut "clipbridge: add a computer" scans to admit the computer. `clipbridge join
+  -code` keeps the code from `clipbridge pair`.
+- Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
+  [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).
