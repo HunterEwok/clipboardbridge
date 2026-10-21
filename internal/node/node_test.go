@@ -742,3 +742,22 @@ func TestRenewPeer(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+func TestRoles(t *testing.T) {
+	// A phone app and a lite member connect like a Mac and show their
+	// role; an unknown role is refused.
+	for _, role := range []Role{Phone, Lite} {
+		pi, other := newMember(t, Linux), newMember(t, role)
+		link(t, other, pi)
+		waitPeers(t, pi, 1)
+		if got := pi.Peers()[0].Role; got != role {
+			t.Errorf("the peer's role is %q, want %q", got, role)
+		}
+	}
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.send(&message{Type: typeHello, Role: "robot", Hello: json.RawMessage(`{"wall_ms":0}`)})
+	if err := wait(t, r.done, "Serve to refuse"); err == nil {
+		t.Error("Serve accepted an unknown role")
+	}
+}

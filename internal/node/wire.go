@@ -43,7 +43,18 @@ type Role string
 const (
 	Linux Role = "linux" // listens, can hold clipbridge.local
 	Mac   Role = "mac"   // only dials
+	Phone Role = "phone" // a phone app: only dials, never dialed
+	Lite  Role = "lite"  // a lite member for small devices: only dials
 )
+
+// known reports whether a peer may claim the role in its hello.
+func (r Role) known() bool {
+	switch r {
+	case Linux, Mac, Phone, Lite:
+		return true
+	}
+	return false
+}
 
 // message is one frame of the member protocol. The hello and the event are
 // decoded on their own, so an event this member cannot read, for example
