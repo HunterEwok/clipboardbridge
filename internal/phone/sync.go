@@ -97,6 +97,58 @@ func SyncHandler(g Group) http.Handler {
 	})
 }
 
+// admitRequest is what the shortcut that adds a computer sends: the code
+// it read from the computer's QR code.
+type admitRequest struct {
+	V    json.Number `json:"v"`
+	Code string      `json:"code"`
+}
+
+// AdmitHandler serves POST /admit: a paired phone, the group's main
+// device, asks the member to admit a computer with the code that the
+// computer shows. ca returns the iPhone CA; admit opens the window.
+// Answers come with status 200 and JSON, as for /sync.
+func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := func(rep syncReply) {
+			rep.V = 1
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			json.NewEncoder(w).Encode(rep)
+		}
+		if r.Method != http.MethodPost {
+			reply(syncReply{Direction: "error", Message: "the shortcut must POST to /admit"})
+			return
+		}
+		token := bearer(r.Header.Get("Authorization"))
+		if _, err := CheckToken(ca(), token); token == "" || err != nil {
+			reply(syncReply{Direction: "unpaired", Message: "this iPhone is not paired with the group; run clipbridge pair -phone"})
+			return
+		}
+		var req admitRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.V.String() != "1" {
+			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipbridge; install it again"})
+			return
+		}
+		code, ok := strings.CutPrefix(strings.TrimSpace(req.Code), joinPrefix)
+		if !ok {
+			reply(syncReply{Direction: "error", Message: "this is not the QR code of clipbridge join"})
+			return
+		}
+		if err := admit(code); err != nil {
+			reply(syncReply{Direction: "error", Message: "the computer could not be added: " + err.Error()})
+			return
+		}
+		reply(syncReply{Direction: "none", Message: "The computer is joining the group"})
+	})
+}
+
+// joinPrefix starts the text of the QR code that clipbridge join shows.
+const joinPrefix = "clipbridge-join:"
+
+// JoinQR returns the text of the QR code for a joining computer's code.
+func JoinQR(code string) string { return joinPrefix + code }
+
 // bearer returns the token of an Authorization header: "Bearer cb1.…" in
 // any case, or the bare token, as a shortcut built by hand may send it.
 func bearer(h string) string {

@@ -48,8 +48,20 @@ any member may be switched off at any time.
 
 ## Group and pairing
 
-- **Creating the group**: the first `clipbridge pair` on a Linux machine that is in no group
-  creates it: the group CA and the iPhone CA. A Mac cannot start a group.
+- **The phone is the main device.** The usual way to build a group starts from the phone:
+  `clipbridge pair -phone` on the first Linux machine creates the group and pairs the
+  phone; every further computer runs `clipbridge join`, which shows a QR code with a fresh
+  code, and the phone's second shortcut ("clipbridge: add a computer") scans it and posts
+  the code to `/admit` on `clipbridge.local` with its token. The member there opens a
+  pairing window with exactly that code, and the computer, which browses for a window for
+  up to five minutes, joins through the same CPace exchange as below. The keys of the group
+  stay on the Linux members, which must be on; the phone's token is the authority to add a
+  computer, so a stolen token lets its holder add a computer (and a Linux one gets the CA
+  keys). Each admission is logged. Admitting from a Linux member with `clipbridge pair` and
+  `clipbridge join -code` stays for groups without a phone.
+- **Creating the group**: the first `clipbridge pair` or `clipbridge pair -phone` on a Linux
+  machine that is in no group creates it: the group CA and the iPhone CA. A Mac cannot start
+  a group.
 - **Group CA**: ECDSA P-256, valid 20 years, path length 0. Every member has its own P-256
   key and a certificate from the group CA, valid 2 years and renewed when less than 240 days
   remain. Its `NotBefore` is the CA's, and members check certificates with their own clock but
@@ -72,11 +84,11 @@ any member may be switched off at any time.
   Linux member, the keys of both CAs in one file, `identity.json` in the service's state
   directory, readable only by the service. It is replaced in one step, so a crash leaves the
   old identity or the new one.
-- **Joining a computer**: `clipbridge pair` on a Linux member (on a Mac, the command asks a
-  connected Linux member) shows a six-digit code and opens a pairing window for five minutes
-  (one attempt at a time, closed after a success or the third failed attempt; an attempt that
-  has started may finish after the five minutes). On the new device the user runs
-  `clipbridge join` and types the code (it is read from the terminal or standard input, never
+- **Joining a computer from a Linux member**: `clipbridge pair` on a Linux member (on a Mac,
+  the command asks a connected Linux member) shows a six-digit code and opens a pairing
+  window for five minutes (one attempt at a time, closed after a success or the third failed
+  attempt; an attempt that has started may finish after the five minutes). On the new device
+  the user runs `clipbridge join -code` and types the code (it is read from the terminal or standard input, never
   from the command line, where other users of the machine could read it). The new device
   connects to the member's port with
   the ALPN protocol `clipbridge-pair/1` and presents a self-signed certificate for the key
@@ -313,7 +325,8 @@ and lifetimes. The installer enables what the device needs.
   answers, and stops after the first attempt in which the other side could check the code,
   so a device that only pretends to pair gets one guess at most. When more than one device
   announces a window, it asks for the address. Hanging up cancels it, and it gives up after
-  two minutes.
+  two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
+  for the window.
 - tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
   pastes the member's own clipboard text into any program inside tmux. A login snippet starts tmux on the
   text console.
@@ -431,8 +444,49 @@ The order may change.
 3. macOS: service as a LaunchDaemon and the pasteboard agent.
 4. Desktop connector: Wayland data-control, X11, GNOME through XWayland.
 5. iPhone: `/sync`, the pairing pages, the published shortcut.
-6. Console helper and auto-paste.
-7. Packages and signed releases.
+6. Simpler setup: QR codes, the generated shortcuts, the phone as the main device.
+7. Installers: a one-line installer for Linux (with the firewall), Homebrew and a signed
+   `.pkg` for macOS, signed releases.
+8. Windows: the service as a Windows service and a clipboard connector through the Win32
+   API.
+9. Apps for iPhone and Android, which make the phone the group's root of trust (see "Target
+   architecture with the phone apps" below).
+10. Console helper and auto-paste.
+11. A lite member in Rust for weak devices (routers, small boards): a member without CA
+    keys that only dials, like a Mac, joins by QR code through the phone and syncs; it
+    never admits devices, holds `clipbridge.local` or serves the iPhone, and needs one full
+    member on. Only once the Go version is complete and its architecture settled, so it is
+    written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
+    that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
+    Rust member among Go members.
+
+## Target architecture with the phone apps
+
+The shortcut can neither hold a key, sign, run CPace nor accept connections, so today the
+group CA lives on the Linux members and the phone only authorizes with its token. A phone
+app can do all four, and then the phone becomes the root of the group:
+
+- The app creates the group CA in the Secure Enclave (iPhone) or StrongBox/Keystore
+  (Android): a P-256 key that cannot be exported. Only the phone issues member
+  certificates; no computer holds CA keys, so a stolen computer cannot add devices.
+- The first computer joins the phone, not the other way round: `clipbridge join` shows a
+  QR code with its address and a fresh code and listens; the app scans it, dials the
+  computer and runs CPace with that code, with the phone in the admitting role, then issues
+  its certificate. No profile and no fingerprint check: the app trusts its own group's CA.
+- Every computer is then a member without CA keys, as a Mac is today; Linux members still
+  publish, hold `clipbridge.local` and serve the app and the shortcut. A lite member (Rust)
+  fits the same role.
+- Certificate renewal (every two years) and revocation need the phone. Losing it needs a
+  way back: an encrypted backup of the CA key (for example in iCloud Keychain) or a second
+  admin phone; to be designed with the apps.
+- The app syncs while it is open and through a share extension, a widget or an Android
+  quick-settings tile; background sync stays impossible on iOS.
+- The current mode, with the CA on the Linux members and the phone's token as the authority,
+  stays for users without the app, and `clipbridge pair` / `join -code` for groups without a
+  phone.
+
+The protocol in `docs/protocol.md` and the lite member are designed for this target, so
+neither is written twice.
 
 ## Open questions
 

@@ -84,6 +84,9 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	return w, nil
 }
 
+// Code returns the window's code, normalized to six digits.
+func (w *Window) Code() string { return string(w.code) }
+
 // Done is closed when the window closes.
 func (w *Window) Done() <-chan struct{} { return w.done }
 

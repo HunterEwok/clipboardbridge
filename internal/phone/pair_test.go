@@ -171,7 +171,7 @@ func TestProfile(t *testing.T) {
 	}
 	// Without a signed shortcut in this build, the page sends the user to
 	// the release, and the file is not served.
-	if Shortcut() == nil {
+	if Shortcut(SyncShortcut) == nil {
 		if !strings.Contains(rec.Body.String(), "release page") {
 			t.Error("the page does not say where the shortcut is")
 		}
@@ -235,13 +235,22 @@ func TestPairJSON(t *testing.T) {
 func TestShortcutFile(t *testing.T) {
 	// The committed property list is what the generator makes; run
 	// go run ./tools/shortcut after changing it, and sign it again.
-	got, err := os.ReadFile("shortcut/clipbridge.plist")
-	if err != nil {
-		t.Fatal(err)
+	for name, want := range UnsignedShortcuts() {
+		got, err := os.ReadFile("shortcut/" + name + ".plist")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("shortcut/%s.plist is stale; run go run ./tools/shortcut", name)
+		}
 	}
-	if !bytes.Equal(got, UnsignedShortcut()) {
-		t.Error("shortcut/clipbridge.plist is stale; run go run ./tools/shortcut")
+	add := UnsignedAdmitShortcut()
+	for _, want := range []string{"https://clipbridge.local:8765/admit", "is.workflow.actions.scanbarcode", tokenPath} {
+		if !bytes.Contains(add, []byte(want)) {
+			t.Errorf("the add shortcut lacks %q", want)
+		}
 	}
+	got := UnsignedShortcut()
 	d := xml.NewDecoder(bytes.NewReader(got))
 	for {
 		if _, err := d.Token(); err == io.EOF {
@@ -256,8 +265,10 @@ func TestShortcutFile(t *testing.T) {
 		}
 	}
 	if runtime.GOOS == "darwin" {
-		if out, err := exec.Command("plutil", "-lint", "shortcut/clipbridge.plist").CombinedOutput(); err != nil {
-			t.Errorf("plutil: %v\n%s", err, out)
+		for name := range UnsignedShortcuts() {
+			if out, err := exec.Command("plutil", "-lint", "shortcut/"+name+".plist").CombinedOutput(); err != nil {
+				t.Errorf("plutil: %v\n%s", err, out)
+			}
 		}
 	}
 }

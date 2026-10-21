@@ -21,8 +21,8 @@ Commands:
   status                  Show the group and the connected members.
   pair                    Admit a new computer: show a code for clipbridge join.
   pair -phone             Pair an iPhone or iPad with the shortcut.
-  join [address:port]     Join a group with the code from clipbridge pair,
-                          typed or read from standard input.
+  join                    Join a group: show a QR code for the phone to scan.
+  join -code [address]    Join with the code from clipbridge pair on a Linux member.
   service                 Run the service (started by systemd or launchd).
   agent                   Link the Mac's pasteboard to the service (started by launchd).
   desktop                 Link a Linux desktop's clipboard to the service (started with the session).

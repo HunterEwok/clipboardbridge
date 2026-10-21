@@ -182,20 +182,25 @@ func ProfileHandler(ca *group.CA) http.Handler {
 		w.Header().Set("Content-Disposition", `attachment; filename="clipbridge.mobileconfig"`)
 		w.Write(Profile(ca))
 	})
-	mux.HandleFunc("GET /clipbridge.shortcut", func(w http.ResponseWriter, r *http.Request) {
-		sc := Shortcut()
-		if sc == nil {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="clipbridge.shortcut"`)
-		w.Write(sc)
-	})
+	for _, name := range []string{SyncShortcut, AdmitShortcut} {
+		mux.HandleFunc("GET /"+name+".shortcut", func(w http.ResponseWriter, r *http.Request) {
+			sc := Shortcut(name)
+			if sc == nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.shortcut"`)
+			w.Write(sc)
+		})
+	}
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		data := map[string]string{"Fingerprint": Fingerprint(ca), "Short": ShortFingerprint(ca)}
-		if Shortcut() != nil {
+		if Shortcut(SyncShortcut) != nil {
 			data["Shortcut"] = "yes"
+		}
+		if Shortcut(AdmitShortcut) != nil {
+			data["Admit"] = "yes"
 		}
 		page(w, profilePage, data)
 	})
@@ -320,6 +325,8 @@ var profilePage = template.Must(template.New("profile").Parse(pageHead + `
 {{if .Shortcut}}<li><p><a class="btn" href="/clipbridge.shortcut">Add the shortcut</a></p>
 <p>Then run it once: it asks for the six-digit code that the computer shows, and remembers this iPhone.</p></li>
 {{else}}<li><p>Add the clipbridge shortcut from the release page, run it once, and type the six-digit code that the computer shows.</p></li>
+{{end}}{{if .Admit}}<li><p><a class="btn" href="/clipbridge-add.shortcut">Add the shortcut for new computers</a></p>
+<p>This iPhone is the group's main device: to add a computer, run <b>clipbridge join</b> there and scan its QR code with this shortcut.</p></li>
 {{end}}<li><p>Put the shortcut on Back Tap: Settings &rsaquo; Accessibility &rsaquo; Touch &rsaquo; Back Tap &rsaquo; Double Tap &rsaquo; clipbridge. On an iPhone with an Action button, use that instead.</p></li>
 </ol>
 </body></html>`))

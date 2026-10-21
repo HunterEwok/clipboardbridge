@@ -205,27 +205,57 @@ func (s *Service) status() *control.Status {
 // closes the window. On a Linux device in no group, it creates the group
 // first.
 func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
-	if s.cfg.Role != node.Linux {
-		fail(c, errors.New("only a Linux member can admit devices; run clipbridge pair on one"))
+	w, _, end, err := s.openWindow(pair.NewCode(), true)
+	if err != nil {
+		fail(c, err)
 		return
 	}
+	defer end()
 	s.mu.Lock()
-	id, busy := s.id, s.window != nil || s.opening
-	joining := s.joining
+	port := s.port
+	s.mu.Unlock()
+	reply(c, control.Header{Code: w.Code(), Expires: int(pair.Lifetime / time.Second), Address: localAddress(port)}, nil)
+	hangup := make(chan struct{})
+	go func() {
+		r.Read() // returns when the client hangs up
+		close(hangup)
+	}()
+	select {
+	case <-w.Done():
+	case <-hangup:
+		return
+	case <-ctx.Done():
+		return
+	}
+	res, err := s.windowResult(w)
+	end()
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	reply(c, control.Header{Name: res.Info.Name, Done: true}, nil)
+}
+
+// openWindow reserves the pairing window and opens it with code. On a
+// Linux device in no group it first creates the group, when create is set.
+// end closes the window and frees it; it may be called more than once, and
+// runs before the last answer to a client, so it can pair again at once.
+func (s *Service) openWindow(code string, create bool) (*pair.Window, *group.Identity, func(), error) {
+	if s.cfg.Role != node.Linux {
+		return nil, nil, nil, errors.New("only a Linux member can admit devices; run clipbridge pair on one")
+	}
+	s.mu.Lock()
+	id, busy, joining := s.id, s.window != nil || s.opening, s.joining
 	if !busy && !joining {
 		s.opening = true
 	}
 	s.mu.Unlock()
 	switch {
 	case busy:
-		fail(c, errors.New("a pairing window is already open"))
-		return
+		return nil, nil, nil, errors.New("a pairing window is already open")
 	case joining:
-		fail(c, errors.New("this device is joining a group"))
-		return
+		return nil, nil, nil, errors.New("this device is joining a group")
 	}
-	// end closes the window, or ends the opening; it runs before the last
-	// answer, so the client can pair again at once.
 	var w *pair.Window
 	ended := false
 	end := func() {
@@ -244,65 +274,91 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 		s.opening = false
 		s.mu.Unlock()
 	}
-	defer end()
-	abort := func(err error) {
-		end()
-		fail(c, err)
-	}
 	if id == nil {
+		if !create {
+			end()
+			return nil, nil, nil, s.errNoGroup()
+		}
 		var err error
-		if id, err = group.Create(time.Now()); err == nil {
-			err = id.Save(s.cfg.StateDir)
+		if id, err = s.createGroup(); err != nil {
+			end()
+			return nil, nil, nil, err
 		}
-		if err == nil {
-			err = s.startGroup(id)
-		}
-		if err != nil {
-			abort(fmt.Errorf("creating the group: %w", err))
-			return
-		}
-		s.logf("clipbridge: created a new group %s", group.Tag(id.GroupCA.Cert))
 	}
-	code := pair.NewCode()
 	opened, err := pair.Open(id, code, pair.Options{})
 	if err != nil {
-		abort(err)
-		return
+		end()
+		return nil, nil, nil, err
 	}
 	w = opened
 	s.mu.Lock()
 	s.window, s.opening = w, false
 	s.responder.SetTXT(s.txtLocked())
-	port := s.port
 	s.mu.Unlock()
-	reply(c, control.Header{Code: code, Expires: int(pair.Lifetime / time.Second), Address: localAddress(port)}, nil)
-	hangup := make(chan struct{})
-	go func() {
-		r.Read() // returns when the client hangs up
-		close(hangup)
-	}()
-	select {
-	case <-w.Done():
-	case <-hangup:
-		return
-	case <-ctx.Done():
-		return
+	return w, id, end, nil
+}
+
+// createGroup creates a group on a Linux device in no group and starts it.
+// One creation runs at a time, so two requests cannot save two identities.
+func (s *Service) createGroup() (*group.Identity, error) {
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	if id != nil {
+		return id, nil // another request created it meanwhile
 	}
+	id, err := group.Create(time.Now())
+	if err == nil {
+		err = id.Save(s.cfg.StateDir)
+	}
+	if err == nil {
+		err = s.startGroup(id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("creating the group: %w", err)
+	}
+	s.logf("clipbridge: created a new group %s", group.Tag(id.GroupCA.Cert))
+	return id, nil
+}
+
+// windowResult returns how a window that closed ended, and logs it.
+func (s *Service) windowResult(w *pair.Window) (*pair.Result, error) {
 	res, err := w.Result()
 	if err != nil {
-		abort(err)
-		return
+		return nil, err
 	}
 	if !res.Confirmed {
 		// It holds a certificate, and on Linux the CA keys, but may not
 		// have stored them.
 		s.logf("clipbridge: %s (%s) got its certificate but did not confirm it stored it", res.Info.Name, res.Device)
-		abort(fmt.Errorf("%s got its certificate but did not confirm that it stored it; check it with clipbridge status there, and pair it again if needed", res.Info.Name))
-		return
+		return nil, fmt.Errorf("%s got its certificate but did not confirm that it stored it; check it with clipbridge status there, and pair it again if needed", res.Info.Name)
 	}
 	s.logf("clipbridge: %s (%s) joined the group", res.Info.Name, res.Device)
-	end()
-	reply(c, control.Header{Name: res.Info.Name, Done: true}, nil)
+	return res, nil
+}
+
+// admit opens a pairing window with a code that a paired phone read from
+// the joining computer's screen, and closes it when it ends. The phone's
+// token is the authority: the phone is the main device of the group.
+func (s *Service) admit(code string) error {
+	if _, err := pair.NormalizeCode(code); err != nil {
+		return err
+	}
+	w, _, end, err := s.openWindow(code, false)
+	if err != nil {
+		return err
+	}
+	s.logf("clipbridge: the iPhone opened a pairing window for a new computer")
+	go func() {
+		<-w.Done()
+		if _, err := s.windowResult(w); err != nil {
+			s.logf("clipbridge: adding a computer from the iPhone: %v", err)
+		}
+		end()
+	}()
+	return nil
 }
 
 // localAddress returns an address of this member that a joining device can
@@ -367,7 +423,13 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		end()
 		fail(c, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, joinTimeout)
+	// A computer that waits for the phone to scan its code browses for
+	// the window for as long as the client asked, up to a window's lifetime.
+	browse := s.cfg.browseFor
+	if m.Expires > 0 {
+		browse = min(time.Duration(m.Expires)*time.Second, pair.Lifetime)
+	}
+	ctx, cancel := context.WithTimeout(ctx, joinTimeout+browse)
 	defer cancel()
 	go func() {
 		r.Read() // returns when the client hangs up, or when the join ends
@@ -386,7 +448,7 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 	}
 	addrs := []string{m.Address}
 	if m.Address == "" {
-		if addrs, err = s.findPairing(ctx); err != nil {
+		if addrs, err = s.findPairing(ctx, browse); err != nil {
 			abort(err)
 			return
 		}
@@ -425,11 +487,11 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 }
 
 // findPairing returns the addresses of the one member that announces an
-// open pairing window, best first, browsing for up to ten seconds. When
+// open pairing window, best first, browsing for up to browse. When
 // more than one announces a window, it refuses: the user gives the address
 // that pair showed.
-func (s *Service) findPairing(ctx context.Context) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.browseFor)
+func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, browse)
 	defer cancel()
 	found := make(chan []mdns.Peer, 1)
 	d, err := s.cfg.Discover(DiscoveryConfig{
