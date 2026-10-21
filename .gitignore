@@ -1,0 +1,21 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Local only, never published
+/prototype/
+/.claude/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp

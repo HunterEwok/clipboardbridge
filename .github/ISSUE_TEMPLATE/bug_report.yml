@@ -1,0 +1,52 @@
+name: Bug report
+description: Something does not work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. For a security problem, do not use this form; follow SECURITY.md instead.
+        Before you submit, remove tokens, keys and any private text you copied.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: clipbridge version
+      description: The output of `clipbridge --version`, or the commit.
+  - type: dropdown
+    id: devices
+    attributes:
+      label: Devices involved
+      multiple: true
+      options:
+        - Linux with a desktop
+        - Linux without a desktop
+        - Mac
+        - iPhone or iPad
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Distribution and version; desktop (GNOME, KDE, ...) or text console; macOS or iOS version; device model.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The relevant log lines, with private text removed.
+      render: text
