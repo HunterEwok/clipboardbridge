@@ -206,7 +206,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
@@ -214,6 +214,8 @@ jobs:
           sudo systemd-sysusers "$PWD/packaging/linux/clipbridge.sysusers"
           systemd-analyze verify packaging/linux/clipbridge.service
           systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=30 # 3.0 on the scale it prints
+      - name: release notes
+        run: sh packaging/release-notes.sh v0.1.1 >/dev/null
       - name: desktop entry
         run: |
           sudo apt-get install -y -qq desktop-file-utils >/dev/null

@@ -66,3 +66,6 @@ archives, so it has no release.
 
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
+
+[Unreleased]: https://github.com/HunterEwok/clipbridge/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/HunterEwok/clipbridge/releases/tag/v0.1.1
