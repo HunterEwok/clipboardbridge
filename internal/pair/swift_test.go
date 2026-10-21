@@ -118,3 +118,73 @@ func writeBlob(w io.Writer, b []byte) error {
 	_, err := w.Write(append(binary.BigEndian.AppendUint32(nil, uint32(len(b))), b...))
 	return err
 }
+
+// TestSwiftMemberAdmitsGoJoinerTLS is the same with real TLS: the joiner
+// listens with Accept, as clipbridge join does, and the phone app's code
+// dials it with Network.framework, checks the QR code's fingerprint and
+// binds CPace to the TLS exporter. It needs macOS (CLIPBRIDGE_SWIFT_INTEROP_TLS
+// names the tool there).
+func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
+	tool := os.Getenv("CLIPBRIDGE_SWIFT_INTEROP_TLS")
+	if tool == "" {
+		t.Skip("CLIPBRIDGE_SWIFT_INTEROP_TLS names no clipbridge-interop binary")
+	}
+	for _, tc := range []struct {
+		name   string
+		code   string
+		goodFP bool
+		ok     bool
+	}{
+		{"the right code", "246802", true, true},
+		{"a wrong code", "246803", true, false},
+		{"another certificate", "246802", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ln.Close()
+			j := newJoiner(t, "darwin")
+			j.Now = time.Now
+			fp, err := j.Fingerprint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.goodFP {
+				fp = CertFingerprint([]byte("another certificate"))
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, tool, "admit-tls", "127.0.0.1", strconv.Itoa(ln.Addr().(*net.TCPAddr).Port), tc.code, fp)
+			var out, errOut strings.Builder
+			cmd.Stdout, cmd.Stderr = &out, &errOut
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			conn, err := ln.Accept()
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved := 0
+			id, joinErr := j.Accept(ctx, conn, "246802", func(*group.Identity) error { saved++; return nil })
+			toolErr := cmd.Wait()
+			if !tc.ok {
+				if joinErr == nil || Spent(joinErr) || toolErr == nil || saved != 0 {
+					t.Fatalf("join %v (spent %v), tool %v, saved %d", joinErr, Spent(joinErr), toolErr, saved)
+				}
+				return
+			}
+			if joinErr != nil || toolErr != nil {
+				t.Fatalf("join %v; tool %v: %s", joinErr, toolErr, errOut.String())
+			}
+			if err := id.Check(); err != nil || id.Admin() || saved != 1 {
+				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.Admin(), saved)
+			}
+			caDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.String()))
+			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
+				t.Errorf("the joiner holds another group CA than the phone made")
+			}
+		})
+	}
+}

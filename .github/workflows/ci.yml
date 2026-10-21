@@ -262,7 +262,25 @@ jobs:
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit
-        run: swift test
+        run: |
+          swift test
+          swift build --product clipbridge-interop
+          cp "$(swift build --show-bin-path)/clipbridge-interop" "$GITHUB_WORKSPACE/clipbridge-interop"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: runner.os == 'macOS'
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the Swift phone admits the Go joiner over TLS
+        if: runner.os == 'macOS'
+        run: |
+          # A throwaway keychain for the tool's identity, unlocked and the default.
+          security create-keychain -p ci ci.keychain
+          security list-keychains -d user -s ci.keychain
+          security default-keychain -s ci.keychain
+          security unlock-keychain -p ci ci.keychain
+          security set-keychain-settings ci.keychain
+          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
 
   ci-ok:
     name: ci-ok
