@@ -78,16 +78,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
-          - { goos: linux, goarch: arm, goarm: "7" }
-          - { goos: linux, goarch: arm, goarm: "6" } # Raspberry Pi Zero W
-          - { goos: darwin, goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
-    runs-on: ubuntu-latest
+          - { goos: linux, goarch: amd64, runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: arm, goarm: "7", runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: arm, goarm: "6", runner: ubuntu-latest, cgo: "0" } # Raspberry Pi Zero W
+          # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
+          - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1" }
+          - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: "1" }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
-      CGO_ENABLED: "0"
+      CGO_ENABLED: ${{ matrix.cgo }}
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
@@ -103,6 +104,10 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
+      - name: the agent has the pasteboard
+        if: matrix.goos == 'darwin'
+        # Without cgo the agent would start and fail; this build must link AppKit.
+        run: otool -L "$RUNNER_TEMP/clipbridge" | grep -q AppKit.framework
 
   avahi:
     name: mdns with avahi
@@ -195,7 +200,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/linux/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
