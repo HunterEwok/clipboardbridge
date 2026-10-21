@@ -13,9 +13,10 @@ import (
 
 // The shortcut: UnsignedShortcut builds it as a property list, which
 // tools/shortcut writes to shortcut/clipbridge.plist. iOS imports only a
-// signed shortcut, so the maintainer signs that file on a Mac with
-// `shortcuts sign` into shortcut/clipbridge.shortcut, which the build embeds
-// and the profile port serves.
+// signed shortcut, so the maintainer converts that file to the binary form
+// and signs it on a Mac with `shortcuts sign` into
+// shortcut/clipbridge.shortcut, which the build embeds and the profile port
+// serves (see docs/maintaining.md).
 //
 // The shortcut keeps its token in iCloud Drive at Shortcuts/clipbridge/token.txt.
 // Without it, it asks for the pairing code, gets a token from /pair and

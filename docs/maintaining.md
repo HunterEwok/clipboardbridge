@@ -101,8 +101,10 @@ Rules for workflows:
 - Built by CI from a tag, never on a laptop.
 - The iPhone shortcut is the one exception: iOS imports only shortcuts signed with an Apple
   ID, which needs a Mac. After `tools/shortcut` changes it, run on a Mac
-  `go run ./tools/shortcut` and
-  `shortcuts sign --mode anyone --input internal/phone/shortcut/clipbridge.plist --output internal/phone/shortcut/clipbridge.shortcut`,
+  `go run ./tools/shortcut`,
+  `plutil -convert binary1 -o /tmp/clipbridge-unsigned.shortcut internal/phone/shortcut/clipbridge.plist`
+  (`shortcuts sign` reads only the binary form) and
+  `shortcuts sign --mode anyone --input /tmp/clipbridge-unsigned.shortcut --output internal/phone/shortcut/clipbridge.shortcut`,
   check the result by importing it on an iPhone, and commit the signed file.
 - Published with `SHA256SUMS` and a build provenance attestation
   (`actions/attest-build-provenance`), which users can check with `gh attestation verify`.

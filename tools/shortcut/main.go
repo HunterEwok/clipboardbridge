@@ -6,8 +6,11 @@
 // clipbridge.shortcut next to it:
 //
 //	go run ./tools/shortcut
-//	shortcuts sign --mode anyone --input internal/phone/shortcut/clipbridge.plist \
+//	plutil -convert binary1 -o /tmp/clipbridge-unsigned.shortcut internal/phone/shortcut/clipbridge.plist
+//	shortcuts sign --mode anyone --input /tmp/clipbridge-unsigned.shortcut \
 //		--output internal/phone/shortcut/clipbridge.shortcut
+//
+// shortcuts sign reads only the binary form.
 package main
 
 import (
