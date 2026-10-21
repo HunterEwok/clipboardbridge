@@ -93,7 +93,7 @@ any member may be switched off at any time.
   that it stored its identity. Errors travel as short codes, never as text, so a device that
   has not proved it knows the code cannot put words in front of the user. The five minutes
   count the time the machine sleeps.
-- **Joining an iPhone or iPad**: `clipbridge pair --phone` asks the Linux member that holds
+- **Joining an iPhone or iPad**: `clipbridge pair -phone` asks the Linux member that holds
   `clipbridge.local` to open a phone pairing window, with the same limits as for a computer,
   and prints a six-digit code and the fingerprint of the iPhone CA. No secret travels before
   the iPhone trusts the CA:

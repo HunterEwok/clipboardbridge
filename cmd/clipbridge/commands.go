@@ -142,9 +142,18 @@ func writeStatus(w io.Writer, st *control.Status) {
 // cmdPair opens a pairing window and waits until a device joins, the
 // window closes, or the user presses Ctrl+C.
 func cmdPair(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "clipbridge: pair takes no arguments")
+	fs := flag.NewFlagSet("pair", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	phone := fs.Bool("phone", false, "pair an iPhone or iPad instead of a computer")
+	if fs.Parse(args) != nil {
 		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "clipbridge: pair takes only -phone")
+		return 2
+	}
+	if *phone {
+		return cmdPairPhone(stdout, stderr)
 	}
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
@@ -166,6 +175,35 @@ func cmdPair(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "%s joined the group.\n", m.Name)
+	return 0
+}
+
+// cmdPairPhone opens an iPhone pairing window and walks the user through
+// it: the profile first, the fingerprint, and only then the code.
+func cmdPairPhone(stdout, stderr io.Writer) int {
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "On the iPhone, with Safari:")
+	fmt.Fprintf(stdout, "  1. Open http://%s/ and install the clipbridge profile.\n", m.Address)
+	fmt.Fprintln(stdout, "  2. In Settings > General > VPN & Device Management > clipbridge > More Details,")
+	fmt.Fprintln(stdout, "     check that the SHA-256 fingerprint is:")
+	fmt.Fprintf(stdout, "       %s\n", m.Fingerprint)
+	fmt.Fprintln(stdout, "     Only if it matches, turn on full trust in Settings > General > About >")
+	fmt.Fprintln(stdout, "     Certificate Trust Settings.")
+	fmt.Fprintln(stdout, "  3. Open https://clipbridge.local:8765/pair. It must open without a warning;")
+	fmt.Fprintf(stdout, "     if it does not, stop. Type the code: %s %s\n", m.Code[:3], m.Code[3:])
+	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
+	if _, err := c.Receive(); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "The iPhone is paired. Install the shortcut and give it the token the page showed.")
 	return 0
 }
 

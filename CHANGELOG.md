@@ -24,5 +24,8 @@ All notable changes to clipbridge are documented in this file. The format follow
 - macOS: `clipbridge agent` links the pasteboard (secrets stay on the Mac and carry the
   concealed marker); the service runs as a LaunchDaemon and the agent as a LaunchAgent,
   installed by `packaging/macos/install.sh`.
+- iPhone: `clipbridge pair -phone` on the member that holds `clipbridge.local` serves the
+  profile with the iPhone CA and a pairing page that issues the shortcut's token; the
+  shortcut's `/sync` sends the iPhone's text to the group or brings a recent copy back.
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).

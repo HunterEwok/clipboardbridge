@@ -20,6 +20,7 @@ Commands:
   paste                   Print this member's clipboard text.
   status                  Show the group and the connected members.
   pair                    Admit a new computer: show a code for clipbridge join.
+  pair -phone             Pair an iPhone or iPad with the shortcut.
   join [address:port]     Join a group with the code from clipbridge pair,
                           typed or read from standard input.
   service                 Run the service (started by systemd or launchd).

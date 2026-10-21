@@ -4,12 +4,21 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +28,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/control"
+	"github.com/HunterEwok/clipbridge/internal/group"
 	"github.com/HunterEwok/clipbridge/internal/mdns"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
@@ -158,6 +168,30 @@ type testService struct {
 	done     chan error
 	accepted atomic.Int32 // member connections accepted
 	cfg      func(*Config)
+
+	mu          sync.Mutex
+	phoneAddr   string // where the iPhone port listens
+	profileAddr string // where the profile port listens, while open
+}
+
+func (s *testService) addrs() (phone, profile string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.phoneAddr, s.profileAddr
+}
+
+// listenOn returns a listen function on a free loopback port that records
+// the address in *addr.
+func (s *testService) listenOn(addr *string) func() (net.Listener, error) {
+	return func() (net.Listener, error) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err == nil {
+			s.mu.Lock()
+			*addr = ln.Addr().String()
+			s.mu.Unlock()
+		}
+		return ln, err
+	}
 }
 
 func startService(t *testing.T, h *hub, name string) *testService {
@@ -213,7 +247,9 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
 			return countingListener{ln, &s.accepted}, err
 		},
-		browseFor: 2 * time.Second,
+		browseFor:     2 * time.Second,
+		phoneListen:   s.listenOn(&s.phoneAddr),
+		profileListen: s.listenOn(&s.profileAddr),
 	}
 	if s.cfg != nil {
 		s.cfg(&cfg)
@@ -837,5 +873,116 @@ func TestControlSocketMode(t *testing.T) {
 	ln.Close()
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Errorf("the socket is still there after Close: %v", err)
+	}
+}
+
+func TestIPhone(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	other := startService(t, &h, "other")
+	pairWith(t, pi, other) // creates the group
+	waitFor(t, "one holder", func() bool { return pi.status(t).Holder != other.status(t).Holder })
+	holder, notHolder := pi, other
+	if other.status(t).Holder {
+		holder, notHolder = other, pi
+	}
+	// Only the holder of clipbridge.local pairs an iPhone.
+	if _, err := notHolder.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "does not answer for clipbridge.local") {
+		t.Errorf("pair -phone on a member that does not hold clipbridge.local: %v", err)
+	}
+	c := holder.dial(t)
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := holder.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "already open") {
+		t.Errorf("a second iPhone window: %v", err)
+	}
+	phoneAddr, profileAddr := holder.addrs()
+
+	// 1. The iPhone downloads the profile over plain HTTP and trusts the
+	// CA in it, nothing else.
+	resp, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	der := regexp.MustCompile(`<data>([A-Za-z0-9+/=]+)</data>`).FindSubmatch(profile)
+	if der == nil {
+		t.Fatalf("profile:\n%s", profile)
+	}
+	raw, _ := base64.StdEncoding.DecodeString(string(der[1]))
+	ca, err := x509.ParseCertificate(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.Fingerprint(ca) != m.Fingerprint {
+		t.Fatal("the printed fingerprint is not the profile's")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	iphone := &http.Client{Timeout: 10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipbridge.local"}}}
+
+	// 2. The pairing page, reached as clipbridge.local, takes the code.
+	resp, err = iphone.PostForm("https://"+phoneAddr+"/pair", url.Values{"code": {m.Code}})
+	if err != nil {
+		t.Fatalf("the iPhone could not reach the pairing page: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	tok := regexp.MustCompile(`<code>(cb1\.[A-Za-z0-9_-]+)</code>`).FindSubmatch(page)
+	if tok == nil {
+		t.Fatalf("pairing page:\n%s", page)
+	}
+	if m, err := c.Receive(); err != nil || !m.Done {
+		t.Fatalf("pair -phone ended with %+v, %v", m, err)
+	}
+	// The window and the profile port closed before the answer.
+	if _, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig"); err == nil {
+		t.Error("the profile port is still open")
+	}
+
+	// 3. The button: the iPhone's text goes to every member.
+	sync := func(text string) map[string]any {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"v": 1, "text": text})
+		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/sync", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+string(tok[1]))
+		resp, err := iphone.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var rep map[string]any
+		json.NewDecoder(resp.Body).Decode(&rep)
+		return rep
+	}
+	if rep := sync("from the iPhone"); rep["direction"] != "from_iphone" {
+		t.Fatalf("reply %v", rep)
+	}
+	for _, s := range []*testService{pi, other} {
+		waitFor(t, s.name+" has the iPhone's text", func() bool { return s.paste(t) == "from the iPhone" })
+	}
+	// A computer copies; the next press brings it to the iPhone.
+	if _, err := other.do(t, control.Header{Op: control.OpCopy}, "from the computer"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the holder has the copy", func() bool { return holder.paste(t) == "from the computer" })
+	if rep := sync("from the iPhone"); rep["direction"] != "to_iphone" || rep["copy"] != "from the computer" {
+		t.Errorf("reply %v", rep)
+	}
+	// A token from another group is refused.
+	req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/sync", strings.NewReader(`{"v":1,"text":"x"}`))
+	req.Header.Set("Authorization", "Bearer cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	if resp, err := iphone.Do(req); err == nil {
+		var rep map[string]any
+		json.NewDecoder(resp.Body).Decode(&rep)
+		resp.Body.Close()
+		if rep["direction"] != "error" {
+			t.Errorf("a forged token got %v", rep)
+		}
 	}
 }

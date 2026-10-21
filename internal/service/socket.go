@@ -124,6 +124,8 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpPair:
 		s.pair(ctx, c, r)
+	case control.OpPairPhone:
+		s.pairPhone(ctx, c, r)
 	case control.OpJoin:
 		s.join(ctx, c, r, m)
 	case control.OpWatch:
@@ -556,6 +558,14 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	for {
 		select {
 		case wr := <-w.out:
+			// The clipboard will hold this text. A report that came in
+			// after the engine decided on it, such as the watch request
+			// itself, must not leave the engine thinking otherwise.
+			if e := s.engine(); e != nil {
+				if text, _, _, ok := e.Local(); !ok || text != wr.Text {
+					e.ClipboardIs(wr.Text, wr.Kind)
+				}
+			}
 			h := control.Header{Op: control.OpWrite, Kind: kindName(wr.Kind), Via: viaName(wr.Via), Seq: wr.Seq}
 			if wr.Kind == clip.Secret {
 				h.TTLMS = s.secretLeft().Milliseconds()

@@ -26,6 +26,7 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/mdns"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
+	"github.com/HunterEwok/clipbridge/internal/phone"
 )
 
 // markFile holds the hybrid clock's saved mark, in the state directory.
@@ -48,6 +49,9 @@ type Config struct {
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
+	// phoneListen and profileListen open the iPhone's ports; PhonePort and
+	// ProfilePort on all addresses if nil.
+	phoneListen, profileListen func() (net.Listener, error)
 }
 
 // maxHandshakes is how many connections to the member port may wait for
@@ -91,6 +95,8 @@ type Service struct {
 	port          uint16
 	window        *pair.Window
 	opening       bool // a pairing window is being opened, maybe with a new group
+	phoneWindow   *phone.Window
+	phoneOpening  bool // an iPhone pairing window is being opened
 	joining       bool // a join is running
 	stopping      bool // the service is stopping: no new group, no election
 	holder        bool
@@ -120,6 +126,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.listen == nil {
 		cfg.listen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
+	}
+	if cfg.phoneListen == nil {
+		cfg.phoneListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", PhonePort)) }
+	}
+	if cfg.profileListen == nil {
+		cfg.profileListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", ProfilePort)) }
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}}
 
@@ -231,10 +243,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.groupCtx, s.groupCancel = gctx, cancel
 	nd.Rejoin() // the service just started; there are no connections yet
 	if ln != nil {
-		s.wg.Add(1)
+		s.wg.Add(2)
 		go func() {
 			defer s.wg.Done()
 			s.accept(gctx, ln)
+		}()
+		go func() {
+			defer s.wg.Done()
+			s.servePhone(gctx, id)
 		}()
 	}
 	// Discovery has its own context, so it can say goodbye for
@@ -257,11 +273,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 func (s *Service) stopGroup() {
 	s.mu.Lock()
 	s.stopping = true
-	cancel, nd, w := s.groupCancel, s.nd, s.window
+	cancel, nd, w, pw := s.groupCancel, s.nd, s.window, s.phoneWindow
 	stopDiscovery, discoveryDone := s.discoveryStop, s.discoveryDone
 	s.mu.Unlock()
 	if w != nil {
 		w.Close()
+	}
+	if pw != nil {
+		pw.Close()
 	}
 	if stopDiscovery != nil {
 		stopDiscovery()
