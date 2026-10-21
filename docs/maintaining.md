@@ -98,7 +98,14 @@ Rules for workflows:
 
 ## Releases
 
-- Built by CI from a tag, never on a laptop.
+- Built by CI from a tag, never on a laptop: push a tag `vX.Y.Z` on main
+  (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
+  `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and
+  publishes the release, with notes generated from the merged pull requests. A tag with a
+  hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
+- The archives are `clipbridge-<os>-<arch>.tar.gz` without the version, so that
+  `releases/latest/download/` has fixed names for `get.sh`; each holds `clipbridge/` with the
+  binary, `LICENSE` and `packaging/`.
 - The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
   Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipbridge.plist` or
   `clipbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:

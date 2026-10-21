@@ -1154,3 +1154,29 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		t.Errorf("five digits: %v", rep)
 	}
 }
+
+func TestListenPreferring(t *testing.T) {
+	taken, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	port := taken.Addr().(*net.TCPAddr).Port
+	ln, err := listenPreferring(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if got := ln.Addr().(*net.TCPAddr).Port; got == port || got == 0 {
+		t.Errorf("listenPreferring(%d) listened on %d", port, got)
+	}
+	taken.Close()
+	free, err := listenPreferring(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer free.Close()
+	if got := free.Addr().(*net.TCPAddr).Port; got != port {
+		t.Errorf("listenPreferring(%d) on a free port listened on %d", port, got)
+	}
+}

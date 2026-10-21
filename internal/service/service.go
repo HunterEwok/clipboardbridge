@@ -44,21 +44,40 @@ type Config struct {
 	// a Mac in browse-only mode. Tests replace it.
 	Discover func(DiscoveryConfig) (Discovery, error)
 
-	// listen opens the member port; any port on all addresses if nil.
+	// listen opens the member port; MemberPort, or any free port, on all
+	// addresses if nil.
 	listen func() (net.Listener, error)
 	// now is the clock for certificates; time.Now if nil.
 	now func() time.Time
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
-	// joinListen opens the port a listening join waits at, any port on all
-	// addresses if nil; joinAddrs returns the addresses for its QR code,
+	// joinListen opens the port a listening join waits at, JoinPort or any
+	// free port on all addresses if nil; joinAddrs returns the addresses for its QR code,
 	// joinAddresses if nil.
 	joinListen func() (net.Listener, error)
 	joinAddrs  func(port uint16) []string
 	// phoneListen and profileListen open the iPhone's ports; PhonePort and
 	// ProfilePort on all addresses if nil.
 	phoneListen, profileListen func() (net.Listener, error)
+}
+
+// MemberPort and JoinPort are the ports the member port and a listening
+// join prefer, so a firewall can open them; when one is taken, any free
+// port does, since discovery and the QR code carry the port.
+const (
+	MemberPort = 8764
+	JoinPort   = 8767
+)
+
+// listenPreferring listens on port on all addresses, or on any free port if
+// that one is taken.
+func listenPreferring(port int) (net.Listener, error) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		ln, err = net.Listen("tcp", ":0")
+	}
+	return ln, err
 }
 
 // maxHandshakes is how many connections to the member port may wait for
@@ -137,10 +156,10 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.browseFor = 10 * time.Second
 	}
 	if cfg.listen == nil {
-		cfg.listen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
+		cfg.listen = func() (net.Listener, error) { return listenPreferring(MemberPort) }
 	}
 	if cfg.joinListen == nil {
-		cfg.joinListen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
+		cfg.joinListen = func() (net.Listener, error) { return listenPreferring(JoinPort) }
 	}
 	if cfg.joinAddrs == nil {
 		cfg.joinAddrs = joinAddresses

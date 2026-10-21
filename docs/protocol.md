@@ -24,7 +24,7 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Member host name | `cb-<device ID>.local` (mDNS host name and the only DNS name in the member certificate) | `DeviceID.HostName` |
 | Service instance | `<device ID>._clipbridge._tcp.local` | `internal/mdns/zone.go` |
 | Shared iPhone name | `clipbridge.local` | `group.PhoneName` |
-| Member port | TCP, chosen by the OS at start (`:0`), all addresses; published in the SRV record. Linux members only | `internal/service/service.go` |
+| Member port | TCP 8764 when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only | `internal/service/service.go` |
 | iPhone port | TCP 8765, HTTPS, all addresses. Linux members only | `internal/service/iphone.go` |
 | Profile port | TCP 8766, plain HTTP, only while an iPhone pairing window is open | `internal/service/iphone.go` |
 | mDNS | UDP 5353, groups 224.0.0.251 and ff02::fb | `internal/mdns/mdns.go` |
@@ -488,8 +488,9 @@ plus the browse time.
 `clipbridge join` without `-code` turns the direction round, so that the device that scans
 the QR code dials the computer, and nothing is announced:
 
-- The joiner listens on a new TCP port (all addresses; only home network addresses may
-  connect, as on the member port) for up to 5 minutes, and shows the QR code
+- The joiner listens on TCP 8767 when free, otherwise on a port the OS chooses (all
+  addresses; only home network addresses may connect, as on the member port) for up to
+  5 minutes, and shows the QR code
   `clipbridge://join?code=<code>&addr=<host:port>&fp=<fingerprint>` (section 7): its
   addresses that mDNS would publish, IPv4 first, without link-local ones, at most four; and
   the fingerprint of its self-signed certificate, SHA-256 over the DER in base64url without
