@@ -44,6 +44,9 @@ All notable changes to clipbridge are documented in this file. The format follow
   provenance attestations; `get.sh` installs the latest release on Linux in one command,
   checks it, and opens clipbridge's ports in ufw for the home network only. The member port
   is 8764 and a listening join 8767 when they are free.
+- Linux members without the CA keys, for groups whose root will be the phone: a welcome
+  without them makes such a member, which syncs but admits nobody and never holds
+  `clipbridge.local`.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and

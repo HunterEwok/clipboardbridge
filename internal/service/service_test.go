@@ -1180,3 +1180,52 @@ func TestListenPreferring(t *testing.T) {
 		t.Errorf("listenPreferring(%d) on a free port listened on %d", port, got)
 	}
 }
+
+func TestLinuxMemberWithoutCAKeys(t *testing.T) {
+	// A Linux member without the CA keys, as in a group whose root is the
+	// phone, connects and syncs, but never holds clipbridge.local, even
+	// with the lowest device ID, and admits nobody. (A group is either one
+	// or the other, so the pi gives the name up to the lower ID here; in a
+	// group whose root is the phone nobody holds it.)
+	var h hub
+	pi := startService(t, &h, "pi")
+	c, _ := openWindow(t, pi) // creates the group
+	c.Close()
+	admin, err := group.Load(pi.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	devID := group.DeviceID("00000000000000000000000000000001")
+	cert, err := admin.GroupCA.IssueMember(devID, &key.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp("", "cb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	id := &group.Identity{ID: devID, Key: key, Cert: cert, GroupCA: group.CA{Cert: admin.GroupCA.Cert}}
+	if err := id.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	box := startIn(t, &h, &testService{name: "box", dir: dir, role: node.Linux})
+	waitFor(t, "connected", func() bool { return len(box.status(t).Peers) == 1 })
+	if _, err := box.do(t, control.Header{Op: control.OpCopy}, "from the box"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "from the box" })
+	if box.status(t).Holder {
+		t.Error("the member without CA keys holds clipbridge.local")
+	}
+	if _, err := box.do(t, control.Header{Op: control.OpPair}, ""); err == nil {
+		t.Error("a member without CA keys opened a pairing window")
+	}
+	if _, err := box.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil {
+		t.Error("a member without CA keys paired an iPhone")
+	}
+}

@@ -23,6 +23,11 @@ import (
 
 // Options adjust a pairing window. The zero value uses the system clocks.
 type Options struct {
+	// NoCAKeys keeps the CA keys from a joining Linux device, which then
+	// cannot admit devices: the welcome of a group whose root is the phone.
+	NoCAKeys bool
+
+
 	Now       func() time.Time                        // for the certificates; time.Now if nil
 	Uptime    func() time.Duration                    // for the window's lifetime; uptime.Now if nil
 	AfterFunc func(time.Duration, func()) func() bool // the expiry timer, returning its Stop; time.AfterFunc if nil
@@ -30,8 +35,9 @@ type Options struct {
 
 // A Window is an open pairing window on a member that holds the CA keys.
 type Window struct {
-	admin  *group.Identity
-	code   []byte
+	admin    *group.Identity
+	code     []byte
+	noCAKeys bool
 	now    func() time.Time
 	uptime func() time.Duration
 
@@ -76,7 +82,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), now: opt.Now, uptime: opt.Uptime,
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, now: opt.Now, uptime: opt.Uptime,
 		expires: opt.Uptime() + Lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(Lifetime, w.expire)
 	w.mu.Lock()
@@ -392,7 +398,7 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 	if err != nil {
 		return nil, true, err
 	}
-	welcome, err := w.welcome(cert, info.OS == "linux")
+	welcome, err := w.welcome(cert, info.OS == "linux" && !w.noCAKeys)
 	if err != nil {
 		return nil, true, err
 	}
@@ -420,9 +426,9 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 	return res, true, nil
 }
 
-func (w *Window) welcome(cert *x509.Certificate, linux bool) (*Welcome, error) {
+func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
-	if !linux {
+	if !keys {
 		return wel, nil
 	}
 	var err error

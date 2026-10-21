@@ -176,7 +176,9 @@ rescanned every 10 s.
 
 Election (`electLocked`, `internal/service/members.go`): a Linux member holds
 `clipbridge.local` when no connected peer that has sent its hello has role `linux` and a
-lower device ID. A member alone holds it at once. Macs never hold it. The election runs
+lower device ID. A member alone holds it at once. Macs never hold it, nor do Linux members
+without the CA keys. A group's Linux members either all hold the keys (its root is a Linux
+member) or none do (its root is the phone), so the rule needs to know no more about peers. The election runs
 whenever the set of connected peers changes, so a holder that leaves with a goodbye is
 replaced at once and one that falls silent after the 15-second timeout. Two holders for a
 moment are harmless.
@@ -463,14 +465,17 @@ put words in front of the user.
 |-------|------|---------|
 | `cert` | bytes, DER | always: a member certificate from the group CA for the key of the joiner's TLS certificate and its device ID |
 | `group_ca` | bytes, DER | always |
-| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux` |
-| `phone_ca` | bytes, DER | only for `linux` |
-| `phone_ca_key` | bytes, PKCS #8 DER | only for `linux` |
+| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
+| `phone_ca` | bytes, DER | likewise |
+| `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 
 The joiner checks: the tag of `group_ca` equals ADb `group`; the member's TLS certificate is
-signed by `group_ca` and names ADb `device` (section 2); for `linux`, all three CA fields are
-present and the keys are P-256 and match. A Linux joiner then issues its own
-`clipbridge.local` certificate from the iPhone CA.
+signed by `group_ca` and names ADb `device` (section 2); the three CA fields are all present
+or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
+match. A Linux joiner that got them then issues its own `clipbridge.local` certificate from
+the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
+phone (section 9): it publishes and listens, but admits nobody, serves no iPhone and never
+holds `clipbridge.local`.
 
 Note: design.md (lines 100-103) says the new member also receives the group state and, on
 Linux, the token hashes; the Welcome has neither (`internal/pair/pair.go:181`). Tokens need no
@@ -730,7 +735,10 @@ a computer keep working as they do today.
 
 - **Group CA.** The app creates the group CA: a P-256 key in the Secure Enclave or
   StrongBox that cannot be exported, with the certificate profile of section 2. Computers
-  get member certificates only and never hold a CA key; only the phone admits devices.
+  get member certificates only and never hold a CA key; only the phone admits devices. The
+  Linux side is in place: a Welcome without CA keys makes a Linux member without them
+  (section 6), and such members never hold `clipbridge.local`. There is no iPhone CA in such
+  a group.
 - **The app is a member.** It holds a member certificate of its own group with role
   `phone` and speaks the member protocol of section 4. It always dials and never listens
   (a phone cannot accept connections in the background), so members MUST NOT dial a
