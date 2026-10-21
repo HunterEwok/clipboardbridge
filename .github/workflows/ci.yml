@@ -104,10 +104,38 @@ jobs:
       - name: go build
         run: go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
 
+  avahi:
+    name: mdns with avahi
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: build the mDNS tests
+        env:
+          CGO_ENABLED: "0"
+        run: go test -c -o "$RUNNER_TEMP/mdns.test" ./internal/mdns
+      - name: run them beside avahi-daemon in a container
+        run: |
+          docker run --rm -v "$RUNNER_TEMP:/t:ro" debian:stable-slim sh -euc '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq avahi-daemon avahi-utils dbus >/dev/null
+            mkdir -p /run/dbus
+            dbus-daemon --system --fork
+            avahi-daemon --daemonize --no-chroot
+            sleep 2
+            CLIPBRIDGE_TEST_AVAHI=1 /t/mdns.test -test.v -test.run "TestAvahi|TestSystemNetwork"
+          '
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build]
+    needs: [check, test, build, avahi]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

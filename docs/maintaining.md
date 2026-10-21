@@ -73,6 +73,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
   ARMv6 for the Raspberry Pi Zero W. When the macOS agent arrives, the macOS targets move to
   macOS runners with cgo (see the Build section of [the design](design.md#build));
+- **mdns with avahi**: the mDNS tests on real sockets, beside avahi-daemon, in a Debian
+  container;
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:

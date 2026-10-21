@@ -10,7 +10,10 @@ tool (
 	honnef.co/go/tools/cmd/staticcheck
 )
 
-require golang.org/x/sys v0.49.0
+require (
+	golang.org/x/net v0.61.0
+	golang.org/x/sys v0.49.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
