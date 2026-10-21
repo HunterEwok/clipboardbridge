@@ -1,0 +1,239 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+// Package group holds the certificates and keys of a clipbridge group: the
+// group CA, which certifies the members, the iPhone CA, which certifies the
+// clipbridge.local address for the iPhone, and this device's own identity.
+//
+// Every certificate uses ECDSA P-256. The CAs have a path length of 0, so
+// they sign only end certificates. The iPhone CA carries critical name
+// constraints: an iPhone that trusts it accepts it for clipbridge.local
+// only, never for another site or an IP address.
+package group
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"time"
+)
+
+// PhoneName is the DNS name the iPhone uses for the group.
+const PhoneName = "clipbridge.local"
+
+// Lifetimes of the certificates, and how long before its end a certificate
+// is renewed.
+const (
+	caYears            = 20
+	memberYears        = 2
+	memberRenewBefore  = 240 * 24 * time.Hour
+	phoneLifetime      = 397 * 24 * time.Hour // below the 825 days iOS allows
+	phoneRenewBefore   = 60 * 24 * time.Hour
+	backdate           = 24 * time.Hour // for a device whose clock is a little behind
+	phoneCAName        = "clipbridge iPhone CA"
+	groupCAName        = "clipbridge group CA"
+	notPermittedDomain = "clipbridge.invalid"
+)
+
+// A DeviceID identifies a device: 128 random bits as 32 lowercase hex
+// characters, which fit in a DNS label.
+type DeviceID string
+
+// NewDeviceID returns a new random device ID.
+func NewDeviceID() DeviceID {
+	var b [16]byte
+	rand.Read(b[:]) // never fails
+	return DeviceID(hex.EncodeToString(b[:]))
+}
+
+// ParseDeviceID checks that s is a device ID.
+func ParseDeviceID(s string) (DeviceID, error) {
+	if len(s) != 32 || strings.Trim(s, "0123456789abcdef") != "" {
+		return "", fmt.Errorf("group: %q is not a device ID", s)
+	}
+	return DeviceID(s), nil
+}
+
+// HostName returns the device's own mDNS host name, cb-<device ID>.local.
+// It is also the DNS name in the device's member certificate.
+func (id DeviceID) HostName() string { return "cb-" + string(id) + ".local" }
+
+// NewKey returns a new P-256 private key.
+func NewKey() (*ecdsa.PrivateKey, error) {
+	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+}
+
+// A CA is a certificate authority of the group: its certificate and, on
+// members that hold it, its private key.
+type CA struct {
+	Cert *x509.Certificate
+	Key  *ecdsa.PrivateKey // nil when this device does not hold the key
+}
+
+// NewGroupCA creates a group CA, which certifies the members.
+func NewGroupCA(now time.Time) (*CA, error) {
+	return newCA(&x509.Certificate{
+		Subject: pkix.Name{CommonName: groupCAName + " " + now.UTC().Format(time.DateOnly)},
+	}, now)
+}
+
+// NewPhoneCA creates an iPhone CA. Its name constraints permit only the DNS
+// name clipbridge.local and its subdomains, and URI and e-mail names under
+// clipbridge.invalid, a domain that never exists; they exclude every IP
+// address. The constraints are critical, so a client that does not
+// understand them rejects the certificates instead of ignoring the limits.
+func NewPhoneCA(now time.Time) (*CA, error) {
+	return newCA(&x509.Certificate{
+		Subject:                     pkix.Name{CommonName: phoneCAName + " " + now.UTC().Format(time.DateOnly)},
+		PermittedDNSDomainsCritical: true,
+		PermittedDNSDomains:         []string{PhoneName},
+		PermittedEmailAddresses:     []string{notPermittedDomain},
+		PermittedURIDomains:         []string{notPermittedDomain},
+		ExcludedIPRanges: []*net.IPNet{
+			{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(0, 32)},
+			{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+		},
+	}, now)
+}
+
+func newCA(tmpl *x509.Certificate, now time.Time) (*CA, error) {
+	key, err := NewKey()
+	if err != nil {
+		return nil, err
+	}
+	tmpl.NotBefore = now.Add(-backdate)
+	tmpl.NotAfter = now.AddDate(caYears, 0, 0)
+	tmpl.IsCA = true
+	tmpl.BasicConstraintsValid = true
+	tmpl.MaxPathLen = 0
+	tmpl.MaxPathLenZero = true
+	tmpl.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+	cert, err := create(tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, err
+	}
+	return &CA{Cert: cert, Key: key}, nil
+}
+
+// IssueMember certifies a member's public key for the device id. The
+// certificate is valid for two years, and its NotBefore is the CA's, so a
+// device whose clock is behind still accepts it.
+func (ca *CA) IssueMember(id DeviceID, pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
+	if _, err := ParseDeviceID(string(id)); err != nil {
+		return nil, err
+	}
+	return ca.issue(&x509.Certificate{
+		Subject:     pkix.Name{CommonName: string(id)},
+		DNSNames:    []string{id.HostName()},
+		NotBefore:   ca.Cert.NotBefore,
+		NotAfter:    now.AddDate(memberYears, 0, 0),
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+	}, pub, now)
+}
+
+// IssuePhone certifies a Linux member's public key for clipbridge.local,
+// for 397 days.
+func (ca *CA) IssuePhone(pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
+	notBefore := maxTime(now.Add(-backdate), ca.Cert.NotBefore)
+	return ca.issue(&x509.Certificate{
+		Subject:     pkix.Name{CommonName: PhoneName},
+		DNSNames:    []string{PhoneName},
+		NotBefore:   notBefore,
+		NotAfter:    notBefore.Add(phoneLifetime),
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}, pub, now)
+}
+
+// issue signs tmpl. A clock outside the CA's lifetime is an error: the
+// certificate would be useless, and the date is most likely wrong.
+func (ca *CA) issue(tmpl *x509.Certificate, pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
+	if ca.Key == nil {
+		return nil, errors.New("group: this device does not hold the CA key")
+	}
+	if pub == nil || pub.Curve != elliptic.P256() {
+		return nil, errors.New("group: the key to certify is not a P-256 key")
+	}
+	if now.Before(ca.Cert.NotBefore) || !now.Before(ca.Cert.NotAfter) {
+		return nil, fmt.Errorf("group: the clock (%v) is outside the lifetime of %q; check the date", now.UTC(), ca.Cert.Subject.CommonName)
+	}
+	tmpl.NotAfter = minTime(tmpl.NotAfter, ca.Cert.NotAfter)
+	tmpl.KeyUsage = x509.KeyUsageDigitalSignature
+	tmpl.BasicConstraintsValid = true
+	return create(tmpl, ca.Cert, pub, ca.Key)
+}
+
+// create signs a certificate; a nil serial number makes x509 pick a random
+// one.
+func create(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, priv *ecdsa.PrivateKey) (*x509.Certificate, error) {
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, priv)
+	if err != nil {
+		return nil, fmt.Errorf("group: %w", err)
+	}
+	return x509.ParseCertificate(der)
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+// Fingerprint returns the SHA-256 fingerprint of a certificate the way iOS
+// shows it under the details of a profile: upper-case hex bytes separated
+// by spaces.
+func Fingerprint(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
+	var b strings.Builder
+	for i, c := range sum {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%02X", c)
+	}
+	return b.String()
+}
+
+// Tag returns a short identifier of the group CA, 16 hex characters, which
+// members publish so that the members of another group ignore them. A new
+// group CA has a new tag.
+func Tag(groupCA *x509.Certificate) string {
+	sum := sha256.Sum256(groupCA.Raw)
+	return hex.EncodeToString(sum[:8])
+}
+
+// DeviceOf returns the device ID that a member certificate names.
+func DeviceOf(cert *x509.Certificate) (DeviceID, error) {
+	id, err := ParseDeviceID(cert.Subject.CommonName)
+	if err != nil {
+		return "", err
+	}
+	if len(cert.DNSNames) != 1 || cert.DNSNames[0] != id.HostName() {
+		return "", fmt.Errorf("group: the certificate of %s does not name %s", id, id.HostName())
+	}
+	return id, nil
+}
+
+// verifyTime returns the time at which to check certificates issued by ca:
+// now, but never before the CA's NotBefore. Member certificates start when
+// their CA starts, so a device whose clock is behind, such as a Raspberry Pi
+// without a real-time clock before it synchronizes, still accepts them.
+// Expired certificates are rejected.
+func verifyTime(ca *x509.Certificate, now time.Time) time.Time {
+	return maxTime(now, ca.NotBefore)
+}

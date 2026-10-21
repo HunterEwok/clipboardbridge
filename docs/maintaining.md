@@ -30,7 +30,7 @@ a checked box means the setting is in place.
 - [x] **Private vulnerability reporting**. [SECURITY.md](../SECURITY.md) relies on it.
 - [x] **Dependency graph**, **Dependabot alerts** and **Dependabot security updates**.
 - [x] **Secret scanning** and **Push protection**.
-- [ ] **CodeQL** default setup: enable once Go code is on `main`.
+- [x] **CodeQL** default setup for Go and GitHub Actions.
 
 **Settings → Actions → General**
 
@@ -67,8 +67,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 
 - **check**: `gofmt`, `go mod tidy`, `go mod verify`, `go vet`, `staticcheck`,
   `govulncheck`, `actionlint` for the workflows, and
-  [the repository rules](../tools/repocheck/main.go) (English only, license header in Go
-  files);
+  [the repository rules](../tools/repocheck/main.go) (English only, license headers in Go
+  files, copied code with its license);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
   ARMv6 for the Raspberry Pi Zero W. When the macOS agent arrives, the macOS targets move to
