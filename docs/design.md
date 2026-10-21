@@ -95,16 +95,26 @@ any member may be switched off at any time.
   count the time the machine sleeps.
 - **Joining an iPhone or iPad**: `clipbridge pair -phone` asks the Linux member that holds
   `clipbridge.local` to open a phone pairing window, with the same limits as for a computer,
-  and prints a six-digit code and the fingerprint of the iPhone CA. No secret travels before
-  the iPhone trusts the CA:
-  1. In Safari the user downloads the configuration profile with the iPhone CA from the
-     profile port (plain HTTP, so no certificate warning is ever accepted for port 8765) and
-     installs it.
-  2. The user compares the fingerprint (at least 64 bits) under the profile's details with
-     the printed one, and only then turns on full trust.
-  3. The user opens `https://clipbridge.local:8765/pair`, which must load without a
-     certificate warning (otherwise the user stops), and types the code there; the token for
-     the shortcut comes back on that same connection.
+  and prints a QR code of the profile port's page, the first 64 bits of the iPhone CA's
+  fingerprint and a six-digit code. The user only scans, compares and types digits. No
+  secret travels before the iPhone trusts the CA:
+  1. The camera opens the page on the profile port (plain HTTP, so no certificate warning is
+     ever accepted for port 8765), which walks through the steps; the user installs the
+     configuration profile with the iPhone CA.
+  2. The user compares the fingerprint's first 64 bits under the profile's details with the
+     printed ones, and only then turns on full trust.
+  3. The user adds the shortcut from the same page and runs it. On its first run it asks for
+     the code and posts it to `https://clipbridge.local:8765/pair`, which only works once the
+     CA is trusted; the token comes back on that connection, and the shortcut keeps it in
+     iCloud Drive (Shortcuts/clipbridge/token.txt). Told later that its token is unknown, it
+     deletes it, so the next run pairs again. The same page also takes the code in Safari
+     and shows the token, for a shortcut built by hand.
+
+  The shortcut is a property list generated from the code (`tools/shortcut`) and signed on
+  a Mac with `shortcuts sign`, since iOS imports only signed shortcuts; the build embeds the
+  signed file. The profile cannot be signed so that iOS shows it as verified: it carries
+  the group's own CA, made on the member, and only a key that Apple's roots vouch for would
+  do, which a release cannot ship. The fingerprint comparison is what protects it.
 
   A relay on the home network cannot present a certificate from the verified CA, so it sees
   neither the code nor the token. The profile has a fixed identifier, so a new one replaces

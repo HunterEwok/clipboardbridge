@@ -4,9 +4,13 @@
 package phone
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -159,12 +163,101 @@ func TestProfile(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	ProfileHandler(ca).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if !strings.Contains(rec.Body.String(), Fingerprint(ca)) {
+	if !strings.Contains(rec.Body.String(), Fingerprint(ca)) || !strings.Contains(rec.Body.String(), ShortFingerprint(ca)) {
 		t.Error("the profile page does not show the fingerprint")
+	}
+	if len(ShortFingerprint(ca)) != 23 || !strings.HasPrefix(Fingerprint(ca), ShortFingerprint(ca)) {
+		t.Errorf("short fingerprint %q", ShortFingerprint(ca))
+	}
+	// Without a signed shortcut in this build, the page sends the user to
+	// the release, and the file is not served.
+	if Shortcut() == nil {
+		if !strings.Contains(rec.Body.String(), "release page") {
+			t.Error("the page does not say where the shortcut is")
+		}
+		rec = httptest.NewRecorder()
+		ProfileHandler(ca).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/clipbridge.shortcut", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("a missing shortcut: %d", rec.Code)
+		}
 	}
 	rec = httptest.NewRecorder()
 	ProfileHandler(ca).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sync", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("the profile port serves /sync: %d", rec.Code)
+	}
+}
+
+func TestPairJSON(t *testing.T) {
+	// The shortcut's first run: the code as a number, which loses leading
+	// zeros, and a JSON answer with the token.
+	ca := newCA(t)
+	w, err := OpenWindow(ca, "012345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := PairHandler(func() *Window { return w })
+	post := func(body string) pairReply {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/pair", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var rep pairReply
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &rep) != nil {
+			t.Fatalf("reply %d %s", rec.Code, rec.Body)
+		}
+		return rep
+	}
+	if rep := post(`{"v":1,"code":"999999"}`); rep.OK || rep.Token != "" || !strings.Contains(rep.Message, "Wrong code") {
+		t.Errorf("a wrong code got %+v", rep)
+	}
+	rep := post(`{"v":1,"code":12345}`)
+	if !rep.OK {
+		t.Fatalf("the right code got %+v", rep)
+	}
+	if _, err := CheckToken(ca, rep.Token); err != nil {
+		t.Errorf("the token: %v", err)
+	}
+	if rep := post(`{"v":2,"code":"012345"}`); rep.OK {
+		t.Errorf("another version got %+v", rep)
+	}
+	none := PairHandler(func() *Window { return nil })
+	req := httptest.NewRequest(http.MethodPost, "/pair", strings.NewReader(`{"v":1,"code":"012345"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	none.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "No pairing window") {
+		t.Errorf("without a window: %s", rec.Body)
+	}
+}
+
+func TestShortcutFile(t *testing.T) {
+	// The committed property list is what the generator makes; run
+	// go run ./tools/shortcut after changing it, and sign it again.
+	got, err := os.ReadFile("shortcut/clipbridge.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, UnsignedShortcut()) {
+		t.Error("shortcut/clipbridge.plist is stale; run go run ./tools/shortcut")
+	}
+	d := xml.NewDecoder(bytes.NewReader(got))
+	for {
+		if _, err := d.Token(); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("not well-formed XML: %v", err)
+		}
+	}
+	for _, want := range []string{"https://clipbridge.local:8765/pair", "https://clipbridge.local:8765/sync", tokenPath, "unpaired", "to_iphone"} {
+		if !bytes.Contains(got, []byte(want)) {
+			t.Errorf("the shortcut lacks %q", want)
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		if out, err := exec.Command("plutil", "-lint", "shortcut/clipbridge.plist").CombinedOutput(); err != nil {
+			t.Errorf("plutil: %v\n%s", err, out)
+		}
 	}
 }
