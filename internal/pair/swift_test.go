@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package pair
+
+import (
+	"context"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/binary"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/group"
+)
+
+// TestSwiftMemberAdmitsGoJoiner runs the phone app's pairing code against
+// this joiner: clipbridge-interop (apps/ios/ClipbridgeKit), named by
+// CLIPBRIDGE_SWIFT_INTEROP, creates a group as the phone does, dials, and
+// admits the Linux joiner without CA keys. The two exchange certificates
+// over plain TCP in place of a TLS handshake, with a fixed session ID; the
+// CPace exchange, the frames, the welcome and the certificates are the real
+// ones.
+func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
+	tool := os.Getenv("CLIPBRIDGE_SWIFT_INTEROP")
+	if tool == "" {
+		t.Skip("CLIPBRIDGE_SWIFT_INTEROP names no clipbridge-interop binary")
+	}
+	for _, tc := range []struct {
+		name, code, toolCode string
+		ok                   bool
+	}{
+		{"the right code", "135790", "135790", true},
+		{"a wrong code", "135790", "135791", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ln.Close()
+			addr := ln.Addr().(*net.TCPAddr)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, tool, "admit", "127.0.0.1", strconv.Itoa(addr.Port), tc.toolCode)
+			var out, errOut strings.Builder
+			cmd.Stdout, cmd.Stderr = &out, &errOut
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			conn, err := ln.Accept()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			conn.SetDeadline(time.Now().Add(20 * time.Second))
+
+			j := newJoiner(t, "linux")
+			j.Now = time.Now
+			memberDER, err := readBlob(conn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			memberCert, err := x509.ParseCertificate(memberDER)
+			if err != nil {
+				t.Fatalf("the phone's certificate: %v", err)
+			}
+			own, err := j.cert()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeBlob(conn, own); err != nil {
+				t.Fatal(err)
+			}
+			saved := 0
+			id, joinErr := j.exchange(conn, tc.code, channelID(memberDER, own), make([]byte, 32), memberCert, true,
+				func(*group.Identity) error { saved++; return nil })
+			conn.Close()
+			toolErr := cmd.Wait()
+
+			if !tc.ok {
+				if joinErr == nil || Spent(joinErr) || toolErr == nil || saved != 0 {
+					t.Fatalf("a wrong code: join %v (spent %v), tool %v, saved %d", joinErr, Spent(joinErr), toolErr, saved)
+				}
+				return
+			}
+			if joinErr != nil || toolErr != nil {
+				t.Fatalf("join %v; tool %v: %s", joinErr, toolErr, errOut.String())
+			}
+			if err := id.Check(); err != nil || id.Admin() || saved != 1 {
+				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.Admin(), saved)
+			}
+			caDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.String()))
+			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
+				t.Errorf("the joiner holds another group CA than the phone made")
+			}
+		})
+	}
+}
+
+func readBlob(r io.Reader) ([]byte, error) {
+	var n [4]byte
+	if _, err := io.ReadFull(r, n[:]); err != nil {
+		return nil, err
+	}
+	b := make([]byte, binary.BigEndian.Uint32(n[:]))
+	_, err := io.ReadFull(r, b)
+	return b, err
+}
+
+func writeBlob(w io.Writer, b []byte) error {
+	_, err := w.Write(append(binary.BigEndian.AppendUint32(nil, uint32(len(b))), b...))
+	return err
+}

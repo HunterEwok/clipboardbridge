@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -163,6 +164,12 @@ func (j *Joiner) join(ctx context.Context, tc *tls.Conn, code string, memberFirs
 	if err != nil {
 		return nil, err
 	}
+	return j.exchange(tc, code, ci, sid, memberCert, memberFirst, save)
+}
+
+// exchange runs the frames of the exchange over rw, bound to a channel by ci
+// and sid, with the member whose certificate is memberCert.
+func (j *Joiner) exchange(tc io.ReadWriter, code string, ci, sid []byte, memberCert *x509.Certificate, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
 	ad, err := json.Marshal(j.Info)
 	if err != nil {
 		return nil, err
