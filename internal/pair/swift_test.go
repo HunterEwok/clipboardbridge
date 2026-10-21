@@ -54,10 +54,7 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			conn, err := ln.Accept()
-			if err != nil {
-				t.Fatal(err)
-			}
+			conn := acceptTool(t, ln, cmd, &errOut)
 			defer conn.Close()
 			conn.SetDeadline(time.Now().Add(20 * time.Second))
 
@@ -102,6 +99,20 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			}
 		})
 	}
+}
+
+// acceptTool accepts the tool's connection, or fails with what the tool
+// wrote when it ends or does not connect within 20 seconds.
+func acceptTool(t *testing.T, ln net.Listener, cmd *exec.Cmd, errOut *strings.Builder) net.Conn {
+	t.Helper()
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(20 * time.Second))
+	conn, err := ln.Accept()
+	if err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		t.Fatalf("the tool did not connect (%v): %s", err, errOut.String())
+	}
+	return conn
 }
 
 func readBlob(r io.Reader) ([]byte, error) {
@@ -162,10 +173,7 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			conn, err := ln.Accept()
-			if err != nil {
-				t.Fatal(err)
-			}
+			conn := acceptTool(t, ln, cmd, &errOut)
 			saved := 0
 			id, joinErr := j.Accept(ctx, conn, "246802", func(*group.Identity) error { saved++; return nil })
 			toolErr := cmd.Wait()

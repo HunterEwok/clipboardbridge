@@ -280,7 +280,7 @@ jobs:
           security default-keychain -s ci.keychain
           security unlock-keychain -p ci ci.keychain
           security set-keychain-settings ci.keychain
-          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
 
   ci-ok:
     name: ci-ok
