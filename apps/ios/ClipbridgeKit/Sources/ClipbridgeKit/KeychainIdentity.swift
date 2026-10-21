@@ -21,6 +21,26 @@ public enum KeychainIdentity {
         return k
     }
 
+    /// Creates a P-256 key in the keychain under label: in the Secure
+    /// Enclave with secureEnclave (on a device), a keychain key otherwise.
+    public static func makeKey(label: String, secureEnclave: Bool = false) throws -> SecKey {
+        var attrs: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits: 256,
+            kSecAttrIsPermanent: true,
+            kSecAttrLabel: label,
+        ]
+        if secureEnclave { attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave }
+        #if os(macOS)
+        if !secureEnclave { attrs[kSecUseDataProtectionKeychain] = false }
+        #endif
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateRandomKey(attrs as CFDictionary, &error) else {
+            throw error!.takeRetainedValue() as Error
+        }
+        return key
+    }
+
     /// Stores the key (unless it is in the keychain already, as a Secure
     /// Enclave key is) and the certificate under label, and returns the
     /// identity they make.

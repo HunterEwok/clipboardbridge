@@ -89,15 +89,19 @@ do {
     let ca = try GroupCertificates.groupCA(signer: caSigner, now: now)
     let phoneKey = SoftwareSigner()
     let phoneID = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
-    let phoneCert = try GroupCertificates.member(device: phoneID, publicKey: phoneKey.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
+    var phoneCert = try GroupCertificates.member(device: phoneID, publicKey: phoneKey.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
     let t: FrameTransport
     let joinerCert: Data
     let sid: [UInt8]
     if args[1] == "admit-tls" {
         #if canImport(Network)
         let fp = args[5]
-        let identity = try KeychainIdentity.identity(certificate: phoneCert, key: try KeychainIdentity.secKey(phoneKey.key),
-                                                     label: "clipbridge-interop-\(phoneID)")
+        // The key is made in the keychain, as the app makes its key in the
+        // Secure Enclave, and the certificate is issued for it.
+        let label = "clipbridge-interop-\(phoneID)"
+        let signer = try SecKeySigner(try KeychainIdentity.makeKey(label: label))
+        phoneCert = try GroupCertificates.member(device: phoneID, publicKey: signer.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
+        let identity = try KeychainIdentity.identity(certificate: phoneCert, key: signer.key, label: label, storeKey: false)
         let tls = TLSTransport(host: args[2], port: port, alpn: Pairing.alpn, identity: identity) { leaf in
             Pairing.fingerprint(cert: leaf) == fp
         }
