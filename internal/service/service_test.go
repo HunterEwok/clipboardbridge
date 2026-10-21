@@ -813,7 +813,12 @@ func TestAcceptSurvivesErrors(t *testing.T) {
 }
 
 func TestControlSocketMode(t *testing.T) {
-	dir := t.TempDir()
+	// Not t.TempDir: on macOS its path is too long for a socket.
+	dir, err := os.MkdirTemp("", "cb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "c.sock")
 	ln, err := listenControl(path)
 	if err != nil {

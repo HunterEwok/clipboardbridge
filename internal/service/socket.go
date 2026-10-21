@@ -29,7 +29,7 @@ import (
 // enter, and then moved into place, so nobody can connect before its mode is
 // right.
 func listenControl(path string) (net.Listener, error) {
-	tmp, err := os.MkdirTemp(filepath.Dir(path), ".control-")
+	tmp, err := os.MkdirTemp(filepath.Dir(path), ".c")
 	if err != nil {
 		return nil, err
 	}
