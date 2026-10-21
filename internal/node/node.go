@@ -624,7 +624,7 @@ func (c *conn) reader() error {
 			return err
 		}
 		if first {
-			if m.Type != typeHello || (m.Role != Linux && m.Role != Mac) {
+			if m.Type != typeHello || !m.Role.known() {
 				return fmt.Errorf("node: %s did not start with a hello", c.id)
 			}
 			h, err := decodeHello(m.Hello)

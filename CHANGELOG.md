@@ -36,6 +36,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   -code` keeps the code from `clipbridge pair`.
 - Certificate renewal: a Linux member renews its own certificates and, with a new `cert`
   message, those of the members it is connected to, months before they expire.
+- The member protocol accepts the roles `phone` (the phone apps) and `lite` (a lite member),
+  which connect like a Mac.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and

@@ -222,7 +222,7 @@ Message object:
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
 | `t` | string | all | `hello`, `event`, `ping`, `bye` or `cert` |
-| `role` | string | hello | `linux` or `mac` |
+| `role` | string | hello | `linux`, `mac`, `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
@@ -246,7 +246,7 @@ Message object:
 
 Rules for the receiver:
 
-- The first frame MUST be a hello with role `linux` or `mac`; otherwise the connection is
+- The first frame MUST be a hello with one of the four roles; otherwise the connection is
   closed. A hello whose `hello` object does not decode closes the connection. A `current`
   that does not decode (for example an unknown `kind` or `via` from a newer version) counts
   as no current event. A `current` that decodes but fails validation, or that is a secret
@@ -261,8 +261,8 @@ Rules for the receiver:
 - A peer whose outgoing queue (256 messages) is full is disconnected; it gets the current
   event again in the next hello.
 
-Note: a Rust lite member has to use role `mac` for now: any other role closes the
-connection (`internal/node/node.go:564`). design.md (roadmap item 11) plans a `lite` role.
+Roles: a `phone` or `lite` member dials Linux members as a Mac does, publishes nothing and is
+never dialed; the Linux members treat it as a Mac (it never holds `clipbridge.local`).
 
 ### Hello
 
@@ -698,8 +698,8 @@ a computer keep working as they do today.
 - **The app is a member.** It holds a member certificate of its own group with role
   `phone` and speaks the member protocol of section 4. It always dials and never listens
   (a phone cannot accept connections in the background), so members MUST NOT dial a
-  `phone` member; it publishes no mDNS records. Members MUST accept the role `phone` in
-  Hello; a lite member will claim `lite`.
+  `phone` member; it publishes no mDNS records. The roles `phone` and `lite` are already
+  accepted (section 4).
 - **Join QR code.** In this mode `clipbridge join` listens on a fresh TCP port with a
   fresh self-signed P-256 certificate and shows
   `clipbridge://join?code=<six digits>&addr=<host:port>&fp=<base64url SHA-256 of the
