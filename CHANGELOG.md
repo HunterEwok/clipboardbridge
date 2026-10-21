@@ -47,6 +47,9 @@ All notable changes to clipbridge are documented in this file. The format follow
 - Linux members without the CA keys, for groups whose root will be the phone: a welcome
   without them makes such a member, which syncs but admits nobody and never holds
   `clipbridge.local`.
+- The start of the phone app: `apps/ios/ClipbridgeKit`, a Swift package with CPace (checked
+  against the draft's test vectors), the pairing frames and the join QR code, tested on
+  Linux and macOS against vectors from the Go side in `testdata/interop/`.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and

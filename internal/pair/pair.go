@@ -237,7 +237,12 @@ func binding(cs tls.ConnectionState, memberCert, joinerCert []byte) (ci, sid []b
 	if err != nil {
 		return nil, nil, err
 	}
+	return channelID(memberCert, joinerCert), sid, nil
+}
+
+// channelID returns the CPace channel identifier for the two certificates,
+// the member's first.
+func channelID(memberCert, joinerCert []byte) []byte {
 	m, j := sha256.Sum256(memberCert), sha256.Sum256(joinerCert)
-	ci = append(append([]byte(channelPrefix), m[:]...), j[:]...)
-	return ci, sid, nil
+	return append(append([]byte(channelPrefix), m[:]...), j[:]...)
 }
