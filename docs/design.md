@@ -122,12 +122,28 @@ any member may be switched off at any time.
 
 ## Discovery and the shared address
 
-- Linux members advertise `<device ID>._clipbridge._tcp.local` with SRV, TXT (device ID,
-  protocol version, a short group fingerprint, so another group's members are ignored) and
-  A/AAAA records under their own host label `cb-<device ID>.local`, never the system host
-  name. Macs only browse.
+- Linux members advertise `<device ID>._clipbridge._tcp.local` with SRV, TXT (the protocol
+  version `v=1`; the group tag `g=`, a short fingerprint of the group CA, so the members of
+  another group, or of a replaced CA, are ignored; and `p=1` while a pairing window is open)
+  and A/AAAA records under their own host label `cb-<device ID>.local`, never the system
+  host name. Macs only browse.
 - Linux members run clipbridge's own small mDNS responder, which shares UDP port 5353 with
-  avahi-daemon or systemd-resolved. Macs use the system Bonjour service (dns_sd).
+  avahi-daemon or systemd-resolved; a CI job checks that avahi browses and resolves it. It
+  answers each query with the addresses of the interface the query arrived on, and with an
+  NSEC record when the name has no address of the asked type, so a resolver does not wait
+  for it. Records that name a host (SRV, A, AAAA) live 120 seconds, PTR and TXT 75 minutes.
+  The member announces its records twice at start and after every change, and sends
+  goodbyes, without the cache-flush bit, for addresses that go away and for everything when
+  it stops. A record is multicast at most once a second on an interface, and
+  a legacy unicast resolver gets a few answers a second at most. Packets are read record by
+  record, so a record clipbridge cannot read, such as an Apple device's instance name with a
+  dot in it, costs only itself. It browses at growing intervals, listing the members it
+  knows as known answers, and asks again for the records of the members it found at 80,
+  85, 90 and 95 percent of their lifetime, so they do not expire while the members are
+  there. A received record lives no longer than clipbridge's own records of its type, and
+  only names in the form of device IDs count as members. Names are not probed: device IDs
+  are random, and the election, not a probe, decides who holds `clipbridge.local`. Macs use
+  the system Bonjour service (dns_sd).
 - Members connect to the addresses from discovery, never by resolving a `.local` name: a
   static Linux binary cannot resolve `.local` itself. Peers are authenticated by the group
   CA, not by name. A home group is small: Linux members connect to each other, every Mac
@@ -137,10 +153,10 @@ any member may be switched off at any time.
   lifetime of 10 seconds. The live Linux member with the lowest device ID holds it. Macs
   never hold it: they sleep and roam, and when no Linux member is up the iPhone and the Mac
   share through Universal Clipboard anyway.
-- **Handover**: a holder that leaves sends goodbye packets for the name first and then tells
-  its successor over the member connection; the successor announces at once without probing.
-  After a power cut the others notice the missing member and take the name over within
-  about 10–20 seconds.
+- **Handover**: a holder that leaves sends goodbye packets for the name first and then closes
+  its member connections with a goodbye; the member that is now the lowest sees that at
+  once and announces the name. After a power cut the others notice the missing member when
+  its connection falls silent and take the name over within about 15–20 seconds.
 - Only private IPv4, unique-local and link-local IPv6 addresses are published.
 
 ## Sync model
@@ -411,7 +427,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-9  | Pairing a computer: code entry with CPace inside TLS 1.3 instead of comparing digits, which a man in the middle can grind. |
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
 | D-11 | Members talk on their own advertised port; port 8765 serves only the iPhone.               |
-| D-12 | Own mDNS responder on Linux, system Bonjour on macOS: no Go library publishes a separate name with its own lifetime, probes without renaming and sends goodbyes. |
+| D-12 | Own mDNS responder on Linux, system Bonjour on macOS: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
 | D-13 | Only Linux members hold `clipbridge.local`; Macs only dial out.                            |
 | D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |
 | D-15 | macOS runs the service as a LaunchDaemon plus a pasteboard LaunchAgent, which avoids the Local Network prompt; installing needs administrator rights. |
@@ -430,3 +446,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-28 | Two ways in: watchers report changes (no event when nothing really changed), deliberate actions always send and also write the member's own clipboard. |
 | D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |
 | D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |
+| D-31 | The mDNS responder does not probe its names: device IDs are random, `clipbridge.local` is never renamed, and the group's election decides who holds it; two holders for a moment are harmless, since any Linux member can serve the iPhone. |
