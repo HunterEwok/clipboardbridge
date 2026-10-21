@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package node
+
+import (
+	"bytes"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"time"
+)
+
+// The member protocol runs over a TLS connection made with the group's
+// member configuration. Each side sends frames of a 4-byte big-endian length
+// and a JSON message. The first message of each side is a hello; then
+// events follow, and a ping whenever the side has sent nothing for a while,
+// so a silent connection is a dead one.
+const (
+	typeHello = "hello"
+	typeEvent = "event"
+	typePing  = "ping"
+	typeBye   = "bye"
+
+	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
+	// escape to six bytes per byte for control characters, and the rest
+	// of the event.
+	maxFrame = 7 << 20
+
+	// minRate is the slowest transfer a frame is given time for, on top
+	// of the timeout, so a large text over a slow link still arrives.
+	minRate = 16 << 10 // bytes per second
+)
+
+// Role tells what kind of member is at the other end.
+type Role string
+
+const (
+	Linux Role = "linux" // listens, can hold clipbridge.local
+	Mac   Role = "mac"   // only dials
+)
+
+// message is one frame of the member protocol. The hello and the event are
+// decoded on their own, so an event this member cannot read, for example
+// from a newer version, is dropped without ending the connection.
+type message struct {
+	Type  string          `json:"t"`
+	Role  Role            `json:"role,omitempty"`  // in a hello
+	Hello json.RawMessage `json:"hello,omitempty"` // in a hello: clip.Hello
+	Event json.RawMessage `json:"event,omitempty"` // in an event: clip.Event
+}
+
+// helloBody is the content of a hello, with its current event left to
+// decode on its own.
+type helloBody struct {
+	Wall    int64           `json:"wall_ms"`
+	Current json.RawMessage `json:"current,omitempty"`
+}
+
+// encode marshals v as JSON without escaping <, > and &, which would make
+// texts that contain them up to six times longer.
+func encode(v any) ([]byte, error) {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+}
+
+// transferTime is how long a frame of n bytes may take, beyond the timeout.
+func transferTime(n int) time.Duration { return time.Duration(n/minRate) * time.Second }
+
+// frame encodes a message as a frame.
+func frame(m *message) ([]byte, error) {
+	data, err := encode(m)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxFrame {
+		return nil, errors.New("node: message too large")
+	}
+	return append(binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(data)), uint32(len(data))), data...), nil
+}
+
+// deadliner is the part of a connection readMessage needs to give a large
+// frame more time once its length is known.
+type deadliner interface {
+	io.Reader
+	SetReadDeadline(time.Time) error
+}
+
+// readMessage reads one frame. The caller sets the deadline for its
+// start; once the length is known, the deadline grows with it.
+func readMessage(r deadliner, timeout time.Duration) (*message, error) {
+	var n [4]byte
+	if _, err := io.ReadFull(r, n[:]); err != nil {
+		return nil, err
+	}
+	size := binary.BigEndian.Uint32(n[:])
+	if size > maxFrame {
+		return nil, fmt.Errorf("node: a frame of %d bytes is too large", size)
+	}
+	r.SetReadDeadline(time.Now().Add(timeout + transferTime(int(size))))
+	// Read the body as it arrives, rather than allocating what the length
+	// promises before a byte of it came.
+	data, err := io.ReadAll(io.LimitReader(r, int64(size)))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) != int(size) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	var m message
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, errors.New("node: a frame is not a message")
+	}
+	return &m, nil
+}
