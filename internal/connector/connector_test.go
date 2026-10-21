@@ -5,12 +5,16 @@ package connector
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipbridge/internal/clip"
 	"github.com/HunterEwok/clipbridge/internal/control"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/service"
@@ -168,70 +172,228 @@ func TestConnector(t *testing.T) {
 	b.item, b.has = Item{Text: "already there"}, true
 	run(t, socket, b)
 	// What the clipboard held at start is known to the service, without
-	// an event.
+	// an event (TestReport checks the message).
 	waitFor(t, "the starting text", func() bool { return paste(t, socket) == "already there" })
 
 	// A copy on the desktop reaches the service.
 	b.copyOn(Item{Text: "copied on the desktop"})
 	waitFor(t, "the desktop copy", func() bool { return paste(t, socket) == "copied on the desktop" })
 
+	// One that came through Universal Clipboard too.
+	b.copyOn(Item{Text: "from the iPhone", Remote: true})
+	waitFor(t, "the Universal Clipboard copy", func() bool { return paste(t, socket) == "from the iPhone" })
+
 	// A deliberate copy, as from tmux, reaches the desktop clipboard.
 	do(t, socket, control.Header{Op: control.OpCopy}, "from tmux")
-	select {
-	case w := <-b.writes:
-		if w.Text != "from tmux" || w.Secret {
-			t.Errorf("write %+v", w)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no write")
-	}
+	expectWrite(t, b, "from tmux", false)
 
 	// A marked secret is not sent: the service only remembers it.
 	b.copyOn(Item{Text: "hunter2", Secret: true})
-	time.Sleep(200 * time.Millisecond)
-	if got := paste(t, socket); got != "hunter2" {
-		t.Errorf("own clipboard %q after a marked secret", got)
-	}
+	waitFor(t, "the marked secret", func() bool { return paste(t, socket) == "hunter2" })
+
+	// A copy the group does not carry is skipped, and the session goes on.
+	b.copyOn(Item{Text: strings.Repeat("x", clip.MaxText+100)})
+	do(t, socket, control.Header{Op: control.OpCopy}, "after the big copy")
+	expectWrite(t, b, "after the big copy", false)
 }
 
-func TestSecretExpires(t *testing.T) {
-	socket := startService(t)
-	b := newBoard()
-	run(t, socket, b)
-	waitFor(t, "connected", func() bool {
-		m := do(t, socket, control.Header{Op: control.OpStatus}, "")
-		return m.Status != nil && m.Status.Group != ""
-	})
-	time.Sleep(100 * time.Millisecond) // let the watcher register
-	do(t, socket, control.Header{Op: control.OpCopy, Kind: "secret"}, "one-time code")
+func expectWrite(t *testing.T, b *fakeBoard, text string, secret bool) {
+	t.Helper()
 	select {
 	case w := <-b.writes:
-		if !w.Secret {
-			t.Errorf("the secret was written as %+v", w)
+		if w.Text != text || w.Secret != secret {
+			t.Errorf("write %+v, want %q (secret %v)", w, text, secret)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("no write")
-	}
-	// The test does not wait a minute: the lifetime the service sent is
-	// checked through the timer the connector set.
-	if err := b.ClearIfUnchanged(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-b.cleared:
-	default:
-		t.Error("the clipboard was not given up")
+		t.Fatalf("no write of %q", text)
 	}
 }
 
-func TestReconnect(t *testing.T) {
+func TestReport(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		op      string
+		it      Item
+		wantOp  string
+		kind    string
+		via     string
+		skipped bool
+	}{
+		{name: "a copy", op: control.OpCopied, it: Item{Text: "x"}, wantOp: control.OpCopied, kind: control.KindText, via: control.ViaCopy},
+		{name: "the clipboard at start", op: control.OpClipboard, it: Item{Text: "x"}, wantOp: control.OpClipboard, kind: control.KindText, via: control.ViaCopy},
+		{name: "a marked secret is never a copy", op: control.OpCopied, it: Item{Text: "x", Secret: true}, wantOp: control.OpClipboard, kind: control.KindSecret, via: control.ViaCopy},
+		{name: "Universal Clipboard", op: control.OpCopied, it: Item{Text: "x", Remote: true}, wantOp: control.OpCopied, kind: control.KindText, via: control.ViaUniversal},
+		{name: "a secret through Universal Clipboard", op: control.OpCopied, it: Item{Text: "x", Secret: true, Remote: true}, wantOp: control.OpClipboard, kind: control.KindSecret, via: control.ViaUniversal},
+		{name: "empty", op: control.OpCopied, it: Item{}, skipped: true},
+		{name: "over 1 MiB", op: control.OpCopied, it: Item{Text: strings.Repeat("x", clip.MaxText+1)}, skipped: true},
+		{name: "not UTF-8", op: control.OpCopied, it: Item{Text: "\xff\xfe"}, skipped: true},
+	} {
+		m := report(tt.op, tt.it)
+		if tt.skipped {
+			if m != nil {
+				t.Errorf("%s: reported %+v", tt.name, m.Header)
+			}
+			continue
+		}
+		if m == nil || m.Op != tt.wantOp || m.Kind != tt.kind || m.Via != tt.via || string(m.Payload) != tt.it.Text {
+			t.Errorf("%s: got %+v", tt.name, m)
+		}
+	}
+}
+
+// fakeService is a control socket that the test drives: each session it
+// accepts is handed to the test after the watch request.
+type fakeService struct {
+	ln       net.Listener
+	sessions chan *fakeSession
+}
+
+type fakeSession struct {
+	c     net.Conn
+	r     *control.Reader
+	watch *control.Message
+}
+
+func (f *fakeSession) write(t *testing.T, h control.Header, text string) {
+	t.Helper()
+	h.Op = control.OpWrite
+	if err := control.Write(f.c, &control.Message{Header: h, Payload: []byte(text)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func listenFake(t *testing.T, socket string) *fakeService {
+	t.Helper()
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeService{ln: ln, sessions: make(chan *fakeSession, 8)}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			r := control.NewReader(c)
+			m, err := r.Read()
+			if err != nil || m.Op != control.OpWatch {
+				c.Close()
+				continue
+			}
+			control.Write(c, &control.Message{Header: control.Header{Op: control.OpReply}})
+			f.sessions <- &fakeSession{c: c, r: r, watch: m}
+		}
+	}()
+	return f
+}
+
+func (f *fakeService) next(t *testing.T) *fakeSession {
+	t.Helper()
+	select {
+	case s := <-f.sessions:
+		t.Cleanup(func() { s.c.Close() })
+		return s
+	case <-time.After(10 * time.Second):
+		t.Fatal("the connector did not connect")
+		return nil
+	}
+}
+
+func socketPath(t *testing.T) string {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "c.sock")
+}
+
+func expectCleared(t *testing.T, b *fakeBoard, want bool) {
+	t.Helper()
+	select {
+	case <-b.cleared:
+		if !want {
+			t.Error("the clipboard was given up")
+		}
+	case <-time.After(time.Second):
+		if want {
+			t.Error("the clipboard was not given up")
+		}
+	}
+}
+
+func TestSecretExpires(t *testing.T) {
+	socket := socketPath(t)
+	f := listenFake(t, socket)
+	b := newBoard()
+	b.item, b.has = Item{Text: "on the desktop"}, true
+	run(t, socket, b)
+	s := f.next(t)
+	if string(s.watch.Payload) != "on the desktop" || s.watch.Kind != control.KindText {
+		t.Errorf("the watch request carried %+v %q", s.watch.Header, s.watch.Payload)
+	}
+
+	// The connector gives up a secret after the lifetime the service sent.
+	s.write(t, control.Header{Kind: control.KindSecret, Seq: 1, TTLMS: 50}, "one-time code")
+	expectWrite(t, b, "one-time code", true)
+	expectCleared(t, b, true)
+
+	// Not when the user copied something else meanwhile.
+	s.write(t, control.Header{Kind: control.KindSecret, Seq: 2, TTLMS: 300}, "another code")
+	expectWrite(t, b, "another code", true)
+	b.copyOn(Item{Text: "the user's copy"})
+	expectCleared(t, b, false)
+
+	// A text written after a secret cancels its expiry.
+	s.write(t, control.Header{Kind: control.KindSecret, Seq: 3, TTLMS: 300}, "a third code")
+	expectWrite(t, b, "a third code", true)
+	s.write(t, control.Header{Seq: 4}, "plain text")
+	expectWrite(t, b, "plain text", false)
+	expectCleared(t, b, false)
+
+	// Writes out of order are dropped.
+	s.write(t, control.Header{Seq: 2}, "old")
+	s.write(t, control.Header{Seq: 5}, "new")
+	expectWrite(t, b, "new", false)
+
+	// A secret still expires when the service connection ends.
+	s.write(t, control.Header{Kind: control.KindSecret, Seq: 6, TTLMS: 300}, "code before a restart")
+	expectWrite(t, b, "code before a restart", true)
+	s.c.Close()
+	expectCleared(t, b, true)
+}
+
+func TestReconnect(t *testing.T) {
+	socket := socketPath(t)
 	b := newBoard()
 	// No service yet: Run keeps trying and does not fail.
-	run(t, filepath.Join(dir, "missing.sock"), b)
-	time.Sleep(100 * time.Millisecond)
+	run(t, socket, b)
+	time.Sleep(200 * time.Millisecond)
+	f := listenFake(t, socket)
+	s := f.next(t)
+	s.write(t, control.Header{Seq: 1}, "first session")
+	expectWrite(t, b, "first session", false)
+	// The service restarts: the connector comes back.
+	s.c.Close()
+	s = f.next(t)
+	s.write(t, control.Header{Seq: 1}, "second session")
+	expectWrite(t, b, "second session", false)
+}
+
+// goneBoard is a clipboard whose display went away.
+type goneBoard struct{ *fakeBoard }
+
+func (goneBoard) Next(context.Context) (Item, bool, error) { return Item{}, false, ErrBoardGone }
+
+func TestBoardGone(t *testing.T) {
+	socket := socketPath(t)
+	listenFake(t, socket)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := Run(ctx, Config{Socket: socket, Board: goneBoard{newBoard()}, Logf: t.Logf}); !errors.Is(err, ErrBoardGone) {
+		t.Errorf("Run = %v, want ErrBoardGone", err)
+	}
 }

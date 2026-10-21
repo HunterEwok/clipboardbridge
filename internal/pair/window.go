@@ -228,6 +228,20 @@ func joinerID(cs tls.ConnectionState) (group.DeviceID, error) {
 	return group.ParseDeviceID(c.Subject.CommonName)
 }
 
+// Refuse answers a pairing connection, whose TLS handshake used ServerTLS,
+// with err, such as ErrClosed when no window is open, and closes it. The
+// joiner sees err instead of a broken handshake.
+func Refuse(ctx context.Context, conn *tls.Conn, err error) {
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, refuseTimeout)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Unix(1, 0)) })
+	defer stop()
+	// Read the joiner's first message before answering, as Serve does.
+	readFrame(conn)
+	writeFrame(conn, &frame{Error: codeOf(err)})
+}
+
 // Serve runs the member's side of one pairing connection, whose TLS
 // handshake used ServerTLS. It returns the error of this attempt; Result
 // reports the outcome of the window.

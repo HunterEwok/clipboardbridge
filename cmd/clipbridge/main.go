@@ -20,7 +20,8 @@ Commands:
   paste                   Print this member's clipboard text.
   status                  Show the group and the connected members.
   pair                    Admit a new computer: show a code for clipbridge join.
-  join [code [address]]   Join a group with the code from clipbridge pair.
+  join [address:port]     Join a group with the code from clipbridge pair,
+                          typed or read from standard input.
   service                 Run the service (started by systemd or launchd).
   version                 Print the version and the platform.
   help                    Print this help.

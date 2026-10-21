@@ -492,13 +492,14 @@ func (e *Engine) Disconnected(peer string) {
 }
 
 // Rejoin records that this member itself was away: the service just started,
-// the machine woke up, or its network came back. The caller first closes the
-// connections from before the absence. Until a hello is reconciled again,
-// copies count as made while away; and for the next RejoinWindow an event
-// that becomes the group's current event is written to the local clipboard
-// even when it is old, unless such a copy was made. A member that only lost
-// its peers, because they went away, must not call Rejoin: its clipboard is
-// kept.
+// or the machine woke up. The caller first closes the connections from before
+// the absence. Until a hello is reconciled again, copies count as made while
+// away; and for the next RejoinWindow an event that becomes the group's
+// current event is written to the local clipboard even when it is old, unless
+// such a copy was made. So is the current event when a hello brings it again
+// after it was taken before Rejoin, as by a hello that came right after
+// waking up. A member that only lost its peers, because they went away, must
+// not call Rejoin: its clipboard is kept.
 func (e *Engine) Rejoin() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -547,14 +548,23 @@ func (e *Engine) receive(ev Event) Result {
 	// Cap before converting: a huge age_ms would overflow time.Duration.
 	age := time.Duration(min(ev.Age, maxAge.Milliseconds())) * time.Millisecond
 	if e.seen.has(ev.ID) {
-		// The full event may follow the mark of the same secret: take its text.
-		if e.current.ID != ev.ID || !e.current.IsMark() || ev.IsMark() {
+		if e.current.ID != ev.ID {
 			return Result{}
 		}
-		e.current, e.copiedAt = ev, now-age
-		e.secrets.add(e.sum(ev.Text), now)
-		fwd := ev
-		return e.decideWrite(Result{Forward: &fwd}, now)
+		// The full event may follow the mark of the same secret: take its text.
+		if e.current.IsMark() && !ev.IsMark() {
+			e.current, e.copiedAt = ev, now-age
+			e.secrets.add(e.sum(ev.Text), now)
+			fwd := ev
+			return e.decideWrite(Result{Forward: &fwd}, now)
+		}
+		// A member that took the current event before it noticed that it
+		// had been away, such as a hello right after waking up, writes it
+		// when it is back in sync.
+		if e.rejoined && !e.synced && e.inRejoinWindow(now) {
+			return e.decideWrite(Result{}, now)
+		}
+		return Result{}
 	}
 	e.cfg.Clock.Observe(ev.Time)
 	e.seen.add(ev.ID)

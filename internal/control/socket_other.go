@@ -8,3 +8,6 @@ package control
 // DefaultSocket is where the service listens: in the runtime directory that
 // systemd makes for it.
 const DefaultSocket = "/run/clipbridge/control.sock"
+
+// Group is the group whose members may use the control socket.
+const Group = "clipbridge"

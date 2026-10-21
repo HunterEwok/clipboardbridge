@@ -2,8 +2,9 @@
 // Copyright (C) 2026 HunterEwok
 
 // Package service is the clipbridge service: it holds the device's identity,
-// the sync engine and the member connections, publishes and browses on
-// Linux, admits devices, and serves the local control socket.
+// the sync engine and the member connections, publishes and browses with
+// mDNS on Linux and only browses on a Mac (D-32), admits devices, and serves
+// the local control socket.
 package service
 
 import (
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipbridge/internal/clip"
@@ -37,13 +39,20 @@ type Config struct {
 	Name     string    // this device's name, shown to the others; the host name if empty
 	Logf     func(format string, args ...any)
 
-	// Discover publishes this member and finds the others; mDNS if nil.
-	// Tests replace it, and the Mac's Bonjour browser will plug in here.
+	// Discover publishes this member and finds the others; mDNS if nil, on
+	// a Mac in browse-only mode. Tests replace it.
 	Discover func(DiscoveryConfig) (Discovery, error)
 
 	// listen opens the member port; any port on all addresses if nil.
 	listen func() (net.Listener, error)
+	// browseFor is how long join looks for a pairing window; ten seconds
+	// if zero.
+	browseFor time.Duration
 }
+
+// maxHandshakes is how many connections to the member port may wait for
+// their TLS handshake, or run a pairing attempt, at once.
+const maxHandshakes = 32
 
 // DiscoveryConfig is what discovery publishes and whom it tells.
 type DiscoveryConfig struct {
@@ -81,10 +90,14 @@ type Service struct {
 	discoveryDone chan struct{}
 	port          uint16
 	window        *pair.Window
+	opening       bool // a pairing window is being opened, maybe with a new group
+	joining       bool // a join is running
+	stopping      bool // the service is stopping: no new group, no election
 	holder        bool
-	dialers       map[group.DeviceID]context.CancelFunc
+	dialers       map[group.DeviceID]*dialer
 	watchers      map[*watcher]bool
 	lastSeq       uint64
+	pending       *node.Write // a write that no watcher got, for the next one
 
 	groupCtx    context.Context
 	groupCancel context.CancelFunc
@@ -102,10 +115,13 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Discover == nil {
 		cfg.Discover = mdnsDiscovery
 	}
+	if cfg.browseFor == 0 {
+		cfg.browseFor = 10 * time.Second
+	}
 	if cfg.listen == nil {
 		cfg.listen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
 	}
-	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]context.CancelFunc{}, watchers: map[*watcher]bool{}}
+	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}}
 
 	floor, err := loadMark(cfg.StateDir)
 	if err != nil {
@@ -137,7 +153,7 @@ func Run(ctx context.Context, cfg Config) error {
 	go s.serveControl(ctx, ln)
 
 	if id != nil {
-		if err := s.startGroup(ctx, id); err != nil {
+		if err := s.startGroup(id); err != nil {
 			return err
 		}
 	}
@@ -172,37 +188,54 @@ func loadMark(dir string) (hlc.Timestamp, error) {
 
 // startGroup starts the network part with an identity: the member
 // connections and discovery; on Linux also the member port, publishing and
-// clipbridge.local. A Mac only browses.
-func (s *Service) startGroup(ctx context.Context, id *group.Identity) error {
+// clipbridge.local. A Mac only browses. Its state is set only when all of it
+// started.
+//
+// The group's context does not derive from Run's: only stopGroup ends it,
+// after the goodbyes, so a stopping service leaves in order.
+func (s *Service) startGroup(id *group.Identity) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	gctx, cancel := context.WithCancel(ctx)
-	s.id, s.groupCtx, s.groupCancel = id, gctx, cancel
-	s.eng = clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
-	s.nd = node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Engine: s.eng,
+	switch {
+	case s.stopping:
+		return errors.New("the service is stopping")
+	case s.id != nil:
+		return errors.New("this device is already in a group")
+	}
+	gctx, cancel := context.WithCancel(context.Background())
+	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
+	nd := node.New(node.Config{
+		Identity: id, Role: s.cfg.Role, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, Logf: s.logf,
 	})
-	s.nd.Rejoin() // the service just started
-	dc := DiscoveryConfig{ID: string(id.ID), TXT: s.txtLocked(), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
+	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
+	var ln net.Listener
 	if s.cfg.Role == node.Linux {
-		ln, err := s.cfg.listen()
-		if err != nil {
+		var err error
+		if ln, err = s.cfg.listen(); err != nil {
 			cancel()
 			return err
 		}
-		s.port = uint16(ln.Addr().(*net.TCPAddr).Port)
-		dc.Port = s.port
+		dc.Port = uint16(ln.Addr().(*net.TCPAddr).Port)
+	}
+	r, err := s.cfg.Discover(dc)
+	if err != nil {
+		if ln != nil {
+			ln.Close()
+		}
+		cancel()
+		return err
+	}
+
+	s.id, s.eng, s.nd, s.port = id, eng, nd, dc.Port
+	s.groupCtx, s.groupCancel = gctx, cancel
+	nd.Rejoin() // the service just started; there are no connections yet
+	if ln != nil {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
 			s.accept(gctx, ln)
 		}()
-	}
-	r, err := s.cfg.Discover(dc)
-	if err != nil {
-		cancel()
-		return err
 	}
 	// Discovery has its own context, so it can say goodbye for
 	// clipbridge.local before the member connections close.
@@ -223,6 +256,7 @@ func (s *Service) startGroup(ctx context.Context, id *group.Identity) error {
 // goodbye too, so the next holder takes clipbridge.local over at once.
 func (s *Service) stopGroup() {
 	s.mu.Lock()
+	s.stopping = true
 	cancel, nd, w := s.groupCancel, s.nd, s.window
 	stopDiscovery, discoveryDone := s.discoveryStop, s.discoveryDone
 	s.mu.Unlock()
@@ -242,32 +276,65 @@ func (s *Service) stopGroup() {
 	s.wg.Wait()
 }
 
-// txtLocked returns the TXT record: the protocol version, the group tag,
-// and whether a pairing window is open.
-func (s *Service) txtLocked() []string {
-	txt := []string{"v=1", "g=" + group.Tag(s.id.GroupCA.Cert)}
-	if s.window != nil {
-		txt = append(txt, "p=1")
+// txtLocked returns the TXT record of this member.
+func (s *Service) txtLocked() []string { return txt(s.id, s.window != nil) }
+
+// txt returns a TXT record: the protocol version, the group tag, and
+// whether a pairing window is open.
+func txt(id *group.Identity, window bool) []string {
+	t := []string{"v=1", "g=" + group.Tag(id.GroupCA.Cert)}
+	if window {
+		t = append(t, "p=1")
 	}
-	return txt
+	return t
 }
 
 // accept serves the member port: pairing connections while a window is
 // open, member connections otherwise. Only addresses of the home network
-// are accepted.
+// are accepted, and at most maxHandshakes connections that have not yet
+// proved they belong to the group.
 func (s *Service) accept(ctx context.Context, ln net.Listener) {
-	stop := context.AfterFunc(ctx, func() { ln.Close() })
-	defer stop()
-	for {
-		raw, err := ln.Accept()
-		if err != nil {
-			return
-		}
+	slots := make(chan struct{}, maxHandshakes)
+	acceptLoop(ctx, ln, s.logf, "the member port", func(raw net.Conn) {
 		ap, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
 		if !mdns.Published(ap.Addr()) && !ap.Addr().Unmap().IsLoopback() {
 			raw.Close()
+			return
+		}
+		select {
+		case slots <- struct{}{}:
+		default:
+			raw.Close()
+			return
+		}
+		go s.serveMember(ctx, raw, func() { <-slots })
+	})
+}
+
+// acceptLoop accepts connections until ctx is done or ln is closed. Other
+// errors, such as running out of file descriptors, only pause it, with a
+// growing pause as net/http does.
+func acceptLoop(ctx context.Context, ln net.Listener, logf func(string, ...any), what string, handle func(net.Conn)) {
+	stop := context.AfterFunc(ctx, func() { ln.Close() })
+	defer stop()
+	defer ln.Close()
+	var pause time.Duration
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			pause = min(max(2*pause, 5*time.Millisecond), time.Second)
+			logf("clipbridge: %s: %v; trying again in %v", what, err, pause)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(pause):
+			}
 			continue
 		}
-		go s.serveMember(ctx, raw)
+		pause = 0
+		handle(c)
 	}
 }

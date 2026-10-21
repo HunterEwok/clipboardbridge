@@ -5,8 +5,11 @@ package control
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/HunterEwok/clipbridge/internal/clip"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -23,6 +26,7 @@ func TestRoundTrip(t *testing.T) {
 		}
 	}
 	r := NewReader(&buf)
+	var read []*Message
 	for i, want := range msgs {
 		got, err := r.Read()
 		if err != nil {
@@ -31,9 +35,10 @@ func TestRoundTrip(t *testing.T) {
 		if got.Op != want.Op || got.Kind != want.Kind || got.Seq != want.Seq || !bytes.Equal(got.Payload, want.Payload) {
 			t.Errorf("message %d: got %+v", i, got.Header)
 		}
+		read = append(read, got)
 	}
-	if got := msgs[2]; got.Status.Peers[0].SkewMS != -7 {
-		t.Error("the status did not survive")
+	if st := read[2].Status; st == nil || st.Device != "d" || len(st.Peers) != 1 || st.Peers[0].SkewMS != -7 {
+		t.Errorf("the status did not survive: %+v", st)
 	}
 	if _, err := r.Read(); err == nil {
 		t.Error("read past the end")
@@ -44,12 +49,14 @@ func TestLimits(t *testing.T) {
 	if err := Write(&bytes.Buffer{}, &Message{Header: Header{Op: OpCopy}, Payload: make([]byte, maxPayload+1)}); err == nil {
 		t.Error("wrote a payload over the limit")
 	}
+	// Each input fails only for the reason it is named after: the long
+	// header is valid JSON, and the long payload is all there.
 	for name, input := range map[string]string{
-		"a header that never ends": strings.Repeat("x", maxHeader+10),
-		"bad JSON":                 "{nope\n",
-		"negative length":          `{"op":"copy","len":-1}` + "\n",
-		"length over the limit":    `{"op":"copy","len":99999999}` + "\n",
-		"payload cut short":        `{"op":"copy","len":10}` + "\nabc",
+		"a header over the limit": `{"op":"` + strings.Repeat("x", maxHeader) + `"}` + "\n",
+		"bad JSON":                "{nope\n",
+		"negative length":         `{"op":"copy","len":-1}` + "\n",
+		"length over the limit":   fmt.Sprintf(`{"op":"copy","len":%d}`+"\n", maxPayload+1) + strings.Repeat("x", maxPayload+1),
+		"payload cut short":       `{"op":"copy","len":10}` + "\nabc",
 	} {
 		if _, err := NewReader(strings.NewReader(input)).Read(); err == nil {
 			t.Errorf("%s: read without an error", name)
@@ -72,5 +79,21 @@ func TestDialErrors(t *testing.T) {
 	_, err := Dial("/nonexistent/clipbridge.sock")
 	if err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("Dial of a missing socket: %v", err)
+	}
+}
+
+func TestNames(t *testing.T) {
+	// The names on the socket are the engine's own.
+	for _, name := range []string{ViaCopy, ViaPhone, ViaUniversal} {
+		var v clip.Via
+		if err := v.UnmarshalText([]byte(name)); err != nil {
+			t.Errorf("via %q: %v", name, err)
+		}
+	}
+	for _, name := range []string{KindText, KindSecret} {
+		var k clip.Kind
+		if err := k.UnmarshalText([]byte(name)); err != nil {
+			t.Errorf("kind %q: %v", name, err)
+		}
 	}
 }

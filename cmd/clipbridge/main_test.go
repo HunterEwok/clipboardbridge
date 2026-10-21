@@ -24,6 +24,7 @@ func TestRun(t *testing.T) {
 		{name: "help", args: []string{"help"}, code: 0, stdout: "Usage: clipbridge"},
 		{name: "help flag", args: []string{"-h"}, code: 0, stdout: "Usage: clipbridge"},
 		{name: "unknown command", args: []string{"frobnicate"}, code: 2, stderr: `unknown command "frobnicate"`},
+		{name: "service with an argument", args: []string{"service", "extra"}, code: 2, stderr: "takes only flags"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

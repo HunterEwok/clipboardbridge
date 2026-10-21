@@ -2,8 +2,9 @@
 
 One clipboard for your Apple devices and every Linux machine on your home network.
 
-> **Status: early development.** There is nothing to use yet: the Go code so far only
-> prints its version. The design is in [docs/design.md](docs/design.md).
+> **Status: early development.** The Linux service and the `pair`, `join`, `copy`,
+> `paste` and `status` commands work; there is no installer, desktop connector or iPhone
+> support yet. The design is in [docs/design.md](docs/design.md).
 
 ## What it will do
 

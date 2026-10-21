@@ -78,10 +78,12 @@ func (j *Joiner) clientTLSVerifiedByCPace() (*tls.Config, error) {
 func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func(*group.Identity) error) (*group.Identity, error) {
 	code, err := NormalizeCode(code)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 	cfg, err := j.clientTLSVerifiedByCPace()
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 	tc := tls.Client(conn, cfg)
@@ -127,18 +129,19 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 	if err := json.Unmarshal(reply.AD, &member); err != nil {
 		return nil, err
 	}
+	// From here on the other side can check a guess of the code.
 	if err := writeFrame(tc, &frame{Tag: st.Tag()}); err != nil {
-		return nil, err
+		return nil, &spentError{err}
 	}
 	final, err := readFrame(tc)
 	if err != nil {
-		return nil, err
+		return nil, &spentError{err}
 	}
 	if final.Error != "" {
-		return nil, errorOf(final.Error)
+		return nil, &spentError{errorOf(final.Error)}
 	}
 	if err := st.Verify(final.Tag); err != nil || final.Welcome == nil {
-		return nil, errors.New("pair: the other device did not prove that it knows the code")
+		return nil, &spentError{errors.New("pair: the other device did not prove that it knows the code")}
 	}
 	id, err := j.identity(final.Welcome, memberCert, member)
 	if err == nil {
@@ -146,7 +149,7 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 	}
 	if err != nil {
 		writeFrame(tc, &frame{Error: "refused"})
-		return nil, err
+		return nil, &spentError{err}
 	}
 	// The identity is stored, and the member admitted the device when it
 	// sent the welcome, whether or not it hears this.

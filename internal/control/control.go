@@ -32,19 +32,28 @@ const (
 	OpStatus    = "status"    // client → service: ask for the status
 	OpPair      = "pair"      // client → service: open a pairing window; answers follow
 	OpJoin      = "join"      // client → service: join a group with a code
-	OpWatch     = "watch"     // watcher → service: start watching
+	OpWatch     = "watch"     // watcher → service: start watching, with what the clipboard holds now
 	OpCopied    = "copied"    // watcher → service: the clipboard changed
 	OpClipboard = "clipboard" // watcher → service: what the clipboard holds, without a change
 	OpWrite     = "write"     // service → watcher: put this text into the clipboard
 	OpReply     = "reply"     // service → client: the answer to a request
 )
 
+// Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
+const (
+	KindText     = "text"
+	KindSecret   = "secret"
+	ViaCopy      = "copy"                // copied on the member
+	ViaPhone     = "iphone"              // sent by the iPhone button
+	ViaUniversal = "universal-clipboard" // reached a Mac through Universal Clipboard
+)
+
 // Header is the JSON line of a message. Fields that an operation does not
 // use stay empty.
 type Header struct {
 	Op    string `json:"op"`
-	Kind  string `json:"kind,omitempty"`   // "text" or "secret"
-	Via   string `json:"via,omitempty"`    // "copy", "phone" or "universal"
+	Kind  string `json:"kind,omitempty"`   // KindText or KindSecret; text if empty
+	Via   string `json:"via,omitempty"`    // ViaCopy, ViaPhone or ViaUniversal; copy if empty
 	Seq   uint64 `json:"seq,omitempty"`    // the order of writes
 	TTLMS int64  `json:"ttl_ms,omitempty"` // how long a written secret may stay in the clipboard
 	Len   int    `json:"len,omitempty"`    // the length of the payload

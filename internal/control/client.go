@@ -30,7 +30,7 @@ func Dial(path string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.New("no permission to use the clipbridge service; add your user to the clipbridge group and log in again")
+			return nil, errors.New("no permission to use the clipbridge service; add your user to the " + Group + " group and log in again")
 		}
 		return nil, errors.New("the clipbridge service is not running (" + err.Error() + ")")
 	}
@@ -39,6 +39,9 @@ func Dial(path string) (*Client, error) {
 
 // Close closes the connection.
 func (c *Client) Close() error { return c.c.Close() }
+
+// SetDeadline sets the deadline for sending and receiving.
+func (c *Client) SetDeadline(t time.Time) error { return c.c.SetDeadline(t) }
 
 // Send sends a message.
 func (c *Client) Send(m *Message) error { return Write(c.c, m) }

@@ -5,26 +5,36 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/control"
 	"github.com/HunterEwok/clipbridge/internal/mdns"
 	"github.com/HunterEwok/clipbridge/internal/node"
+	"github.com/HunterEwok/clipbridge/internal/pair"
 )
 
 // hub is a fake network for discovery: every member sees the others on the
-// loopback address.
+// loopback address. Like the mdns responder, each member gets its lists on
+// its own Run goroutine, in order, and none after Run returned.
 type hub struct {
 	mu      sync.Mutex
 	members map[*fakeDiscovery]bool
+	// sticky keeps a member that stopped in the lists, with its old port,
+	// until one with its device ID starts again, as mDNS does when a member
+	// restarts within a record's lifetime.
+	sticky bool
+	ghosts map[string]mdns.Peer
 }
 
 type fakeDiscovery struct {
@@ -33,10 +43,13 @@ type fakeDiscovery struct {
 	mu     sync.Mutex
 	txt    []string
 	holder bool
+	latest []mdns.Peer
+	fresh  bool
+	kick   chan struct{}
 }
 
 func (h *hub) discover(c DiscoveryConfig) (Discovery, error) {
-	return &fakeDiscovery{h: h, cfg: c, txt: slices.Clone(c.TXT)}, nil
+	return &fakeDiscovery{h: h, cfg: c, txt: slices.Clone(c.TXT), kick: make(chan struct{}, 1)}, nil
 }
 
 func (d *fakeDiscovery) Run(ctx context.Context) error {
@@ -45,14 +58,40 @@ func (d *fakeDiscovery) Run(ctx context.Context) error {
 		d.h.members = map[*fakeDiscovery]bool{}
 	}
 	d.h.members[d] = true
+	delete(d.h.ghosts, d.cfg.ID)
 	d.h.mu.Unlock()
 	d.h.update()
-	<-ctx.Done()
-	d.h.mu.Lock()
-	delete(d.h.members, d)
-	d.h.mu.Unlock()
-	d.h.update()
-	return nil
+	for {
+		select {
+		case <-ctx.Done():
+			d.h.mu.Lock()
+			delete(d.h.members, d)
+			if d.h.sticky && !d.cfg.BrowseOnly {
+				if d.h.ghosts == nil {
+					d.h.ghosts = map[string]mdns.Peer{}
+				}
+				d.h.ghosts[d.cfg.ID] = d.peer()
+			}
+			d.h.mu.Unlock()
+			d.h.update()
+			return nil
+		case <-d.kick:
+		}
+		d.mu.Lock()
+		peers, fresh := d.latest, d.fresh
+		d.fresh = false
+		d.mu.Unlock()
+		if fresh && d.cfg.OnPeers != nil {
+			d.cfg.OnPeers(peers)
+		}
+	}
+}
+
+func (d *fakeDiscovery) peer() mdns.Peer {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return mdns.Peer{ID: d.cfg.ID, Port: d.cfg.Port, TXT: slices.Clone(d.txt),
+		Addrs: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
 }
 
 func (d *fakeDiscovery) SetTXT(txt []string) {
@@ -68,35 +107,57 @@ func (d *fakeDiscovery) SetHolder(hold bool) {
 	d.mu.Unlock()
 }
 
-// update tells every member about the others.
+// txtOf returns the TXT record that the member with this device ID
+// publishes.
+func (h *hub) txtOf(id string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for m := range h.members {
+		if m.cfg.ID == id && !m.cfg.BrowseOnly {
+			return m.peer().TXT
+		}
+	}
+	return nil
+}
+
+// update tells every member about the others: it replaces the list each
+// member has not yet taken.
 func (h *hub) update() {
 	h.mu.Lock()
 	var all []mdns.Peer
 	var members []*fakeDiscovery
 	for m := range h.members {
 		members = append(members, m)
-		if m.cfg.BrowseOnly {
-			continue
+		if !m.cfg.BrowseOnly {
+			all = append(all, m.peer())
 		}
-		m.mu.Lock()
-		all = append(all, mdns.Peer{ID: m.cfg.ID, Port: m.cfg.Port, TXT: slices.Clone(m.txt),
-			Addrs: []netip.Addr{netip.MustParseAddr("127.0.0.1")}})
-		m.mu.Unlock()
 	}
-	h.mu.Unlock()
+	for _, g := range h.ghosts {
+		all = append(all, g)
+	}
+	slices.SortFunc(all, func(a, b mdns.Peer) int { return strings.Compare(a.ID, b.ID) })
 	for _, m := range members {
 		others := slices.DeleteFunc(slices.Clone(all), func(p mdns.Peer) bool { return p.ID == m.cfg.ID })
-		go m.cfg.OnPeers(others)
+		m.mu.Lock()
+		m.latest, m.fresh = others, true
+		m.mu.Unlock()
+		select {
+		case m.kick <- struct{}{}:
+		default:
+		}
 	}
+	h.mu.Unlock()
 }
 
 type testService struct {
-	name   string
-	dir    string
-	role   node.Role
-	socket string
-	cancel context.CancelFunc
-	done   chan error
+	name     string
+	dir      string
+	role     node.Role
+	socket   string
+	cancel   context.CancelFunc
+	done     chan error
+	accepted atomic.Int32 // member connections accepted
+	cfg      func(*Config)
 }
 
 func startService(t *testing.T, h *hub, name string) *testService {
@@ -106,38 +167,71 @@ func startService(t *testing.T, h *hub, name string) *testService {
 
 func startRole(t *testing.T, h *hub, name string, role node.Role) *testService {
 	t.Helper()
+	return startWith(t, h, name, role, nil)
+}
+
+func startWith(t *testing.T, h *hub, name string, role node.Role, cfg func(*Config)) *testService {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	return startIn(t, h, name, dir, role)
+	return startIn(t, h, &testService{name: name, dir: dir, role: role, cfg: cfg})
 }
 
 // restartService starts a stopped service again with its state.
 func restartService(t *testing.T, h *hub, old *testService) *testService {
 	t.Helper()
-	return startIn(t, h, old.name, old.dir, old.role)
+	return startIn(t, h, &testService{name: old.name, dir: old.dir, role: old.role, cfg: old.cfg})
 }
 
-func startIn(t *testing.T, h *hub, name, dir string, role node.Role) *testService {
+// countingListener counts the connections it accepts.
+type countingListener struct {
+	net.Listener
+	n *atomic.Int32
+}
+
+func (l countingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err == nil {
+		l.n.Add(1)
+	}
+	return c, err
+}
+
+func startIn(t *testing.T, h *hub, s *testService) *testService {
 	t.Helper()
-	s := &testService{name: name, dir: dir, role: role, socket: filepath.Join(dir, "c.sock"), done: make(chan error, 1)}
+	s.socket, s.done = filepath.Join(s.dir, "c.sock"), make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
+	name := s.name
 	cfg := Config{
-		StateDir: dir, Socket: s.socket, Role: role, Name: name, Discover: h.discover,
-		Logf:   func(f string, a ...any) { t.Logf(name+": "+f, a...) },
-		listen: func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
+		StateDir: s.dir, Socket: s.socket, Role: s.role, Name: name, Discover: h.discover,
+		Logf: func(f string, a ...any) { t.Logf(name+": "+f, a...) },
+		listen: func() (net.Listener, error) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			return countingListener{ln, &s.accepted}, err
+		},
+		browseFor: 2 * time.Second,
+	}
+	if s.cfg != nil {
+		s.cfg(&cfg)
 	}
 	go func() { s.done <- Run(ctx, cfg) }()
 	t.Cleanup(s.stop)
-	// Wait for the control socket.
+	// Wait for the control socket, or for Run to fail.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if c, err := control.Dial(s.socket); err == nil {
 			c.Close()
 			break
+		}
+		select {
+		case err := <-s.done:
+			s.cancel = nil
+			t.Fatalf("%s: the service ended at the start: %v", name, err)
+		default:
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("%s: the control socket never appeared", name)
@@ -155,12 +249,21 @@ func (s *testService) stop() {
 	}
 }
 
-func (s *testService) do(t *testing.T, h control.Header, payload string) (*control.Message, error) {
+// dial connects to the service with a deadline, so that a missing answer
+// fails the test instead of hanging it.
+func (s *testService) dial(t *testing.T) *control.Client {
 	t.Helper()
 	c, err := control.Dial(s.socket)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.SetDeadline(time.Now().Add(20 * time.Second))
+	return c
+}
+
+func (s *testService) do(t *testing.T, h control.Header, payload string) (*control.Message, error) {
+	t.Helper()
+	c := s.dial(t)
 	defer c.Close()
 	return c.Do(&control.Message{Header: h, Payload: []byte(payload)})
 }
@@ -174,23 +277,37 @@ func (s *testService) status(t *testing.T) *control.Status {
 	return m.Status
 }
 
+func (s *testService) paste(t *testing.T) string {
+	t.Helper()
+	m, err := s.do(t, control.Header{Op: control.OpPaste}, "")
+	if err != nil {
+		return ""
+	}
+	return string(m.Payload)
+}
+
+// openWindow opens a pairing window on admin; closing the client closes it.
+func openWindow(t *testing.T, admin *testService) (*control.Client, string) {
+	t.Helper()
+	c := admin.dial(t)
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPair}})
+	if err != nil {
+		c.Close()
+		t.Fatalf("pair on %s: %v", admin.name, err)
+	}
+	return c, m.Code
+}
+
 // pairWith opens a pairing window on admin and joins s through it, found
 // by discovery.
 func pairWith(t *testing.T, admin, s *testService) {
 	t.Helper()
-	c, err := control.Dial(admin.socket)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c, code := openWindow(t, admin)
 	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPair}})
-	if err != nil {
-		t.Fatalf("pair on %s: %v", admin.name, err)
-	}
-	if _, err := s.do(t, control.Header{Op: control.OpJoin, Code: m.Code}, ""); err != nil {
+	if _, err := s.do(t, control.Header{Op: control.OpJoin, Code: code}, ""); err != nil {
 		t.Fatalf("join on %s: %v", s.name, err)
 	}
-	m, err = c.Receive()
+	m, err := c.Receive()
 	if err != nil || m.Name != s.name {
 		t.Fatalf("pair on %s ended with %+v, %v", admin.name, m, err)
 	}
@@ -215,7 +332,7 @@ func TestThreeMembers(t *testing.T) {
 	if st := a.status(t); st.Group != "" {
 		t.Fatalf("a new service is in a group: %+v", st)
 	}
-	if _, err := a.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "no group") {
+	if _, err := a.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair here to start one") {
 		t.Errorf("paste in no group: %v", err)
 	}
 	pairWith(t, a, b) // creates the group on alpha
@@ -234,10 +351,7 @@ func TestThreeMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range []*testService{a, b, c} {
-		waitFor(t, s.name+" has the text", func() bool {
-			m, err := s.do(t, control.Header{Op: control.OpPaste}, "")
-			return err == nil && string(m.Payload) == "from alpha"
-		})
+		waitFor(t, s.name+" has the text", func() bool { return s.paste(t) == "from alpha" })
 	}
 	// Exactly one member holds clipbridge.local: the lowest device ID.
 	holders := func() []string {
@@ -267,6 +381,33 @@ func TestThreeMembers(t *testing.T) {
 	})
 }
 
+func TestOneConnectionBetweenTwo(t *testing.T) {
+	// Only the member with the lower device ID dials, so the one with the
+	// higher ID accepts the only connection between them.
+	var h hub
+	a := startService(t, &h, "alpha")
+	b := startService(t, &h, "beta")
+	pairWith(t, a, b)
+	waitFor(t, "connected", func() bool { return len(a.status(t).Peers) == 1 && len(b.status(t).Peers) == 1 })
+	since := a.status(t).Peers[0]
+	time.Sleep(1500 * time.Millisecond)
+	low, high := a, b
+	if b.status(t).Device < a.status(t).Device {
+		low, high = b, a
+	}
+	// The join itself was one connection to the admin's port.
+	pairing := map[*testService]int32{a: 1, b: 0}
+	if n := low.accepted.Load() - pairing[low]; n != 0 {
+		t.Errorf("the member with the lower ID accepted %d member connections", n)
+	}
+	if n := high.accepted.Load() - pairing[high]; n != 1 {
+		t.Errorf("the member with the higher ID accepted %d member connections, want 1", n)
+	}
+	if now := a.status(t).Peers; len(now) != 1 || now[0] != since {
+		t.Errorf("the connection changed: %+v, then %+v", since, now)
+	}
+}
+
 func TestWatcher(t *testing.T) {
 	var h hub
 	a := startService(t, &h, "alpha")
@@ -274,10 +415,7 @@ func TestWatcher(t *testing.T) {
 	pairWith(t, a, b)
 	waitFor(t, "connected", func() bool { return len(a.status(t).Peers) == 1 })
 	// A desktop connector on b watches its clipboard.
-	w, err := control.Dial(b.socket)
-	if err != nil {
-		t.Fatal(err)
-	}
+	w := b.dial(t)
 	defer w.Close()
 	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch}}); err != nil {
 		t.Fatal(err)
@@ -286,17 +424,78 @@ func TestWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, err := w.Receive()
-	if err != nil || m.Op != control.OpWrite || string(m.Payload) != "for the desktop" || m.Seq == 0 {
+	if err != nil || m.Op != control.OpWrite || string(m.Payload) != "for the desktop" || m.Seq == 0 || m.Kind != control.KindText {
 		t.Fatalf("watcher got %+v, %v", m, err)
 	}
-	// A copy on b's desktop reaches a.
-	if err := w.Send(&control.Message{Header: control.Header{Op: control.OpCopied, Kind: "text"}, Payload: []byte("from the desktop")}); err != nil {
+	// A secret carries what is left of its lifetime.
+	if _, err := a.do(t, control.Header{Op: control.OpCopy, Kind: control.KindSecret}, "one-time code"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "alpha has the desktop copy", func() bool {
-		m, err := a.do(t, control.Header{Op: control.OpPaste}, "")
-		return err == nil && string(m.Payload) == "from the desktop"
-	})
+	m, err = w.Receive()
+	if err != nil || string(m.Payload) != "one-time code" || m.Kind != control.KindSecret {
+		t.Fatalf("watcher got %+v, %v", m, err)
+	}
+	if m.TTLMS <= 55000 || m.TTLMS > 60000 {
+		t.Errorf("a fresh secret came with ttl_ms %d", m.TTLMS)
+	}
+	// A copy on b's desktop reaches a.
+	if err := w.Send(&control.Message{Header: control.Header{Op: control.OpCopied, Kind: control.KindText}, Payload: []byte("from the desktop")}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "alpha has the desktop copy", func() bool { return a.paste(t) == "from the desktop" })
+	// So does one that came through Universal Clipboard, by its name.
+	if err := w.Send(&control.Message{Header: control.Header{Op: control.OpCopied, Via: control.ViaUniversal}, Payload: []byte("from the iPhone")}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "alpha has the Universal Clipboard copy", func() bool { return a.paste(t) == "from the iPhone" })
+}
+
+func TestWatcherGetsAMissedWrite(t *testing.T) {
+	// A write made while no watcher was connected goes to the next one,
+	// instead of the stale text its clipboard holds.
+	var h hub
+	a := startService(t, &h, "alpha")
+	b := startService(t, &h, "beta")
+	pairWith(t, a, b)
+	waitFor(t, "connected", func() bool { return len(a.status(t).Peers) == 1 })
+	if _, err := a.do(t, control.Header{Op: control.OpCopy}, "while the desktop was away"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "beta has it", func() bool { return b.paste(t) == "while the desktop was away" })
+	w := b.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch}, Payload: []byte("stale desktop text")}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := w.Receive()
+	if err != nil || m.Op != control.OpWrite || string(m.Payload) != "while the desktop was away" {
+		t.Fatalf("watcher got %+v, %v", m, err)
+	}
+	if got := b.paste(t); got != "while the desktop was away" {
+		t.Errorf("paste %q after the watcher started", got)
+	}
+	w.Close()
+	// Without a missed write, what the watcher reports is the clipboard.
+	w2 := b.dial(t)
+	defer w2.Close()
+	if _, err := w2.Do(&control.Message{Header: control.Header{Op: control.OpWatch}, Payload: []byte("on the desktop")}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "beta knows the desktop text", func() bool { return b.paste(t) == "on the desktop" })
+}
+
+func TestWatcherKeepsTheNewestWrite(t *testing.T) {
+	w := &watcher{out: make(chan node.Write, 4)}
+	for i := uint64(1); i <= 10; i++ {
+		w.send(node.Write{Seq: i})
+	}
+	var got []uint64
+	for len(w.out) > 0 {
+		got = append(got, (<-w.out).Seq)
+	}
+	if !slices.Equal(got, []uint64{7, 8, 9, 10}) {
+		t.Errorf("a full queue kept %v", got)
+	}
 }
 
 func TestAloneHoldsTheName(t *testing.T) {
@@ -313,26 +512,77 @@ func TestAloneHoldsTheName(t *testing.T) {
 	waitFor(t, "alpha holds it right after a restart", func() bool { return a2.status(t).Holder })
 }
 
+func TestRestartWithANewPort(t *testing.T) {
+	// A member that restarts on a new port while discovery still lists it
+	// is dialed at the new port.
+	h := hub{sticky: true}
+	a := startService(t, &h, "alpha")
+	b := startService(t, &h, "beta")
+	pairWith(t, a, b)
+	waitFor(t, "connected", func() bool { return len(a.status(t).Peers) == 1 })
+	high, low := b, a
+	if a.status(t).Device > b.status(t).Device {
+		high, low = a, b
+	}
+	high.stop()
+	high2 := restartService(t, &h, high)
+	waitFor(t, "connected again", func() bool { return len(low.status(t).Peers) == 1 && len(high2.status(t).Peers) == 1 })
+}
+
 func TestMac(t *testing.T) {
 	// A Mac joins through a Linux member, cannot admit devices itself, and
-	// syncs in both directions; it never holds clipbridge.local.
+	// syncs in both directions; it never holds clipbridge.local. Its rules
+	// must hold whichever device ID is lower, so the test runs until it saw
+	// both orders.
+	seen := map[bool]bool{}
+	for i := 0; i < 16 && len(seen) < 2; i++ {
+		var h hub
+		pi := startService(t, &h, "pi")
+		mac := startRole(t, &h, "mac", node.Mac)
+		pairWith(t, pi, mac)
+		macLower := mac.status(t).Device < pi.status(t).Device
+		if seen[macLower] {
+			pi.stop()
+			mac.stop()
+			continue
+		}
+		seen[macLower] = true
+		t.Logf("the Mac's ID is lower: %v", macLower)
+		waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
+		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only a Linux member can admit devices") {
+			t.Errorf("pair on a Mac: %v", err)
+		}
+		if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "from the Mac" })
+		if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "from the pi"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "the Mac has it", func() bool { return mac.paste(t) == "from the pi" })
+		if mac.status(t).Holder || !pi.status(t).Holder {
+			t.Error("the Mac holds clipbridge.local, or the pi does not")
+		}
+		pi.stop()
+		mac.stop()
+	}
+	if len(seen) < 2 {
+		t.Errorf("saw only one order of device IDs: %v", seen)
+	}
+}
+
+func TestMacInNoGroup(t *testing.T) {
+	// A Mac in no group cannot start one: it would hold no CA keys.
 	var h hub
-	pi := startService(t, &h, "pi")
 	mac := startRole(t, &h, "mac", node.Mac)
-	pairWith(t, pi, mac)
-	waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
-	if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil {
-		t.Error("a Mac opened a pairing window")
+	if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only a Linux member can admit devices") {
+		t.Errorf("pair on a Mac in no group: %v", err)
 	}
-	if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
-		t.Fatal(err)
+	if st := mac.status(t); st.Group != "" {
+		t.Errorf("the Mac is in a group: %+v", st)
 	}
-	waitFor(t, "the pi has it", func() bool {
-		m, err := pi.do(t, control.Header{Op: control.OpPaste}, "")
-		return err == nil && string(m.Payload) == "from the Mac"
-	})
-	if mac.status(t).Holder || !pi.status(t).Holder {
-		t.Error("the Mac holds clipbridge.local, or the pi does not")
+	if _, err := mac.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair on a Linux member") {
+		t.Errorf("paste on a Mac in no group: %v", err)
 	}
 }
 
@@ -340,23 +590,247 @@ func TestWrongCode(t *testing.T) {
 	var h hub
 	a := startService(t, &h, "alpha")
 	b := startService(t, &h, "beta")
-	c, err := control.Dial(a.socket)
+	c, code := openWindow(t, a)
+	defer c.Close()
+	wrong := "000000"
+	if code == wrong {
+		wrong = "111111"
+	}
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: wrong}, ""); err == nil || !strings.Contains(err.Error(), "wrong code") {
+		t.Fatalf("join with a wrong code: %v", err)
+	}
+	if st := b.status(t); st.Group != "" {
+		t.Errorf("beta is in a group after a wrong code")
+	}
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: "12345"}, ""); err == nil || !strings.Contains(err.Error(), "six digits") {
+		t.Errorf("join with five digits: %v", err)
+	}
+}
+
+func TestPairingWindow(t *testing.T) {
+	var h hub
+	a := startService(t, &h, "alpha")
+	c, _ := openWindow(t, a)
+	id := a.status(t).Device
+	waitFor(t, "p=1 published", func() bool { return slices.Contains(h.txtOf(id), "p=1") })
+	if _, err := a.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "already open") {
+		t.Errorf("a second window: %v", err)
+	}
+	// The client hanging up closes the window.
+	c.Close()
+	waitFor(t, "p=1 gone", func() bool { txt := h.txtOf(id); return txt != nil && !slices.Contains(txt, "p=1") })
+	c2, _ := openWindow(t, a)
+	c2.Close()
+}
+
+func TestConcurrentPairs(t *testing.T) {
+	// Two pairs on a device in no group make one group and one window.
+	var h hub
+	a := startService(t, &h, "alpha")
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	clients := make([]*control.Client, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := control.Dial(a.socket)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			clients[i] = c
+			_, errs[i] = c.Do(&control.Message{Header: control.Header{Op: control.OpPair}})
+		}()
+	}
+	wg.Wait()
+	for _, c := range clients {
+		if c != nil {
+			defer c.Close()
+		}
+	}
+	if (errs[0] == nil) == (errs[1] == nil) {
+		t.Fatalf("two pairs at once: %v, %v; want one to fail", errs[0], errs[1])
+	}
+	published := func() int {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		n := 0
+		for m := range h.members {
+			if !m.cfg.BrowseOnly {
+				n++
+			}
+		}
+		return n
+	}
+	waitFor(t, "one discovery", func() bool { return published() == 1 })
+	time.Sleep(100 * time.Millisecond)
+	if n := published(); n != 1 {
+		t.Errorf("%d discoveries publish", n)
+	}
+}
+
+func TestJoinFindsTheWindow(t *testing.T) {
+	// A member without a window is found first; join goes to the one that
+	// announces a window.
+	var h hub
+	a := startService(t, &h, "alpha")
+	c := startService(t, &h, "gamma")
+	pairWith(t, a, c)
+	b := startService(t, &h, "beta")
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: "123456"}, ""); err == nil || !strings.Contains(err.Error(), "no member with an open pairing window") {
+		t.Errorf("join with no window anywhere: %v", err)
+	}
+	pairWith(t, a, b)
+	if b.status(t).Group != a.status(t).Group {
+		t.Error("beta is not in alpha's group")
+	}
+	// Joining again from a device in a group fails and changes nothing.
+	before := b.status(t)
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: "123456"}, ""); err == nil || !strings.Contains(err.Error(), "already in a group") {
+		t.Errorf("join in a group: %v", err)
+	}
+	if after := b.status(t); after.Device != before.Device || after.Group != before.Group {
+		t.Errorf("status changed from %+v to %+v", before, after)
+	}
+}
+
+func TestJoinRefusesTwoWindows(t *testing.T) {
+	var h hub
+	a := startService(t, &h, "alpha")
+	d := startService(t, &h, "delta")
+	b := startService(t, &h, "beta")
+	ca, _ := openWindow(t, a)
+	defer ca.Close()
+	cd, _ := openWindow(t, d)
+	defer cd.Close()
+	waitFor(t, "both windows published", func() bool {
+		return slices.Contains(h.txtOf(a.status(t).Device), "p=1") && slices.Contains(h.txtOf(d.status(t).Device), "p=1")
+	})
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: "123456"}, ""); err == nil || !strings.Contains(err.Error(), "2 devices announce a pairing window") {
+		t.Errorf("join with two windows: %v", err)
+	}
+}
+
+func TestJoinAClosedWindow(t *testing.T) {
+	// At a member's address with no window, the joiner hears that the
+	// window is closed, not a TLS error.
+	var h hub
+	a := startService(t, &h, "alpha")
+	b := startService(t, &h, "beta")
+	c := startService(t, &h, "gamma")
+	pairWith(t, a, b)
+	id, addr := a.status(t).Device, ""
+	h.mu.Lock()
+	for m := range h.members {
+		if m.cfg.ID == id {
+			addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(m.cfg.Port)))
+		}
+	}
+	h.mu.Unlock()
+	if _, err := c.do(t, control.Header{Op: control.OpJoin, Code: "123456", Address: addr}, ""); err == nil || !strings.Contains(err.Error(), pair.ErrClosed.Error()) {
+		t.Errorf("join at %s without a window: %v", addr, err)
+	}
+}
+
+func TestDiscoveryFails(t *testing.T) {
+	// When the group's network part cannot start, the device stays in no
+	// group, and a second try fails the same way instead of crashing.
+	var h hub
+	a := startWith(t, &h, "alpha", node.Linux, func(c *Config) {
+		c.Discover = func(DiscoveryConfig) (Discovery, error) { return nil, errors.New("no network") }
+	})
+	for range 2 {
+		if _, err := a.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "no network") {
+			t.Errorf("pair: %v", err)
+		}
+		if st := a.status(t); st.Group != "" {
+			t.Errorf("in a group after a failed start: %+v", st)
+		}
+	}
+}
+
+func TestSleepDetector(t *testing.T) {
+	start := time.Now()
+	d := newSleepDetector(time.Hour, start)
+	up, mono := time.Hour, start
+	for range 10 {
+		up, mono = up+sleepCheckEvery, mono.Add(sleepCheckEvery)
+		if _, ok := d.check(up, mono); ok {
+			t.Fatal("steady ticks counted as sleep")
+		}
+	}
+	up, mono = up+10*time.Minute+sleepCheckEvery, mono.Add(sleepCheckEvery)
+	if slept, ok := d.check(up, mono); !ok || slept != 10*time.Minute {
+		t.Errorf("check after a sleep = %v, %v", slept, ok)
+	}
+	up, mono = up+sleepCheckEvery, mono.Add(sleepCheckEvery)
+	if _, ok := d.check(up, mono); ok {
+		t.Error("one sleep counted twice")
+	}
+}
+
+// flakyListener fails its first Accept calls with a temporary error.
+type flakyListener struct {
+	net.Listener
+	fails atomic.Int32
+}
+
+func (l *flakyListener) Accept() (net.Conn, error) {
+	if l.fails.Add(-1) >= 0 {
+		return nil, errors.New("accept: too many open files")
+	}
+	return l.Listener.Accept()
+}
+
+func TestAcceptSurvivesErrors(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fl := &flakyListener{Listener: ln}
+	fl.fails.Store(3)
+	got := make(chan net.Conn, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		acceptLoop(ctx, fl, t.Logf, "test", func(c net.Conn) { got <- c })
+	}()
+	c, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPair}})
+	select {
+	case sc := <-got:
+		sc.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop stopped after an error")
+	}
+	cancel()
+	<-done
+}
+
+func TestControlSocketMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.sock")
+	ln, err := listenControl(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrong := "000000"
-	if m.Code == wrong {
-		wrong = "111111"
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: wrong}, ""); err == nil {
-		t.Fatal("joined with a wrong code")
+	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != 0o660 {
+		t.Errorf("socket mode %v", fi.Mode())
 	}
-	if st := b.status(t); st.Group != "" {
-		t.Errorf("beta is in a group after a wrong code")
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("left behind: %v", entries)
+	}
+	ln.Close()
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Errorf("the socket is still there after Close: %v", err)
 	}
 }
