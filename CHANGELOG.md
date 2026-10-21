@@ -17,5 +17,9 @@ All notable changes to clipbridge are documented in this file. The format follow
 - The service: the group's certificates, pairing, mDNS discovery (publishing on Linux,
   browsing on a Mac), member connections and the sync engine, and a local control socket.
 - The connector package, which links a desktop clipboard to the service.
+- Linux desktops: `clipbridge desktop` links the session's clipboard, through Wayland
+  data-control or X11 (XWayland on GNOME), started by an XDG autostart entry.
+- Linux packaging: a hardened systemd unit, the service user, a tmux configuration, an
+  optional tmux start on the text console, and `packaging/linux/install.sh`.
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).

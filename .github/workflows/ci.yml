@@ -151,10 +151,67 @@ jobs:
       - name: three members and a resolver in containers
         run: sh tools/e2e/e2e.sh "$RUNNER_TEMP/clipbridge"
 
+  desktop:
+    name: desktop clipboards
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: install sway, Xvfb and the clipboard tools
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sway wl-clipboard xvfb xclip >/dev/null
+      - name: Wayland data-control under headless sway, and X11 under Xvfb
+        run: |
+          go test -c -o "$RUNNER_TEMP/desktop.test" ./internal/desktop
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman sway >"$RUNNER_TEMP/sway.log" 2>&1 &
+          Xvfb :5 -screen 0 640x480x24 >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          for _ in $(seq 1 100); do
+            WAYLAND_DISPLAY=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -name 'wayland-[0-9]' -printf '%f\n' | head -n 1)
+            [ -n "$WAYLAND_DISPLAY" ] && [ -e /tmp/.X11-unix/X5 ] && break
+            sleep 0.1
+          done
+          export WAYLAND_DISPLAY DISPLAY=:5
+          CLIPBRIDGE_TEST_WAYLAND=1 CLIPBRIDGE_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.v
+
+  packaging:
+    name: packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: shellcheck
+        run: shellcheck packaging/linux/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+      - name: systemd-analyze verify
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
+          sudo install -m 0755 "$RUNNER_TEMP/clipbridge" /usr/local/bin/clipbridge
+          sudo systemd-sysusers "$PWD/packaging/linux/clipbridge.sysusers"
+          systemd-analyze verify packaging/linux/clipbridge.service
+          systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=30 # 3.0 on the scale it prints
+      - name: desktop entry
+        run: |
+          sudo apt-get install -y -qq desktop-file-utils >/dev/null
+          desktop-file-validate packaging/linux/clipbridge-desktop.desktop
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e]
+    needs: [check, test, build, avahi, e2e, desktop, packaging]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

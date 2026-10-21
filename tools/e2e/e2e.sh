@@ -120,7 +120,7 @@ eventually "avahi browses the members" sh -c "[ \$(docker exec $run-phone avahi-
 
 say "the holder stops; another takes clipbridge.local over"
 docker stop -t 5 "$run-$first" >/dev/null
-members=$(echo $members | tr ' ' '\n' | grep -v "^$first\$" | tr '\n' ' ')
+members=$(echo "$members" | tr ' ' '\n' | grep -v "^$first\$" | tr '\n' ' ')
 eventually "a new holder" holders
 holders
 eventually "clipbridge.local follows to $holder" resolves_to "$(ip_of "$holder")"
