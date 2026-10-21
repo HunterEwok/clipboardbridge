@@ -62,10 +62,12 @@ type Header struct {
 	Done  bool   `json:"done,omitempty"`   // the last answer to a request
 
 	Code        string   `json:"code,omitempty"`        // pairing code
-	Fingerprint string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare
+	Fingerprint string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
 	Address     string   `json:"address,omitempty"`     // a member's address for join
+	Addrs       []string `json:"addrs,omitempty"`       // where a listening join waits, for its QR code
+	Listen      bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
 	Name        string   `json:"name,omitempty"`        // a device name
-	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for join, seconds to wait for one
+	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Status      *Status  `json:"status,omitempty"`
 	Devices     []Device `json:"devices,omitempty"`
 }

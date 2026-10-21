@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -219,6 +220,37 @@ func ServerTLS(admin *group.Identity) *tls.Config {
 	}
 }
 
+// ClientTLS returns the TLS configuration for dialing a joiner that listens:
+// the member's own certificate, and the joiner's self-signed certificate,
+// which must have the fingerprint fp from the joiner's QR code.
+func ClientTLS(admin *group.Identity, fp string) *tls.Config {
+	return clientTLSVerifiedByFingerprint(admin, fp)
+}
+
+// clientTLSVerifiedByFingerprint builds ClientTLS: crypto/tls cannot check a
+// self-signed certificate against a fingerprint, so VerifyConnection does.
+func clientTLSVerifiedByFingerprint(admin *group.Identity, fp string) *tls.Config {
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS13,
+		Certificates:       []tls.Certificate{{Certificate: [][]byte{admin.Cert.Raw}, PrivateKey: admin.Key, Leaf: admin.Cert}},
+		InsecureSkipVerify: true, // checked below against the fingerprint
+		NextProtos:         []string{Protocol},
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if cs.NegotiatedProtocol != Protocol {
+				return errors.New("pair: the device does not offer pairing")
+			}
+			if len(cs.PeerCertificates) != 1 || CertFingerprint(cs.PeerCertificates[0].Raw) != fp {
+				return errors.New("pair: the device is not the one in the QR code")
+			}
+			id, err := joinerID(cs)
+			if err == nil && id == admin.ID {
+				err = errors.New("pair: the joining device has this member's own device ID")
+			}
+			return err
+		},
+	}
+}
+
 // joinerID returns the device ID of the joiner's self-signed certificate.
 func joinerID(cs tls.ConnectionState) (group.DeviceID, error) {
 	if len(cs.PeerCertificates) != 1 {
@@ -249,6 +281,19 @@ func Refuse(ctx context.Context, conn *tls.Conn, err error) {
 // handshake used ServerTLS. It returns the error of this attempt; Result
 // reports the outcome of the window.
 func (w *Window) Serve(ctx context.Context, conn *tls.Conn) error {
+	return w.attempt(ctx, conn, false)
+}
+
+// Dial runs the member's side of a pairing with a joiner that listens:
+// conn is a connection the member dialed to the address in the joiner's QR
+// code, and fp the fingerprint in it. The member, which dialed, confirms the
+// key first; the joiner tells it whether that was right.
+func (w *Window) Dial(ctx context.Context, conn net.Conn, fp string) error {
+	return w.attempt(ctx, tls.Client(conn, ClientTLS(w.admin, fp)), true)
+}
+
+// attempt runs one attempt; with dialed, the member confirms first.
+func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error {
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
@@ -264,7 +309,7 @@ func (w *Window) Serve(ctx context.Context, conn *tls.Conn) error {
 		writeFrame(conn, &frame{Error: codeOf(err)})
 		return err
 	}
-	res, started, err := w.serve(conn)
+	res, started, err := w.serve(conn, dialed)
 	if res != nil {
 		w.succeed(res)
 		if !res.Confirmed {
@@ -283,8 +328,10 @@ func (w *Window) Serve(ctx context.Context, conn *tls.Conn) error {
 // serve runs the exchange. It returns a result once the welcome went out,
 // with the error of the last step if the device did not confirm; started
 // reports whether the joiner got the member's CPace message, after which a
-// failure counts.
-func (w *Window) serve(conn *tls.Conn) (res *Result, started bool, err error) {
+// failure counts. With memberFirst the member sends its confirmation tag
+// with its CPace message, and the joiner answers with its own tag or an
+// error.
+func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started bool, err error) {
 	cs := conn.ConnectionState()
 	joiner, err := joinerID(cs)
 	if err != nil {
@@ -313,15 +360,27 @@ func (w *Window) serve(conn *tls.Conn) (res *Result, started bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err := writeFrame(conn, &frame{Msg: msg, AD: ad}); err != nil {
+	reply := &frame{Msg: msg, AD: ad}
+	if memberFirst {
+		if _, err := st.Finish(first.Msg, first.AD); err != nil {
+			return nil, false, err
+		}
+		reply.Tag = st.Tag()
+	}
+	if err := writeFrame(conn, reply); err != nil {
 		return nil, true, err
 	}
-	if _, err := st.Finish(first.Msg, first.AD); err != nil {
-		return nil, true, err
+	if !memberFirst {
+		if _, err := st.Finish(first.Msg, first.AD); err != nil {
+			return nil, true, err
+		}
 	}
 	confirm, err := readFrame(conn)
 	if err != nil {
 		return nil, true, err
+	}
+	if confirm.Error != "" {
+		return nil, true, errorOf(confirm.Error)
 	}
 	if err := st.Verify(confirm.Tag); err != nil {
 		return nil, true, ErrWrongCode
@@ -343,7 +402,11 @@ func (w *Window) serve(conn *tls.Conn) (res *Result, started bool, err error) {
 	// From here on the device counts as admitted: the welcome may reach it
 	// even if this side sees an error.
 	res = &Result{Device: joiner, Info: info, Cert: cert}
-	if err := writeFrame(conn, &frame{Tag: st.Tag(), Welcome: welcome}); err != nil {
+	final := &frame{Welcome: welcome}
+	if !memberFirst {
+		final.Tag = st.Tag()
+	}
+	if err := writeFrame(conn, final); err != nil {
 		return res, true, err
 	}
 	done, err := readFrame(conn)

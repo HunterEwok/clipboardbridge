@@ -51,6 +51,11 @@ type Config struct {
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
+	// joinListen opens the port a listening join waits at, any port on all
+	// addresses if nil; joinAddrs returns the addresses for its QR code,
+	// joinAddresses if nil.
+	joinListen func() (net.Listener, error)
+	joinAddrs  func(port uint16) []string
 	// phoneListen and profileListen open the iPhone's ports; PhonePort and
 	// ProfilePort on all addresses if nil.
 	phoneListen, profileListen func() (net.Listener, error)
@@ -96,8 +101,9 @@ type Service struct {
 	discoveryStop context.CancelFunc
 	discoveryDone chan struct{}
 	port          uint16
-	window        *pair.Window
-	opening       bool // a pairing window is being opened, maybe with a new group
+	window        *pair.Window // announced; takes pairing connections
+	dialWindow    *pair.Window // not announced; dials a listening joiner for the phone
+	opening       bool         // a pairing window is being opened, maybe with a new group
 	phoneWindow   *phone.Window
 	phoneOpening  bool // an iPhone pairing window is being opened
 	joining       bool // a join is running
@@ -132,6 +138,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.listen == nil {
 		cfg.listen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
+	}
+	if cfg.joinListen == nil {
+		cfg.joinListen = func() (net.Listener, error) { return net.Listen("tcp", ":0") }
+	}
+	if cfg.joinAddrs == nil {
+		cfg.joinAddrs = joinAddresses
 	}
 	if cfg.phoneListen == nil {
 		cfg.phoneListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", PhonePort)) }
@@ -284,11 +296,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 func (s *Service) stopGroup() {
 	s.mu.Lock()
 	s.stopping = true
-	cancel, nd, w, pw := s.groupCancel, s.nd, s.window, s.phoneWindow
+	cancel, nd, w, dw, pw := s.groupCancel, s.nd, s.window, s.dialWindow, s.phoneWindow
 	stopDiscovery, discoveryDone := s.discoveryStop, s.discoveryDone
 	s.mu.Unlock()
 	if w != nil {
 		w.Close()
+	}
+	if dw != nil {
+		dw.Close()
 	}
 	if pw != nil {
 		pw.Close()

@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/mdns"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
+	"github.com/HunterEwok/clipbridge/internal/phone"
 )
 
 // hub is a fake network for discovery: every member sees the others on the
@@ -248,6 +250,8 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 			return countingListener{ln, &s.accepted}, err
 		},
 		browseFor:     2 * time.Second,
+		joinListen:    func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
+		joinAddrs:     func(port uint16) []string { return []string{fmt.Sprintf("127.0.0.1:%d", port)} },
 		phoneListen:   s.listenOn(&s.phoneAddr),
 		profileListen: s.listenOn(&s.profileAddr),
 	}
@@ -1095,11 +1099,19 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A new computer runs clipbridge join: it shows its code and waits.
+	// A new computer runs clipbridge join: it listens, shows its QR code
+	// and waits.
 	laptop := startService(t, &h, "laptop")
+	lc := laptop.dial(t)
+	defer lc.Close()
+	where, err := lc.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Code: "246802", Expires: 60, Listen: true}})
+	if err != nil || len(where.Addrs) == 0 || where.Fingerprint == "" {
+		t.Fatalf("a listening join: %+v, %v", where, err)
+	}
+	qr := phone.JoinQR(phone.JoinCode{Code: "246802", Addrs: where.Addrs, Fingerprint: where.Fingerprint})
 	joined := make(chan error, 1)
 	go func() {
-		_, err := laptop.do(t, control.Header{Op: control.OpJoin, Code: "246802", Expires: 60}, "")
+		_, err := lc.Receive()
 		joined <- err
 	}()
 	admit := func(token, code string) map[string]any {
@@ -1115,10 +1127,13 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		json.NewDecoder(resp.Body).Decode(&rep)
 		return rep
 	}
-	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "clipbridge://join?code=246802"); rep["direction"] != "unpaired" {
+	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", qr); rep["direction"] != "unpaired" {
 		t.Errorf("a forged token: %v", rep)
 	}
-	if rep := admit(paired.Token, "clipbridge://join?code=246802"); rep["direction"] != "none" {
+	if rep := admit(paired.Token, "clipbridge://join?code=246802"); rep["direction"] != "error" {
+		t.Errorf("a QR code without an address: %v", rep)
+	}
+	if rep := admit(paired.Token, qr); rep["direction"] != "none" {
 		t.Fatalf("admit: %v", rep)
 	}
 	select {

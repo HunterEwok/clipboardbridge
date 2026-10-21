@@ -8,13 +8,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/group"
@@ -27,6 +30,10 @@ type Joiner struct {
 	Key  *ecdsa.PrivateKey
 	Info Info
 	Now  func() time.Time // time.Now if nil
+
+	certOnce sync.Once
+	certDER  []byte // the self-signed certificate for Key, made once
+	certErr  error
 }
 
 // NewJoiner returns a joiner with a new device ID and key.
@@ -48,46 +55,94 @@ func (j *Joiner) now() time.Time {
 	return time.Now()
 }
 
-// clientTLSVerifiedByCPace returns the joiner's TLS configuration. The
-// joiner cannot check the member's certificate during the handshake, since
-// it does not know the group CA yet: the CPace exchange, bound to this TLS
-// session and to the member's certificate, authenticates the member, and
-// Join checks the certificate against the group CA it receives.
-func (j *Joiner) clientTLSVerifiedByCPace() (*tls.Config, error) {
-	tmpl := &x509.Certificate{
-		Subject:   pkix.Name{CommonName: string(j.ID)},
-		NotBefore: time.Unix(0, 0),
-		NotAfter:  time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &j.Key.PublicKey, j.Key)
+// cert returns the joiner's self-signed certificate for its key, the same
+// on every call: it is what the QR code's fingerprint names.
+func (j *Joiner) cert() ([]byte, error) {
+	j.certOnce.Do(func() {
+		tmpl := &x509.Certificate{
+			Subject:   pkix.Name{CommonName: string(j.ID)},
+			NotBefore: time.Unix(0, 0),
+			NotAfter:  time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
+		}
+		j.certDER, j.certErr = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &j.Key.PublicKey, j.Key)
+	})
+	return j.certDER, j.certErr
+}
+
+// tlsConfigVerifiedByCPace returns the joiner's TLS configuration, for
+// either end of the connection. The joiner cannot check the member's
+// certificate during the handshake, since it does not know the group CA
+// yet: the CPace exchange, bound to this TLS session and to the member's
+// certificate, authenticates the member, and the joiner checks the
+// certificate against the group CA it receives.
+func (j *Joiner) tlsConfigVerifiedByCPace() (*tls.Config, error) {
+	der, err := j.cert()
 	if err != nil {
 		return nil, err
 	}
 	return &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		Certificates:       []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: j.Key}},
-		InsecureSkipVerify: true,
-		NextProtos:         []string{Protocol},
+		MinVersion:             tls.VersionTLS13,
+		Certificates:           []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: j.Key}},
+		InsecureSkipVerify:     true,
+		ClientAuth:             tls.RequireAnyClientCert,
+		NextProtos:             []string{Protocol},
+		SessionTicketsDisabled: true,
 	}, nil
 }
 
-// Join runs the joining side of a pairing over conn, a connection to the
-// member's port, with the code the user typed. It checks what the member
-// sends, builds the device's new identity, calls save with it, and tells
-// the member whether that worked.
+// Fingerprint returns the fingerprint of the joiner's certificate that a
+// member dialing the joiner checks: SHA-256 over the DER, in base64url
+// without padding.
+func (j *Joiner) Fingerprint() (string, error) {
+	der, err := j.cert()
+	if err != nil {
+		return "", err
+	}
+	return CertFingerprint(der), nil
+}
+
+// CertFingerprint returns the fingerprint of a certificate in the form a
+// join QR code carries: SHA-256 over the DER, in base64url without padding.
+func CertFingerprint(der []byte) string {
+	sum := sha256.Sum256(der)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// Join runs the joining side of a pairing over conn, a connection the
+// joiner dialed to the member's port, with the code the user typed. It
+// checks what the member sends, builds the device's new identity, calls
+// save with it, and tells the member whether that worked.
 func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func(*group.Identity) error) (*group.Identity, error) {
+	cfg, err := j.tlsConfigVerifiedByCPace()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return j.join(ctx, tls.Client(conn, cfg), code, false, save)
+}
+
+// Accept runs the joining side of a pairing over conn, a connection that a
+// member dialed to the joiner, which listens and showed its address and
+// Fingerprint in the QR code. The member, which dialed, confirms the key
+// first, so the joiner reveals nothing to a device that does not know the
+// code: a failed attempt is never Spent, and the joiner may take another.
+func (j *Joiner) Accept(ctx context.Context, conn net.Conn, code string, save func(*group.Identity) error) (*group.Identity, error) {
+	cfg, err := j.tlsConfigVerifiedByCPace()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return j.join(ctx, tls.Server(conn, cfg), code, true, save)
+}
+
+// join runs the exchange. With memberFirst the member confirms the key
+// before the joiner does.
+func (j *Joiner) join(ctx context.Context, tc *tls.Conn, code string, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
+	defer tc.Close()
 	code, err := NormalizeCode(code)
 	if err != nil {
-		conn.Close()
 		return nil, err
 	}
-	cfg, err := j.clientTLSVerifiedByCPace()
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	tc := tls.Client(conn, cfg)
-	defer tc.Close()
 	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { tc.SetDeadline(time.Unix(1, 0)) })
@@ -100,7 +155,11 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 		return nil, errors.New("pair: the device does not offer pairing")
 	}
 	memberCert := cs.PeerCertificates[0]
-	ci, sid, err := binding(cs, memberCert.Raw, cfg.Certificates[0].Certificate[0])
+	own, err := j.cert()
+	if err != nil {
+		return nil, err
+	}
+	ci, sid, err := binding(cs, memberCert.Raw, own)
 	if err != nil {
 		return nil, err
 	}
@@ -129,19 +188,29 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 	if err := json.Unmarshal(reply.AD, &member); err != nil {
 		return nil, err
 	}
-	// From here on the other side can check a guess of the code.
+	// spent marks an error after the joiner's tag went out, from which on
+	// the other side can check a guess of the code; when the member
+	// confirmed first, it already proved that it knows the code.
+	spent := func(err error) error { return &spentError{err} }
+	if memberFirst {
+		if err := st.Verify(reply.Tag); err != nil {
+			writeFrame(tc, &frame{Error: codeOf(ErrWrongCode)})
+			return nil, ErrWrongCode
+		}
+		spent = func(err error) error { return err }
+	}
 	if err := writeFrame(tc, &frame{Tag: st.Tag()}); err != nil {
-		return nil, &spentError{err}
+		return nil, spent(err)
 	}
 	final, err := readFrame(tc)
 	if err != nil {
-		return nil, &spentError{err}
+		return nil, spent(err)
 	}
 	if final.Error != "" {
-		return nil, &spentError{errorOf(final.Error)}
+		return nil, spent(errorOf(final.Error))
 	}
-	if err := st.Verify(final.Tag); err != nil || final.Welcome == nil {
-		return nil, &spentError{errors.New("pair: the other device did not prove that it knows the code")}
+	if !memberFirst && st.Verify(final.Tag) != nil || final.Welcome == nil {
+		return nil, spent(errors.New("pair: the other device did not prove that it knows the code"))
 	}
 	id, err := j.identity(final.Welcome, memberCert, member)
 	if err == nil {
@@ -149,7 +218,7 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 	}
 	if err != nil {
 		writeFrame(tc, &frame{Error: "refused"})
-		return nil, &spentError{err}
+		return nil, spent(err)
 	}
 	// The identity is stored, and the member admitted the device when it
 	// sent the welcome, whether or not it hears this.

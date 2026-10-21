@@ -373,7 +373,7 @@ func TestBusy(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
 	j := newJoiner(t, "darwin")
-	cfg, err := j.clientTLSVerifiedByCPace()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestRelay(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			j := newJoiner(t, "linux")
-			joinerCfg, err := j.clientTLSVerifiedByCPace()
+			joinerCfg, err := j.tlsConfigVerifiedByCPace()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -472,7 +472,7 @@ func TestRelay(t *testing.T) {
 				t.Fatal(err)
 			}
 			serverCert := tls.Certificate{Certificate: [][]byte{mitm.Cert.Raw}, PrivateKey: mitm.Key}
-			toMember, err := (&Joiner{ID: group.NewDeviceID(), Key: mitm.Key}).clientTLSVerifiedByCPace()
+			toMember, err := (&Joiner{ID: group.NewDeviceID(), Key: mitm.Key}).tlsConfigVerifiedByCPace()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -508,7 +508,7 @@ func TestBinding(t *testing.T) {
 	// session identifier is the TLS exporter.
 	f := newFixture(t)
 	a, b := socketPair(t)
-	cfg, err := newJoiner(t, "darwin").clientTLSVerifiedByCPace()
+	cfg, err := newJoiner(t, "darwin").tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func startRaw(t *testing.T, f *fixture, info Info, code string) (*rawJoiner, cha
 	a, b := socketPair(t)
 	served := make(chan error, 1)
 	go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
-	cfg, err := j.clientTLSVerifiedByCPace()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +704,7 @@ func TestWhatTheMemberSends(t *testing.T) {
 func TestServerTLSRejects(t *testing.T) {
 	f := newFixture(t)
 	j := newJoiner(t, "darwin")
-	good, err := j.clientTLSVerifiedByCPace()
+	good, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -879,5 +879,87 @@ func TestOpenNeedsCAKeys(t *testing.T) {
 	}
 	if _, err := Open(admin, "12345", Options{}); err == nil {
 		t.Error("opened a window with a five-digit code")
+	}
+}
+
+// dial runs one attempt in which the fixture's window dials a listening
+// joiner, which checks code; fp is the fingerprint the member expects.
+func (f *fixture) dial(t *testing.T, j *Joiner, code, fp string) outcome {
+	t.Helper()
+	a, b := socketPair(t)
+	var out outcome
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		out.serveErr = f.window.Dial(context.Background(), b, fp)
+	}()
+	out.id, out.joinErr = j.Accept(context.Background(), a, code, func(*group.Identity) error {
+		out.savedCalls++
+		return nil
+	})
+	a.Close()
+	<-done
+	return out
+}
+
+func TestDialAListeningJoiner(t *testing.T) {
+	for _, os := range []string{"darwin", "linux"} {
+		t.Run(os, func(t *testing.T) {
+			f := newFixture(t)
+			j := newJoiner(t, os)
+			fp, err := j.Fingerprint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := f.dial(t, j, f.code, fp)
+			if out.joinErr != nil || out.serveErr != nil || out.savedCalls != 1 {
+				t.Fatalf("join %v, serve %v, saved %d", out.joinErr, out.serveErr, out.savedCalls)
+			}
+			if err := out.id.Check(); err != nil || out.id.Admin() != (os == "linux") {
+				t.Errorf("the new identity: %v, admin %v", err, out.id.Admin())
+			}
+			if res, err := f.window.Result(); err != nil || res.Device != j.ID || !res.Confirmed {
+				t.Errorf("Result = %+v, %v", res, err)
+			}
+		})
+	}
+}
+
+func TestDialChecksTheFingerprint(t *testing.T) {
+	f := newFixture(t)
+	j, other := newJoiner(t, "darwin"), newJoiner(t, "darwin")
+	fp, err := other.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := f.dial(t, j, f.code, fp)
+	if out.serveErr == nil || out.joinErr == nil || out.savedCalls != 0 {
+		t.Fatalf("a device with another certificate paired: join %v, serve %v", out.joinErr, out.serveErr)
+	}
+	if f.failures() != 0 || closed(f.window) {
+		t.Errorf("the handshake failure counted: %d failures, closed %v", f.failures(), closed(f.window))
+	}
+}
+
+func TestListeningJoinerRevealsNothing(t *testing.T) {
+	// A member that does not know the code gets the joiner's refusal and
+	// no tag: the attempt is not spent, the joiner keeps listening, and
+	// the real member admits it afterwards with the same code.
+	f := newFixture(t)
+	j := newJoiner(t, "darwin")
+	fp, err := j.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	impostor := newFixture(t) // another group, with another code
+	out := impostor.dial(t, j, f.code, fp)
+	if !errors.Is(out.joinErr, ErrWrongCode) || Spent(out.joinErr) || out.savedCalls != 0 {
+		t.Fatalf("join with the impostor: %v (spent %v)", out.joinErr, Spent(out.joinErr))
+	}
+	if !errors.Is(out.serveErr, ErrWrongCode) || impostor.failures() != 1 {
+		t.Errorf("the impostor's window: %v, %d failures", out.serveErr, impostor.failures())
+	}
+	if out := f.dial(t, j, f.code, fp); out.joinErr != nil || out.serveErr != nil {
+		t.Fatalf("the real member after the impostor: join %v, serve %v", out.joinErr, out.serveErr)
 	}
 }

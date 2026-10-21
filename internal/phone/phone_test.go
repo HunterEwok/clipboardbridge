@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -226,9 +227,9 @@ func TestAdmit(t *testing.T) {
 	ca := newCA(t)
 	tok, _, _ := NewToken(ca)
 	otherTok, _, _ := NewToken(newCA(t))
-	var admitted []string
-	h := AdmitHandler(func() *group.CA { return ca }, func(code string) error {
-		admitted = append(admitted, code)
+	var admitted []JoinCode
+	h := AdmitHandler(func() *group.CA { return ca }, func(jc JoinCode) error {
+		admitted = append(admitted, jc)
 		return nil
 	})
 	post := func(token, body string) syncReply {
@@ -245,7 +246,8 @@ func TestAdmit(t *testing.T) {
 		}
 		return rep
 	}
-	qr := `{"v":1,"code":"` + JoinQR("123456") + `"}`
+	jc := JoinCode{Code: "123456", Addrs: []string{"192.168.1.20:40123"}, Fingerprint: "abc"}
+	qr := `{"v":1,"code":"` + JoinQR(jc) + `"}`
 	if rep := post("", qr); rep.Direction != "unpaired" {
 		t.Errorf("no token: %+v", rep)
 	}
@@ -258,28 +260,33 @@ func TestAdmit(t *testing.T) {
 	if len(admitted) != 0 {
 		t.Fatalf("admitted %v without a valid request", admitted)
 	}
-	if rep := post(tok, qr); rep.Direction != "none" || len(admitted) != 1 || admitted[0] != "123456" {
+	if rep := post(tok, qr); rep.Direction != "none" || len(admitted) != 1 || !reflect.DeepEqual(admitted[0], jc) {
 		t.Errorf("a valid request: %+v, admitted %v", rep, admitted)
 	}
 }
 
 func TestJoinQR(t *testing.T) {
-	if got := JoinQR("012345"); got != "clipbridge://join?code=012345" {
+	if got := JoinQR(JoinCode{Code: "012345"}); got != "clipbridge://join?code=012345" {
 		t.Errorf("JoinQR = %q", got)
 	}
-	for in, want := range map[string]string{
-		JoinQR("246802"):                              "246802",
-		" clipbridge://join?code=135790\n":            "135790",
-		"CLIPBRIDGE://JOIN?code=111111":               "111111",
-		"clipbridge://join?code=222222&addr=10.0.0.2": "222222",
+	full := JoinCode{Code: "246802", Addrs: []string{"192.168.1.20:40123", "[fd00::5]:40123"}, Fingerprint: "q83vEjRWeJA"}
+	if got := JoinQR(full); !strings.HasPrefix(got, "clipbridge://join?code=246802&") {
+		t.Errorf("JoinQR = %q", got)
+	}
+	for in, want := range map[string]JoinCode{
+		JoinQR(full):                                      full,
+		" clipbridge://join?code=135790\n":                {Code: "135790"},
+		"CLIPBRIDGE://JOIN?code=111111":                   {Code: "111111"},
+		"clipbridge://join?code=222222&addr=10.0.0.2&x=1": {Code: "222222"}, // no port
+		"clipbridge://join?code=3&addr=a:1&addr=b:1&addr=c:1&addr=d:1&addr=e:1": {Code: "3", Addrs: []string{"a:1", "b:1", "c:1", "d:1"}},
 	} {
-		if code, ok := ParseJoinQR(in); !ok || code != want {
-			t.Errorf("ParseJoinQR(%q) = %q, %v", in, code, ok)
+		if jc, ok := ParseJoinQR(in); !ok || !reflect.DeepEqual(jc, want) {
+			t.Errorf("ParseJoinQR(%q) = %+v, %v", in, jc, ok)
 		}
 	}
 	for _, in := range []string{"", "123456", "clipbridge-join:123456", "clipbridge://pair?code=1", "clipbridge://join", "https://join/?code=1"} {
-		if code, ok := ParseJoinQR(in); ok {
-			t.Errorf("ParseJoinQR(%q) = %q, true", in, code)
+		if jc, ok := ParseJoinQR(in); ok {
+			t.Errorf("ParseJoinQR(%q) = %+v, true", in, jc)
 		}
 	}
 }

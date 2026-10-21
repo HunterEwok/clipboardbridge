@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -106,10 +107,10 @@ type admitRequest struct {
 }
 
 // AdmitHandler serves POST /admit: a paired phone, the group's main
-// device, asks the member to admit a computer with the code that the
-// computer shows. ca returns the iPhone CA; admit opens the window.
+// device, asks the member to admit a computer with what the computer's QR
+// code carries. ca returns the iPhone CA; admit starts the pairing.
 // Answers come with status 200 and JSON, as for /sync.
-func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handler {
+func AdmitHandler(ca func() *group.CA, admit func(JoinCode) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reply := func(rep syncReply) {
 			rep.V = 1
@@ -131,12 +132,12 @@ func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handl
 			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipbridge; install it again"})
 			return
 		}
-		code, ok := ParseJoinQR(req.Code)
+		jc, ok := ParseJoinQR(req.Code)
 		if !ok {
 			reply(syncReply{Direction: "error", Message: "this is not the QR code of clipbridge join"})
 			return
 		}
-		if err := admit(code); err != nil {
+		if err := admit(jc); err != nil {
 			reply(syncReply{Direction: "error", Message: "the computer could not be added: " + err.Error()})
 			return
 		}
@@ -144,23 +145,54 @@ func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handl
 	})
 }
 
-// JoinQR returns the text of the QR code that clipbridge join shows: a URL,
-// clipbridge://join?code=123456, so that the shortcut and the phone apps
-// read the same code, and later fields (the computer's address) can be
-// added without breaking either.
-func JoinQR(code string) string {
-	return (&url.URL{Scheme: "clipbridge", Host: "join", RawQuery: url.Values{"code": {code}}.Encode()}).String()
+// A JoinCode is what the QR code of clipbridge join carries: the code, the
+// addresses where the joining computer listens, and the fingerprint of its
+// certificate (pair.CertFingerprint).
+type JoinCode struct {
+	Code        string
+	Addrs       []string // host:port, best first
+	Fingerprint string
 }
 
-// ParseJoinQR returns the code in the text of a join QR code, and whether
-// the text is one. Unknown query fields are ignored.
-func ParseJoinQR(s string) (code string, ok bool) {
+// maxJoinAddrs bounds the addresses a member dials for one QR code.
+const maxJoinAddrs = 4
+
+// JoinQR returns the text of the QR code that clipbridge join shows: a URL,
+// clipbridge://join?code=123456&addr=192.168.1.20:40123&fp=…, which the
+// shortcut and the phone apps read alike; later fields can be added without
+// breaking either.
+func JoinQR(jc JoinCode) string {
+	q := url.Values{}
+	if len(jc.Addrs) > 0 {
+		q["addr"] = jc.Addrs
+	}
+	if jc.Fingerprint != "" {
+		q.Set("fp", jc.Fingerprint)
+	}
+	// The code goes first, so a person reading the text sees it at once.
+	text := "clipbridge://join?code=" + url.QueryEscape(jc.Code)
+	if len(q) > 0 {
+		text += "&" + q.Encode()
+	}
+	return text
+}
+
+// ParseJoinQR returns what the text of a join QR code carries, and whether
+// the text is one. Unknown query fields are ignored, and at most four
+// addresses are kept.
+func ParseJoinQR(s string) (JoinCode, bool) {
 	u, err := url.Parse(strings.TrimSpace(s))
 	if err != nil || !strings.EqualFold(u.Scheme, "clipbridge") || !strings.EqualFold(u.Host, "join") {
-		return "", false
+		return JoinCode{}, false
 	}
-	code = u.Query().Get("code")
-	return code, code != ""
+	q := u.Query()
+	jc := JoinCode{Code: q.Get("code"), Fingerprint: q.Get("fp")}
+	for _, a := range q["addr"] {
+		if _, _, err := net.SplitHostPort(a); err == nil && len(jc.Addrs) < maxJoinAddrs {
+			jc.Addrs = append(jc.Addrs, a)
+		}
+	}
+	return jc, jc.Code != ""
 }
 
 // bearer returns the token of an Authorization header: "Bearer cb1.…" in

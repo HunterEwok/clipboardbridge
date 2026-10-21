@@ -459,6 +459,54 @@ The order may change.
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
     Rust member among Go members.
+12. Sync away from home; see "Sync away from home (planned)" below.
+
+## Sync away from home (planned)
+
+The group's certificates stay the only identity of devices, and every text stays end to end
+encrypted between the members; nothing below may change that.
+
+1. **By address.** Members configured by address, for example the home Linux member's address
+   in a WireGuard or Tailscale/Headscale network, where mDNS does not reach, and a guide for
+   such a VPN. No server of ours; data goes straight between the user's devices.
+2. **A relay, self-hosted or offered as a free service.** `clipbridge relay` is one small
+   program that the user runs (on the home Linux member with a forwarded port, or a small
+   server), or that an operator runs for anyone, free of charge. A member keeps one outgoing
+   connection to it and asks to be joined to another member of its group by device ID; the
+   relay then splices the two byte streams. The member protocol runs inside, unchanged: the
+   members' own mutual TLS 1.3 with their member certificates, so the relay sees only
+   ciphertext and needs no keys. It learns device IDs, group tags, addresses and traffic
+   timing, never a text.
+3. **No accounts.** A member presents its member certificate with the group CA certificate
+   to the relay; the relay checks the signature and knows the group by its tag, the hash of
+   the CA certificate. A group needs no registration, and the relay stores nothing on disk:
+   its state is the open connections. Abuse is bounded by limits, not by identities: devices
+   per group (16), connections per address, the size of a frame (as in the member protocol)
+   and bytes per group per minute, and idle connections closed. A private relay can instead
+   admit only the group tags in its configuration. Admitting devices stays with the group's
+   own CA (the phone, in the target architecture); the relay can add nobody.
+4. **Waking a closed iPhone app** needs Apple push notifications, which only a server with
+   the developer account's key can send. The relay can send a silent push carrying nothing
+   but "connect" to a phone it holds a push token for; it comes last, if at all.
+5. **Messages for members that are off** (the relay keeping the latest event for a phone that
+   comes back) need encryption to each member's key, since the relay must not read them; to
+   be designed when needed. Without it, a returning member gets the current text from the
+   first member it meets, as at home.
+
+Cost estimates for the relay (Go, a goroutine and two buffers per spliced connection):
+
+- On the devices: one more TLS connection and its pings, a few hundred KiB of memory, no
+  measurable CPU; each text takes the round trip to the relay (tens of milliseconds) instead
+  of the home network's.
+- On the relay: roughly 50 to 100 KiB of memory per connected device, so 10 000 devices in
+  about 0.5 to 1 GiB; almost no CPU, since it only copies ciphertext (its own TLS handshake
+  per connection aside); traffic is the texts themselves plus pings, which a relay link
+  should send less often than the 5 s of the home network, to spare phone batteries and the
+  relay. A small virtual server serves thousands of users.
+
+So the architecture needs no change now: members already run the member protocol over any
+connection (`node.Serve` takes a connected TLS session), and only the dialing and the relay
+are new.
 
 ## Target architecture with the phone apps
 
@@ -470,9 +518,11 @@ app can do all four, and then the phone becomes the root of the group:
   (Android): a P-256 key that cannot be exported. Only the phone issues member
   certificates; no computer holds CA keys, so a stolen computer cannot add devices.
 - The first computer joins the phone, not the other way round: `clipbridge join` shows a
-  QR code with its address and a fresh code and listens; the app scans it, dials the
-  computer and runs CPace with that code, with the phone in the admitting role, then issues
-  its certificate. No profile and no fingerprint check: the app trusts its own group's CA.
+  QR code with its addresses, its certificate fingerprint and a fresh code, and listens
+  (already so today, for the shortcut); the app scans it, dials the computer, checks the
+  fingerprint and runs CPace with that code, with the phone in the admitting role, then
+  issues its certificate. No profile for the user to check: the app trusts its own group's
+  CA.
 - Every computer is then a member without CA keys, as a Mac is today; Linux members still
   publish, hold `clipbridge.local` and serve the app and the shortcut. A lite member (Rust)
   fits the same role.

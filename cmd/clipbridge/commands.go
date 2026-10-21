@@ -250,23 +250,34 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else {
 		h.Code = pair.NewCode()
 		h.Expires = int(pair.Lifetime / time.Second)
+		h.Listen = true
 	}
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
 	}
 	defer c.Close()
+	m, err := c.Do(&control.Message{Header: h})
+	if err != nil {
+		return fail(stderr, err)
+	}
 	if !*typed {
+		// The service listens and answers first with where, for the QR
+		// code, then once more when the join ends.
+		if len(m.Addrs) == 0 {
+			return fail(stderr, errors.New("this device has no address on the home network; connect it to the network, or use clipbridge join -code"))
+		}
 		fmt.Fprintln(stdout, "On the iPhone, run the shortcut \"clipbridge: add a computer\" and scan this:")
 		fmt.Fprintln(stdout)
-		if err := writeQR(stdout, phone.JoinQR(h.Code)); err != nil {
+		jc := phone.JoinCode{Code: h.Code, Addrs: m.Addrs, Fingerprint: m.Fingerprint}
+		if err := writeQR(stdout, phone.JoinQR(jc)); err != nil {
 			return fail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
 		fmt.Fprintln(stdout, "Without a phone: run clipbridge pair on a Linux member and clipbridge join -code here.")
-	}
-	if _, err := c.Do(&control.Message{Header: h}); err != nil {
-		return fail(stderr, err)
+		if _, err := c.Receive(); err != nil {
+			return fail(stderr, err)
+		}
 	}
 	fmt.Fprintln(stdout, "Joined the group.")
 	return 0

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/mdns"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
+	"github.com/HunterEwok/clipbridge/internal/phone"
 	"github.com/HunterEwok/clipbridge/internal/version"
 )
 
@@ -205,7 +207,7 @@ func (s *Service) status() *control.Status {
 // closes the window. On a Linux device in no group, it creates the group
 // first.
 func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
-	w, _, end, err := s.openWindow(pair.NewCode(), true)
+	w, _, end, err := s.openWindow(pair.NewCode(), true, true)
 	if err != nil {
 		fail(c, err)
 		return
@@ -238,14 +240,17 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 
 // openWindow reserves the pairing window and opens it with code. On a
 // Linux device in no group it first creates the group, when create is set.
-// end closes the window and frees it; it may be called more than once, and
-// runs before the last answer to a client, so it can pair again at once.
-func (s *Service) openWindow(code string, create bool) (*pair.Window, *group.Identity, func(), error) {
+// With announce, the window is published and takes pairing connections on
+// the member port; without, it only serves the member's own dials to a
+// listening joiner. end closes the window and frees it; it may be called
+// more than once, and runs before the last answer to a client, so it can
+// pair again at once.
+func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, *group.Identity, func(), error) {
 	if s.cfg.Role != node.Linux {
 		return nil, nil, nil, errors.New("only a Linux member can admit devices; run clipbridge pair on one")
 	}
 	s.mu.Lock()
-	id, busy, joining := s.id, s.window != nil || s.opening, s.joining
+	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
 	if !busy && !joining {
 		s.opening = true
 	}
@@ -271,6 +276,9 @@ func (s *Service) openWindow(code string, create bool) (*pair.Window, *group.Ide
 			s.window = nil
 			s.responder.SetTXT(s.txtLocked())
 		}
+		if s.dialWindow != nil && s.dialWindow == w {
+			s.dialWindow = nil
+		}
 		s.opening = false
 		s.mu.Unlock()
 	}
@@ -292,8 +300,13 @@ func (s *Service) openWindow(code string, create bool) (*pair.Window, *group.Ide
 	}
 	w = opened
 	s.mu.Lock()
-	s.window, s.opening = w, false
-	s.responder.SetTXT(s.txtLocked())
+	if announce {
+		s.window = w
+		s.responder.SetTXT(s.txtLocked())
+	} else {
+		s.dialWindow = w
+	}
+	s.opening = false
 	s.mu.Unlock()
 	return w, id, end, nil
 }
@@ -339,26 +352,60 @@ func (s *Service) windowResult(w *pair.Window) (*pair.Result, error) {
 	return res, nil
 }
 
-// admit opens a pairing window with a code that a paired phone read from
-// the joining computer's screen, and closes it when it ends. The phone's
-// token is the authority: the phone is the main device of the group.
-func (s *Service) admit(code string) error {
-	if _, err := pair.NormalizeCode(code); err != nil {
+// admit adds a computer whose QR code a paired phone scanned: it dials the
+// addresses in it and pairs with the computer that has the certificate the
+// QR code names. The phone's token is the authority: the phone is the main
+// device of the group. The window is not announced and takes no pairing
+// connections, so the code is good only against that computer.
+func (s *Service) admit(jc phone.JoinCode) error {
+	if _, err := pair.NormalizeCode(jc.Code); err != nil {
 		return err
 	}
-	w, _, end, err := s.openWindow(code, false)
+	if len(jc.Addrs) == 0 || jc.Fingerprint == "" {
+		return errors.New("the QR code is from an older clipbridge; update clipbridge on the computer")
+	}
+	w, _, end, err := s.openWindow(jc.Code, false, false)
 	if err != nil {
 		return err
 	}
-	s.logf("clipbridge: the iPhone opened a pairing window for a new computer")
+	s.logf("clipbridge: the iPhone asked to add a computer at %s", strings.Join(jc.Addrs, ", "))
 	go func() {
-		<-w.Done()
+		defer end()
+		ctx, cancel := context.WithTimeout(context.Background(), joinTimeout)
+		defer cancel()
+		stop := context.AfterFunc(ctx, w.Close)
+		defer stop()
+		var lastErr error
+		for _, addr := range jc.Addrs {
+			d := net.Dialer{Timeout: handshakeTimeout}
+			raw, err := d.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if lastErr = w.Dial(ctx, raw, jc.Fingerprint); closed(w) {
+				break
+			}
+		}
+		if !closed(w) {
+			s.logf("clipbridge: adding a computer from the iPhone: %v", lastErr)
+			return
+		}
 		if _, err := s.windowResult(w); err != nil {
 			s.logf("clipbridge: adding a computer from the iPhone: %v", err)
 		}
-		end()
 	}()
 	return nil
+}
+
+// closed reports whether a window has closed.
+func closed(w *pair.Window) bool {
+	select {
+	case <-w.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 // localAddress returns an address of this member that a joining device can
@@ -381,12 +428,11 @@ func localAddress(port uint16) string {
 // joinTimeout bounds a whole join: browsing, dialing and the attempt.
 const joinTimeout = 2 * time.Minute
 
-// join joins a group with a code: at the address the user gave, or at the
-// one Linux member that announces an open pairing window. It tries that
-// member's addresses until one answers, and stops after the first attempt
-// in which the other side could check the code, so a device on the network
-// that only pretends to pair gets one guess at most. A client that hangs up
-// cancels the join.
+// join joins a group with a code. With Listen it waits for a member to dial
+// this device, at the addresses and with the certificate it answers with
+// first, for the QR code; otherwise it dials the address the user gave, or
+// the one Linux member that announces an open pairing window. A client that
+// hangs up cancels the join.
 func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *control.Message) {
 	code, err := pair.NormalizeCode(m.Code)
 	if err != nil {
@@ -419,17 +465,14 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		}
 	}
 	defer end()
-	abort := func(err error) {
-		end()
-		fail(c, err)
+	wait := joinTimeout + s.cfg.browseFor
+	if m.Listen {
+		wait = pair.Lifetime
+		if m.Expires > 0 {
+			wait = min(time.Duration(m.Expires)*time.Second, wait)
+		}
 	}
-	// A computer that waits for the phone to scan its code browses for
-	// the window for as long as the client asked, up to a window's lifetime.
-	browse := s.cfg.browseFor
-	if m.Expires > 0 {
-		browse = min(time.Duration(m.Expires)*time.Second, pair.Lifetime)
-	}
-	ctx, cancel := context.WithTimeout(ctx, joinTimeout+browse)
+	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	go func() {
 		r.Read() // returns when the client hangs up, or when the join ends
@@ -443,14 +486,40 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 	}
 	j, err := pair.NewJoiner(pair.Info{Name: s.cfg.Name, OS: osName})
 	if err != nil {
-		abort(err)
+		end()
+		fail(c, err)
 		return
 	}
-	addrs := []string{m.Address}
-	if m.Address == "" {
-		if addrs, err = s.findPairing(ctx, browse); err != nil {
-			abort(err)
-			return
+	var id *group.Identity
+	if m.Listen {
+		id, err = s.listenForMember(ctx, c, j, code)
+	} else {
+		id, err = s.dialMember(ctx, j, code, m.Address)
+	}
+	if err == nil {
+		err = s.startGroup(id)
+	}
+	end()
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	reply(c, control.Header{Done: true}, nil)
+}
+
+func (s *Service) saveIdentity(id *group.Identity) error { return id.Save(s.cfg.StateDir) }
+
+// dialMember joins at the address the user gave, or at the one member that
+// announces an open pairing window. It tries that member's addresses until
+// one answers, and stops after the first attempt in which the other side
+// could check the code, so a device on the network that only pretends to
+// pair gets one guess at most.
+func (s *Service) dialMember(ctx context.Context, j *pair.Joiner, code, address string) (*group.Identity, error) {
+	addrs := []string{address}
+	if address == "" {
+		var err error
+		if addrs, err = s.findPairing(ctx, s.cfg.browseFor); err != nil {
+			return nil, err
 		}
 	}
 	var lastErr error
@@ -464,26 +533,100 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 			lastErr = err
 			continue
 		}
-		id, err := j.Join(ctx, raw, code, func(id *group.Identity) error { return id.Save(s.cfg.StateDir) })
+		id, err := j.Join(ctx, raw, code, s.saveIdentity)
+		if err == nil {
+			return id, nil
+		}
+		if ctx.Err() != nil {
+			err = fmt.Errorf("the join was cancelled or took too long: %w", err)
+		}
+		lastErr = err
+		if pair.Spent(err) || ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, lastErr
+}
+
+// listenForMember waits for a member, or a phone, to dial this device and
+// admit it. It first answers the client with the addresses it listens at and
+// the fingerprint of the joiner's certificate, for the QR code. Only devices
+// on the home network may connect, one attempt at a time; the member
+// confirms the code first, so a wrong attempt reveals nothing, and the join
+// ends after three of them.
+func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joiner, code string) (*group.Identity, error) {
+	fp, err := j.Fingerprint()
+	if err != nil {
+		return nil, err
+	}
+	ln, err := s.cfg.joinListen()
+	if err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { ln.Close() })
+	defer stop()
+	defer ln.Close()
+	port := uint16(ln.Addr().(*net.TCPAddr).Port)
+	reply(c, control.Header{Addrs: s.cfg.joinAddrs(port), Fingerprint: fp}, nil)
+	failures := 0
+	for {
+		raw, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				err = fmt.Errorf("the join was cancelled or took too long: %w", err)
+				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run clipbridge pair on a Linux member and clipbridge join -code here")
 			}
-			lastErr = err
-			if pair.Spent(err) || ctx.Err() != nil {
-				break
-			}
+			return nil, err
+		}
+		ap, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
+		if !mdns.Published(ap.Addr()) && !ap.Addr().Unmap().IsLoopback() {
+			raw.Close()
 			continue
 		}
-		if err := s.startGroup(id); err != nil {
-			abort(err)
-			return
+		id, err := j.Accept(ctx, raw, code, s.saveIdentity)
+		if err == nil {
+			return id, nil
 		}
-		end()
-		reply(c, control.Header{Done: true}, nil)
-		return
+		s.logf("clipbridge: a pairing attempt from %s failed: %v", ap.Addr(), err)
+		switch {
+		case ctx.Err() != nil:
+			return nil, fmt.Errorf("the join was cancelled or took too long: %w", err)
+		case pair.Spent(err):
+			return nil, err // the welcome came, but saving failed
+		case errors.Is(err, pair.ErrWrongCode):
+			if failures++; failures >= pair.MaxFailures {
+				return nil, pair.ErrTooMany
+			}
+		}
 	}
-	abort(lastErr)
+}
+
+// joinAddresses returns where a listening join can be reached: the
+// addresses mDNS would publish, IPv4 first, at most four.
+func joinAddresses(port uint16) []string {
+	ifaddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var v4, v6 []string
+	for _, a := range ifaddrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip, ok := netip.AddrFromSlice(ipn.IP)
+		// Link-local addresses need a zone, which a QR code cannot carry.
+		if !ok || !mdns.Published(ip) || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		hp := netip.AddrPortFrom(ip.Unmap(), port).String()
+		if ip.Unmap().Is4() {
+			v4 = append(v4, hp)
+		} else {
+			v6 = append(v6, hp)
+		}
+	}
+	all := append(v4, v6...)
+	return all[:min(len(all), 4)]
 }
 
 // findPairing returns the addresses of the one member that announces an
