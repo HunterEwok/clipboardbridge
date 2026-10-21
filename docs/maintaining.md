@@ -78,6 +78,10 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 - **e2e**: the built binary as three members and an avahi resolver in Docker containers:
   pairing, sync, the holder of `clipbridge.local` and its handover, a wrong code
   ([tools/e2e/e2e.sh](../tools/e2e/e2e.sh));
+- **desktop clipboards**: the Wayland data-control client under a headless sway and the X11
+  client under Xvfb, against wl-clipboard and xclip;
+- **packaging**: shellcheck for the scripts, `systemd-analyze verify` and `security` for the
+  unit, and the desktop entry;
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:
