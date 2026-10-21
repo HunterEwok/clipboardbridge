@@ -21,7 +21,8 @@ Pull requests from forks are closed without review.
 The maintainer follows these rules; they are written down to keep the history consistent.
 
 - **English only** in code, comments, documentation, commit messages and issues.
-- **License header.** Every Go file, except generated code, starts with:
+- **License header.** Every Go file, except generated code and code copied from other
+  projects, starts with:
 
   ```go
   // SPDX-License-Identifier: AGPL-3.0-only
@@ -29,6 +30,10 @@ The maintainer follows these rules; they are written down to keep the history co
   ```
 
   Scripts and other source files start with the same two lines in their own comment style.
+
+- **Copied code** lives in its own directory below `internal/third_party`, with its
+  `LICENSE` and a `README.md` that names the source and version; its files keep their own
+  copyright notices.
 
 - **Pull requests.** Every change goes into `main` through a pull request and is merged with
   squash. `main` is protected.
@@ -55,7 +60,7 @@ go vet ./...
 go tool staticcheck ./...
 go tool govulncheck ./...
 go tool actionlint             # GitHub Actions workflows
-go run ./tools/repocheck       # English only, license headers
+go run ./tools/repocheck       # English only, license headers, copied code
 go test -race ./...
 go build -o /dev/null ./cmd/clipbridge
 GOOS=linux GOARCH=arm GOARM=6 go build -o /dev/null ./cmd/clipbridge   # Raspberry Pi Zero W

@@ -5,7 +5,10 @@
 // check:
 //
 //   - every tracked text file is in English: no Cyrillic letters;
-//   - every Go file, except generated code, starts with the license header.
+//   - every Go file, except generated code, starts with the license header;
+//   - code copied from other projects lives in a directory below a
+//     third_party directory, with its LICENSE file next to it, and each of
+//     its Go files keeps its own copyright notice instead of the header.
 //
 // Run it anywhere inside the repository:
 //
@@ -62,6 +65,12 @@ func checkRepo() (problems []string, checked int, err error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	type file struct {
+		name string
+		data []byte
+	}
+	var files []file
+	listed := make(map[string]bool)
 	for _, name := range strings.Split(out, "\x00") {
 		if name == "" {
 			continue
@@ -71,13 +80,15 @@ func checkRepo() (problems []string, checked int, err error) {
 			problems = append(problems, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
-		if !ok {
-			continue
+		if ok {
+			files = append(files, file{name, data})
+			listed[name] = true
 		}
-		checked++
-		problems = append(problems, check(name, data)...)
 	}
-	return problems, checked, nil
+	for _, f := range files {
+		problems = append(problems, check(f.name, f.data, listed)...)
+	}
+	return problems, len(files), nil
 }
 
 // readEntry returns the content to check for one listed path: the file, or
@@ -115,8 +126,9 @@ func git(args ...string) (string, error) {
 	return string(out), nil
 }
 
-// check returns the rule violations in one file.
-func check(name string, data []byte) []string {
+// check returns the rule violations in one file; listed holds the paths of
+// all files checked, which exist in the working tree.
+func check(name string, data []byte, listed map[string]bool) []string {
 	if bytes.IndexByte(data, 0) >= 0 {
 		return nil // a binary file
 	}
@@ -126,10 +138,36 @@ func check(name string, data []byte) []string {
 			problems = append(problems, fmt.Sprintf("%s:%d: Cyrillic letter %q; the repository is in English only", name, i+1, r))
 		}
 	}
-	if strings.HasSuffix(name, ".go") && !isGenerated(data) && !hasHeader(data) {
+	if !strings.HasSuffix(name, ".go") {
+		return problems
+	}
+	generated := isGenerated(data)
+	if dir := thirdPartyDir(name); dir != "" {
+		if !listed[dir+"/LICENSE"] {
+			problems = append(problems, fmt.Sprintf("%s:1: copied code without %s/LICENSE", name, dir))
+		}
+		if !generated && !strings.HasPrefix(string(data), "// Copyright ") {
+			problems = append(problems, fmt.Sprintf("%s:1: copied code must keep its copyright notice on the first line", name))
+		}
+		return problems
+	}
+	if !generated && !hasHeader(data) {
 		problems = append(problems, fmt.Sprintf("%s:1: missing license header; start the file with\n\t%s\n\t// Copyright (C) <year> HunterEwok", name, spdxLine))
 	}
 	return problems
+}
+
+// thirdPartyDir returns the directory of the copied package that the file
+// name belongs to: the directory right below a third_party directory, such
+// as internal/third_party/cpace. It returns "" for the project's own files.
+func thirdPartyDir(name string) string {
+	parts := strings.Split(name, "/")
+	for i, p := range parts {
+		if p == "third_party" && i+2 < len(parts) {
+			return strings.Join(parts[:i+2], "/")
+		}
+	}
+	return ""
 }
 
 func firstCyrillic(s string) (rune, bool) {

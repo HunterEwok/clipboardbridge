@@ -51,15 +51,27 @@ any member may be switched off at any time.
 - **Creating the group**: the first `clipbridge pair` on a Linux machine that is in no group
   creates it: the group CA and the iPhone CA. A Mac cannot start a group.
 - **Group CA**: ECDSA P-256, valid 20 years, path length 0. Every member has its own P-256
-  key and a certificate from the group CA, valid 2 years and renewed automatically; its
-  `NotBefore` is the CA's, so a Raspberry Pi that boots with a clock behind real time still
-  accepts it. Linux members keep a copy of the CA key, so any of them can admit a new device.
-  TLS 1.3 only.
+  key and a certificate from the group CA, valid 2 years and renewed when less than 240 days
+  remain. Its `NotBefore` is the CA's, and members check certificates with their own clock but
+  never earlier than the CA's start, so a Raspberry Pi that boots with a clock years behind
+  real time still accepts them; expired certificates are rejected. Linux members keep a copy
+  of the CA key, so any of them can admit a new device. TLS 1.3 only, with the ALPN protocol
+  `clipbridge/1`; a client checks that the server's certificate names the device it found in
+  discovery.
 - **iPhone CA**: ECDSA P-256, valid 20 years, path length 0, with critical name constraints
-  that permit only the DNS name `clipbridge.local` (and URI and e-mail names under
-  `clipbridge.invalid`) and exclude every IP address. Every Linux member holds its key and its
-  own `clipbridge.local` server certificate from it, valid 397 days and renewed automatically,
-  so whichever member holds the name can serve the iPhone.
+  that permit only the DNS name `clipbridge.local` and names below it (and URI and e-mail
+  names under `clipbridge.invalid`) and exclude every IP address. Every Linux member holds its key and its
+  own `clipbridge.local` server certificate from it, valid 397 days from a day before it was
+  issued and renewed when less than 60 days remain, or at once if it starts in the future
+  because it was issued while the clock was ahead, so whichever member holds the name can
+  serve the iPhone.
+- **End of a CA's life**: certificates end no later than their CA. A member certificate that
+  already ends with its CA is not renewed again; replacing a CA after 20 years works like
+  the replacement after a revocation.
+- **Identity file**: each device keeps its device ID, its key, its certificates and, on a
+  Linux member, the keys of both CAs in one file, `identity.json` in the service's state
+  directory, readable only by the service. It is replaced in one step, so a crash leaves the
+  old identity or the new one.
 - **Joining a computer**: `clipbridge pair` on a Linux member (on a Mac, the command asks a
   connected Linux member) shows a six-digit code and opens a pairing window for five minutes
   (one attempt at a time, closed after a success or the third failure). On the new device the user runs `clipbridge join` and types the code. The two
@@ -311,7 +323,7 @@ and lifetimes. The installer enables what the device needs.
 | Someone attacks the pairing of an iPhone                       | the same attempt limits; the profile comes over a separate plain-HTTP port, so no certificate warning is ever accepted for the pairing page; the user compares the iPhone CA fingerprint before trusting it; the code and the token travel only over a connection that the trusted CA authenticates, so a relay sees neither |
 | A device impersonates a member (for example, a host that answers `clipbridge.local` on another network) | mutual TLS with the group CA; members dial discovered addresses and check the peer's certificate; the iPhone accepts only a certificate from the iPhone CA, so an impostor gets neither the token nor the text |
 | A device is lost or stolen                                     | `clipbridge revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin |
-| A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipbridge.local` and excludes IP addresses and other name forms. The Mac never changes its system trust |
+| A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipbridge.local` and names below it, and excludes IP addresses and other name forms. The Mac never changes its system trust |
 | A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
 | A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipbridge` group; single-line injection by default with control characters removed |
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd |
@@ -329,7 +341,7 @@ and lifetimes. The installer enables what the device needs.
   248 and later and are checked with `systemd-analyze verify`.
 - Third-party code: `golang.org/x/net` and `golang.org/x/sys` (BSD-3-Clause), `jezek/xgb`
   (BSD-3-Clause), and the CPace implementation copied from `rsc.io/cmd/mote` v0.1.3
-  (BSD-3-Clause). Release archives carry their notices.
+  (BSD-3-Clause) into `internal/third_party/cpace`. Release archives carry their notices.
 
 ## Roadmap
 
@@ -393,3 +405,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-26 | iPhone pairing: the profile over a separate plain-HTTP port and the fingerprint check first, then the code on a page that the trusted CA authenticates. |
 | D-27 | The engine remembers secrets for 12 hours; a watcher offering one again without its mark makes no event, a deliberate action makes it a secret again. |
 | D-28 | Two ways in: watchers report changes (no event when nothing really changed), deliberate actions always send and also write the member's own clipboard. |
+| D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |

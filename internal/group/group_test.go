@@ -1,0 +1,574 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package group
+
+import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/json"
+	"errors"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+var t0 = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+
+// newGroup creates a group on a Linux member at t0.
+func newGroup(t *testing.T) *Identity {
+	t.Helper()
+	id, err := Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := id.Check(); err != nil {
+		t.Fatalf("a new identity does not check: %v", err)
+	}
+	return id
+}
+
+// join admits a new device to admin's group, as pairing does: a Linux
+// member gets the CA keys and its own clipbridge.local certificate, a Mac
+// neither.
+func join(t *testing.T, admin *Identity, linux bool, now time.Time) *Identity {
+	t.Helper()
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := NewDeviceID()
+	cert, err := admin.GroupCA.IssueMember(id, &key.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := &Identity{ID: id, Key: key, Cert: cert, GroupCA: CA{Cert: admin.GroupCA.Cert}}
+	if linux {
+		member.GroupCA.Key = admin.GroupCA.Key
+		phoneCA := *admin.PhoneCA
+		member.PhoneCA = &phoneCA
+		if member.Phone, err = phoneCA.IssuePhone(&key.PublicKey, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := member.Check(); err != nil {
+		t.Fatal(err)
+	}
+	return member
+}
+
+func TestDeviceID(t *testing.T) {
+	a, b := NewDeviceID(), NewDeviceID()
+	if a == b {
+		t.Errorf("two device IDs are equal: %s", a)
+	}
+	if _, err := ParseDeviceID(string(a)); err != nil {
+		t.Errorf("ParseDeviceID(%q): %v", a, err)
+	}
+	if got := a.HostName(); got != "cb-"+string(a)+".local" || len(strings.Split(got, ".")[0]) > 63 {
+		t.Errorf("HostName() = %q", got)
+	}
+	for _, bad := range []string{"", "abc", strings.Repeat("A", 32), strings.Repeat("0", 31) + "g",
+		strings.Repeat("0", 33), strings.Repeat("0", 30) + "é"} {
+		if _, err := ParseDeviceID(bad); err == nil {
+			t.Errorf("ParseDeviceID(%q) succeeded", bad)
+		}
+	}
+}
+
+func TestCAs(t *testing.T) {
+	id := newGroup(t)
+	for _, ca := range []*x509.Certificate{id.GroupCA.Cert, id.PhoneCA.Cert} {
+		if !ca.IsCA || !ca.BasicConstraintsValid || ca.MaxPathLen != 0 || !ca.MaxPathLenZero {
+			t.Errorf("%s: not a CA with path length 0", ca.Subject.CommonName)
+		}
+		if ca.KeyUsage&x509.KeyUsageCertSign == 0 {
+			t.Errorf("%s: cannot sign certificates", ca.Subject.CommonName)
+		}
+		if got := ca.NotAfter.Sub(t0); got < 19*365*24*time.Hour {
+			t.Errorf("%s: valid for %v, want 20 years", ca.Subject.CommonName, got)
+		}
+		if ca.NotBefore.After(t0) {
+			t.Errorf("%s: starts at %v, after its creation", ca.Subject.CommonName, ca.NotBefore)
+		}
+		if pub, ok := ca.PublicKey.(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
+			t.Errorf("%s: not a P-256 key", ca.Subject.CommonName)
+		}
+		if ca.SignatureAlgorithm != x509.ECDSAWithSHA256 {
+			t.Errorf("%s: signed with %v", ca.Subject.CommonName, ca.SignatureAlgorithm)
+		}
+	}
+	if !strings.HasPrefix(id.PhoneCA.Cert.Subject.CommonName, "clipbridge iPhone CA 2026-10-21") {
+		t.Errorf("iPhone CA name %q", id.PhoneCA.Cert.Subject.CommonName)
+	}
+	if len(id.GroupCA.Cert.PermittedDNSDomains) != 0 {
+		t.Errorf("the group CA has name constraints")
+	}
+	if Tag(id.GroupCA.Cert) == Tag(newGroup(t).GroupCA.Cert) || len(Tag(id.GroupCA.Cert)) != 16 {
+		t.Errorf("Tag = %q", Tag(id.GroupCA.Cert))
+	}
+	fp := Fingerprint(id.PhoneCA.Cert)
+	if len(fp) != 32*3-1 || strings.ToUpper(fp) != fp || strings.Count(fp, " ") != 31 {
+		t.Errorf("Fingerprint = %q, want 32 upper-case hex bytes separated by spaces", fp)
+	}
+}
+
+func TestPhoneCANameConstraints(t *testing.T) {
+	ca := newGroup(t).PhoneCA.Cert
+	if !ca.PermittedDNSDomainsCritical {
+		t.Error("the name constraints are not critical")
+	}
+	var critical bool
+	for _, ext := range ca.Extensions {
+		if ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 30}) {
+			critical = ext.Critical
+		}
+	}
+	if !critical {
+		t.Error("the name constraints extension is missing or not critical")
+	}
+	if got := ca.PermittedDNSDomains; len(got) != 1 || got[0] != PhoneName {
+		t.Errorf("permitted DNS domains %v", got)
+	}
+	if got := ca.PermittedEmailAddresses; len(got) != 1 || got[0] != "clipbridge.invalid" {
+		t.Errorf("permitted e-mail addresses %v", got)
+	}
+	if got := ca.PermittedURIDomains; len(got) != 1 || got[0] != "clipbridge.invalid" {
+		t.Errorf("permitted URI domains %v", got)
+	}
+	if got := ca.ExcludedIPRanges; len(got) != 2 || got[0].String() != "0.0.0.0/0" || got[1].String() != "::/0" {
+		t.Errorf("excluded IP ranges %v", got)
+	}
+}
+
+// TestPhoneCACannotCertifyOtherSites shows that even a member that holds the
+// iPhone CA key, for example a compromised one, cannot make a certificate
+// that a client trusting the CA accepts for another site.
+func TestPhoneCACannotCertifyOtherSites(t *testing.T) {
+	phoneCA := newGroup(t).PhoneCA
+	roots := x509.NewCertPool()
+	roots.AddCert(phoneCA.Cert)
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	evil, _ := url.Parse("https://www.example.com/")
+	tests := []struct {
+		name string
+		tmpl x509.Certificate
+		ok   bool
+	}{
+		{name: "clipbridge.local", tmpl: x509.Certificate{DNSNames: []string{PhoneName}}, ok: true},
+		{name: "another site", tmpl: x509.Certificate{DNSNames: []string{"www.example.com"}}},
+		{name: "another site next to ours", tmpl: x509.Certificate{DNSNames: []string{PhoneName, "mail.example.com"}}},
+		{name: "a similar name", tmpl: x509.Certificate{DNSNames: []string{"evilclipbridge.local"}}},
+		{name: "an IPv4 address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, IPAddresses: []net.IP{net.IPv4(192, 168, 1, 1)}}},
+		{name: "an IPv6 address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, IPAddresses: []net.IP{net.ParseIP("fe80::1")}}},
+		{name: "an e-mail address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, EmailAddresses: []string{"someone@example.com"}}},
+		{name: "a URI", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, URIs: []*url.URL{evil}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := tt.tmpl
+			tmpl.Subject = pkix.Name{CommonName: "www.example.com"}
+			tmpl.NotBefore, tmpl.NotAfter = t0, t0.Add(24*time.Hour)
+			tmpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+			der, err := x509.CreateCertificate(rand.Reader, &tmpl, phoneCA.Cert, &key.PublicKey, phoneCA.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf, err := x509.ParseCertificate(der)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = leaf.Verify(x509.VerifyOptions{Roots: roots, CurrentTime: t0.Add(time.Hour)})
+			if tt.ok && err != nil {
+				t.Errorf("rejected: %v", err)
+			}
+			if !tt.ok && err == nil {
+				t.Error("a certificate outside the name constraints verified")
+			}
+		})
+	}
+}
+
+func TestMemberCertificate(t *testing.T) {
+	admin := newGroup(t)
+	later := t0.AddDate(1, 0, 0)
+	mac := join(t, admin, false, later)
+	c := mac.Cert
+	if !c.NotBefore.Equal(admin.GroupCA.Cert.NotBefore) {
+		t.Errorf("NotBefore = %v, want the CA's %v", c.NotBefore, admin.GroupCA.Cert.NotBefore)
+	}
+	if want := later.AddDate(2, 0, 0); !c.NotAfter.Equal(want) {
+		t.Errorf("NotAfter = %v, want %v", c.NotAfter, want)
+	}
+	if c.IsCA || c.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("IsCA = %v, KeyUsage = %v", c.IsCA, c.KeyUsage)
+	}
+	if got, err := DeviceOf(c); err != nil || got != mac.ID {
+		t.Errorf("DeviceOf = %q, %v; want %q", got, err, mac.ID)
+	}
+	// Near the end of the CA's lifetime the certificate ends with the CA.
+	end := admin.GroupCA.Cert.NotAfter.Add(-24 * time.Hour)
+	key, _ := NewKey()
+	last, err := admin.GroupCA.IssueMember(NewDeviceID(), &key.PublicKey, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !last.NotAfter.Equal(admin.GroupCA.Cert.NotAfter) {
+		t.Errorf("a certificate issued a day before the CA ends lasts until %v, after the CA", last.NotAfter)
+	}
+	// The phone certificate is not a member certificate.
+	if _, err := DeviceOf(admin.Phone); err == nil {
+		t.Error("DeviceOf accepted the clipbridge.local certificate")
+	}
+}
+
+func TestPhoneCertificate(t *testing.T) {
+	admin := newGroup(t)
+	p := admin.Phone
+	if err := p.VerifyHostname(PhoneName); err != nil {
+		t.Error(err)
+	}
+	if p.NotBefore.Before(admin.PhoneCA.Cert.NotBefore) {
+		t.Errorf("starts at %v, before its CA at %v", p.NotBefore, admin.PhoneCA.Cert.NotBefore)
+	}
+	if life := p.NotAfter.Sub(p.NotBefore); life > 397*24*time.Hour || life < 390*24*time.Hour {
+		t.Errorf("valid for %v, want 397 days", life)
+	}
+	if len(p.ExtKeyUsage) != 1 || p.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth {
+		t.Errorf("ExtKeyUsage = %v", p.ExtKeyUsage)
+	}
+	// Issued later, it starts a day back, for a phone whose clock is behind.
+	key, _ := NewKey()
+	later := t0.AddDate(1, 0, 0)
+	q, err := admin.PhoneCA.IssuePhone(&key.PublicKey, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := later.Add(-24 * time.Hour); !q.NotBefore.Equal(want) {
+		t.Errorf("NotBefore = %v, want %v", q.NotBefore, want)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(admin.PhoneCA.Cert)
+	if _, err := q.Verify(x509.VerifyOptions{Roots: roots, DNSName: PhoneName, CurrentTime: later}); err != nil {
+		t.Errorf("the iPhone would reject the certificate: %v", err)
+	}
+}
+
+func TestIssueErrors(t *testing.T) {
+	admin := newGroup(t)
+	key, _ := NewKey()
+	if _, err := admin.GroupCA.IssueMember("not-an-id", &key.PublicKey, t0); err == nil {
+		t.Error("issued a certificate for a bad device ID")
+	}
+	if _, err := admin.GroupCA.IssueMember(NewDeviceID(), &key.PublicKey, t0.AddDate(-1, 0, 0)); err == nil {
+		t.Error("issued a certificate with the clock before the CA")
+	}
+	if _, err := admin.GroupCA.IssueMember(NewDeviceID(), &key.PublicKey, t0.AddDate(21, 0, 0)); err == nil {
+		t.Error("issued a certificate with the clock after the CA")
+	}
+	other, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if _, err := admin.PhoneCA.IssuePhone(&other.PublicKey, t0); err == nil {
+		t.Error("certified a P-384 key")
+	}
+	if _, err := admin.PhoneCA.IssuePhone(nil, t0); err == nil {
+		t.Error("certified a nil key")
+	}
+	noKey := CA{Cert: admin.GroupCA.Cert}
+	if _, err := noKey.IssueMember(NewDeviceID(), &key.PublicKey, t0); err == nil {
+		t.Error("issued a certificate without the CA key")
+	}
+}
+
+func TestSaveLoad(t *testing.T) {
+	admin := newGroup(t)
+	mac := join(t, admin, false, t0)
+	linux := join(t, admin, true, t0)
+	for _, tt := range []struct {
+		name  string
+		id    *Identity
+		admin bool
+	}{
+		{"group creator", admin, true}, {"Mac", mac, false}, {"Linux member", linux, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := tt.id.Save(dir); err != nil {
+				t.Fatal(err)
+			}
+			fi, err := os.Stat(filepath.Join(dir, FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+				t.Errorf("the identity file has mode %v", fi.Mode().Perm())
+			}
+			got, err := Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ID != tt.id.ID || !got.Key.Equal(tt.id.Key) || !got.Cert.Equal(tt.id.Cert) ||
+				!got.GroupCA.Cert.Equal(tt.id.GroupCA.Cert) {
+				t.Error("the loaded identity differs")
+			}
+			if got.Admin() != tt.admin {
+				t.Errorf("Admin() = %v, want %v", got.Admin(), tt.admin)
+			}
+			if tt.admin && (!got.GroupCA.Key.Equal(tt.id.GroupCA.Key) || !got.PhoneCA.Key.Equal(tt.id.PhoneCA.Key) ||
+				!got.Phone.Equal(tt.id.Phone)) {
+				t.Error("the loaded CA keys or the clipbridge.local certificate differ")
+			}
+			if !tt.admin && (got.GroupCA.Key != nil || got.PhoneCA != nil || got.Phone != nil || got.PhoneTLS() != nil) {
+				t.Error("a Mac identity holds CA keys or a clipbridge.local certificate")
+			}
+		})
+	}
+	if _, err := Load(t.TempDir()); !errors.Is(err, ErrNoGroup) {
+		t.Errorf("Load of an empty directory: %v, want ErrNoGroup", err)
+	}
+}
+
+func TestLoadRejectsBadFiles(t *testing.T) {
+	admin := newGroup(t)
+	other := newGroup(t)
+	dir := t.TempDir()
+	if err := admin.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	good, err := os.ReadFile(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f identityFile
+	if err := json.Unmarshal(good, &f); err != nil {
+		t.Fatal(err)
+	}
+	otherKey, _ := x509.MarshalPKCS8PrivateKey(other.Key)
+	otherCAKey, _ := x509.MarshalPKCS8PrivateKey(other.GroupCA.Key)
+	p384, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	p384DER, _ := x509.MarshalPKCS8PrivateKey(p384)
+	tests := []struct {
+		name   string
+		change func(f *identityFile)
+	}{
+		{"another version", func(f *identityFile) { f.Version = 2 }},
+		{"another device ID", func(f *identityFile) { f.Device = string(NewDeviceID()) }},
+		{"a bad device ID", func(f *identityFile) { f.Device = "x" }},
+		{"another device key", func(f *identityFile) { f.Key = otherKey }},
+		{"a P-384 device key", func(f *identityFile) { f.Key = p384DER }},
+		{"a corrupt key", func(f *identityFile) { f.Key = []byte("junk") }},
+		{"a member certificate from another group", func(f *identityFile) { f.Cert = other.Cert.Raw }},
+		{"another group CA", func(f *identityFile) { f.GroupCA = other.GroupCA.Cert.Raw }},
+		{"the key of another CA", func(f *identityFile) { f.GroupCAKey = otherCAKey }},
+		{"the iPhone CA as the group CA", func(f *identityFile) { f.GroupCA, f.GroupCAKey = f.PhoneCA, f.PhoneCAKey }},
+		{"a member certificate as the group CA", func(f *identityFile) { f.GroupCA, f.GroupCAKey = f.Cert, nil }},
+		{"the iPhone CA without the clipbridge.local certificate", func(f *identityFile) { f.Phone = nil }},
+		{"a clipbridge.local certificate without its CA", func(f *identityFile) { f.PhoneCA, f.PhoneCAKey = nil, nil }},
+		{"the member certificate as the clipbridge.local one", func(f *identityFile) { f.Phone = f.Cert }},
+		{"a clipbridge.local certificate from another group", func(f *identityFile) { f.Phone = other.Phone.Raw }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bad := f
+			tt.change(&bad)
+			data, err := json.Marshal(bad)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, FileName), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err == nil {
+				t.Error("Load accepted the file")
+			}
+		})
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil {
+		t.Error("Load accepted truncated JSON")
+	}
+	// Save refuses an identity whose parts do not belong together.
+	broken := *admin
+	broken.Cert = other.Cert
+	if err := broken.Save(t.TempDir()); err == nil {
+		t.Error("Save accepted a broken identity")
+	}
+}
+
+func TestRenew(t *testing.T) {
+	admin := newGroup(t)
+	mac := join(t, admin, false, t0)
+	if next, changed, err := admin.Renew(t0.AddDate(0, 6, 0)); err != nil || changed || next.Cert != admin.Cert {
+		t.Errorf("Renew half a year in = changed %v, %v; want no change", changed, err)
+	}
+	// 11 months and 10 days in, the clipbridge.local certificate has less
+	// than 60 days left.
+	at := t0.AddDate(0, 11, 10)
+	next, changed, err := admin.Renew(at)
+	if err != nil || !changed {
+		t.Fatalf("Renew = %v, %v", changed, err)
+	}
+	if next.Phone == admin.Phone || next.Cert != admin.Cert {
+		t.Error("Renew did not renew just the clipbridge.local certificate")
+	}
+	if !next.Phone.NotAfter.After(at.Add(300 * 24 * time.Hour)) {
+		t.Errorf("the renewed certificate ends at %v", next.Phone.NotAfter)
+	}
+	// 18 months in, the member certificate has less than 240 days.
+	at = t0.AddDate(1, 6, 0)
+	next, changed, err = next.Renew(at)
+	if err != nil || !changed || !next.Cert.NotAfter.Equal(at.AddDate(2, 0, 0)) {
+		t.Fatalf("Renew = %v, %v; member certificate ends at %v", changed, err, next.Cert.NotAfter)
+	}
+	if err := next.Check(); err != nil {
+		t.Error(err)
+	}
+	if admin.Cert.NotAfter.Equal(next.Cert.NotAfter) {
+		t.Error("Renew changed the old identity")
+	}
+	// A Mac cannot renew by itself.
+	if _, changed, err := mac.Renew(at); changed || err != nil {
+		t.Errorf("a Mac renewed its own certificate: %v, %v", changed, err)
+	}
+	// With the clock outside the CA's lifetime, Renew reports the error.
+	if _, _, err := admin.Renew(t0.AddDate(30, 0, 0)); err == nil {
+		t.Error("Renew 30 years later succeeded")
+	}
+	// With the clock before the CA's start, nothing can be renewed, and
+	// nothing is.
+	if _, changed, err := admin.Renew(t0.AddDate(-1, 0, 0)); changed || err != nil {
+		t.Errorf("Renew with the clock a year behind: %v, %v", changed, err)
+	}
+}
+
+func TestRenewAfterTheClockWasAhead(t *testing.T) {
+	// The clock jumps three years ahead, Renew issues a clipbridge.local
+	// certificate that starts then, and the clock is corrected: the next
+	// Renew replaces the certificate, which the iPhone would reject.
+	admin := newGroup(t)
+	ahead := t0.AddDate(3, 0, 0)
+	wrong, changed, err := admin.Renew(ahead)
+	if err != nil || !changed || !wrong.Phone.NotBefore.After(t0.AddDate(2, 0, 0)) {
+		t.Fatalf("Renew with the clock ahead: %v, %v", changed, err)
+	}
+	now := t0.AddDate(0, 1, 0)
+	fixed, changed, err := wrong.Renew(now)
+	if err != nil || !changed {
+		t.Fatalf("Renew after the clock was corrected: %v, %v", changed, err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(fixed.PhoneCA.Cert)
+	if _, err := fixed.Phone.Verify(x509.VerifyOptions{Roots: roots, DNSName: PhoneName, CurrentTime: now}); err != nil {
+		t.Errorf("the renewed certificate does not verify: %v", err)
+	}
+	if _, changed, _ := fixed.Renew(now); changed {
+		t.Error("Renew renewed again at once")
+	}
+}
+
+func TestRenewNearTheEndOfTheCA(t *testing.T) {
+	// In the last months of the CA, certificates end with it; Renew must
+	// not issue a new one on every call.
+	admin := newGroup(t)
+	late := admin.GroupCA.Cert.NotAfter.Add(-30 * 24 * time.Hour)
+	next, changed, err := admin.Renew(late)
+	if err != nil || !changed {
+		t.Fatalf("first Renew near the end: %v, %v", changed, err)
+	}
+	if !next.Cert.NotAfter.Equal(admin.GroupCA.Cert.NotAfter) {
+		t.Errorf("the member certificate ends at %v, not with the CA", next.Cert.NotAfter)
+	}
+	if _, changed, err := next.Renew(late.Add(time.Hour)); changed || err != nil {
+		t.Errorf("second Renew near the end: %v, %v; want no change", changed, err)
+	}
+}
+
+func TestCheckRejectsPartialAdmins(t *testing.T) {
+	admin := newGroup(t)
+	tests := map[string]func(id *Identity){
+		"group CA key without the iPhone CA":                    func(id *Identity) { id.PhoneCA, id.Phone = nil, nil },
+		"iPhone CA without its key":                             func(id *Identity) { id.PhoneCA = &CA{Cert: id.PhoneCA.Cert} },
+		"iPhone CA without the group CA key":                    func(id *Identity) { id.GroupCA.Key = nil },
+		"no clipbridge.local certificate":                       func(id *Identity) { id.Phone = nil },
+		"clipbridge.local certificate only":                     func(id *Identity) { id.PhoneCA = nil },
+		"the iPhone CA certificate as the clipbridge.local one": func(id *Identity) { id.Phone = id.PhoneCA.Cert },
+	}
+	for name, change := range tests {
+		t.Run(name, func(t *testing.T) {
+			id := *admin
+			phoneCA := *admin.PhoneCA
+			id.PhoneCA = &phoneCA
+			change(&id)
+			if err := id.Check(); err == nil {
+				t.Error("Check accepted it")
+			}
+			if err := id.Save(t.TempDir()); err == nil {
+				t.Error("Save accepted it")
+			}
+		})
+	}
+	// A Mac holds no clipbridge.local certificate either.
+	mac := *join(t, admin, false, t0)
+	mac.Phone = admin.Phone
+	if err := mac.Check(); err == nil {
+		t.Error("Check accepted a Mac with a clipbridge.local certificate")
+	}
+}
+
+func TestCheckRejectsOtherCurves(t *testing.T) {
+	// A group CA with a P-384 key, and a member certificate it issued
+	// properly: Load refuses CA keys that are not P-256, so Check refuses
+	// such a CA first.
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "P-384 CA"},
+		NotBefore: t0.Add(-time.Hour), NotAfter: t0.AddDate(20, 0, 0),
+		IsCA: true, BasicConstraintsValid: true, MaxPathLenZero: true,
+		KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := &CA{Cert: caCert, Key: key}
+	devKey, _ := NewKey()
+	id := &Identity{ID: NewDeviceID(), Key: devKey, GroupCA: CA{Cert: caCert}}
+	if id.Cert, err = ca.IssueMember(id.ID, &devKey.PublicKey, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := id.Check(); err == nil {
+		t.Error("Check accepted a P-384 group CA")
+	}
+}
+
+func TestFileIsJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := join(t, newGroup(t), false, t0).Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, FileName))
+	if !json.Valid(data) || !bytes.HasSuffix(data, []byte("\n")) || bytes.Contains(data, []byte("group_ca_key")) {
+		t.Errorf("the identity file of a Mac:\n%s", data)
+	}
+}
