@@ -373,7 +373,7 @@ func TestBusy(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
 	j := newJoiner(t, "darwin")
-	cfg, err := j.tlsConfig()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestRelay(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			j := newJoiner(t, "linux")
-			joinerCfg, err := j.tlsConfig()
+			joinerCfg, err := j.tlsConfigVerifiedByCPace()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -472,7 +472,7 @@ func TestRelay(t *testing.T) {
 				t.Fatal(err)
 			}
 			serverCert := tls.Certificate{Certificate: [][]byte{mitm.Cert.Raw}, PrivateKey: mitm.Key}
-			toMember, err := (&Joiner{ID: group.NewDeviceID(), Key: mitm.Key}).tlsConfig()
+			toMember, err := (&Joiner{ID: group.NewDeviceID(), Key: mitm.Key}).tlsConfigVerifiedByCPace()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -508,7 +508,7 @@ func TestBinding(t *testing.T) {
 	// session identifier is the TLS exporter.
 	f := newFixture(t)
 	a, b := socketPair(t)
-	cfg, err := newJoiner(t, "darwin").tlsConfig()
+	cfg, err := newJoiner(t, "darwin").tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func startRaw(t *testing.T, f *fixture, info Info, code string) (*rawJoiner, cha
 	a, b := socketPair(t)
 	served := make(chan error, 1)
 	go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
-	cfg, err := j.tlsConfig()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +704,7 @@ func TestWhatTheMemberSends(t *testing.T) {
 func TestServerTLSRejects(t *testing.T) {
 	f := newFixture(t)
 	j := newJoiner(t, "darwin")
-	good, err := j.tlsConfig()
+	good, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -224,6 +224,12 @@ func ServerTLS(admin *group.Identity) *tls.Config {
 // the member's own certificate, and the joiner's self-signed certificate,
 // which must have the fingerprint fp from the joiner's QR code.
 func ClientTLS(admin *group.Identity, fp string) *tls.Config {
+	return clientTLSVerifiedByFingerprint(admin, fp)
+}
+
+// clientTLSVerifiedByFingerprint builds ClientTLS: crypto/tls cannot check a
+// self-signed certificate against a fingerprint, so VerifyConnection does.
+func clientTLSVerifiedByFingerprint(admin *group.Identity, fp string) *tls.Config {
 	return &tls.Config{
 		MinVersion:         tls.VersionTLS13,
 		Certificates:       []tls.Certificate{{Certificate: [][]byte{admin.Cert.Raw}, PrivateKey: admin.Key, Leaf: admin.Cert}},

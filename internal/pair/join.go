@@ -69,13 +69,13 @@ func (j *Joiner) cert() ([]byte, error) {
 	return j.certDER, j.certErr
 }
 
-// tlsConfig returns the joiner's TLS configuration, for either end of the
-// connection. The joiner cannot check the member's certificate during the
-// handshake, since it does not know the group CA yet: the CPace exchange,
-// bound to this TLS session and to the member's certificate, authenticates
-// the member, and the joiner checks the certificate against the group CA it
-// receives.
-func (j *Joiner) tlsConfig() (*tls.Config, error) {
+// tlsConfigVerifiedByCPace returns the joiner's TLS configuration, for
+// either end of the connection. The joiner cannot check the member's
+// certificate during the handshake, since it does not know the group CA
+// yet: the CPace exchange, bound to this TLS session and to the member's
+// certificate, authenticates the member, and the joiner checks the
+// certificate against the group CA it receives.
+func (j *Joiner) tlsConfigVerifiedByCPace() (*tls.Config, error) {
 	der, err := j.cert()
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func CertFingerprint(der []byte) string {
 // checks what the member sends, builds the device's new identity, calls
 // save with it, and tells the member whether that worked.
 func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func(*group.Identity) error) (*group.Identity, error) {
-	cfg, err := j.tlsConfig()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -127,7 +127,7 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 // first, so the joiner reveals nothing to a device that does not know the
 // code: a failed attempt is never Spent, and the joiner may take another.
 func (j *Joiner) Accept(ctx context.Context, conn net.Conn, code string, save func(*group.Identity) error) (*group.Identity, error) {
-	cfg, err := j.tlsConfig()
+	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		conn.Close()
 		return nil, err
