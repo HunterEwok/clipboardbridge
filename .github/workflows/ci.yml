@@ -232,10 +232,30 @@ jobs:
             exit 1
           fi
 
+  kit:
+    name: phone kit (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: swift test (in the Swift container on Linux)
+        if: runner.os == 'Linux'
+        run: docker run --rm -v "$PWD:/src" -w /src/apps/ios/ClipbridgeKit swift:6.2-noble swift test
+      - name: swift test
+        if: runner.os == 'macOS'
+        working-directory: apps/ios/ClipbridgeKit
+        run: swift test
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, kit]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -1,0 +1,58 @@
+[
+	{
+		"text": "clipbridge://join?code=246802\u0026addr=192.168.1.20%3A8767\u0026addr=%5Bfd00%3A%3A5%5D%3A8767\u0026fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA",
+		"want": {
+			"Code": "246802",
+			"Addrs": [
+				"192.168.1.20:8767",
+				"[fd00::5]:8767"
+			],
+			"Fingerprint": "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+		}
+	},
+	{
+		"text": "clipbridge://join?code=012345",
+		"want": {
+			"Code": "012345",
+			"Addrs": null,
+			"Fingerprint": ""
+		}
+	},
+	{
+		"text": " CLIPBRIDGE://JOIN?code=111111\u0026x=1\n",
+		"want": {
+			"Code": "111111",
+			"Addrs": null,
+			"Fingerprint": ""
+		}
+	},
+	{
+		"text": "clipbridge://join?code=3\u0026addr=a:1\u0026addr=b:1\u0026addr=c:1\u0026addr=d:1\u0026addr=e:1\u0026addr=10.0.0.2",
+		"want": {
+			"Code": "3",
+			"Addrs": [
+				"a:1",
+				"b:1",
+				"c:1",
+				"d:1"
+			],
+			"Fingerprint": ""
+		}
+	},
+	{
+		"text": "clipbridge://join",
+		"want": null
+	},
+	{
+		"text": "clipbridge://pair?code=123456",
+		"want": null
+	},
+	{
+		"text": "clipbridge-join:123456",
+		"want": null
+	},
+	{
+		"text": "https://join/?code=1",
+		"want": null
+	}
+]

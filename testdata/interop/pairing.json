@@ -1,0 +1,41 @@
+{
+	"member_cert": "bWVtYmVyIGNlcnRpZmljYXRlIERFUg==",
+	"joiner_cert": "am9pbmVyIGNlcnRpZmljYXRlIERFUg==",
+	"channel_id": "636c69706272696467652070616972207631002384b67ac8c97ec1af5411238370fcd6ec62844b8a6344f8ca7a52eff4f88691a859e3ed4bcb084fd63679dad8812631a2db900ead1dc29fd158a34d1cde90a0",
+	"fingerprint": "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA",
+	"frames": [
+		{
+			"msg": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+			"ad": "eyJuYW1lIjoibGFwdG9wIiwib3MiOiJsaW51eCJ9"
+		},
+		{
+			"msg": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+			"ad": "eyJkZXZpY2UiOiIwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZiIsImdyb3VwIjoiMDAxMTIyMzM0NDU1NjY3NyJ9",
+			"tag": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=="
+		},
+		{
+			"tag": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA=="
+		},
+		{
+			"welcome": {
+				"cert": "Y2VydA==",
+				"group_ca": "Z3JvdXAgQ0E="
+			}
+		},
+		{
+			"welcome": {
+				"cert": "Y2VydA==",
+				"group_ca": "Z3JvdXAgQ0E=",
+				"group_ca_key": "azE=",
+				"phone_ca": "cGhvbmUgQ0E=",
+				"phone_ca_key": "azI="
+			}
+		},
+		{
+			"error": "wrong-code"
+		},
+		{
+			"ok": true
+		}
+	]
+}
