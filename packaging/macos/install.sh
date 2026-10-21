@@ -16,6 +16,11 @@ if [ $# -ne 1 ]; then
 	exit 2
 fi
 bin=$1
+# A bare file name would be looked up in PATH, not here.
+case $bin in
+*/*) ;;
+*) bin=./$bin ;;
+esac
 here=$(cd "$(dirname "$0")" && pwd)
 if [ "$(id -u)" -ne 0 ]; then
 	echo "install.sh: run it with sudo" >&2
