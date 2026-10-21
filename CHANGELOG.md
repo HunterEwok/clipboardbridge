@@ -34,6 +34,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   creates the group, and `clipbridge join` shows a QR code (a `clipbridge://join` URL) that
   the shortcut "clipbridge: add a computer" scans to admit the computer. `clipbridge join
   -code` keeps the code from `clipbridge pair`.
+- Certificate renewal: a Linux member renews its own certificates and, with a new `cert`
+  message, those of the members it is connected to, months before they expire.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and

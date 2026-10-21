@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package service
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/group"
+)
+
+// renewEvery is how often a member checks whether certificates are due for
+// renewal: its own, if it holds the CA keys, and those of the connected
+// members. The renewal periods are months long, so twice a day is plenty.
+const renewEvery = 12 * time.Hour
+
+// renewLoop renews certificates when the group starts and every renewEvery
+// after, until ctx is done.
+func (s *Service) renewLoop(ctx context.Context) {
+	t := time.NewTicker(renewEvery)
+	defer t.Stop()
+	for {
+		s.renew(s.cfg.now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// renew renews this member's own certificates if they are due and it holds
+// the CA keys, then sends renewed certificates to the connected members
+// whose certificates are due.
+func (s *Service) renew(now time.Time) {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	if id == nil || nd == nil {
+		s.mu.Unlock()
+		return
+	}
+	next, changed, err := id.Renew(now)
+	if err == nil && changed {
+		err = s.setIdentityLocked(next)
+	}
+	s.mu.Unlock()
+	switch {
+	case err != nil:
+		s.logf("clipbridge: renewing the certificates: %v", err)
+	case changed:
+		s.logf("clipbridge: renewed this member's certificates; the member certificate is valid until %s",
+			next.Cert.NotAfter.UTC().Format(time.DateOnly))
+	}
+	nd.RenewPeers()
+}
+
+// certRenewed keeps a member certificate that another member renewed for
+// this one.
+func (s *Service) certRenewed(der []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.id == nil {
+		return errors.New("this device is in no group")
+	}
+	next, err := s.id.WithCert(der)
+	if err != nil {
+		return err
+	}
+	if err := s.setIdentityLocked(next); err != nil {
+		return err
+	}
+	s.logf("clipbridge: got a renewed member certificate, valid until %s", next.Cert.NotAfter.UTC().Format(time.DateOnly))
+	return nil
+}
+
+// setIdentityLocked saves a renewed identity and starts using it: new member
+// connections and the iPhone port present its certificates.
+func (s *Service) setIdentityLocked(next *group.Identity) error {
+	if err := next.Save(s.cfg.StateDir); err != nil {
+		return err
+	}
+	s.id = next
+	s.nd.SetIdentity(next)
+	return nil
+}

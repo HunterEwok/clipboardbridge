@@ -46,6 +46,8 @@ type Config struct {
 
 	// listen opens the member port; any port on all addresses if nil.
 	listen func() (net.Listener, error)
+	// now is the clock for certificates; time.Now if nil.
+	now func() time.Time
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
@@ -121,6 +123,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.Discover == nil {
 		cfg.Discover = mdnsDiscovery
+	}
+	if cfg.now == nil {
+		cfg.now = time.Now
 	}
 	if cfg.browseFor == 0 {
 		cfg.browseFor = 10 * time.Second
@@ -219,7 +224,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Engine: eng,
-		OnWrite: s.write, OnPeers: s.peersChanged, Logf: s.logf,
+		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, Now: s.cfg.now, Logf: s.logf,
 	})
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
 	var ln net.Listener
@@ -243,6 +248,11 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.id, s.eng, s.nd, s.port = id, eng, nd, dc.Port
 	s.groupCtx, s.groupCancel = gctx, cancel
 	nd.Rejoin() // the service just started; there are no connections yet
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.renewLoop(gctx)
+	}()
 	if ln != nil {
 		s.wg.Add(2)
 		go func() {
@@ -251,7 +261,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		}()
 		go func() {
 			defer s.wg.Done()
-			s.servePhone(gctx, id)
+			s.servePhone(gctx)
 		}()
 	}
 	// Discovery has its own context, so it can say goodbye for

@@ -72,9 +72,16 @@ Renewal rules (`Identity.Renew`): a member certificate is renewed when less than
 remain, a `clipbridge.local` certificate when less than 60 days remain or when its NotBefore
 is in the future; neither is renewed when it already ends with its CA.
 
-Note: `Identity.Renew` (`internal/group/identity.go:167`) is never called, and the member
-protocol has no message to deliver a renewed certificate to a Mac, so design.md's renewal
-(design.md lines 65-67 and 76-79) is not implemented yet.
+When renewal runs: a member that holds the CA keys checks its own certificates when the group
+starts and every 12 hours, saves renewed ones and presents them on new connections at once
+(running connections keep theirs). It renews the certificates of other members too: when a
+peer's hello arrives, and every 12 hours for the running connections, it checks the
+certificate the peer presented in the handshake and, when it is due, sends a `cert` message
+(section 4) with a new certificate for the same device ID and key, at most once per
+connection. A member without the CA keys keeps a certificate from a `cert` message only when
+it verifies to the group CA, names its own device ID and key, has client and server use and
+ends later than its current one; otherwise it logs and ignores it. A certificate that has
+already expired cannot be renewed this way, since the handshake fails; the device pairs again.
 
 Fingerprint (shown to the user): SHA-256 over the certificate DER as upper-case hex bytes
 separated by spaces; the short form is the first 8 bytes (23 characters).
@@ -214,22 +221,24 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping` or `bye` |
+| `t` | string | all | `hello`, `event`, `ping`, `bye` or `cert` |
 | `role` | string | hello | `linux` or `mac` |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
+| `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
 
 ```json
 {"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
 {"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"iphone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
 {"t":"ping"}
 {"t":"bye"}
+{"t":"cert","cert":"MIIB..."}
 ```
 
 ### Message order
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
-2. Then events follow, in any number, interleaved with pings.
+2. Then events follow, in any number, interleaved with pings and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -706,6 +715,7 @@ a computer keep working as they do today.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.
-- **Open.** Certificate renewal and revocation (both missing today, see the notes in
-  sections 2 and 8) will be issued by the phone; the recovery path when the phone is lost
+- **Open.** Certificate renewal (section 2) moves to the phone, which sends `cert` messages
+  as a Linux member does today; revocation (missing today, see the note in section 8) will be
+  issued by the phone too; the recovery path when the phone is lost
   (an encrypted backup of the CA key or a second admin phone) is designed with the apps.

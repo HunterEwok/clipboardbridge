@@ -17,6 +17,7 @@ package node
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/clip"
@@ -58,6 +60,11 @@ type Config struct {
 	// goroutines at once.
 	OnPeers func()
 
+	// OnCert, if set, is called with a renewed member certificate that a
+	// peer sent for this member; it checks it, keeps it and passes the new
+	// identity to SetIdentity. An error is logged.
+	OnCert func(der []byte) error
+
 	// Allow, if set, rejects peers, for example revoked devices.
 	Allow func(group.DeviceID) error
 
@@ -86,6 +93,7 @@ type Peer struct {
 // A Node is a member's set of connections.
 type Node struct {
 	cfg Config
+	id  atomic.Pointer[group.Identity] // the current identity; renewal replaces it
 
 	rejoinMu sync.Mutex // one Rejoin at a time
 
@@ -116,15 +124,25 @@ func New(cfg Config) *Node {
 	if cfg.OnWrite == nil {
 		cfg.OnWrite = func(Write) {}
 	}
-	return &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn)}
+	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn)}
+	n.id.Store(cfg.Identity)
+	return n
 }
+
+// identity returns the member's current identity.
+func (n *Node) identity() *group.Identity { return n.id.Load() }
+
+// SetIdentity replaces the member's identity with a renewed one, of the
+// same device and group. New connections present its certificates; the
+// running ones keep theirs.
+func (n *Node) SetIdentity(id *group.Identity) { n.id.Store(id) }
 
 func (n *Node) tlsOptions() group.TLSOptions {
 	return group.TLSOptions{Allow: n.cfg.Allow, Now: n.cfg.Now}
 }
 
 // ServerTLS returns the TLS configuration for accepting member connections.
-func (n *Node) ServerTLS() *tls.Config { return n.cfg.Identity.ServerTLS(n.tlsOptions()) }
+func (n *Node) ServerTLS() *tls.Config { return n.identity().ServerTLS(n.tlsOptions()) }
 
 // Dial connects to the member peer at addr and runs the connection until it
 // ends. A Mac dials every Linux member it finds; a Linux member dials the
@@ -135,7 +153,7 @@ func (n *Node) Dial(ctx context.Context, peer group.DeviceID, addr string) error
 	if err != nil {
 		return err
 	}
-	return n.Serve(ctx, tls.Client(raw, n.cfg.Identity.ClientTLS(peer, n.tlsOptions())))
+	return n.Serve(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())))
 }
 
 // Serve runs a member connection until it ends: one dialed by Dial, or one
@@ -152,15 +170,16 @@ func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error {
 	if err != nil {
 		return err
 	}
-	id, err := group.PeerID(tc.ConnectionState())
+	cs := tc.ConnectionState()
+	id, err := group.PeerID(cs)
 	if err != nil {
 		return err
 	}
-	if id == n.cfg.Identity.ID {
+	if id == n.identity().ID {
 		return errors.New("node: connected to itself")
 	}
-	c := &conn{n: n, id: id, tc: tc, out: make(chan outgoing, queueLen), done: make(chan struct{}),
-		finished: make(chan struct{}), since: n.cfg.Uptime()}
+	c := &conn{n: n, id: id, tc: tc, peerCert: cs.PeerCertificates[0], out: make(chan outgoing, queueLen),
+		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
 	defer close(c.finished)
 
 	// A connection that arrives while a Rejoin closes the old ones waits
@@ -308,6 +327,45 @@ func (n *Node) Peers() []Peer {
 	return out
 }
 
+// RenewPeers sends a renewed certificate to every connected member whose
+// certificate is due for renewal, if this member holds the group CA key.
+// Peers are also checked when their hello arrives; this covers connections
+// that last for months.
+func (n *Node) RenewPeers() {
+	n.mu.Lock()
+	conns := make([]*conn, 0, len(n.conns))
+	for _, c := range n.conns {
+		conns = append(conns, c)
+	}
+	n.mu.Unlock()
+	for _, c := range conns {
+		if c.role() != "" {
+			n.renewPeer(c)
+		}
+	}
+}
+
+// renewPeer sends the peer of c a renewed certificate if it is due, once
+// per connection: the connection keeps the certificate of its handshake.
+func (n *Node) renewPeer(c *conn) {
+	cert, err := n.identity().RenewMember(c.peerCert, n.cfg.Now())
+	if err != nil {
+		n.cfg.Logf("node: renewing the certificate of %s: %v", c.id, err)
+		return
+	}
+	if cert == nil {
+		return
+	}
+	c.mu.Lock()
+	sent := c.certSent
+	c.certSent = true
+	c.mu.Unlock()
+	if !sent {
+		n.cfg.Logf("node: sending %s a renewed certificate, valid until %s", c.id, cert.NotAfter.UTC().Format(time.DateOnly))
+		c.enqueue(outgoing{cert: cert})
+	}
+}
+
 func (n *Node) peersChanged() {
 	if n.cfg.OnPeers != nil {
 		n.cfg.OnPeers()
@@ -341,24 +399,27 @@ func (n *Node) forward(ev clip.Event, from *conn) {
 
 // conn is one connection to a member.
 type conn struct {
-	n     *Node
-	id    group.DeviceID
-	tc    *tls.Conn
-	since time.Duration
-	out   chan outgoing
+	n        *Node
+	id       group.DeviceID
+	tc       *tls.Conn
+	peerCert *x509.Certificate // from the handshake
+	since    time.Duration
+	out      chan outgoing
 
 	mu       sync.Mutex
 	peerRole Role // set by the peer's hello
+	certSent bool // a renewed certificate was queued for the peer
 	sayBye   bool
 	done     chan struct{} // closed to end the connection
 	closed   bool
 	finished chan struct{} // closed when Serve has cleaned up
 }
 
-// outgoing is a queued message: a hello or an event.
+// outgoing is a queued message: a hello, an event or a renewed certificate.
 type outgoing struct {
 	hello  *clip.Hello
 	event  *clip.Event
+	cert   *x509.Certificate
 	queued time.Duration
 }
 
@@ -465,6 +526,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 			return nil, err
 		}
 		return &message{Type: typeHello, Role: c.n.cfg.Role, Hello: data}, nil
+	case o.cert != nil:
+		return &message{Type: typeCert, Cert: o.cert.Raw}, nil
 	default:
 		ev := *o.event
 		ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
@@ -577,6 +640,7 @@ func (c *conn) reader() error {
 				return fmt.Errorf("node: bad hello from %s: %w", c.id, err)
 			}
 			c.n.apply(res, c)
+			c.n.renewPeer(c)
 			continue
 		}
 		switch m.Type {
@@ -592,6 +656,13 @@ func (c *conn) reader() error {
 				continue
 			}
 			c.n.apply(res, c)
+		case typeCert:
+			if c.n.cfg.OnCert == nil {
+				continue
+			}
+			if err := c.n.cfg.OnCert(m.Cert); err != nil {
+				c.n.cfg.Logf("node: a renewed certificate from %s: %v", c.id, err)
+			}
 		case typeBye:
 			return nil
 		}

@@ -455,6 +455,53 @@ func TestRenew(t *testing.T) {
 	}
 }
 
+func TestRenewMember(t *testing.T) {
+	admin := newGroup(t)
+	mac := join(t, admin, false, t0)
+	other := newGroup(t)
+	// Half a year in, nothing is due.
+	if c, err := admin.RenewMember(mac.Cert, t0.AddDate(0, 6, 0)); c != nil || err != nil {
+		t.Errorf("RenewMember half a year in = %v, %v", c, err)
+	}
+	at := t0.AddDate(1, 6, 0)
+	// Only a member with the group CA key renews.
+	if c, err := mac.RenewMember(admin.Cert, at); c != nil || err != nil {
+		t.Errorf("a Mac renewed a certificate: %v, %v", c, err)
+	}
+	// A certificate of another group is not renewed.
+	if c, err := admin.RenewMember(other.Cert, at); c != nil || err == nil {
+		t.Errorf("RenewMember renewed another group's certificate: %v, %v", c, err)
+	}
+	cert, err := admin.RenewMember(mac.Cert, at)
+	if err != nil || cert == nil {
+		t.Fatalf("RenewMember = %v, %v", cert, err)
+	}
+	next, err := mac.WithCert(cert.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !next.Cert.NotAfter.Equal(at.AddDate(2, 0, 0)) || next.ID != mac.ID || mac.Cert == next.Cert {
+		t.Errorf("WithCert: ends at %v", next.Cert.NotAfter)
+	}
+	// A Mac takes only a certificate for itself that ends later.
+	if _, err := next.WithCert(mac.Cert.Raw); err == nil {
+		t.Error("WithCert took an older certificate")
+	}
+	if _, err := mac.WithCert(admin.Cert.Raw); err == nil {
+		t.Error("WithCert took another member's certificate")
+	}
+	if _, err := mac.WithCert([]byte("junk")); err == nil {
+		t.Error("WithCert took junk")
+	}
+	forged, err := other.GroupCA.IssueMember(mac.ID, &mac.Key.PublicKey, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mac.WithCert(forged.Raw); err == nil {
+		t.Error("WithCert took a certificate from another group CA")
+	}
+}
+
 func TestRenewAfterTheClockWasAhead(t *testing.T) {
 	// The clock jumps three years ahead, Renew issues a clipbridge.local
 	// certificate that starts then, and the clock is corrected: the next

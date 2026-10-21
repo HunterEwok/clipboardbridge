@@ -77,15 +77,25 @@ func (id *Identity) ClientTLS(peer DeviceID, opt TLSOptions) *tls.Config {
 // PhoneTLS returns the TLS configuration for the iPhone port, with the
 // clipbridge.local certificate. It returns nil on a device without one.
 func (id *Identity) PhoneTLS() *tls.Config {
+	cert := id.PhoneCertificate()
+	if cert == nil {
+		return nil
+	}
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{*cert},
+	}
+}
+
+// PhoneCertificate returns the clipbridge.local certificate with its CA, for
+// the iPhone port, or nil on a device without one.
+func (id *Identity) PhoneCertificate() *tls.Certificate {
 	if id.Phone == nil {
 		return nil
 	}
 	cert := id.tlsCert(id.Phone)
 	cert.Certificate = append(cert.Certificate, id.PhoneCA.Cert.Raw)
-	return &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{cert},
-	}
+	return &cert
 }
 
 // PeerID returns the device ID of the member at the other end of a

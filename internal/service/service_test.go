@@ -607,6 +607,41 @@ func TestMac(t *testing.T) {
 	}
 }
 
+func TestRenewal(t *testing.T) {
+	// Eighteen months after pairing, the pi renews its own certificates
+	// when it starts and the Mac's when the Mac connects; both keep them.
+	var h hub
+	pi := startService(t, &h, "pi")
+	mac := startRole(t, &h, "mac", node.Mac)
+	pairWith(t, pi, mac)
+	before := map[string]*group.Identity{}
+	for _, s := range []*testService{pi, mac} {
+		s.stop()
+		id, err := group.Load(s.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[s.name] = id
+	}
+	later := func(c *Config) { c.now = func() time.Time { return time.Now().AddDate(1, 6, 0) } }
+	pi.cfg, mac.cfg = later, later
+	pi, mac = restartService(t, &h, pi), restartService(t, &h, mac)
+	for _, s := range []*testService{pi, mac} {
+		waitFor(t, s.name+" keeps a renewed certificate", func() bool {
+			id, err := group.Load(s.dir)
+			return err == nil && id.Cert.NotAfter.After(before[s.name].Cert.NotAfter.AddDate(1, 0, 0))
+		})
+	}
+	id, _ := group.Load(pi.dir)
+	if !id.Phone.NotAfter.After(before["pi"].Phone.NotAfter) {
+		t.Error("the pi did not renew its clipbridge.local certificate")
+	}
+	// The renewed certificates work: the members connect again.
+	mac.stop()
+	mac = restartService(t, &h, mac)
+	waitFor(t, "connected with the renewed certificates", func() bool { return len(mac.status(t).Peers) == 1 })
+}
+
 func TestMacInNoGroup(t *testing.T) {
 	// A Mac in no group cannot start one: it would hold no CA keys.
 	var h hub

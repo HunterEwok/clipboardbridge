@@ -163,7 +163,7 @@ func hasUsage(c *x509.Certificate, u x509.ExtKeyUsage) bool {
 // clock was ahead, is replaced too, since the iPhone would reject it. A
 // certificate that already ends with its CA is kept: a new one could not
 // last longer. Only a device that holds the CA keys renews its own
-// certificates; others get theirs from a Linux member.
+// certificates; others get theirs from a member that does (RenewMember).
 func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 	next := *id
 	changed := false
@@ -182,6 +182,48 @@ func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 		next.Phone, changed = cert, true
 	}
 	return &next, changed, nil
+}
+
+// RenewMember returns a new member certificate for the member at the other
+// end of a connection, whose certificate peer is from the group CA and ends
+// within its renewal period, for the same device and key. It returns nil
+// when the certificate is not due, or this device does not hold the group
+// CA key: then another member renews it.
+func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (*x509.Certificate, error) {
+	if id.GroupCA.Key == nil || !renewable(peer, id.GroupCA.Cert, now, memberRenewBefore) {
+		return nil, nil
+	}
+	if err := peer.CheckSignatureFrom(id.GroupCA.Cert); err != nil {
+		return nil, fmt.Errorf("group: the certificate to renew is not from the group CA: %w", err)
+	}
+	dev, err := DeviceOf(peer)
+	if err != nil {
+		return nil, err
+	}
+	pub, ok := peer.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("group: the certificate to renew has no ECDSA key")
+	}
+	return id.GroupCA.IssueMember(dev, pub, now)
+}
+
+// WithCert returns the identity with a member certificate that another
+// member renewed for it. The certificate must be from the group CA, name
+// this device and its key, and end later than the current one.
+func (id *Identity) WithCert(der []byte) (*Identity, error) {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, fmt.Errorf("group: the renewed certificate: %w", err)
+	}
+	next := *id
+	next.Cert = cert
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	if !cert.NotAfter.After(id.Cert.NotAfter) {
+		return nil, errors.New("group: the renewed certificate does not end later than the current one")
+	}
+	return &next, nil
 }
 
 // renewable reports whether a certificate should be replaced: it starts in
