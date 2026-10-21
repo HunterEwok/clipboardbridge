@@ -202,7 +202,7 @@ jobs:
           sudo install -m 0755 "$RUNNER_TEMP/clipbridge" /usr/local/bin/clipbridge
           sudo systemd-sysusers "$PWD/packaging/linux/clipbridge.sysusers"
           systemd-analyze verify packaging/linux/clipbridge.service
-          systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=3
+          systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=30 # 3.0 on the scale it prints
       - name: desktop entry
         run: |
           sudo apt-get install -y -qq desktop-file-utils >/dev/null
