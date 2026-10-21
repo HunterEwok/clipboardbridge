@@ -104,7 +104,7 @@ func doSync(t *testing.T, g *fakeGroup, token, body string) syncReply {
 }
 
 func body(text string) string {
-	b, _ := json.Marshal(syncRequest{V: 1, Text: text})
+	b, _ := json.Marshal(map[string]any{"v": 1, "text": text})
 	return string(b)
 }
 
@@ -161,7 +161,7 @@ func TestSyncSecret(t *testing.T) {
 	}
 	// A secret from the phone becomes a secret event.
 	g = &fakeGroup{ca: ca}
-	b, _ := json.Marshal(syncRequest{V: 1, Text: "otp 123456", Secret: true})
+	b, _ := json.Marshal(syncRequest{V: "1", Text: "otp 123456", Secret: true})
 	if rep := doSync(t, g, tok, string(b)); rep.Direction != "from_iphone" || g.kind != clip.Secret {
 		t.Errorf("reply %+v, kind %v", rep, g.kind)
 	}
@@ -173,8 +173,6 @@ func TestSyncErrors(t *testing.T) {
 	otherTok, _, _ := NewToken(newCA(t))
 	g := &fakeGroup{ca: ca}
 	for name, tt := range map[string]struct{ token, body string }{
-		"no token":        {"", body("x")},
-		"another group":   {otherTok, body("x")},
 		"bad JSON":        {tok, "{"},
 		"another version": {tok, `{"v":2,"text":"x"}`},
 		"too large":       {tok, `{"v":1,"text":"` + strings.Repeat("x", maxBody) + `"}`},
@@ -186,6 +184,13 @@ func TestSyncErrors(t *testing.T) {
 			}
 		})
 	}
+	// Without a token this group issued, the shortcut is told to pair
+	// again.
+	for name, token := range map[string]string{"no token": "", "another group": otherTok} {
+		if rep := doSync(t, g, token, body("x")); rep.Direction != "unpaired" || rep.Message == "" {
+			t.Errorf("%s: reply %+v", name, rep)
+		}
+	}
 	if len(g.sent) != 0 {
 		t.Error("a bad request sent a text")
 	}
@@ -195,5 +200,24 @@ func TestSyncErrors(t *testing.T) {
 	SyncHandler(g).ServeHTTP(rec, req)
 	if rec.Code != 200 || !bytes.Contains(rec.Body.Bytes(), []byte(`"error"`)) {
 		t.Errorf("GET: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSyncByHand(t *testing.T) {
+	// A shortcut built by hand: the token without "Bearer" or in another
+	// case, and v typed as text.
+	ca := newCA(t)
+	tok, _, _ := NewToken(ca)
+	g := &fakeGroup{ca: ca}
+	for _, auth := range []string{tok, "bearer " + tok, "BEARER  " + tok + " "} {
+		req := httptest.NewRequest(http.MethodPost, "/sync", strings.NewReader(`{"v":"1","text":"by hand"}`))
+		req.Header.Set("Authorization", auth)
+		rec := httptest.NewRecorder()
+		SyncHandler(g).ServeHTTP(rec, req)
+		var rep syncReply
+		json.Unmarshal(rec.Body.Bytes(), &rep)
+		if rep.Direction == "error" || rep.Direction == "unpaired" {
+			t.Errorf("Authorization %q: %+v", auth, rep)
+		}
 	}
 }

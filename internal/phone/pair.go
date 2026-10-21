@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -112,6 +113,11 @@ func (w *Window) try(code string) (string, error) {
 // the SHA-256 fingerprint of the iPhone CA, in the groups iOS shows.
 func Fingerprint(ca *group.CA) string { return group.Fingerprint(ca.Cert) }
 
+// ShortFingerprint returns the first eight groups of the fingerprint, which
+// the user compares: a fake profile would need a CA whose fingerprint starts
+// with the same 64 bits.
+func ShortFingerprint(ca *group.CA) string { return Fingerprint(ca)[:8*3-1] }
+
 // Profile returns the configuration profile that installs the iPhone CA.
 // Its identifier is fixed, so a new profile replaces the old one.
 func Profile(ca *group.CA) []byte {
@@ -167,8 +173,8 @@ func Profile(ca *group.CA) []byte {
 `)
 }
 
-// ProfileHandler serves the profile port while a window is open: the
-// profile, and a short page that links to it.
+// ProfileHandler serves the profile port while a window is open: a page
+// that walks the user through the steps, the profile, and the shortcut.
 func ProfileHandler(ca *group.CA) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /clipbridge.mobileconfig", func(w http.ResponseWriter, r *http.Request) {
@@ -176,14 +182,44 @@ func ProfileHandler(ca *group.CA) http.Handler {
 		w.Header().Set("Content-Disposition", `attachment; filename="clipbridge.mobileconfig"`)
 		w.Write(Profile(ca))
 	})
+	mux.HandleFunc("GET /clipbridge.shortcut", func(w http.ResponseWriter, r *http.Request) {
+		sc := Shortcut()
+		if sc == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", `attachment; filename="clipbridge.shortcut"`)
+		w.Write(sc)
+	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		page(w, profilePage, map[string]string{"Fingerprint": Fingerprint(ca)})
+		data := map[string]string{"Fingerprint": Fingerprint(ca), "Short": ShortFingerprint(ca)}
+		if Shortcut() != nil {
+			data["Shortcut"] = "yes"
+		}
+		page(w, profilePage, data)
 	})
 	return mux
 }
 
-// PairHandler serves the pairing page on the iPhone port. win returns the
-// open window, or nil.
+// pairRequest is what the shortcut sends to /pair on its first run. The
+// code may come as a number or as text.
+type pairRequest struct {
+	V    json.Number     `json:"v"`
+	Code json.RawMessage `json:"code"`
+}
+
+// pairReply is what the shortcut gets from /pair, always with status 200.
+type pairReply struct {
+	V       int    `json:"v"`
+	OK      bool   `json:"ok"`
+	Token   string `json:"token,omitempty"`
+	Message string `json:"message"`
+}
+
+// PairHandler serves the pairing page on the iPhone port, and the same
+// pairing as JSON for the shortcut's first run. win returns the open
+// window, or nil.
 func PairHandler(win func() *Window) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /pair", func(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +227,10 @@ func PairHandler(win func() *Window) http.Handler {
 	})
 	mux.HandleFunc("POST /pair", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if strings.Contains(r.Header.Get("Content-Type"), "json") {
+			pairJSON(w, r, win())
+			return
+		}
 		code := r.PostFormValue("code")
 		wd := win()
 		if wd == nil {
@@ -199,16 +239,54 @@ func PairHandler(win func() *Window) http.Handler {
 		}
 		token, err := wd.try(code)
 		if err != nil {
-			msg := "Wrong code. Check it and try again."
-			if !errors.Is(err, pair.ErrWrongCode) {
-				msg = strings.TrimPrefix(err.Error(), "pair: ") + ". Run clipbridge pair -phone again."
-			}
-			page(w, codePage, map[string]string{"Error": msg})
+			page(w, codePage, map[string]string{"Error": pairError(err)})
 			return
 		}
 		page(w, tokenPage, map[string]string{"Token": token})
 	})
 	return mux
+}
+
+func pairJSON(w http.ResponseWriter, r *http.Request, wd *Window) {
+	reply := func(rep pairReply) {
+		rep.V = 1
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(rep)
+	}
+	var req pairRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.V.String() != "1" {
+		reply(pairReply{Message: "The shortcut is from another version of clipbridge; install it again."})
+		return
+	}
+	if wd == nil {
+		reply(pairReply{Message: "No pairing window is open. Run clipbridge pair -phone on a Linux member, then the shortcut again."})
+		return
+	}
+	var code string
+	if json.Unmarshal(req.Code, &code) != nil {
+		// A number: typed into a number field, it lost its leading zeros.
+		var n json.Number
+		json.Unmarshal(req.Code, &n)
+		code = n.String()
+		for len(code) > 0 && len(code) < 6 && strings.Trim(code, "0123456789") == "" {
+			code = "0" + code
+		}
+	}
+	token, err := wd.try(code)
+	if err != nil {
+		reply(pairReply{Message: pairError(err)})
+		return
+	}
+	reply(pairReply{OK: true, Token: token, Message: "This iPhone is paired. Press the shortcut to sync."})
+}
+
+// pairError is the message for a failed code.
+func pairError(err error) string {
+	if errors.Is(err, pair.ErrWrongCode) {
+		return "Wrong code. Check it and try again."
+	}
+	return strings.TrimPrefix(err.Error(), "pair: ") + ". Run clipbridge pair -phone again."
 }
 
 func page(w http.ResponseWriter, t *template.Template, data map[string]string) {
@@ -224,17 +302,25 @@ const pageHead = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>clipbridge</title>
 <style>body{font:17px -apple-system,system-ui,sans-serif;margin:24px;max-width:36em;line-height:1.45}
 input,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid #888}
-code{word-break:break-all;font-size:15px}.err{color:#b00020}.fp{font:15px ui-monospace,monospace}</style>
+code{word-break:break-all;font-size:15px}.err{color:#b00020}.fp{font:20px ui-monospace,monospace}
+.small{font-size:13px;color:#666;word-break:break-all}li{margin-bottom:18px}
+.btn{display:inline-block;background:#0a7aff;color:#fff;text-decoration:none;padding:12px 18px;border-radius:12px}</style>
 </head><body>`
 
 var profilePage = template.Must(template.New("profile").Parse(pageHead + `
-<h1>clipbridge</h1>
+<h1>clipbridge on this iPhone</h1>
 <ol>
-<li><a href="/clipbridge.mobileconfig">Download the profile</a> and install it in Settings.</li>
-<li>Under Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipbridge &rsaquo; More Details, compare the SHA-256 fingerprint with the one the computer printed:
-<p class="fp">{{.Fingerprint}}</p></li>
-<li>Only if they match, turn on full trust under Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings.</li>
-<li>Then open <b>https://clipbridge.local:8765/pair</b>. It must open without a warning; if it does not, stop.</li>
+<li><p><a class="btn" href="/clipbridge.mobileconfig">Install the profile</a></p>
+<p>Allow the download, then open Settings: the profile waits at the top, under <b>Profile Downloaded</b>. Tap <b>Install</b>.</p></li>
+<li><p>In Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipbridge &rsaquo; More Details, the SHA-256 fingerprint must start with what the computer shows:</p>
+<p class="fp"><b>{{.Short}}</b></p>
+<p class="small">The whole fingerprint: {{.Fingerprint}}</p>
+<p>If it does not match, stop: someone else is answering.</p></li>
+<li><p>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings: turn on <b>clipbridge</b>. Without it, the shortcut reports that it cannot make a secure connection.</p></li>
+{{if .Shortcut}}<li><p><a class="btn" href="/clipbridge.shortcut">Add the shortcut</a></p>
+<p>Then run it once: it asks for the six-digit code that the computer shows, and remembers this iPhone.</p></li>
+{{else}}<li><p>Add the clipbridge shortcut from the release page, run it once, and type the six-digit code that the computer shows.</p></li>
+{{end}}<li><p>Put the shortcut on Back Tap: Settings &rsaquo; Accessibility &rsaquo; Touch &rsaquo; Back Tap &rsaquo; Double Tap &rsaquo; clipbridge. On an iPhone with an Action button, use that instead.</p></li>
 </ol>
 </body></html>`))
 

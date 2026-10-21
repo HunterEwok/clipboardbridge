@@ -190,21 +190,29 @@ func cmdPairPhone(stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintln(stdout, "On the iPhone, with Safari:")
-	fmt.Fprintf(stdout, "  1. Open http://%s/ and install the clipbridge profile.\n", m.Address)
-	fmt.Fprintln(stdout, "  2. In Settings > General > VPN & Device Management > clipbridge > More Details,")
-	fmt.Fprintln(stdout, "     check that the SHA-256 fingerprint is:")
-	fmt.Fprintf(stdout, "       %s\n", m.Fingerprint)
-	fmt.Fprintln(stdout, "     Only if it matches, turn on full trust in Settings > General > About >")
-	fmt.Fprintln(stdout, "     Certificate Trust Settings.")
-	fmt.Fprintln(stdout, "  3. Open https://clipbridge.local:8765/pair. It must open without a warning;")
-	fmt.Fprintf(stdout, "     if it does not, stop. Type the code: %s %s\n", m.Code[:3], m.Code[3:])
+	fmt.Fprintln(stdout, "Scan this with the iPhone's camera and follow the page:")
+	fmt.Fprintln(stdout)
+	if err := writeQR(stdout, "http://"+m.Address+"/"); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "\n  (or open http://%s/ in Safari)\n\n", m.Address)
+	fmt.Fprintf(stdout, "The profile's fingerprint must start with:  %s\n", shortFingerprint(m.Fingerprint))
+	fmt.Fprintf(stdout, "The code the shortcut asks for:            %s %s\n", m.Code[:3], m.Code[3:])
 	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
 	if _, err := c.Receive(); err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintln(stdout, "The iPhone is paired. Install the shortcut and give it the token the page showed.")
+	fmt.Fprintln(stdout, "The iPhone is paired. Press the shortcut to sync.")
 	return 0
+}
+
+// shortFingerprint returns the first eight groups of a fingerprint, the part
+// the user compares.
+func shortFingerprint(fp string) string {
+	if len(fp) > 23 {
+		return fp[:23]
+	}
+	return fp
 }
 
 // cmdJoin joins this device to a group with the code shown by pair. The

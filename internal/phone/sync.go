@@ -35,18 +35,19 @@ type Group interface {
 	PhoneCA() *group.CA
 }
 
-// syncRequest is what the shortcut sends.
+// syncRequest is what the shortcut sends. V may come as a number or, from
+// a shortcut built by hand with a text field, as a string.
 type syncRequest struct {
-	V      int    `json:"v"`
-	Text   string `json:"text"`
-	Secret bool   `json:"secret,omitempty"`
+	V      json.Number `json:"v"`
+	Text   string      `json:"text"`
+	Secret bool        `json:"secret,omitempty"`
 }
 
 // syncReply is what the shortcut gets: always with HTTP status 200, since
 // a shortcut cannot read status codes.
 type syncReply struct {
 	V         int    `json:"v"`
-	Direction string `json:"direction"` // to_iphone, from_iphone, none or error
+	Direction string `json:"direction"` // to_iphone, from_iphone, none, unpaired or error
 	Copy      string `json:"copy,omitempty"`
 	ExpiresIn int    `json:"expires_in"` // seconds a secret copy may stay, 0 for normal text
 	Message   string `json:"message"`
@@ -62,17 +63,19 @@ func SyncHandler(g Group) http.Handler {
 			json.NewEncoder(w).Encode(rep)
 		}
 		fail := func(msg string) { reply(syncReply{Direction: "error", Message: msg}) }
+		// unpaired tells the shortcut to forget its token and pair again.
+		unpaired := func(msg string) { reply(syncReply{Direction: "unpaired", Message: msg}) }
 		if r.Method != http.MethodPost {
 			fail("the shortcut must POST to /sync")
 			return
 		}
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok {
-			fail("the shortcut has no token; pair the iPhone with clipbridge pair -phone")
+		token := bearer(r.Header.Get("Authorization"))
+		if token == "" {
+			unpaired("the shortcut has no token; run clipbridge pair -phone and the shortcut again")
 			return
 		}
 		if _, err := CheckToken(g.PhoneCA(), token); err != nil {
-			fail(ErrBadToken.Error())
+			unpaired(ErrBadToken.Error())
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
@@ -81,7 +84,7 @@ func SyncHandler(g Group) http.Handler {
 			return
 		}
 		var req syncRequest
-		if err := json.Unmarshal(body, &req); err != nil || req.V != 1 {
+		if err := json.Unmarshal(body, &req); err != nil || req.V.String() != "1" {
 			fail("the shortcut is from another version of clipbridge; install it again")
 			return
 		}
@@ -92,6 +95,16 @@ func SyncHandler(g Group) http.Handler {
 		}
 		reply(rep)
 	})
+}
+
+// bearer returns the token of an Authorization header: "Bearer cb1.…" in
+// any case, or the bare token, as a shortcut built by hand may send it.
+func bearer(h string) string {
+	h = strings.TrimSpace(h)
+	if scheme, rest, ok := strings.Cut(h, " "); ok && strings.EqualFold(scheme, "Bearer") {
+		h = strings.TrimSpace(rest)
+	}
+	return h
 }
 
 // decide picks the direction, as the design's iPhone button section says.

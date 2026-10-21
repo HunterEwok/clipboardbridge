@@ -27,5 +27,8 @@ All notable changes to clipbridge are documented in this file. The format follow
 - iPhone: `clipbridge pair -phone` on the member that holds `clipbridge.local` serves the
   profile with the iPhone CA and a pairing page that issues the shortcut's token; the
   shortcut's `/sync` sends the iPhone's text to the group or brings a recent copy back.
+  `pair -phone` shows a QR code of a page that walks through the steps; the shortcut,
+  generated from the code and signed on a Mac, asks for the six-digit code on its first run
+  and keeps its token.
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).

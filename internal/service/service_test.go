@@ -974,15 +974,44 @@ func TestIPhone(t *testing.T) {
 	if rep := sync("from the iPhone"); rep["direction"] != "to_iphone" || rep["copy"] != "from the computer" {
 		t.Errorf("reply %v", rep)
 	}
-	// A token from another group is refused.
+	// A token from another group is refused, and the shortcut told to
+	// pair again.
 	req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/sync", strings.NewReader(`{"v":1,"text":"x"}`))
 	req.Header.Set("Authorization", "Bearer cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if resp, err := iphone.Do(req); err == nil {
 		var rep map[string]any
 		json.NewDecoder(resp.Body).Decode(&rep)
 		resp.Body.Close()
-		if rep["direction"] != "error" {
+		if rep["direction"] != "unpaired" {
 			t.Errorf("a forged token got %v", rep)
 		}
+	}
+
+	// A second iPhone pairs the way the shortcut does: the code as JSON.
+	c2 := holder.dial(t)
+	defer c2.Close()
+	m, err = c2.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paired struct {
+		OK    bool   `json:"ok"`
+		Token string `json:"token"`
+	}
+	json.NewDecoder(resp.Body).Decode(&paired)
+	resp.Body.Close()
+	if !paired.OK || !strings.HasPrefix(paired.Token, "cb1.") {
+		t.Fatalf("JSON pairing: %+v", paired)
+	}
+	if m, err := c2.Receive(); err != nil || !m.Done {
+		t.Fatalf("pair -phone ended with %+v, %v", m, err)
+	}
+	tok[1] = []byte(paired.Token)
+	if rep := sync("from the second iPhone"); rep["direction"] == "unpaired" || rep["direction"] == "error" {
+		t.Errorf("the second iPhone's token: %v", rep)
 	}
 }
