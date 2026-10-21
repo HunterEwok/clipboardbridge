@@ -1,0 +1,331 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package node
+
+import (
+	"bytes"
+	"crypto/x509"
+	"encoding/json"
+	"flag"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/clip"
+	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipbridge/internal/hlc"
+)
+
+var update = flag.Bool("update", false, "rewrite the interop test vectors")
+
+func interopPath(name string) string { return filepath.Join("..", "..", "testdata", "interop", name) }
+
+// memberVectors are what another implementation of the member protocol,
+// such as the phone app's ClipbridgeKit, must decode and encode the same
+// way (docs/protocol.md, sections 4 and 5).
+type memberVectors struct {
+	Frames     []json.RawMessage `json:"frames"` // message objects as the Go side writes them
+	Timestamps []timestampVector `json:"timestamps"`
+	Events     []eventVector     `json:"events"`
+	Order      []orderVector     `json:"order"`
+}
+
+type timestampVector struct {
+	Text string `json:"text"`
+	OK   bool   `json:"ok"`
+}
+
+type eventVector struct {
+	JSON  json.RawMessage `json:"json"`
+	Valid bool            `json:"valid"` // decodes and passes Validate
+}
+
+type orderVector struct {
+	A     json.RawMessage `json:"a"`
+	B     json.RawMessage `json:"b"`
+	Later bool            `json:"later"` // A sorts after B
+}
+
+const (
+	vecDevice = "0123456789abcdef0123456789abcdef"
+	vecEvent  = "fedcba9876543210fedcba9876543210"
+)
+
+func vecTime(t *testing.T, s string) hlc.Timestamp {
+	t.Helper()
+	var ts hlc.Timestamp
+	if err := ts.UnmarshalText([]byte(s)); err != nil {
+		t.Fatal(err)
+	}
+	return ts
+}
+
+func TestMemberInteropVectors(t *testing.T) {
+	text := clip.Event{ID: vecEvent, Origin: vecDevice, Time: vecTime(t, "1761024000000.3"), Age: 1500, Kind: clip.Text, Text: "hello <world> & \"you\" / ✓"}
+	mark := clip.Event{ID: vecEvent, Origin: vecDevice, Via: clip.Phone, Time: vecTime(t, "1761024000001.0"), Age: 20, Kind: clip.Secret}
+	secret := mark
+	secret.Text = "hunter2"
+	universal := text
+	universal.Via = clip.Universal
+	hello := func(role Role, h helloOut) json.RawMessage {
+		data, err := encode(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return msg(t, &message{Type: typeHello, Role: role, Hello: data})
+	}
+	event := func(e clip.Event) json.RawMessage {
+		data, err := encode(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return msg(t, &message{Type: typeEvent, Event: data})
+	}
+	v := memberVectors{Frames: []json.RawMessage{
+		hello(Linux, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &text}, Records: "q83vEjRWeJA=", Name: "pi"}),
+		hello(Mac, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &mark}}),
+		hello(Phone, helloOut{Hello: clip.Hello{Wall: 0}}),
+		event(text),
+		event(secret),
+		event(universal),
+		msg(t, &message{Type: typePing}),
+		msg(t, &message{Type: typeBye}),
+		msg(t, &message{Type: typeCert, Cert: []byte("member certificate DER")}),
+		msg(t, &message{Type: typeRecs, Records: []group.Record{
+			{Body: []byte(`{"v":1,"type":"revoke"}`), Sig: []byte("sig")},
+			{Body: []byte(`{"v":1}`), Sig: []byte("sig2"), Chain: [][]byte{[]byte("admin CA")}},
+		}}),
+	}}
+
+	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",
+		"1.4294967296", "", "1", "1.", ".1", "-1.0", "+1.0", "1 .0", "1.0 ", "0x1.0", "1.0.0", "01.0", "1.00"} {
+		var ts hlc.Timestamp
+		v.Timestamps = append(v.Timestamps, timestampVector{Text: s, OK: ts.UnmarshalText([]byte(s)) == nil})
+	}
+
+	for _, raw := range []string{
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","via":"iphone","time":"1.0","age_ms":0,"kind":"secret","text":""}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","kind":"text","text":"no age"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":""}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"0.0","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"FEDCBA9876543210FEDCBA9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"fedcba98","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":-1,"kind":"text","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"image","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","via":"fax","time":"1.0","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1","age_ms":0,"kind":"text","text":"x"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x","extra":true}`,
+	} {
+		var e clip.Event
+		ok := json.Unmarshal([]byte(raw), &e) == nil && e.Validate() == nil
+		v.Events = append(v.Events, eventVector{JSON: json.RawMessage(raw), Valid: ok})
+	}
+
+	ev := func(id, ts string) clip.Event {
+		return clip.Event{ID: id, Origin: vecDevice, Time: vecTime(t, ts), Kind: clip.Text, Text: "x"}
+	}
+	for _, p := range [][2]clip.Event{
+		{ev(vecEvent, "2.0"), ev(vecEvent, "1.0")},
+		{ev(vecEvent, "1.1"), ev(vecEvent, "1.0")},
+		{ev(vecEvent, "1.0"), ev(vecEvent, "1.1")},
+		{ev("ff000000000000000000000000000000", "1.0"), ev("0f000000000000000000000000000000", "1.0")},
+		{ev("0f000000000000000000000000000000", "1.0"), ev("ff000000000000000000000000000000", "1.0")},
+		{ev(vecEvent, "1.0"), ev(vecEvent, "1.0")},
+	} {
+		a, _ := encode(p[0])
+		b, _ := encode(p[1])
+		v.Order = append(v.Order, orderVector{A: a, B: b, Later: later(p[0], p[1])})
+	}
+
+	checkVectors(t, "member.json", v)
+}
+
+// later is the order of docs/protocol.md, section 5: by time, then by ID.
+func later(a, b clip.Event) bool {
+	if c := a.Time.Compare(b.Time); c != 0 {
+		return c > 0
+	}
+	return a.ID > b.ID
+}
+
+func msg(t *testing.T, m *message) json.RawMessage {
+	t.Helper()
+	f, err := frame(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return json.RawMessage(f[4:])
+}
+
+// checkVectors compares v, as JSON, with the file, or rewrites it with
+// -update.
+func checkVectors(t *testing.T, name string, v any) {
+	t.Helper()
+	got, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = append(got, '\n')
+	path := interopPath(name)
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s is out of date; run go test ./internal/node -run TestMemberInteropVectors -update", path)
+	}
+}
+
+// certVectors are member certificates and whether the member protocol
+// accepts each at a time, for another implementation's peer check. The
+// certificates are random, so the file is written only with -update; a
+// normal run checks that the Go side still decides as it says.
+type certVectors struct {
+	GroupCA []byte       `json:"group_ca"`
+	Cases   []certVector `json:"cases"`
+}
+
+type certVector struct {
+	Name   string `json:"name"`
+	Cert   []byte `json:"cert"`
+	NowMS  int64  `json:"now_ms"`
+	Device string `json:"device"` // "" when refused
+}
+
+// acceptedDevice checks a peer's certificate as the member TLS
+// configuration does: the chain to the group CA at max(now, its start),
+// then the device name.
+func acceptedDevice(ca, cert *x509.Certificate, now time.Time) string {
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	at := now
+	if at.Before(ca.NotBefore) {
+		at = ca.NotBefore
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, CurrentTime: at, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		return ""
+	}
+	id, err := group.DeviceOf(cert)
+	if err != nil {
+		return ""
+	}
+	return string(id)
+}
+
+func TestMemberCertVectors(t *testing.T) {
+	path := interopPath("member-certs.json")
+	if *update {
+		t0 := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+		g, err := group.Create(t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, err := group.Create(t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := func(d time.Duration) int64 { return t0.Add(d).UnixMilli() }
+		v := certVectors{GroupCA: g.GroupCA.Cert.Raw, Cases: []certVector{
+			{Name: "a member", Cert: g.Cert.Raw, NowMS: at(24 * time.Hour)},
+			{Name: "a clock years behind", Cert: g.Cert.Raw, NowMS: 0},
+			{Name: "expired", Cert: g.Cert.Raw, NowMS: at(3 * 365 * 24 * time.Hour)},
+			{Name: "another group", Cert: other.Cert.Raw, NowMS: at(24 * time.Hour)},
+			{Name: "the group CA itself", Cert: g.GroupCA.Cert.Raw, NowMS: at(24 * time.Hour)},
+			{Name: "the clipbridge.local certificate", Cert: g.Phone.Raw, NowMS: at(24 * time.Hour)},
+		}}
+		for i := range v.Cases {
+			c, _ := x509.ParseCertificate(v.Cases[i].Cert)
+			v.Cases[i].Device = acceptedDevice(g.GroupCA.Cert, c, time.UnixMilli(v.Cases[i].NowMS))
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v certVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := 0
+	for _, c := range v.Cases {
+		cert, err := x509.ParseCertificate(c.Cert)
+		if err != nil {
+			t.Fatalf("%s: %v", c.Name, err)
+		}
+		if got := acceptedDevice(ca, cert, time.UnixMilli(c.NowMS)); got != c.Device {
+			t.Errorf("%s: accepted as %q, the file says %q", c.Name, got, c.Device)
+		}
+		if c.Device != "" {
+			accepted++
+		}
+	}
+	if accepted != 2 {
+		t.Errorf("%d cases accepted, want the member at two times", accepted)
+	}
+}
+
+// TestSwiftMemberFrames decodes the frames the phone app's ClipbridgeKit
+// writes (testdata/interop/swift-member.json, from its tests) as a member
+// does.
+func TestSwiftMemberFrames(t *testing.T) {
+	data, err := os.ReadFile(interopPath("swift-member.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frames [][]byte
+	if err := json.Unmarshal(data, &frames); err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) < 3 {
+		t.Fatalf("%d frames, want a hello, an event and a ping at least", len(frames))
+	}
+	for i, f := range frames {
+		m, err := readMessage(nopDeadline{bytes.NewReader(f)}, time.Second)
+		if err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		switch {
+		case i == 0:
+			if m.Type != typeHello || m.Role != Phone {
+				t.Fatalf("frame 0 is %s from %q, want the phone's hello", m.Type, m.Role)
+			}
+			h, extra, err := decodeHello(m.Hello)
+			if err != nil || h.Current == nil || h.Current.Validate() != nil || extra.Name != "iPhone" {
+				t.Errorf("the hello: %+v %+v, %v", h, extra, err)
+			}
+			if h.Current != nil && h.Current.Kind == clip.Secret && h.Current.Text != "" {
+				t.Error("the hello carries a secret's text")
+			}
+		case m.Type == typeEvent:
+			var e clip.Event
+			if err := json.Unmarshal(m.Event, &e); err != nil || e.Validate() != nil {
+				t.Errorf("frame %d: an event that Go refuses: %s, %v", i, m.Event, err)
+			}
+		case m.Type != typePing && m.Type != typeBye:
+			t.Errorf("frame %d: unexpected type %q", i, m.Type)
+		}
+	}
+}
+
+type nopDeadline struct{ *bytes.Reader }
+
+func (nopDeadline) SetReadDeadline(time.Time) error { return nil }

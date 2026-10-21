@@ -129,6 +129,85 @@ public enum GroupCertificates {
     }
 
     public enum CertificateError: Error { case badDeviceID, outsideCALifetime, malformed }
+
+    public enum VerifyError: Error, Equatable {
+        case notFromGroupCA, expired, notYetValid, badName, isCA
+    }
+
+    /// Checks a member certificate as Go's checkPeer does (docs/protocol.md,
+    /// section 2): signed by the group CA, valid at max(now, the CA's
+    /// start), not a CA, its CN a device ID and its one DNS name
+    /// cb-<ID>.local. It returns the device ID.
+    public static func verifyMember(_ der: Data, groupCA: Data, now: Date) throws -> String {
+        let ca = try CertificateInfo(der: groupCA)
+        let cert = try ParsedCertificate(der: der)
+        guard cert.rawIssuer == ca.rawSubject,
+              let key = try? P256.Signing.PublicKey(derRepresentation: ca.publicKey),
+              let sig = try? P256.Signing.ECDSASignature(derRepresentation: cert.signature),
+              cert.signatureAlgorithm == DER.oid(oidECDSAWithSHA256),
+              key.isValidSignature(sig, for: cert.tbs) else { throw VerifyError.notFromGroupCA }
+        let t = max(now, ca.notBefore)
+        guard t >= cert.info.notBefore else { throw VerifyError.notYetValid }
+        guard t <= cert.info.notAfter else { throw VerifyError.expired }
+        guard !cert.isCA else { throw VerifyError.isCA }
+        guard let id = cert.info.commonName, isDeviceID(id), cert.dnsNames == ["cb-\(id).local"] else { throw VerifyError.badName }
+        return id
+    }
+}
+
+/// The parts of a certificate that verifying it needs: the signed bytes,
+/// the signature, the issuer and the extensions.
+struct ParsedCertificate {
+    let info: CertificateInfo
+    let tbs: [UInt8]
+    let signatureAlgorithm: [UInt8] // the OID, encoded
+    let signature: [UInt8] // DER
+    let rawIssuer: [UInt8]
+    let dnsNames: [String]
+    let isCA: Bool
+
+    init(der: Data) throws {
+        info = try CertificateInfo(der: der)
+        var r = DERReader(Array(der))
+        var cert = try r.read(0x30)
+        tbs = try cert.readAny(raw: true).bytes
+        var alg = try cert.read(0x30)
+        signatureAlgorithm = try alg.readAny(raw: true).bytes
+        signature = Array(try cert.read(0x03).bytes.dropFirst()) // the unused-bits byte
+        var t = DERReader(tbs)
+        var body = try t.read(0x30)
+        if body.peek == 0xa0 { _ = try body.readAny() } // version
+        _ = try body.read(0x02) // serial
+        _ = try body.read(0x30) // algorithm
+        rawIssuer = try body.readAny(raw: true).bytes
+        _ = try body.read(0x30) // validity
+        _ = try body.readAny() // subject
+        _ = try body.readAny() // public key
+        var names: [String] = []
+        var ca = false
+        while let tag = body.peek {
+            var e = try body.readAny()
+            guard tag == 0xa3 else { continue } // extensions
+            var exts = try e.read(0x30)
+            while exts.peek != nil {
+                var ext = try exts.read(0x30)
+                let oid = try ext.readAny(raw: true).bytes
+                if ext.peek == 0x01 { _ = try ext.readAny() } // critical
+                var value = DERReader(try ext.read(0x04).bytes)
+                if oid == DER.oid(GroupCertificates.oidSubjectAltName) {
+                    var seq = try value.read(0x30)
+                    while let t = seq.peek {
+                        let n = try seq.readAny()
+                        if t == 0x82 { names.append(String(decoding: n.bytes, as: UTF8.self)) } // dNSName
+                    }
+                } else if oid == DER.oid(GroupCertificates.oidBasicConstraints) {
+                    var seq = try value.read(0x30)
+                    if seq.peek == 0x01 { ca = try seq.readAny().bytes != [0] }
+                }
+            }
+        }
+        (dnsNames, isCA) = (names, ca)
+    }
 }
 
 /// What ClipbridgeKit reads from a certificate: its subject, validity and

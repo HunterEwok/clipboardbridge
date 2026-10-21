@@ -260,9 +260,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: the Swift phone admits the Go joiner
+      - name: the Swift phone admits the Go joiner, and Go reads its member frames
         if: runner.os == 'Linux'
-        run: CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
+        run: |
+          CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
+          # swift test just wrote testdata/interop/swift-member.json.
+          go test ./internal/node -run TestSwiftMemberFrames -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit
@@ -275,7 +278,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: the Swift phone admits the Go joiner over TLS
+      - name: the Swift phone admits the Go joiner and syncs with a Go member over TLS
         if: runner.os == 'macOS'
         run: |
           # A throwaway keychain for the tool's identity, unlocked and the default.
@@ -285,6 +288,7 @@ jobs:
           security unlock-keychain -p ci ci.keychain
           security set-keychain-settings ci.keychain
           CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
 
   ci-ok:
     name: ci-ok

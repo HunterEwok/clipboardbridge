@@ -8,7 +8,15 @@
 //   clipbridge-interop admit HOST PORT CODE
 //   clipbridge-interop admit-tls HOST PORT CODE FINGERPRINT   (macOS: real TLS)
 //
-// It prints the group CA in base64 on success. Test use only.
+// It prints the group CA in base64 on success.
+//
+//   clipbridge-interop member-tls HOST PORT PEER   (macOS)
+//
+// plays the phone as a member (internal/node, TestSwiftMemberTLS): it makes
+// a key in the keychain and prints "key <SubjectPublicKeyInfo, base64>",
+// reads "cert <DER, base64>" and "ca <DER, base64>" from standard input,
+// dials the Go member PEER with TLS, sends "from swift", waits for "from
+// go", and prints "ok". Test use only.
 
 import ClipbridgeKit
 import Foundation
@@ -76,7 +84,64 @@ final class SocketTransport: FrameTransport {
     }
 }
 
+#if canImport(Network)
+func memberTLS(host: String, port: UInt16, peer: String) async throws {
+    let label = "clipbridge-interop-member-\(SyncEngine.newID())"
+    let signer = try SecKeySigner(try KeychainIdentity.makeKey(label: label))
+    print("key \(signer.publicKeyDER.base64EncodedString())")
+    fflush(stdout)
+    func field(_ name: String) throws -> Data {
+        guard let line = readLine(), line.hasPrefix(name + " "), let d = Data(base64Encoded: String(line.dropFirst(name.count + 1))) else {
+            throw TLSTransport.Failure.notReady("no \(name) on standard input")
+        }
+        return d
+    }
+    let cert = try field("cert"), ca = try field("ca")
+    guard let me = try CertificateInfo(der: cert).commonName else { throw TLSTransport.Failure.notReady("no device ID") }
+    let identity = try KeychainIdentity.identity(certificate: cert, key: signer.key, label: label, storeKey: false)
+    let tls = TLSTransport(host: host, port: port, alpn: Member.alpn, identity: identity) { leaf in
+        (try? GroupCertificates.verifyMember(leaf, groupCA: ca, now: Date())) == peer
+    }
+    try await tls.start()
+    let (changes, cont) = AsyncStream<String>.makeStream()
+    let node = MemberNode(engine: SyncEngine(device: me, clock: HybridClock()), name: "iPhone", onChange: { cont.yield($0.text) })
+    let serving = Task { try await node.serve(tls) }
+    let timeout = Task {
+        try await Task.sleep(nanoseconds: 15_000_000_000)
+        cont.finish()
+    }
+    while await node.peers == 0 {
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    await node.send(text: "from swift", kind: .text)
+    var gotIt = false
+    for await t in changes where t == "from go" {
+        gotIt = true
+        break
+    }
+    timeout.cancel()
+    guard gotIt else { throw TLSTransport.Failure.notReady("no \"from go\" within 15 s") }
+    print("ok")
+    await node.closeAll()
+    try await serving.value
+}
+#endif
+
 let args = CommandLine.arguments
+if args.count == 5, args[1] == "member-tls", let port = UInt16(args[3]) {
+    #if canImport(Network)
+    do {
+        try await memberTLS(host: args[2], port: port, peer: args[4])
+        exit(0)
+    } catch {
+        FileHandle.standardError.write("clipbridge-interop: \(error)\n".data(using: .utf8)!)
+        exit(1)
+    }
+    #else
+    FileHandle.standardError.write("member-tls needs Network.framework\n".data(using: .utf8)!)
+    exit(2)
+    #endif
+}
 guard args.count >= 5, let port = UInt16(args[3]),
       args[1] == "admit" && args.count == 5 || args[1] == "admit-tls" && args.count == 6 else {
     FileHandle.standardError.write("usage: clipbridge-interop admit HOST PORT CODE | admit-tls HOST PORT CODE FINGERPRINT\n".data(using: .utf8)!)
@@ -139,3 +204,4 @@ do {
     FileHandle.standardError.write("clipbridge-interop: \(error)\n".data(using: .utf8)!)
     exit(1)
 }
+
