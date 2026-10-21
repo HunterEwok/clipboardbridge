@@ -48,26 +48,37 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     /// Starts the connection and waits for the handshake.
     public func start() async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            var done = false
+            let once = Once()
             connection.stateUpdateHandler = { [weak self] state in
-                guard !done else { return }
                 switch state {
                 case .ready:
-                    done = true
+                    guard once.claim() else { return }
                     self?.peerCertificate = self?.leafCertificate()
                     c.resume()
                 case .failed(let e), .waiting(let e):
-                    done = true
+                    guard once.claim() else { return }
                     self?.connection.cancel()
                     c.resume(throwing: Failure.notReady("\(e)"))
                 case .cancelled:
-                    done = true
+                    guard once.claim() else { return }
                     c.resume(throwing: Failure.closed)
                 default:
                     break
                 }
             }
             connection.start(queue: queue)
+        }
+    }
+
+    /// Lets the first of several callbacks through.
+    final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func claim() -> Bool {
+            lock.withLock {
+                defer { done = true }
+                return !done
+            }
         }
     }
 

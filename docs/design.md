@@ -678,7 +678,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-5  | All devices are on one home network; no relay.                                             |
 | D-6  | Mac and Linux sync automatically; the iPhone uses one button that picks the direction.     |
 | D-7  | Console without a desktop: tmux for copy and paste, a root helper for console paste outside tmux. |
-| D-8  | The repository is in English only.                                                         |
+| D-8  | The repository is in English only, apart from the apps' translations (String Catalogs, Android `values-<language>`). |
 | D-9  | Pairing a computer: code entry with CPace inside TLS 1.3 instead of comparing digits, which a man in the middle can grind. |
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
 | D-11 | Members talk on their own advertised port; port 8765 serves only the iPhone.               |

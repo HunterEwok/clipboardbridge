@@ -78,7 +78,9 @@ the group", not a status code), never a dialog that must be dismissed.
 
 ## Layout of the repository
 
-- `apps/ios/` — the Xcode project (SwiftUI), built and tested in CI on macOS runners, and
+- `apps/ios/` — the app (SwiftUI): `project.yml` describes the Xcode project for XcodeGen
+  (`cd apps/ios && xcodegen generate`; the generated project is not committed), built and
+  tested on an iPhone simulator in CI without signing; and
   `apps/ios/ClipbridgeKit`, the Swift package with the protocol core (CPace, the pairing
   frames, the join QR code, the member protocol and the phone's sync engine). It has no UI
   and runs on Linux too; its tests check it against the vectors that the Go tests write to
@@ -91,6 +93,8 @@ the group", not a status code), never a dialog that must be dismissed.
   `_clipbridge._tcp` under `NSBonjourServices` and explains the use in
   `NSLocalNetworkUsageDescription`.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
-- `apps/design/` — tokens and the icon; `apps/l10n/` — the shared glossary of terms, so
+- `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
+  `apps/ios/Clipbridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
+  WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
 - The protocol both apps speak is [protocol.md](protocol.md).

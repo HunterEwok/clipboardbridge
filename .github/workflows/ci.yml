@@ -52,6 +52,8 @@ jobs:
         run: go tool actionlint
       - name: repository rules
         run: go run ./tools/repocheck
+      - name: design tokens up to date and readable
+        run: go run ./tools/tokens -check
 
   test:
     name: test (${{ matrix.os }})
@@ -290,10 +292,35 @@ jobs:
           CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
           CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
 
+  app:
+    name: iPhone app
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: generate the Xcode project
+        working-directory: apps/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: build and test on the simulator, without signing
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          # The first available iPhone simulator.
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")))')
+          xcodebuild test -project Clipbridge.xcodeproj -scheme Clipbridge -destination "id=$udid" \
+            CODE_SIGNING_ALLOWED=NO | tail -n 200
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, kit]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, kit, app]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
