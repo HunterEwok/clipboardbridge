@@ -43,7 +43,10 @@ final class AppModel: ObservableObject {
 
     let group: GroupController
 
-    init(group: GroupController = PendingGroup()) {
+    /// nil means PendingGroup, made here because a default argument is
+    /// evaluated outside the main actor.
+    init(group: GroupController? = nil) {
+        let group = group ?? PendingGroup()
         self.group = group
         phase = group.hasGroup ? .home : .start
         computers = group.computers
