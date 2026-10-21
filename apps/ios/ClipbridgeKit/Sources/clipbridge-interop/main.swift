@@ -6,6 +6,7 @@
 // handshake, and admits the joiner with PairingMember.
 //
 //   clipbridge-interop admit HOST PORT CODE
+//   clipbridge-interop admit-tls HOST PORT CODE FINGERPRINT   (macOS: real TLS)
 //
 // It prints the group CA in base64 on success. Test use only.
 
@@ -76,8 +77,9 @@ final class SocketTransport: FrameTransport {
 }
 
 let args = CommandLine.arguments
-guard args.count == 5, args[1] == "admit", let port = UInt16(args[3]) else {
-    FileHandle.standardError.write("usage: clipbridge-interop admit HOST PORT CODE\n".data(using: .utf8)!)
+guard args.count >= 5, let port = UInt16(args[3]),
+      args[1] == "admit" && args.count == 5 || args[1] == "admit-tls" && args.count == 6 else {
+    FileHandle.standardError.write("usage: clipbridge-interop admit HOST PORT CODE | admit-tls HOST PORT CODE FINGERPRINT\n".data(using: .utf8)!)
     exit(2)
 }
 
@@ -87,16 +89,43 @@ do {
     let ca = try GroupCertificates.groupCA(signer: caSigner, now: now)
     let phoneKey = SoftwareSigner()
     let phoneID = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
-    let phoneCert = try GroupCertificates.member(device: phoneID, publicKey: phoneKey.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
-    let t = try SocketTransport(host: args[2], port: port)
-    // In place of the TLS handshake: the member's certificate, then the
-    // joiner's; the session ID is fixed.
-    try await t.writeBlob(phoneCert)
-    let joinerCert = try await t.readBlob()
+    var phoneCert = try GroupCertificates.member(device: phoneID, publicKey: phoneKey.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
+    let t: FrameTransport
+    let joinerCert: Data
+    let sid: [UInt8]
+    if args[1] == "admit-tls" {
+        #if canImport(Network)
+        let fp = args[5]
+        // The key is made in the keychain, as the app makes its key in the
+        // Secure Enclave, and the certificate is issued for it.
+        let label = "clipbridge-interop-\(phoneID)"
+        let signer = try SecKeySigner(try KeychainIdentity.makeKey(label: label))
+        phoneCert = try GroupCertificates.member(device: phoneID, publicKey: signer.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
+        let identity = try KeychainIdentity.identity(certificate: phoneCert, key: signer.key, label: label, storeKey: false)
+        let tls = TLSTransport(host: args[2], port: port, alpn: Pairing.alpn, identity: identity) { leaf in
+            Pairing.fingerprint(cert: leaf) == fp
+        }
+        try await tls.start()
+        guard let leaf = tls.peerCertificate,
+              let exported = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else {
+            throw TLSTransport.Failure.notReady("no peer certificate or exporter")
+        }
+        (t, joinerCert, sid) = (tls, leaf, exported)
+        #else
+        FileHandle.standardError.write("admit-tls needs Network.framework\n".data(using: .utf8)!)
+        exit(2)
+        #endif
+    } else {
+        let s = try SocketTransport(host: args[2], port: port)
+        // In place of the TLS handshake: the member's certificate, then the
+        // joiner's; the session ID is fixed.
+        try await s.writeBlob(phoneCert)
+        (t, joinerCert, sid) = (s, try await s.readBlob(), [UInt8](repeating: 0, count: 32))
+    }
     let tag = GroupCertificates.tag(groupCA: ca)
     let admitted = try await PairingMember.admit(
         over: t, code: args[4], memberCert: phoneCert, joinerCert: joinerCert,
-        sessionID: [UInt8](repeating: 0, count: 32),
+        sessionID: sid,
         memberAD: Pairing.MemberAD(device: phoneID, group: tag)
     ) { device, publicKey, _ in
         Pairing.Welcome(cert: try GroupCertificates.member(device: device, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now), groupCA: ca)
