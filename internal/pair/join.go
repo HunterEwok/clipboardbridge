@@ -247,9 +247,15 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	if dev, err := group.DeviceOf(memberCert); err != nil || dev != member.Device {
 		return nil, errors.New("pair: the member's certificate does not name the member")
 	}
-	if j.Info.OS == "linux" {
+	// A Linux device gets the CA keys, except in a group whose root is the
+	// phone, where no computer holds them; a Mac never gets them.
+	keys := w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil
+	if keys && j.Info.OS != "linux" {
+		return nil, errors.New("pair: the member sent CA keys to a Mac")
+	}
+	if keys {
 		if w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {
-			return nil, errors.New("pair: the member did not send the CA keys")
+			return nil, errors.New("pair: the member sent only some of the CA keys")
 		}
 		if id.GroupCA.Key, err = parseKey(w.GroupCAKey); err != nil {
 			return nil, err

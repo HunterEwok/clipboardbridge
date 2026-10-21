@@ -193,6 +193,9 @@ func (s *Service) electLocked() {
 	if s.id == nil || s.cfg.Role != node.Linux || s.responder == nil || s.stopping {
 		return // a stopping member keeps what it had until its goodbye
 	}
+	if s.id.Phone == nil {
+		return // without the CA keys, as in a group whose root is the phone, it never holds the name
+	}
 	hold := true
 	for _, p := range s.nd.Peers() {
 		if p.Role == node.Linux && p.ID < s.id.ID {

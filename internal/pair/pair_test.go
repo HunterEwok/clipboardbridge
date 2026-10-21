@@ -963,3 +963,47 @@ func TestListeningJoinerRevealsNothing(t *testing.T) {
 		t.Fatalf("the real member after the impostor: join %v, serve %v", out.joinErr, out.serveErr)
 	}
 }
+
+func TestWelcomeWithoutCAKeys(t *testing.T) {
+	// In a group whose root is the phone, a Linux device joins without the
+	// CA keys and cannot admit devices.
+	admin, err := group.Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clk := &clock{up: time.Hour}
+	code := NewCode()
+	w, err := Open(admin, code, Options{NoCAKeys: true, Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.Close)
+	f := &fixture{admin: admin, window: w, code: code, clock: clk}
+	out := f.attempt(t, newJoiner(t, "linux"), code, nil)
+	if out.joinErr != nil || out.serveErr != nil {
+		t.Fatalf("join %v, serve %v", out.joinErr, out.serveErr)
+	}
+	if err := out.id.Check(); err != nil || out.id.Admin() || out.id.GroupCA.Key != nil || out.id.PhoneCA != nil || out.id.Phone != nil {
+		t.Errorf("the Linux device holds CA keys: %v, admin %v", err, out.id.Admin())
+	}
+}
+
+func TestMacRefusesCAKeys(t *testing.T) {
+	admin, err := group.Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := newJoiner(t, "darwin")
+	cert, err := admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Window{admin: admin}
+	wel, err := w.welcome(cert, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.identity(wel, admin.Cert, memberAD{Device: admin.ID, Group: group.Tag(admin.GroupCA.Cert)}); err == nil {
+		t.Error("a Mac took the CA keys")
+	}
+}
