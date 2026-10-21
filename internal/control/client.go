@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package control
+
+import (
+	"errors"
+	"net"
+	"os"
+	"time"
+)
+
+// SocketPath returns the control socket to use: $CLIPBRIDGE_SOCKET, or
+// DefaultSocket.
+func SocketPath() string {
+	if p := os.Getenv("CLIPBRIDGE_SOCKET"); p != "" {
+		return p
+	}
+	return DefaultSocket
+}
+
+// A Client is a connection to the service.
+type Client struct {
+	c net.Conn
+	r *Reader
+}
+
+// Dial connects to the service.
+func Dial(path string) (*Client, error) {
+	c, err := net.DialTimeout("unix", path, 5*time.Second)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil, errors.New("no permission to use the clipbridge service; add your user to the clipbridge group and log in again")
+		}
+		return nil, errors.New("the clipbridge service is not running (" + err.Error() + ")")
+	}
+	return &Client{c: c, r: NewReader(c)}, nil
+}
+
+// Close closes the connection.
+func (c *Client) Close() error { return c.c.Close() }
+
+// Send sends a message.
+func (c *Client) Send(m *Message) error { return Write(c.c, m) }
+
+// Receive reads the next message. An answer with an error becomes the
+// error.
+func (c *Client) Receive() (*Message, error) {
+	m, err := c.r.Read()
+	if err != nil {
+		return nil, err
+	}
+	if m.Error != "" {
+		return m, errors.New(m.Error)
+	}
+	return m, nil
+}
+
+// Do sends a request and returns its single answer.
+func (c *Client) Do(m *Message) (*Message, error) {
+	if err := c.Send(m); err != nil {
+		return nil, err
+	}
+	return c.Receive()
+}

@@ -28,7 +28,7 @@ func TestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			if code := run(tt.args, &stdout, &stderr); code != tt.code {
+			if code := run(tt.args, strings.NewReader(""), &stdout, &stderr); code != tt.code {
 				t.Errorf("exit code = %d, want %d", code, tt.code)
 			}
 			checkOutput(t, "stdout", stdout.String(), tt.stdout)

@@ -75,6 +75,9 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   macOS runners with cgo (see the Build section of [the design](design.md#build));
 - **mdns with avahi**: the mDNS tests on real sockets, beside avahi-daemon, in a Debian
   container;
+- **e2e**: the built binary as three members and an avahi resolver in Docker containers:
+  pairing, sync, the holder of `clipbridge.local` and its handover, a wrong code
+  ([tools/e2e/e2e.sh](../tools/e2e/e2e.sh));
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:
