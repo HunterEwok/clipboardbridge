@@ -1,0 +1,140 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package phone
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/clip"
+	"github.com/HunterEwok/clipbridge/internal/group"
+)
+
+// recentCopy is how recent a computer's copy must be for the button to
+// fetch it: the user most likely copied and then picked up the phone.
+const recentCopy = 45 * time.Second
+
+// maxBody bounds a request: a text of up to 1 MiB, escaped in JSON.
+const maxBody = 7 << 20
+
+// Group is what the iPhone endpoint needs from the member.
+type Group interface {
+	// Current returns the group's current event, with its age as of now.
+	Current() (clip.Event, bool)
+	// Local returns the member's own clipboard text and its age.
+	Local() (string, clip.Kind, time.Duration, bool)
+	// Send makes an event from the iPhone button and writes it to the
+	// member's own clipboard.
+	Send(text string, kind clip.Kind, via clip.Via) error
+	// PhoneCA returns the iPhone CA, whose key checks the tokens.
+	PhoneCA() *group.CA
+}
+
+// syncRequest is what the shortcut sends.
+type syncRequest struct {
+	V      int    `json:"v"`
+	Text   string `json:"text"`
+	Secret bool   `json:"secret,omitempty"`
+}
+
+// syncReply is what the shortcut gets: always with HTTP status 200, since
+// a shortcut cannot read status codes.
+type syncReply struct {
+	V         int    `json:"v"`
+	Direction string `json:"direction"` // to_iphone, from_iphone, none or error
+	Copy      string `json:"copy,omitempty"`
+	ExpiresIn int    `json:"expires_in"` // seconds a secret copy may stay, 0 for normal text
+	Message   string `json:"message"`
+}
+
+// SyncHandler serves POST /sync.
+func SyncHandler(g Group) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := func(rep syncReply) {
+			rep.V = 1
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			json.NewEncoder(w).Encode(rep)
+		}
+		fail := func(msg string) { reply(syncReply{Direction: "error", Message: msg}) }
+		if r.Method != http.MethodPost {
+			fail("the shortcut must POST to /sync")
+			return
+		}
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok {
+			fail("the shortcut has no token; pair the iPhone with clipbridge pair -phone")
+			return
+		}
+		if _, err := CheckToken(g.PhoneCA(), token); err != nil {
+			fail(ErrBadToken.Error())
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+		if err != nil || len(body) > maxBody {
+			fail("the text is too large; clipbridge carries up to 1 MiB")
+			return
+		}
+		var req syncRequest
+		if err := json.Unmarshal(body, &req); err != nil || req.V != 1 {
+			fail("the shortcut is from another version of clipbridge; install it again")
+			return
+		}
+		rep, err := decide(g, req)
+		if err != nil {
+			fail(err.Error())
+			return
+		}
+		reply(rep)
+	})
+}
+
+// decide picks the direction, as the design's iPhone button section says.
+func decide(g Group, req syncRequest) (syncReply, error) {
+	cur, hasCur := g.Current()
+	local, localKind, localAge, hasLocal := g.Local()
+
+	// 1. A computer copied something a moment ago: the iPhone gets it.
+	// Copies from the iPhone itself, directly or through Universal
+	// Clipboard, do not count.
+	if hasCur && cur.Via == clip.Copy && !cur.IsMark() && cur.Text != "" &&
+		time.Duration(cur.Age)*time.Millisecond < recentCopy && cur.Text != req.Text {
+		return toPhone(cur.Text, cur.Kind, time.Duration(cur.Age)*time.Millisecond), nil
+	}
+	// 2. The iPhone has a new text: it goes to the group and to the
+	// member's own clipboard.
+	if req.Text != "" && (!hasCur || cur.Text != req.Text) && (!hasLocal || local != req.Text) {
+		kind := clip.Text
+		if req.Secret {
+			kind = clip.Secret
+		}
+		if err := g.Send(req.Text, kind, clip.Phone); err != nil {
+			if errors.Is(err, errTooLarge) {
+				return syncReply{}, err
+			}
+			return syncReply{}, errors.New("the text could not be sent: " + err.Error())
+		}
+		return syncReply{Direction: "from_iphone", Message: "Sent to the computers"}, nil
+	}
+	// 3. The member's own clipboard holds another text: the iPhone gets it.
+	if hasLocal && local != req.Text {
+		return toPhone(local, localKind, localAge), nil
+	}
+	return syncReply{Direction: "none", Message: "Nothing new to transfer"}, nil
+}
+
+var errTooLarge = errors.New("the text is too large")
+
+func toPhone(text string, kind clip.Kind, age time.Duration) syncReply {
+	rep := syncReply{Direction: "to_iphone", Copy: text, Message: "Copied to the iPhone"}
+	if kind == clip.Secret {
+		rep.ExpiresIn = max(1, int((clip.DefaultSecretTTL-age)/time.Second))
+		rep.Message = "Copied a password to the iPhone"
+	}
+	return rep
+}

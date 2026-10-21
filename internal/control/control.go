@@ -27,16 +27,17 @@ const (
 
 // Operations.
 const (
-	OpCopy      = "copy"      // client → service: make an event from a deliberate action
-	OpPaste     = "paste"     // client → service: ask for the member's own clipboard text
-	OpStatus    = "status"    // client → service: ask for the status
-	OpPair      = "pair"      // client → service: open a pairing window; answers follow
-	OpJoin      = "join"      // client → service: join a group with a code
-	OpWatch     = "watch"     // watcher → service: start watching, with what the clipboard holds now
-	OpCopied    = "copied"    // watcher → service: the clipboard changed
-	OpClipboard = "clipboard" // watcher → service: what the clipboard holds, without a change
-	OpWrite     = "write"     // service → watcher: put this text into the clipboard
-	OpReply     = "reply"     // service → client: the answer to a request
+	OpCopy      = "copy"       // client → service: make an event from a deliberate action
+	OpPaste     = "paste"      // client → service: ask for the member's own clipboard text
+	OpStatus    = "status"     // client → service: ask for the status
+	OpPair      = "pair"       // client → service: open a pairing window; answers follow
+	OpPairPhone = "pair-phone" // client → service: open an iPhone pairing window; answers follow
+	OpJoin      = "join"       // client → service: join a group with a code
+	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
+	OpCopied    = "copied"     // watcher → service: the clipboard changed
+	OpClipboard = "clipboard"  // watcher → service: what the clipboard holds, without a change
+	OpWrite     = "write"      // service → watcher: put this text into the clipboard
+	OpReply     = "reply"      // service → client: the answer to a request
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
@@ -60,12 +61,13 @@ type Header struct {
 	Error string `json:"error,omitempty"`  // a failed request
 	Done  bool   `json:"done,omitempty"`   // the last answer to a request
 
-	Code    string   `json:"code,omitempty"`    // pairing code
-	Address string   `json:"address,omitempty"` // a member's address for join
-	Name    string   `json:"name,omitempty"`    // a device name
-	Expires int      `json:"expires,omitempty"` // seconds a pairing window stays open
-	Status  *Status  `json:"status,omitempty"`
-	Devices []Device `json:"devices,omitempty"`
+	Code        string   `json:"code,omitempty"`        // pairing code
+	Fingerprint string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare
+	Address     string   `json:"address,omitempty"`     // a member's address for join
+	Name        string   `json:"name,omitempty"`        // a device name
+	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open
+	Status      *Status  `json:"status,omitempty"`
+	Devices     []Device `json:"devices,omitempty"`
 }
 
 // Status describes the service for clipbridge status.
