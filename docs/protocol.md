@@ -722,9 +722,9 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   it expires. A watcher writes a secret with the platform's password-manager marks.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
 
-Note: design.md (lines 134-145) describes `clipbridge devices` and `clipbridge revoke` with
-signed revocation records; neither has a control operation or a wire format yet, and the
-member TLS configuration never sets its `Allow` hook (`internal/service/service.go:220`).
+Note: design.md describes `clipbridge devices` and `clipbridge revoke` with signed
+revocation records; their wire format and control operations are planned in section 10, and
+the member TLS configuration never sets its `Allow` hook yet.
 
 ## 9. Planned: the phone as the root (not implemented)
 
@@ -733,9 +733,11 @@ apps" in [design.md](design.md)), so that the Go foundation and the apps are bui
 same plan. Nothing here is implemented yet; sections 1-8 stay valid, and groups created by
 a computer keep working as they do today.
 
-- **Group CA.** The app creates the group CA: a P-256 key in the Secure Enclave or
-  StrongBox that cannot be exported, with the certificate profile of section 2. Computers
-  get member certificates only and never hold a CA key; only the phone admits devices. The
+- **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
+  StrongBox that cannot be exported, with the certificate profile of section 2 except
+  path length 1 (MaxPathLen 1), CN `clipbridge group root YYYY-MM-DD`. Below it every admin
+  phone has an admin CA (section 10). Computers get member certificates only and never hold
+  a CA key; only admin phones admit devices. The
   Linux side is in place: a Welcome without CA keys makes a Linux member without them
   (section 6), and such members never hold `clipbridge.local`. There is no iPhone CA in such
   a group.
@@ -752,7 +754,95 @@ a computer keep working as they do today.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.
-- **Open.** Certificate renewal (section 2) moves to the phone, which sends `cert` messages
-  as a Linux member does today; revocation (missing today, see the note in section 8) will be
-  issued by the phone too; the recovery path when the phone is lost
-  (an encrypted backup of the CA key or a second admin phone) is designed with the apps.
+- **Renewal and revocation.** Certificate renewal (section 2) moves to the admin phones,
+  which send `cert` messages as a Linux member does today; revocation and the devices list
+  are section 10, and a second admin phone is the way back when a phone is lost.
+
+## 10. Planned: admin CAs, device records and revocation (not implemented)
+
+The wire side of "Admin phones, the devices list and revocation (planned)" in
+[design.md](design.md). Sections 1-9 stay valid until this is implemented; the order of work
+is the Go side first (records, their exchange, refusing revoked keys, `devices` and `revoke`
+in groups a computer created, verification through an admin CA), then the apps.
+
+### Admin CA and chains
+
+| Certificate | Subject CN | Validity | Extensions |
+|-------------|-----------|----------|------------|
+| Group root CA (phone groups) | `clipbridge group root YYYY-MM-DD` | as the group CA | CA, path length 1; key usage certSign, cRLSign |
+| Admin CA | `clipbridge admin <device ID>`, the admin phone's device ID | NotBefore = the root's NotBefore; NotAfter = the root's NotAfter | CA, path length 0; key usage certSign, cRLSign; issued by the root |
+
+- An admin phone has two keys: its admin key (certified by the admin CA, used only to sign
+  certificates and records, behind a user-presence check) and its member key (certified by
+  its own admin CA, role `phone`).
+- A member certificate issued by an admin CA has the profile of section 2, issuer the admin
+  CA, NotBefore = the admin CA's NotBefore.
+- In the member handshake (section 4) a member MUST send its certificate followed by its
+  issuer when the issuer is not the group CA. Checking a peer: the chain MUST verify to the
+  group CA through at most one intermediate that is a CA with path length 0, with the time
+  rule of section 2; then the revocation rules below apply. A group whose CA has path length
+  0 (every group a computer created) has no intermediates.
+
+### Records
+
+A record is a signed JSON body. On the wire and on disk it is an envelope:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `body` | bytes | the record body, JSON (below); signed as these exact bytes, never re-encoded |
+| `sig` | bytes | ECDSA P-256 with SHA-256 over `body`, DER |
+| `chain` | array of bytes | the signer's certificates below the group CA: empty when the group CA key signed (groups a computer created, or the root), else the admin CA certificate |
+
+Body fields common to every record: `v` (1), `type`, `group` (the group tag), `time_ms` (the
+signer's wall clock; informative only, never used for ordering), `by` (the signer's device
+ID; informative). Types:
+
+| `type` | Fields | Meaning |
+|--------|--------|---------|
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA certificate, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
+| `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
+| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
+
+The record ID is SHA-256 over the envelope's `body`. A member keeps every valid record it
+has seen, in a file next to its identity, at most 4096 records.
+
+Validity and evaluation, which depend only on the set of records, never on their order:
+
+1. A record is **signed by an admin** when `group` is the member's group tag and `sig`
+   verifies with the group CA key (empty `chain`) or with the key of an admin CA in
+   `chain` that verifies to the group CA. Other records are dropped.
+2. The **revoked set** is the union of `keys` of every `revoke` record signed by an admin,
+   including records whose signer is itself revoked. So two admins that revoke each other
+   are both revoked.
+3. A `device` or `root` record counts only when its signer's key is not revoked.
+4. A certificate is refused when its key is revoked, or when its issuer is an admin CA
+   whose key is revoked and its key is not in the `keep` of a record that revoked that
+   admin CA.
+5. A `root` record signed under the current root replaces the group CA: the member trusts
+   the new root alone, keeps its records (re-signed records are not needed, since records
+   are checked against the root they were signed under, which the member keeps as history),
+   and expects new certificates from an admin. When two valid `root` records exist under the
+   same root, the one whose new root certificate has the smaller SHA-256 wins.
+
+The devices list is the `device` records that count, less the revoked keys; a device is an
+admin when its record names an admin CA whose key is not revoked. A Linux member that holds
+the CA keys is an admin in a group a computer created.
+
+### Exchange in the member protocol
+
+- The hello gets a field `records`: SHA-256 over the sorted record IDs the sender holds,
+  base64; absent when it holds none.
+- A side whose digest differs from the peer's sends, after its hello, a message
+  `{"t":"records","records":[envelope, ...]}` with every record it holds; frames stay within
+  the 7 MiB limit. A receiver adds the valid ones, saves them, and sends the records that were
+  new to it to its other peers in the same message.
+- After adding records a member closes every connection whose peer certificate is now
+  refused (rule 4), and the TLS `Allow` hook refuses it from then on. A member that learns
+  that its own key is revoked stops syncing and reports "removed from the group".
+
+### Control operations
+
+| `op` | Request | Answers |
+|------|---------|---------|
+| `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self}], done}` |
+| `revoke` | `{device}` (ID or name) | `{done}` or an error; only where the member is an admin, otherwise it asks a connected admin, else fails with `no admin is connected` |
