@@ -26,11 +26,20 @@ public enum KeychainIdentity {
     /// identity they make.
     public static func identity(certificate der: Data, key: SecKey, label: String, storeKey: Bool = true) throws -> SecIdentity {
         guard let cert = SecCertificateCreateWithData(nil, der as CFData) else { throw Failure.noIdentity }
+        // On macOS a tool without entitlements may only use the file
+        // keychain; the app on iOS uses the data protection keychain.
+        #if os(macOS)
+        let where_: [CFString: Any] = [kSecUseDataProtectionKeychain: false]
+        #else
+        let where_: [CFString: Any] = [:]
+        #endif
         if storeKey {
-            let status = SecItemAdd([kSecClass: kSecClassKey, kSecValueRef: key, kSecAttrLabel: label] as CFDictionary, nil)
+            let add = [kSecClass: kSecClassKey, kSecValueRef: key, kSecAttrLabel: label].merging(where_) { a, _ in a }
+            let status = SecItemAdd(add as CFDictionary, nil)
             guard status == errSecSuccess || status == errSecDuplicateItem else { throw Failure.keychain(status) }
         }
-        let status = SecItemAdd([kSecClass: kSecClassCertificate, kSecValueRef: cert, kSecAttrLabel: label] as CFDictionary, nil)
+        let add = [kSecClass: kSecClassCertificate, kSecValueRef: cert, kSecAttrLabel: label].merging(where_) { a, _ in a }
+        let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else { throw Failure.keychain(status) }
         #if os(macOS)
         var identity: SecIdentity?
