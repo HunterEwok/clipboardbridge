@@ -71,7 +71,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   files);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
-  ARMv6 for the Raspberry Pi Zero W;
+  ARMv6 for the Raspberry Pi Zero W. When the macOS agent arrives, the macOS targets move to
+  macOS runners with cgo (see the Build section of [the design](design.md#build));
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:
