@@ -18,7 +18,14 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     /// Dials host:port with TLS 1.3 and the ALPN protocol, presenting
     /// identity. verify gets the peer's leaf certificate (DER) and decides
     /// whether to trust it: for pairing, against the QR code's fingerprint.
-    public init(host: String, port: UInt16, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
+    public convenience init(host: String, port: UInt16, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
+        self.init(endpoint: .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!),
+                  alpn: alpn, identity: identity, verify: verify)
+    }
+
+    /// Dials an endpoint, such as a service that BonjourBrowser found, the
+    /// same way.
+    public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
         let tls = NWProtocolTLS.Options()
         let sec = tls.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(sec, .TLSv13)
@@ -35,7 +42,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
             complete(verify(SecCertificateCopyData(leaf) as Data))
         }, DispatchQueue(label: "clipbridge.tls.verify"))
         let params = NWParameters(tls: tls)
-        connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: params)
+        connection = NWConnection(to: endpoint, using: params)
     }
 
     /// Starts the connection and waits for the handshake.
