@@ -201,6 +201,20 @@ func readLine(r io.Reader) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
+// cmdDesktop links a Linux desktop's clipboard to the service; the session
+// starts it. When the display connection drops it opens it again, and it
+// exits when the session is gone.
+func cmdDesktop(args []string, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "clipbridge: desktop takes no arguments")
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
+	return runDesktop(ctx, logf, stderr)
+}
+
 // cmdService runs the service; systemd and launchd start it.
 func cmdService(args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
