@@ -200,7 +200,7 @@ jobs:
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
           sudo install -m 0755 "$RUNNER_TEMP/clipbridge" /usr/local/bin/clipbridge
-          sudo systemd-sysusers packaging/linux/clipbridge.sysusers
+          sudo systemd-sysusers "$PWD/packaging/linux/clipbridge.sysusers"
           systemd-analyze verify packaging/linux/clipbridge.service
           systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=3
       - name: desktop entry
