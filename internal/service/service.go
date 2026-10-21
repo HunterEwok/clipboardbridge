@@ -85,6 +85,7 @@ type Service struct {
 	clock *hlc.Clock
 	logf  func(string, ...any)
 
+	createMu      sync.Mutex // one group creation at a time
 	mu            sync.Mutex
 	id            *group.Identity // nil while the device is in no group
 	eng           *clip.Engine    // made with the identity

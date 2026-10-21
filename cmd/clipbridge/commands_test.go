@@ -86,14 +86,14 @@ func TestCopy(t *testing.T) {
 func TestJoin(t *testing.T) {
 	got := fakeService(t, control.Message{Header: control.Header{Done: true}})
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"join", "192.168.1.5:4000"}, strings.NewReader("123 456\n"), &stdout, &stderr); code != 0 {
+	if code := run([]string{"join", "-code", "192.168.1.5:4000"}, strings.NewReader("123 456\n"), &stdout, &stderr); code != 0 {
 		t.Fatalf("join: %d, %s", code, stderr.String())
 	}
 	if m := request(t, got); m.Op != control.OpJoin || m.Code != "123456" || m.Address != "192.168.1.5:4000" {
 		t.Errorf("join sent %+v", m.Header)
 	}
 	// The code is never taken from the command line.
-	for _, args := range [][]string{{"join", "123456"}, {"join", "123", "456"}} {
+	for _, args := range [][]string{{"join", "-code", "123456"}, {"join", "-code", "123", "456"}, {"join", "192.168.1.5:4000"}} {
 		stderr.Reset()
 		if code := run(args, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "usage") {
 			t.Errorf("%v: %d, %q", args, code, stderr.String())
@@ -101,7 +101,7 @@ func TestJoin(t *testing.T) {
 	}
 	// A bad code fails before the service is asked.
 	stderr.Reset()
-	if code := run([]string{"join"}, strings.NewReader("12345\n"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "six digits") {
+	if code := run([]string{"join", "-code"}, strings.NewReader("12345\n"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "six digits") {
 		t.Errorf("join with five digits: %d, %q", code, stderr.String())
 	}
 	select {
@@ -139,5 +139,22 @@ func TestPasteWriteError(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := run([]string{"paste"}, strings.NewReader(""), brokenWriter{}, &stderr); code != 1 || !strings.Contains(stderr.String(), "no space") {
 		t.Errorf("paste to a full disk: %d, %q", code, stderr.String())
+	}
+}
+
+func TestJoinWithThePhone(t *testing.T) {
+	// By default join shows a QR code with its own code and asks the
+	// service to wait for the window the phone opens.
+	got := fakeService(t, control.Message{Header: control.Header{Done: true}})
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("join: %d, %s", code, stderr.String())
+	}
+	m := request(t, got)
+	if m.Op != control.OpJoin || len(m.Code) != 6 || m.Expires != 300 || m.Address != "" {
+		t.Errorf("join sent %+v", m.Header)
+	}
+	if !strings.Contains(stdout.String(), "add a computer") || !strings.Contains(stdout.String(), "\x1b[") {
+		t.Errorf("join printed:\n%s", stdout.String())
 	}
 }

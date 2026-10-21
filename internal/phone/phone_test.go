@@ -221,3 +221,44 @@ func TestSyncByHand(t *testing.T) {
 		}
 	}
 }
+
+func TestAdmit(t *testing.T) {
+	ca := newCA(t)
+	tok, _, _ := NewToken(ca)
+	otherTok, _, _ := NewToken(newCA(t))
+	var admitted []string
+	h := AdmitHandler(func() *group.CA { return ca }, func(code string) error {
+		admitted = append(admitted, code)
+		return nil
+	})
+	post := func(token, body string) syncReply {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/admit", strings.NewReader(body))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var rep syncReply
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &rep) != nil {
+			t.Fatalf("reply %d %s", rec.Code, rec.Body)
+		}
+		return rep
+	}
+	qr := `{"v":1,"code":"` + JoinQR("123456") + `"}`
+	if rep := post("", qr); rep.Direction != "unpaired" {
+		t.Errorf("no token: %+v", rep)
+	}
+	if rep := post(otherTok, qr); rep.Direction != "unpaired" {
+		t.Errorf("another group's token: %+v", rep)
+	}
+	if rep := post(tok, `{"v":1,"code":"https://example.com/"}`); rep.Direction != "error" {
+		t.Errorf("another QR code: %+v", rep)
+	}
+	if len(admitted) != 0 {
+		t.Fatalf("admitted %v without a valid request", admitted)
+	}
+	if rep := post(tok, qr); rep.Direction != "none" || len(admitted) != 1 || admitted[0] != "123456" {
+		t.Errorf("a valid request: %+v, admitted %v", rep, admitted)
+	}
+}

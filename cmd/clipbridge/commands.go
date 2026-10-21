@@ -23,6 +23,7 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
 	"github.com/HunterEwok/clipbridge/internal/pasteboard"
+	"github.com/HunterEwok/clipbridge/internal/phone"
 	"github.com/HunterEwok/clipbridge/internal/service"
 )
 
@@ -215,33 +216,56 @@ func shortFingerprint(fp string) string {
 	return fp
 }
 
-// cmdJoin joins this device to a group with the code shown by pair. The
-// code is read from standard input, never taken from the command line,
-// where other users of the machine could read it.
+// cmdJoin joins this device to a group. By default it shows a QR code for
+// the phone, the group's main device, to scan with the clipbridge
+// shortcut that adds a computer, and waits for the window that the phone
+// opens. With -code it asks for the code that clipbridge pair shows on a
+// Linux member instead; that code is read from standard input, never taken
+// from the command line, where other users of the machine could read it.
 func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) > 1 || len(args) == 1 && !strings.Contains(args[0], ":") {
-		fmt.Fprintln(stderr, "usage: clipbridge join [address:port]\nThe code is asked for, or read from standard input.")
+	fs := flag.NewFlagSet("join", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	typed := fs.Bool("code", false, "type the code that clipbridge pair shows on a Linux member")
+	if fs.Parse(args) != nil {
 		return 2
 	}
-	var addr string
-	if len(args) == 1 {
-		addr = args[0]
+	rest := fs.Args()
+	if len(rest) > 1 || len(rest) == 1 && (!*typed || !strings.Contains(rest[0], ":")) {
+		fmt.Fprintln(stderr, "usage: clipbridge join            (scan the QR code with the phone)\n       clipbridge join -code [address:port]\nThe code is asked for, or read from standard input.")
+		return 2
 	}
-	fmt.Fprint(stdout, "Pairing code: ")
-	line, err := readLine(stdin)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	code, err := pair.NormalizeCode(line)
-	if err != nil {
-		return fail(stderr, err)
+	h := control.Header{Op: control.OpJoin}
+	if *typed {
+		if len(rest) == 1 {
+			h.Address = rest[0]
+		}
+		fmt.Fprint(stdout, "Pairing code: ")
+		line, err := readLine(stdin)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		if h.Code, err = pair.NormalizeCode(line); err != nil {
+			return fail(stderr, err)
+		}
+	} else {
+		h.Code = pair.NewCode()
+		h.Expires = int(pair.Lifetime / time.Second)
 	}
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
 	}
 	defer c.Close()
-	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Code: code, Address: addr}}); err != nil {
+	if !*typed {
+		fmt.Fprintln(stdout, "On the iPhone, run the shortcut \"clipbridge: add a computer\" and scan this:")
+		fmt.Fprintln(stdout)
+		if err := writeQR(stdout, phone.JoinQR(h.Code)); err != nil {
+			return fail(stderr, err)
+		}
+		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
+		fmt.Fprintln(stdout, "Without a phone: run clipbridge pair on a Linux member and clipbridge join -code here.")
+	}
+	if _, err := c.Do(&control.Message{Header: h}); err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintln(stdout, "Joined the group.")

@@ -65,7 +65,7 @@ type Header struct {
 	Fingerprint string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare
 	Address     string   `json:"address,omitempty"`     // a member's address for join
 	Name        string   `json:"name,omitempty"`        // a device name
-	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open
+	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for join, seconds to wait for one
 	Status      *Status  `json:"status,omitempty"`
 	Devices     []Device `json:"devices,omitempty"`
 }

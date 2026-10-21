@@ -48,8 +48,20 @@ any member may be switched off at any time.
 
 ## Group and pairing
 
-- **Creating the group**: the first `clipbridge pair` on a Linux machine that is in no group
-  creates it: the group CA and the iPhone CA. A Mac cannot start a group.
+- **The phone is the main device.** The usual way to build a group starts from the phone:
+  `clipbridge pair -phone` on the first Linux machine creates the group and pairs the
+  phone; every further computer runs `clipbridge join`, which shows a QR code with a fresh
+  code, and the phone's second shortcut ("clipbridge: add a computer") scans it and posts
+  the code to `/admit` on `clipbridge.local` with its token. The member there opens a
+  pairing window with exactly that code, and the computer, which browses for a window for
+  up to five minutes, joins through the same CPace exchange as below. The keys of the group
+  stay on the Linux members, which must be on; the phone's token is the authority to add a
+  computer, so a stolen token lets its holder add a computer (and a Linux one gets the CA
+  keys). Each admission is logged. Admitting from a Linux member with `clipbridge pair` and
+  `clipbridge join -code` stays for groups without a phone.
+- **Creating the group**: the first `clipbridge pair` or `clipbridge pair -phone` on a Linux
+  machine that is in no group creates it: the group CA and the iPhone CA. A Mac cannot start
+  a group.
 - **Group CA**: ECDSA P-256, valid 20 years, path length 0. Every member has its own P-256
   key and a certificate from the group CA, valid 2 years and renewed when less than 240 days
   remain. Its `NotBefore` is the CA's, and members check certificates with their own clock but
@@ -72,11 +84,11 @@ any member may be switched off at any time.
   Linux member, the keys of both CAs in one file, `identity.json` in the service's state
   directory, readable only by the service. It is replaced in one step, so a crash leaves the
   old identity or the new one.
-- **Joining a computer**: `clipbridge pair` on a Linux member (on a Mac, the command asks a
-  connected Linux member) shows a six-digit code and opens a pairing window for five minutes
-  (one attempt at a time, closed after a success or the third failed attempt; an attempt that
-  has started may finish after the five minutes). On the new device the user runs
-  `clipbridge join` and types the code (it is read from the terminal or standard input, never
+- **Joining a computer from a Linux member**: `clipbridge pair` on a Linux member (on a Mac,
+  the command asks a connected Linux member) shows a six-digit code and opens a pairing
+  window for five minutes (one attempt at a time, closed after a success or the third failed
+  attempt; an attempt that has started may finish after the five minutes). On the new device
+  the user runs `clipbridge join -code` and types the code (it is read from the terminal or standard input, never
   from the command line, where other users of the machine could read it). The new device
   connects to the member's port with
   the ALPN protocol `clipbridge-pair/1` and presents a self-signed certificate for the key
@@ -313,7 +325,8 @@ and lifetimes. The installer enables what the device needs.
   answers, and stops after the first attempt in which the other side could check the code,
   so a device that only pretends to pair gets one guess at most. When more than one device
   announces a window, it asks for the address. Hanging up cancels it, and it gives up after
-  two minutes.
+  two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
+  for the window.
 - tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
   pastes the member's own clipboard text into any program inside tmux. A login snippet starts tmux on the
   text console.
@@ -431,8 +444,15 @@ The order may change.
 3. macOS: service as a LaunchDaemon and the pasteboard agent.
 4. Desktop connector: Wayland data-control, X11, GNOME through XWayland.
 5. iPhone: `/sync`, the pairing pages, the published shortcut.
-6. Console helper and auto-paste.
-7. Packages and signed releases.
+6. Simpler setup: QR codes, the generated shortcuts, the phone as the main device.
+7. Installers: a one-line installer for Linux (with the firewall), Homebrew and a signed
+   `.pkg` for macOS, signed releases.
+8. Windows: the service as a Windows service and a clipboard connector through the Win32
+   API.
+9. Apps for iPhone and Android: pairing by QR code, the phone as the group's root of trust
+   (keys in the Keychain or Keystore), sync while the app is open, a share extension and an
+   Android quick-settings tile. Background sync stays impossible on iOS.
+10. Console helper and auto-paste.
 
 ## Open questions
 

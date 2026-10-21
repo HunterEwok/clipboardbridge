@@ -1015,3 +1015,92 @@ func TestIPhone(t *testing.T) {
 		t.Errorf("the second iPhone's token: %v", rep)
 	}
 }
+
+func TestPhoneAddsAComputer(t *testing.T) {
+	// The phone is the main device: it pairs with the first computer, which
+	// creates the group, and adds the next computer by scanning its code.
+	var h hub
+	pi := startService(t, &h, "pi")
+	c := pi.dial(t)
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
+	if err != nil {
+		t.Fatalf("pair -phone in no group: %v", err)
+	}
+	if pi.status(t).Group == "" {
+		t.Fatal("pair -phone did not create the group")
+	}
+	// The iPhone port starts with the group, just after it.
+	waitFor(t, "the iPhone port", func() bool { a, _ := pi.addrs(); return a != "" })
+	phoneAddr, profileAddr := pi.addrs()
+	resp, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	der := regexp.MustCompile(`<data>([A-Za-z0-9+/=]+)</data>`).FindSubmatch(profile)
+	raw, _ := base64.StdEncoding.DecodeString(string(der[1]))
+	ca, err := x509.ParseCertificate(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	iphone := &http.Client{Timeout: 10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipbridge.local"}}}
+	resp, err = iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paired struct{ Token string }
+	json.NewDecoder(resp.Body).Decode(&paired)
+	resp.Body.Close()
+	if _, err := c.Receive(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new computer runs clipbridge join: it shows its code and waits.
+	laptop := startService(t, &h, "laptop")
+	joined := make(chan error, 1)
+	go func() {
+		_, err := laptop.do(t, control.Header{Op: control.OpJoin, Code: "246802", Expires: 60}, "")
+		joined <- err
+	}()
+	admit := func(token, code string) map[string]any {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/admit", strings.NewReader(`{"v":1,"code":"`+code+`"}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := iphone.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var rep map[string]any
+		json.NewDecoder(resp.Body).Decode(&rep)
+		return rep
+	}
+	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "clipbridge-join:246802"); rep["direction"] != "unpaired" {
+		t.Errorf("a forged token: %v", rep)
+	}
+	if rep := admit(paired.Token, "clipbridge-join:246802"); rep["direction"] != "none" {
+		t.Fatalf("admit: %v", rep)
+	}
+	select {
+	case err := <-joined:
+		if err != nil {
+			t.Fatalf("join: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the laptop never joined")
+	}
+	if laptop.status(t).Group != pi.status(t).Group {
+		t.Error("the laptop is not in the phone's group")
+	}
+	waitFor(t, "the laptop connected", func() bool { return len(laptop.status(t).Peers) == 1 })
+	// The window closed: a second admit with the same code opens a new one,
+	// which nobody uses; a code that is not six digits is refused.
+	if rep := admit(paired.Token, "clipbridge-join:12345"); rep["direction"] != "error" {
+		t.Errorf("five digits: %v", rep)
+	}
+}

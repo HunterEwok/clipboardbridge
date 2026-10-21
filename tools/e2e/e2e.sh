@@ -66,7 +66,7 @@ pair() { # admin, joiner
 	docker exec -d "$run-$1" sh -c '/cb/clipbridge pair >/tmp/pair.out 2>&1'
 	eventually "a code on $1" docker exec "$run-$1" grep -q 'Pairing code' /tmp/pair.out
 	code=$(docker exec "$run-$1" sed -n 's/^Pairing code: \([0-9]*\) \([0-9]*\)$/\1\2/p' /tmp/pair.out)
-	printf '%s\n' "$code" | cb "$2" join || fail "$2 could not join with the code from $1"
+	printf '%s\n' "$code" | cb "$2" join -code || fail "$2 could not join with the code from $1"
 	eventually "$1 reports the new member" docker exec "$run-$1" grep -q "host-$2 joined" /tmp/pair.out
 }
 
@@ -135,7 +135,7 @@ docker exec -d "$run-$admin" sh -c '/cb/clipbridge pair >/tmp/pair2.out 2>&1'
 eventually "a code" docker exec "$run-$admin" grep -q 'Pairing code' /tmp/pair2.out
 code=$(docker exec "$run-$admin" sed -n 's/^Pairing code: \([0-9]*\) \([0-9]*\)$/\1\2/p' /tmp/pair2.out)
 [ "$code" = "$wrong" ] && wrong=111111
-if printf '%s\n' "$wrong" | cb d join >/dev/null 2>&1; then
+if printf '%s\n' "$wrong" | cb d join -code >/dev/null 2>&1; then
 	fail "d joined with a wrong code"
 fi
 cb d status | grep -q 'Not in a group' || fail "d is in a group after a wrong code"
