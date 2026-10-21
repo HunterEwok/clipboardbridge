@@ -6,8 +6,12 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
 ### Added
 
+- A quick start, [docs/quickstart.md](docs/quickstart.md): install with one command, make
+  the group, add the iPhone and the other computers.
 - The devices list: `clipbridge devices` shows every device of the group with its role, an
   admin mark and when this member last saw it; `clipbridge revoke <name or ID>` removes a
   Mac, a phone or an iPhone's shortcut from the group. Members keep signed device and
@@ -15,6 +19,11 @@ All notable changes to clipbridge are documented in this file. The format follow
   iPhone's token stops working. A Linux member records the devices it admits, and the
   members of an existing group when it meets them. Removing a Linux member is not supported
   yet. See section 10 of [docs/protocol.md](docs/protocol.md).
+
+### Fixed
+
+- `clipbridge pair` and the installers told the new computer to run `clipbridge join`, which
+  now shows a QR code for the phone; for the code they show, it is `clipbridge join -code`.
 
 ## [0.1.1] - 2026-10-21
 
@@ -77,5 +86,6 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipbridge/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipbridge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/HunterEwok/clipbridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterEwok/clipbridge/releases/tag/v0.1.1

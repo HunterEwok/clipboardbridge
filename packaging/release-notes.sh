@@ -63,8 +63,8 @@ tar -xzf clipbridge-darwin-arm64.tar.gz
 sudo sh clipbridge/packaging/macos/install.sh clipbridge/clipbridge
 \`\`\`
 
-Then follow the README: \`clipbridge pair -phone\` on a Linux machine for the iPhone, and
-\`clipbridge join\` on each further computer.
+Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`clipbridge pair -phone\`
+on a Linux machine for the iPhone, and \`clipbridge join\` on each further computer.
 
 ## Verify the downloads
 
