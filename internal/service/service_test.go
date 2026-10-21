@@ -1080,10 +1080,10 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		json.NewDecoder(resp.Body).Decode(&rep)
 		return rep
 	}
-	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "clipbridge-join:246802"); rep["direction"] != "unpaired" {
+	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "clipbridge://join?code=246802"); rep["direction"] != "unpaired" {
 		t.Errorf("a forged token: %v", rep)
 	}
-	if rep := admit(paired.Token, "clipbridge-join:246802"); rep["direction"] != "none" {
+	if rep := admit(paired.Token, "clipbridge://join?code=246802"); rep["direction"] != "none" {
 		t.Fatalf("admit: %v", rep)
 	}
 	select {
@@ -1100,7 +1100,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	waitFor(t, "the laptop connected", func() bool { return len(laptop.status(t).Peers) == 1 })
 	// The window closed: a second admit with the same code opens a new one,
 	// which nobody uses; a code that is not six digits is refused.
-	if rep := admit(paired.Token, "clipbridge-join:12345"); rep["direction"] != "error" {
+	if rep := admit(paired.Token, "clipbridge://join?code=12345"); rep["direction"] != "error" {
 		t.Errorf("five digits: %v", rep)
 	}
 }
