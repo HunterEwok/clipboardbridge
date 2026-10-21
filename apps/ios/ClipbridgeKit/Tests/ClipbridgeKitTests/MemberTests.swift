@@ -227,11 +227,15 @@ final class MemberTests: XCTestCase {
 
     func testFramesForGo() throws {
         // The frames Go decodes in TestSwiftMemberFrames.
-        let e = SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock(wallMS: { 1_761_024_000_000 }))
-        let ev = e.local(text: "from Swift / <ok>", kind: .text)
-        let secret = e.local(text: "hunter2", kind: .secret)
+        // Fixed values, so the file changes only with the encoding.
+        let origin = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let ev = Member.Event(id: "0123456789abcdef0123456789abcdef", origin: origin, via: .iphone,
+                              time: .init(wall: 1_761_024_000_000, logical: 0), ageMS: 12, kind: .text, text: "from Swift / <ok>")
+        let secret = Member.Event(id: "fedcba9876543210fedcba9876543210", origin: origin, via: .iphone,
+                                  time: .init(wall: 1_761_024_000_000, logical: 1), ageMS: 0, kind: .secret, text: "hunter2")
+        let hello = Member.Hello(wallMS: 1_761_024_000_500, current: secret.mark, name: "iPhone")
         let frames = try [
-            Member.encode(.hello(.phone, e.hello(name: "iPhone"))),
+            Member.encode(.hello(.phone, hello)),
             Member.encode(.event(ev)),
             Member.encode(.event(secret)),
             Member.encode(.ping),

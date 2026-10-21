@@ -85,6 +85,11 @@ the group", not a status code), never a dialog that must be dismissed.
   `testdata/interop/` (`go test ./internal/pair ./internal/phone ./internal/node -update`
   regenerates them), and CI runs it against the Go code: pairing over plain TCP on Linux,
   pairing and a member connection over real TLS on macOS.
+- The app finds the Linux members by browsing `_clipbridge._tcp` (ClipbridgeKit's
+  `BonjourBrowser` on iOS) and keeps one connection to each member of its group
+  (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
+  `_clipbridge._tcp` under `NSBonjourServices` and explains the use in
+  `NSLocalNetworkUsageDescription`.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/design/` — tokens and the icon; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
