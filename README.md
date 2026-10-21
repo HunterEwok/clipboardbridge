@@ -2,9 +2,35 @@
 
 One clipboard for your Apple devices and every Linux machine on your home network.
 
-> **Status: early development.** The Linux service and the `pair`, `join`, `copy`,
-> `paste` and `status` commands work; there is no installer, desktop connector or iPhone
-> support yet. The design is in [docs/design.md](docs/design.md).
+> **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
+> shortcut work; the phone apps, Windows and sync away from home are planned. The design is
+> in [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
+
+## Install
+
+On Linux with systemd (x86-64, ARM64, ARMv7, ARMv6), from the latest release:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
+```
+
+It checks the download against the release's `SHA256SUMS`, installs the service and, when
+ufw is active, allows clipbridge's ports (mDNS and TCP 8764 to 8767) from the home network
+only. Add `-s -- --console` after `sh` to also start tmux on the text console, or
+`--no-firewall` to leave ufw alone. Every release file has a build provenance attestation:
+`gh attestation verify FILE --repo HunterEwok/clipbridge`.
+
+On a Mac (Apple silicon; `amd64` instead of `arm64` for Intel), in Terminal, so that the
+unsigned binary is not quarantined as a browser download would be:
+
+```sh
+curl -fsSLO https://github.com/HunterEwok/clipbridge/releases/latest/download/clipbridge-darwin-arm64.tar.gz
+tar -xzf clipbridge-darwin-arm64.tar.gz
+sudo sh clipbridge/packaging/macos/install.sh clipbridge/clipbridge
+```
+
+Then pair with the iPhone on a Linux machine with `clipbridge pair -phone`, and add each
+further computer with `clipbridge join` and the shortcut "clipbridge: add a computer".
 
 ## What it will do
 

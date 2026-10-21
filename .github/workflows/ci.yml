@@ -200,7 +200,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
@@ -212,6 +212,25 @@ jobs:
         run: |
           sudo apt-get install -y -qq desktop-file-utils >/dev/null
           desktop-file-validate packaging/linux/clipbridge-desktop.desktop
+      - name: get.sh installs a release archive and refuses a changed one
+        run: |
+          # The archive as the release workflow makes it.
+          rel="$RUNNER_TEMP/release"
+          dir="$RUNNER_TEMP/pkg/clipbridge"
+          mkdir -p "$rel" "$dir/packaging"
+          cp "$RUNNER_TEMP/clipbridge" LICENSE "$dir/"
+          cp -R packaging/linux packaging/tmux "$dir/packaging/"
+          tar -czf "$rel/clipbridge-linux-amd64.tar.gz" -C "$RUNNER_TEMP/pkg" clipbridge
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall
+          systemctl is-active clipbridge.service
+          for _ in $(seq 20); do sudo clipbridge status && break; sleep 0.5; done
+          sudo clipbridge status | grep -q 'Not in a group'
+          echo tampered >>"$rel/clipbridge-linux-amd64.tar.gz"
+          if sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall; then
+            echo "get.sh installed an archive that does not match SHA256SUMS" >&2
+            exit 1
+          fi
 
   ci-ok:
     name: ci-ok

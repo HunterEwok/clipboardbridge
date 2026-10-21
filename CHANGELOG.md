@@ -40,6 +40,10 @@ All notable changes to clipbridge are documented in this file. The format follow
   message, those of the members it is connected to, months before they expire.
 - The member protocol accepts the roles `phone` (the phone apps) and `lite` (a lite member),
   which connect like a Mac.
+- Releases from a version tag: archives for Linux and macOS, `SHA256SUMS` and build
+  provenance attestations; `get.sh` installs the latest release on Linux in one command,
+  checks it, and opens clipbridge's ports in ufw for the home network only. The member port
+  is 8764 and a listening join 8767 when they are free.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
