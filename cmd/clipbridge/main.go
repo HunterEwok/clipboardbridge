@@ -22,6 +22,7 @@ Commands:
   pair                    Admit a new computer: show a code for clipbridge join.
   join [code [address]]   Join a group with the code from clipbridge pair.
   service                 Run the service (started by systemd or launchd).
+  agent                   Link the Mac's pasteboard to the service (started by launchd).
   desktop                 Link a Linux desktop's clipboard to the service (started with the session).
   version                 Print the version and the platform.
   help                    Print this help.
@@ -61,6 +62,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdJoin(rest, stdin, stdout, stderr)
 	case "service":
 		return cmdService(rest, stderr)
+	case "agent":
+		return cmdAgent(rest, stderr)
 	case "desktop":
 		return cmdDesktop(rest, stderr)
 	case "help", "-h", "-help", "--help":
