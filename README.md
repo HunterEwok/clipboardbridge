@@ -2,8 +2,8 @@
 
 One clipboard for your Apple devices and every Linux machine on your home network.
 
-> **Status: design phase.** There is nothing to install yet. The design is in
-> [docs/design.md](docs/design.md); the first code will be written in Go.
+> **Status: early development.** There is nothing to use yet: the Go code so far only
+> prints its version. The design is in [docs/design.md](docs/design.md).
 
 ## What it will do
 

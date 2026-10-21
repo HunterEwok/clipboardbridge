@@ -2,7 +2,9 @@
 # Reference: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 #
 # GitHub Actions are pinned to commit SHAs; Dependabot updates the SHA and the version comment.
-# The gomod ecosystem is added together with the first Go module.
+# gomod covers the Go modules. The tools in go.mod (staticcheck, govulncheck, actionlint) are
+# recorded as indirect requirements, which Dependabot skips by default, so they are allowed by
+# name (until https://github.com/dependabot/dependabot-core/issues/12050 is fixed).
 # The cooldown waits a week after a release before proposing it, so a compromised release
 # has time to be noticed and pulled.
 version: 2
@@ -18,4 +20,24 @@ updates:
       default-days: 7
     groups:
       github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-type: "direct"
+      - dependency-name: "honnef.co/go/tools"
+        dependency-type: "all"
+      - dependency-name: "golang.org/x/vuln"
+        dependency-type: "all"
+      - dependency-name: "github.com/rhysd/actionlint"
+        dependency-type: "all"
+    groups:
+      go:
         patterns: ["*"]
