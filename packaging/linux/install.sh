@@ -69,4 +69,4 @@ fi
 systemctl daemon-reload
 systemctl enable clipbridge.service
 systemctl restart clipbridge.service # also takes a new binary on a reinstall
-echo "clipbridge is running. Next: clipbridge pair on the first Linux machine, clipbridge join on the others."
+echo "clipbridge is running. Next: see docs/quickstart.md; in short, clipbridge pair -phone on the first Linux machine, clipbridge join on the others."

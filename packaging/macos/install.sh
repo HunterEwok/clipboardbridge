@@ -74,4 +74,4 @@ if [ -n "$user" ] && [ "$user" != root ]; then
 	launchctl bootout "gui/$uid/$agent" 2>/dev/null || true
 	launchctl bootstrap "gui/$uid" "/Library/LaunchAgents/$agent.plist"
 fi
-echo "clipbridge is running. Join the group with: clipbridge join (run clipbridge pair on a Linux member first)."
+echo "clipbridge is running. Join the group: clipbridge join, and scan its QR code with the iPhone shortcut \"clipbridge: add a computer\"; or clipbridge pair on a Linux member, then clipbridge join -code here."

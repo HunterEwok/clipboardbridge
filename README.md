@@ -8,6 +8,9 @@ One clipboard for your Apple devices and every Linux machine on your home networ
 
 ## Install
 
+New here? The [quick start](docs/quickstart.md) walks through installing and pairing step
+by step.
+
 On Linux with systemd (x86-64, ARM64, ARMv7, ARMv6), from the latest release:
 
 ```sh
@@ -30,7 +33,9 @@ sudo sh clipbridge/packaging/macos/install.sh clipbridge/clipbridge
 ```
 
 Then pair with the iPhone on a Linux machine with `clipbridge pair -phone`, and add each
-further computer with `clipbridge join` and the shortcut "clipbridge: add a computer".
+further computer with `clipbridge join` and the shortcut "clipbridge: add a computer"; see
+the [quick start](docs/quickstart.md). `clipbridge devices` lists the group, and
+`clipbridge revoke` removes a lost device.
 
 ## What it will do
 

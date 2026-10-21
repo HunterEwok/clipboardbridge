@@ -166,9 +166,9 @@ func cmdPair(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Pairing code: %s %s\n\n", m.Code[:3], m.Code[3:])
-	fmt.Fprintln(stdout, "On the new computer run:  clipbridge join")
+	fmt.Fprintln(stdout, "On the new computer run:  clipbridge join -code")
 	if m.Address != "" {
-		fmt.Fprintf(stdout, "If it cannot find this one: clipbridge join %s\n", m.Address)
+		fmt.Fprintf(stdout, "If it cannot find this one: clipbridge join -code %s\n", m.Address)
 	}
 	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
 	m, err = c.Receive()
