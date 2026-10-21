@@ -66,9 +66,10 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 `main`:
 
 - **check**: `gofmt`, `go mod tidy`, `go mod verify`, `go vet`, `staticcheck`,
-  `govulncheck`, `actionlint` for the workflows, and
-  [the repository rules](../tools/repocheck/main.go) (English only, license headers in Go
-  files, copied code with its license);
+  `govulncheck`, `actionlint` for the workflows,
+  [the repository rules](../tools/repocheck/main.go) (English only, apart from the apps'
+  translations; license headers in Go files; copied code with its license), and the design
+  tokens (`go run ./tools/tokens -check`);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
   ARMv6 for the Raspberry Pi Zero W. When the macOS agent arrives, the macOS targets move to
@@ -82,6 +83,10 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   client under Xvfb, against wl-clipboard and xclip;
 - **packaging**: shellcheck for the scripts, `systemd-analyze verify` and `security` for the
   unit, and the desktop entry;
+- **phone kit**: ClipbridgeKit's tests on Linux and macOS, and its cross tests with the Go
+  code (pairing over plain TCP on Linux; pairing and a member connection over TLS on macOS);
+- **iPhone app**: the Xcode project from XcodeGen, built and tested on an iPhone simulator
+  without signing;
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:

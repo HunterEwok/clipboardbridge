@@ -1,0 +1,29 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "shouldTranslate": false
+    },
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipbridge сканирует QR-код, который показывает компьютер, чтобы добавить его в вашу группу."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipbridge находит ваши компьютеры в домашней сети и синхронизирует их буфер обмена с этим телефоном."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

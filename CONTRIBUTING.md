@@ -20,7 +20,8 @@ Pull requests from forks are closed without review.
 
 The maintainer follows these rules; they are written down to keep the history consistent.
 
-- **English only** in code, comments, documentation, commit messages and issues.
+- **English only** in code, comments, documentation, commit messages and issues; the apps'
+  translations are the one exception.
 - **License header.** Every Go file, except generated code and code copied from other
   projects, starts with:
 

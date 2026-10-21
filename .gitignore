@@ -24,3 +24,7 @@ go.work.sum
 # Swift
 .build/
 .swiftpm/
+
+# The iPhone app's generated Xcode project
+/apps/ios/*.xcodeproj/
+/apps/ios/Clipbridge/Info.plist

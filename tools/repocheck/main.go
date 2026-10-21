@@ -4,7 +4,9 @@
 // Command repocheck enforces the repository rules that the Go tools do not
 // check:
 //
-//   - every tracked text file is in English: no Cyrillic letters;
+//   - every tracked text file is in English: no Cyrillic letters, except the
+//     translations of the apps (String Catalogs, *.xcstrings, and Android's
+//     res/values-<language>/strings.xml);
 //   - every Go file, except generated code, starts with the license header;
 //   - code copied from other projects lives in a directory below a
 //     third_party directory, with its LICENSE file next to it, and each of
@@ -126,6 +128,16 @@ func git(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// androidTranslation matches the strings of a language other than the
+// default one in an Android project.
+var androidTranslation = regexp.MustCompile(`(^|/)res/values-[a-z]{2,3}(-r[A-Z]{2})?/strings\.xml$`)
+
+// isTranslation reports whether a file holds the apps' translations, which
+// are the one place for other languages.
+func isTranslation(name string) bool {
+	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name)
+}
+
 // check returns the rule violations in one file; listed holds the paths of
 // all files checked, which exist in the working tree.
 func check(name string, data []byte, listed map[string]bool) []string {
@@ -134,6 +146,9 @@ func check(name string, data []byte, listed map[string]bool) []string {
 	}
 	var problems []string
 	for i, line := range strings.Split(string(data), "\n") {
+		if isTranslation(name) {
+			break
+		}
 		if r, ok := firstCyrillic(line); ok {
 			problems = append(problems, fmt.Sprintf("%s:%d: Cyrillic letter %q; the repository is in English only", name, i+1, r))
 		}

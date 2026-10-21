@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import SwiftUI
+
+/// Picks the screen and applies the theme.
+struct RootView: View {
+    @EnvironmentObject private var model: AppModel
+    @AppStorage("theme") private var theme = ThemeChoice.system
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let palette = theme.palette(for: scheme)
+        ZStack {
+            GridBackground()
+            switch model.phase {
+            case .start: StartView()
+            case .home: HomeView()
+            }
+        }
+        .environment(\.palette, palette)
+        .tint(palette.accent)
+        .foregroundStyle(palette.text)
+        .preferredColorScheme(theme == .system ? nil : (palette.dark ? .dark : .light))
+    }
+}

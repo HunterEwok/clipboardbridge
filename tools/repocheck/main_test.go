@@ -37,6 +37,12 @@ func TestCheck(t *testing.T) {
 			want: []string{"a.txt:1:", "a.txt:3:"},
 		},
 		{name: "binary file", file: "logo.png", content: "\x89PNG\x00\x00" + cyrillicWord},
+		{name: "a String Catalog", file: "apps/ios/Clipbridge/Resources/Localizable.xcstrings", content: `{"ru":"` + cyrillicWord + `"}`},
+		{name: "an Android translation", file: "apps/android/app/src/main/res/values-ru/strings.xml", content: "<string>" + cyrillicWord + "</string>\n"},
+		{
+			name: "the default Android strings", file: "apps/android/app/src/main/res/values/strings.xml", content: "<string>" + cyrillicWord + "</string>\n",
+			want: []string{"strings.xml:1: Cyrillic letter"},
+		},
 		{name: "Go file with the header", file: "x.go", content: header + "package x\n"},
 		{name: "header with a year range", file: "x.go", content: strings.Replace(header, "2026", "2026-2027", 1) + "package x\n"},
 		{name: "header with CRLF line ends", file: "x.go", content: strings.ReplaceAll(header, "\n", "\r\n") + "package x\r\n"},
