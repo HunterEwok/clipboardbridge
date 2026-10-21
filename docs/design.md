@@ -459,6 +459,15 @@ The order may change.
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
     Rust member among Go members.
+12. Sync away from home, without accounts: the group's certificates stay the only
+    identity. First, members configured by address (for example the home Linux member's
+    address in a WireGuard or Tailscale/Headscale network, where mDNS does not reach) and a
+    guide for such a VPN; data then goes straight between the user's devices. Later, if
+    needed, an optional relay that the user can host (on the home Linux member with a
+    forwarded port, or a small server): it only passes on traffic that the members encrypt
+    end to end, and admits members by their group certificate. Waking a closed iPhone app
+    needs Apple push notifications, which only a server can send; that comes last, if at
+    all.
 
 ## Target architecture with the phone apps
 
@@ -470,9 +479,11 @@ app can do all four, and then the phone becomes the root of the group:
   (Android): a P-256 key that cannot be exported. Only the phone issues member
   certificates; no computer holds CA keys, so a stolen computer cannot add devices.
 - The first computer joins the phone, not the other way round: `clipbridge join` shows a
-  QR code with its address and a fresh code and listens; the app scans it, dials the
-  computer and runs CPace with that code, with the phone in the admitting role, then issues
-  its certificate. No profile and no fingerprint check: the app trusts its own group's CA.
+  QR code with its addresses, its certificate fingerprint and a fresh code, and listens
+  (already so today, for the shortcut); the app scans it, dials the computer, checks the
+  fingerprint and runs CPace with that code, with the phone in the admitting role, then
+  issues its certificate. No profile for the user to check: the app trusts its own group's
+  CA.
 - Every computer is then a member without CA keys, as a Mac is today; Linux members still
   publish, hold `clipbridge.local` and serve the app and the shortcut. A lite member (Rust)
   fits the same role.

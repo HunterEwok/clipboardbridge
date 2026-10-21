@@ -31,9 +31,11 @@ All notable changes to clipbridge are documented in this file. The format follow
   generated from the code and signed on a Mac, asks for the six-digit code on its first run
   and keeps its token.
 - The phone as the main device: `clipbridge pair -phone` on a Linux machine in no group
-  creates the group, and `clipbridge join` shows a QR code (a `clipbridge://join` URL) that
-  the shortcut "clipbridge: add a computer" scans to admit the computer. `clipbridge join
-  -code` keeps the code from `clipbridge pair`.
+  creates the group, and `clipbridge join` listens and shows a QR code (a `clipbridge://join`
+  URL with its code, addresses and certificate fingerprint) that the shortcut "clipbridge:
+  add a computer" scans; the Linux member then dials the computer, so no announcement and
+  no multicast are needed, and a device that does not know the code learns nothing from a
+  try. `clipbridge join -code` keeps the code from `clipbridge pair`.
 - Certificate renewal: a Linux member renews its own certificates and, with a new `cert`
   message, those of the members it is connected to, months before they expire.
 - The member protocol accepts the roles `phone` (the phone apps) and `lite` (a lite member),

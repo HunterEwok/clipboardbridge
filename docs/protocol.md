@@ -478,11 +478,43 @@ hashes (section 7), and the group state arrives in the first hello.
 
 ### Joining side behaviour
 
-Without an address the joiner browses up to 10 s (or, when waiting for the phone, up to the
-`expires` it was given, at most 5 minutes) for a member with `p=1`, refuses when more than
-one announces a window, and tries that member's addresses in order, at most three, stopping
-after the first attempt whose code was spent. A whole join is bounded by 2 minutes plus the
-browse time.
+Without an address the joiner browses up to 10 s for a member with `p=1`, refuses when more
+than one announces a window, and tries that member's addresses in order, at most three,
+stopping after the first attempt whose code was spent. A whole join is bounded by 2 minutes
+plus the browse time.
+
+### The joiner listens (for the phone)
+
+`clipbridge join` without `-code` turns the direction round, so that the device that scans
+the QR code dials the computer, and nothing is announced:
+
+- The joiner listens on a new TCP port (all addresses; only home network addresses may
+  connect, as on the member port) for up to 5 minutes, and shows the QR code
+  `clipbridge://join?code=<code>&addr=<host:port>&fp=<fingerprint>` (section 7): its
+  addresses that mDNS would publish, IPv4 first, without link-local ones, at most four; and
+  the fingerprint of its self-signed certificate, SHA-256 over the DER in base64url without
+  padding.
+- The member dials and is the TLS client. It presents its member certificate and MUST
+  check that the server sent exactly one certificate whose fingerprint is `fp`, with a
+  P-256 key and a device ID as CN. The joiner (server) requires any client certificate and
+  checks it as in the other direction, through the exchange and the Welcome.
+- The CPace inputs, roles and the Welcome are those above. The member, which dialed,
+  confirms first:
+
+| # | Direction | Frame |
+|---|-----------|-------|
+| 1 | joiner to member | `{"msg": Ya, "ad": ADa}` |
+| 2 | member to joiner | `{"msg": Yb, "ad": ADb, "tag": Tb}` |
+| 3 | joiner to member | `{"tag": Ta}`, or `{"error": "wrong-code"}` when Tb does not verify |
+| 4 | member to joiner | `{"welcome": Welcome}`, or `{"error": code}` |
+| 5 | joiner to member | `{"ok": true}`, or `{"error": "refused"}` |
+
+- A device that does not know the code gets the joiner's refusal and nothing to test
+  guesses with, so a failed attempt never spends the code: the joiner takes further
+  attempts, one at a time, and gives up after the third wrong code or the 5 minutes.
+- On the member the window counts attempts as above. It is not announced (`p` stays unset)
+  and takes no pairing connections on the member port, so the code is good only against the
+  computer whose certificate `fp` names.
 
 ## 7. iPhone endpoints
 
@@ -577,12 +609,13 @@ one success, three wrong codes; any code that is not six digits counts as wrong)
 ### POST /admit
 
 Lets a paired phone add a computer. Request body (at most 4096 bytes), with
-`Authorization`: `{"v": 1, "code": "clipbridge://join?code=123456"}` (the scanned QR text). The
-member opens a computer pairing window (section 6) with that code; the computer, which runs
-`clipbridge join` and waits for a window, then pairs as usual. The reply has the shape of a
-`/sync` reply, always HTTP 200: `none` on success, `unpaired` for a missing or unknown token,
-`error` otherwise (wrong method, bad body or version, not a join QR code, a window already
-open).
+`Authorization`: `{"v": 1, "code": "clipbridge://join?code=123456&addr=...&fp=..."}` (the
+scanned QR text; unknown query fields are ignored, at most four `addr` are used). The member
+opens an unannounced window with that code and dials the addresses in order, pairing with
+the computer whose certificate `fp` names (section 6, "The joiner listens"). The reply has
+the shape of a `/sync` reply, always HTTP 200, and comes as soon as the dialing starts:
+`none`, `unpaired` for a missing or unknown token, `error` otherwise (wrong method, bad body
+or version, not a join QR code, no `addr` or `fp`, a window already open).
 
 ### Profile port 8766
 
@@ -638,7 +671,9 @@ Header fields (all omitted when empty):
 | `fingerprint` | string | iPhone CA fingerprint |
 | `address` | string | `host:port` |
 | `name` | string | a device name, or a phone ID |
-| `expires` | integer | seconds a window stays open; for `join`, seconds to wait for one |
+| `expires` | integer | seconds a window stays open; for a listening `join`, seconds to wait (at most 300) |
+| `listen` | bool | `join`: listen for a member instead of dialing one |
+| `addrs` | array of strings | the first answer of a listening `join`: where it listens |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
 
@@ -655,7 +690,7 @@ A connection carries one request: the service reads the first message and dispat
 | `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], version}` |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the profile port), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipbridge.local`. Hanging up closes the window |
-| `join` | `{code, address?, expires?}` | `{done}` or an error. Without `address` it browses for `p=1`; `expires` > 0 makes it wait up to that long (at most 300 s) for a window. Hanging up cancels |
+| `join` | `{code, address?}` or `{code, listen, expires}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. Hanging up cancels |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
@@ -700,18 +735,11 @@ a computer keep working as they do today.
   (a phone cannot accept connections in the background), so members MUST NOT dial a
   `phone` member; it publishes no mDNS records. The roles `phone` and `lite` are already
   accepted (section 4).
-- **Join QR code.** In this mode `clipbridge join` listens on a fresh TCP port with a
-  fresh self-signed P-256 certificate and shows
-  `clipbridge://join?code=<six digits>&addr=<host:port>&fp=<base64url SHA-256 of the
-  certificate's DER, no padding>`. `addr` may be repeated (IPv4 and IPv6). The shortcut and
-  today's `/admit` ignore the extra fields (section 7), so the same QR code serves both
-  modes.
-- **Pairing direction.** The phone dials `addr` and is the TLS client; it MUST check `fp`
-  against the server certificate. The computer is the TLS server, and nothing in its
-  certificate needs to be trusted beyond `fp`. The CPace roles, the channel binding and the
-  frames of section 6 stay the same: the computer is the joining side and the phone the
-  admitting side, which sends Welcome with a member certificate signed by the phone's CA.
-  The window and attempt rules of section 6 apply to the listening computer.
+- **Join QR code and pairing direction.** Already implemented: `clipbridge join` listens
+  and shows its addresses and certificate fingerprint, and the admitting side dials it and
+  confirms first (section 6, "The joiner listens"). Today a Linux member dials, when the
+  shortcut posts the QR code to `/admit`; the app will dial by itself, as the admitting
+  side, and send a Welcome with a member certificate signed by the phone's CA.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.

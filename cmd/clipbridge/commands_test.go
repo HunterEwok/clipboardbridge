@@ -17,7 +17,7 @@ import (
 
 // fakeService answers every request on a control socket with answer and
 // records the requests.
-func fakeService(t *testing.T, answer control.Message) chan *control.Message {
+func fakeService(t *testing.T, answers ...control.Message) chan *control.Message {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
 	if err != nil {
@@ -41,9 +41,10 @@ func fakeService(t *testing.T, answer control.Message) chan *control.Message {
 			m, err := control.NewReader(c).Read()
 			if err == nil {
 				got <- m
-				a := answer
-				a.Op = control.OpReply
-				control.Write(c, &a)
+				for _, a := range answers {
+					a.Op = control.OpReply
+					control.Write(c, &a)
+				}
 			}
 			c.Close()
 		}
@@ -143,18 +144,27 @@ func TestPasteWriteError(t *testing.T) {
 }
 
 func TestJoinWithThePhone(t *testing.T) {
-	// By default join shows a QR code with its own code and asks the
-	// service to wait for the window the phone opens.
-	got := fakeService(t, control.Message{Header: control.Header{Done: true}})
+	// By default join asks the service to listen, shows a QR code with
+	// its code, address and fingerprint, and waits for the member to dial.
+	got := fakeService(t,
+		control.Message{Header: control.Header{Addrs: []string{"192.168.1.20:40123"}, Fingerprint: "q83vEjRWeJA"}},
+		control.Message{Header: control.Header{Done: true}})
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
 		t.Fatalf("join: %d, %s", code, stderr.String())
 	}
 	m := request(t, got)
-	if m.Op != control.OpJoin || len(m.Code) != 6 || m.Expires != 300 || m.Address != "" {
+	if m.Op != control.OpJoin || len(m.Code) != 6 || m.Expires != 300 || m.Address != "" || !m.Listen {
 		t.Errorf("join sent %+v", m.Header)
 	}
-	if !strings.Contains(stdout.String(), "add a computer") || !strings.Contains(stdout.String(), "\x1b[") {
+	if !strings.Contains(stdout.String(), "add a computer") || !strings.Contains(stdout.String(), "\x1b[") ||
+		!strings.Contains(stdout.String(), "Joined the group") {
 		t.Errorf("join printed:\n%s", stdout.String())
+	}
+	// Without an address on the home network there is nothing to show.
+	fakeService(t, control.Message{Header: control.Header{}})
+	stdout.Reset()
+	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "no address") {
+		t.Errorf("join without an address: %d, %s", code, stderr.String())
 	}
 }
