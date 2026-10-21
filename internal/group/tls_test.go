@@ -95,7 +95,10 @@ func TestMemberHandshakeRejects(t *testing.T) {
 	now := at(t0)
 	revoked := errors.New("revoked")
 	deny := func(bad DeviceID) TLSOptions {
-		return TLSOptions{Now: now.Now, Allow: func(id DeviceID) error {
+		return TLSOptions{Now: now.Now, Allow: func(id DeviceID, chain []*x509.Certificate) error {
+			if len(chain) == 0 || chain[0].Subject.CommonName != string(id) {
+				return errors.New("Allow got the wrong certificates")
+			}
 			if id == bad {
 				return revoked
 			}

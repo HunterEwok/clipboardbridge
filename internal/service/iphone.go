@@ -75,7 +75,7 @@ func (s *Service) servePhone(ctx context.Context) {
 	}}
 	mux := http.NewServeMux()
 	mux.Handle("/sync", phone.SyncHandler(phoneGroup{s}))
-	mux.Handle("/admit", phone.AdmitHandler(phoneGroup{s}.PhoneCA, s.admit))
+	mux.Handle("/admit", phone.AdmitHandler(phoneGroup{s}, s.admit))
 	mux.Handle("/pair", phone.PairHandler(func() *phone.Window {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -194,6 +194,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 		return
 	}
 	s.logf("clipbridge: an iPhone (%s) was paired", phoneID)
+	s.recordPhone(phoneID)
 	end()
 	reply(c, control.Header{Name: phoneID, Done: true}, nil)
 }

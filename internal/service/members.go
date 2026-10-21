@@ -185,8 +185,14 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 // connected to.
 func (s *Service) peersChanged() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.electLocked()
+	nd := s.nd
+	s.mu.Unlock()
+	if nd == nil {
+		return
+	}
+	s.trackSeen(nd.Peers())
+	s.ensureListed()
 }
 
 func (s *Service) electLocked() {

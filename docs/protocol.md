@@ -223,11 +223,12 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye` or `cert` |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert` or `records` |
 | `role` | string | hello | `linux`, `mac`, `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
+| `records` | array | records | signed records (section 10) |
 
 ```json
 {"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -240,7 +241,8 @@ Message object:
 ### Message order
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
-2. Then events follow, in any number, interleaved with pings and at most one `cert`.
+2. Then events follow, in any number, interleaved with pings, records messages and at most
+   one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -272,6 +274,8 @@ never dialed; the Linux members treat it as a Mac (it never holds `clipbridge.lo
 |-------|------|---------|
 | `wall_ms` | integer | the sender's wall clock, milliseconds since the Unix epoch; for skew reports only (`clipbridge status` shows `skew_ms`); 0 or absent means unknown |
 | `current` | Event or absent | the sender's current event with its age as of sending; for a secret only its mark (text `""`), whatever its age; absent when there is none |
+| `records` | string or absent | the digest of the sender's records (section 10) |
+| `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
 
 ### Event
 
@@ -722,9 +726,7 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   it expires. A watcher writes a secret with the platform's password-manager marks.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
 
-Note: design.md describes `clipbridge devices` and `clipbridge revoke` with signed
-revocation records; their wire format and control operations are planned in section 10, and
-the member TLS configuration never sets its `Allow` hook yet.
+The `devices` and `revoke` operations are in section 10.
 
 ## 9. Planned: the phone as the root (not implemented)
 
@@ -758,14 +760,15 @@ a computer keep working as they do today.
   which send `cert` messages as a Linux member does today; revocation and the devices list
   are section 10, and a second admin phone is the way back when a phone is lost.
 
-## 10. Planned: admin CAs, device records and revocation (not implemented)
+## 10. Admin CAs, device records and revocation
 
 The wire side of "Admin phones, the devices list and revocation (planned)" in
-[design.md](design.md). Sections 1-9 stay valid until this is implemented; the order of work
-is the Go side first (records, their exchange, refusing revoked keys, `devices` and `revoke`
-in groups a computer created, verification through an admin CA), then the apps.
+[design.md](design.md). Implemented in Go: the records, their exchange, refusing revoked
+keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
+`internal/node`, `internal/service/devices.go`). Planned, with the apps: admin CAs in member
+chains (Go verifies records signed by one already) and `root` records.
 
-### Admin CA and chains
+### Admin CA and chains (planned)
 
 | Certificate | Subject CN | Validity | Extensions |
 |-------------|-----------|----------|------------|
@@ -799,7 +802,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA certificate, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
 
@@ -814,35 +817,46 @@ Validity and evaluation, which depend only on the set of records, never on their
 2. The **revoked set** is the union of `keys` of every `revoke` record signed by an admin,
    including records whose signer is itself revoked. So two admins that revoke each other
    are both revoked.
-3. A `device` or `root` record counts only when its signer's key is not revoked.
+3. A `device` or `root` record counts only when its signer's key is not revoked; a
+   `device` record also counts when every record that revoked its signer keeps the
+   device's key, so the devices a removed admin admitted stay in the list.
 4. A certificate is refused when its key is revoked, or when its issuer is an admin CA
-   whose key is revoked and its key is not in the `keep` of a record that revoked that
-   admin CA.
+   whose key is revoked and not every record that revoked that admin CA keeps the
+   certificate's key.
 5. A `root` record signed under the current root replaces the group CA: the member trusts
    the new root alone, keeps its records (re-signed records are not needed, since records
    are checked against the root they were signed under, which the member keeps as history),
    and expects new certificates from an admin. When two valid `root` records exist under the
    same root, the one whose new root certificate has the smaller SHA-256 wins.
 
-The devices list is the `device` records that count, less the revoked keys; a device is an
-admin when its record names an admin CA whose key is not revoked. A Linux member that holds
-the CA keys is an admin in a group a computer created.
+The devices list is, for each device, the `device` record that counts with the largest
+`time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
+record names an admin CA whose key is not revoked. A Linux member that holds the CA keys is
+an admin in a group a computer created. Go keeps the records in `records.json` next to the
+identity (mode 0600) and refuses `root` records until the apps implement them.
 
 ### Exchange in the member protocol
 
-- The hello gets a field `records`: SHA-256 over the sorted record IDs the sender holds,
-  base64; absent when it holds none.
-- A side whose digest differs from the peer's sends, after its hello, a message
-  `{"t":"records","records":[envelope, ...]}` with every record it holds; frames stay within
-  the 7 MiB limit. A receiver adds the valid ones, saves them, and sends the records that were
-  new to it to its other peers in the same message.
-- After adding records a member closes every connection whose peer certificate is now
-  refused (rule 4), and the TLS `Allow` hook refuses it from then on. A member that learns
-  that its own key is revoked stops syncing and reports "removed from the group".
+- The hello object (section 4) carries `records`: SHA-256 over the sorted record IDs the
+  sender holds, standard base64; absent when it holds none.
+- A side that holds records and whose digest differs from the peer's sends, after the peer's
+  hello, `{"t":"records","records":[envelope, ...]}` with every record it holds, split into
+  messages of about 1 MiB each. A receiver adds the valid ones, saves them, and sends the
+  records that were new to it to its other peers, which have sent their hello, the same way.
+  Invalid records are logged and dropped; the connection stays.
+- After adding a revocation a member closes every connection whose peer certificate is now
+  refused (rule 4), and the TLS check refuses it from then on. A member that learns that its
+  own key is revoked logs that it was removed from the group; the others refuse it.
+- A Linux member that holds the group CA key records every device it admits (its name from
+  the pairing Info, role `linux` or `mac`) and every iPhone it pairs (`iphone`, name
+  `iPhone`, device = the phone ID), and, for groups made before the list existed, itself and
+  every connected peer that has no record yet, with the name from the peer's hello (or the
+  role and the first 8 characters of its ID).
+- The iPhone endpoints (section 7) treat the token of a revoked iPhone as unknown.
 
 ### Control operations
 
 | `op` | Request | Answers |
 |------|---------|---------|
-| `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self}], done}` |
-| `revoke` | `{device}` (ID or name) | `{done}` or an error; only where the member is an admin, otherwise it asks a connected admin, else fails with `no admin is connected` |
+| `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
+| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on a member that holds the group CA key; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation") |

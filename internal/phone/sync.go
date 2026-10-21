@@ -33,8 +33,29 @@ type Group interface {
 	// Send makes an event from the iPhone button and writes it to the
 	// member's own clipboard.
 	Send(text string, kind clip.Kind, via clip.Via) error
+	Tokens
+}
+
+// Tokens checks the shortcut's tokens.
+type Tokens interface {
 	// PhoneCA returns the iPhone CA, whose key checks the tokens.
 	PhoneCA() *group.CA
+	// PhoneRevoked reports whether the phone with this ID was removed
+	// from the group (clipbridge revoke).
+	PhoneRevoked(phoneID string) bool
+}
+
+// checkToken checks a token: the group issued it, and its phone was not
+// removed.
+func checkToken(t Tokens, token string) error {
+	id, err := CheckToken(t.PhoneCA(), token)
+	if err != nil {
+		return err
+	}
+	if t.PhoneRevoked(id) {
+		return ErrBadToken
+	}
+	return nil
 }
 
 // syncRequest is what the shortcut sends. V may come as a number or, from
@@ -76,7 +97,7 @@ func SyncHandler(g Group) http.Handler {
 			unpaired("the shortcut has no token; run clipbridge pair -phone and the shortcut again")
 			return
 		}
-		if _, err := CheckToken(g.PhoneCA(), token); err != nil {
+		if err := checkToken(g, token); err != nil {
 			unpaired(ErrBadToken.Error())
 			return
 		}
@@ -108,9 +129,9 @@ type admitRequest struct {
 
 // AdmitHandler serves POST /admit: a paired phone, the group's main
 // device, asks the member to admit a computer with what the computer's QR
-// code carries. ca returns the iPhone CA; admit starts the pairing.
+// code carries. t checks the phone's token; admit starts the pairing.
 // Answers come with status 200 and JSON, as for /sync.
-func AdmitHandler(ca func() *group.CA, admit func(JoinCode) error) http.Handler {
+func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reply := func(rep syncReply) {
 			rep.V = 1
@@ -123,7 +144,7 @@ func AdmitHandler(ca func() *group.CA, admit func(JoinCode) error) http.Handler 
 			return
 		}
 		token := bearer(r.Header.Get("Authorization"))
-		if _, err := CheckToken(ca(), token); token == "" || err != nil {
+		if token == "" || checkToken(t, token) != nil {
 			reply(syncReply{Direction: "unpaired", Message: "this iPhone is not paired with the group; run clipbridge pair -phone"})
 			return
 		}

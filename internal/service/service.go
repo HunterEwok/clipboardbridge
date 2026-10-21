@@ -131,7 +131,13 @@ type Service struct {
 	dialers       map[group.DeviceID]*dialer
 	watchers      map[*watcher]bool
 	lastSeq       uint64
-	pending       *node.Write // a write that no watcher got, for the next one
+	pending       *node.Write                  // a write that no watcher got, for the next one
+	seen          map[group.DeviceID]time.Time // when each peer was last seen connected
+	online        map[group.DeviceID]bool
+
+	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
+	recMu   sync.Mutex     // guards records; taken after mu, never before
+	records *group.Records // the group's device records; nil while in no group
 
 	groupCtx    context.Context
 	groupCancel context.CancelFunc
@@ -170,7 +176,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.profileListen == nil {
 		cfg.profileListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", ProfilePort)) }
 	}
-	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}}
+	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}}
 
 	floor, err := loadMark(cfg.StateDir)
 	if err != nil {
@@ -253,9 +260,13 @@ func (s *Service) startGroup(id *group.Identity) error {
 	}
 	gctx, cancel := context.WithCancel(context.Background())
 	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
+	s.recMu.Lock()
+	s.records = s.loadRecords(id)
+	s.recMu.Unlock()
 	nd := node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Engine: eng,
+		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, Now: s.cfg.now, Logf: s.logf,
+		Records: recordStore{s}, Allow: s.allow,
 	})
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
 	var ln net.Listener
@@ -279,10 +290,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.id, s.eng, s.nd, s.port = id, eng, nd, dc.Port
 	s.groupCtx, s.groupCancel = gctx, cancel
 	nd.Rejoin() // the service just started; there are no connections yet
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go func() {
 		defer s.wg.Done()
 		s.renewLoop(gctx)
+	}()
+	go func() {
+		defer s.wg.Done()
+		s.ensureListed()
 	}()
 	if ln != nil {
 		s.wg.Add(2)

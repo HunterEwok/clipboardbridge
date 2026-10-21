@@ -16,10 +16,10 @@ const MemberProtocol = "clipbridge/1"
 
 // TLSOptions adjust the TLS configuration of member connections.
 type TLSOptions struct {
-	// Allow, if set, is called with the peer's device ID once its
-	// certificate is verified; an error rejects the peer, for example a
-	// revoked device.
-	Allow func(DeviceID) error
+	// Allow, if set, is called with the peer's device ID and the
+	// certificates it presented (leaf first) once they are verified; an
+	// error rejects the peer, for example a revoked device.
+	Allow func(DeviceID, []*x509.Certificate) error
 
 	// Now returns the current time; time.Now if nil.
 	Now func() time.Time
@@ -118,7 +118,7 @@ func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID,
 		return "", err
 	}
 	if opt.Allow != nil {
-		if err := opt.Allow(peer); err != nil {
+		if err := opt.Allow(peer, cs.PeerCertificates); err != nil {
 			return "", err
 		}
 	}

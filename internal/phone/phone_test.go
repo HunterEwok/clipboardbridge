@@ -63,13 +63,14 @@ func TestToken(t *testing.T) {
 
 // fakeGroup is the member as the iPhone endpoint sees it.
 type fakeGroup struct {
-	ca    *group.CA
-	cur   clip.Event
-	has   bool
-	local string
-	kind  clip.Kind
-	age   time.Duration
-	sent  []string
+	ca      *group.CA
+	revoked string // a removed phone's ID
+	cur     clip.Event
+	has     bool
+	local   string
+	kind    clip.Kind
+	age     time.Duration
+	sent    []string
 }
 
 func (g *fakeGroup) Current() (clip.Event, bool) { return g.cur, g.has }
@@ -85,6 +86,8 @@ func (g *fakeGroup) Send(text string, kind clip.Kind, via clip.Via) error {
 	return nil
 }
 func (g *fakeGroup) PhoneCA() *group.CA { return g.ca }
+
+func (g *fakeGroup) PhoneRevoked(id string) bool { return id == g.revoked }
 
 func doSync(t *testing.T, g *fakeGroup, token, body string) syncReply {
 	t.Helper()
@@ -172,7 +175,8 @@ func TestSyncErrors(t *testing.T) {
 	ca := newCA(t)
 	tok, _, _ := NewToken(ca)
 	otherTok, _, _ := NewToken(newCA(t))
-	g := &fakeGroup{ca: ca}
+	revokedTok, revokedID, _ := NewToken(ca)
+	g := &fakeGroup{ca: ca, revoked: revokedID}
 	for name, tt := range map[string]struct{ token, body string }{
 		"bad JSON":        {tok, "{"},
 		"another version": {tok, `{"v":2,"text":"x"}`},
@@ -187,7 +191,7 @@ func TestSyncErrors(t *testing.T) {
 	}
 	// Without a token this group issued, the shortcut is told to pair
 	// again.
-	for name, token := range map[string]string{"no token": "", "another group": otherTok} {
+	for name, token := range map[string]string{"no token": "", "another group": otherTok, "a removed phone": revokedTok} {
 		if rep := doSync(t, g, token, body("x")); rep.Direction != "unpaired" || rep.Message == "" {
 			t.Errorf("%s: reply %+v", name, rep)
 		}
@@ -227,8 +231,9 @@ func TestAdmit(t *testing.T) {
 	ca := newCA(t)
 	tok, _, _ := NewToken(ca)
 	otherTok, _, _ := NewToken(newCA(t))
+	revokedTok, revokedID, _ := NewToken(ca)
 	var admitted []JoinCode
-	h := AdmitHandler(func() *group.CA { return ca }, func(jc JoinCode) error {
+	h := AdmitHandler(&fakeGroup{ca: ca, revoked: revokedID}, func(jc JoinCode) error {
 		admitted = append(admitted, jc)
 		return nil
 	})
@@ -253,6 +258,9 @@ func TestAdmit(t *testing.T) {
 	}
 	if rep := post(otherTok, qr); rep.Direction != "unpaired" {
 		t.Errorf("another group's token: %+v", rep)
+	}
+	if rep := post(revokedTok, qr); rep.Direction != "unpaired" {
+		t.Errorf("a removed phone's token: %+v", rep)
 	}
 	if rep := post(tok, `{"v":1,"code":"https://example.com/"}`); rep.Direction != "error" {
 		t.Errorf("another QR code: %+v", rep)

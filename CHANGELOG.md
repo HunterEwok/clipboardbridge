@@ -6,6 +6,16 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 ## [Unreleased]
 
+### Added
+
+- The devices list: `clipbridge devices` shows every device of the group with its role, an
+  admin mark and when this member last saw it; `clipbridge revoke <name or ID>` removes a
+  Mac, a phone or an iPhone's shortcut from the group. Members keep signed device and
+  revocation records, give them to each other, and refuse removed devices at once; a removed
+  iPhone's token stops working. A Linux member records the devices it admits, and the
+  members of an existing group when it meets them. Removing a Linux member is not supported
+  yet. See section 10 of [docs/protocol.md](docs/protocol.md).
+
 ## [0.1.1] - 2026-10-21
 
 The first release. The tag v0.1.0 was made, but its release build failed on the macOS

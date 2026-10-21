@@ -33,6 +33,8 @@ const (
 	OpPair      = "pair"       // client → service: open a pairing window; answers follow
 	OpPairPhone = "pair-phone" // client → service: open an iPhone pairing window; answers follow
 	OpJoin      = "join"       // client → service: join a group with a code
+	OpDevices   = "devices"    // client → service: list the group's devices
+	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
 	OpCopied    = "copied"     // watcher → service: the clipboard changed
 	OpClipboard = "clipboard"  // watcher → service: what the clipboard holds, without a change
@@ -82,12 +84,19 @@ type Status struct {
 	Version string   `json:"version"`
 }
 
-// Device is a member as status shows it.
+// Device is a member as status shows it, or a device of the group as
+// devices lists it.
 type Device struct {
 	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
 	Role   string `json:"role,omitempty"`
 	SkewMS int64  `json:"skew_ms,omitempty"` // how far its clock is ahead of this one
+
+	Admin      bool  `json:"admin,omitempty"`        // it can admit and remove devices
+	Online     bool  `json:"online,omitempty"`       // connected to this member now
+	LastSeenMS int64 `json:"last_seen_ms,omitempty"` // when this member last saw it connected, Unix milliseconds; 0 if never
+	Self       bool  `json:"self,omitempty"`         // this device
+	Listed     bool  `json:"listed,omitempty"`       // it has a device record; a member that joined before the list existed may have none yet
 }
 
 // Message is a header and its payload.

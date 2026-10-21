@@ -47,6 +47,7 @@ const (
 type Config struct {
 	Identity *group.Identity
 	Role     Role
+	Name     string // this device's name, sent in the hello
 	Engine   *clip.Engine
 
 	// OnWrite puts a text into this member's own clipboard. Writes carry
@@ -65,14 +66,31 @@ type Config struct {
 	// identity to SetIdentity. An error is logged.
 	OnCert func(der []byte) error
 
-	// Allow, if set, rejects peers, for example revoked devices.
-	Allow func(group.DeviceID) error
+	// Allow, if set, rejects peers, for example revoked devices. Recheck
+	// asks it again for the running connections.
+	Allow func(group.DeviceID, []*x509.Certificate) error
+
+	// Records, if set, keeps the group's signed records.
+	Records RecordStore
 
 	PingEvery time.Duration        // defaultPingEvery if zero
 	Timeout   time.Duration        // defaultTimeout if zero
 	Uptime    func() time.Duration // uptime.Now if nil
 	Now       func() time.Time     // for certificate checks; time.Now if nil
 	Logf      func(format string, args ...any)
+}
+
+// A RecordStore keeps the group's signed records (docs/protocol.md, section
+// 10). Its methods are called from connection goroutines.
+type RecordStore interface {
+	// Digest returns the digest of the records, which the hello carries;
+	// "" when there are none.
+	Digest() string
+	// All returns every record, for a peer whose digest differs.
+	All() []group.Record
+	// Add takes the records a peer sent and returns those that were new
+	// and valid, which go on to the other peers.
+	Add(from group.DeviceID, rs []group.Record) []group.Record
 }
 
 // Write is a text to put into the member's own clipboard.
@@ -87,6 +105,8 @@ type Write struct {
 type Peer struct {
 	ID    group.DeviceID
 	Role  Role
+	Name  string // from its hello; "" when it sent none or an invalid one
+	Key   group.KeyHash
 	Since time.Duration // uptime when the connection started
 }
 
@@ -178,7 +198,7 @@ func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error {
 	if id == n.identity().ID {
 		return errors.New("node: connected to itself")
 	}
-	c := &conn{n: n, id: id, tc: tc, peerCert: cs.PeerCertificates[0], out: make(chan outgoing, queueLen),
+	c := &conn{n: n, id: id, tc: tc, peerCert: cs.PeerCertificates[0], peerChain: cs.PeerCertificates, out: make(chan outgoing, queueLen),
 		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
 	defer close(c.finished)
 
@@ -320,7 +340,7 @@ func (n *Node) Peers() []Peer {
 	out := make([]Peer, 0, len(n.conns))
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
-			out = append(out, Peer{ID: c.id, Role: role, Since: c.since})
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), Key: group.KeyHashOf(c.peerCert), Since: c.since})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -366,6 +386,61 @@ func (n *Node) renewPeer(c *conn) {
 	}
 }
 
+// offerRecords sends every record to the peer of c when its digest differs
+// from this member's and this member has any.
+func (n *Node) offerRecords(c *conn, digest string) {
+	st := n.cfg.Records
+	if st == nil {
+		return
+	}
+	if mine := st.Digest(); mine == "" || mine == digest {
+		return
+	}
+	for _, chunk := range chunkRecords(st.All()) {
+		c.enqueue(outgoing{records: chunk})
+	}
+}
+
+// SendRecords sends records to every connected member, for example a
+// revocation made on this member.
+func (n *Node) SendRecords(rs []group.Record) { n.sendRecords(rs, nil) }
+
+// sendRecords sends records to every connection that sent its hello,
+// except the one they came from.
+func (n *Node) sendRecords(rs []group.Record, from *conn) {
+	chunks := chunkRecords(rs)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, c := range n.conns {
+		if c == from || c.role() == "" {
+			continue
+		}
+		for _, chunk := range chunks {
+			c.enqueue(outgoing{records: chunk})
+		}
+	}
+}
+
+// Recheck asks Allow again about every connection and closes those it now
+// rejects, for example after a revocation.
+func (n *Node) Recheck() {
+	if n.cfg.Allow == nil {
+		return
+	}
+	n.mu.Lock()
+	var drop []*conn
+	for _, c := range n.conns {
+		if err := n.cfg.Allow(c.id, c.peerChain); err != nil {
+			n.cfg.Logf("node: closing the connection to %s: %v", c.id, err)
+			drop = append(drop, c)
+		}
+	}
+	n.mu.Unlock()
+	for _, c := range drop {
+		c.close(false)
+	}
+}
+
 func (n *Node) peersChanged() {
 	if n.cfg.OnPeers != nil {
 		n.cfg.OnPeers()
@@ -403,30 +478,41 @@ type conn struct {
 	id       group.DeviceID
 	tc       *tls.Conn
 	peerCert *x509.Certificate // from the handshake
-	since    time.Duration
-	out      chan outgoing
+	// peerChain is what the peer presented, leaf first, for Recheck.
+	peerChain []*x509.Certificate
+	since     time.Duration
+	out       chan outgoing
 
 	mu       sync.Mutex
-	peerRole Role // set by the peer's hello
-	certSent bool // a renewed certificate was queued for the peer
+	peerRole Role   // set by the peer's hello
+	peerName string // set by the peer's hello
+	certSent bool   // a renewed certificate was queued for the peer
 	sayBye   bool
 	done     chan struct{} // closed to end the connection
 	closed   bool
 	finished chan struct{} // closed when Serve has cleaned up
 }
 
-// outgoing is a queued message: a hello, an event or a renewed certificate.
+// outgoing is a queued message: a hello, an event, a renewed certificate
+// or records.
 type outgoing struct {
-	hello  *clip.Hello
-	event  *clip.Event
-	cert   *x509.Certificate
-	queued time.Duration
+	hello   *clip.Hello
+	event   *clip.Event
+	cert    *x509.Certificate
+	records []group.Record
+	queued  time.Duration
 }
 
 func (c *conn) role() Role {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.peerRole
+}
+
+func (c *conn) name() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.peerName
 }
 
 // enqueue queues a message without blocking. A peer that falls a whole
@@ -521,13 +607,19 @@ func (c *conn) message(o outgoing) (*message, error) {
 			ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
 			h.Current = &ev
 		}
-		data, err := encode(h)
+		out := helloOut{Hello: h, Name: c.n.cfg.Name}
+		if c.n.cfg.Records != nil {
+			out.Records = c.n.cfg.Records.Digest()
+		}
+		data, err := encode(out)
 		if err != nil {
 			return nil, err
 		}
 		return &message{Type: typeHello, Role: c.n.cfg.Role, Hello: data}, nil
 	case o.cert != nil:
 		return &message{Type: typeCert, Cert: o.cert.Raw}, nil
+	case o.records != nil:
+		return &message{Type: typeRecs, Records: o.records}, nil
 	default:
 		ev := *o.event
 		ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
@@ -627,12 +719,15 @@ func (c *conn) reader() error {
 			if m.Type != typeHello || !m.Role.known() {
 				return fmt.Errorf("node: %s did not start with a hello", c.id)
 			}
-			h, err := decodeHello(m.Hello)
+			h, extra, err := decodeHello(m.Hello)
 			if err != nil {
 				return fmt.Errorf("node: bad hello from %s: %w", c.id, err)
 			}
 			c.mu.Lock()
 			c.peerRole = m.Role
+			if group.ValidName(extra.Name) {
+				c.peerName = extra.Name
+			}
 			c.mu.Unlock()
 			c.n.peersChanged()
 			res, err := e.Reconcile(string(c.id), h)
@@ -641,6 +736,7 @@ func (c *conn) reader() error {
 			}
 			c.n.apply(res, c)
 			c.n.renewPeer(c)
+			c.n.offerRecords(c, extra.Records)
 			continue
 		}
 		switch m.Type {
@@ -663,6 +759,12 @@ func (c *conn) reader() error {
 			if err := c.n.cfg.OnCert(m.Cert); err != nil {
 				c.n.cfg.Logf("node: a renewed certificate from %s: %v", c.id, err)
 			}
+		case typeRecs:
+			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {
+				if fresh := st.Add(c.id, m.Records); len(fresh) > 0 {
+					c.n.sendRecords(fresh, c)
+				}
+			}
 		case typeBye:
 			return nil
 		}
@@ -670,12 +772,13 @@ func (c *conn) reader() error {
 	}
 }
 
-// decodeHello decodes a hello. A current event that does not decode, for
-// example from a newer version, counts as none.
-func decodeHello(raw json.RawMessage) (clip.Hello, error) {
+// decodeHello decodes a hello, and returns the rest of it, the peer's
+// records digest and name, as it came. A current event that does not
+// decode, for example from a newer version, counts as none.
+func decodeHello(raw json.RawMessage) (clip.Hello, helloBody, error) {
 	var b helloBody
 	if err := json.Unmarshal(raw, &b); err != nil || len(raw) == 0 {
-		return clip.Hello{}, errors.New("the hello does not decode")
+		return clip.Hello{}, helloBody{}, errors.New("the hello does not decode")
 	}
 	h := clip.Hello{Wall: b.Wall}
 	if len(b.Current) > 0 && string(b.Current) != "null" {
@@ -684,5 +787,5 @@ func decodeHello(raw json.RawMessage) (clip.Hello, error) {
 			h.Current = &ev
 		}
 	}
-	return h, nil
+	return h, b, nil
 }
