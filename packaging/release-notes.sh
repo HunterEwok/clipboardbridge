@@ -25,6 +25,7 @@ repo=https://github.com/HunterEwok/clipbridge
 changes=$(awk -v v="$version" '
 	index($0, "## [" v "]") == 1 { on = 1; next }
 	on && /^## \[/ { exit }
+	on && /^\[[^]]*\]: / { next } # the link definitions at the end of the file
 	on { print }
 ' "$root/CHANGELOG.md" |
 	# Links relative to the repository point at this tag on the release page.
