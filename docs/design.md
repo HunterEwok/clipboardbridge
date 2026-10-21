@@ -453,6 +453,13 @@ The order may change.
    (keys in the Keychain or Keystore), sync while the app is open, a share extension and an
    Android quick-settings tile. Background sync stays impossible on iOS.
 10. Console helper and auto-paste.
+11. A lite member in Rust for weak devices (routers, small boards): a member without CA
+    keys that only dials, like a Mac, joins by QR code through the phone and syncs; it
+    never admits devices, holds `clipbridge.local` or serves the iPhone, and needs one full
+    member on. Only once the Go version is complete and its architecture settled, so it is
+    written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
+    that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
+    Rust member among Go members.
 
 ## Open questions
 
