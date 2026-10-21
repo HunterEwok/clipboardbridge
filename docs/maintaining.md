@@ -98,6 +98,10 @@ Rules for workflows:
 
 ## Releases
 
+- Before the tag, a pull request moves the changes under `## [Unreleased]` in
+  `CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section and updates the link
+  references at the end of the file; the release notes are built from that section
+  (`packaging/release-notes.sh`), which fails the release if it is missing.
 - Built by CI from a tag, never on a laptop: push a tag `vX.Y.Z` on main
   (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
   `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and

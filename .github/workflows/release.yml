@@ -93,5 +93,9 @@ jobs:
           prerelease=
           case $GITHUB_REF_NAME in *-*) prerelease=--prerelease ;; esac
           # shellcheck disable=SC2086 # $prerelease is one word or none
+          # Our notes first (packaging/release-notes.sh), then GitHub's list
+          # of the merged pull requests.
+          sh packaging/release-notes.sh "$GITHUB_REF_NAME" >"$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-            --title "clipbridge $GITHUB_REF_NAME" --generate-notes --verify-tag $prerelease
+            --title "clipbridge $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" \
+            --generate-notes --verify-tag $prerelease

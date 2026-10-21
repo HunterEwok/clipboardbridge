@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-clipbridge has no releases yet. Until the first release, only the `main` branch is
-supported. After that, the latest release receives security fixes.
+The latest release receives security fixes; older releases do not. Fixes land on the
+`main` branch first and go out in the next release.
 
 ## Reporting a vulnerability
 
