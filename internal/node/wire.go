@@ -17,12 +17,15 @@ import (
 // member configuration. Each side sends frames of a 4-byte big-endian length
 // and a JSON message. The first message of each side is a hello; then
 // events follow, and a ping whenever the side has sent nothing for a while,
-// so a silent connection is a dead one.
+// so a silent connection is a dead one. A member that holds the group CA key
+// sends a cert message with a renewed certificate to a peer whose
+// certificate is due for renewal.
 const (
 	typeHello = "hello"
 	typeEvent = "event"
 	typePing  = "ping"
 	typeBye   = "bye"
+	typeCert  = "cert"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -50,6 +53,7 @@ type message struct {
 	Role  Role            `json:"role,omitempty"`  // in a hello
 	Hello json.RawMessage `json:"hello,omitempty"` // in a hello: clip.Hello
 	Event json.RawMessage `json:"event,omitempty"` // in an event: clip.Event
+	Cert  []byte          `json:"cert,omitempty"`  // in a cert: the renewed member certificate, DER
 }
 
 // helloBody is the content of a hello, with its current event left to

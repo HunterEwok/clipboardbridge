@@ -703,3 +703,42 @@ func TestConverges(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestRenewPeer(t *testing.T) {
+	// A Linux member that holds the group CA key, with its clock 18
+	// months ahead, finds the Mac's certificate due and sends a renewed
+	// one; the Mac takes it.
+	pi := newMember(t, Linux, func(_ *clip.Config, nc *Config) {
+		nc.Now = func() time.Time { return time.Now().AddDate(1, 6, 0) }
+	})
+	piID := *pi.id
+	piID.GroupCA = admin.GroupCA
+	pi.SetIdentity(&piID)
+	got := make(chan *group.Identity, 2)
+	var mac *member
+	mac = newMember(t, Mac, func(_ *clip.Config, nc *Config) {
+		nc.OnCert = func(der []byte) error {
+			next, err := mac.id.WithCert(der)
+			if err == nil {
+				got <- next
+			}
+			return err
+		}
+	})
+	link(t, mac, pi)
+	select {
+	case next := <-got:
+		if !next.Cert.NotAfter.After(mac.id.Cert.NotAfter.AddDate(1, 0, 0)) {
+			t.Errorf("the renewed certificate ends at %v", next.Cert.NotAfter)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no renewed certificate")
+	}
+	// Once per connection, also when asked again.
+	pi.RenewPeers()
+	select {
+	case <-got:
+		t.Error("a second renewed certificate on the same connection")
+	case <-time.After(200 * time.Millisecond):
+	}
+}

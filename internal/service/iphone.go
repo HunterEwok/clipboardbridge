@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -58,11 +59,20 @@ func homeOnly(h http.Handler) http.Handler {
 }
 
 // servePhone runs the iPhone port on a Linux member, until ctx is done.
-func (s *Service) servePhone(ctx context.Context, id *group.Identity) {
-	cfg := id.PhoneTLS()
-	if cfg == nil {
+func (s *Service) servePhone(ctx context.Context) {
+	s.mu.Lock()
+	admin := s.id.Phone != nil
+	s.mu.Unlock()
+	if !admin {
 		return
 	}
+	// The certificate is looked up for each connection, so a renewed one
+	// is used at once.
+	cfg := &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.id.PhoneCertificate(), nil
+	}}
 	mux := http.NewServeMux()
 	mux.Handle("/sync", phone.SyncHandler(phoneGroup{s}))
 	mux.Handle("/admit", phone.AdmitHandler(phoneGroup{s}.PhoneCA, s.admit))
