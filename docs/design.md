@@ -74,12 +74,23 @@ any member may be switched off at any time.
   old identity or the new one.
 - **Joining a computer**: `clipbridge pair` on a Linux member (on a Mac, the command asks a
   connected Linux member) shows a six-digit code and opens a pairing window for five minutes
-  (one attempt at a time, closed after a success or the third failure). On the new device the user runs `clipbridge join` and types the code. The two
-  run the CPace password-authenticated key exchange inside TLS 1.3, bound to the TLS session
-  and both certificates. An attacker gets one guess per attempt and no offline attack; a
-  relay between two TLS sessions fails. The new member then receives, protected by the key
-  from CPace, its certificate, the group CA and the group state; a Linux member also receives
-  the keys of both CAs and the token hashes.
+  (one attempt at a time, closed after a success or the third failed attempt; an attempt that
+  has started may finish after the five minutes). On the new device the user runs
+  `clipbridge join` and types the code. The new device connects to the member's port with
+  the ALPN protocol `clipbridge-pair/1` and presents a self-signed certificate for the key
+  it will keep. The two run the CPace password-authenticated key exchange
+  (CPACE-X25519-SHA512) with the code, bound to the TLS session by an exporter and to both
+  certificates, and confirm the key, the new device first. An attacker gets one guess per
+  attempt and no offline attack; a relay between two TLS sessions fails. An attempt that
+  reaches the exchange and does not succeed counts as a failure. The new member then
+  receives, over the TLS session that CPace authenticated, a certificate for the key it
+  presented, the group CA and the group state, and checks the member's certificate against
+  that CA; a Linux member also receives the keys of both CAs and the token hashes and issues
+  its own `clipbridge.local` certificate. Sending the certificate is the point of no return:
+  the window then records the device and closes, and reports whether the device confirmed
+  that it stored its identity. Errors travel as short codes, never as text, so a device that
+  has not proved it knows the code cannot put words in front of the user. The five minutes
+  count the time the machine sleeps.
 - **Joining an iPhone or iPad**: `clipbridge pair --phone` asks the Linux member that holds
   `clipbridge.local` to open a phone pairing window, with the same limits as for a computer,
   and prints a six-digit code and the fingerprint of the iPhone CA. No secret travels before
@@ -406,3 +417,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-27 | The engine remembers secrets for 12 hours; a watcher offering one again without its mark makes no event, a deliberate action makes it a secret again. |
 | D-28 | Two ways in: watchers report changes (no event when nothing really changed), deliberate actions always send and also write the member's own clipboard. |
 | D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |
+| D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |

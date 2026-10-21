@@ -1,0 +1,357 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package pair
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipbridge/internal/third_party/cpace"
+	"github.com/HunterEwok/clipbridge/internal/uptime"
+)
+
+// Options adjust a pairing window. The zero value uses the system clocks.
+type Options struct {
+	Now       func() time.Time                        // for the certificates; time.Now if nil
+	Uptime    func() time.Duration                    // for the window's lifetime; uptime.Now if nil
+	AfterFunc func(time.Duration, func()) func() bool // the expiry timer, returning its Stop; time.AfterFunc if nil
+}
+
+// A Window is an open pairing window on a member that holds the CA keys.
+type Window struct {
+	admin  *group.Identity
+	code   []byte
+	now    func() time.Time
+	uptime func() time.Duration
+
+	mu        sync.Mutex
+	expires   time.Duration // on the uptime clock
+	busy      bool          // an attempt is running
+	committed bool          // the running attempt is sending the welcome
+	cancel    context.CancelFunc
+	failures  int
+	err       error // why the window closed; nil while open
+	result    *Result
+	done      chan struct{}
+	stopTimer func() bool
+}
+
+// Result is a device the window admitted.
+type Result struct {
+	Device group.DeviceID
+	Info   Info
+	Cert   *x509.Certificate
+	// Confirmed reports whether the device said that it stored its
+	// identity. When it did not, it may still hold the certificate, and,
+	// for a Linux member, the CA keys.
+	Confirmed bool
+}
+
+// Open opens a pairing window for the code.
+func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
+	if !admin.Admin() {
+		return nil, errors.New("pair: only a Linux member that holds the CA keys can admit devices")
+	}
+	code, err := NormalizeCode(code)
+	if err != nil {
+		return nil, err
+	}
+	if opt.Now == nil {
+		opt.Now = time.Now
+	}
+	if opt.Uptime == nil {
+		opt.Uptime = uptime.Now
+	}
+	if opt.AfterFunc == nil {
+		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
+	}
+	w := &Window{admin: admin, code: []byte(code), now: opt.Now, uptime: opt.Uptime,
+		expires: opt.Uptime() + Lifetime, done: make(chan struct{})}
+	stop := opt.AfterFunc(Lifetime, w.expire)
+	w.mu.Lock()
+	w.stopTimer = stop
+	w.mu.Unlock()
+	return w, nil
+}
+
+// Done is closed when the window closes.
+func (w *Window) Done() <-chan struct{} { return w.done }
+
+// Result returns the outcome once the window has closed: the device it
+// admitted, or why it closed without one.
+func (w *Window) Result() (*Result, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.result != nil {
+		return w.result, nil
+	}
+	return nil, w.err
+}
+
+// Close closes the window. A running attempt fails at once, unless it has
+// already started sending the welcome; then the device is admitted.
+func (w *Window) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.committed {
+		return // succeed closes the window
+	}
+	w.closeLocked(ErrClosed)
+	if w.cancel != nil {
+		w.cancel()
+	}
+}
+
+// expire closes the window when its time is up. A running attempt may
+// still finish; the window closes when it ends.
+func (w *Window) expire() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.busy {
+		w.closeLocked(ErrExpired)
+	}
+}
+
+func (w *Window) closeLocked(err error) {
+	if w.err != nil || w.result != nil {
+		return
+	}
+	w.err = err
+	if w.stopTimer != nil {
+		w.stopTimer()
+	}
+	close(w.done)
+}
+
+// acquire starts an attempt, or reports why the window takes none.
+func (w *Window) acquire(cancel context.CancelFunc) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.busy && w.uptime() >= w.expires {
+		w.closeLocked(ErrExpired)
+	}
+	switch {
+	case w.result != nil:
+		return ErrClosed
+	case w.err != nil:
+		return w.err
+	case w.busy:
+		return ErrBusy
+	}
+	w.busy, w.cancel = true, cancel
+	return nil
+}
+
+// commit marks the running attempt as admitted, just before the welcome
+// goes out, unless the window was closed meanwhile.
+func (w *Window) commit() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.err != nil {
+		return w.err
+	}
+	w.committed = true
+	return nil
+}
+
+// release ends an attempt that admitted no device; failed reports whether
+// it counts.
+func (w *Window) release(failed bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.busy, w.cancel = false, nil
+	if failed {
+		w.failures++
+		if w.failures >= MaxFailures {
+			w.closeLocked(ErrTooMany)
+		}
+	}
+	if w.uptime() >= w.expires {
+		w.closeLocked(ErrExpired)
+	}
+}
+
+// succeed records the admitted device and closes the window.
+func (w *Window) succeed(r *Result) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.busy, w.committed, w.cancel = false, false, nil
+	w.result = r
+	if w.stopTimer != nil {
+		w.stopTimer()
+	}
+	close(w.done)
+}
+
+// ServerTLS returns the TLS configuration for pairing connections: the
+// member's own certificate, and any client certificate, which the exchange
+// authenticates.
+func ServerTLS(admin *group.Identity) *tls.Config {
+	return &tls.Config{
+		MinVersion:             tls.VersionTLS13,
+		Certificates:           []tls.Certificate{{Certificate: [][]byte{admin.Cert.Raw}, PrivateKey: admin.Key, Leaf: admin.Cert}},
+		ClientAuth:             tls.RequireAnyClientCert,
+		NextProtos:             []string{Protocol},
+		SessionTicketsDisabled: true,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if cs.NegotiatedProtocol != Protocol {
+				return errors.New("pair: the client does not speak the pairing protocol")
+			}
+			id, err := joinerID(cs)
+			if err == nil && id == admin.ID {
+				err = errors.New("pair: the joining device has this member's own device ID")
+			}
+			return err
+		},
+	}
+}
+
+// joinerID returns the device ID of the joiner's self-signed certificate.
+func joinerID(cs tls.ConnectionState) (group.DeviceID, error) {
+	if len(cs.PeerCertificates) != 1 {
+		return "", errors.New("pair: the joining device must send exactly one certificate")
+	}
+	c := cs.PeerCertificates[0]
+	if pub, ok := c.PublicKey.(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
+		return "", errors.New("pair: the joining device's key is not a P-256 key")
+	}
+	return group.ParseDeviceID(c.Subject.CommonName)
+}
+
+// Serve runs the member's side of one pairing connection, whose TLS
+// handshake used ServerTLS. It returns the error of this attempt; Result
+// reports the outcome of the window.
+func (w *Window) Serve(ctx context.Context, conn *tls.Conn) error {
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Unix(1, 0)) })
+	defer stop()
+	if err := conn.HandshakeContext(ctx); err != nil {
+		return err
+	}
+	if err := w.acquire(cancel); err != nil {
+		// Read the joiner's first message before answering, so the answer
+		// does not arrive while the joiner is still writing.
+		readFrame(conn)
+		writeFrame(conn, &frame{Error: codeOf(err)})
+		return err
+	}
+	res, started, err := w.serve(conn)
+	if res != nil {
+		w.succeed(res)
+		if !res.Confirmed {
+			return fmt.Errorf("pair: %s got its certificate but did not confirm that it stored it: %w", res.Device, err)
+		}
+		return nil
+	}
+	if ctx.Err() != nil && errors.Is(context.Cause(ctx), context.Canceled) {
+		err = ErrClosed // Close ended the attempt
+	}
+	w.release(started)
+	writeFrame(conn, &frame{Error: codeOf(err)})
+	return err
+}
+
+// serve runs the exchange. It returns a result once the welcome went out,
+// with the error of the last step if the device did not confirm; started
+// reports whether the joiner got the member's CPace message, after which a
+// failure counts.
+func (w *Window) serve(conn *tls.Conn) (res *Result, started bool, err error) {
+	cs := conn.ConnectionState()
+	joiner, err := joinerID(cs)
+	if err != nil {
+		return nil, false, err
+	}
+	first, err := readFrame(conn)
+	if err != nil {
+		return nil, false, err
+	}
+	var info Info
+	if err := json.Unmarshal(first.AD, &info); err != nil {
+		return nil, false, fmt.Errorf("pair: bad device description: %w", err)
+	}
+	if err := info.check(); err != nil {
+		return nil, false, err
+	}
+	ci, sid, err := binding(cs, w.admin.Cert.Raw, cs.PeerCertificates[0].Raw)
+	if err != nil {
+		return nil, false, err
+	}
+	ad, err := json.Marshal(memberAD{Device: w.admin.ID, Group: group.Tag(w.admin.GroupCA.Cert)})
+	if err != nil {
+		return nil, false, err
+	}
+	st, msg, err := cpace.Start(&cpace.Config{Role: cpace.Responder, Password: w.code, ChannelID: ci, SessionID: sid, AD: ad})
+	if err != nil {
+		return nil, false, err
+	}
+	if err := writeFrame(conn, &frame{Msg: msg, AD: ad}); err != nil {
+		return nil, true, err
+	}
+	if _, err := st.Finish(first.Msg, first.AD); err != nil {
+		return nil, true, err
+	}
+	confirm, err := readFrame(conn)
+	if err != nil {
+		return nil, true, err
+	}
+	if err := st.Verify(confirm.Tag); err != nil {
+		return nil, true, ErrWrongCode
+	}
+	// The joiner knows the code. Certify the key it proved it holds in the
+	// TLS handshake.
+	pub := cs.PeerCertificates[0].PublicKey.(*ecdsa.PublicKey)
+	cert, err := w.admin.GroupCA.IssueMember(joiner, pub, w.now())
+	if err != nil {
+		return nil, true, err
+	}
+	welcome, err := w.welcome(cert, info.OS == "linux")
+	if err != nil {
+		return nil, true, err
+	}
+	if err := w.commit(); err != nil {
+		return nil, true, err
+	}
+	// From here on the device counts as admitted: the welcome may reach it
+	// even if this side sees an error.
+	res = &Result{Device: joiner, Info: info, Cert: cert}
+	if err := writeFrame(conn, &frame{Tag: st.Tag(), Welcome: welcome}); err != nil {
+		return res, true, err
+	}
+	done, err := readFrame(conn)
+	switch {
+	case err != nil:
+		return res, true, err
+	case !done.OK:
+		return res, true, errorOf(done.Error)
+	}
+	res.Confirmed = true
+	return res, true, nil
+}
+
+func (w *Window) welcome(cert *x509.Certificate, linux bool) (*Welcome, error) {
+	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
+	if !linux {
+		return wel, nil
+	}
+	var err error
+	if wel.GroupCAKey, err = x509.MarshalPKCS8PrivateKey(w.admin.GroupCA.Key); err != nil {
+		return nil, err
+	}
+	wel.PhoneCA = w.admin.PhoneCA.Cert.Raw
+	if wel.PhoneCAKey, err = x509.MarshalPKCS8PrivateKey(w.admin.PhoneCA.Key); err != nil {
+		return nil, err
+	}
+	return wel, nil
+}
