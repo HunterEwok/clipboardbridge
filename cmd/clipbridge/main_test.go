@@ -24,11 +24,12 @@ func TestRun(t *testing.T) {
 		{name: "help", args: []string{"help"}, code: 0, stdout: "Usage: clipbridge"},
 		{name: "help flag", args: []string{"-h"}, code: 0, stdout: "Usage: clipbridge"},
 		{name: "unknown command", args: []string{"frobnicate"}, code: 2, stderr: `unknown command "frobnicate"`},
+		{name: "service with an argument", args: []string{"service", "extra"}, code: 2, stderr: "takes only flags"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			if code := run(tt.args, &stdout, &stderr); code != tt.code {
+			if code := run(tt.args, strings.NewReader(""), &stdout, &stderr); code != tt.code {
 				t.Errorf("exit code = %d, want %d", code, tt.code)
 			}
 			checkOutput(t, "stdout", stdout.String(), tt.stdout)

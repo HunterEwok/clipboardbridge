@@ -13,22 +13,29 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/version"
 )
 
-const usage = `Usage: clipbridge <command>
+const usage = `Usage: clipbridge <command> [arguments]
 
 Commands:
-  version   Print the version and the platform.
-  help      Print this help.
+  copy [-secret]          Send standard input to the group.
+  paste                   Print this member's clipboard text.
+  status                  Show the group and the connected members.
+  pair                    Admit a new computer: show a code for clipbridge join.
+  join [address:port]     Join a group with the code from clipbridge pair,
+                          typed or read from standard input.
+  service                 Run the service (started by systemd or launchd).
+  version                 Print the version and the platform.
+  help                    Print this help.
 
-More commands come with the service; see docs/design.md.
+The design is in docs/design.md.
 `
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run executes one command line and returns the exit code: 0 on success,
-// 2 on a usage error.
-func run(args []string, stdout, stderr io.Writer) int {
+// 1 on a failure, 2 on a usage error.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
@@ -42,6 +49,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, version.String())
 		return 0
+	case "copy":
+		return cmdCopy(rest, stdin, stdout, stderr)
+	case "paste":
+		return cmdPaste(rest, stdout, stderr)
+	case "status":
+		return cmdStatus(rest, stdout, stderr)
+	case "pair":
+		return cmdPair(rest, stdout, stderr)
+	case "join":
+		return cmdJoin(rest, stdin, stdout, stderr)
+	case "service":
+		return cmdService(rest, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

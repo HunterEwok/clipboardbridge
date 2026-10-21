@@ -239,10 +239,10 @@ func (n *Node) Send(text string, kind clip.Kind, via clip.Via) error {
 	return nil
 }
 
-// Rejoin tells the engine that the member was away: the service started,
-// the machine woke up or its network came back. First it closes every
-// connection and waits, for at most two seconds, until they are gone; new
-// connections wait meanwhile, so every hello after the absence counts.
+// Rejoin tells the engine that the member was away: the service started, or
+// the machine woke up. First it closes every connection and waits, for at
+// most two seconds, until they are gone; new connections wait meanwhile, so
+// every hello after the absence counts.
 func (n *Node) Rejoin() {
 	n.rejoinMu.Lock()
 	defer n.rejoinMu.Unlock()

@@ -230,6 +230,9 @@ func TestWrongCode(t *testing.T) {
 		if !errors.Is(out.joinErr, ErrWrongCode) || !errors.Is(out.serveErr, ErrWrongCode) {
 			t.Fatalf("attempt %d: join %v, serve %v; want ErrWrongCode", i, out.joinErr, out.serveErr)
 		}
+		if !Spent(out.joinErr) {
+			t.Fatalf("attempt %d: a wrong code did not use up the code", i)
+		}
 		if out.savedCalls != 0 {
 			t.Fatal("save was called after a wrong code")
 		}
@@ -394,6 +397,9 @@ func TestBusy(t *testing.T) {
 	out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil)
 	if !errors.Is(out.serveErr, ErrBusy) || !errors.Is(out.joinErr, ErrBusy) {
 		t.Errorf("join %v, serve %v; want busy", out.joinErr, out.serveErr)
+	}
+	if Spent(out.joinErr) {
+		t.Error("a busy answer before CPace used up the code")
 	}
 	stall.Close()
 	<-served

@@ -76,7 +76,9 @@ any member may be switched off at any time.
   connected Linux member) shows a six-digit code and opens a pairing window for five minutes
   (one attempt at a time, closed after a success or the third failed attempt; an attempt that
   has started may finish after the five minutes). On the new device the user runs
-  `clipbridge join` and types the code. The new device connects to the member's port with
+  `clipbridge join` and types the code (it is read from the terminal or standard input, never
+  from the command line, where other users of the machine could read it). The new device
+  connects to the member's port with
   the ALPN protocol `clipbridge-pair/1` and presents a self-signed certificate for the key
   it will keep. The two run the CPace password-authenticated key exchange
   (CPACE-X25519-SHA512) with the code, bound to the TLS session by an exporter and to both
@@ -142,8 +144,10 @@ any member may be switched off at any time.
   85, 90 and 95 percent of their lifetime, so they do not expire while the members are
   there. A received record lives no longer than clipbridge's own records of its type, and
   only names in the form of device IDs count as members. Names are not probed: device IDs
-  are random, and the election, not a probe, decides who holds `clipbridge.local`. Macs use
-  the system Bonjour service (dns_sd).
+  are random, and the election, not a probe, decides who holds `clipbridge.local`. Macs
+  browse with the same code without publishing; a test on macOS showed that it shares port
+  5353 with mDNSResponder and that the system's `dns-sd` sees what it publishes, so no
+  Bonjour binding is needed.
 - Members connect to the addresses from discovery, never by resolving a `.local` name: a
   static Linux binary cannot resolve `.local` itself. Peers are authenticated by the group
   CA, not by name. A home group is small: Linux members connect to each other, every Mac
@@ -202,7 +206,9 @@ any member may be switched off at any time.
   local time, so an old event that arrives late, for example after a reconnect, never looks
   recent. Local durations are measured on a clock that counts the time the machine slept and
   does not jump when the wall clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on
-  macOS). Connections have heartbeats and are closed before the machine sleeps, and an event
+  macOS). Connections have heartbeats; the ones from before a sleep are closed when the
+  machine wakes (a sleeping holder of `clipbridge.local` is replaced after the 15-second
+  silence timeout, as it sends no goodbye), and an event
   that waited in a queue is sent with that time added to its age. The hybrid clock is never
   used to measure durations.
 - **Secrets** travel in a hello only as a mark without their text, so the group converges on
@@ -217,11 +223,13 @@ any member may be switched off at any time.
   goes into a member's own clipboard is a local decision:
   - a live event (copied at most 60 seconds ago) that becomes the group's current event is
     written;
-  - for 30 seconds after the member itself was away (the service started, the machine woke
-    up or its network came back), an event that becomes the group's current event is written
+  - for 30 seconds after the member itself was away (the service started or the machine woke
+    up), an event that becomes the group's current event is written
     even when it is old, unless the member copied something before it was back in sync with
     the group (a connection up and a hello exchanged). The connections from before the
-    absence are closed first;
+    absence are closed first. A hello that arrived before the member noticed it had slept is
+    written too, when the member is back in sync. A network that drops without a sleep does
+    not open the window: such a member gets the group's text only while it is live;
   - nothing else is written: a group text the member already knew is not written again, and
     a member that only lost its peers, because they went away, keeps its clipboard.
 
@@ -268,13 +276,34 @@ and lifetimes. The installer enables what the device needs.
 
 - A system service that runs from boot as its own system user `clipbridge`, with or without
   a desktop.
-- Network, group, discovery, the shared address, sync and the current text.
+- Network, group, discovery, the shared address, sync and the current text. It keeps the
+  identity and the clock mark in its state directory (`/var/lib/clipbridge`) and listens on
+  a member port chosen at start. Of two Linux members, the one with the lower device ID
+  dials the other, so they make one connection; a member keeps dialing a member it finds,
+  waiting up to 30 seconds between attempts, at the addresses and port that discovery last
+  saw. It notices that the machine slept when the clock that counts sleep moves further than
+  the one that does not, and then rejoins. At most 32 connections to the member port may be
+  in their TLS handshake or a pairing attempt at once; errors such as running out of file
+  descriptors only pause the accept loops. On stop it sends the mDNS goodbyes first, then
+  the member goodbyes.
 - Local control socket `/run/clipbridge/control.sock`, mode 0660, group `clipbridge`: the
-  kernel admits only root and members of that group. The installer adds the desktop or tmux
-  user to the group. Frames are a small JSON header plus the raw text.
+  kernel admits only root and members of that group. It is made in a private directory and
+  moved into place, so it is never reachable with a wider mode. The installer adds the desktop or tmux
+  user to the group. Each message is a JSON header on one line followed by the raw text.
+  Commands send one request and read the answers; a desktop connector keeps its connection
+  open to receive writes and report copies. Its watch request carries what the clipboard
+  holds; a write that no connector got, such as the group's text at boot, goes to the next
+  one that connects, if it is still the member's own text.
 - Command line: `clipbridge copy` (standard input to the group), `clipbridge paste` (the
   member's own clipboard text to standard output), `clipbridge pair`, `join`, `devices`,
-  `revoke`, `status`.
+  `revoke`, `status`. `clipbridge pair` on a Linux machine in no group creates the group.
+  `clipbridge join` finds the member with an open pairing window by its TXT record, or uses
+  the address that `pair` prints, for networks where multicast does not pass. It talks to
+  one member only, tries that member's addresses (IPv4 first, link-local last) until one
+  answers, and stops after the first attempt in which the other side could check the code,
+  so a device that only pretends to pair gets one guess at most. When more than one device
+  announces a window, it asks for the address. Hanging up cancels it, and it gives up after
+  two minutes.
 - tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
   pastes the member's own clipboard text into any program inside tmux. A login snippet starts tmux on the
   text console.
@@ -316,8 +345,8 @@ and lifetimes. The installer enables what the device needs.
 ## macOS
 
 - **Service**: the same service as on Linux, as a LaunchDaemon under a hidden service account.
-  macOS grants local network access to daemons without a prompt. It only dials out to Linux
-  members, so the macOS firewall needs no exception.
+  macOS grants local network access to daemons without a prompt. It listens on UDP 5353
+  for mDNS (D-32) and dials out to Linux members; it accepts no connections.
 - **Pasteboard agent**: a LaunchAgent in the user's session, linked to the service over a
   local socket. It checks the pasteboard change counter every 0.5 seconds on the main thread
   and reads the text only after a change.
@@ -328,8 +357,8 @@ and lifetimes. The installer enables what the device needs.
   `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
   Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
   only, so clipboard histories skip them and they do not travel over Universal Clipboard.
-- Finds members with the system Bonjour service and trusts only the group CA, in its own
-  configuration; the system keychain is not changed.
+- Finds Linux members with clipbridge's own mDNS code, browsing without publishing, and
+  trusts only the group CA, in its own configuration; the system keychain is not changed.
 - Installing needs administrator rights once. Later: a menu bar item with pause, status and
   devices.
 
@@ -358,7 +387,7 @@ and lifetimes. The installer enables what the device needs.
 | Threat                                                         | Measure                                                                    |
 |----------------------------------------------------------------|----------------------------------------------------------------------------|
 | Someone on the home network reads the traffic                  | TLS 1.3 everywhere                                                         |
-| Someone guesses or intercepts the pairing code of a computer   | CPace inside TLS: one online guess per attempt, at most three per pairing window, no offline attack |
+| Someone guesses or intercepts the pairing code of a computer   | CPace inside TLS: one online guess per attempt, at most three per pairing window, no offline attack; the joining device spends the code on one attempt, and never takes it from the command line |
 | Someone attacks the pairing of an iPhone                       | the same attempt limits; the profile comes over a separate plain-HTTP port, so no certificate warning is ever accepted for the pairing page; the user compares the iPhone CA fingerprint before trusting it; the code and the token travel only over a connection that the trusted CA authenticates, so a relay sees neither |
 | A device impersonates a member (for example, a host that answers `clipbridge.local` on another network) | mutual TLS with the group CA; members dial discovered addresses and check the peer's certificate; the iPhone accepts only a certificate from the iPhone CA, so an impostor gets neither the token nor the text |
 | A device is lost or stolen                                     | `clipbridge revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin |
@@ -370,9 +399,9 @@ and lifetimes. The installer enables what the device needs.
 
 ## Build
 
-- Go, with `CGO_ENABLED=0` everywhere except on macOS, where the service's Bonjour binding
-  (dns_sd) and the pasteboard agent use cgo with a small Objective-C file. From then on CI
-  builds the macOS targets on macOS runners with cgo.
+- Go, with `CGO_ENABLED=0` everywhere except for the Mac's pasteboard agent, which uses cgo
+  with a small Objective-C file. From then on CI builds the macOS targets on macOS runners
+  with cgo.
 - Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`
   and `darwin/amd64`.
 - The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. clipbridge
@@ -410,6 +439,9 @@ These need experiments on real devices; CI cannot answer them.
   promptly, and do its writes become the Wayland selection without focus?
 - Console injection at an agetty login prompt, in `sudo` and in vim on Ubuntu and Raspberry Pi
   OS; latency and CPU of the double-tap trigger on a Pi Zero W.
+- Does the macOS application firewall, set to block incoming connections, filter the mDNS
+  answers that reach the service's own socket on UDP 5353 (it is not mDNSResponder)? If so,
+  the installer must add an exception for the service.
 - Images and files after the first version.
 
 ## Decision log
@@ -427,7 +459,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-9  | Pairing a computer: code entry with CPace inside TLS 1.3 instead of comparing digits, which a man in the middle can grind. |
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
 | D-11 | Members talk on their own advertised port; port 8765 serves only the iPhone.               |
-| D-12 | Own mDNS responder on Linux, system Bonjour on macOS: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
+| D-12 | Own mDNS responder on Linux: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
 | D-13 | Only Linux members hold `clipbridge.local`; Macs only dial out.                            |
 | D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |
 | D-15 | macOS runs the service as a LaunchDaemon plus a pasteboard LaunchAgent, which avoids the Local Network prompt; installing needs administrator rights. |
@@ -435,7 +467,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-17 | Console paste injects a single line by default, with control characters removed.         |
 | D-18 | Secrets reach only root and the `clipbridge` group; the control socket enforces it through file permissions. |
 | D-19 | The group state is last-writer-wins; the protection of copies made during a disconnect applies only to writing the local clipboard (live window 60 s, rejoin window 30 s). The first version kept that rule in the group state, and a review showed that the group could then split for good. |
-| D-20 | The rejoin window opens only on a local sign that the member itself was away (start, wake, network back), not when it merely lost its peers. |
+| D-20 | The rejoin window opens only on a local sign that the member itself was away (start, wake), not when it merely lost its peers. A network that drops without a sleep is not noticed yet. |
 | D-21 | Each member keeps its own clipboard text apart from the group state; `clipbridge paste`, tmux, the console helper and the iPhone button use it. |
 | D-22 | A secret travels in a hello as a mark without its text, so the group converges on secrets too. |
 | D-23 | Revoking a Linux member replaces both CAs, because it holds their keys; members that were off still trust the old CA until they pair again, and iPhones delete the old profile. |
@@ -447,3 +479,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |
 | D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |
 | D-31 | The mDNS responder does not probe its names: device IDs are random, `clipbridge.local` is never renamed, and the group's election decides who holds it; two holders for a moment are harmless, since any Linux member can serve the iPhone. |
+| D-32 | The Mac browses with clipbridge's own mDNS code instead of the Bonjour API: it shares port 5353 with mDNSResponder, and the service needs no cgo. The cost is a socket of its own on UDP 5353, which the macOS firewall may treat differently (see Open questions). D-12 still holds for Linux. |

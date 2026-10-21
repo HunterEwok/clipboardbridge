@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Package mdns is the small multicast DNS responder and browser of Linux
-// members (RFC 6762 and RFC 6763).
+// Package mdns is the small multicast DNS responder and browser of
+// clipbridge (RFC 6762 and RFC 6763): Linux members publish and browse, a Mac
+// and a device about to join only browse (D-32).
 //
 // A member publishes its service instance <device ID>._clipbridge._tcp.local
 // with SRV and TXT records, its own host name cb-<device ID>.local and, while
@@ -57,8 +58,9 @@ type Config struct {
 	// or their records change. It runs on the responder's goroutine.
 	OnPeers func([]Peer)
 
-	// BrowseOnly finds members without publishing this one, for a device
-	// that is about to join a group.
+	// BrowseOnly finds members without publishing this one: for a Mac,
+	// which browses for as long as its service runs, and for a device that
+	// is about to join a group.
 	BrowseOnly bool
 
 	// Logf, if set, receives diagnostics.

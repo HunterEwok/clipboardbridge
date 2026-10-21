@@ -530,6 +530,23 @@ func TestWritePolicy(t *testing.T) {
 			t.Errorf("Reconcile() = %+v, want Write", res)
 		}
 	})
+	t.Run("a hello taken before the wake-up was noticed is written after it", func(t *testing.T) {
+		w := newWorld()
+		a := w.member(idA)
+		ev := event(w, "copied while it slept", 10*time.Minute, 0)
+		w.advance(time.Hour)
+		if res := join(t, w, a, idB, ptr(ev)); res.Write {
+			t.Fatalf("Reconcile() before Rejoin = %+v, want no write", res)
+		}
+		a.Disconnected(idB)
+		a.Rejoin()
+		if res := join(t, w, a, idB, ptr(ev)); !res.Write || localOf(a) != "copied while it slept" {
+			t.Errorf("Reconcile() after Rejoin = %+v, want Write", res)
+		}
+		if res := join(t, w, a, idC, ptr(ev)); res.Write {
+			t.Error("the same event was written twice")
+		}
+	})
 	t.Run("a member that copied while away keeps its copy", func(t *testing.T) {
 		w := newWorld()
 		a := w.member(idA)

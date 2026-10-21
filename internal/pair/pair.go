@@ -68,6 +68,7 @@ const (
 	MaxFailures = 3
 
 	attemptTimeout = 30 * time.Second
+	refuseTimeout  = 10 * time.Second
 	maxFrame       = 64 << 10
 	maxNameLen     = 64
 )
@@ -81,6 +82,21 @@ var (
 	ErrTooMany   = errors.New("pair: three failed attempts; the pairing window is closed")
 	ErrRefused   = errors.New("pair: the other device refused the pairing")
 )
+
+// spentError is an attempt that failed after the joiner sent its
+// confirmation tag: the other side could check a guess of the code with it.
+type spentError struct{ err error }
+
+func (e *spentError) Error() string { return e.err.Error() }
+func (e *spentError) Unwrap() error { return e.err }
+
+// Spent reports whether a failed Join used up the code: the joiner sent its
+// confirmation tag, so whoever answered could check a guess of the code.
+// The joiner must not try the same code anywhere else then.
+func Spent(err error) bool {
+	var s *spentError
+	return errors.As(err, &s)
+}
 
 // errorCodes are the errors that travel in frames, by their codes.
 var errorCodes = map[string]error{
