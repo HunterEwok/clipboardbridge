@@ -46,22 +46,14 @@ jobs:
           cache: false # a release builds from scratch
       - name: build
         run: |
-          dir="$RUNNER_TEMP/pkg/clipbridge"
-          mkdir -p "$dir/packaging"
           go build -trimpath \
             -ldflags "-s -w -X github.com/HunterEwok/clipbridge/internal/version.Version=$GITHUB_REF_NAME" \
-            -o "$dir/clipbridge" ./cmd/clipbridge
-          cp LICENSE "$dir/"
-          cp -R "packaging/$GOOS" packaging/tmux "$dir/packaging/"
+            -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
-        run: otool -L "$RUNNER_TEMP/pkg/clipbridge/clipbridge" | grep -q AppKit.framework
+        run: otool -L "$RUNNER_TEMP/clipbridge" | grep -q AppKit.framework
       - name: archive
-        env:
-          COPYFILE_DISABLE: "1" # no AppleDouble files from macOS tar
-        run: |
-          mkdir -p "$RUNNER_TEMP/dist"
-          tar -czf "$RUNNER_TEMP/dist/$ARCHIVE" -C "$RUNNER_TEMP/pkg" clipbridge
+        run: sh packaging/archive.sh "$RUNNER_TEMP/clipbridge" "$GOOS" "${{ matrix.name }}" "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.ARCHIVE }}

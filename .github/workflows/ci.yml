@@ -104,6 +104,12 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
+      - name: the release archive
+        run: |
+          name=$GOARCH
+          if [ -n "$GOARM" ]; then name=armv$GOARM; fi
+          sh packaging/archive.sh "$RUNNER_TEMP/clipbridge" "$GOOS" "$name" "$RUNNER_TEMP/dist"
+          tar -tzf "$RUNNER_TEMP/dist/clipbridge-$GOOS-$name.tar.gz" | grep -qx "clipbridge/clipbridge"
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
         # Without cgo the agent would start and fail; this build must link AppKit.
@@ -200,7 +206,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
@@ -216,11 +222,7 @@ jobs:
         run: |
           # The archive as the release workflow makes it.
           rel="$RUNNER_TEMP/release"
-          dir="$RUNNER_TEMP/pkg/clipbridge"
-          mkdir -p "$rel" "$dir/packaging"
-          cp "$RUNNER_TEMP/clipbridge" LICENSE "$dir/"
-          cp -R packaging/linux packaging/tmux "$dir/packaging/"
-          tar -czf "$rel/clipbridge-linux-amd64.tar.gz" -C "$RUNNER_TEMP/pkg" clipbridge
+          sh packaging/archive.sh "$RUNNER_TEMP/clipbridge" linux amd64 "$rel"
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
           sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall
           systemctl is-active clipbridge.service

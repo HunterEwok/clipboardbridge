@@ -6,6 +6,11 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
+The first release. The tag v0.1.0 was made, but its release build failed on the macOS
+archives, so it has no release.
+
 ### Added
 
 - Repository scaffolding: license (AGPL-3.0-only), security policy, contributing rules,
@@ -56,3 +61,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).
+
+### Fixed
+
+- The release build packs the macOS archives with `packaging/macos`; CI now builds every
+  release archive on each pull request with the same script, `packaging/archive.sh`.
