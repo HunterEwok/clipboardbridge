@@ -49,6 +49,9 @@ func TestLimits(t *testing.T) {
 	if err := Write(&bytes.Buffer{}, &Message{Header: Header{Op: OpCopy}, Payload: make([]byte, maxPayload+1)}); err == nil {
 		t.Error("wrote a payload over the limit")
 	}
+	if err := Write(&bytes.Buffer{}, &Message{Header: Header{Op: strings.Repeat("x", maxHeader)}}); err == nil {
+		t.Error("wrote a header over the limit")
+	}
 	// Each input fails only for the reason it is named after: the long
 	// header is valid JSON, and the long payload is all there.
 	for name, input := range map[string]string{

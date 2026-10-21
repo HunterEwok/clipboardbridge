@@ -102,7 +102,11 @@ func Write(w io.Writer, m *Message) error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 0, len(line)+1+len(m.Payload))
+	if len(line) > maxHeader {
+		return errors.New("control: header too long")
+	}
+	// Both parts are bounded above, so the size cannot overflow.
+	buf := make([]byte, 0, len(line)+1+m.Len)
 	buf = append(append(append(buf, line...), '\n'), m.Payload...)
 	_, err = w.Write(buf)
 	return err
