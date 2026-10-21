@@ -21,5 +21,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   data-control or X11 (XWayland on GNOME), started by an XDG autostart entry.
 - Linux packaging: a hardened systemd unit, the service user, a tmux configuration, an
   optional tmux start on the text console, and `packaging/linux/install.sh`.
+- macOS: `clipbridge agent` links the pasteboard (secrets stay on the Mac and carry the
+  concealed marker); the service runs as a LaunchDaemon and the agent as a LaunchAgent,
+  installed by `packaging/macos/install.sh`.
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
   macOS; builds for Linux (x86-64, ARM64, ARMv7, ARMv6) and macOS (ARM64, x86-64).
