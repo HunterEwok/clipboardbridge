@@ -21,9 +21,17 @@ final class SocketTransport: FrameTransport {
     let fd: Int32
 
     init(host: String, port: UInt16) throws {
-        fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        #if canImport(Glibc)
+        let stream = Int32(SOCK_STREAM.rawValue) // an enum in Glibc
+        #else
+        let stream = SOCK_STREAM
+        #endif
+        fd = socket(AF_INET, stream, 0)
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
+        #if !canImport(Glibc)
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        #endif
         addr.sin_port = port.bigEndian
         inet_pton(AF_INET, host, &addr.sin_addr)
         let ok = withUnsafePointer(to: &addr) {
