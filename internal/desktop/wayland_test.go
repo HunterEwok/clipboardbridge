@@ -7,11 +7,17 @@ package desktop
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/HunterEwok/clipbridge/internal/wl"
 )
 
 // TestWayland runs against a real compositor with data-control, such as a
@@ -99,5 +105,124 @@ func TestWayland(t *testing.T) {
 	}
 	if cur, ok, _ := w.Current(); !ok || cur.Text != "after the secret" {
 		t.Errorf("Current = %+v, %v", cur, ok)
+	}
+}
+
+// TestWaylandStuckSource checks that a program that offers a text and never
+// writes it cannot hold the connector's read.
+func TestWaylandStuckSource(t *testing.T) {
+	if os.Getenv("CLIPBRIDGE_TEST_WAYLAND") == "" {
+		t.Skip("set CLIPBRIDGE_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
+	}
+	logged := make(chan string, 8)
+	w, err := OpenWayland(func(f string, a ...any) {
+		select {
+		case logged <- fmt.Sprintf(f, a...):
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	// The stuck program: a second client whose source keeps the pipe open
+	// and writes nothing.
+	stuck, err := OpenWayland(t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stuck.Close()
+	var mu sync.Mutex
+	var held []int
+	defer func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, fd := range held {
+			unix.Close(fd)
+		}
+	}()
+	src := stuck.d.NewID(func(op uint16, a *wl.Args) error {
+		if op == srcEvSend {
+			_ = a.String()
+			fd := a.FD()
+			mu.Lock()
+			held = append(held, fd)
+			mu.Unlock()
+		}
+		return a.Err
+	})
+	stuck.d.Send(stuck.mgr, mgrCreateSource, (&wl.Request{}).Uint(src))
+	stuck.d.Send(src, srcOffer, (&wl.Request{}).String("text/plain;charset=utf-8"))
+	stuck.d.Send(stuck.device, devSetSelection, (&wl.Request{}).Uint(src))
+	select {
+	case msg := <-logged:
+		if !strings.Contains(msg, "reading the clipboard") {
+			t.Errorf("logged %q", msg)
+		}
+	case <-time.After(readTimeout + 3*time.Second):
+		t.Fatal("the read of a stuck source never ended")
+	}
+}
+
+func TestWaylandWrites(t *testing.T) {
+	if os.Getenv("CLIPBRIDGE_TEST_WAYLAND") == "" {
+		t.Skip("set CLIPBRIDGE_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
+	}
+	// What the clipboard holds at open is known, but no change.
+	if err := exec.Command("wl-copy", "there before").Run(); err != nil {
+		t.Fatal(err)
+	}
+	w, err := OpenWayland(t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if it, ok, _ := w.Current(); !ok || it.Text != "there before" {
+		t.Errorf("Current = %+v, %v", it, ok)
+	}
+	select {
+	case it := <-w.changes:
+		t.Errorf("the clipboard at open came as a change: %+v", it)
+	case <-time.After(300 * time.Millisecond):
+	}
+	paste := func(args ...string) string {
+		out, _ := exec.Command("wl-paste", append([]string{"--no-newline"}, args...)...).Output()
+		return string(out)
+	}
+	// Writes in quick succession replace each other's sources; each is
+	// destroyed once, so the compositor sees no protocol error.
+	for i := range 50 {
+		if err := w.Write(fmt.Sprintf("write %d", i), false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := paste(); got != "write 49" {
+		t.Errorf("wl-paste = %q", got)
+	}
+	select {
+	case err := <-w.errc:
+		t.Fatalf("the connection failed: %v", err)
+	case it := <-w.changes:
+		t.Fatalf("our own write came back as a change: %+v", it)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// An expired secret is given up only where it still is: a newer
+	// selection made with the mouse stays.
+	if err := w.Write("hunter2", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("wl-copy", "--primary", "selected by the user").Run(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := w.ClearIfUnchanged(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := paste("--primary"); got != "selected by the user" {
+		t.Errorf("the primary selection is %q after giving up the secret", got)
+	}
+	if got := paste(); got == "hunter2" {
+		t.Error("the secret is still in the clipboard")
 	}
 }

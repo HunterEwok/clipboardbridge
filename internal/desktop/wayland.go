@@ -55,8 +55,9 @@ var textTypes = []string{"text/plain;charset=utf-8", "UTF8_STRING", "text/plain"
 const secretType = "x-kde-passwordManagerHint"
 
 const (
-	maxText     = 1 << 20
-	readTimeout = 2 * time.Second
+	maxText      = 1 << 20
+	readTimeout  = 2 * time.Second
+	writeTimeout = 5 * time.Second // for a program that asked for the text and does not read it
 )
 
 // Wayland is the clipboard of a Wayland session through data-control.
@@ -67,15 +68,18 @@ type Wayland struct {
 	ifaces string // the protocol's prefix, for the offer and source interfaces
 	logf   func(string, ...any)
 
-	mu      sync.Mutex
-	offers  map[uint32][]string // the types of each live offer
-	current uint32              // the clipboard's offer, 0 if empty
-	own     uint32              // the clipboard source this client set, 0 if none
-	ownSet  bool                // the next selection event is for our own source
-	item    connector.Item
-	has     bool
-	changes chan connector.Item
-	errc    chan error
+	mu         sync.Mutex
+	offers     map[uint32][]string // the types of each live offer
+	current    uint32              // the clipboard's offer, 0 if empty
+	own        uint32              // the clipboard source this client set, 0 if none
+	ownPrimary uint32              // the primary selection source this client set, 0 if none
+	ownPending int                 // selection events still to come for our own writes
+	opened     bool                // the selection at open was announced; later ones are changes
+	sources    map[uint32]bool     // the sources not yet destroyed
+	item       connector.Item
+	has        bool
+	changes    chan connector.Item
+	errc       chan error
 }
 
 // OpenWayland connects to the Wayland session and binds data-control.
@@ -89,7 +93,8 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 		d.Close()
 		return nil, err
 	}
-	w := &Wayland{d: d, logf: logf, offers: map[uint32][]string{}, changes: make(chan connector.Item, 4), errc: make(chan error, 1)}
+	w := &Wayland{d: d, logf: logf, offers: map[uint32][]string{}, sources: map[uint32]bool{},
+		changes: make(chan connector.Item, 4), errc: make(chan error, 1)}
 	var mgr wl.Global
 	found := false
 	for _, name := range dataControls {
@@ -114,11 +119,15 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 		d.Close()
 		return nil, err
 	}
-	// The device announces the current selection right away.
+	// The device announces the current selection right away; it is what
+	// the clipboard holds, not a change.
 	if err := d.Roundtrip(); err != nil {
 		d.Close()
 		return nil, err
 	}
+	w.mu.Lock()
+	w.opened = true
+	w.mu.Unlock()
 	go w.loop()
 	return w, nil
 }
@@ -176,11 +185,16 @@ func (w *Wayland) deviceEvent(op uint16, a *wl.Args) error {
 	return a.Err
 }
 
+// dropOffer destroys an offer once. It holds the lock while it sends, as
+// read does, so a receive never follows the destroy.
 func (w *Wayland) dropOffer(id uint32) {
 	w.mu.Lock()
+	_, live := w.offers[id]
 	delete(w.offers, id)
+	if live {
+		w.d.Send(id, offerDestroy, nil)
+	}
 	w.mu.Unlock()
-	w.d.Send(id, offerDestroy, nil)
 	w.d.Forget(id)
 }
 
@@ -191,8 +205,14 @@ func (w *Wayland) selection(id uint32) {
 	old := w.current
 	w.current = id
 	types := slices.Clone(w.offers[id])
-	own := w.ownSet && w.own != 0
-	w.ownSet = false
+	// Our writes come back in order, one selection event each. A copy
+	// made by another program between them would be taken for ours, and
+	// ours for a copy, which the engine then sees as an echo.
+	own := id != 0 && w.ownPending > 0
+	if own {
+		w.ownPending--
+	}
+	change := w.opened
 	w.mu.Unlock()
 	if old != 0 && old != id {
 		w.dropOffer(old)
@@ -219,7 +239,7 @@ func (w *Wayland) selection(id uint32) {
 		}
 		w.item, w.has = it, ok
 		w.mu.Unlock()
-		if ok {
+		if ok && change {
 			select {
 			case w.changes <- it:
 			default:
@@ -250,10 +270,24 @@ func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) 
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
 		return connector.Item{}, false, err
 	}
+	// Only a non-blocking descriptor takes a deadline, so a program that
+	// never writes or never closes cannot hold the read.
+	unix.SetNonblock(p[0], true)
 	r := os.NewFile(uintptr(p[0]), "clipboard")
 	defer r.Close()
-	err := w.d.Send(id, offerReceive, (&wl.Request{}).String(mime).FD(p[1]))
+	// A newer selection may have destroyed the offer meanwhile; a receive
+	// for a destroyed offer is a protocol error that ends the connection.
+	w.mu.Lock()
+	_, live := w.offers[id]
+	var err error
+	if live {
+		err = w.d.Send(id, offerReceive, (&wl.Request{}).String(mime).FD(p[1]))
+	}
+	w.mu.Unlock()
 	unix.Close(p[1])
+	if !live {
+		return connector.Item{}, false, nil
+	}
 	if err != nil {
 		return connector.Item{}, false, err
 	}
@@ -307,15 +341,23 @@ func (w *Wayland) Write(text string, secret bool) error {
 		return err
 	}
 	w.mu.Lock()
-	if w.own != 0 {
-		defer w.destroySource(w.own)
-	}
-	w.own, w.ownSet = clip, true
+	old := w.own
+	w.own = clip
+	w.ownPending++
 	w.mu.Unlock()
+	if old != 0 {
+		defer w.destroySource(old)
+	}
 	if err := w.d.Send(w.device, devSetSelection, (&wl.Request{}).Uint(clip)); err != nil {
+		w.mu.Lock()
+		w.ownPending--
+		w.mu.Unlock()
 		return err
 	}
 	if primary, err := w.source(text, types); err == nil {
+		w.mu.Lock()
+		w.ownPrimary = primary
+		w.mu.Unlock()
 		w.d.Send(w.device, devSetPrimarySelection, (&wl.Request{}).Uint(primary))
 	}
 	w.mu.Lock()
@@ -336,8 +378,10 @@ func (w *Wayland) source(text string, types []string) (uint32, error) {
 				return a.Err
 			}
 			go func() {
+				unix.SetNonblock(fd, true) // so the deadline works
 				f := os.NewFile(uintptr(fd), "clipboard")
 				defer f.Close()
+				f.SetWriteDeadline(time.Now().Add(writeTimeout))
 				if mime == secretType {
 					f.WriteString("secret")
 					return
@@ -349,11 +393,17 @@ func (w *Wayland) source(text string, types []string) (uint32, error) {
 			if w.own == id {
 				w.own = 0
 			}
+			if w.ownPrimary == id {
+				w.ownPrimary = 0
+			}
 			w.mu.Unlock()
 			w.destroySource(id)
 		}
 		return a.Err
 	})
+	w.mu.Lock()
+	w.sources[id] = true
+	w.mu.Unlock()
 	if err := w.d.Send(w.mgr, mgrCreateSource, (&wl.Request{}).Uint(id)); err != nil {
 		return 0, err
 	}
@@ -365,22 +415,43 @@ func (w *Wayland) source(text string, types []string) (uint32, error) {
 	return id, nil
 }
 
+// destroySource destroys a source once, however often it is called: by a
+// newer write, and by the compositor's cancel. Until the compositor confirms
+// with delete_id, a send event may still come for it; its descriptor is
+// closed, so it does not stay queued for the next event that takes one.
 func (w *Wayland) destroySource(id uint32) {
+	w.mu.Lock()
+	live := w.sources[id]
+	delete(w.sources, id)
+	w.mu.Unlock()
+	if !live {
+		return
+	}
+	w.d.SetHandler(id, func(op uint16, a *wl.Args) error {
+		if op == srcEvSend {
+			_ = a.String() // the type
+			if fd := a.FD(); fd >= 0 {
+				unix.Close(fd)
+			}
+		}
+		return a.Err
+	})
 	w.d.Send(id, srcDestroy, nil)
-	w.d.Forget(id)
 }
 
-// ClearIfUnchanged empties the clipboard if it still holds our last write.
+// ClearIfUnchanged empties the clipboard if it still holds our last write,
+// and the primary selection if it still holds ours.
 func (w *Wayland) ClearIfUnchanged() error {
 	w.mu.Lock()
-	own := w.own
+	own, primary := w.own, w.ownPrimary
 	w.mu.Unlock()
-	if own == 0 {
-		return nil
+	if own != 0 {
+		if err := w.d.Send(w.device, devSetSelection, (&wl.Request{}).Uint(0)); err != nil {
+			return err
+		}
 	}
-	if err := w.d.Send(w.device, devSetSelection, (&wl.Request{}).Uint(0)); err != nil {
-		return err
+	if primary != 0 {
+		w.d.Send(w.device, devSetPrimarySelection, (&wl.Request{}).Uint(0))
 	}
-	w.d.Send(w.device, devSetPrimarySelection, (&wl.Request{}).Uint(0))
 	return nil
 }

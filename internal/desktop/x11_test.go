@@ -115,3 +115,54 @@ func TestX11(t *testing.T) {
 	case <-time.After(time.Second):
 	}
 }
+
+func TestX11Writes(t *testing.T) {
+	if os.Getenv("CLIPBRIDGE_TEST_X11") == "" {
+		t.Skip("set CLIPBRIDGE_TEST_X11 with an X server in DISPLAY and xclip installed")
+	}
+	// What the clipboard holds at open is known, but no change.
+	cmd := exec.Command("xclip", "-selection", "clipboard", "-i")
+	cmd.Stdin = strings.NewReader("there before")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenX11(t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if it, ok, _ := b.Current(); !ok || it.Text != "there before" {
+		t.Errorf("Current = %+v, %v", it, ok)
+	}
+	select {
+	case it := <-b.changes:
+		t.Errorf("the clipboard at open came as a change: %+v", it)
+	case <-time.After(300 * time.Millisecond):
+	}
+	for i := range 50 {
+		if err := b.Write(strings.Repeat("x", i)+"end", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := exec.Command("xclip", "-selection", "clipboard", "-o").Output()
+	if err != nil || string(out) != strings.Repeat("x", 49)+"end" {
+		t.Errorf("xclip -o = %q, %v", out, err)
+	}
+	select {
+	case it := <-b.changes:
+		t.Errorf("our own write came back as a change: %+v", it)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// An expired secret given up while a large transfer runs leaves no copy
+	// of it behind.
+	if err := b.Write(strings.Repeat("s", 300_000), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ClearIfUnchanged(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if out, _ := exec.Command("xclip", "-selection", "clipboard", "-o").Output(); len(out) > 0 {
+		t.Errorf("the clipboard still holds %d bytes", len(out))
+	}
+}

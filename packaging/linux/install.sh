@@ -7,8 +7,8 @@
 #   sudo sh install.sh [--console] path/to/clipbridge
 #
 # It installs the binary to /usr/local/bin, the service user, the systemd
-# unit and the tmux configuration, adds the user who ran sudo to the
-# clipbridge group, and starts the service. --console also starts tmux after
+# unit, the desktop autostart entry and the tmux configuration, adds the user
+# who ran sudo to the clipbridge group, and starts or restarts the service. --console also starts tmux after
 # a login on the text console.
 set -eu
 
@@ -41,6 +41,9 @@ install -m 0755 "$bin" /usr/local/bin/clipbridge
 install -m 0644 "$here/clipbridge.sysusers" /usr/lib/sysusers.d/clipbridge.conf
 systemd-sysusers /usr/lib/sysusers.d/clipbridge.conf
 install -m 0644 "$here/clipbridge.service" /etc/systemd/system/clipbridge.service
+# Desktop sessions start the connector with the session.
+install -d -m 0755 /etc/xdg/autostart
+install -m 0644 "$here/clipbridge-desktop.desktop" /etc/xdg/autostart/clipbridge-desktop.desktop
 
 # tmux reads /etc/tmux.conf; source the clipbridge part from there once.
 install -d -m 0755 /usr/local/share/clipbridge
@@ -59,5 +62,6 @@ if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 fi
 
 systemctl daemon-reload
-systemctl enable --now clipbridge.service
+systemctl enable clipbridge.service
+systemctl restart clipbridge.service # also takes a new binary on a reinstall
 echo "clipbridge is running. Next: clipbridge pair on the first Linux machine, clipbridge join on the others."

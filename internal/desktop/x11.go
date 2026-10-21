@@ -56,6 +56,7 @@ type x11Read struct {
 	stage   int // readTargets, readText or readIncr
 	targets []xproto.Atom
 	secret  bool
+	initial bool // the clipboard at open: what it holds, not a change
 	data    []byte
 	started time.Time
 }
@@ -68,9 +69,15 @@ const (
 
 // x11Send is an INCR transfer to another program.
 type x11Send struct {
-	data []byte
-	typ  xproto.Atom
+	data    []byte
+	typ     xproto.Atom
+	started time.Time
 }
+
+// sendTimeout is how long an INCR transfer may take before it is dropped,
+// with its copy of the text, which may be a secret: a program that asked
+// and went away never finishes it.
+const sendTimeout = 30 * time.Second
 
 type sendKey struct {
 	win  xproto.Window
@@ -128,8 +135,11 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 		return nil, err
 	}
 	go b.loop()
-	// Read what the clipboard holds now, as an owner change would.
-	b.request(func() { b.startRead() })
+	// Read what the clipboard holds now; it is not reported as a change.
+	b.request(func() {
+		b.startRead()
+		b.read.initial = true
+	})
 	return b, nil
 }
 
@@ -217,11 +227,17 @@ func (b *X11) startRead() {
 // finishRead ends a read, reports its item, and starts the next one if the
 // owner changed meanwhile.
 func (b *X11) finishRead(it connector.Item, ok bool) {
+	initial := b.read != nil && b.read.initial
 	b.read = nil
 	b.mu.Lock()
-	b.item, b.has = it, ok
+	// A read that ends while this client owns CLIPBOARD was answered by
+	// itself, or its text was replaced by a write: it is no copy.
+	owned := b.owned
+	if !owned {
+		b.item, b.has = it, ok
+	}
 	b.mu.Unlock()
-	if ok {
+	if ok && !owned && !initial {
 		select {
 		case b.changes <- it:
 		default:
@@ -250,6 +266,13 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 	}
 	prop, err := xproto.GetProperty(b.x, true, b.win, e.Property, xproto.GetPropertyTypeAny, 0, (maxText+3)/4).Reply()
 	if err != nil {
+		b.finishRead(connector.Item{}, false)
+		return
+	}
+	if prop.BytesAfter > 0 {
+		// More than the group carries, in one piece: skip it rather than
+		// report the beginning as the whole text.
+		b.logf("clipbridge: the clipboard holds more than %d bytes", maxText)
 		b.finishRead(connector.Item{}, false)
 		return
 	}
@@ -302,7 +325,7 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 		r.data = append(r.data, prop.Value...)
 		if len(r.data) > maxText {
 			b.logf("clipbridge: the clipboard holds more than %d bytes", maxText)
-			b.read = nil
+			b.finishRead(connector.Item{}, false)
 		}
 		return
 	}
@@ -357,8 +380,9 @@ func (b *X11) serve(e xproto.SelectionRequestEvent) {
 		if len(data) > b.chunk {
 			// INCR: announce the size, then send pieces each time the
 			// requestor deletes the property.
+			b.pruneSends()
 			xproto.ChangeWindowAttributes(b.x, e.Requestor, xproto.CwEventMask, []uint32{xproto.EventMaskPropertyChange})
-			b.sends[sendKey{e.Requestor, prop}] = &x11Send{data: data, typ: typ}
+			b.sends[sendKey{e.Requestor, prop}] = &x11Send{data: data, typ: typ, started: time.Now()}
 			size := make([]byte, 4)
 			xgb.Put32(size, uint32(len(data)))
 			xproto.ChangeProperty(b.x, xproto.PropModeReplace, e.Requestor, prop, b.atoms["INCR"], 32, 1, size)
@@ -373,6 +397,15 @@ func (b *X11) serve(e xproto.SelectionRequestEvent) {
 		notify.Property = xproto.AtomNone
 	}
 	xproto.SendEvent(b.x, false, e.Requestor, 0, string(notify.Bytes()))
+}
+
+// pruneSends drops the INCR transfers that took too long.
+func (b *X11) pruneSends() {
+	for k, s := range b.sends {
+		if time.Since(s.started) > sendTimeout {
+			delete(b.sends, k)
+		}
+	}
 }
 
 // Current returns what the clipboard holds.
@@ -432,5 +465,7 @@ func (b *X11) ClearIfUnchanged() error {
 			xproto.SetSelectionOwner(b.x, xproto.WindowNone, b.atoms[sel], xproto.TimeCurrentTime)
 		}
 	}
+	// Transfers still running hold a copy of the expired text.
+	b.request(func() { clear(b.sends) })
 	return nil
 }

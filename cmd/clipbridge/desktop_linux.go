@@ -26,7 +26,7 @@ func runDesktop(ctx context.Context, logf func(string, ...any), stderr io.Writer
 				return fail(stderr, err)
 			}
 		} else {
-			failures = 0
+			failures, backoff = 0, time.Second
 			logf("clipbridge: linked the clipboard through %s", how)
 			err = connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: b, Logf: logf})
 			b.Close()
