@@ -475,6 +475,15 @@ Questions to study before anything is planned for them.
   would serve any device too weak for the member protocol. To study: the cost of the
   key derivation and the cipher on a Z80, the AT command TCP mode of the ESP8266, and how
   the gateway names such devices in the devices list.
+- **A plain tier below the gateway protocol**, for devices that cannot even run
+  ChaCha20-Poly1305: texts in the clear over the home network, which is better than typing
+  them by hand. Only by an explicit choice on the gateway, per device, after a warning that
+  says plainly that anyone on the network can read and change what that device sends and
+  receives and that the user takes this risk. Such a device carries a warning mark in the
+  devices list, never receives secrets (items a password manager marked), and can be
+  limited to receiving only, or to sending only. A middle step to study: a key from the
+  pairing code used only to authenticate (a MAC, cheap even on a Z80), so that nobody else
+  can inject texts, while they still travel unencrypted.
 - **Arduino and other microcontrollers** with the same gateway protocol: AVR boards with a
   Wi-Fi or Ethernet module, for example to show or type the clipboard. Boards built on the
   ESP32 may manage TLS 1.3 with P-256 themselves and could become lite members instead; to
