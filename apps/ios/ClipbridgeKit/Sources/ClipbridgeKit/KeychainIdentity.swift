@@ -34,11 +34,13 @@ public enum KeychainIdentity {
         let where_: [CFString: Any] = [:]
         #endif
         if storeKey {
-            let add = [kSecClass: kSecClassKey, kSecValueRef: key, kSecAttrLabel: label].merging(where_) { a, _ in a }
+            let item: [CFString: Any] = [kSecClass: kSecClassKey, kSecValueRef: key, kSecAttrLabel: label]
+            let add = item.merging(where_) { a, _ in a }
             let status = SecItemAdd(add as CFDictionary, nil)
             guard status == errSecSuccess || status == errSecDuplicateItem else { throw Failure.keychain(status) }
         }
-        let add = [kSecClass: kSecClassCertificate, kSecValueRef: cert, kSecAttrLabel: label].merging(where_) { a, _ in a }
+        let item: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecValueRef: cert, kSecAttrLabel: label]
+        let add = item.merging(where_) { a, _ in a }
         let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else { throw Failure.keychain(status) }
         #if os(macOS)
