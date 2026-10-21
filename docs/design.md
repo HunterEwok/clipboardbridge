@@ -449,9 +449,8 @@ The order may change.
    `.pkg` for macOS, signed releases.
 8. Windows: the service as a Windows service and a clipboard connector through the Win32
    API.
-9. Apps for iPhone and Android: pairing by QR code, the phone as the group's root of trust
-   (keys in the Keychain or Keystore), sync while the app is open, a share extension and an
-   Android quick-settings tile. Background sync stays impossible on iOS.
+9. Apps for iPhone and Android, which make the phone the group's root of trust (see "Target
+   architecture with the phone apps" below).
 10. Console helper and auto-paste.
 11. A lite member in Rust for weak devices (routers, small boards): a member without CA
     keys that only dials, like a Mac, joins by QR code through the phone and syncs; it
@@ -460,6 +459,34 @@ The order may change.
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
     Rust member among Go members.
+
+## Target architecture with the phone apps
+
+The shortcut can neither hold a key, sign, run CPace nor accept connections, so today the
+group CA lives on the Linux members and the phone only authorizes with its token. A phone
+app can do all four, and then the phone becomes the root of the group:
+
+- The app creates the group CA in the Secure Enclave (iPhone) or StrongBox/Keystore
+  (Android): a P-256 key that cannot be exported. Only the phone issues member
+  certificates; no computer holds CA keys, so a stolen computer cannot add devices.
+- The first computer joins the phone, not the other way round: `clipbridge join` shows a
+  QR code with its address and a fresh code and listens; the app scans it, dials the
+  computer and runs CPace with that code, with the phone in the admitting role, then issues
+  its certificate. No profile and no fingerprint check: the app trusts its own group's CA.
+- Every computer is then a member without CA keys, as a Mac is today; Linux members still
+  publish, hold `clipbridge.local` and serve the app and the shortcut. A lite member (Rust)
+  fits the same role.
+- Certificate renewal (every two years) and revocation need the phone. Losing it needs a
+  way back: an encrypted backup of the CA key (for example in iCloud Keychain) or a second
+  admin phone; to be designed with the apps.
+- The app syncs while it is open and through a share extension, a widget or an Android
+  quick-settings tile; background sync stays impossible on iOS.
+- The current mode, with the CA on the Linux members and the phone's token as the authority,
+  stays for users without the app, and `clipbridge pair` / `join -code` for groups without a
+  phone.
+
+The protocol in `docs/protocol.md` and the lite member are designed for this target, so
+neither is written twice.
 
 ## Open questions
 
