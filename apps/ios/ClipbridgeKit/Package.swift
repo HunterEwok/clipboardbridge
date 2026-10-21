@@ -18,5 +18,7 @@ let package = Package(
     targets: [
         .target(name: "ClipbridgeKit", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "ClipbridgeKitTests", dependencies: ["ClipbridgeKit"]),
+        // Plays the phone against the Go code in the Go tests; not shipped.
+        .executableTarget(name: "clipbridge-interop", dependencies: ["ClipbridgeKit"]),
     ]
 )

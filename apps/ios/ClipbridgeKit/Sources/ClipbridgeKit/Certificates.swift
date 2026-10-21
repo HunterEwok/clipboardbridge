@@ -82,6 +82,12 @@ public enum GroupCertificates {
                         notBefore: caInfo.notBefore, notAfter: notAfter, extensions: extensions, signer: caSigner)
     }
 
+    /// The group tag: the first 8 bytes of SHA-256 over the group CA
+    /// certificate, in hex. Members publish it, and the welcome names it.
+    public static func tag(groupCA: Data) -> String {
+        SHA256.hash(data: groupCA).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Whether s is a device ID: 32 lowercase hex characters.
     public static func isDeviceID(_ s: String) -> Bool {
         s.utf8.count == 32 && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
@@ -146,6 +152,23 @@ public struct CertificateInfo {
         notAfter = try validity.readTime()
         rawSubject = try tbs.readAny(raw: true).bytes
         publicKey = Data(try tbs.readAny(raw: true).bytes)
+    }
+
+    /// The subject's common name, or nil without one.
+    public var commonName: String? {
+        var r = DERReader(rawSubject)
+        guard var name = try? r.read(0x30) else { return nil }
+        while name.peek != nil {
+            guard var rdn = try? name.read(0x31) else { return nil }
+            while rdn.peek != nil {
+                guard var atv = try? rdn.read(0x30), let oid = try? atv.readAny(raw: true).bytes,
+                      let value = try? atv.readAny() else { return nil }
+                if oid == DER.oid(GroupCertificates.oidCommonName) {
+                    return String(decoding: value.bytes, as: UTF8.self)
+                }
+            }
+        }
+        return nil
     }
 
     /// The bits of the public key in a SubjectPublicKeyInfo.

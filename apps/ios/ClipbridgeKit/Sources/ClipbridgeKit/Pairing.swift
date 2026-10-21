@@ -51,6 +51,8 @@ public enum Pairing {
         public var name: String
         public var os: String // "linux" or "darwin"
 
+        public init(name: String, os: String) { (self.name, self.os) = (name, os) }
+
         /// Checks it as the member does: a known OS and a printable name of
         /// 1 to 64 bytes.
         public var isValid: Bool {
@@ -63,6 +65,8 @@ public enum Pairing {
     public struct MemberAD: Codable, Equatable {
         public var device: String
         public var group: String // the group tag
+
+        public init(device: String, group: String) { (self.device, self.group) = (device, group) }
     }
 
     /// The error codes that travel in frames. Anything else means "refused".

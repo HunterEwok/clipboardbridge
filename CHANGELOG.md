@@ -50,6 +50,8 @@ All notable changes to clipbridge are documented in this file. The format follow
 - The start of the phone app: `apps/ios/ClipbridgeKit`, a Swift package with CPace (checked
   against the draft's test vectors), the pairing frames and the join QR code, tested on
   Linux and macOS against vectors from the Go side in `testdata/interop/`.
+- ClipbridgeKit admits a computer as the phone will: it dials, confirms the code first and
+  issues the computer's certificate; a Go test runs it against the Go joiner.
 - Protocol specification: [docs/protocol.md](docs/protocol.md); the plan for the phone apps:
   [docs/apps.md](docs/apps.md).
 - CI: formatting, vet, staticcheck, govulncheck, actionlint and repository rules; tests on Linux and
