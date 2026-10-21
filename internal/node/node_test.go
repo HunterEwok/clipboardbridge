@@ -1,0 +1,705 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package node
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"math"
+	"net"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/HunterEwok/clipbridge/internal/clip"
+	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipbridge/internal/hlc"
+	"github.com/HunterEwok/clipbridge/internal/uptime"
+)
+
+func socketPair(t *testing.T) (net.Conn, net.Conn) {
+	t.Helper()
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := func(fd int) net.Conn {
+		f := os.NewFile(uintptr(fd), "socketpair")
+		defer f.Close()
+		c, err := net.FileConn(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return c
+	}
+	return conn(fds[0]), conn(fds[1])
+}
+
+// clock is an uptime clock a test moves by hand.
+type clock struct{ d atomic.Int64 }
+
+func (c *clock) now() time.Duration      { return time.Duration(c.d.Load()) }
+func (c *clock) advance(d time.Duration) { c.d.Add(int64(d)) }
+
+// member is a node with its engine and the writes it received.
+type member struct {
+	*Node
+	id     *group.Identity
+	engine *clip.Engine
+	writes chan Write
+	peers  chan int // len(Peers()) at each OnPeers call
+}
+
+var (
+	adminOnce sync.Once
+	admin     *group.Identity
+)
+
+type option func(*clip.Config, *Config)
+
+// withUptime gives the engine and the node one clock the test moves.
+func withUptime(c *clock) option {
+	return func(ec *clip.Config, nc *Config) { ec.Uptime, nc.Uptime = c.now, c.now }
+}
+
+// withNodeUptime gives only the node a clock, which measures queue times.
+func withNodeUptime(f func() time.Duration) option {
+	return func(_ *clip.Config, nc *Config) { nc.Uptime = f }
+}
+
+func withTimers(ping, timeout time.Duration) option {
+	return func(_ *clip.Config, nc *Config) { nc.PingEvery, nc.Timeout = ping, timeout }
+}
+
+func newMember(t *testing.T, role Role, opts ...option) *member {
+	t.Helper()
+	adminOnce.Do(func() {
+		var err error
+		if admin, err = group.Create(time.Now()); err != nil {
+			panic(err)
+		}
+	})
+	key, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	devID := group.NewDeviceID()
+	cert, err := admin.GroupCA.IssueMember(devID, &key.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := &group.Identity{ID: devID, Key: key, Cert: cert, GroupCA: group.CA{Cert: admin.GroupCA.Cert}}
+	m := &member{id: id, writes: make(chan Write, 1024), peers: make(chan int, 1024)}
+	ec := clip.Config{Self: string(devID), Clock: hlc.NewClock(nil, hlc.Timestamp{}, nil)}
+	nc := Config{
+		Identity: id, Role: role,
+		OnWrite:   func(w Write) { m.writes <- w },
+		PingEvery: 50 * time.Millisecond, Timeout: 300 * time.Millisecond,
+		Logf: t.Logf,
+	}
+	for _, o := range opts {
+		o(&ec, &nc)
+	}
+	m.engine = clip.New(ec)
+	nc.Engine = m.engine
+	nc.OnPeers = func() { m.peers <- len(m.Peers()) }
+	m.Node = New(nc)
+	t.Cleanup(m.Close)
+	return m
+}
+
+// link connects client to server and returns channels with the result of
+// each side's Serve.
+func link(t *testing.T, client, server *member) (clientDone, serverDone chan error) {
+	t.Helper()
+	return linkCtx(t, context.Background(), client, server)
+}
+
+func linkCtx(t *testing.T, ctx context.Context, client, server *member) (clientDone, serverDone chan error) {
+	t.Helper()
+	a, b := socketPair(t)
+	clientDone, serverDone = make(chan error, 1), make(chan error, 1)
+	go func() {
+		serverDone <- server.Serve(context.Background(), tls.Server(b, server.ServerTLS()))
+	}()
+	go func() {
+		clientDone <- client.Serve(ctx, tls.Client(a, client.id.ClientTLS(server.id.ID, group.TLSOptions{})))
+	}()
+	return clientDone, serverDone
+}
+
+func wait(t *testing.T, ch <-chan error, what string) error {
+	t.Helper()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+		return nil
+	}
+}
+
+func waitPeers(t *testing.T, m *member, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(m.Peers()) != n {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s has %d peers, want %d", m.id.ID, len(m.Peers()), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func waitWrite(t *testing.T, m *member, text string) Write {
+	t.Helper()
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case w := <-m.writes:
+			if w.Text == text {
+				return w
+			}
+		case <-timeout:
+			t.Fatalf("%s never wrote %q", m.id.ID, text)
+		}
+	}
+}
+
+func noWrite(t *testing.T, m *member, text string, d time.Duration) {
+	t.Helper()
+	timeout := time.After(d)
+	for {
+		select {
+		case w := <-m.writes:
+			if w.Text == text {
+				t.Errorf("%s wrote %q", m.id.ID, text)
+				return
+			}
+		case <-timeout:
+			return
+		}
+	}
+}
+
+// raw is a hand-driven peer: TLS with a member certificate, and frames the
+// test writes and reads itself.
+type raw struct {
+	t    *testing.T
+	tc   *tls.Conn
+	done chan error // the node's Serve
+}
+
+func rawPeer(t *testing.T, node, as *member) *raw {
+	t.Helper()
+	a, b := socketPair(t)
+	r := &raw{t: t, done: make(chan error, 1)}
+	go func() { r.done <- node.Serve(context.Background(), tls.Server(b, node.ServerTLS())) }()
+	r.tc = tls.Client(a, as.id.ClientTLS(node.id.ID, group.TLSOptions{}))
+	if err := r.tc.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func (r *raw) send(m *message) {
+	r.t.Helper()
+	f, err := frame(m)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if _, err := r.tc.Write(f); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+func (r *raw) hello(h clip.Hello) {
+	r.t.Helper()
+	data, _ := json.Marshal(h)
+	r.send(&message{Type: typeHello, Role: Mac, Hello: data})
+}
+
+func (r *raw) event(ev clip.Event) {
+	r.t.Helper()
+	data, _ := json.Marshal(ev)
+	r.send(&message{Type: typeEvent, Event: data})
+}
+
+// frames reads frames for d and returns them.
+func (r *raw) frames(d time.Duration) []*message {
+	var out []*message
+	deadline := time.Now().Add(d)
+	for {
+		r.tc.SetReadDeadline(deadline)
+		m, err := readMessage(r.tc, time.Until(deadline))
+		if err != nil {
+			return out
+		}
+		out = append(out, m)
+	}
+}
+
+var eventClock = hlc.NewClock(nil, hlc.Timestamp{}, nil)
+
+// newEvent makes an event with a timestamp after every earlier one.
+func newEvent(origin *member, text string) clip.Event {
+	return clip.Event{ID: clip.NewID(), Origin: string(origin.id.ID), Time: eventClock.Now(), Kind: clip.Text, Text: text}
+}
+
+func TestCopyReachesTheOtherMember(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	waitPeers(t, pi, 1)
+	if p := mac.Peers()[0]; p.ID != pi.id.ID || p.Role != Linux {
+		t.Errorf("the Mac sees %+v", p)
+	}
+	if ok, err := mac.Copied("hello from the Mac", clip.Text, clip.Copy); err != nil || !ok {
+		t.Fatalf("Copied = %v, %v", ok, err)
+	}
+	w := waitWrite(t, pi, "hello from the Mac")
+	if w.Kind != clip.Text || w.Seq == 0 {
+		t.Errorf("write %+v", w)
+	}
+	if err := pi.Send("hello from tmux", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	waitWrite(t, pi, "hello from tmux") // the member's own clipboard
+	waitWrite(t, mac, "hello from tmux")
+}
+
+func TestSecretsKeepTheirKind(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	if _, err := mac.Copied("hunter2", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	if w := waitWrite(t, pi, "hunter2"); w.Kind != clip.Secret {
+		t.Errorf("a secret was written as %v", w.Kind)
+	}
+	if err := pi.Send("otp 123456", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	if w := waitWrite(t, pi, "otp 123456"); w.Kind != clip.Secret {
+		t.Errorf("the member's own secret was written as %v", w.Kind)
+	}
+}
+
+func TestHelloCarriesAnOldTextAfterRejoin(t *testing.T) {
+	// A text copied long ago reaches a member that was away, and only
+	// then: a member that merely lost its peers keeps its clipboard.
+	for _, rejoin := range []bool{true, false} {
+		t.Run(fmt.Sprintf("rejoin=%v", rejoin), func(t *testing.T) {
+			var c clock
+			c.advance(time.Hour)
+			mac, pi := newMember(t, Mac, withUptime(&c)), newMember(t, Linux, withUptime(&c))
+			if _, err := pi.Copied("copied long ago", clip.Text, clip.Copy); err != nil {
+				t.Fatal(err)
+			}
+			c.advance(2 * time.Minute)
+			if rejoin {
+				mac.Rejoin()
+			}
+			link(t, mac, pi)
+			waitPeers(t, mac, 1)
+			if rejoin {
+				waitWrite(t, mac, "copied long ago")
+			} else {
+				noWrite(t, mac, "copied long ago", 300*time.Millisecond)
+			}
+			if ev, ok := mac.engine.Current(); !ok || ev.Text != "copied long ago" {
+				t.Errorf("the group text did not arrive: %+v", ev)
+			}
+		})
+	}
+}
+
+func TestRejoinClosesTheConnectionsFirst(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	cd, _ := link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	mac.Rejoin()
+	if len(mac.Peers()) != 0 {
+		t.Errorf("peers after Rejoin: %v", mac.Peers())
+	}
+	wait(t, cd, "the old connection to end")
+}
+
+func TestRejoinHoldsNewConnections(t *testing.T) {
+	// A connection that starts while Rejoin waits for the old ones is
+	// registered only after the engine knows the member was away.
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	mac.mu.Lock()
+	old := mac.conns[pi.id.ID]
+	ch := make(chan struct{})
+	mac.rejoining = ch
+	mac.mu.Unlock()
+	link(t, mac, pi)
+	time.Sleep(200 * time.Millisecond)
+	mac.mu.Lock()
+	cur := mac.conns[pi.id.ID]
+	mac.mu.Unlock()
+	if cur != nil && cur != old {
+		t.Error("a new connection registered during a rejoin")
+	}
+	mac.mu.Lock()
+	mac.rejoining = nil
+	mac.mu.Unlock()
+	close(ch)
+	waitPeers(t, mac, 1)
+}
+
+func TestForwardedOnlyToOthers(t *testing.T) {
+	// An event that comes in on a connection never goes back out on it.
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	cur := newEvent(mac, "current of the peer")
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli(), Current: &cur})
+	r.event(newEvent(mac, "an event"))
+	waitWrite(t, pi, "an event")
+	for _, m := range r.frames(300 * time.Millisecond) {
+		if m.Type == typeEvent {
+			t.Errorf("the node sent an event back to its source: %s", m.Event)
+		}
+	}
+}
+
+func TestQueueTimeIsAddedToTheAge(t *testing.T) {
+	// The node's clock moves two minutes on every reading, so each queued
+	// event waits two minutes.
+	var steps atomic.Int64
+	slow := func() time.Duration { return uptime.Now() + time.Duration(steps.Add(1))*2*time.Minute }
+	mac, pi := newMember(t, Mac), newMember(t, Linux, withNodeUptime(slow))
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	waitPeers(t, pi, 1)
+	if _, err := pi.Copied("queued for a long time", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if ev, ok := mac.engine.Current(); ok && ev.Text == "queued for a long time" {
+			if ev.Age < 2*60*1000 {
+				t.Errorf("age %d ms, want the two minutes in the queue added", ev.Age)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the event never arrived")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	noWrite(t, mac, "queued for a long time", 200*time.Millisecond)
+}
+
+func TestHelloAfterJoiningTheForwardingSet(t *testing.T) {
+	// The connection joins the forwarding set before the engine makes the
+	// hello: a copy made in between reaches the peer one way or the other.
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	pi.mu.Lock()
+	link(t, mac, pi)
+	time.Sleep(200 * time.Millisecond) // the handshake is done; Serve waits for the lock
+	if _, _, err := pi.engine.Copied("made meanwhile", clip.Text, clip.Copy); err != nil {
+		pi.mu.Unlock()
+		t.Fatal(err)
+	}
+	pi.mu.Unlock()
+	waitWrite(t, mac, "made meanwhile")
+}
+
+func TestSilentPeerIsDropped(t *testing.T) {
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	go func() {
+		for {
+			r.tc.SetReadDeadline(time.Now().Add(time.Minute))
+			if _, err := readMessage(r.tc, time.Minute); err != nil {
+				return
+			}
+		}
+	}()
+	if err := wait(t, r.done, "a silent peer to be dropped"); err == nil {
+		t.Error("Serve returned no error for a silent peer")
+	}
+}
+
+func TestStalledPeerIsDropped(t *testing.T) {
+	// A peer that stops reading fills the socket and then the queue; the
+	// node drops it instead of waiting.
+	pi, mac := newMember(t, Linux, withTimers(time.Second, 3*time.Second)), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	waitPeers(t, pi, 1)
+	start := time.Now()
+	text := strings.Repeat("x", 4096)
+	for i := range 2000 {
+		pi.Copied(fmt.Sprintf("%d %s", i, text), clip.Text, clip.Copy)
+	}
+	wait(t, r.done, "a stalled peer to be dropped")
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("dropping a stalled peer took %v", d)
+	}
+}
+
+func TestPingCadence(t *testing.T) {
+	// Pings come every PingEvery, so a connection survives a Timeout of
+	// three PingEvery, as in production.
+	pi, mac := newMember(t, Linux, withTimers(100*time.Millisecond, 300*time.Millisecond)), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	var last time.Time
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		r.tc.SetReadDeadline(time.Now().Add(time.Second))
+		m, err := readMessage(r.tc, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Type != typePing {
+			continue
+		}
+		if !last.IsZero() {
+			if gap := time.Since(last); gap > 180*time.Millisecond {
+				t.Errorf("%v between pings, want about 100 ms", gap)
+			}
+		}
+		last = time.Now()
+		r.send(&message{Type: typePing})
+	}
+}
+
+func TestPingsKeepAnIdleConnection(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	cd, sd := link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	select {
+	case err := <-cd:
+		t.Fatalf("the client ended: %v", err)
+	case err := <-sd:
+		t.Fatalf("the server ended: %v", err)
+	case <-time.After(time.Second): // more than three timeouts
+	}
+}
+
+func TestByeEndsTheConnectionAtOnce(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	cd, sd := link(t, mac, pi)
+	waitPeers(t, pi, 1)
+	if len(pi.engine.Skews()) != 1 {
+		t.Fatal("the engine does not count the connection")
+	}
+	start := time.Now()
+	mac.Close()
+	// Close waits for its connections: when it returns, Serve is ending.
+	select {
+	case <-cd:
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Close returned while its connection was still running")
+	}
+	if err := wait(t, sd, "the goodbye"); err != nil {
+		t.Errorf("Serve after a goodbye: %v", err)
+	}
+	if time.Since(start) > 250*time.Millisecond {
+		t.Errorf("the goodbye took %v to notice", time.Since(start))
+	}
+	if len(pi.Peers()) != 0 || len(pi.engine.Skews()) != 0 {
+		t.Errorf("after the goodbye: peers %v, engine peers %v", pi.Peers(), pi.engine.Skews())
+	}
+}
+
+func TestQueuedEventsGoOutBeforeTheGoodbye(t *testing.T) {
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	waitPeers(t, pi, 1)
+	for i := range 20 {
+		pi.Copied(fmt.Sprintf("last copy %d", i), clip.Text, clip.Copy)
+	}
+	pi.Close()
+	var events int
+	var bye bool
+	for _, m := range r.frames(time.Second) {
+		switch m.Type {
+		case typeEvent:
+			events++
+		case typeBye:
+			bye = true
+		}
+	}
+	if events != 20 || !bye {
+		t.Errorf("got %d events and goodbye %v, want 20 and a goodbye", events, bye)
+	}
+}
+
+func TestCancelEndsServe(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	ctx, cancel := context.WithCancel(context.Background())
+	cd, _ := linkCtx(t, ctx, mac, pi)
+	waitPeers(t, mac, 1)
+	cancel()
+	wait(t, cd, "Serve to end after cancel")
+}
+
+func TestOnPeers(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	_, sd := link(t, mac, pi)
+	got := func(want int) {
+		t.Helper()
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case n := <-pi.peers:
+				if n == want {
+					return
+				}
+			case <-timeout:
+				t.Fatalf("OnPeers never reported %d peers", want)
+			}
+		}
+	}
+	got(1)
+	mac.Close()
+	wait(t, sd, "the connection to end")
+	got(0)
+}
+
+func TestReconnectReplacesTheOldConnection(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	cd1, _ := link(t, mac, pi)
+	waitPeers(t, pi, 1)
+	link(t, mac, pi)
+	wait(t, cd1, "the old connection to end")
+	waitPeers(t, pi, 1)
+	if _, err := mac.Copied("after the reconnect", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	waitWrite(t, pi, "after the reconnect")
+}
+
+func TestBadFirstMessage(t *testing.T) {
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.event(newEvent(mac, "sneaky"))
+	if err := wait(t, r.done, "Serve to refuse"); err == nil {
+		t.Error("Serve accepted an event before the hello")
+	}
+	if ev, ok := pi.engine.Current(); ok {
+		t.Errorf("the event before the hello was applied: %+v", ev)
+	}
+}
+
+func TestBadEventsAreDropped(t *testing.T) {
+	// Events this member cannot use, as a buggy or newer member might send
+	// them, are dropped, and the connection goes on.
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	r.send(&message{Type: typeEvent, Event: json.RawMessage(`{"id":"x","kind":"pdf","via":"telepathy"}`)})
+	r.send(&message{Type: typeEvent, Event: json.RawMessage(`{"id":"bad"}`)})
+	r.send(&message{Type: "from-the-future"})
+	r.event(newEvent(mac, "still connected"))
+	waitWrite(t, pi, "still connected")
+}
+
+func TestHelloWithAnUnreadableCurrent(t *testing.T) {
+	// A hello whose current event does not decode counts as one without a
+	// current event.
+	pi, mac := newMember(t, Linux), newMember(t, Mac)
+	r := rawPeer(t, pi, mac)
+	r.send(&message{Type: typeHello, Role: Mac, Hello: json.RawMessage(`{"wall_ms":1,"current":{"kind":"pdf"}}`)})
+	r.event(newEvent(mac, "after an odd hello"))
+	waitWrite(t, pi, "after an odd hello")
+}
+
+func TestConnectingToItself(t *testing.T) {
+	pi := newMember(t, Linux)
+	a, b := socketPair(t)
+	go pi.Serve(context.Background(), tls.Server(b, pi.ServerTLS()))
+	err := pi.Serve(context.Background(), tls.Client(a, pi.id.ClientTLS(pi.id.ID, group.TLSOptions{})))
+	if err == nil {
+		t.Error("a member connected to itself")
+	}
+}
+
+func TestClosedNodeRefuses(t *testing.T) {
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	pi.Close()
+	cd, sd := link(t, mac, pi)
+	if err := wait(t, sd, "the closed node"); err == nil {
+		t.Error("a closed node served a connection")
+	}
+	wait(t, cd, "the client")
+}
+
+func TestQueueFullCloses(t *testing.T) {
+	a, _ := socketPair(t)
+	n := New(Config{Logf: t.Logf})
+	c := &conn{n: n, tc: tls.Client(a, &tls.Config{}), out: make(chan outgoing, 1), done: make(chan struct{})}
+	c.enqueue(outgoing{event: &clip.Event{}})
+	c.enqueue(outgoing{event: &clip.Event{}})
+	select {
+	case <-c.done:
+	case <-time.After(time.Second):
+		t.Fatal("a full queue did not close the connection")
+	}
+	c.enqueue(outgoing{event: &clip.Event{}}) // closed: no panic, no log flood
+}
+
+func TestAddAge(t *testing.T) {
+	if got := addAge(math.MaxInt64-5, time.Second); got != math.MaxInt64 {
+		t.Errorf("addAge near the top = %d", got)
+	}
+	if got := addAge(100, -time.Second); got != 100 {
+		t.Errorf("a negative wait changed the age to %d", got)
+	}
+	if got := addAge(100, 2*time.Second); got != 2100 {
+		t.Errorf("addAge = %d", got)
+	}
+}
+
+func TestConverges(t *testing.T) {
+	// Many copies from both sides end with both members on the same event.
+	mac, pi := newMember(t, Mac), newMember(t, Linux)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	waitPeers(t, pi, 1)
+	var wg sync.WaitGroup
+	for i, m := range []*member{mac, pi} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 50 {
+				kind := clip.Text
+				if j%7 == 0 {
+					kind = clip.Secret
+				}
+				m.Copied(fmt.Sprintf("%d-%d-%d", i, j, time.Now().UnixNano()), kind, clip.Copy)
+			}
+		}()
+	}
+	wg.Wait()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		a, _ := mac.engine.Current()
+		b, _ := pi.engine.Current()
+		if a.ID == b.ID && a.ID != "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the members did not converge: %s vs %s", a.ID, b.ID)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

@@ -155,6 +155,18 @@ any member may be switched off at any time.
   current event without a write; this also removes duplicates when two Macs report the same
   Universal Clipboard item. A Mac that receives the group's own text through Universal
   Clipboard does not turn it into a new event.
+- **Member connections** carry frames of a 4-byte length and a JSON message. Each side first
+  sends a hello with its role (Linux member or Mac) and its current event; events follow. A
+  side that has sent nothing for 5 seconds sends a ping, and a connection that stays silent
+  for 15 seconds is closed; a large frame gets more time, as if the link carried at least
+  16 KiB a second. A member that stops sends what is queued and a goodbye, so the others
+  notice at once. A new connection from a member replaces the old one. A peer that falls a
+  whole queue (256 messages) behind is disconnected and gets the current event again in the
+  next hello. An event that does not decode or is invalid is dropped, and a hello whose
+  current event does not decode counts as one without; a connection that does not start
+  with a hello is closed. When the member was away, it closes its connections and waits up
+  to 2 seconds for them to end before the engine treats it as back; connections that start
+  meanwhile wait too, so every hello after the absence counts.
 - **Automatic reports and deliberate actions.** A clipboard watcher (a desktop connector or
   the Mac's pasteboard agent) reports changes; a report of the text the clipboard already
   held, for example offered again by a clipboard manager, makes no event. Deliberate actions
