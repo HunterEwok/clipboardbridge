@@ -18,9 +18,11 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/HunterEwok/clipbridge/internal/connector"
 	"github.com/HunterEwok/clipbridge/internal/control"
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
+	"github.com/HunterEwok/clipbridge/internal/pasteboard"
 	"github.com/HunterEwok/clipbridge/internal/service"
 )
 
@@ -219,6 +221,29 @@ func readLine(r io.Reader) (string, error) {
 		}
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+// cmdAgent links the Mac's pasteboard to the service; launchd starts it in
+// the user's session.
+func cmdAgent(args []string, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "clipbridge: agent takes no arguments")
+		return 2
+	}
+	if runtime.GOOS != "darwin" {
+		return fail(stderr, errors.New("the pasteboard agent is for macOS; on Linux the desktop connector links the clipboard"))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
+	b := pasteboard.General()
+	if _, _, err := b.Read(); errors.Is(err, pasteboard.ErrUnsupported) {
+		return fail(stderr, err)
+	}
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: pasteboard.NewWatch(b), Logf: logf}); err != nil {
+		return fail(stderr, err)
+	}
+	return 0
 }
 
 // cmdDesktop links a Linux desktop's clipboard to the service; the session
