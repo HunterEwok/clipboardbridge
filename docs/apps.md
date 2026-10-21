@@ -80,9 +80,11 @@ the group", not a status code), never a dialog that must be dismissed.
 
 - `apps/ios/` — the Xcode project (SwiftUI), built and tested in CI on macOS runners, and
   `apps/ios/ClipbridgeKit`, the Swift package with the protocol core (CPace, the pairing
-  frames, the join QR code, later the member protocol). It has no UI and runs on Linux too;
-  its tests check it against the vectors that the Go tests write to `testdata/interop/`
-  (`go test ./internal/pair ./internal/phone -update` regenerates them).
+  frames, the join QR code, the member protocol and the phone's sync engine). It has no UI
+  and runs on Linux too; its tests check it against the vectors that the Go tests write to
+  `testdata/interop/` (`go test ./internal/pair ./internal/phone ./internal/node -update`
+  regenerates them), and CI runs it against the Go code: pairing over plain TCP on Linux,
+  pairing and a member connection over real TLS on macOS.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/design/` — tokens and the icon; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.

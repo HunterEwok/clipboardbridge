@@ -6,8 +6,8 @@ import Network
 import Security
 
 /// A TLS 1.3 connection with Network.framework that carries frames: pairing
-/// with a listening computer now, member connections later.
-public final class TLSTransport: FrameTransport, @unchecked Sendable {
+/// with a listening computer, and member connections.
+public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     public enum Failure: Error { case notReady(String), closed, peerRejected }
 
     let connection: NWConnection

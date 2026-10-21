@@ -1,0 +1,431 @@
+{
+	"frames": [
+		{
+			"t": "hello",
+			"role": "linux",
+			"hello": {
+				"wall_ms": 1761024000500,
+				"current": {
+					"id": "fedcba9876543210fedcba9876543210",
+					"origin": "0123456789abcdef0123456789abcdef",
+					"time": "1761024000000.3",
+					"age_ms": 1500,
+					"kind": "text",
+					"text": "hello \u003cworld\u003e \u0026 \"you\" / ✓"
+				},
+				"records": "q83vEjRWeJA=",
+				"name": "pi"
+			}
+		},
+		{
+			"t": "hello",
+			"role": "mac",
+			"hello": {
+				"wall_ms": 1761024000500,
+				"current": {
+					"id": "fedcba9876543210fedcba9876543210",
+					"origin": "0123456789abcdef0123456789abcdef",
+					"via": "iphone",
+					"time": "1761024000001.0",
+					"age_ms": 20,
+					"kind": "secret",
+					"text": ""
+				}
+			}
+		},
+		{
+			"t": "hello",
+			"role": "phone",
+			"hello": {
+				"wall_ms": 0
+			}
+		},
+		{
+			"t": "event",
+			"event": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1761024000000.3",
+				"age_ms": 1500,
+				"kind": "text",
+				"text": "hello \u003cworld\u003e \u0026 \"you\" / ✓"
+			}
+		},
+		{
+			"t": "event",
+			"event": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"via": "iphone",
+				"time": "1761024000001.0",
+				"age_ms": 20,
+				"kind": "secret",
+				"text": "hunter2"
+			}
+		},
+		{
+			"t": "event",
+			"event": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"via": "universal-clipboard",
+				"time": "1761024000000.3",
+				"age_ms": 1500,
+				"kind": "text",
+				"text": "hello \u003cworld\u003e \u0026 \"you\" / ✓"
+			}
+		},
+		{
+			"t": "ping"
+		},
+		{
+			"t": "bye"
+		},
+		{
+			"t": "cert",
+			"cert": "bWVtYmVyIGNlcnRpZmljYXRlIERFUg=="
+		},
+		{
+			"t": "records",
+			"records": [
+				{
+					"body": "eyJ2IjoxLCJ0eXBlIjoicmV2b2tlIn0=",
+					"sig": "c2ln"
+				},
+				{
+					"body": "eyJ2IjoxfQ==",
+					"sig": "c2lnMg==",
+					"chain": [
+						"YWRtaW4gQ0E="
+					]
+				}
+			]
+		}
+	],
+	"timestamps": [
+		{
+			"text": "1761024000000.3",
+			"ok": true
+		},
+		{
+			"text": "1.0",
+			"ok": true
+		},
+		{
+			"text": "0.0",
+			"ok": true
+		},
+		{
+			"text": "253402300799999.4294967295",
+			"ok": true
+		},
+		{
+			"text": "253402300800000.0",
+			"ok": false
+		},
+		{
+			"text": "1.4294967296",
+			"ok": false
+		},
+		{
+			"text": "",
+			"ok": false
+		},
+		{
+			"text": "1",
+			"ok": false
+		},
+		{
+			"text": "1.",
+			"ok": false
+		},
+		{
+			"text": ".1",
+			"ok": false
+		},
+		{
+			"text": "-1.0",
+			"ok": false
+		},
+		{
+			"text": "+1.0",
+			"ok": false
+		},
+		{
+			"text": "1 .0",
+			"ok": false
+		},
+		{
+			"text": "1.0 ",
+			"ok": false
+		},
+		{
+			"text": "0x1.0",
+			"ok": false
+		},
+		{
+			"text": "1.0.0",
+			"ok": false
+		},
+		{
+			"text": "01.0",
+			"ok": true
+		},
+		{
+			"text": "1.00",
+			"ok": true
+		}
+	],
+	"events": [
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"via": "iphone",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "secret",
+				"text": ""
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"kind": "text",
+				"text": "no age"
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": ""
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "0.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "FEDCBA9876543210FEDCBA9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba98",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": -1,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "image",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"via": "fax",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x",
+				"extra": true
+			},
+			"valid": true
+		}
+	],
+	"order": [
+		{
+			"a": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "2.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": true
+		},
+		{
+			"a": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.1",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": true
+		},
+		{
+			"a": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.1",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": false
+		},
+		{
+			"a": {
+				"id": "ff000000000000000000000000000000",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "0f000000000000000000000000000000",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": true
+		},
+		{
+			"a": {
+				"id": "0f000000000000000000000000000000",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "ff000000000000000000000000000000",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": false
+		},
+		{
+			"a": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"b": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
+			},
+			"later": false
+		}
+	]
+}
