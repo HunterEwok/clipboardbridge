@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/clip"
+	"github.com/HunterEwok/clipbridge/internal/group"
 )
 
 // The member protocol runs over a TLS connection made with the group's
@@ -19,13 +22,15 @@ import (
 // events follow, and a ping whenever the side has sent nothing for a while,
 // so a silent connection is a dead one. A member that holds the group CA key
 // sends a cert message with a renewed certificate to a peer whose
-// certificate is due for renewal.
+// certificate is due for renewal. The group's signed records travel in
+// records messages to a peer whose hello names other records.
 const (
 	typeHello = "hello"
 	typeEvent = "event"
 	typePing  = "ping"
 	typeBye   = "bye"
 	typeCert  = "cert"
+	typeRecs  = "records"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -65,6 +70,8 @@ type message struct {
 	Hello json.RawMessage `json:"hello,omitempty"` // in a hello: clip.Hello
 	Event json.RawMessage `json:"event,omitempty"` // in an event: clip.Event
 	Cert  []byte          `json:"cert,omitempty"`  // in a cert: the renewed member certificate, DER
+
+	Records []group.Record `json:"records,omitempty"` // in a records message
 }
 
 // helloBody is the content of a hello, with its current event left to
@@ -72,6 +79,44 @@ type message struct {
 type helloBody struct {
 	Wall    int64           `json:"wall_ms"`
 	Current json.RawMessage `json:"current,omitempty"`
+	Records string          `json:"records,omitempty"` // the digest of the sender's records
+	Name    string          `json:"name,omitempty"`    // the sender's device name
+}
+
+// helloOut is the hello this member sends: the engine's hello, the digest
+// of its records and its name.
+type helloOut struct {
+	clip.Hello
+	Records string `json:"records,omitempty"`
+	Name    string `json:"name,omitempty"`
+}
+
+// recordsChunk bounds the records of one message, well below maxFrame.
+const recordsChunk = 1 << 20
+
+// chunkRecords splits records into groups whose encoded size stays near
+// recordsChunk, so each fits a frame.
+func chunkRecords(rs []group.Record) [][]group.Record {
+	var out [][]group.Record
+	var cur []group.Record
+	size := 0
+	for _, r := range rs {
+		n := len(r.Body) + len(r.Sig)
+		for _, c := range r.Chain {
+			n += len(c)
+		}
+		n = n*4/3 + 64 // base64 and the JSON around it
+		if len(cur) > 0 && size+n > recordsChunk {
+			out = append(out, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, r)
+		size += n
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
 }
 
 // encode marshals v as JSON without escaping <, > and &, which would make

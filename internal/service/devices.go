@@ -1,0 +1,400 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package service
+
+import (
+	"crypto/x509"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/HunterEwok/clipbridge/internal/control"
+	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipbridge/internal/node"
+	"github.com/HunterEwok/clipbridge/internal/pair"
+)
+
+// The group's devices list and revocation (docs/protocol.md, section 10):
+// the member keeps the group's signed records, gives them to its peers,
+// refuses the devices they revoke, and, where it holds the group CA key,
+// records the devices it admits and removes devices on request.
+
+// recordStore is the service as the node's store of records.
+type recordStore struct{ s *Service }
+
+func (r recordStore) Digest() string {
+	r.s.recMu.Lock()
+	defer r.s.recMu.Unlock()
+	if r.s.records == nil {
+		return ""
+	}
+	return r.s.records.Digest()
+}
+
+func (r recordStore) All() []group.Record {
+	r.s.recMu.Lock()
+	defer r.s.recMu.Unlock()
+	if r.s.records == nil {
+		return nil
+	}
+	return r.s.records.All()
+}
+
+func (r recordStore) Add(from group.DeviceID, rs []group.Record) []group.Record {
+	return r.s.addRecords(from, rs)
+}
+
+// loadRecords reads the records of the group of id; a file that cannot be
+// read leaves the set empty, since the peers give the records again.
+func (s *Service) loadRecords(id *group.Identity) *group.Records {
+	recs, err := group.LoadRecords(s.cfg.StateDir, id.GroupCA.Cert)
+	if err != nil {
+		s.logf("clipbridge: reading the device records: %v", err)
+		return group.NewRecords(id.GroupCA.Cert)
+	}
+	return recs
+}
+
+// addRecords adds the valid records among rs, saves them, and returns
+// those that were new. After a new revocation it closes the connections
+// to devices that are now refused.
+func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Record {
+	s.recMu.Lock()
+	recs := s.records
+	if recs == nil {
+		s.recMu.Unlock()
+		return nil
+	}
+	var fresh []group.Record
+	revoked := false
+	for _, r := range rs {
+		isNew, err := recs.Add(r)
+		if err != nil {
+			s.logf("clipbridge: dropped a device record from %s: %v", orThis(from), err)
+			continue
+		}
+		if isNew {
+			fresh = append(fresh, r)
+			revoked = revoked || r.Type() == group.RecordRevoke
+		}
+	}
+	if len(fresh) > 0 {
+		if err := recs.Save(s.cfg.StateDir); err != nil {
+			s.logf("clipbridge: saving the device records: %v", err)
+		}
+	}
+	s.recMu.Unlock()
+	if revoked {
+		s.afterRevocation()
+	}
+	return fresh
+}
+
+func orThis(from group.DeviceID) string {
+	if from == "" {
+		return "this device"
+	}
+	return string(from)
+}
+
+// afterRevocation closes the connections to devices that are now refused,
+// and tells whether this device itself was removed.
+func (s *Service) afterRevocation() {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if nd != nil {
+		nd.Recheck()
+	}
+	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
+		s.logf("clipbridge: this device was removed from the group; the other members refuse it until it pairs again")
+	}
+}
+
+// allow is the TLS check of member connections: it refuses devices that the
+// records revoke.
+func (s *Service) allow(_ group.DeviceID, chain []*x509.Certificate) error {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.Refused(chain)
+}
+
+// signRecord signs a record with the group CA key of id, for this group.
+func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.Record, error) {
+	if id.GroupCA.Key == nil {
+		return group.Record{}, errNotAdmin
+	}
+	body.Group = group.Tag(id.GroupCA.Cert)
+	body.TimeMS = s.cfg.now().UnixMilli()
+	body.By = id.ID
+	return group.SignRecord(body, id.GroupCA.Key)
+}
+
+var errNotAdmin = errors.New("only a member that holds the group's keys can change the devices list; run this on a Linux member of the group")
+
+// publish adds records made on this member and sends them to the peers.
+func (s *Service) publish(nd *node.Node, rs ...group.Record) {
+	if fresh := s.addRecords("", rs); len(fresh) > 0 && nd != nil {
+		nd.SendRecords(fresh)
+	}
+}
+
+// recordDevice records a device this member admitted, if it holds the group
+// CA key.
+func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.KeyHash) {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || id.GroupCA.Key == nil {
+		return
+	}
+	if !group.ValidName(name) {
+		name = defaultName(role, dev)
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
+	if err != nil {
+		s.logf("clipbridge: recording %s in the devices list: %v", dev, err)
+		return
+	}
+	s.publish(nd, r)
+}
+
+// recordAdmitted records a computer that a pairing window admitted.
+func (s *Service) recordAdmitted(res *pair.Result) {
+	role := group.RoleLinux
+	if res.Info.OS == "darwin" {
+		role = group.RoleMac
+	}
+	s.recordDevice(res.Device, res.Info.Name, role, group.KeyHashOf(res.Cert))
+}
+
+// recordPhone records an iPhone that paired for the shortcut.
+func (s *Service) recordPhone(phoneID string) {
+	raw, err := hex.DecodeString(phoneID)
+	if err != nil {
+		return
+	}
+	s.recordDevice(group.DeviceID(phoneID), "iPhone", group.RoleIPhone, group.PhoneKeyHash(raw))
+}
+
+// defaultName names a device that has no valid name: its role and the start
+// of its ID.
+func defaultName(role string, dev group.DeviceID) string {
+	return role + " " + string(dev)[:min(8, len(dev))]
+}
+
+// roleOf maps a member role to the role in a device record.
+func roleOf(r node.Role) string {
+	switch r {
+	case node.Linux:
+		return group.RoleLinux
+	case node.Mac:
+		return group.RoleMac
+	case node.Phone:
+		return group.RolePhone
+	}
+	return group.RoleLite
+}
+
+// ensureListed records this member, and the connected peers, in the devices
+// list when they are not in it yet, as in a group made before the list
+// existed. Only a member that holds the group CA key does.
+func (s *Service) ensureListed() {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || nd == nil || id.GroupCA.Key == nil {
+		return
+	}
+	s.recMu.Lock()
+	listed := map[group.KeyHash]bool{}
+	for _, d := range s.records.Devices() {
+		listed[d.Key] = true
+	}
+	s.recMu.Unlock()
+	var rs []group.Record
+	add := func(dev group.DeviceID, name, role string, key group.KeyHash) {
+		if listed[key] {
+			return
+		}
+		if !group.ValidName(name) {
+			name = defaultName(role, dev)
+		}
+		r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
+		if err != nil {
+			s.logf("clipbridge: recording %s in the devices list: %v", dev, err)
+			return
+		}
+		rs = append(rs, r)
+	}
+	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), group.KeyHashOf(id.Cert))
+	for _, p := range nd.Peers() {
+		add(p.ID, p.Name, roleOf(p.Role), p.Key)
+	}
+	if len(rs) > 0 {
+		s.publish(nd, rs...)
+	}
+}
+
+// trackSeen notes when the connected peers were last seen.
+func (s *Service) trackSeen(peers []node.Peer) {
+	now := s.cfg.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	online := map[group.DeviceID]bool{}
+	for _, p := range peers {
+		online[p.ID] = true
+		s.seen[p.ID] = now
+	}
+	for id := range s.online {
+		if !online[id] {
+			s.seen[id] = now // it was there until now
+		}
+	}
+	s.online = online
+}
+
+// devices returns the devices list as clipbridge devices shows it: the
+// devices in the records, then this device and the connected peers that
+// are not in them yet.
+func (s *Service) devices() ([]control.Device, error) {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	seen := make(map[group.DeviceID]time.Time, len(s.seen))
+	for k, v := range s.seen {
+		seen[k] = v
+	}
+	s.mu.Unlock()
+	if id == nil || nd == nil {
+		return nil, s.errNoGroup()
+	}
+	peers := map[group.DeviceID]node.Peer{}
+	for _, p := range nd.Peers() {
+		peers[p.ID] = p
+	}
+	s.recMu.Lock()
+	list := s.records.Devices()
+	s.recMu.Unlock()
+
+	// In a group a computer created, every Linux member holds the CA keys.
+	computerGroup := id.GroupCA.Cert.MaxPathLen == 0
+	now := s.cfg.now()
+	var out []control.Device
+	shown := map[group.DeviceID]bool{}
+	entry := func(dev group.DeviceID, name, role string, admin, listed bool) {
+		d := control.Device{ID: string(dev), Name: name, Role: role, Listed: listed, Self: dev == id.ID}
+		d.Admin = admin || (computerGroup && role == group.RoleLinux)
+		if _, ok := peers[dev]; ok || d.Self {
+			d.Online, d.LastSeenMS = true, now.UnixMilli()
+		} else if t, ok := seen[dev]; ok {
+			d.LastSeenMS = t.UnixMilli()
+		}
+		if d.Self {
+			d.Admin = id.Admin()
+		}
+		out = append(out, d)
+		shown[dev] = true
+	}
+	for _, d := range list {
+		entry(d.ID, d.Name, d.Role, d.Admin, true)
+	}
+	if !shown[id.ID] {
+		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), false, false)
+	}
+	for _, p := range nd.Peers() {
+		if !shown[p.ID] {
+			entry(p.ID, p.Name, roleOf(p.Role), false, false)
+		}
+	}
+	return out, nil
+}
+
+// revoke removes a device, named by its device ID or its name, from the
+// group: it signs a revocation of its key, which spreads to every member.
+func (s *Service) revoke(target string) (string, error) {
+	devs, err := s.devices()
+	if err != nil {
+		return "", err
+	}
+	var match []control.Device
+	for _, d := range devs {
+		if d.ID == target {
+			match = []control.Device{d}
+			break
+		}
+		if strings.EqualFold(d.Name, target) {
+			match = append(match, d)
+		}
+	}
+	switch {
+	case len(match) == 0:
+		return "", fmt.Errorf("no device %q in the group; clipbridge devices lists them", target)
+	case len(match) > 1:
+		var ids []string
+		for _, d := range match {
+			ids = append(ids, d.ID)
+		}
+		return "", fmt.Errorf("several devices are named %q; name one by its ID: %s", target, strings.Join(ids, ", "))
+	}
+	d := match[0]
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	switch {
+	case id.GroupCA.Key == nil:
+		return "", errNotAdmin
+	case d.Self:
+		return "", errors.New("a device cannot remove itself; run clipbridge revoke on another member")
+	case d.Role == group.RoleLinux && id.GroupCA.Cert.MaxPathLen == 0:
+		return "", errors.New("a Linux member holds the group's keys, so removing it needs a new group; this is not supported yet")
+	}
+	key, ok := s.keyOf(group.DeviceID(d.ID), nd)
+	if !ok {
+		return "", fmt.Errorf("the key of %s is unknown", d.ID)
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{key}})
+	if err != nil {
+		return "", err
+	}
+	s.publish(nd, r)
+	s.logf("clipbridge: removed %s (%s) from the group", d.Name, d.ID)
+	return d.Name, nil
+}
+
+// keyOf returns the key of a device: from its record, or from its
+// connection when it has none.
+func (s *Service) keyOf(dev group.DeviceID, nd *node.Node) (group.KeyHash, bool) {
+	s.recMu.Lock()
+	list := s.records.Devices()
+	s.recMu.Unlock()
+	for _, d := range list {
+		if d.ID == dev {
+			return d.Key, true
+		}
+	}
+	for _, p := range nd.Peers() {
+		if p.ID == dev {
+			return p.Key, true
+		}
+	}
+	return group.KeyHash{}, false
+}
+
+// PhoneRevoked reports whether the iPhone with this phone ID was removed.
+func (g phoneGroup) PhoneRevoked(phoneID string) bool {
+	raw, err := hex.DecodeString(phoneID)
+	if err != nil {
+		return true
+	}
+	g.s.recMu.Lock()
+	defer g.s.recMu.Unlock()
+	return g.s.records != nil && g.s.records.Revoked(group.PhoneKeyHash(raw))
+}

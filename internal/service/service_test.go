@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1227,5 +1228,76 @@ func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	}
 	if _, err := box.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil {
 		t.Error("a member without CA keys paired an iPhone")
+	}
+}
+
+func (s *testService) devices(t *testing.T) []control.Device {
+	t.Helper()
+	m, err := s.do(t, control.Header{Op: control.OpDevices}, "")
+	if err != nil {
+		t.Fatalf("devices on %s: %v", s.name, err)
+	}
+	return m.Devices
+}
+
+// listed returns the names of the listed devices, sorted.
+func listed(devs []control.Device) string {
+	var names []string
+	for _, d := range devs {
+		if d.Listed {
+			names = append(names, d.Name)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, " ")
+}
+
+func TestDevicesAndRevoke(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	mac := startRole(t, &h, "mac", node.Mac)
+	pairWith(t, pi, deck)
+	pairWith(t, pi, mac)
+	for _, s := range []*testService{pi, deck, mac} {
+		waitFor(t, s.name+" lists every device", func() bool { return listed(s.devices(t)) == "deck mac pi" })
+	}
+	for _, d := range mac.devices(t) {
+		if want := d.Role == "linux"; d.Admin != want || !d.Online {
+			t.Errorf("on the Mac: %+v", d)
+		}
+		if d.Self != (d.Name == "mac") {
+			t.Errorf("self is wrong: %+v", d)
+		}
+	}
+
+	if _, err := mac.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "holds the group's keys") {
+		t.Errorf("revoke on the Mac: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "needs a new group") {
+		t.Errorf("revoking a Linux member: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "cannot remove itself") {
+		t.Errorf("revoking itself: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "toaster"}, ""); err == nil {
+		t.Error("revoked a device that is not there")
+	}
+	// Any Linux member holds the keys; deck removes the Mac.
+	m, err := deck.do(t, control.Header{Op: control.OpRevoke, Name: "MAC"}, "")
+	if err != nil || m.Name != "mac" {
+		t.Fatalf("revoke the Mac: %+v, %v", m, err)
+	}
+	for _, s := range []*testService{pi, deck} {
+		waitFor(t, s.name+" drops the Mac", func() bool {
+			return listed(s.devices(t)) == "deck pi" && len(s.status(t).Peers) == 1
+		})
+	}
+	waitFor(t, "the Mac is alone", func() bool { return len(mac.status(t).Peers) == 0 })
+	// The records survive a restart.
+	pi.stop()
+	pi = restartService(t, &h, pi)
+	if got := listed(pi.devices(t)); got != "deck pi" {
+		t.Errorf("after a restart the pi lists %q", got)
 	}
 }

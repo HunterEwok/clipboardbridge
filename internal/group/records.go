@@ -115,6 +115,15 @@ type Record struct {
 // ID returns the record's ID: SHA-256 over its body.
 func (r Record) ID() [sha256.Size]byte { return sha256.Sum256(r.Body) }
 
+// Type returns the type its body names, without checking the record.
+func (r Record) Type() string {
+	var b struct {
+		Type string `json:"type"`
+	}
+	json.Unmarshal(r.Body, &b)
+	return b.Type
+}
+
 // SignRecord signs body with key, the group CA key (chain empty) or an
 // admin CA key (chain holds the admin CA certificate).
 func SignRecord(body RecordBody, key *ecdsa.PrivateKey, chain ...*x509.Certificate) (Record, error) {

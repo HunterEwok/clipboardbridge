@@ -6,6 +6,7 @@ package node
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -80,14 +81,19 @@ func withTimers(ping, timeout time.Duration) option {
 	return func(_ *clip.Config, nc *Config) { nc.PingEvery, nc.Timeout = ping, timeout }
 }
 
-func newMember(t *testing.T, role Role, opts ...option) *member {
-	t.Helper()
+// ensureAdmin creates the group all test members belong to.
+func ensureAdmin() {
 	adminOnce.Do(func() {
 		var err error
 		if admin, err = group.Create(time.Now()); err != nil {
 			panic(err)
 		}
 	})
+}
+
+func newMember(t *testing.T, role Role, opts ...option) *member {
+	t.Helper()
+	ensureAdmin()
 	key, err := group.NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -759,5 +765,140 @@ func TestRoles(t *testing.T) {
 	r.send(&message{Type: typeHello, Role: "robot", Hello: json.RawMessage(`{"wall_ms":0}`)})
 	if err := wait(t, r.done, "Serve to refuse"); err == nil {
 		t.Error("Serve accepted an unknown role")
+	}
+}
+
+// recordStore is a RecordStore over group.Records, with Allow refusing what
+// the records refuse and the records added reported on a channel.
+type recordStore struct {
+	mu    sync.Mutex
+	s     *group.Records
+	added chan int
+	node  func() *Node
+}
+
+func newRecordStore() *recordStore {
+	ensureAdmin()
+	return &recordStore{s: group.NewRecords(admin.GroupCA.Cert), added: make(chan int, 64)}
+}
+
+func (r *recordStore) Digest() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.s.Digest()
+}
+
+func (r *recordStore) All() []group.Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.s.All()
+}
+
+func (r *recordStore) Add(_ group.DeviceID, rs []group.Record) []group.Record {
+	r.mu.Lock()
+	var fresh []group.Record
+	for _, rec := range rs {
+		if ok, err := r.s.Add(rec); ok && err == nil {
+			fresh = append(fresh, rec)
+		}
+	}
+	r.mu.Unlock()
+	if len(fresh) > 0 {
+		r.node().Recheck()
+	}
+	r.added <- len(fresh)
+	return fresh
+}
+
+func (r *recordStore) allow(_ group.DeviceID, chain []*x509.Certificate) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.s.Refused(chain)
+}
+
+func withRecords(r *recordStore) option {
+	return func(_ *clip.Config, nc *Config) { nc.Records, nc.Allow = r, r.allow }
+}
+
+func (m *member) record(t *testing.T, body group.RecordBody) group.Record {
+	t.Helper()
+	body.Group = group.Tag(admin.GroupCA.Cert)
+	r, err := group.SignRecord(body, admin.GroupCA.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// TestRecordsSpread links a, b and c in a chain: records a holds reach c
+// through b, and a revocation of c closes b's connection to it.
+func TestRecordsSpread(t *testing.T) {
+	stores := []*recordStore{newRecordStore(), newRecordStore(), newRecordStore()}
+	var ms []*member
+	for _, st := range stores {
+		m := newMember(t, Linux, withRecords(st))
+		st.node = func() *Node { return m.Node }
+		ms = append(ms, m)
+	}
+	a, b, c := ms[0], ms[1], ms[2]
+	key := group.KeyHashOf(a.id.Cert)
+	dev := a.record(t, group.RecordBody{Type: group.RecordDevice, Device: a.id.ID, Name: "a", Role: group.RoleLinux, Key: &key})
+	stores[0].Add("", []group.Record{dev})
+	<-stores[0].added
+
+	_, bcDone := link(t, b, c)
+	link(t, a, b)
+	for i, st := range stores[1:] {
+		select {
+		case n := <-st.added:
+			if n != 1 {
+				t.Fatalf("store %d added %d records, want 1", i+1, n)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("store %d got no records", i+1)
+		}
+	}
+	if stores[2].Digest() != stores[0].Digest() {
+		t.Fatal("c's records differ from a's")
+	}
+
+	revoke := a.record(t, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{group.KeyHashOf(c.id.Cert)}})
+	stores[0].Add("", []group.Record{revoke})
+	<-stores[0].added
+	a.SendRecords([]group.Record{revoke})
+	if err := wait(t, bcDone, "c's connection on b's side"); err != nil {
+		t.Logf("c's connection ended with %v", err)
+	}
+	// c can no longer connect to b. In TLS 1.3 the client's handshake ends
+	// before the server checks its certificate, so b's side tells.
+	_, bDone := link(t, c, b)
+	if err := wait(t, bDone, "b's side of c's new connection"); err == nil {
+		t.Error("the revoked c connected again")
+	}
+}
+
+func TestChunkRecords(t *testing.T) {
+	big := group.Record{Body: make([]byte, 6<<10), Sig: make([]byte, 72)}
+	rs := make([]group.Record, 400) // about 3.3 MB encoded
+	for i := range rs {
+		rs[i] = big
+	}
+	chunks := chunkRecords(rs)
+	total := 0
+	for _, c := range chunks {
+		f, err := frame(&message{Type: typeRecs, Records: c})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(f) > recordsChunk*5/4 {
+			t.Errorf("a chunk of %d records takes %d bytes", len(c), len(f))
+		}
+		total += len(c)
+	}
+	if total != len(rs) || len(chunks) < 3 {
+		t.Errorf("%d records in %d chunks", total, len(chunks))
+	}
+	if chunkRecords(nil) != nil {
+		t.Error("no records make a chunk")
 	}
 }

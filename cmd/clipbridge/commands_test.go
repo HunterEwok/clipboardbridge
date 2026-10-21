@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/clipbridge/internal/control"
 )
@@ -166,5 +167,21 @@ func TestJoinWithThePhone(t *testing.T) {
 	stdout.Reset()
 	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "no address") {
 		t.Errorf("join without an address: %d, %s", code, stderr.String())
+	}
+}
+
+func TestWriteDevices(t *testing.T) {
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	var b bytes.Buffer
+	writeDevices(&b, []control.Device{
+		{ID: "a1", Name: "pi", Role: "linux", Admin: true, Online: true, Self: true, Listed: true},
+		{ID: "b2", Name: "mac", Role: "mac", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true},
+		{ID: "c3", Name: "deck", Role: "linux"},
+	}, now)
+	out := b.String()
+	for _, want := range []string{"pi (this device)", "online", "5 min ago", "deck *", "not in the devices list yet"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
 	}
 }

@@ -610,8 +610,8 @@ Every app and the command line show it:
   an admin mark, whether it is online now and when this phone last saw it; on an admin phone
   each row has "Remove".
 - The command line on Linux and the Mac: `clipbridge devices` prints the same list;
-  `clipbridge revoke <name or ID>` removes a device where the device is an admin (a Linux
-  member in a group that a computer created) or asks a connected admin to.
+  `clipbridge revoke <name or ID>` removes a device; it runs where the device is an admin (a
+  Linux member in a group that a computer created; on a Mac, the command says so).
 - The Windows connector and later apps show the same list from the same records.
 
 **Revoking a device.** An admin signs a revocation record naming the device's keys: its

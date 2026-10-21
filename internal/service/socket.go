@@ -132,6 +132,20 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		s.join(ctx, c, r, m)
 	case control.OpWatch:
 		s.watch(ctx, c, r, m)
+	case control.OpDevices:
+		devs, err := s.devices()
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Devices: devs, Done: true}, nil)
+	case control.OpRevoke:
+		name, err := s.revoke(m.Name)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: name, Done: true}, nil)
 	default:
 		fail(c, fmt.Errorf("unknown operation %q", m.Op))
 	}
@@ -349,6 +363,7 @@ func (s *Service) windowResult(w *pair.Window) (*pair.Result, error) {
 		return nil, fmt.Errorf("%s got its certificate but did not confirm that it stored it; check it with clipbridge status there, and pair it again if needed", res.Info.Name)
 	}
 	s.logf("clipbridge: %s (%s) joined the group", res.Info.Name, res.Device)
+	s.recordAdmitted(res)
 	return res, nil
 }
 
