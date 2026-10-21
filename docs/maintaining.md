@@ -1,10 +1,11 @@
 # Maintaining
 
-Settings and routines that live outside the repository files. Only the owner can change them.
+Settings and routines that live outside the repository files. Only the owner can change them;
+a checked box means the setting is in place.
 
 ## Account
 
-- [ ] Two-factor authentication on the GitHub account, preferably with a passkey or a
+- [x] Two-factor authentication on the GitHub account, preferably with a passkey or a
   security key. This protects the repository more than any setting below.
 - [ ] Optional: sign commits with an SSH key (`git config gpg.format ssh`) and add the key
   to GitHub as a signing key, so commits show as Verified.
@@ -13,55 +14,77 @@ Settings and routines that live outside the repository files. Only the owner can
 
 **Settings → General**
 
-- [ ] Features: turn off Wiki and Projects; keep Issues.
-- [ ] Pull Requests: allow only **squash merging**; turn on **Automatically delete head
-  branches**.
-- [ ] Releases: turn on **release immutability**, if the setting is available.
+- [x] Features: Wiki and Projects off; Issues on.
+- [x] Pull Requests: only **squash merging**; **Automatically delete head branches** on.
+- [x] Releases: **release immutability** on.
 
-**Settings → Moderation options → Reported content**
+**Settings → Moderation**
 
-- [ ] Accept content reports from **all users**. [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
-  sends reports this way, so no email address is published.
+- Interaction limits are for a temporary cool-down only and are normally off.
+- Conduct reports go to GitHub Support through **Report content**, as
+  [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) says. A repository of a personal account has no
+  option to send reports to the repository admins, and no email address is published.
 
 **Settings → Advanced Security** (named Code security on some accounts)
 
-- [ ] **Private vulnerability reporting**: enable. [SECURITY.md](../SECURITY.md) relies on it.
-- [ ] **Dependency graph**, **Dependabot alerts** and **Dependabot security updates**: enable.
-- [ ] **Secret scanning** and **Push protection**: enable.
-- [ ] **CodeQL** default setup: enable once the repository contains Go code.
+- [x] **Private vulnerability reporting**. [SECURITY.md](../SECURITY.md) relies on it.
+- [x] **Dependency graph**, **Dependabot alerts** and **Dependabot security updates**.
+- [x] **Secret scanning** and **Push protection**.
+- [ ] **CodeQL** default setup: enable once Go code is on `main`.
 
 **Settings → Actions → General**
 
-- [ ] Workflow permissions: **Read repository contents and packages permissions**.
-- [ ] Turn off **Allow GitHub Actions to create and approve pull requests**.
-- [ ] Fork pull request workflows: **Require approval for all external contributors**.
+- [x] Workflow permissions: **Read repository contents and packages permissions**.
+- [x] **Allow GitHub Actions to create and approve pull requests** off.
+- [x] Fork pull request workflows: **Require approval for all external contributors**.
 
-**Settings → Rules → Rulesets → New branch ruleset**: name `main`, enforcement Active,
-target the default branch.
+**Settings → Rules → Rulesets**
 
-- [ ] Restrict deletions and block force pushes.
-- [ ] Require linear history.
-- [ ] Require a pull request before merging, with 0 required approvals: a single maintainer
-  cannot approve their own pull request.
-- [ ] Require status checks to pass, once CI exists.
-- [ ] Leave the bypass list empty.
+Branch ruleset **Production Branch Protection** (made from the GitHub template), active,
+targeting the default branch:
 
-**Settings → Rules → Rulesets → New tag ruleset**: name `releases`, target `v*`.
+- [x] Restrict deletions and block force pushes.
+- [x] Require linear history.
+- [x] Require a pull request before merging: 0 required approvals and **Require extra
+  approval for unattributed changes** off, because a single maintainer cannot approve their
+  own pull request; squash is the only merge method.
+- [x] Require the status check `ci-ok` from the GitHub Actions app, with the branch up to date
+  before merging. `ci-ok` is the last job of [the CI workflow](../.github/workflows/ci.yml)
+  and passes only when every other job passed, so CI jobs can change without touching the
+  ruleset.
+- [x] Bypass list empty.
 
-- [ ] Restrict creations, updates and deletions, and block force pushes, so release tags
-  cannot be moved.
+Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 
-## CI rules
+- [x] Restrict updates and deletions, and block force pushes, so a release tag cannot be
+  moved. Creation stays allowed: with an empty bypass list, restricting it would block every
+  release.
 
-For the workflows added together with the first Go code:
+## CI
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull request and on
+`main`:
+
+- **check**: `gofmt`, `go mod tidy`, `go mod verify`, `go vet`, `staticcheck`,
+  `govulncheck`, `actionlint` for the workflows, and
+  [the repository rules](../tools/repocheck/main.go) (English only, license header in Go
+  files);
+- **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
+- **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
+  ARMv6 for the Raspberry Pi Zero W;
+- **ci-ok**: the summary that the ruleset requires.
+
+Rules for workflows:
 
 - Pin every action to a full commit SHA, with the version in a comment; Dependabot updates
   them.
 - Set `permissions: contents: read` at the workflow level; grant more to a single job only
   when it needs it.
+- Check out with `persist-credentials: false`.
 - Pull request workflows get no secrets.
-- Checks: `gofmt`, `go vet`, `staticcheck`, `govulncheck`, tests, the cross builds for
-  every target, and a check that the repository text is in English.
+- Tools such as `staticcheck`, `govulncheck` and `actionlint` are pinned in `go.mod` and run
+  with `go tool`. Go records them as indirect requirements, so `.github/dependabot.yml` allows
+  them by name; otherwise Dependabot would never update them.
 
 ## Releases
 

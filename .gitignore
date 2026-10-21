@@ -1,4 +1,5 @@
 # Build output
+/clipbridge
 /bin/
 /dist/
 *.exe
