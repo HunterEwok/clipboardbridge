@@ -462,6 +462,24 @@ The order may change.
     Rust member among Go members.
 12. Sync away from home; see "Sync away from home (planned)" below.
 
+### Future research (not planned)
+
+Questions to study before anything is planned for them.
+
+- **Very small and retro computers through a gateway**, for example the ZX Spectrum Next
+  (Z80 at 28 MHz, Wi-Fi through an ESP8266 driven by AT commands, programs in C with z88dk).
+  TLS 1.3 with P-256 is out of reach there, so a Linux member acts as a gateway with a
+  simpler protocol: pairing with the six-digit code derives a key shared by the gateway and
+  the device, and every text travels encrypted and authenticated with ChaCha20-Poly1305
+  over plain TCP. The gateway turns those messages into ordinary events. The same protocol
+  would serve any device too weak for the member protocol. To study: the cost of the
+  key derivation and the cipher on a Z80, the AT command TCP mode of the ESP8266, and how
+  the gateway names such devices in the devices list.
+- **Arduino and other microcontrollers** with the same gateway protocol: AVR boards with a
+  Wi-Fi or Ethernet module, for example to show or type the clipboard. Boards built on the
+  ESP32 may manage TLS 1.3 with P-256 themselves and could become lite members instead; to
+  be measured.
+
 ## Sync away from home (planned)
 
 The group's certificates stay the only identity of devices, and every text stays end to end
