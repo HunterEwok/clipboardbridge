@@ -799,7 +799,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA certificate, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
 
@@ -814,18 +814,23 @@ Validity and evaluation, which depend only on the set of records, never on their
 2. The **revoked set** is the union of `keys` of every `revoke` record signed by an admin,
    including records whose signer is itself revoked. So two admins that revoke each other
    are both revoked.
-3. A `device` or `root` record counts only when its signer's key is not revoked.
+3. A `device` or `root` record counts only when its signer's key is not revoked; a
+   `device` record also counts when every record that revoked its signer keeps the
+   device's key, so the devices a removed admin admitted stay in the list.
 4. A certificate is refused when its key is revoked, or when its issuer is an admin CA
-   whose key is revoked and its key is not in the `keep` of a record that revoked that
-   admin CA.
+   whose key is revoked and not every record that revoked that admin CA keeps the
+   certificate's key.
 5. A `root` record signed under the current root replaces the group CA: the member trusts
    the new root alone, keeps its records (re-signed records are not needed, since records
    are checked against the root they were signed under, which the member keeps as history),
    and expects new certificates from an admin. When two valid `root` records exist under the
    same root, the one whose new root certificate has the smaller SHA-256 wins.
 
-The devices list is the `device` records that count, less the revoked keys; a device is an
-admin when its record names an admin CA whose key is not revoked. A Linux member that holds
+The devices list is, for each device, the `device` record that counts with the largest
+`time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
+record names an admin CA whose key is not revoked. Source: `internal/group/records.go`
+(the records, their evaluation and the file; their exchange and the control operations are
+not implemented yet). A Linux member that holds
 the CA keys is an admin in a group a computer created.
 
 ### Exchange in the member protocol

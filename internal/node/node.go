@@ -66,7 +66,7 @@ type Config struct {
 	OnCert func(der []byte) error
 
 	// Allow, if set, rejects peers, for example revoked devices.
-	Allow func(group.DeviceID) error
+	Allow func(group.DeviceID, []*x509.Certificate) error
 
 	PingEvery time.Duration        // defaultPingEvery if zero
 	Timeout   time.Duration        // defaultTimeout if zero
