@@ -262,3 +262,24 @@ func TestAdmit(t *testing.T) {
 		t.Errorf("a valid request: %+v, admitted %v", rep, admitted)
 	}
 }
+
+func TestJoinQR(t *testing.T) {
+	if got := JoinQR("012345"); got != "clipbridge://join?code=012345" {
+		t.Errorf("JoinQR = %q", got)
+	}
+	for in, want := range map[string]string{
+		JoinQR("246802"):                              "246802",
+		" clipbridge://join?code=135790\n":            "135790",
+		"CLIPBRIDGE://JOIN?code=111111":               "111111",
+		"clipbridge://join?code=222222&addr=10.0.0.2": "222222",
+	} {
+		if code, ok := ParseJoinQR(in); !ok || code != want {
+			t.Errorf("ParseJoinQR(%q) = %q, %v", in, code, ok)
+		}
+	}
+	for _, in := range []string{"", "123456", "clipbridge-join:123456", "clipbridge://pair?code=1", "clipbridge://join", "https://join/?code=1"} {
+		if code, ok := ParseJoinQR(in); ok {
+			t.Errorf("ParseJoinQR(%q) = %q, true", in, code)
+		}
+	}
+}

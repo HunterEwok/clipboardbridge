@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -130,7 +131,7 @@ func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handl
 			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipbridge; install it again"})
 			return
 		}
-		code, ok := strings.CutPrefix(strings.TrimSpace(req.Code), joinPrefix)
+		code, ok := ParseJoinQR(req.Code)
 		if !ok {
 			reply(syncReply{Direction: "error", Message: "this is not the QR code of clipbridge join"})
 			return
@@ -143,11 +144,24 @@ func AdmitHandler(ca func() *group.CA, admit func(code string) error) http.Handl
 	})
 }
 
-// joinPrefix starts the text of the QR code that clipbridge join shows.
-const joinPrefix = "clipbridge-join:"
+// JoinQR returns the text of the QR code that clipbridge join shows: a URL,
+// clipbridge://join?code=123456, so that the shortcut and the phone apps
+// read the same code, and later fields (the computer's address) can be
+// added without breaking either.
+func JoinQR(code string) string {
+	return (&url.URL{Scheme: "clipbridge", Host: "join", RawQuery: url.Values{"code": {code}}.Encode()}).String()
+}
 
-// JoinQR returns the text of the QR code for a joining computer's code.
-func JoinQR(code string) string { return joinPrefix + code }
+// ParseJoinQR returns the code in the text of a join QR code, and whether
+// the text is one. Unknown query fields are ignored.
+func ParseJoinQR(s string) (code string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || !strings.EqualFold(u.Scheme, "clipbridge") || !strings.EqualFold(u.Host, "join") {
+		return "", false
+	}
+	code = u.Query().Get("code")
+	return code, code != ""
+}
 
 // bearer returns the token of an Authorization header: "Bearer cb1.…" in
 // any case, or the bare token, as a shortcut built by hand may send it.
