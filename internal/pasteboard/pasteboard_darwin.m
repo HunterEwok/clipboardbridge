@@ -94,13 +94,13 @@ long cb_write(const char *name, const char *text, long len, int secret) {
 		}
 		if (secret) {
 			// A secret stays on this Mac: no Universal Clipboard, and the
-			// marker tells clipboard histories to skip it.
+			// marker tells clipboard histories to skip it. No declareTypes
+			// here: it clears the contents again, and with them the
+			// current-host-only option.
 			[pb prepareForNewContentsWithOptions:NSPasteboardContentsCurrentHostOnly];
-			[pb declareTypes:@[NSPasteboardTypeString, @"org.nspasteboard.ConcealedType"] owner:nil];
 			[pb setString:@"" forType:@"org.nspasteboard.ConcealedType"];
 		} else {
 			[pb clearContents];
-			[pb declareTypes:@[NSPasteboardTypeString] owner:nil];
 		}
 		if (![pb setString:s forType:NSPasteboardTypeString]) {
 			return -1;
