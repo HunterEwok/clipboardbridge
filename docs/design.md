@@ -469,20 +469,22 @@ encrypted between the members; nothing below may change that.
 1. **By address.** Members configured by address, for example the home Linux member's address
    in a WireGuard or Tailscale/Headscale network, where mDNS does not reach, and a guide for
    such a VPN. No server of ours; data goes straight between the user's devices.
-2. **A relay, self-hosted or offered as a service.** `clipbridge relay` is one small program
-   that the user runs (on the home Linux member with a forwarded port, or a small server), or
-   that an operator runs for many users. A member keeps one outgoing connection to it and asks
-   to be joined to another member of its group by device ID; the relay then splices the two
-   byte streams. The member protocol runs inside, unchanged: the members' own mutual TLS 1.3
-   with their member certificates, so the relay sees only ciphertext and needs no keys. To
-   use the relay, a member authenticates with its member certificate, which the relay checks
-   against the group CA certificate (public) registered for the group; it learns device IDs,
-   group tags, addresses and traffic timing, never a text.
-3. **Accounts only at a hosted relay, and only for the operator.** An operator who serves
-   other people needs accounts for billing, quotas and abuse handling: an e-mail address or a
-   passkey, the group tags and group CA certificates registered, a quota. The account is not
-   an identity in the group and cannot read or add anything: admitting devices stays with
-   the group's own CA (the phone, in the target architecture).
+2. **A relay, self-hosted or offered as a free service.** `clipbridge relay` is one small
+   program that the user runs (on the home Linux member with a forwarded port, or a small
+   server), or that an operator runs for anyone, free of charge. A member keeps one outgoing
+   connection to it and asks to be joined to another member of its group by device ID; the
+   relay then splices the two byte streams. The member protocol runs inside, unchanged: the
+   members' own mutual TLS 1.3 with their member certificates, so the relay sees only
+   ciphertext and needs no keys. It learns device IDs, group tags, addresses and traffic
+   timing, never a text.
+3. **No accounts.** A member presents its member certificate with the group CA certificate
+   to the relay; the relay checks the signature and knows the group by its tag, the hash of
+   the CA certificate. A group needs no registration, and the relay stores nothing on disk:
+   its state is the open connections. Abuse is bounded by limits, not by identities: devices
+   per group (16), connections per address, the size of a frame (as in the member protocol)
+   and bytes per group per minute, and idle connections closed. A private relay can instead
+   admit only the group tags in its configuration. Admitting devices stays with the group's
+   own CA (the phone, in the target architecture); the relay can add nobody.
 4. **Waking a closed iPhone app** needs Apple push notifications, which only a server with
    the developer account's key can send. The relay can send a silent push carrying nothing
    but "connect" to a phone it holds a push token for; it comes last, if at all.
