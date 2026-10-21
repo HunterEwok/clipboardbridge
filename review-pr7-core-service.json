@@ -1,0 +1,471 @@
+{
+ "confirmed": [
+  {
+   "file": "internal/service/socket.go",
+   "line": 293,
+   "severity": "high",
+   "dimension": "security",
+   "summary": "join tries every address of every peer that announces p=1, reusing the same code, and stops only when a peer answers wrong-code. Any host on the LAN can announce fake pairing windows and get one CPace guess per address, so the design's limit of three guesses per window does not hold on the joining side.",
+   "failure_scenario": "A host on the home network multicasts 64 fake instances (maxPeers) with TXT p=1 and device IDs that sort before the real member's. They can all point at one cb-<id>.local carrying hundreds of link-local or ULA AAAA records (the cache keeps up to ~1024 records), and findPairing does not dedupe across peers. The user runs `clipbridge join` and types the code. On each connection the fake plays the CPace responder with a guessed code, receives the joiner's confirmation tag (sent first), checks its guess, then answers {\"error\":\"busy\"}. Because that is not ErrWrongCode, the loop moves on to the next address. I ran a probe test in a scratch copy (/private/tmp/claude-501/-Users-ewok-Library-Application-Support-Claude-scratch-workspaces-d047aa96-ed95-4f50-abbd-04c47bb51584-e4f27988-0663-42fc-b737-c220a021d7d5-scratch-2026-10-21-9b6d25/5e13887c-7238-40fd-8377-019609ff635c/scratchpad/zz-main-drafts/agents-pr7/a1/probes/zz_sec_test.go): with 64 fake peers on a single address, one join handed out 64 verifiable guesses in 0.09 s and the fake recovered the code. With many addresses this reaches thousands of guesses per join, a percent-level chance. A fake that guesses right either sends a welcome for its own group, so the device joins the attacker's group, or answers wrong-code to stop the joiner and then uses the code at the real window, which has seen no failures, and joins the real group as a Linux device holding the CA keys. The loop also has no overall deadline and ignores client hang-up, so guesses keep going after Ctrl+C. Separately, a single fake that answers wrong-code at once blocks every join that has no address.",
+   "suggested_fix": "Use only one announced member per join, and count any attempt that got past the CPace exchange (the joiner sent its tag) as the attempt for this code: stop after it unless the error came before CPace started (dial or TLS failure, busy before the first reply). If more than one device announces p=1, refuse and ask for the address shown by pair, or show the candidates' device IDs. Cap the total attempts at pair.MaxFailures, put a deadline on the whole join, and cancel it when the control client hangs up."
+  },
+  {
+   "file": "internal/connector/connector.go",
+   "line": 132,
+   "severity": "medium",
+   "dimension": "security",
+   "summary": "The connector sends via \"universal\" for Universal Clipboard items, but clip.Via accepts only \"copy\", \"iphone\" and \"universal-clipboard\". The service's watch loop (socket.go:393-396) silently drops these reports, so a concealed item that arrived through Universal Clipboard is never recorded as a secret.",
+   "failure_scenario": "On a Mac, a password manager's concealed item arrives through Universal Clipboard. connector.report sends OpClipboard kind=secret via=universal. parseKind fails and the service hits `continue`, so engine.ClipboardIs never records the text in secret memory. Later a clipboard manager, or the user, offers the same text without the concealed mark. The agent sends OpCopied kind=text, engine.Copied finds no secret memory and makes a normal Text event. The password then goes to every member as plain text: written to Linux clipboards (and their histories), returned by paste, and never expired after 60 s. I reproduced this in the scratch copy with the same probe test file: the peer received \"hunter2\" with kind \"text\". With via=\"universal-clipboard\" the same sequence is blocked. Ordinary Universal Clipboard copies are dropped as well. The control.go Header comment lists the same wrong names (\"phone\", \"universal\").",
+   "suggested_fix": "Send the clip.Via text names (\"universal-clipboard\", \"iphone\") from the connector, ideally from shared constants or Via.MarshalText instead of string literals. Fix the comment on control.Header.Via. Have the service fail or log a report it cannot parse instead of silently skipping it. Add a connector-to-service test for a Remote secret item."
+  },
+  {
+   "file": "internal/service/service.go",
+   "line": 262,
+   "severity": "medium",
+   "dimension": "security",
+   "summary": "The member-port accept loop (and serveControl in socket.go:44-47) returns on the first Accept error of any kind, with no limit on concurrent unauthenticated connections. A LAN host that drives the process into EMFILE or ENFILE stops the member port, and the control socket if a client connects meanwhile, until the service restarts.",
+   "failure_scenario": "A host on the home network opens TCP connections to the advertised member port and sends nothing. Each one holds a descriptor and a goroutine for the 10 s handshake timeout, or up to 40 s while a pairing window is open, and nothing caps how many. Once the process reaches its descriptor limit, Accept returns \"too many open files\" and s.accept returns. Its deferred stop() also cancels the AfterFunc, so the listener is never closed. The port stays bound and advertised over mDNS, but nothing accepts any more: members cannot reconnect after sleep and pairing fails, even after the flood ends. I reproduced this in the scratch copy (probes/zz_flood_test.go) with RLIMIT_NOFILE set to 256 and 400 idle connections. The loop ended with \"accept: too many open files\", and after the descriptors were free again the port no longer completed TLS handshakes. On a small device, memory runs out from the unbounded per-connection goroutines even before the descriptor limit.",
+   "suggested_fix": "In both accept loops, return only on net.ErrClosed or a done context. For other errors, log, sleep with a growing backoff (as net/http does) and continue. Bound concurrent pre-handshake connections on the member port with a semaphore (for example 32 to 64), closing any connection above the bound at once, and optionally limit connections per source address."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 139,
+   "severity": "medium",
+   "dimension": "security",
+   "summary": "pair tells the user to run `clipbridge join <code> <address>`, and join accepts the code as a command-line argument. On the joining machine every local user can read argv through ps or /proc. Combined with holding the pairing window busy, a local user without the clipbridge group can take the pairing.",
+   "failure_scenario": "On a multi-user Linux machine that is about to join, a local user without the clipbridge group polls /proc/*/cmdline. They also connect to the admin's member port, which accepts any home or loopback address, as soon as TXT p=1 appears, and complete the TLS handshake with pair ALPN. Window.Serve acquires the attempt and waits up to 30 s for the first frame. Reconnecting every 30 s, this costs no failures because the attempt never started. The owner runs `clipbridge join 123456 192.168.1.5` as printed. Their attempt gets ErrBusy, or, without an address, loses the race while the service browses mDNS. Meanwhile the attacker reads 123456 from argv and sends the CPace message on the held connection with OS \"linux\" and the owner's device name. The attacker is admitted with the group CA and iPhone CA keys, and the admin's terminal shows the expected name joining. The code also ends up in shell history.",
+   "suggested_fix": "Never take the code from argv: always prompt for it on the terminal, or read it from stdin. Change the usage to `clipbridge join [address]` and have pair print `clipbridge join <address>`. If a non-interactive form is needed for tests, read the code from stdin or an environment variable rather than an argument."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 33,
+   "severity": "low",
+   "dimension": "security",
+   "summary": "listenControl creates the socket with the process umask and narrows it to 0660 only after net.Listen, using os.Chmod, which follows symlinks. The socket is live with broader permissions for a moment, and connections made in that gap stay authorized.",
+   "failure_scenario": "If the service runs with UMask=0000, for example started from a root shell, in a container, or under a unit that sets UMask=0, the socket exists as srwxrwxrwx between Listen and Chmod. A local user without the group who loops connect() on /run/clipbridge/control.sock wins the race at a service start or restart. That user then keeps a connection that can watch (receiving every write, secrets included), paste, or pair, since permissions are checked only at connect. Chmod by path also changes a symlink's target if the socket was swapped in between. That requires a writable socket directory, which is not the default, but the -socket flag and CLIPBRIDGE_SOCKET allow other locations.",
+   "suggested_fix": "Make the socket's permissions correct before it is reachable. Either set syscall.Umask(0o117) around net.Listen at startup (before other goroutines create files) and restore it, or bind to a temporary name in a directory only the service can write, chmod it, then rename it over the final path. Optionally refuse to start if the socket's parent directory is writable by group or others."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 99,
+   "severity": "high",
+   "dimension": "correctness",
+   "summary": "found() starts a dialer once per device ID and never gives it new addresses or a new port: while the peer stays in the discovery results, the dialer keeps redialing the address:port list it got first.",
+   "failure_scenario": "A Linux member B with the higher ID crashes and systemd restarts it, or it restarts within the 1 s goodbye window. Its member port is chosen at random (':0'), so the new SRV record has a new port. Because the PTR record is refreshed, B never leaves the peer list. found() sees an existing dialer for B and skips it, so the lower-ID member A redials the old port forever ('connection refused', backoff up to 30 s). B never dials A (only the lower ID dials), and no Mac reconnects either, because Macs follow the same path. The group stays split until A restarts. Reproduced in a scratch copy with a fake discovery that keeps a restarted member listed (as mDNS does): alpha logged 'dial tcp 127.0.0.1:<old port>: connection refused' for 8 s and never reconnected. The same happens when a member's IP changes (DHCP, Wi-Fi/Ethernet roaming).",
+   "suggested_fix": "Keep the address list with each dialer (map id -> {cancel, addrs}). When the sorted address set for an ID changes, cancel the old dialer and start a new one, or let dial read the current addresses for its ID from a mutex-guarded map on every round."
+  },
+  {
+   "file": "internal/service/service.go",
+   "line": 179,
+   "severity": "medium",
+   "dimension": "correctness",
+   "summary": "gctx, and the discovery context under it, derive from Run's ctx. On SIGTERM every member connection is closed without a goodbye at the same moment discovery sends its goodbyes, so the ordered shutdown that stopGroup documents (discovery goodbyes first, then member goodbyes) never happens.",
+   "failure_scenario": "systemctl stop or docker stop cancels Run's ctx. The cancellation reaches gctx and every dial ctx at once, and node.Serve's AfterFunc(ctx, c.close(false)) closes each connection without a bye and drops what is still queued. stopGroup's later nd.Close() does nothing, because the connections are already closed. Verified in a scratch copy: stopping the dialing member makes the peer log 'connection from 127.0.0.1:…: EOF' every time instead of ending cleanly on a bye. The logs also show that a stopping non-holder elects itself holder during shutdown ('holds clipbridge.local: true') as its connections drop. With the real responder, if Run handles that SetHolder kick before ctx.Done, it multicasts clipbridge.local with the cache-flush bit just before its goodbye, which can wipe the real holder's address from the iPhone's cache.",
+   "suggested_fix": "Derive gctx from context.WithoutCancel(ctx) (or context.Background()), so that only stopGroup cancels it: after discovery has returned and after nd.Close() has sent the goodbyes. Also mark the service as stopping under s.mu and make electLocked a no-op from then on."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 181,
+   "severity": "medium",
+   "dimension": "correctness",
+   "summary": "pair() and join() check s.id and s.window under the lock, release it, and act later. startGroup has no guard against running twice, so concurrent requests open two windows or start the network part twice.",
+   "failure_scenario": "Two 'clipbridge pair' commands on a fresh Linux device, or pair plus join: both see s.id == nil, both call group.Create, Save and startGroup. The second call overwrites s.id, s.eng, s.nd and s.groupCancel without stopping the first group's listener, discovery or node. Reproduced: one service then had two discoveries publishing with different group tags (g=14930d…, g=4755b2…). The identity on disk and the one in memory can differ, depending on which Save and which startGroup ran last. In an existing group, two concurrent pairs both get codes, but s.window holds only the second window. Reproduced: joining with the first code failed with 'pair: wrong code', which also uses up an attempt on the second window. Related: startGroup sets s.id, s.eng and s.nd before listen and Discover can fail. After such a failure the device reports a group with a nil s.responder, and a later pair panics at s.responder.SetTXT.",
+   "suggested_fix": "Check and set s.window in the same critical section. Serialize group creation and joining with a 'starting' flag or a dedicated mutex. Make startGroup return an error when s.id != nil, build its state in locals, and assign it to s.* only when it succeeds."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 216,
+   "severity": "medium",
+   "dimension": "correctness",
+   "summary": "A write made while no watcher is connected is lost, because watch() never replays the last write to a watcher that connects later. The rejoin-window write never reaches the desktop at boot, or while a connector is reconnecting after a service restart.",
+   "failure_scenario": "Text is copied on alpha while beta is off. Beta's service starts at boot, Rejoins, and the hello makes the engine write the group text (seq 1). s.write finds no watchers and drops it, and the engine's Local now claims the clipboard holds it. The desktop connector connects when the user logs in, or 1–30 s later after a restart because of its backoff, and receives nothing. Reproduced: after restarting beta, 'paste' on beta returned the group text, but a watcher that connected afterwards received no write within 3 s. Ctrl+V on the desktop gives the old or empty clipboard, against the design's promise that a member that comes back gets the latest text.",
+   "suggested_fix": "Keep the last write (text, kind, via, seq) in Service. When a watcher registers, send it if the engine's Local still holds that text. Order this against the connector's initial OpClipboard report: carry the connector's current clipboard in the OpWatch request, or replay only after that first report, so that the report does not overwrite the replayed state."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 196,
+   "severity": "medium",
+   "dimension": "correctness",
+   "summary": "The machine's sleep is noticed only on the next 2 s tick. A hello reconciled between wake-up and that tick marks the group's current event as seen outside the rejoin window, and the hello after Rejoin, which carries the same event ID, writes nothing.",
+   "failure_scenario": "A Linux laptop sleeps for 10 minutes while the iPhone sends a text to the group. After wake-up its ping gets an RST from the dead connection, the dialer waits 1 s and reconnects, and the hello arrives before watchSleep's ticker fires (the ticker fires anywhere from 0 to 2 s after wake). Reconcile applies the old event without writing it, because it is not live and the window from the service start is long closed. Then Rejoin closes the connections and opens the window. The new hello carries the same event, receive() sees e.seen.has(ev.ID), and it returns an empty Result. The woken member's clipboard is never updated. Confirmed at engine level: the same event reconciled before and after Rejoin gives write=false both times.",
+   "suggested_fix": "Run the sleep check synchronously before a new connection's hello is reconciled, for example a hook that node.Serve calls, or a check in OnPeers or dial before reconnecting. Alternatively, have Engine.Rejoin mark the current event as eligible again, so that the next Reconcile of the same event ID runs decideWrite."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 365,
+   "severity": "low",
+   "dimension": "correctness",
+   "summary": "When a watcher's 16-slot channel is full, watcher.send drops the incoming write, which is the newest one, so a lagging watcher can be left with a stale text.",
+   "failure_scenario": "A desktop connector stalls in Board.Write (for example, a slow wl-copy with large texts that fill the socket buffer) while 17 writes arrive from a scripted burst of 'clipbridge copy'. The 17th, which is the group's latest text, is dropped and the 16 older ones are delivered. No later write follows, so the desktop clipboard ends on an older text while the group and the engine's Local hold the newer one. The comment 'the next one wins anyway' assumes a later write that may never come.",
+   "suggested_fix": "When the channel is full, drop the oldest queued write instead and queue the new one, or use a one-slot 'latest write' mailbox, since only the newest write matters and Seq already orders them."
+  },
+  {
+   "file": "tools/e2e/e2e.sh",
+   "line": 77,
+   "severity": "low",
+   "dimension": "correctness",
+   "summary": "The check `cb a status | grep -q 'group'` always passes: the status text for a device in no group, 'Not in a group. Run clipbridge pair …', also contains 'group'.",
+   "failure_scenario": "If pairing left a in no group, this assertion would not catch it. The script would carry on and fail later with a misleading message ('a connects to the two others'), or pass parts it should not.",
+   "suggested_fix": "Match the in-group line, for example `cb a status | grep -q '^Device .*, group '`, or fail on `grep -q 'Not in a group'`."
+  },
+  {
+   "file": "internal/connector/connector.go",
+   "line": 132,
+   "severity": "high",
+   "dimension": "commands",
+   "summary": "The connector reports Universal Clipboard items with via \"universal\", but the service only accepts clip.Via names (\"copy\", \"iphone\", \"universal-clipboard\"), so the watch loop's parseKind fails and the report is silently dropped (socket.go:393-396).",
+   "failure_scenario": "On a Mac, the user copies on the iPhone and the item reaches the Mac through Universal Clipboard. The agent's Board returns Item{Remote:true}, report() sends OpCopied with Via \"universal\", parseKind returns an error and the loop does `continue`. The text never reaches the Linux members. A marked secret that arrived the same way is also dropped, so the engine never remembers it. Confirmed with a probe test in the copy: after b.copyOn(Item{Text:\"from the iPhone\", Remote:true}), paste returns \"\". The Header doc comment (control.go:47: \"copy\", \"phone\" or \"universal\") is also wrong: the service sends \"iphone\" and \"universal-clipboard\" in writes, and auto-paste will key on \"iphone\".",
+   "suggested_fix": "Send \"universal-clipboard\", ideally taken from clip.Via.MarshalText or from shared constants in package control. Correct the Header.Via comment. In the service watch loop, log a report whose kind or via does not parse instead of dropping it silently. Add a connector test for a Remote item."
+  },
+  {
+   "file": "internal/connector/connector.go",
+   "line": 112,
+   "severity": "medium",
+   "dimension": "commands",
+   "summary": "A desktop clipboard text over the control limit (1 MiB + 64) makes control.Write fail, which ends the session. Every reconnect then fails again at the Current() report, so the connector stays offline until the user copies something smaller.",
+   "failure_scenario": "The user copies a 2 MiB log in a terminal. watch() calls send(report(...)), which returns \"control: the text is larger than 1 MiB\" (line 147), and the session ends. On each reconnect, Board.Current() returns the same large item, send fails at line 112, and the session ends again, with backoff 1s, 2s, 4s up to 30s. Meanwhile no writes from the group reach the desktop clipboard. Confirmed with a probe: after a 1 MiB+100 copy, a later OpCopy from tmux never reaches the board, and the log shows repeated \"connection ended: control: the text is larger than 1 MiB\".",
+   "suggested_fix": "In report/watch and in the Current() step, skip (or report as OpClipboard with an empty payload) any text longer than clip.MaxText, or with invalid UTF-8, instead of passing it to Send. Never let a local clipboard item end the session."
+  },
+  {
+   "file": "internal/connector/connector.go",
+   "line": 158,
+   "severity": "medium",
+   "dimension": "commands",
+   "summary": "The secret expiry timer belongs to one session's apply(): when the service connection ends (service restart, crash, upgrade), the deferred expiry.Stop() cancels it, so a secret written less than 60 s earlier stays in the desktop clipboard indefinitely.",
+   "failure_scenario": "`clipbridge copy -secret` (or a secret from another member) is written to the desktop with TTL 60 s. Ten seconds later clipbridge.service restarts. apply's Receive fails, the defer stops the timer, and the new session knows nothing about the secret. ClearIfUnchanged is never called, contrary to the design (\"When a secret that a connector wrote expires, the connector gives up the clipboard\"). Confirmed with a fake service that sends a secret with TTLMS=300 and closes the connection: the board is never cleared.",
+   "suggested_fix": "Keep the expiry timer in Run (across sessions), or pass the pending deadline from one session to the next, and stop it only when the user copies something else or a newer write replaces it. Decide explicitly whether Run returning (ctx done or ErrBoardGone) should clear the secret immediately."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 384,
+   "severity": "medium",
+   "dimension": "commands",
+   "summary": "A write is delivered only to watchers registered when it happens. Nothing replays the latest write to a watcher that connects later, and the connector's initial OpClipboard then overwrites the engine's local text with the stale desktop content.",
+   "failure_scenario": "A desktop Linux machine is in no group, and its connector retries OpWatch every 30 s (\"in no group\"). The user runs `clipbridge join`. startGroup calls Rejoin, the first hello makes the group's text current, and it is written within the rejoin window, but s.watchers is empty, so Service.write drops it. Up to 30 s later the connector connects and sends OpClipboard with the old desktop text. ClipboardIs records that text, and the group's text never reaches the desktop. The same happens for writes during any reconnect backoff, after a service restart, or while the caller reopens the display after ErrBoardGone. Probe: OpCopy before the connector starts leaves paste returning the text while the board never receives a write.",
+   "suggested_fix": "Remember the last Write in Service. On OpWatch, after the reply, send it if engine.Local() still holds that text (and, for a secret, it is still live). On the connector side, send the Current() report before the watch request completes, or skip it when a replayed write is pending, so the replay is not undone by the stale report."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 365,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "watcher.send drops the newest write when the 16-slot buffer is full, so a watcher that falls behind applies 16 stale writes and misses the latest one; the comment's claim \"the next one wins anyway\" does not hold when no further write follows.",
+   "failure_scenario": "A desktop connector's Board.Write stalls for a few seconds (pasteboard agent main thread busy, slow X selection owner) while a burst of events arrives. The 17th and later writes are discarded. When the connector catches up it writes the 16 oldest, and the desktop ends on an older text than the group's current one.",
+   "suggested_fix": "Coalesce instead of dropping the newest: on a full buffer, drain one element and enqueue the new write, or keep only the latest pending write per watcher (a 1-slot buffer that is replaced)."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 37,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "A join that reaches a member whose pairing window has closed fails with the raw TLS alert \"remote error: tls: internal error\", because GetConfigForClient returns an error, and the CLI prints that text as is.",
+   "failure_scenario": "On a network without multicast, the user types the `clipbridge join <code> <address>` line that pair printed, but the window has already expired, or the admin pressed Ctrl+C. Output: \"clipbridge: remote error: tls: internal error\" (confirmed with a probe), with no hint that the pairing window is closed. A stale p=1 TXT record found by browsing gives the same message.",
+   "suggested_fix": "In service.join, map a TLS handshake failure on a pairing dial to \"no pairing window is open at <addr>; run clipbridge pair there\". Alternatively, let the member complete the handshake and answer with the existing \"closed\" error code, which errorOf already maps to ErrClosed."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 157,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "pair displays the code as \"123 456\", but `clipbridge join 123 456` takes 456 as the address. join also does not validate the code before the service browses for up to 10 s and dials, and on that path service.join leaks the raw TCP connection, since Join returns at NormalizeCode before wrapping it.",
+   "failure_scenario": "The user copies the code exactly as displayed: `clipbridge join 123 456`. Output: \"clipbridge: dial tcp: address 456: missing port in address\" (confirmed). A mistyped 5-digit code with no address waits ~10 s for discovery, then opens a TCP connection to each announced member, never closed by the joiner, before failing with \"pair: the code is six digits\".",
+   "suggested_fix": "In cmdJoin, call pair.NormalizeCode on the code first. When two arguments together form six digits, treat them as the code, or reject with a usage message naming the address form host:port. In service.join, close raw when Join fails before the TLS layer exists, or normalize the code before dialing."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 32,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "`clipbridge copy <text>` (and `clipbridge service <extra>`, line 210) exits with status 2 without printing anything, because the NArg check returns before any message.",
+   "failure_scenario": "A user runs `clipbridge copy hello` expecting \"hello\" to be copied. The command exits 2 silently (confirmed), with no hint that copy reads standard input. tmux or script users see a failure with no reason.",
+   "suggested_fix": "When fs.NArg() != 0, print \"clipbridge: copy takes no arguments; it reads the text from standard input\" (and a similar message for service) before returning 2."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 72,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "paste ignores the error from writing the text to stdout and exits 0.",
+   "failure_scenario": "`clipbridge paste > out.txt` on a full disk, or `clipbridge paste > /dev/full` on Linux: the write fails with ENOSPC, but the command exits 0, so scripts and tmux bindings treat a truncated or empty paste as success.",
+   "suggested_fix": "Check the result: `if _, err := stdout.Write(m.Payload); err != nil { return fail(stderr, err) }`. The same applies to the status output."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 267,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "join runs on the service context and ignores a client hang-up, and nothing guards against a second join while one is running, so Ctrl+C does not cancel a join and a retried join races the orphaned one.",
+   "failure_scenario": "The user runs `clipbridge join`, waits during the 10 s browse, presses Ctrl+C and runs it again. The first join keeps going in the service and takes the window's single attempt. The second fails with \"pair: another device is pairing; try again in a minute\", although the device is the one joining, and then joins anyway. With two windows open, both joins can save an identity and call startGroup twice.",
+   "suggested_fix": "Watch for the client hanging up, as pair() does, and cancel a derived context. Keep a joining flag under s.mu so that a second join gets \"a join is already running\"."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 96,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "On a Linux device in no group, status and the errNoGroup message (socket.go:61) tell the user to run pair on another Linux member and join here, but on the first Linux machine running `clipbridge pair` locally is what creates the group.",
+   "failure_scenario": "A user installs clipbridge on their first and only Linux machine and runs `clipbridge status` or `clipbridge paste`. They are told to \"Run clipbridge pair on a Linux member, then clipbridge join here\". There is no other member, so they are stuck, although the design says `clipbridge pair` on a Linux machine in no group creates the group.",
+   "suggested_fix": "Use st.Role (and the role in the service for errNoGroup): on Linux, say \"run clipbridge pair here to start a group, or clipbridge join to join an existing one\"; keep the current text for a Mac."
+  },
+  {
+   "file": "internal/control/client.go",
+   "line": 33,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "The permission error always says \"add your user to the clipbridge group\", but on macOS the socket is guarded by the _clipbridge group (socket_darwin.go).",
+   "failure_scenario": "A Mac user who is not in the group runs `clipbridge paste`, is told to join \"clipbridge\" and runs `dseditgroup -o edit -a me -t group clipbridge`, which fails because the group is named _clipbridge.",
+   "suggested_fix": "Define the group name per platform next to DefaultSocket (\"clipbridge\" and \"_clipbridge\") and use it in the message."
+  },
+  {
+   "file": "tools/e2e/e2e.sh",
+   "line": 77,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "The check `cb a status | grep -q 'group'` is vacuous, because the no-group output \"Not in a group. ...\" also contains \"group\".",
+   "failure_scenario": "If pairing left a in no group, status prints \"Not in a group. Run clipbridge pair ...\", grep finds \"group\" and the e2e step passes instead of failing with \"a is in no group\".",
+   "suggested_fix": "Match the in-group line, for example `grep -q '^Device .*, group '`, or check that 'Not in a group' is absent."
+  },
+  {
+   "file": "internal/control/control_test.go",
+   "line": 35,
+   "severity": "low",
+   "dimension": "commands",
+   "summary": "TestRoundTrip checks the Status of the input message msgs[2] instead of the decoded one, so it never verifies that a status survives the round trip.",
+   "failure_scenario": "A change that breaks Status or Device JSON encoding (a renamed tag, or a skew_ms that is lost) still passes TestRoundTrip, because the assertion reads the original struct.",
+   "suggested_fix": "Keep the decoded messages from the loop and assert on the decoded message 2's Status.Peers[0].SkewMS (and Device)."
+  },
+  {
+   "file": "internal/service/service_test.go",
+   "line": 89,
+   "severity": "high",
+   "dimension": "tests",
+   "summary": "The fake discovery hub calls OnPeers in a new goroutine for every update. Lists can arrive out of order, and they can arrive after the fake's Run has returned. The mdns contract says OnPeers runs on the responder's goroutine, so the real code never does either.",
+   "failure_scenario": "In pairWith, the admin's deferred SetTXT takes a snapshot without the joiner just before the joiner's Run registers. If that stale snapshot is delivered last, found() cancels the admin's dialer (admin ID < joiner ID) and nothing restarts it. I reproduced this with 16 service test binaries running in parallel, 15 runs each (240 runs). TestWatcher failed 3 times with 'timed out waiting for connected'. TestAloneHoldsTheName failed once with a DATA RACE: found() called s.wg.Add from a late delivery while stopGroup was in s.wg.Wait (service.go:147). With 0-5 ms delivery jitter, TestThreeMembers failed 4 of 20 runs. The same hub with ordered delivery (a generation counter) and no delivery after Run returned passed 60 of 60 runs under jitter, with no race.",
+   "suggested_fix": "Make the fake keep the mdns contract. Give the hub a generation counter and have each member drop lists older than the last one it applied. Hold a per-member lock while calling OnPeers, and have Run set a 'gone' flag under that lock before returning, so no OnPeers runs after Run returns."
+  },
+  {
+   "file": "internal/connector/connector_test.go",
+   "line": 217,
+   "severity": "high",
+   "dimension": "tests",
+   "summary": "TestSecretExpires calls b.ClearIfUnchanged() itself and checks only that its own call cleared the board. It never exercises the connector's expiry timer or the TTL the service sends, although the comment claims it does.",
+   "failure_scenario": "These mutations all pass both test packages: removing the time.AfterFunc expiry in apply (C19), ignoring m.TTLMS (C20), clearing with b.Write(\"\") instead of ClearIfUnchanged (C25, which would wipe a newer copy the user made), and every secretLeft mutation (M11a/b/c). In production, a received one-time code or password would stay in the desktop clipboard forever and no test would notice. The waitFor at line 201 is vacuous because startService already created the group. The 100 ms sleep at line 205 is the only thing that makes sure the watcher is registered before the copy; if it is not registered in time, the write is dropped and the test fails with 'no write'.",
+   "suggested_fix": "Unit-test apply() against an in-memory control stream: send an OpWrite with Kind secret and TTLMS of 50, assert that b.cleared fires within about 1 s, and assert it does not fire if copyOn happened in between. Replace the sleep with a real sync point, for example wait until a desktop copy reaches the service, as TestConnector does."
+  },
+  {
+   "file": "internal/connector/connector_test.go",
+   "line": 192,
+   "severity": "high",
+   "dimension": "tests",
+   "summary": "The check 'A marked secret is not sent' and the check that the starting text is known 'without an event' (line 172) only look at paste on the same member. A copy event gives the same paste result, so neither check can tell the difference.",
+   "failure_scenario": "Mutation C17 makes report() send a password-manager-marked secret as OpCopied instead of OpClipboard. The service then calls nd.Copied and forwards the secret to every member, which breaks 'it is never sent', and TestConnector still passes. Mutation C18 reports the clipboard at connector start as OpCopied. Every login or reconnect would then broadcast the local clipboard over the group's current text, and the test still passes. C22b (dropping the Seq ordering in apply) and C24 (Universal Clipboard items reported as via=copy) also survive. The 200 ms sleep at line 191 makes the check timing-dependent as well.",
+   "suggested_fix": "Assert on the wire. Unit-test report(), for example report(OpCopied, Item{Secret:true}).Op == OpClipboard. Or run a second member, or a second watcher on another service, and assert that it never receives a write for the secret or for the starting text. Use waitFor instead of the fixed sleep."
+  },
+  {
+   "file": "internal/connector/connector_test.go",
+   "line": 227,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "TestReconnect only sleeps 100 ms against a missing socket and asserts nothing. It never starts a service, so reconnection is untested.",
+   "failure_scenario": "Mutation C21 makes Run return on the first session error: the connector would exit for good when the service restarts, and TestReconnect still passes. Mutation C23 retries ErrBoardGone forever instead of returning it, and also survives. In 100 ms there is only one dial attempt anyway, because the first retry comes after 1 s.",
+   "suggested_fix": "Start Run against the missing path. Then start a service on that path and wait until a copy reaches the board, which needs a reconnect after at least one backoff. Stop the service, start it again, and assert the connector reconnects. Add a Board whose Next returns ErrBoardGone and assert that Run returns that error."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 222,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "The pairing-window lifecycle is untested: a client hangup closing the window, the window's p=1 TXT record being cleared, and the refusal of a second window.",
+   "failure_scenario": "These mutations all pass the service and connector tests: never closing the hangup channel, so Ctrl+C on 'clipbridge pair' leaves the window open and accepting code guesses for 5 minutes (M9); not calling SetTXT when the window closes, so p=1 is advertised forever (M13); and removing the 'already open' check, which allows two windows (M14). The connector's startService even hangs up a pair client but never checks that the window closed.",
+   "suggested_fix": "In the service tests, open a pair, close the client, then waitFor the fake discovery's TXT to lose p=1, and check that a new pair succeeds. While one window is open, assert that a second OpPair fails with 'already open'."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 131,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "No test reads the TTL that the service puts on a secret write (TTLMS, from secretLeft).",
+   "failure_scenario": "Three mutations survive all tests: returning max(age, 1ms) (M11b), so a freshly copied secret gets a TTL of a few milliseconds and the connector clears it before the user can paste; returning the full 60 s regardless of age (M11a); and hard-coding TTLMS=1 (M11c). TestWatcher only sends plain text, and TestSecretExpires never looks at TTLMS.",
+   "suggested_fix": "Add a TestWatcher case: copy with Kind \"secret\" on the other member, then assert that the OpWrite has Kind secret and 55000 < TTLMS <= 60000."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 196,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "watchSleep is untested and cannot be tested as written: it reads uptime.Now, time.Now and a real 2 s ticker directly. The whole service suite finishes in under 2 s, so even a detector that fires on every tick is invisible.",
+   "failure_scenario": "Mutation M41 inverts the check to 'slept < slack'. Every member would then call nd.Rejoin every 2 s, closing all member connections and re-reconciling continuously. All tests still pass.",
+   "suggested_fix": "Inject the two clocks and the tick channel through Config, as node and pair already do. Test that steady ticks never call Rejoin and that a jump in the sleep-counting clock calls it exactly once."
+  },
+  {
+   "file": "internal/service/service_test.go",
+   "line": 323,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "TestMac catches violations of the Mac-specific rules only when the Mac's random device ID happens to be on the right side of the pi's. The rules are: a Mac dials every Linux member, the election counts only Linux peers, and a Mac never holds. The pair-refusal check passes for the wrong reason.",
+   "failure_scenario": "Mutation M4 applies the 'dial only higher IDs' rule to the Mac as well; it was caught in 5 of 10 runs. Electing among all roles (M7) and dropping the Mac guard in electLocked (M8) are likewise caught only when the IDs fall the right way. Removing the role guard in pair() (M37) survives: pair.Open returns 'only a Linux member that holds the CA keys can admit devices', which still makes err != nil. Nothing tests a Mac in no group, where that mutation would make the Mac create a group with CA keys.",
+   "suggested_fix": "Run the scenario with both ID orders, for example by restarting the Mac until its ID is above the pi's, then below. Assert the specific error text from pair on a Mac. Add a case where pair runs on a Mac that is in no group."
+  },
+  {
+   "file": "internal/control/control_test.go",
+   "line": 48,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "Two TestLimits cases never reach the limits they are named after, because their inputs fail for other reasons. 'A header that never ends' is invalid JSON, and 'length over the limit' has no payload, so ReadFull returns EOF.",
+   "failure_scenario": "Removing the maxHeader check (T23) and removing the m.Len > maxPayload check in Read (T24) both pass. With T24, a local client can send len=1<<62: make([]byte, ...) panics in the service's handleControl goroutine and crashes the service, or len=99999999 makes it allocate 100 MB per connection. The tests stay green.",
+   "suggested_fix": "Use a valid JSON header longer than maxHeader, such as `{\"op\":\"` + 70000 'x' + `\"}` plus a newline. Use `{\"op\":\"copy\",\"len\":<maxPayload+1>}` followed by maxPayload+1 real bytes, so only the limit check can reject it."
+  },
+  {
+   "file": "internal/service/service_test.go",
+   "line": 288,
+   "severity": "medium",
+   "dimension": "tests",
+   "summary": "The tests read from the control socket with no deadline: w.Receive() in TestWatcher, c.Receive() in pairWith, and every Do. A missing answer hangs the package until go test's 10-minute timeout instead of failing.",
+   "failure_scenario": "With watchers getting no writes (M5, wt.send removed), TestWatcher blocked at line 288 until 'panic: test timed out after 10m0s'. Any regression where pair never sends its final reply hangs pairWith the same way.",
+   "suggested_fix": "Give the test client a deadline, for example by exposing SetDeadline on control.Client or wrapping Receive in a goroutine with a select timeout, and fail with a clear message."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 329,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "No test checks that join without an address picks only members that announce p=1.",
+   "failure_scenario": "Removing the filter (M10, 'if false') passes every test. In the hub, members without a window fail the pairing TLS handshake, so join just moves on to the next address. In production, findPairing returns the first OnPeers list that has any address. If that list holds only members without a window (another group's, or this group's other members), join fails with a TLS error even though a window is open.",
+   "suggested_fix": "Add a test where a third member with no window is discovered before the admin opens its window. Assert that join still reaches the admin, and that join with no window anywhere fails with the 'no member with an open pairing window' error."
+  },
+  {
+   "file": "internal/service/members.go",
+   "line": 82,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "No test pins the dial rule: the lower ID dials the higher one, so two Linux members make one connection.",
+   "failure_scenario": "Reversing the rule (M2) and letting both sides dial (M3) both pass. With M3 the logs show dialed connections being replaced and torn down ('connection to ... <nil>', 'connection reset by peer'), because node replaces the old connection on a reconnect. The tests only wait until len(Peers)==2 and never see the churn.",
+   "suggested_fix": "Wrap the test listener to count accepted member connections per service, and assert that only the higher-ID member accepts and only once. Or assert that Peers()[i].Since stays the same over a few seconds after connecting."
+  },
+  {
+   "file": "internal/control/control_test.go",
+   "line": 35,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "TestRoundTrip's status check reads msgs[2], the input message, instead of the decoded one, so it can never fail.",
+   "failure_scenario": "Tagging Status or SkewMS with json:\"-\" passes TestRoundTrip (T25, T26). Dropping SkewMS from the wire (T26) passes the entire suite (control, service, connector, cmd), and 'clipbridge status' would then never warn about a peer whose clock is off.",
+   "suggested_fix": "Keep the decoded messages and assert got.Status != nil && got.Status.Peers[0].SkewMS == -7 on the message read back."
+  },
+  {
+   "file": "cmd/clipbridge/commands.go",
+   "line": 43,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "None of the new commands (copy, paste, status, pair, join, service) have a test. The e2e check of 'copy -secret' (tools/e2e/e2e.sh:91) only checks that paste returns the text, which plain text passes too.",
+   "failure_scenario": "Mutation X1 makes 'copy -secret' send Kind \"text\". It passes the Go tests and would pass e2e.sh: tmux or a script that copies a password with -secret would sync it as normal text, with no 60-second expiry.",
+   "suggested_fix": "Test the commands against a service started on a temp socket via CLIPBRIDGE_SOCKET, or against a fake control server that records the request header, and assert Kind \"secret\" for -secret. Also cover status output and the join argument parsing."
+  },
+  {
+   "file": "tools/e2e/e2e.sh",
+   "line": 77,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "The check 'a is in no group' greps status output for 'group', but the no-group message 'Not in a group. Run clipbridge pair ...' also contains 'group', so the check always passes.",
+   "failure_scenario": "If pairing left member a outside a group, line 77 would still pass. The failure would only show up later as a less clear 'connects to the two others' timeout.",
+   "suggested_fix": "Grep for the in-group line instead, for example `grep -q '^Device .*, group '`, or assert that 'Not in a group' is absent."
+  },
+  {
+   "file": "internal/service/service_test.go",
+   "line": 137,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "startIn (and connector_test.go startService) polls the socket for 5 s and reports 'the control socket never appeared' even when Run has already returned an error.",
+   "failure_scenario": "In this sandbox, Run failed at once with 'listen unix .../c.sock: bind: operation not permitted', but the tests only said 'the control socket never appeared' after 5 s. On macOS, a long $TMPDIR that pushes the socket path past the 104-byte sun_path limit fails the same opaque way.",
+   "suggested_fix": "Inside the wait loop, select on s.done and t.Fatalf with Run's error as soon as it returns."
+  },
+  {
+   "file": "internal/service/socket.go",
+   "line": 271,
+   "severity": "low",
+   "dimension": "tests",
+   "summary": "Error paths of join and pair are not covered: joining while already in a group, and a joiner that never confirms it stored its identity.",
+   "failure_scenario": "Removing the 'already in a group' check (M36) passes. A member in a group that runs 'clipbridge join' would then overwrite its saved identity and call startGroup a second time over the running group. Treating an unconfirmed join as success (M39, line 237) and dropping the early break on ErrWrongCode (M33) also pass.",
+   "suggested_fix": "Add a test that join on a member already in a group fails and leaves its status unchanged. Add one with a joiner whose save callback fails, and assert that pair reports the 'did not confirm' error."
+  },
+  {
+   "file": "internal/connector/connector.go",
+   "line": 132,
+   "severity": "high",
+   "dimension": "docs",
+   "summary": "The connector reports Universal Clipboard items with via \"universal\", but the service only accepts \"universal-clipboard\" (clip.Via), and its watch loop silently drops any message whose via does not parse.",
+   "failure_scenario": "A Mac pasteboard agent built on connector.Run sees an iPhone copy arrive through Universal Clipboard (Item.Remote=true). report() sends {op:copied, kind:text, via:universal}. In service/socket.go:393-396, parseKind fails with `clip: unknown via \"universal\"` and the loop runs `continue` without logging anything. No event is made, so the iPhone text never reaches Linux. That contradicts design.md's macOS section: \"Items that arrive through Universal Clipboard are relayed to Linux, marked universal-clipboard\". A marked secret that came through Universal Clipboard (Secret+Remote, sent as OpClipboard) is dropped the same way, so the engine never remembers it as a secret. Checked in a copy of the repo: parseKind(\"text\",\"universal\") and parseKind(\"text\",\"phone\") both return an error, while \"iphone\" and \"universal-clipboard\" are accepted. No test covers Remote.",
+   "suggested_fix": "Send \"universal-clipboard\", or better, build the header from clip.Universal.MarshalText() so the names cannot drift apart. Add a connector test with Remote=true against the real service. Make the service log, or answer with an error, when it rejects a watcher message instead of continuing silently."
+  },
+  {
+   "file": "internal/control/control.go",
+   "line": 47,
+   "severity": "medium",
+   "dimension": "docs",
+   "summary": "The doc comment of control.Header.Via lists the values \"copy\", \"phone\" or \"universal\", but the protocol accepts only \"copy\", \"iphone\" and \"universal-clipboard\" (clip.Via, also named in design.md as `iphone` and `universal-clipboard`).",
+   "failure_scenario": "This comment is the only protocol reference for control-socket clients (tmux, the console helper, the iPhone /sync handler, the pasteboard agent). The connector already followed it and sends \"universal\", which is the finding above. A later client that sends via \"phone\" for an iPhone-button event gets `clip: unknown via \"phone\"` on OpCopy, or has its report silently dropped on a watch connection, so auto-paste and the 45-second rule never see an iphone event.",
+   "suggested_fix": "Change the comment to `// \"copy\", \"iphone\" or \"universal-clipboard\"`. Optionally, define exported constants in control, or reuse clip.Via's text names, so that clients do not hard-code strings."
+  },
+  {
+   "file": "docs/design.md",
+   "line": 330,
+   "severity": "medium",
+   "dimension": "docs",
+   "summary": "The macOS section still says the Mac service \"only dials out to Linux members, so the macOS firewall needs no exception\", but with D-32 the Mac service binds UDP *:5353 (mdns transport listen) and has to receive incoming multicast responses.",
+   "failure_scenario": "This claim was true while the Mac used mDNSResponder through dns_sd. Now internal/mdns/transport.go opens 0.0.0.0:5353 and [::]:5353 in the clipbridge process itself. The macOS application firewall may be set to \"Block all incoming connections\" (which exempts only built-in services such as Bonjour/mDNSResponder), or the binary may be unsigned or ad-hoc signed with no user present to approve a LaunchDaemon. In that case the mDNS responses from Linux members can be filtered before they reach the service. The Mac then never finds a member and stays alone. Following the doc, the installer would add no exception, and nothing in Open questions flags it.",
+   "suggested_fix": "Rewrite the sentence: the service listens on UDP 5353 for mDNS and dials out for member connections. Add the firewall behaviour for a non-Bonjour process on 5353 to Open questions, or have the installer add an application firewall exception. Update D-32's rationale to match."
+  },
+  {
+   "file": "docs/design.md",
+   "line": 222,
+   "severity": "medium",
+   "dimension": "docs",
+   "summary": "The design (sync model, D-20) and the clip.Engine.Rejoin and node.Rejoin contracts say the rejoin window also opens when \"its network came back\", but the service calls Rejoin only at start (service.go:186) and after sleep (members.go:202). Nothing detects a network return.",
+   "failure_scenario": "A Linux laptop's Wi-Fi drops for 3 minutes without the machine sleeping, and its interface loses and regains its address. Meanwhile a Mac copies X. When the network returns, the laptop reconnects and the hello makes X current. X is about 150 s old, more than the 60 s live window, and no rejoin window is open, so X is not written to the laptop's own clipboard. `clipbridge paste`, and the iPhone button if the laptop holds clipbridge.local, keep returning the stale text. The design promises that a member whose network came back gets the latest text. The new Service bullet only mentions sleep, so the docs disagree with each other and with the code.",
+   "suggested_fix": "Either have the service call nd.Rejoin when an interface regains a published address (mdns already rescans interfaces every 10 s and could report it), or remove \"its network came back\" from the sync model, D-20 and the Rejoin doc comments, and record it as a known limitation."
+  },
+  {
+   "file": "README.md",
+   "line": 5,
+   "severity": "low",
+   "dimension": "docs",
+   "summary": "The README still says \"There is nothing to use yet: the Go code so far only prints its version\", but this commit adds the service and the pair, join, copy, paste and status commands, and CHANGELOG lists them.",
+   "failure_scenario": "A visitor reads the status box, decides the binary only prints its version, and never tries the working Linux service and commands that CHANGELOG [Unreleased] and the help text describe. The two top-level documents contradict each other.",
+   "suggested_fix": "Update the status note, for example: early development; the Linux service and the copy, paste, pair, join and status commands work, with no installer or desktop connector yet."
+  },
+  {
+   "file": "internal/service/service.go",
+   "line": 41,
+   "severity": "low",
+   "dimension": "docs",
+   "summary": "Doc comments still describe the Mac discovery that D-32 replaced. Config.Discover says \"the Mac's Bonjour browser will plug in here\", and the package doc says it \"publishes and browses on Linux\", but the Mac now browses with mdns (BrowseOnly). The mdns package doc (mdns.go:4, \"responder and browser of Linux members\") and the BrowseOnly comment (mdns.go:60, \"for a device that is about to join a group\") are equally stale.",
+   "failure_scenario": "A maintainer following the comment adds a cgo Bonjour browser behind Config.Discover, reversing D-32 and breaking the cgo-free Mac service build. Or, trusting the BrowseOnly comment that it is only used briefly before a join, they change BrowseOnly to stop refreshing records or tracking TTLs. That would make the Mac's permanent discovery, which startGroup runs with BrowseOnly for node.Mac, lose Linux members.",
+   "suggested_fix": "Say that the Mac uses mdns in browse-only mode (D-32). Update the mdns package doc and the BrowseOnly comment to cover a Mac's long-running browse as well as a joining device."
+  },
+  {
+   "file": "tools/e2e/e2e.sh",
+   "line": 77,
+   "severity": "low",
+   "dimension": "docs",
+   "summary": "The check `cb a status | grep -q 'group' || fail \"a is in no group\"` always passes, because the not-in-group status text \"Not in a group. Run clipbridge pair ...\" also contains \"group\".",
+   "failure_scenario": "If the pairing silently left a without a group (for example, a group created but startGroup failed after Save), status prints \"Not in a group...\". grep still matches, and the step that claims to verify a is in a group passes. The failure only surfaces later as a less specific timeout (\"a connects to the two others\").",
+   "suggested_fix": "Match the in-group output instead, for example `grep -q '^Device .*, group '`, or test for the absence of 'Not in a group'."
+  },
+  {
+   "file": "docs/design.md",
+   "line": 207,
+   "severity": "low",
+   "dimension": "docs",
+   "summary": "The design says connections \"are closed before the machine sleeps\", but the service has no pre-sleep hook. watchSleep only notices sleep after waking, so a suspending Linux member sends neither the mDNS goodbyes nor the member goodbyes.",
+   "failure_scenario": "A Linux laptop that holds clipbridge.local suspends. It sends no goodbye for clipbridge.local and does not close its member connections with a goodbye. The others keep it as holder until the 15 s silence timeout, and the iPhone's resolver may still hold its cached A record. Handover takes about 15-20 s instead of happening \"at once\" as the Handover section describes for a holder that leaves, and the iPhone button fails in that gap.",
+   "suggested_fix": "Either add a pre-sleep hook (a logind PrepareForSleep inhibitor on Linux, IOKit power notifications on macOS) that runs the stopGroup-style goodbyes, or change the sentence to say that connections from before a sleep are closed after the machine wakes, and that a sleeping holder is replaced through the 15 s timeout."
+  }
+ ],
+ "rejected": [
+  {
+   "file": "docs/design.md",
+   "line": 75,
+   "summary": "The design says `clipbridge pair` \"on a Mac, the command asks a connected Linux member\", but the service refuses pair on a Mac with \"only a Linux member can admit devices; run clipbridge pair on one\" (socket.go:177), and TestMac asserts that refusal.",
+   "dimension": "docs"
+  }
+ ]
+}
