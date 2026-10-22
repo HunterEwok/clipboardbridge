@@ -427,13 +427,15 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | PRS (password) | the six ASCII digits of the code |
 | CI (channel identifier) | `"clipbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipbridge-pair-v1`, empty context |
-| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"}` |
+| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"}`; a phone with the app (`ios`) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER) |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
 | Tags Ta, Tb | HMAC-SHA-512, 64 bytes |
 
 The AD bytes are used exactly as they travel in the `ad` field. The member checks ADa: `os`
-is `linux` or `darwin`; `name` is 1 to 64 bytes of printable UTF-8.
+is `linux` or `darwin` (an admin phone also takes `ios`); `name` is 1 to 64 bytes of
+printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key. Go members
+take no `ios` joiner: only admin phones admit phones.
 
 ### Frames
 
@@ -473,6 +475,7 @@ put words in front of the user.
 | `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
+| `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
 
 The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
 admin CA under `group_ca` (section 10); the member's TLS certificate is signed by `issuer`
@@ -487,6 +490,10 @@ holds `clipbridge.local`.
 Note: design.md (lines 100-103) says the new member also receives the group state and, on
 Linux, the token hashes; the Welcome has neither (`internal/pair/pair.go:181`). Tokens need no
 hashes (section 7), and the group state arrives in the first hello.
+
+A phone that joins checks the same, and also: `group_ca` is a phone's root (path length 1);
+there are no CA keys; `admin_ca`, when present, is an admin CA under `group_ca` for the key
+it sent in `admin_key`, its CN naming its own device ID.
 
 ### Joining side behaviour
 
@@ -528,6 +535,11 @@ the QR code dials the computer, and nothing is announced:
 - On the member the window counts attempts as above. It is not announced (`p` stays unset)
   and takes no pairing connections on the member port, so the code is good only against the
   computer whose certificate `fp` names.
+- A phone joins a phone group the same way (ClipbridgeKit's `PairingJoiner`): it listens
+  while its "Join a group" screen is open, shows this QR code, and an admin phone scans it
+  and dials. The phone makes its admin key before it listens and sends it in ADa; the root
+  phone, when the user makes the new phone an admin (the default), answers with `admin_ca`.
+  A phone that is not the root makes no admins, so its welcome has no `admin_ca`.
 
 ## 7. iPhone endpoints
 
@@ -780,8 +792,9 @@ records with the phone's root key and exchanges them in the member protocol (`Re
 chains and records signed through one are implemented on both sides: Go's
 `Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipbridgeKit's
 `GroupCertificates.adminCA`, `verifyMember(chain:)`, `RecordSet` and `Records.sign` with
-`adminCA` (cross-checked by `TestSwiftAdmin`). Planned, with the apps: a second phone joining
-as an admin, and `root` records.
+`adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
+ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). Planned, with the apps:
+`root` records.
 
 ### Admin CA and chains
 
@@ -792,7 +805,12 @@ as an admin, and `root` records.
 
 - An admin phone has two keys: its admin key (certified by the admin CA, used only to sign
   certificates and records, behind a user-presence check) and its member key (certified by
-  its own admin CA, role `phone`).
+  its own admin CA, role `phone`). The root phone signs with the root key itself and has no
+  admin CA. A second phone gets its first member certificate from the phone that admitted it
+  and issues the next from its own admin CA when it is due.
+- Renewal (section 2): the root renews any member certificate, from the root; an admin phone
+  renews only those its own admin CA issued, from that CA, since a member takes a renewal
+  only from the issuer of its certificate or from the root (Go's `Identity.WithCert`).
 - A member certificate issued by an admin CA has the profile of section 2, issuer the admin
   CA, NotBefore = the admin CA's NotBefore.
 - In the member handshake (section 4) a member MUST send its certificate followed by its

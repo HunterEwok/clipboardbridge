@@ -31,7 +31,8 @@ public enum Pairing {
 
     /// What a new device receives: its member certificate, the group CA
     /// and, for a Linux device in a group rooted in a Linux member, the CA
-    /// keys. A phone root never sends keys.
+    /// keys. A phone root never sends keys; it may send a joining phone its
+    /// admin CA.
     public struct Welcome: Codable, Equatable {
         public var cert: Data
         /// The admin CA that issued cert and the admitting phone's own
@@ -41,26 +42,39 @@ public enum Pairing {
         public var groupCAKey: Data?
         public var phoneCA: Data?
         public var phoneCAKey: Data?
+        /// For a phone that joins as an admin: the admin CA the root issued
+        /// for the admin key the phone sent in its Info.
+        public var adminCA: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, issuer, groupCA = "group_ca", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key"
+            case cert, issuer, groupCA = "group_ca", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
+                 adminCA = "admin_ca"
         }
 
-        public init(cert: Data, groupCA: Data, issuer: Data? = nil) { (self.cert, self.groupCA, self.issuer) = (cert, groupCA, issuer) }
+        public init(cert: Data, groupCA: Data, issuer: Data? = nil, adminCA: Data? = nil) {
+            (self.cert, self.groupCA, self.issuer, self.adminCA) = (cert, groupCA, issuer, adminCA)
+        }
     }
 
     /// The joiner's CPace associated data.
     public struct Info: Codable, Equatable {
         public var name: String
-        public var os: String // "linux" or "darwin"
+        public var os: String // "linux", "darwin", or "ios" for a phone with the app
+        /// A phone's admin key, a SubjectPublicKeyInfo, for the admin CA the
+        /// root may issue it; only with os "ios".
+        public var adminKey: Data?
 
-        public init(name: String, os: String) { (self.name, self.os) = (name, os) }
+        enum CodingKeys: String, CodingKey { case name, os, adminKey = "admin_key" }
 
-        /// Checks it as the member does: a known OS and a printable name of
-        /// 1 to 64 bytes.
+        public init(name: String, os: String, adminKey: Data? = nil) { (self.name, self.os, self.adminKey) = (name, os, adminKey) }
+
+        /// Checks it as the member does: a known OS, a printable name of 1
+        /// to 64 bytes, and an admin key only from a phone, a P-256 one.
         public var isValid: Bool {
-            (os == "linux" || os == "darwin") && !name.isEmpty && name.utf8.count <= 64
-                && !name.unicodeScalars.contains { $0.properties.generalCategory == .control }
+            guard ["linux", "darwin", "ios"].contains(os), !name.isEmpty, name.utf8.count <= 64,
+                  !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return false }
+            guard let adminKey else { return true }
+            return os == "ios" && (try? P256.Signing.PublicKey(derRepresentation: adminKey)) != nil
         }
     }
 

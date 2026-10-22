@@ -12,8 +12,11 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
 
     let connection: NWConnection
     let queue = DispatchQueue(label: "clipbridge.tls")
+    /// The peer's certificate chain, DER, leaf first, once the handshake is
+    /// done.
+    public private(set) var peerChain: [Data] = []
     /// The peer's leaf certificate, DER, once the handshake is done.
-    public private(set) var peerCertificate: Data?
+    public var peerCertificate: Data? { peerChain.first }
 
     /// Dials host:port with TLS 1.3 and the ALPN protocol, presenting
     /// identity. verify gets the peer's leaf certificate (DER) and decides
@@ -54,7 +57,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
                 switch state {
                 case .ready:
                     guard once.claim() else { return }
-                    self?.peerCertificate = self?.leafCertificate()
+                    self?.peerChain = self?.certificateChain() ?? []
                     c.resume()
                 case .failed(let e), .waiting(let e):
                     guard once.claim() else { return }
@@ -89,15 +92,13 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
         (connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata)?.securityProtocolMetadata
     }
 
-    func leafCertificate() -> Data? {
-        guard let meta = tlsMetadata else { return nil }
-        var leaf: Data?
+    func certificateChain() -> [Data] {
+        guard let meta = tlsMetadata else { return [] }
+        var chain: [Data] = []
         sec_protocol_metadata_access_peer_certificate_chain(meta) { cert in
-            if leaf == nil {
-                leaf = SecCertificateCopyData(sec_certificate_copy_ref(cert).takeRetainedValue()) as Data
-            }
+            chain.append(SecCertificateCopyData(sec_certificate_copy_ref(cert).takeRetainedValue()) as Data)
         }
-        return leaf
+        return chain
     }
 
     /// The TLS exporter's output for label with an empty context, as Go's
