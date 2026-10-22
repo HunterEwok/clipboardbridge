@@ -72,10 +72,10 @@ public enum PairingJoiner {
 
     /// Checks a welcome as Go's joiner does (section 6, "Welcome"), for a
     /// phone: the group CA is a phone's root and the one announced; the
-    /// admitting phone's certificate is from it or from the issuer and
-    /// names that phone; this phone's certificate is for its device and
-    /// key; no CA keys; an admin CA, when present, is for the admin key
-    /// this phone sent.
+    /// admitting phone's certificate is from one of the group's roots or
+    /// from the issuer and names that phone; this phone's certificate is
+    /// for its device and key; no CA keys; an admin CA, when present, is for
+    /// the admin key this phone sent, under the current root.
     static func check(_ j: Joined, info: Pairing.Info, memberCert: Data, joinerCert: Data, now: Date) throws {
         let w = j.welcome
         guard GroupCertificates.tag(groupCA: w.groupCA) == j.member.group else {
@@ -84,15 +84,20 @@ public enum PairingJoiner {
         guard (try? ParsedCertificate(der: w.groupCA))?.pathLength == 1 else {
             throw Failure.badWelcome("the group CA is not a phone's root")
         }
-        if let issuer = w.issuer, (try? GroupCertificates.checkAdminCA(issuer, root: w.groupCA)) == nil {
+        let later = w.roots ?? []
+        guard later.allSatisfy({ (try? GroupCertificates.checkRoot($0)) != nil }) else {
+            throw Failure.badWelcome("a later root is not a phone's root")
+        }
+        let trusted = [w.groupCA] + later
+        if let issuer = w.issuer, !trusted.contains(where: { (try? GroupCertificates.checkAdminCA(issuer, root: $0)) != nil }) {
             throw Failure.badWelcome("the other phone's issuer is not an admin CA of the group")
         }
-        let theirs = (try? GroupCertificates.verifyMember(memberCert, groupCA: w.groupCA, issuer: w.issuer, now: now))
-            ?? (try? GroupCertificates.verifyMember(memberCert, groupCA: w.groupCA, now: now))
+        let issuerChain = w.issuer.map { [$0] } ?? []
+        let theirs = try? GroupCertificates.verifyMember(chain: [memberCert] + issuerChain, roots: trusted, now: now)
         guard theirs == j.member.device else {
             throw Failure.badWelcome("the other phone's certificate is not from the group or does not name it")
         }
-        guard (try? GroupCertificates.verifyMember(w.cert, groupCA: w.groupCA, issuer: w.issuer, now: now)) == j.device,
+        guard (try? GroupCertificates.verifyMember(chain: [w.cert] + issuerChain, roots: trusted, now: now)) == j.device,
               try CertificateInfo(der: w.cert).publicKey == CertificateInfo(der: joinerCert).publicKey else {
             throw Failure.badWelcome("the certificate is not for this phone")
         }
@@ -100,7 +105,7 @@ public enum PairingJoiner {
             throw Failure.badWelcome("the other phone sent CA keys")
         }
         if let adminCA = w.adminCA {
-            guard let key = info.adminKey, (try? GroupCertificates.checkAdminCA(adminCA, root: w.groupCA)) != nil,
+            guard let key = info.adminKey, (try? GroupCertificates.checkAdminCA(adminCA, root: trusted.last!)) != nil,
                   let ca = try? CertificateInfo(der: adminCA), ca.publicKey == key,
                   ca.commonName == "clipbridge admin " + j.device else {
                 throw Failure.badWelcome("the admin CA is not for this phone's admin key")

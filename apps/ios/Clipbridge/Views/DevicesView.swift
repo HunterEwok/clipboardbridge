@@ -65,13 +65,17 @@ struct DevicesView: View {
                 removing = nil
             } label: { Text("Remove") }
         } message: {
-            Text("It will no longer sync with your devices. To add it again, scan its QR code again.")
+            if removing?.isRoot == true {
+                Text("It made the group. This phone takes the group over with a new key, and the other devices follow it.")
+            } else {
+                Text("It will no longer sync with your devices. To add it again, scan its QR code again.")
+            }
         }
     }
 
-    /// An admin phone removes any device but itself and the phone that made
-    /// the group.
-    private func canRemove(_ d: AppModel.Computer) -> Bool { model.isAdmin && !d.isSelf && !d.isRoot }
+    /// An admin phone removes any device but itself; removing the phone
+    /// that holds the group's root hands the group to this phone.
+    private func canRemove(_ d: AppModel.Computer) -> Bool { model.isAdmin && !d.isSelf }
 
     private func icon(_ role: String) -> String {
         switch role {

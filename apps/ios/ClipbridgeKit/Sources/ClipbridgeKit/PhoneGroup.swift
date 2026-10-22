@@ -12,15 +12,20 @@ import Foundation
 public struct PhoneGroup: Codable, Equatable, Sendable {
     /// This phone's device ID.
     public var device: String
-    /// The group root CA, DER; path length 1.
+    /// The group root CA, DER; path length 1. The group's first root, which
+    /// names it for good.
     public var groupCA: Data
-    /// This phone's member certificate, DER, from the group CA or from
+    /// The roots that took the group over from groupCA, in order, DER; the
+    /// last is the current root (docs/protocol.md, section 10, "Roots").
+    public var roots: [Data] = []
+    /// This phone's member certificate, DER, from one of the roots or from
     /// memberIssuer.
     public var memberCert: Data
     /// The admin CA that issued memberCert, which the phone sends after it
     /// in TLS handshakes; nil when the group CA did.
     public var memberIssuer: Data?
-    /// Whether this phone holds the root key: it made the group.
+    /// Whether this phone holds the current root's key: it made the group,
+    /// or took it over.
     public var isRoot = true
     /// This phone's admin CA when it is an admin but not the root.
     public var adminCA: Data?
@@ -29,7 +34,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// them, and they spread to every member.
     public var records = RecordSet()
 
-    enum CodingKeys: String, CodingKey { case device, groupCA, memberCert, memberIssuer, isRoot, adminCA, computers, records }
+    enum CodingKeys: String, CodingKey { case device, groupCA, roots, memberCert, memberIssuer, isRoot, adminCA, computers, records }
 
     init(device: String, groupCA: Data, memberCert: Data, computers: [Computer]) {
         (self.device, self.groupCA, self.memberCert, self.computers) = (device, groupCA, memberCert, computers)
@@ -39,6 +44,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         device = try c.decode(String.self, forKey: .device)
         groupCA = try c.decode(Data.self, forKey: .groupCA)
+        roots = try c.decodeIfPresent([Data].self, forKey: .roots) ?? []
         memberCert = try c.decode(Data.self, forKey: .memberCert)
         memberIssuer = try c.decodeIfPresent(Data.self, forKey: .memberIssuer)
         // Files saved before phones could join belong to a root.
@@ -46,6 +52,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         adminCA = try c.decodeIfPresent(Data.self, forKey: .adminCA)
         computers = try c.decode([Computer].self, forKey: .computers)
         records = try c.decodeIfPresent(RecordSet.self, forKey: .records) ?? RecordSet()
+        // Sets saved before root records do not name their group CA.
+        if records.groupCA == nil, !records.records.isEmpty { records.groupCA = groupCA }
     }
 
     /// Whether this phone may admit devices, renew certificates and remove
@@ -55,8 +63,16 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// The certificate chain this phone presents in TLS, leaf first.
     public var memberChain: [Data] { [memberCert] + (memberIssuer.map { [$0] } ?? []) }
 
-    /// The CA whose key signs for this phone: the root, or its admin CA.
-    var signingCA: Data { adminCA ?? groupCA }
+    /// The current root: the last of roots, or the group CA.
+    public var currentRoot: Data { roots.last ?? groupCA }
+
+    /// Every root the group had, the group CA first: member certificates
+    /// and admin CAs from any of them verify.
+    public var trusted: [Data] { [groupCA] + roots }
+
+    /// The CA whose key signs for this phone: the current root, or its
+    /// admin CA.
+    var signingCA: Data { adminCA ?? currentRoot }
 
     /// A computer this phone admitted.
     public struct Computer: Codable, Equatable, Sendable, Identifiable {
@@ -101,11 +117,26 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// welcome carries its admin CA. The records arrive from the computers.
     public static func joined(_ j: PairingJoiner.Joined) -> PhoneGroup {
         var g = PhoneGroup(device: j.device, groupCA: j.welcome.groupCA, memberCert: j.welcome.cert, computers: [])
-        (g.memberIssuer, g.isRoot, g.adminCA) = (j.welcome.issuer, false, j.welcome.adminCA)
+        (g.memberIssuer, g.isRoot, g.adminCA, g.roots) = (j.welcome.issuer, false, j.welcome.adminCA, j.welcome.roots ?? [])
         return g
     }
 
-    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot }
+    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot }
+
+    /// Adds records from other members, then follows the roots they lead
+    /// to when they go further than this phone's; returns the new records.
+    @discardableResult
+    public mutating func add(_ rs: [Member.Record]) -> [Member.Record] {
+        let fresh = records.addAll(rs, groupCA: groupCA)
+        adoptRoots()
+        return fresh
+    }
+
+    /// Takes the roots of the records when they go further than roots.
+    mutating func adoptRoots() {
+        let path = records.roots
+        if path.count > roots.count, Array(path.prefix(roots.count)) == roots { roots = path }
+    }
 
     /// Signs and adds a device record.
     mutating func record(device: String, name: String, role: String, key: Data, admin: Data? = nil, caSigner: CertificateSigner,
@@ -117,12 +148,47 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return r
     }
 
+    /// Hands the group to this admin phone when the root phone lost is gone
+    /// (section 10, "Handing the group over"): a new root for rootSigner's
+    /// key, a root record signed with this phone's admin CA (adminSigner),
+    /// then, as the new root, a revocation of the old root's key and the
+    /// lost phone that keeps everything else the old root certified, and
+    /// this phone's own record under the new root. It returns the records
+    /// to send; this phone is the root afterwards.
+    public mutating func takeOver(from lost: String, adminSigner: CertificateSigner, rootSigner: CertificateSigner,
+                                  now: Date) throws -> [Member.Record] {
+        guard let myCA = adminCA, !isRoot else { throw Failure.notAdmin }
+        guard lost == records.rootDevice, lost != device else { throw Failure.notRoot }
+        let list = devices
+        guard let d = list.first(where: { $0.id == lost }), let me = list.first(where: { $0.id == device }) else {
+            throw Failure.unknownDevice
+        }
+        let oldRoot = try Records.keyHash(cert: currentRoot)
+        let newRoot = try GroupCertificates.groupCA(signer: rootSigner, now: now, pathLength: 1)
+        var keep = records.admitted(by: oldRoot)
+        for other in list where other.id != lost {
+            if let k = other.adminKey, !keep.contains(k) { keep.append(k) }
+        }
+        keep.removeAll { $0 == d.key || $0 == d.adminKey }
+        var out = [try Records.root(newRoot, group: tag, by: device, now: now, signer: adminSigner, adminCA: myCA)]
+        records.add(out[0], groupCA: groupCA)
+        out.append(try Records.revoke([oldRoot, d.key] + (d.adminKey.map { [$0] } ?? []), keep: keep, group: tag, by: device, now: now,
+                                      signer: rootSigner))
+        out.append(try Records.device(device, name: me.name, role: "phone", key: me.key, admin: me.adminKey, group: tag, by: device,
+                                      now: now, signer: rootSigner))
+        for r in out.dropFirst() { records.add(r, groupCA: groupCA) }
+        adoptRoots()
+        guard currentRoot == newRoot else { throw Failure.notRoot }
+        (isRoot, adminCA) = (true, nil)
+        return out
+    }
+
     /// Renews this phone's own member certificate when it is due; reports
     /// whether it did, after which the TLS identity must be made again. An
     /// admin issues it from its own admin CA, a phone without one cannot.
     public mutating func renewOwnCertificate(caSigner: CertificateSigner, now: Date) throws -> Bool {
-        guard isAdmin, GroupCertificates.isDue(memberCert, groupCA: groupCA, now: now),
-              (try? GroupCertificates.verifyMember(memberCert, groupCA: groupCA, issuer: memberIssuer, now: now)) == device else { return false }
+        guard isAdmin, GroupCertificates.isDue(memberCert, groupCA: signingCA, now: now),
+              (try? GroupCertificates.verifyMember(chain: memberChain, roots: trusted, now: now)) == device else { return false }
         memberCert = try GroupCertificates.member(device: device, publicKey: CertificateInfo(der: memberCert).publicKey, ca: signingCA,
                                                   caSigner: caSigner, now: now)
         memberIssuer = adminCA
@@ -134,7 +200,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// own admin CA issued.
     public func renewal(chain: [Data], caSigner: CertificateSigner, now: Date) -> Data? {
         guard isAdmin else { return nil }
-        return try? GroupCertificates.renewal(chain: chain, groupCA: groupCA, caSigner: caSigner, adminCA: adminCA, now: now)
+        return try? GroupCertificates.renewal(chain: chain, roots: trusted, caSigner: caSigner, adminCA: adminCA, now: now)
     }
 
     /// The devices of the group, from the records.
@@ -144,7 +210,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// which every member then refuses, and returns the record to send. For
     /// an admin phone it revokes its admin key too and keeps the devices
     /// that phone admitted, so they stay in the group (section 10). The
-    /// root phone cannot be removed yet: that needs a root record.
+    /// root phone is removed with takeOver instead.
     public mutating func revoke(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
         guard device != self.device else { throw Failure.cannotRemoveItself }
@@ -173,14 +239,15 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     public mutating func admit(over t: FrameTransport, code: String, joinerCert: Data, sessionID: [UInt8],
                                caSigner: CertificateSigner, makeAdmin: Bool = true, now: Date) async throws -> PairingMember.Admitted {
         guard isAdmin else { throw Failure.notAdmin }
-        let (root, ca, issuer, canMakeAdmins) = (groupCA, signingCA, adminCA, isRoot)
+        let (first, later, root, ca, issuer, canMakeAdmins) = (groupCA, roots, currentRoot, signingCA, adminCA, isRoot)
         var adminKey: Data?
         let admitted = try await PairingMember.admit(
             over: t, code: code, memberCert: memberCert, joinerCert: joinerCert, sessionID: sessionID,
             memberAD: Pairing.MemberAD(device: device, group: tag)
         ) { dev, publicKey, info in
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
-                                    groupCA: root, issuer: issuer)
+                                    groupCA: first, issuer: issuer)
+            w.roots = later.isEmpty ? nil : later
             if info.os == "ios", let key = info.adminKey, makeAdmin, canMakeAdmins {
                 w.adminCA = try GroupCertificates.adminCA(device: dev, publicKey: key, root: root, rootSigner: caSigner)
                 adminKey = key

@@ -83,6 +83,15 @@ public enum KeychainIdentity {
         return (out as! SecKey)
     }
 
+    /// Removes the key stored under label, before a new one replaces it.
+    public static func removeKey(label: String) {
+        var query: [CFString: Any] = [kSecClass: kSecClassKey, kSecAttrLabel: label]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain] = false
+        #endif
+        SecItemDelete(query as CFDictionary)
+    }
+
     /// Removes the certificates stored under label, before a new one
     /// replaces them.
     public static func removeCertificates(label: String) {

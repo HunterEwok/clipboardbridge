@@ -273,7 +273,7 @@ jobs:
           # interop-out the records it signed, a certificate it renewed and
           # what an admin phone makes.
           go test ./internal/node -run TestSwiftMemberFrames -v
-          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin' -v
+          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot' -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit

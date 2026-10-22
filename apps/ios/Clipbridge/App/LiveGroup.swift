@@ -59,7 +59,7 @@ final class LiveGroup: GroupController {
     /// Renews this phone's own member certificate when it is due, which
     /// asks for Face ID, and then connects again with it.
     private func renewOwnCertificate() async {
-        guard var g = state, GroupCertificates.isDue(g.memberCert, groupCA: g.groupCA, now: Date()),
+        guard var g = state, GroupCertificates.isDue(g.memberCert, groupCA: g.adminCA ?? g.currentRoot, now: Date()),
               let ca = try? await caSigner(reason: String(localized: "Renew this phone's certificate")),
               (try? g.renewOwnCertificate(caSigner: ca, now: Date())) == true else { return }
         try? g.save(to: file)
@@ -109,7 +109,11 @@ final class LiveGroup: GroupController {
     /// too. A phone that is no admin has no such key.
     private func caSigner(reason: String) async throws -> SecKeySigner {
         guard isAdmin else { throw Failure.notAdmin }
-        let label = Self.signingLabel(state)
+        return try await signer(label: Self.signingLabel(state), reason: reason)
+    }
+
+    /// The signer of the key under label, after Face ID as caSigner asks.
+    private func signer(label: String, reason: String) async throws -> SecKeySigner {
         guard SecureEnclave.isAvailable else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
         let context: LAContext
         if let a = authorized, Date().timeIntervalSince(a.at) < Self.authorizedFor {
@@ -259,7 +263,11 @@ final class LiveGroup: GroupController {
     /// phone's root or admin key, sent to every connected computer, which
     /// refuse the device from then on. The phone stops dialing it.
     func remove(_ id: String) async throws {
-        guard state != nil else { return }
+        guard let current = state else { return }
+        if !current.isRoot, id == current.records.rootDevice {
+            try await takeOver(from: id)
+            return
+        }
         let ca = try await caSigner(reason: String(localized: "Remove a device from your group"))
         guard var g = state else { return }
         let r = try g.revoke(device: id, caSigner: ca, now: Date())
@@ -268,6 +276,28 @@ final class LiveGroup: GroupController {
         groupChanged()
         await node?.sendRecords([r])
         await node?.close(peer: id)
+    }
+
+    /// Removes the phone that holds the group's root, when it is lost: this
+    /// admin phone makes a new root key in the Secure Enclave, behind Face
+    /// ID, and takes the group over (docs/protocol.md, section 10, "Handing
+    /// the group over"). From then on it signs with that key.
+    private func takeOver(from id: String) async throws {
+        let reason = String(localized: "Take the group over from the lost phone")
+        let admin = try await signer(label: Self.adminLabel, reason: reason)
+        // A root key left from a group this phone made before goes.
+        KeychainIdentity.removeKey(label: Self.caLabel)
+        let se = SecureEnclave.isAvailable
+        _ = try KeychainIdentity.makeKey(label: Self.caLabel, secureEnclave: se, userPresence: se)
+        let root = try await signer(label: Self.caLabel, reason: reason)
+        guard var g = state else { return }
+        let rs = try g.takeOver(from: id, adminSigner: admin, rootSigner: root, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords(rs)
+        await node?.close(peer: id)
+        await restartSync()
     }
 
     /// Passes a changed group to the parts that run with it.
@@ -284,14 +314,18 @@ final class LiveGroup: GroupController {
         g.records.records.isEmpty ? nil : Set(g.devices.map(\.id))
     }
 
-    /// Takes in records a computer sent.
+    /// Takes in records a computer sent, and the roots they lead to: a
+    /// new root, after another admin phone took the group over, means
+    /// connecting again with it trusted.
     private func adopt(_ set: RecordSet) {
         guard var g = state else { return }
-        for r in set.records { g.records.add(r, groupCA: g.groupCA) }
+        let roots = g.roots
+        g.add(set.records)
         guard g != state else { return }
         try? g.save(to: file)
         state = g
         relay?.allowed = Self.allowed(g)
+        if g.roots != roots { Task { await restartSync() } }
     }
 
     // MARK: Syncing
@@ -311,7 +345,7 @@ final class LiveGroup: GroupController {
         let relay = Relay()
         relay.allowed = Self.allowed(g)
         let browser = BonjourBrowser { found in relay.update(found) }
-        let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), groupCA: g.groupCA))
+        let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted))
         relay.dialer = dialer
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer) = (node, browser, dialer, relay, box, renewer)
@@ -345,7 +379,8 @@ final class LiveGroup: GroupController {
         /// A renewal for a peer's chain, leaf first, when it is due and this
         /// phone may renew it.
         func renew(_ chain: [Data]) -> Data? {
-            guard group.isAdmin, let cert = chain.first, GroupCertificates.isDue(cert, groupCA: group.groupCA, now: Date()) else { return nil }
+            guard group.isAdmin, let cert = chain.first,
+                  GroupCertificates.isDue(cert, groupCA: group.adminCA ?? group.currentRoot, now: Date()) else { return nil }
             var ctx = context
             if secureEnclave && ctx == nil {
                 let quiet = LAContext()
@@ -373,7 +408,7 @@ final class LiveGroup: GroupController {
 
         func add(_ rs: [Member.Record]) -> [Member.Record] {
             let (fresh, now): ([Member.Record], RecordSet) = lock.withLock {
-                (rs.filter { set.add($0, groupCA: groupCA) }, set)
+                (set.addAll(rs, groupCA: groupCA), set)
             }
             if !fresh.isEmpty { onAdd?(now) }
             return fresh

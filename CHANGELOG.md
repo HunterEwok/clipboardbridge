@@ -32,6 +32,9 @@ All notable changes to clipbridge are documented in this file. The format follow
   is lost: they trust the new root next to the earlier ones, keep it with their identity,
   take renewals from it and refuse anything the old root's key signs after the handover
   (docs/protocol.md, section 10).
+- The phone app removes a lost phone that made the group: on an admin phone, Remove on that
+  phone takes the group over with a new key in the Secure Enclave, and the computers and the
+  other phones follow it.
 
 ## [0.2.0] - 2026-10-21
 
