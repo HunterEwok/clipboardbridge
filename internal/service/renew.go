@@ -64,6 +64,11 @@ func (s *Service) certRenewed(der []byte) error {
 	if s.id == nil {
 		return errors.New("this device is in no group")
 	}
+	// A new root may renew before this member has acted on its root
+	// record.
+	if err := s.adoptRootsLocked(); err != nil {
+		return err
+	}
 	next, err := s.id.WithCert(der)
 	if err != nil {
 		return err

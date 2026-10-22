@@ -28,6 +28,10 @@ All notable changes to clipbridge are documented in this file. The format follow
 - The phone app joins another phone's group: "Join another phone's group" on the Start
   screen shows a QR code, the other phone scans it with +, and the new phone becomes an
   admin. The Devices screen marks the admin phones and lets only admins remove devices.
+- Members accept `root` records, which hand a phone group to a new root when the root phone
+  is lost: they trust the new root next to the earlier ones, keep it with their identity,
+  take renewals from it and refuse anything the old root's key signs after the handover
+  (docs/protocol.md, section 10).
 
 ## [0.2.0] - 2026-10-21
 

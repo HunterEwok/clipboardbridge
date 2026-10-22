@@ -68,18 +68,14 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 		s.recMu.Unlock()
 		return nil
 	}
-	var fresh []group.Record
-	revoked := false
-	for _, r := range rs {
-		isNew, err := recs.Add(r)
-		if err != nil {
-			s.logf("clipbridge: dropped a device record from %s: %v", orThis(from), err)
-			continue
-		}
-		if isNew {
-			fresh = append(fresh, r)
-			revoked = revoked || r.Type() == group.RecordRevoke
-		}
+	fresh, errs := recs.AddAll(rs)
+	for _, err := range errs {
+		s.logf("clipbridge: dropped a device record from %s: %v", orThis(from), err)
+	}
+	revoked, rooted := false, false
+	for _, r := range fresh {
+		revoked = revoked || r.Type() == group.RecordRevoke
+		rooted = rooted || r.Type() == group.RecordRoot
 	}
 	if len(fresh) > 0 {
 		if err := recs.Save(s.cfg.StateDir); err != nil {
@@ -87,10 +83,40 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 		}
 	}
 	s.recMu.Unlock()
-	if revoked {
+	if rooted {
+		s.mu.Lock()
+		err := s.adoptRootsLocked()
+		s.mu.Unlock()
+		if err != nil {
+			s.logf("clipbridge: trusting the group's new root: %v", err)
+		}
+	}
+	if revoked || rooted {
 		s.afterRevocation()
 	}
 	return fresh
+}
+
+// adoptRootsLocked starts trusting the roots the records lead to when they
+// go further than the identity's, after a root record handed the group to
+// a new root (docs/protocol.md, section 10). s.mu is held.
+func (s *Service) adoptRootsLocked() error {
+	if s.id == nil || s.nd == nil {
+		return nil
+	}
+	s.recMu.Lock()
+	roots := s.records.Roots()
+	s.recMu.Unlock()
+	if len(roots) <= len(s.id.Roots) {
+		return nil
+	}
+	next := *s.id
+	next.Roots = roots
+	if err := s.setIdentityLocked(&next); err != nil {
+		return err
+	}
+	s.logf("clipbridge: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
+	return nil
 }
 
 func orThis(from group.DeviceID) string {

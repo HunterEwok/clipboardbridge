@@ -289,6 +289,9 @@ func (s *Service) startGroup(id *group.Identity) error {
 
 	s.id, s.eng, s.nd, s.port = id, eng, nd, dc.Port
 	s.groupCtx, s.groupCancel = gctx, cancel
+	if err := s.adoptRootsLocked(); err != nil {
+		s.logf("clipbridge: trusting the group's new root: %v", err)
+	}
 	nd.Rejoin() // the service just started; there are no connections yet
 	s.wg.Add(2)
 	go func() {

@@ -142,13 +142,15 @@ func (id *Identity) tlsCert(leaf *x509.Certificate) tls.Certificate {
 
 func (id *Identity) groupPool() *x509.CertPool {
 	pool := x509.NewCertPool()
-	pool.AddCert(id.GroupCA.Cert)
+	for _, root := range id.Trusted() {
+		pool.AddCert(root)
+	}
 	return pool
 }
 
 // verifyClock returns the clock crypto/tls checks member certificates
 // with; see verifyTime.
 func (id *Identity) verifyClock(opt TLSOptions) func() time.Time {
-	ca := id.GroupCA.Cert
+	ca := id.Root()
 	return func() time.Time { return verifyTime(ca, opt.now()) }
 }
