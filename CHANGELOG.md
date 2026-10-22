@@ -25,6 +25,9 @@ All notable changes to clipbridge are documented in this file. The format follow
   an admin phone scans it, and the root makes the new phone an admin with an admin CA for
   the admin key it sent. Admin phones admit and renew through their admin CA, and removing
   an admin phone keeps the devices it admitted (docs/protocol.md, sections 6 and 10).
+- The phone app joins another phone's group: "Join another phone's group" on the Start
+  screen shows a QR code, the other phone scans it with +, and the new phone becomes an
+  admin. The Devices screen marks the admin phones and lets only admins remove devices.
 
 ## [0.2.0] - 2026-10-21
 

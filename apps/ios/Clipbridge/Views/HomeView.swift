@@ -41,8 +41,10 @@ struct HomeView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { adding = true } label: {
-                        Image(systemName: "plus").accessibilityLabel(Text("Add a device"))
+                    if model.isAdmin {
+                        Button { adding = true } label: {
+                            Image(systemName: "plus").accessibilityLabel(Text("Add a device"))
+                        }
                     }
                 }
             }

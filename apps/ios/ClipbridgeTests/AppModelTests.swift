@@ -22,6 +22,15 @@ final class AppModelTests: XCTestCase {
     @MainActor
     final class FakeGroup: GroupController {
         var hasGroup = false
+        var isAdmin = true
+        var joinCode = JoinCode(code: "135790", addrs: ["192.168.1.30:50000"], fingerprint: "fp")
+        var shown: [JoinCode] = []
+        func join(show: @escaping @MainActor (JoinCode) -> Void) async throws {
+            show(joinCode)
+            shown.append(joinCode)
+            hasGroup = true
+            isAdmin = false
+        }
         var computers: [AppModel.Computer] = []
         var admitted: [JoinCode] = []
         func admit(_ code: JoinCode) async throws {
@@ -53,6 +62,34 @@ final class AppModelTests: XCTestCase {
         await m.remove("a")
         XCTAssertEqual(m.devices.map(\.id), ["me"])
         XCTAssertTrue(m.computers.isEmpty)
+    }
+
+    func testJoin() async {
+        let g = FakeGroup()
+        let m = AppModel(group: g)
+        m.startJoining()
+        XCTAssertEqual(m.phase, .joining)
+        await m.join()
+        XCTAssertEqual(g.shown, [g.joinCode])
+        XCTAssertEqual(m.phase, .home)
+        XCTAssertNil(m.joinCode)
+        XCTAssertFalse(m.isAdmin)
+
+        let pending = AppModel()
+        pending.startJoining()
+        await pending.join()
+        XCTAssertEqual(pending.phase, .joining, "the screen stays, with the error")
+        XCTAssertNotNil(pending.message)
+        pending.cancelJoin()
+        XCTAssertEqual(pending.phase, .start)
+        XCTAssertNil(pending.message)
+    }
+
+    func testJoinQRText() {
+        let jc = JoinCode(code: "246802", addrs: ["192.168.1.20:8767", JoinCode.address(host: "fd00::5", port: 8767)], fingerprint: "abc_-")
+        XCTAssertEqual(JoinCode(qr: jc.qrText), jc)
+        XCTAssertEqual(AppModel.read(scanned: jc.qrText), .joinCode(jc))
+        XCTAssertTrue(JoinCode(code: JoinCode.newCode(), addrs: [], fingerprint: "").codeIsValid)
     }
 
     func testPendingGroup() async {

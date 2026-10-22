@@ -91,20 +91,20 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
 Done: the Go service (0.2.0 released); the app makes its own group (root key in the Secure
 Enclave, Face ID before each signing action), admits computers by QR code, syncs with them,
 shows the devices and removes them, renews certificates; admin CAs under the root work in Go
-and in the kit (records, chains, Welcome `issuer`), but no second phone can join yet.
+and in the kit (records, chains, Welcome `issuer`); a second phone joins from its Start
+screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`).
 
 Next steps, roughly in order:
 
-1. **Second admin phone.** The Swift *joiner* side of pairing (a phone that joins an
-   existing phone group), the root issuing an admin CA for it, the admin phone's TLS
-   identity with its admin CA in the chain, `MemberNode` passing the peer chain to renewals
-   (`GroupCertificates.renewal(... issuer:)`), the app UI to add a phone and to revoke a lost
-   one with `keep`.
-2. **`root` records**: handing the root role to another admin phone (Go refuses them for now).
+1. **`root` records**: handing the root role to another admin phone, so that a lost root
+   phone can be removed (Go refuses them for now; `PhoneGroup.revoke` refuses the root).
+2. Renewing the certificates of devices a removed admin admitted from another admin's CA
+   (needs the `cert` message to carry the issuer; today the root renews them).
 3. A computer as admin in a phone group, if wanted.
 4. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
-Face ID prompt and reuse of its context, the keychain identity lookup for TLS. Test these on
+Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
+for a joining phone (`TLSListener`) and the admin CA in the TLS chain. Test these on
 a device before relying on them.

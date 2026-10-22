@@ -189,6 +189,23 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertEqual(info.notBefore, Date(timeIntervalSince1970: 0))
     }
 
+    func testJoinCodeText() {
+        let jc = JoinCode(code: "246802", addrs: ["192.168.1.20:8767", JoinCode.address(host: "fd00::5", port: 8767)], fingerprint: "abc_-")
+        XCTAssertEqual(jc.addrs[1], "[fd00::5]:8767")
+        XCTAssertEqual(JoinCode(qr: jc.qrText), jc)
+        XCTAssertTrue(jc.qrText.hasPrefix("clipbridge://join?code=246802&addr=192.168.1.20:8767&"))
+        for _ in 0..<20 { XCTAssertTrue(JoinCode(code: JoinCode.newCode(), addrs: [], fingerprint: "").codeIsValid) }
+    }
+
+    func testHomeAddresses() {
+        for a in ["10.0.0.2", "172.16.1.1", "172.31.255.1", "192.168.0.225"] { XCTAssertTrue(LocalAddresses.isHome(ipv4: a), a) }
+        for a in ["8.8.8.8", "172.32.0.1", "169.254.1.1", "127.0.0.1", "100.64.0.1", "1.2.3"] { XCTAssertFalse(LocalAddresses.isHome(ipv4: a), a) }
+        XCTAssertTrue(LocalAddresses.isHome(ipv6: "fd12:3456::1"))
+        XCTAssertFalse(LocalAddresses.isHome(ipv6: "fe80::1%en0"))
+        XCTAssertFalse(LocalAddresses.isHome(ipv6: "2001:db8::1"))
+        XCTAssertLessThanOrEqual(LocalAddresses.current().count, JoinCode.maxAddrs)
+    }
+
     func testOldFileIsARoot() throws {
         let g = try PhoneGroup.create(caSigner: SoftwareSigner(), memberKey: SoftwareSigner().publicKeyDER, now: t0)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(g)) as? [String: Any])

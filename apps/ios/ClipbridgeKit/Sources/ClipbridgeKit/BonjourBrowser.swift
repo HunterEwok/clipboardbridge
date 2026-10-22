@@ -45,12 +45,13 @@ public final class BonjourBrowser: @unchecked Sendable {
     public func endpoint(of device: String) -> NWEndpoint? { lock.withLock { endpoints[device] } }
 
     /// A dial function for MemberDialer: TLS 1.3 to the member's endpoint
-    /// with the member ALPN protocol and this phone's identity, accepting
-    /// only that device's certificate from the group CA.
-    public func dialer(identity: SecIdentity, groupCA: Data) -> MemberDialer.Dial {
+    /// with the member ALPN protocol and this phone's identity, followed by
+    /// chain (the admin CA that issued its certificate, if one did),
+    /// accepting only that device's certificate from the group CA.
+    public func dialer(identity: SecIdentity, chain: [Data] = [], groupCA: Data) -> MemberDialer.Dial {
         { [weak self] m in
             guard let ep = self?.endpoint(of: m.device) else { throw TLSTransport.Failure.notReady("not found") }
-            let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity) { chain in
+            let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity, chain: chain) { chain in
                 (try? GroupCertificates.verifyMember(chain: chain, groupCA: groupCA, now: Date())) == m.device
             }
             try await t.start()

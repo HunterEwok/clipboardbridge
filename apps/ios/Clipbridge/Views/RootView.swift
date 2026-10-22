@@ -14,6 +14,7 @@ struct RootView: View {
             GridBackground()
             switch model.phase {
             case .start: StartView()
+            case .joining: JoinView()
             case .home: HomeView()
             }
         }

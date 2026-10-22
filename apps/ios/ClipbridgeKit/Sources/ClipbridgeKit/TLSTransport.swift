@@ -6,7 +6,8 @@ import Network
 import Security
 
 /// A TLS 1.3 connection with Network.framework that carries frames: pairing
-/// with a listening computer, and member connections.
+/// with a listening device, member connections, and a pairing connection
+/// that TLSListener accepted.
 public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     public enum Failure: Error { case notReady(String), closed, peerRejected }
 
@@ -19,24 +20,44 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     public var peerCertificate: Data? { peerChain.first }
 
     /// Dials host:port with TLS 1.3 and the ALPN protocol, presenting
-    /// identity. verify gets the peer's leaf certificate (DER) and decides
+    /// identity, followed by chain (DER, such as the admin CA that issued
+    /// it). verify gets the peer's leaf certificate (DER) and decides
     /// whether to trust it: for pairing, against the QR code's fingerprint.
-    public convenience init(host: String, port: UInt16, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
+    public convenience init(host: String, port: UInt16, alpn: String, identity: SecIdentity, chain: [Data] = [],
+                            verify: @escaping @Sendable (Data) -> Bool) {
         self.init(endpoint: .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!),
-                  alpn: alpn, identity: identity, verifyChain: { verify($0[0]) })
+                  alpn: alpn, identity: identity, chain: chain, verifyChain: { verify($0[0]) })
     }
 
     /// Dials an endpoint, such as a service that BonjourBrowser found, the
     /// same way; verifyChain gets the peer's whole chain (DER, leaf first,
     /// never empty), for a leaf that an admin CA issued.
-    public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, verifyChain: @escaping @Sendable ([Data]) -> Bool) {
+    public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, chain: [Data] = [],
+                verifyChain: @escaping @Sendable ([Data]) -> Bool) {
+        let tls = Self.options(alpn: alpn, identity: identity, chain: chain, verifyChain: verifyChain)
+        connection = NWConnection(to: endpoint, using: NWParameters(tls: tls))
+    }
+
+    /// A connection a TLSListener accepted; start runs its handshake.
+    init(accepted: NWConnection) { connection = accepted }
+
+    /// TLS 1.3 options with the ALPN protocol and identity, presenting
+    /// chain after the identity's certificate, and verifyChain deciding on
+    /// the peer's chain; a server requires the client's certificate.
+    static func options(alpn: String, identity: SecIdentity, chain: [Data], server: Bool = false,
+                        verifyChain: @escaping @Sendable ([Data]) -> Bool) -> NWProtocolTLS.Options {
         let tls = NWProtocolTLS.Options()
         let sec = tls.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(sec, .TLSv13)
         sec_protocol_options_add_tls_application_protocol(sec, alpn)
-        if let id = sec_identity_create(identity) {
-            sec_protocol_options_set_local_identity(sec, id)
-        }
+        var leaf: SecCertificate?
+        SecIdentityCopyCertificate(identity, &leaf)
+        let extra = chain.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
+        let id = leaf != nil && !extra.isEmpty
+            ? sec_identity_create_with_certificates(identity, ([leaf!] + extra) as CFArray)
+            : sec_identity_create(identity)
+        if let id { sec_protocol_options_set_local_identity(sec, id) }
+        if server { sec_protocol_options_set_peer_authentication_required(sec, true) }
         sec_protocol_options_set_verify_block(sec, { _, trust, complete in
             let t = sec_trust_copy_ref(trust).takeRetainedValue()
             guard let chain = SecTrustCopyCertificateChain(t) as? [SecCertificate], !chain.isEmpty else {
@@ -45,8 +66,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
             }
             complete(verifyChain(chain.map { SecCertificateCopyData($0) as Data }))
         }, DispatchQueue(label: "clipbridge.tls.verify"))
-        let params = NWParameters(tls: tls)
-        connection = NWConnection(to: endpoint, using: params)
+        return tls
     }
 
     /// Starts the connection and waits for the handshake.
@@ -131,5 +151,59 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
             }
         }
     }
+}
+/// Listens for TLS 1.3 connections, as a phone does while it shows its
+/// join QR code (docs/protocol.md, section 6, "The joiner listens"). It
+/// requires a client certificate and lets verifyChain decide on it.
+public final class TLSListener: @unchecked Sendable {
+    let listener: NWListener
+    let queue = DispatchQueue(label: "clipbridge.tls.listener")
+    private let connections: AsyncStream<TLSTransport>
+    private let yield: AsyncStream<TLSTransport>.Continuation
+
+    /// Listens on port, or on one the system picks when it is 0.
+    public init(port: UInt16 = 0, alpn: String, identity: SecIdentity, verifyChain: @escaping @Sendable ([Data]) -> Bool) throws {
+        let tls = TLSTransport.options(alpn: alpn, identity: identity, chain: [], server: true, verifyChain: verifyChain)
+        let params = NWParameters(tls: tls)
+        params.includePeerToPeer = false
+        listener = try port == 0 ? NWListener(using: params) : NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
+        (connections, yield) = AsyncStream.makeStream(of: TLSTransport.self)
+    }
+
+    /// Starts listening and returns the port once it is ready.
+    public func start() async throws -> UInt16 {
+        let yield = yield
+        listener.newConnectionHandler = { yield.yield(TLSTransport(accepted: $0)) }
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<UInt16, Error>) in
+            let once = TLSTransport.Once()
+            listener.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    guard once.claim() else { return }
+                    c.resume(returning: self?.listener.port?.rawValue ?? 0)
+                case .failed(let e), .waiting(let e):
+                    guard once.claim() else { return }
+                    self?.listener.cancel()
+                    c.resume(throwing: TLSTransport.Failure.notReady("\(e)"))
+                case .cancelled:
+                    yield.finish()
+                    guard once.claim() else { return }
+                    c.resume(throwing: TLSTransport.Failure.closed)
+                default:
+                    break
+                }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    /// The next connection a device made, its handshake not yet run; nil
+    /// once the listener stopped.
+    public func next() async -> TLSTransport? {
+        var it = connections.makeAsyncIterator()
+        return await it.next()
+    }
+
+    public func stop() { listener.cancel() }
 }
 #endif
