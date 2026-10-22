@@ -382,3 +382,69 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(data)
 }
+
+// TestSwiftRoot reads a takeover that the phone kit signs (swift-root.json
+// from its RootTests, in the directory CLIPBRIDGE_INTEROP_OUT names, or
+// testdata/interop): Go must follow it to the same root and devices, refuse
+// the lost phone and keep the computer the old root admitted.
+func TestSwiftRoot(t *testing.T) {
+	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-root.json"))
+	if os.IsNotExist(err) && os.Getenv("CLIPBRIDGE_INTEROP_OUT") == "" {
+		t.Skip("no swift-root.json; the phone kit's tests write it")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		GroupCA []byte   `json:"group_ca"`
+		Records []Record `json:"records"`
+		Roots   [][]byte `json:"roots"`
+		Devices []string `json:"devices"`
+		Digest  string   `json:"digest"`
+		Lost    []byte   `json:"lost"`
+		Kept    []byte   `json:"kept"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatalf("Go refuses the phone's records: %v", errs)
+	}
+	if s.Digest() != v.Digest {
+		t.Error("the digest differs")
+	}
+	roots := s.Roots()
+	if len(roots) != len(v.Roots) || len(roots) != 1 || string(roots[0].Raw) != string(v.Roots[0]) {
+		t.Fatalf("Go follows %d roots, the phone %d", len(roots), len(v.Roots))
+	}
+	var got []string
+	for _, d := range s.Devices() {
+		got = append(got, string(d.ID))
+	}
+	if strings.Join(got, " ") != strings.Join(v.Devices, " ") {
+		t.Errorf("devices %v, the phone lists %v", got, v.Devices)
+	}
+	lost, err := x509.ParseCertificate(v.Lost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := x509.ParseCertificate(v.Kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Refused([]*x509.Certificate{lost}) == nil {
+		t.Error("the lost phone is not refused")
+	}
+	if err := s.Refused([]*x509.Certificate{kept}); err != nil {
+		t.Errorf("the computer the old root admitted is refused: %v", err)
+	}
+}

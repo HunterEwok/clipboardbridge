@@ -96,8 +96,10 @@ the group", not a status code), never a dialog that must be dismissed.
   it makes its admin key, listens with `TLSListener` on a port the system picks, and shows
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
   it in "Add a device". The root phone makes every phone it admits an admin; an admin that
-  is not the root admits phones as plain members. Removing the root phone waits for `root`
-  records.
+  is not the root admits phones as plain members. An admin phone that removes the root
+  phone takes the group over (`PhoneGroup.takeOver`, protocol.md section 10, "Handing the
+  group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
+  `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
   `apps/ios/Clipbridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the

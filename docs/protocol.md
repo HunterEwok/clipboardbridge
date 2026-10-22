@@ -796,8 +796,9 @@ chains and records signed through one are implemented on both sides: Go's
 `adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
 ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
-`testdata/interop/go-root.json` holds a handover for the phone kit to check); the phone kit
-and the app follow.
+`testdata/interop/go-root.json` holds a handover for the phone kit to check) and in
+ClipbridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
+`roots`; `TestSwiftRoot` checks a takeover the kit signs).
 
 ### Admin CA and chains
 

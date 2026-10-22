@@ -130,6 +130,23 @@ public enum GroupCertificates {
         guard signed(c, by: r.info) else { throw VerifyError.notFromGroupCA }
     }
 
+    /// Checks the new root of a root record as Go's checkRoot does: a
+    /// self-signed CA with path length 1 that may sign certificates, with a
+    /// P-256 key (docs/protocol.md, section 10, "Roots").
+    public static func checkRoot(_ der: Data) throws {
+        let c = try ParsedCertificate(der: der)
+        guard c.isCA, c.pathLength == 1, c.canSignCertificates,
+              (try? P256.Signing.PublicKey(derRepresentation: c.info.publicKey)) != nil, signed(c, by: c.info) else {
+            throw VerifyError.notRoot
+        }
+    }
+
+    /// Whether the certificate der was signed by the CA issuer.
+    static func signed(_ der: Data, by issuer: Data) -> Bool {
+        guard let c = try? ParsedCertificate(der: der), let i = try? CertificateInfo(der: issuer) else { return false }
+        return signed(c, by: i)
+    }
+
     static func signed(_ cert: ParsedCertificate, by issuer: CertificateInfo) -> Bool {
         guard cert.rawIssuer == issuer.rawSubject,
               let key = try? P256.Signing.PublicKey(derRepresentation: issuer.publicKey),
@@ -214,13 +231,28 @@ public enum GroupCertificates {
     /// renewal(of:...) for a peer's chain from a TLS handshake, leaf first:
     /// the certificate after the leaf, when there is one, is its issuer.
     public static func renewal(chain: [Data], groupCA: Data, caSigner: CertificateSigner, adminCA: Data? = nil, now: Date) throws -> Data? {
-        guard let leaf = chain.first else { return nil }
-        let issuer = chain.dropFirst().first { (try? checkAdminCA($0, root: groupCA)) != nil }
-        return try renewal(of: leaf, groupCA: groupCA, issuer: issuer, caSigner: caSigner, adminCA: adminCA, now: now)
+        try renewal(chain: chain, roots: [groupCA], caSigner: caSigner, adminCA: adminCA, now: now)
+    }
+
+    /// renewal(chain:...) in a group with several roots, the current one
+    /// last (section 10, "Roots"): the certificate may be from any of them,
+    /// or from an admin CA under any of them, and the renewed one is from
+    /// the current root, or from adminCA.
+    public static func renewal(chain: [Data], roots: [Data], caSigner: CertificateSigner, adminCA: Data? = nil, now: Date) throws -> Data? {
+        guard let leaf = chain.first, let current = roots.last else { return nil }
+        for root in roots {
+            let issuer = chain.dropFirst().first { (try? checkAdminCA($0, root: root)) != nil }
+            if let adminCA, issuer != adminCA { continue }
+            guard let device = try? verifyMember(leaf, groupCA: root, issuer: issuer, now: now) else { continue }
+            let ca = adminCA ?? current
+            guard isDue(leaf, groupCA: ca, now: now) else { return nil }
+            return try member(device: device, publicKey: CertificateInfo(der: leaf).publicKey, ca: ca, caSigner: caSigner, now: now)
+        }
+        return nil
     }
 
     public enum VerifyError: Error, Equatable {
-        case notFromGroupCA, expired, notYetValid, badName, isCA, notAdminCA
+        case notFromGroupCA, expired, notYetValid, badName, isCA, notAdminCA, notRoot
     }
 
     /// Checks a member certificate as Go's checkPeer does (docs/protocol.md,
@@ -256,6 +288,17 @@ public enum GroupCertificates {
             if let id = try? verifyMember(leaf, groupCA: groupCA, issuer: issuer, now: now) { return id }
         }
         return try verifyMember(leaf, groupCA: groupCA, now: now)
+    }
+
+    /// verifyMember(chain:groupCA:now:) in a group with several roots
+    /// (section 10, "Roots"): the leaf from any of them, or from an admin
+    /// CA under any of them.
+    public static func verifyMember(chain: [Data], roots: [Data], now: Date) throws -> String {
+        var last: Error = VerifyError.notFromGroupCA
+        for root in roots {
+            do { return try verifyMember(chain: chain, groupCA: root, now: now) } catch { last = error }
+        }
+        throw last
     }
 }
 

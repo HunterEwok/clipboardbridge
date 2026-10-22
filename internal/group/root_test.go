@@ -53,9 +53,24 @@ func newHandover(t *testing.T) handover {
 	h.all = append(append([]Record(nil), h.before...),
 		rootRecord(t, g, pg.b, bChain, h.newRoot.Cert),
 		revokeRecord(t, g, h.newRoot, nil, []KeyHash{KeyHashOf(pg.root.Cert), KeyHashOf(h.lost)}, keep),
-		adminRecord(t, g, h.newRoot, nil, h.b, "phone B", adminB),
+		listedAgain(t, g, h.newRoot, h.b, "phone B", adminB),
 	)
 	return h
+}
+
+// listedAgain is the record a phone signs for itself under a new root:
+// later than its first one, so that its body and ID differ.
+func listedAgain(t *testing.T, group *x509.Certificate, signer *CA, cert *x509.Certificate, name string, admin KeyHash) Record {
+	t.Helper()
+	key := KeyHashOf(cert)
+	r, err := SignRecord(RecordBody{
+		Type: RecordDevice, Group: Tag(group), TimeMS: 10, By: DeviceID(cert.Subject.CommonName),
+		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RolePhone, Key: &key, Admin: &admin,
+	}, signer.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }
 
 func (h handover) records(t *testing.T) *Records {

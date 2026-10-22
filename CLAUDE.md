@@ -92,20 +92,20 @@ Done: the Go service (0.2.0 released); the app makes its own group (root key in 
 Enclave, Face ID before each signing action), admits computers by QR code, syncs with them,
 shows the devices and removes them, renews certificates; admin CAs under the root work in Go
 and in the kit (records, chains, Welcome `issuer`); a second phone joins from its Start
-screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`).
+screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`);
+an admin phone removes a lost root phone by taking the group over with `root` records
+(`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`).
 
 Next steps, roughly in order:
 
-1. **`root` records**: handing the root role to another admin phone, so that a lost root
-   phone can be removed. Go accepts them (docs/protocol.md, section 10, "Roots"); the kit
-   and the app do not yet (`PhoneGroup.revoke` refuses the root).
-2. Renewing the certificates of devices a removed admin admitted from another admin's CA
+1. Renewing the certificates of devices a removed admin admitted from another admin's CA
    (needs the `cert` message to carry the issuer; today the root renews them).
-3. A computer as admin in a phone group, if wanted.
-4. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
+2. A computer as admin in a phone group, if wanted.
+3. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
-for a joining phone (`TLSListener`) and the admin CA in the TLS chain. Test these on
+for a joining phone (`TLSListener`), the admin CA in the TLS chain and the takeover (a new
+Secure Enclave root key signed right after the admin key). Test these on
 a device before relying on them.

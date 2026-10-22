@@ -131,6 +131,16 @@
         }
       }
     },
+    "It made the group. This phone takes the group over with a new key, and the other devices follow it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон создал группу. Ваш телефон забирает группу себе с новым ключом, остальные устройства переходят за ним."
+          }
+        }
+      }
+    },
     "It will no longer sync with your devices. To add it again, scan its QR code again.": {
       "localizations": {
         "ru": {
@@ -437,6 +447,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Как в системе"
+          }
+        }
+      }
+    },
+    "Take the group over from the lost phone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забрать группу у потерянного телефона"
           }
         }
       }
