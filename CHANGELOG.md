@@ -11,6 +11,13 @@ All notable changes to clipbridge are documented in this file. The format follow
 - Members accept a group CA with path length 1, the root that the phone app creates for its
   group, so that it can certify admin phones later (docs/protocol.md, sections 9 and 10).
 
+### Added
+
+- Groundwork for a second admin phone: members accept a member certificate issued by an
+  admin CA under the phone's root, keep that CA with their identity, send it in member
+  handshakes and take it from a pairing Welcome; the phone app makes admin CAs, verifies
+  such chains and reads and signs records through an admin CA (docs/protocol.md, section 10).
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

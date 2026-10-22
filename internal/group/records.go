@@ -295,6 +295,11 @@ func (s *Records) signerKey(chain [][]byte) (*ecdsa.PublicKey, KeyHash, error) {
 	return nil, KeyHash{}, errors.New("group: a record's chain is too long")
 }
 
+// CheckAdminCA checks that c is an admin CA certified by root: a CA with
+// path length 0 and a P-256 key, signed by root, which allows one level of
+// CAs below it.
+func CheckAdminCA(c, root *x509.Certificate) error { return checkAdminCA(c, root) }
+
 // checkAdminCA checks that c is an admin CA certified by root: a CA with
 // path length 0 and a P-256 key, signed by root, which allows one level of
 // CAs below it.

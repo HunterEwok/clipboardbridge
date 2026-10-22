@@ -4,9 +4,9 @@ import Crypto
 import Foundation
 
 /// The group's signed device and revocation records (docs/protocol.md,
-/// section 10), as internal/group/records.go makes and reads them. The phone
-/// signs them with its root key, so they carry no chain; records signed
-/// through an admin CA come with the admin phones.
+/// section 10), as internal/group/records.go makes and reads them. The root
+/// phone signs them with the group CA key, without a chain; an admin phone
+/// signs them with its admin CA key, and the chain holds the admin CA.
 public enum Records {
     public static let version = 1
 
@@ -42,27 +42,31 @@ public enum Records {
     /// A record's ID: SHA-256 over its body.
     public static func id(_ r: Member.Record) -> Data { Data(SHA256.hash(data: r.body)) }
 
-    /// Signs a body with the group CA key (the phone's root).
-    public static func sign(_ body: Body, with signer: CertificateSigner) throws -> Member.Record {
+    /// Signs a body with the group CA key (the phone's root), or with an
+    /// admin CA key when adminCA is that CA's certificate.
+    public static func sign(_ body: Body, with signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try enc.encode(body)
-        return Member.Record(body: data, sig: try signer.signature(for: data))
+        return Member.Record(body: data, sig: try signer.signature(for: data), chain: adminCA.map { [$0] })
     }
 
-    /// A device record.
-    public static func device(_ device: String, name: String, role: String, key: Data, group: String, by: String,
-                              now: Date, signer: CertificateSigner) throws -> Member.Record {
+    /// A device record. admin is the key hash of the device's admin CA, for
+    /// an admin phone.
+    public static func device(_ device: String, name: String, role: String, key: Data, admin: Data? = nil, group: String, by: String,
+                              now: Date, signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
         var b = Body(type: "device", group: group, timeMS: ms(now), by: by)
-        (b.device, b.name, b.role, b.key) = (device, name, role, key)
-        return try sign(b, with: signer)
+        (b.device, b.name, b.role, b.key, b.admin) = (device, name, role, key, admin)
+        return try sign(b, with: signer, adminCA: adminCA)
     }
 
-    /// A revocation record for keys.
-    public static func revoke(_ keys: [Data], group: String, by: String, now: Date, signer: CertificateSigner) throws -> Member.Record {
+    /// A revocation record for keys; keep names the keys of devices that
+    /// a revoked admin admitted and that stay.
+    public static func revoke(_ keys: [Data], keep: [Data]? = nil, group: String, by: String, now: Date,
+                              signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
         var b = Body(type: "revoke", group: group, timeMS: ms(now), by: by)
-        b.keys = keys
-        return try sign(b, with: signer)
+        (b.keys, b.keep) = (keys, keep)
+        return try sign(b, with: signer, adminCA: adminCA)
     }
 
     static func ms(_ d: Date) -> Int64 { Int64((d.timeIntervalSince1970 * 1000).rounded(.down)) }
@@ -84,41 +88,94 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var name: String
         public var role: String
         public var key: Data
+        /// Whether it is an admin phone whose admin CA is not revoked.
+        public var admin = false
     }
 
-    /// Adds a record that the group CA signed, unless it is known; reports
-    /// whether it was new. Records of another group, or with a chain (admin
-    /// CAs, not supported here yet), are refused.
+    /// Adds a record that the group CA signed, or an admin CA the group CA
+    /// certified (its chain holds that CA), unless it is known; reports
+    /// whether it was new. Records of another group are refused.
     @discardableResult
     public mutating func add(_ r: Member.Record, groupCA: Data) -> Bool {
         let id = Records.id(r)
         guard !records.contains(where: { Records.id($0) == id }), records.count < Self.max,
-              (r.chain ?? []).isEmpty,
               let body = try? JSONDecoder().decode(Records.Body.self, from: r.body),
               body.v == Records.version, body.group == GroupCertificates.tag(groupCA: groupCA),
-              let ca = try? CertificateInfo(der: groupCA),
-              let key = try? P256.Signing.PublicKey(derRepresentation: ca.publicKey),
+              let spki = Self.signerKey(r, groupCA: groupCA),
+              let key = try? P256.Signing.PublicKey(derRepresentation: spki),
               let sig = try? P256.Signing.ECDSASignature(derRepresentation: r.sig),
               key.isValidSignature(sig, for: r.body) else { return false }
         records.append(r)
         return true
     }
 
-    private var bodies: [(Member.Record, Records.Body)] {
-        records.compactMap { r in (try? JSONDecoder().decode(Records.Body.self, from: r.body)).map { (r, $0) } }
+    /// The key that must have signed a record, as a SubjectPublicKeyInfo:
+    /// the group CA's without a chain, an admin CA's with one; nil for a
+    /// chain that is not valid.
+    static func signerKey(_ r: Member.Record, groupCA: Data) -> Data? {
+        switch r.chain ?? [] {
+        case []: return try? CertificateInfo(der: groupCA).publicKey
+        case let c where c.count == 1:
+            guard (try? GroupCertificates.checkAdminCA(c[0], root: groupCA)) != nil else { return nil }
+            return try? CertificateInfo(der: c[0]).publicKey
+        default: return nil
+        }
     }
 
-    /// The revoked keys.
+    private struct Entry {
+        var record: Member.Record
+        var body: Records.Body
+        /// The key hash of the signer: the group CA, or the admin CA.
+        var signer: Data?
+    }
+
+    private var entries: [Entry] {
+        records.compactMap { r in
+            guard let b = try? JSONDecoder().decode(Records.Body.self, from: r.body) else { return nil }
+            let signer = (r.chain?.first).flatMap { try? Records.keyHash(cert: $0) }
+            return Entry(record: r, body: b, signer: signer)
+        }
+    }
+
+    /// The revoked keys: named by any revocation record, whether or not its
+    /// signer is itself revoked.
     public var revoked: Set<Data> {
-        Set(bodies.filter { $0.1.type == "revoke" }.flatMap { $0.1.keys ?? [] })
+        Set(entries.filter { $0.body.type == "revoke" }.flatMap { $0.body.keys ?? [] })
     }
 
-    /// The devices list: the latest device record of each device (by time,
-    /// then record ID), less the revoked keys, sorted by name.
+    /// Whether admin is revoked only by records that keep the key leaf, as
+    /// when an admin is removed and the devices it admitted stay.
+    func kept(admin: Data, leaf: Data) -> Bool {
+        var revokedIt = false
+        for e in entries where e.body.type == "revoke" && (e.body.keys ?? []).contains(admin) {
+            guard (e.body.keep ?? []).contains(leaf) else { return false }
+            revokedIt = true
+        }
+        return revokedIt
+    }
+
+    /// Why a member certificate chain (leaf first, then its admin CA when
+    /// one issued it) is refused, or nil; the chain is verified already.
+    public func refused(chain: [Data]) -> String? {
+        guard let leafCert = chain.first, let leaf = try? Records.keyHash(cert: leafCert) else { return "no certificate" }
+        let revoked = revoked
+        if revoked.contains(leaf) { return "the device was removed from the group" }
+        if chain.count >= 2, let admin = try? Records.keyHash(cert: chain[1]), revoked.contains(admin), !kept(admin: admin, leaf: leaf) {
+            return "the admin that admitted the device was removed"
+        }
+        return nil
+    }
+
+    /// The devices list: the latest device record that counts for each
+    /// device (by time, then record ID), less the revoked keys, sorted by
+    /// name. A device record counts when its signer is not revoked, or
+    /// every revocation of the signer keeps the device's key.
     public var devices: [Device] {
         let revoked = revoked
         var latest: [String: (Member.Record, Records.Body)] = [:]
-        for (r, b) in bodies where b.type == "device" {
+        for e in entries where e.body.type == "device" {
+            let (r, b) = (e.record, e.body)
+            if let s = e.signer, revoked.contains(s), !kept(admin: s, leaf: b.key ?? Data()) { continue }
             guard let d = b.device else { continue }
             if let cur = latest[d] {
                 let newer = b.time_ms != cur.1.time_ms ? b.time_ms > cur.1.time_ms
@@ -129,7 +186,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         }
         return latest.compactMap { d, rb -> Device? in
             guard let key = rb.1.key, !revoked.contains(key) else { return nil }
-            return Device(id: d, name: rb.1.name ?? d, role: rb.1.role ?? "", key: key)
+            return Device(id: d, name: rb.1.name ?? d, role: rb.1.role ?? "", key: key,
+                          admin: rb.1.admin.map { !revoked.contains($0) } ?? false)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 

@@ -14,6 +14,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net"
 	"os"
 	"strings"
@@ -1005,5 +1006,90 @@ func TestMacRefusesCAKeys(t *testing.T) {
 	}
 	if _, err := j.identity(wel, admin.Cert, memberAD{Device: admin.ID, Group: group.Tag(admin.GroupCA.Cert)}); err == nil {
 		t.Error("a Mac took the CA keys")
+	}
+}
+
+// phoneRoot makes a group CA as a phone does (path length 1) and an admin
+// CA under it, as an admin phone holds.
+func phoneRoot(t *testing.T) (root, admin *group.CA) {
+	t.Helper()
+	mk := func(cn string, pathLen int, parent *group.CA) *group.CA {
+		key, err := group.NewKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl := &x509.Certificate{
+			SerialNumber:          big.NewInt(time.Now().UnixNano()),
+			Subject:               pkix.Name{CommonName: cn},
+			NotBefore:             t0.Add(-time.Hour),
+			NotAfter:              t0.AddDate(20, 0, 0),
+			IsCA:                  true,
+			BasicConstraintsValid: true,
+			MaxPathLen:            pathLen,
+			MaxPathLenZero:        pathLen == 0,
+			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		}
+		parentCert, parentKey := tmpl, key
+		if parent != nil {
+			parentCert, parentKey = parent.Cert, parent.Key
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, parentCert, &key.PublicKey, parentKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &group.CA{Cert: c, Key: key}
+	}
+	root = mk("clipbridge group root 2026-10-21", 1, nil)
+	return root, mk("clipbridge admin "+string(group.NewDeviceID()), 0, root)
+}
+
+// TestJoinerTakesAnAdminWelcome checks a welcome from an admin phone: the
+// certificates come from its admin CA, which the welcome carries.
+func TestJoinerTakesAnAdminWelcome(t *testing.T) {
+	root, admin := phoneRoot(t)
+	_, otherAdmin := phoneRoot(t)
+	j := newJoiner(t, "linux")
+	phoneKey, _ := group.NewKey()
+	phone := group.NewDeviceID()
+	phoneCert, err := admin.IssueMember(phone, &phoneKey.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := admin.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: root.Cert.Raw}
+	member := memberAD{Device: phone, Group: group.Tag(root.Cert)}
+	id, err := j.identity(w, phoneCert, member)
+	if err != nil {
+		t.Fatalf("a welcome from an admin phone: %v", err)
+	}
+	if id.Issuer == nil || !id.Issuer.Equal(admin.Cert) {
+		t.Error("the identity does not keep the admin CA")
+	}
+	// The admin phone's own certificate may be from the root.
+	fromRoot, err := root.IssueMember(phone, &phoneKey.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.identity(w, fromRoot, member); err != nil {
+		t.Errorf("an admin phone whose certificate is from the root: %v", err)
+	}
+	for name, change := range map[string]func(*Welcome){
+		"no issuer":          func(w *Welcome) { w.Issuer = nil },
+		"another group's CA": func(w *Welcome) { w.Issuer = otherAdmin.Cert.Raw },
+		"a member as issuer": func(w *Welcome) { w.Issuer = phoneCert.Raw },
+		"a corrupt issuer":   func(w *Welcome) { w.Issuer = []byte("junk") },
+	} {
+		bad := *w
+		change(&bad)
+		if _, err := j.identity(&bad, phoneCert, member); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

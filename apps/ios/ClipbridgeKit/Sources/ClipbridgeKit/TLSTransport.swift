@@ -20,12 +20,13 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     /// whether to trust it: for pairing, against the QR code's fingerprint.
     public convenience init(host: String, port: UInt16, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
         self.init(endpoint: .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!),
-                  alpn: alpn, identity: identity, verify: verify)
+                  alpn: alpn, identity: identity, verifyChain: { verify($0[0]) })
     }
 
     /// Dials an endpoint, such as a service that BonjourBrowser found, the
-    /// same way.
-    public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, verify: @escaping @Sendable (Data) -> Bool) {
+    /// same way; verifyChain gets the peer's whole chain (DER, leaf first,
+    /// never empty), for a leaf that an admin CA issued.
+    public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, verifyChain: @escaping @Sendable ([Data]) -> Bool) {
         let tls = NWProtocolTLS.Options()
         let sec = tls.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(sec, .TLSv13)
@@ -35,11 +36,11 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
         }
         sec_protocol_options_set_verify_block(sec, { _, trust, complete in
             let t = sec_trust_copy_ref(trust).takeRetainedValue()
-            guard let chain = SecTrustCopyCertificateChain(t) as? [SecCertificate], let leaf = chain.first else {
+            guard let chain = SecTrustCopyCertificateChain(t) as? [SecCertificate], !chain.isEmpty else {
                 complete(false)
                 return
             }
-            complete(verify(SecCertificateCopyData(leaf) as Data))
+            complete(verifyChain(chain.map { SecCertificateCopyData($0) as Data }))
         }, DispatchQueue(label: "clipbridge.tls.verify"))
         let params = NWParameters(tls: tls)
         connection = NWConnection(to: endpoint, using: params)

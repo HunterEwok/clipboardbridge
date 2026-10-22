@@ -34,16 +34,19 @@ public enum Pairing {
     /// keys. A phone root never sends keys.
     public struct Welcome: Codable, Equatable {
         public var cert: Data
+        /// The admin CA that issued cert and the admitting phone's own
+        /// certificate; nil when the group CA did.
+        public var issuer: Data?
         public var groupCA: Data
         public var groupCAKey: Data?
         public var phoneCA: Data?
         public var phoneCAKey: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, groupCA = "group_ca", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key"
+            case cert, issuer, groupCA = "group_ca", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key"
         }
 
-        public init(cert: Data, groupCA: Data) { (self.cert, self.groupCA) = (cert, groupCA) }
+        public init(cert: Data, groupCA: Data, issuer: Data? = nil) { (self.cert, self.groupCA, self.issuer) = (cert, groupCA, issuer) }
     }
 
     /// The joiner's CPace associated data.

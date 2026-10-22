@@ -31,9 +31,13 @@ var ErrNoGroup = errors.New("group: this device is in no group; run clipbridge p
 //
 // An Identity is not changed after it is made; renewing returns a new one.
 type Identity struct {
-	ID      DeviceID
-	Key     *ecdsa.PrivateKey
-	Cert    *x509.Certificate // from the group CA
+	ID   DeviceID
+	Key  *ecdsa.PrivateKey
+	Cert *x509.Certificate // from the group CA, or from Issuer
+	// Issuer is the admin CA that issued Cert, in a group whose root is a
+	// phone and where another admin phone admitted this device; nil when
+	// the group CA issued it (docs/protocol.md, section 10).
+	Issuer  *x509.Certificate
 	GroupCA CA
 	PhoneCA *CA               // nil on a Mac
 	Phone   *x509.Certificate // the clipbridge.local certificate, with Key; nil on a Mac
@@ -85,7 +89,14 @@ func (id *Identity) Check() error {
 	if err := checkCA(&id.GroupCA, "group CA", maxGroupCAPath); err != nil {
 		return err
 	}
-	if err := checkLeaf(id.Cert, id.GroupCA.Cert, id.Key, "member certificate"); err != nil {
+	issuer := id.GroupCA.Cert
+	if id.Issuer != nil {
+		if err := checkAdminCA(id.Issuer, id.GroupCA.Cert); err != nil {
+			return err
+		}
+		issuer = id.Issuer
+	}
+	if err := checkLeaf(id.Cert, issuer, id.Key, "member certificate"); err != nil {
 		return err
 	}
 	if dev, err := DeviceOf(id.Cert); err != nil || dev != id.ID {
@@ -216,8 +227,9 @@ func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (*x509.Ce
 }
 
 // WithCert returns the identity with a member certificate that another
-// member renewed for it. The certificate must be from the group CA, name
-// this device and its key, and end later than the current one.
+// member renewed for it. The certificate must be from the issuer of the
+// current one, or from the group CA itself, name this device and its key,
+// and end later than the current one.
 func (id *Identity) WithCert(der []byte) (*Identity, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
@@ -226,7 +238,14 @@ func (id *Identity) WithCert(der []byte) (*Identity, error) {
 	next := *id
 	next.Cert = cert
 	if err := next.Check(); err != nil {
-		return nil, err
+		if id.Issuer == nil {
+			return nil, err
+		}
+		// The root renewed a certificate that an admin CA had issued.
+		next.Issuer = nil
+		if next.Check() != nil {
+			return nil, err
+		}
 	}
 	if !cert.NotAfter.After(id.Cert.NotAfter) {
 		return nil, errors.New("group: the renewed certificate does not end later than the current one")
@@ -254,6 +273,7 @@ type identityFile struct {
 	Device     string `json:"device"`
 	Key        []byte `json:"key"`
 	Cert       []byte `json:"cert"`
+	Issuer     []byte `json:"issuer,omitempty"`
 	GroupCA    []byte `json:"group_ca"`
 	GroupCAKey []byte `json:"group_ca_key,omitempty"`
 	PhoneCA    []byte `json:"phone_ca,omitempty"`
@@ -275,6 +295,9 @@ func (id *Identity) Save(dir string) error {
 		Device:  string(id.ID),
 		Cert:    id.Cert.Raw,
 		GroupCA: id.GroupCA.Cert.Raw,
+	}
+	if id.Issuer != nil {
+		f.Issuer = id.Issuer.Raw
 	}
 	var err error
 	if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
@@ -332,6 +355,11 @@ func parseIdentity(data []byte) (*Identity, error) {
 	}
 	if id.Cert, err = x509.ParseCertificate(f.Cert); err != nil {
 		return nil, err
+	}
+	if f.Issuer != nil {
+		if id.Issuer, err = x509.ParseCertificate(f.Issuer); err != nil {
+			return nil, err
+		}
 	}
 	if id.GroupCA, err = parseCA(f.GroupCA, f.GroupCAKey); err != nil {
 		return nil, err

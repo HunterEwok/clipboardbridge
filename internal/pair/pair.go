@@ -179,8 +179,9 @@ type memberAD struct {
 
 // Welcome is what a new device receives after a successful exchange.
 type Welcome struct {
-	Cert       []byte `json:"cert"`     // the new member certificate, DER
-	GroupCA    []byte `json:"group_ca"` // DER
+	Cert       []byte `json:"cert"`             // the new member certificate, DER
+	Issuer     []byte `json:"issuer,omitempty"` // the admin CA that issued it and the member's own certificate, DER; absent when the group CA did
+	GroupCA    []byte `json:"group_ca"`         // DER
 	GroupCAKey []byte `json:"group_ca_key,omitempty"`
 	PhoneCA    []byte `json:"phone_ca,omitempty"`
 	PhoneCAKey []byte `json:"phone_ca_key,omitempty"`
