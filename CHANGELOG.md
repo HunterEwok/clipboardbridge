@@ -68,6 +68,13 @@ All notable changes to clipbridge are documented in this file. The format follow
   computer's row in Devices asks for Face ID, sends the computer its admin CA and lists it
   as an admin; a computer that missed it gets it when it connects again.
 
+### Fixed
+
+- Adding a device in the phone app no longer hangs when the computer does not answer: a
+  connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,
+  IPv4 addresses come first, leaving the sheet cancels it, and the message names the
+  computer's firewall as a likely cause.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

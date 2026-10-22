@@ -114,6 +114,8 @@ final class AppModel: ObservableObject {
             phase = .home
             message = nil
             return true
+        } catch is CancellationError {
+            return false
         } catch {
             message = Self.describe(error)
             return false
@@ -266,7 +268,7 @@ final class AppModel: ObservableObject {
             return String(localized: "The other phone's group could not be joined. Try again.", bundle: .app)
         }
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
-            return String(localized: "Could not reach the computer. Is it on the same network as this phone?", bundle: .app)
+            return String(localized: "Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipbridge in?", bundle: .app)
         }
         return String(localized: "Something went wrong. Try again.", bundle: .app)
     }

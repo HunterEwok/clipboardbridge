@@ -31,6 +31,11 @@ final class AppModelTests: XCTestCase {
         }
     }
 
+    func testIPv4AddressesFirst() {
+        XCTAssertEqual(LiveGroup.ordered(["[fd00::5]:8767", "192.168.1.20:8767", "[fe80::1]:8767", "10.0.0.2:8767"]),
+                       ["192.168.1.20:8767", "10.0.0.2:8767", "[fd00::5]:8767", "[fe80::1]:8767"])
+    }
+
     /// A group that admits and syncs as told.
     @MainActor
     final class FakeGroup: GroupController {

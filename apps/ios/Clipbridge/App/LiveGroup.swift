@@ -23,6 +23,9 @@ final class LiveGroup: GroupController {
     /// How long the join QR code is good for, and how many wrong codes it
     /// takes, as for clipbridge join (docs/protocol.md, section 6).
     static let joinWindow: TimeInterval = 300
+    /// How long admitting a device may take once its connection is up:
+    /// a computer that stops answering mid-pairing fails then.
+    static let pairingDeadline: Duration = .seconds(30)
     static let joinAttempts = 3
     /// How long one Face ID check covers the root key's signatures for the
     /// actions that follow it.
@@ -175,17 +178,29 @@ final class LiveGroup: GroupController {
         var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
         var lastError: Error = Failure.unreachable
-        for addr in code.addrs {
+        for addr in Self.ordered(code.addrs) {
+            try Task.checkCancellation()
             guard let (host, port) = Self.split(addr) else { continue }
             let tls = TLSTransport(host: host, port: port, alpn: Pairing.alpn, identity: id, chain: Self.chain(g)) { leaf in
                 Pairing.fingerprint(cert: leaf) == code.fingerprint
             }
+            // Closing the connection ends a pairing that takes too long or
+            // that the user cancelled: the pending read fails.
+            let deadline = Task {
+                try await Task.sleep(for: Self.pairingDeadline)
+                tls.close()
+            }
+            defer { deadline.cancel() }
             do {
-                try await tls.start()
-                defer { tls.close() }
-                guard let leaf = tls.peerCertificate,
-                      let sid = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { throw Failure.unreachable }
-                let admitted = try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca, now: Date())
+                let admitted = try await withTaskCancellationHandler {
+                    try await tls.start()
+                    defer { tls.close() }
+                    guard let leaf = tls.peerCertificate,
+                          let sid = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { throw Failure.unreachable }
+                    return try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca, now: Date())
+                } onCancel: {
+                    tls.close()
+                }
                 try g.save(to: file)
                 state = g
                 try startSync()
@@ -197,10 +212,17 @@ final class LiveGroup: GroupController {
                 throw e // the computer answered: a wrong code is not worth another address
             } catch {
                 tls.close()
+                if Task.isCancelled { throw CancellationError() }
                 lastError = error
             }
         }
         throw lastError
+    }
+
+    /// The addresses to try, IPv4 first: a home network reaches those most
+    /// surely, and each that fails costs its timeout.
+    nonisolated static func ordered(_ addrs: [String]) -> [String] {
+        addrs.filter { !$0.hasPrefix("[") } + addrs.filter { $0.hasPrefix("[") }
     }
 
     /// host and port of "host:port" or "[IPv6]:port".

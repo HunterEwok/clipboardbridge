@@ -111,12 +111,22 @@
         }
       }
     },
-    "Could not reach the computer. Is it on the same network as this phone?": {
+    "Connecting to the device…": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Не удалось связаться с компьютером. Он в той же сети, что и телефон?"
+            "value": "Подключение к устройству…"
+          }
+        }
+      }
+    },
+    "Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipbridge in?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол clipbridge?"
           }
         }
       }
