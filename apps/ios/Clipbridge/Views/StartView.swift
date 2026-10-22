@@ -15,8 +15,7 @@ struct StartView: View {
     var body: some View {
         VStack(spacing: Tokens.spacingLarge) {
             HStack {
-                if LanguageChoice.offeredOnStart(preferred: Locale.preferredLanguages, localizations: Bundle.main.localizations,
-                                                 chosen: language) {
+                if LanguageChoice.offeredOnStart(preferred: Locale.preferredLanguages, localizations: Bundle.main.localizations) {
                     // Here the system's language has no translation and the
                     // app shows English, so English is the one chosen.
                     Picker(selection: Binding { language == .system ? .en : language } set: { language = $0 }) {

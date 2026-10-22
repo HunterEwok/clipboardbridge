@@ -23,9 +23,8 @@ enum LanguageChoice: String, CaseIterable, Identifiable {
 
     /// Whether the Start screen offers the language: only when the app has
     /// no translation for the language the system prefers (it shows English
-    /// then), or the user already picked one. Settings always offers it.
-    static func offeredOnStart(preferred: [String], localizations: [String], chosen: LanguageChoice) -> Bool {
-        if chosen != .system { return true }
+    /// then). Settings always offers it.
+    static func offeredOnStart(preferred: [String], localizations: [String]) -> Bool {
         guard let first = preferred.first else { return false }
         let supported = Set(localizations.filter { $0 != "Base" }.map(languageCode))
         return !supported.contains(languageCode(first))

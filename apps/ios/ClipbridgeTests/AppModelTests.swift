@@ -184,14 +184,12 @@ final class AppModelTests: XCTestCase {
 
     func testLanguageOfferedOnStart() {
         let ours = ["Base", "en", "ru"]
-        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["en-GB", "de"], localizations: ours, chosen: .system))
-        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["ru-RU"], localizations: ours, chosen: .system))
-        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["de-DE", "en"], localizations: ours, chosen: .system),
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["en-GB", "de"], localizations: ours))
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["ru-RU"], localizations: ours))
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["de-DE", "en"], localizations: ours),
                       "German is not translated, so the app shows English and offers the choice")
-        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["pt_BR"], localizations: ours, chosen: .system))
-        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["ru"], localizations: ours, chosen: .en),
-                      "a language the user picked stays changeable")
-        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: [], localizations: ours, chosen: .system))
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["pt_BR"], localizations: ours))
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: [], localizations: ours))
     }
 
     func testLanguageChoice() {
