@@ -471,12 +471,12 @@
         }
       }
     },
-    "Something went wrong (%@). Try again.": {
+    "Something went wrong. Try again.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Что-то пошло не так (%@). Попробуйте ещё раз."
+            "value": "Что-то пошло не так. Попробуйте ещё раз."
           }
         }
       }

@@ -189,7 +189,28 @@ final class AppModel: ObservableObject {
         devices = group.devices
     }
 
-    static func describe(_ error: Error) -> String {
+    /// Whether a message names the error underneath, to find out what
+    /// failed: on in debug builds, off in release ones, and either way the
+    /// ShowErrorDetails default when it is set (in Xcode, the launch
+    /// argument -ShowErrorDetails YES or NO).
+    static var showsErrorDetails: Bool {
+        if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The message for an error, with the error itself below it when
+    /// details is set. The error is logged either way.
+    static func describe(_ error: Error, details: Bool = showsErrorDetails) -> String {
+        let text = summary(error), detail = String(reflecting: error)
+        log.error("\(text, privacy: .public) \(detail, privacy: .public)")
+        return details ? text + "\n\n" + detail : text
+    }
+
+    private static func summary(_ error: Error) -> String {
         if let f = error as? PendingGroup.Failure {
             return f == .notReady ? String(localized: "Adding a computer is not ready yet.") : String(localized: "No computers connected.")
         }
@@ -220,11 +241,7 @@ final class AppModel: ObservableObject {
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
             return String(localized: "Could not reach the computer. Is it on the same network as this phone?")
         }
-        // Any other error is unexpected: name it, so that a report says
-        // what failed.
-        let detail = String(reflecting: error)
-        log.error("unexpected error: \(detail, privacy: .public)")
-        return String(localized: "Something went wrong (\(detail)). Try again.")
+        return String(localized: "Something went wrong. Try again.")
     }
 }
 

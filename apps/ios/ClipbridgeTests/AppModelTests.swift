@@ -127,8 +127,10 @@ final class AppModelTests: XCTestCase {
     }
 
     func testDescribe() {
-        XCTAssertNotEqual(AppModel.describe(PairingMember.Failure.refused(.wrongCode)), AppModel.describe(PairingMember.Failure.refused(.busy)))
-        XCTAssertEqual(AppModel.describe(LiveGroup.Failure.unreachable), AppModel.describe(TLSTransport.Failure.closed))
+        XCTAssertNotEqual(AppModel.describe(PairingMember.Failure.refused(.wrongCode), details: false),
+                          AppModel.describe(PairingMember.Failure.refused(.busy), details: false))
+        XCTAssertEqual(AppModel.describe(LiveGroup.Failure.unreachable, details: false), AppModel.describe(TLSTransport.Failure.closed, details: false))
+        XCTAssertTrue(AppModel.describe(TLSTransport.Failure.closed, details: true).contains("closed"))
     }
 
     func testThemes() {
