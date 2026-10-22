@@ -27,7 +27,7 @@ final class PhoneJoinTests: XCTestCase {
         let now = now ?? t0
         let (m, j) = Pipe.pair()
         let sid = sid
-        let memberSide = Task { () -> (PhoneGroup, PairingMember.Admitted) in
+        let memberSide = Task { () async throws -> (PhoneGroup, PairingMember.Admitted) in
             var g = admitter
             let a = try await g.admit(over: m, code: code, joinerCert: l.cert, sessionID: sid, caSigner: signer, makeAdmin: makeAdmin, now: now)
             return (g, a)
@@ -54,8 +54,8 @@ final class PhoneJoinTests: XCTestCase {
         let second = try Listener(), adminKey = SoftwareSigner()
         let r = await pair(root, signer: rootKey, second, info: .init(name: "Second", os: "ios", adminKey: adminKey.publicKeyDER))
         let joined = try r.joiner.get()
-        let admitted: PairingMember.Admitted
-        (root, admitted) = try r.member.get()
+        let (rootAfter, admitted) = try r.member.get()
+        root = rootAfter
         XCTAssertTrue(admitted.confirmed)
         XCTAssertEqual(joined.device, second.device)
         let adminCA = try XCTUnwrap(joined.welcome.adminCA)
@@ -167,7 +167,8 @@ final class PhoneJoinTests: XCTestCase {
         } catch {
             guard case .badWelcome = error as? PairingJoiner.Failure else { return XCTFail("\(error)") }
         }
-        XCTAssertFalse(try await memberSide.value.confirmed)
+        let admitted = try await memberSide.value
+        XCTAssertFalse(admitted.confirmed)
     }
 
     func testInfo() throws {
