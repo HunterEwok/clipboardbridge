@@ -96,18 +96,17 @@ shows the devices and removes them, renews certificates (any admin renews any de
 screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`);
 an admin phone removes a lost root phone by taking the group over with `root` records
 (`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`);
-in Go, a computer of a phone group can be an admin (`Identity.AdminKey`/`AdminCA`, the
-hello's `admin_key`, the `admin` message).
+a computer of a phone group can be an admin: the root phone's "Make it an admin" certifies
+the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go's
+`Identity.AdminKey`/`AdminCA`).
 
 Next steps, roughly in order:
 
-1. A computer as admin in the app: "Make it an admin" on the root phone for a computer whose
-   hello offers `admin_key` (the owner wants it; the Go side is done).
-2. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
+1. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
-for a joining phone (`TLSListener`), the admin CA in the TLS chain and the takeover (a new
+for a joining phone (`TLSListener`), the admin CA in the TLS chain, making a computer an admin and the takeover (a new
 Secure Enclave root key signed right after the admin key). Test these on
 a device before relying on them.

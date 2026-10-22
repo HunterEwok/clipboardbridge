@@ -17,6 +17,8 @@ protocol GroupController: AnyObject {
     var devices: [AppModel.Computer] { get }
     /// Removes a device from the group.
     func remove(_ id: String) async throws
+    /// Makes a computer an admin; only the root phone does.
+    func makeAdmin(_ id: String) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -42,8 +44,11 @@ final class AppModel: ObservableObject {
         var isSelf = false
         /// An admin phone: it may add and remove devices.
         var admin = false
-        /// The phone that made the group; it cannot be removed yet.
+        /// The phone that holds the group's root.
         var isRoot = false
+        /// A computer this phone, the root, can make an admin: it offers an
+        /// admin key.
+        var canMakeAdmin = false
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -170,6 +175,17 @@ final class AppModel: ObservableObject {
         isAdmin = group.isAdmin
     }
 
+    /// Makes a computer an admin.
+    func makeAdmin(_ id: String) async {
+        do {
+            try await group.makeAdmin(id)
+            message = String(localized: "It is an admin now: it adds and removes devices with clipbridge pair and clipbridge revoke.")
+        } catch {
+            message = Self.describe(error)
+        }
+        devices = group.devices
+    }
+
     static func describe(_ error: Error) -> String {
         if let f = error as? PendingGroup.Failure {
             return f == .notReady ? String(localized: "Adding a computer is not ready yet.") : String(localized: "No computers connected.")
@@ -214,6 +230,7 @@ final class PendingGroup: GroupController {
     var computers: [AppModel.Computer] { [] }
     var devices: [AppModel.Computer] { [] }
     func remove(_ id: String) async throws {}
+    func makeAdmin(_ id: String) async throws {}
     func admit(_ code: JoinCode) async throws { throw Failure.notReady }
     func join(show: @escaping @MainActor (JoinCode) -> Void) async throws { throw Failure.notReady }
     func sync() async throws -> AppModel.SyncResult { throw Failure.noComputers }

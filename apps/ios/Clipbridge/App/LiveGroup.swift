@@ -40,7 +40,10 @@ final class LiveGroup: GroupController {
     private var relay: Relay?
     private var recordBox: RecordBox?
     private var renewer: Renewer?
+    private var admins: AdminBox?
     private var online: Set<String> = []
+    /// The admin keys the connected computers offer, by device ID.
+    private var offers: [String: Data] = [:]
     /// The last authentication context the user passed for the root key.
     private var authorized: (context: LAContext, at: Date)?
 
@@ -87,12 +90,14 @@ final class LiveGroup: GroupController {
         let root = g.records.rootDevice
         return g.devices.map {
             .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, isSelf: $0.id == g.device,
-                  admin: $0.admin || $0.id == root, isRoot: $0.id == root)
+                  admin: $0.admin || $0.id == root, isRoot: $0.id == root,
+                  canMakeAdmin: g.isRoot && !$0.admin && ["linux", "mac"].contains($0.role) && offers[$0.id] != nil)
         }
     }
 
     func refresh() async {
         online = await node?.connected ?? []
+        offers = await node?.offeredAdminKeys ?? [:]
     }
 
     // MARK: Keys
@@ -278,6 +283,22 @@ final class LiveGroup: GroupController {
         await node?.close(peer: id)
     }
 
+    /// Makes a computer an admin (docs/protocol.md, section 10, "A computer
+    /// as admin"): the root key, after Face ID, certifies the admin key the
+    /// computer offers; the computer gets its admin CA and every member the
+    /// new record.
+    func makeAdmin(_ id: String) async throws {
+        guard state?.isRoot == true, let key = offers[id] else { throw Failure.notAdmin }
+        let root = try await caSigner(reason: String(localized: "Make a computer an admin"))
+        guard var g = state else { return }
+        let (ca, r) = try g.makeAdmin(device: id, adminKey: key, rootSigner: root, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+        await node?.send(adminCA: ca, to: id)
+    }
+
     /// Removes the phone that holds the group's root, when it is lost: this
     /// admin phone makes a new root key in the Secure Enclave, behind Face
     /// ID, and takes the group over (docs/protocol.md, section 10, "Handing
@@ -304,6 +325,7 @@ final class LiveGroup: GroupController {
     private func groupChanged() {
         guard let g = state else { return }
         recordBox?.replace(g.records)
+        admins?.group = g
         relay?.allowed = Self.allowed(g)
     }
 
@@ -340,15 +362,19 @@ final class LiveGroup: GroupController {
         // connect and are due (docs/protocol.md, section 2).
         let renewer = Renewer(group: g, secureEnclave: SecureEnclave.isAvailable)
         renewer.context = authorized?.context
+        // The root sends a computer it made an admin its admin CA again
+        // when the computer still offers the key.
+        let admins = AdminBox(group: g)
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
-                              records: box, renew: { renewer.renew($0) })
+                              records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) })
         let relay = Relay()
         relay.allowed = Self.allowed(g)
         let browser = BonjourBrowser { found in relay.update(found) }
         let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted))
         relay.dialer = dialer
         browser.start()
-        (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer) = (node, browser, dialer, relay, box, renewer)
+        (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins) =
+            (node, browser, dialer, relay, box, renewer, admins)
     }
 
     /// Stops syncing and starts again, with a renewed certificate.
@@ -356,7 +382,7 @@ final class LiveGroup: GroupController {
         await dialer?.stop()
         browser?.stop()
         await node?.closeAll()
-        (node, browser, dialer, relay, recordBox, renewer) = (nil, nil, nil, nil, nil, nil)
+        (node, browser, dialer, relay, recordBox, renewer, admins) = (nil, nil, nil, nil, nil, nil, nil)
         try? startSync()
     }
 
@@ -391,6 +417,17 @@ final class LiveGroup: GroupController {
                   let signer = try? SecKeySigner(k) else { return nil }
             return group.renewal(chain: chain, caSigner: signer, now: Date())
         }
+    }
+
+    /// The group as the node's adminCA closure reads it, off the main actor.
+    final class AdminBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _group: PhoneGroup
+        var group: PhoneGroup {
+            get { lock.withLock { _group } }
+            set { lock.withLock { _group = newValue } }
+        }
+        init(group: PhoneGroup) { _group = group }
     }
 
     /// The group's records for the node, which exchanges them with the

@@ -462,3 +462,58 @@ func TestSwiftRoot(t *testing.T) {
 		t.Errorf("the computer the old root admitted is refused: %v", err)
 	}
 }
+
+// TestSwiftComputerAdmin reads the admin CA that the phone kit's root
+// issued for a computer's admin key, and the records that list the
+// computer as an admin (ComputerAdminTests.testComputerAdminForGo): the CA
+// is the one an Identity takes, and Go lists the computer as an admin.
+func TestSwiftComputerAdmin(t *testing.T) {
+	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-computer-admin.json"))
+	if os.IsNotExist(err) && os.Getenv("CLIPBRIDGE_INTEROP_OUT") == "" {
+		t.Skip("no swift-computer-admin.json; the phone kit's tests write it")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		GroupCA  []byte   `json:"group_ca"`
+		Device   DeviceID `json:"device"`
+		AdminKey []byte   `json:"admin_key"`
+		AdminCA  []byte   `json:"admin_ca"`
+		Records  []Record `json:"records"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	root, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.AdminCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAdminCA(ca, root); err != nil {
+		t.Fatalf("Go refuses the admin CA: %v", err)
+	}
+	if ca.Subject.CommonName != AdminName(v.Device) || string(ca.RawSubjectPublicKeyInfo) != string(v.AdminKey) {
+		t.Error("the admin CA does not name the computer or its admin key")
+	}
+	s := NewRecords(root)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatalf("Go refuses the phone's records: %v", errs)
+	}
+	for _, d := range s.Devices() {
+		if d.ID == v.Device {
+			if !d.Admin || d.AdminKey == nil || *d.AdminKey != KeyHashOf(ca) {
+				t.Errorf("Go does not list the computer as an admin: %+v", d)
+			}
+			return
+		}
+	}
+	t.Error("Go does not list the computer")
+}

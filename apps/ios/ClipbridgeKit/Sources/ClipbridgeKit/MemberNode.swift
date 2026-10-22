@@ -44,6 +44,7 @@ public actor MemberNode {
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
     private let renew: (@Sendable ([Data]) -> Renewal?)?
+    private let adminCA: (@Sendable (Data) -> Data?)?
 
     /// A renewed member certificate for a peer, DER, and the admin CA that
     /// issued it; nil when a root did.
@@ -58,13 +59,17 @@ public actor MemberNode {
     /// records keeps the group's records and exchanges them with the peers;
     /// renew, on an admin phone, gets each peer's certificate chain (leaf
     /// first) after its hello and returns a renewal when it is due, which
-    /// the peer then gets in a cert message (section 2).
+    /// the peer then gets in a cert message (section 2); adminCA, on the
+    /// root, gets the admin key a computer's hello offers and returns the
+    /// admin CA this phone issued for it, which the computer then gets in
+    /// an admin message, so one that missed it gets it again.
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
+                adminCA: (@Sendable (Data) -> Data?)? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
-        (self.engine, self.name, self.role, self.records, self.renew, self.onChange, self.onCert) =
-            (engine, name, role, records, renew, onChange, onCert)
+        (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
+            (engine, name, role, records, renew, adminCA, onChange, onCert)
     }
 
     /// The current event with its age as of now.
@@ -80,6 +85,20 @@ public actor MemberNode {
     /// the caller of serve named them.
     public var connected: Set<String> {
         Set(conns.values.compactMap { $0.peerRole != nil ? $0.peer : nil })
+    }
+
+    /// The admin keys that the connected computers offer in their hello, by
+    /// device ID, where the caller of serve named them: the computers the
+    /// root can make admins (section 10, "A computer as admin").
+    public var offeredAdminKeys: [String: Data] {
+        var out: [String: Data] = [:]
+        for c in conns.values { if let p = c.peer, let k = c.adminKey { out[p] = k } }
+        return out
+    }
+
+    /// Sends a computer the admin CA the root issued for it.
+    public func send(adminCA: Data, to peer: String) {
+        for c in conns.values where c.peer == peer && c.peerRole != nil { c.enqueue(.admin(adminCA)) }
     }
 
     /// Sends a text this phone copied to every connected member.
@@ -120,6 +139,7 @@ public actor MemberNode {
             if first {
                 guard case let .hello(peerRole, h) = m else { throw Failure.noHello }
                 first = false
+                c.adminKey = h.adminKey
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
@@ -127,6 +147,9 @@ public actor MemberNode {
                 }
                 if let renew, !t.peerChain.isEmpty, let renewed = renew(t.peerChain) {
                     c.enqueue(.cert(renewed.cert, issuer: renewed.issuer))
+                }
+                if let key = h.adminKey, let ca = adminCA?(key) {
+                    c.enqueue(.admin(ca))
                 }
                 continue
             }
@@ -192,6 +215,12 @@ public actor MemberNode {
             set { lock.withLock { _peerRole = newValue } }
         }
         private var _peerRole: Member.Role?
+        /// The admin key the peer's hello offered.
+        var adminKey: Data? {
+            get { lock.withLock { _adminKey } }
+            set { lock.withLock { _adminKey = newValue } }
+        }
+        private var _adminKey: Data?
 
         init(transport: ClosableTransport, peer: String?) { (self.transport, self.peer) = (transport, peer) }
 

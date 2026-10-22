@@ -131,6 +131,26 @@
         }
       }
     },
+    "It can then add and remove devices with clipbridge pair and clipbridge revoke. Its key is a file on the computer, so do this only for a computer you keep safe.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тогда он сможет добавлять и удалять устройства командами clipbridge pair и clipbridge revoke. Его ключ хранится в файле на компьютере, поэтому делайте так только для компьютера, который надёжно защищён."
+          }
+        }
+      }
+    },
+    "It is an admin now: it adds and removes devices with clipbridge pair and clipbridge revoke.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Теперь это админ: он добавляет и удаляет устройства командами clipbridge pair и clipbridge revoke."
+          }
+        }
+      }
+    },
     "It made the group. This phone takes the group over with a new key, and the other devices follow it.": {
       "localizations": {
         "ru": {
@@ -197,6 +217,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Потеряли телефон? Сделайте второй телефон админом: нажмите на нём «Войти в группу другого телефона», а здесь отсканируйте его код через +."
+          }
+        }
+      }
+    },
+    "Make %@ an admin?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сделать %@ админом?"
+          }
+        }
+      }
+    },
+    "Make a computer an admin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сделать компьютер админом"
+          }
+        }
+      }
+    },
+    "Make it an admin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сделать админом"
           }
         }
       }

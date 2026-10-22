@@ -42,6 +42,24 @@ final class AppModelTests: XCTestCase {
         func refresh() async {}
         var devices: [AppModel.Computer] { computers + [.init(id: "me", name: "iPhone", online: true, role: "phone", isSelf: true)] }
         func remove(_ id: String) async throws { computers.removeAll { $0.id == id } }
+        func makeAdmin(_ id: String) async throws {
+            guard let i = computers.firstIndex(where: { $0.id == id && $0.canMakeAdmin }) else { throw PhoneGroup.Failure.notRoot }
+            (computers[i].admin, computers[i].canMakeAdmin) = (true, false)
+        }
+    }
+
+    func testMakeAdmin() async {
+        let g = FakeGroup()
+        g.computers = [.init(id: "a", name: "pi", online: true, canMakeAdmin: true), .init(id: "b", name: "deck", online: true)]
+        let m = AppModel(group: g)
+        await m.makeAdmin("a")
+        XCTAssertEqual(m.devices.first { $0.id == "a" }?.admin, true)
+        XCTAssertEqual(m.devices.first { $0.id == "a" }?.canMakeAdmin, false)
+        XCTAssertNotNil(m.message)
+        m.message = nil
+        await m.makeAdmin("b")
+        XCTAssertEqual(m.devices.first { $0.id == "b" }?.admin, false)
+        XCTAssertNotNil(m.message)
     }
 
     func testScanGoesHome() async {

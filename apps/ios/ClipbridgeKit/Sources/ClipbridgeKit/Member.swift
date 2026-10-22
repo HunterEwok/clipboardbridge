@@ -150,9 +150,13 @@ public enum Member {
         public var records: String?
         /// The sender's device name.
         public var name: String?
+        /// From a computer that is no admin yet: the SubjectPublicKeyInfo of
+        /// its admin key, for the root to certify (section 10, "A computer
+        /// as admin").
+        public var adminKey: Data?
 
-        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil) {
-            (self.wallMS, self.current, self.records, self.name) = (wallMS, current, records, name)
+        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, adminKey: Data? = nil) {
+            (self.wallMS, self.current, self.records, self.name, self.adminKey) = (wallMS, current, records, name, adminKey)
         }
     }
 
@@ -177,6 +181,9 @@ public enum Member {
         /// admin CA that issued it when an admin phone did.
         case cert(Data, issuer: Data? = nil)
         case records([Record])
+        /// From the root: the receiver's admin CA, DER, for the admin key
+        /// its hello offered.
+        case admin(Data)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -212,12 +219,14 @@ public enum Member {
         case "hello":
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
-            return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name))
+            return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
+                                      adminKey: h.admin_key))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
         case "cert": return .cert(w.cert ?? Data(), issuer: w.issuer)
         case "records": return .records(w.records ?? [])
+        case "admin": return .admin(w.admin_ca ?? Data())
         default: return .unknown(w.t)
         }
     }
@@ -234,6 +243,7 @@ public enum Member {
         var current: Lenient<Event>?
         var records: String?
         var name: String?
+        var admin_key: Data?
     }
 
     struct WireIn: Decodable {
@@ -244,14 +254,15 @@ public enum Member {
         var cert: Data?
         var issuer: Data?
         var records: [Record]?
+        var admin_ca: Data?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, admin_key }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -264,6 +275,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.current, forKey: .current)
                 try hc.encodeIfPresent(h.records, forKey: .records)
                 try hc.encodeIfPresent(h.name, forKey: .name)
+                try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)
@@ -276,6 +288,9 @@ public enum Member {
             case let .records(rs):
                 try c.encode("records", forKey: .t)
                 try c.encode(rs, forKey: .records)
+            case let .admin(ca):
+                try c.encode("admin", forKey: .t)
+                try c.encode(ca, forKey: .admin_ca)
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }
