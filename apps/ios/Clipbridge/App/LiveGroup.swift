@@ -29,7 +29,7 @@ final class LiveGroup: GroupController {
     private var dialer: MemberDialer?
     private var online: Set<String> = []
 
-    static var defaultFile: URL {
+    nonisolated static var defaultFile: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("clipbridge/group.json")
     }
