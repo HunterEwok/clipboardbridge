@@ -177,7 +177,7 @@ final class LiveGroup: GroupController {
         let member = try memberSigner()
         var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
-        var lastError: Error = Failure.unreachable
+        var failure: Error?
         for addr in Self.ordered(code.addrs) {
             try Task.checkCancellation()
             guard let (host, port) = Self.split(addr) else { continue }
@@ -213,10 +213,24 @@ final class LiveGroup: GroupController {
             } catch {
                 tls.close()
                 if Task.isCancelled { throw CancellationError() }
-                lastError = error
+                failure = Self.telling(failure, error)
             }
         }
-        throw lastError
+        throw failure ?? Failure.unreachable
+    }
+
+    /// Of two failures on different addresses, the one that says more: an
+    /// address that answered, as with a failed handshake, over one that
+    /// did not.
+    nonisolated static func telling(_ earlier: Error?, _ later: Error) -> Error {
+        guard let earlier else { return later }
+        if case TLSTransport.Failure.timedOut = earlier, !isTimeout(later) { return later }
+        return earlier
+    }
+
+    nonisolated private static func isTimeout(_ e: Error) -> Bool {
+        if case TLSTransport.Failure.timedOut = e { return true }
+        return false
     }
 
     /// The addresses to try, IPv4 first: a home network reaches those most

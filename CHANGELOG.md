@@ -86,6 +86,11 @@ All notable changes to clipbridge are documented in this file. The format follow
   connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,
   IPv4 addresses come first, leaving the sheet cancels it, and the message names the
   computer's firewall as a likely cause.
+- The phone app could not sign its TLS handshake with its own key (PRIVATE_KEY_OPERATION_FAILED):
+  the keychain kept the key's public half under the same label, and the identity paired
+  the certificate with it. Only the private key is stored now, and stale public keys are
+  removed. When every address of a device fails, the app reports the most telling failure,
+  such as a failed handshake, rather than the last timeout.
 
 ## [0.2.0] - 2026-10-21
 

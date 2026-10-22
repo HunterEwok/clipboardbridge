@@ -31,6 +31,17 @@ final class AppModelTests: XCTestCase {
         }
     }
 
+    func testTheMoreTellingFailure() {
+        let handshake = TLSTransport.Failure.notReady("handshake failed")
+        func isHandshake(_ e: Error) -> Bool {
+            if case TLSTransport.Failure.notReady("handshake failed") = e { return true }
+            return false
+        }
+        XCTAssertTrue(isHandshake(LiveGroup.telling(nil, handshake)))
+        XCTAssertTrue(isHandshake(LiveGroup.telling(handshake, TLSTransport.Failure.timedOut)), "a later timeout hides nothing")
+        XCTAssertTrue(isHandshake(LiveGroup.telling(TLSTransport.Failure.timedOut, handshake)), "an address that answered says more")
+    }
+
     func testIPv4AddressesFirst() {
         XCTAssertEqual(LiveGroup.ordered(["[fd00::5]:8767", "192.168.1.20:8767", "[fe80::1]:8767", "10.0.0.2:8767"]),
                        ["192.168.1.20:8767", "10.0.0.2:8767", "[fd00::5]:8767", "[fe80::1]:8767"])

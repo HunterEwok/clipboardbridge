@@ -108,7 +108,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
                 case .failed(let e), .waiting(let e):
                     guard once.claim() else { return }
                     self?.connection.cancel()
-                    c.resume(throwing: Failure.notReady("\(e)"))
+                    c.resume(throwing: Self.failure(e))
                 case .cancelled:
                     guard once.claim() else { return }
                     c.resume(throwing: Failure.closed)
@@ -118,6 +118,13 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
             }
             connection.start(queue: queue)
         }
+    }
+
+    /// timedOut for a peer that did not answer, notReady with the error
+    /// otherwise.
+    static func failure(_ e: NWError) -> Failure {
+        if case .posix(.ETIMEDOUT) = e { return .timedOut }
+        return .notReady("\(e)")
     }
 
     /// Lets the first of several callbacks through.

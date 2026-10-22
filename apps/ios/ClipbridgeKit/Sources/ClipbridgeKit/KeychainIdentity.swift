@@ -29,11 +29,14 @@ public enum KeychainIdentity {
     /// With userPresence, a Secure Enclave key signs only after Face ID,
     /// Touch ID or the passcode (an evaluated LAContext that loadKey takes).
     public static func makeKey(label: String, secureEnclave: Bool = false, userPresence: Bool = false) throws -> SecKey {
+        // Only the private key is stored: a public key under the same label
+        // and key hash can pair with the certificate in an identity, and TLS
+        // then fails to sign with it.
+        var privateAttrs: [CFString: Any] = [kSecAttrIsPermanent: true, kSecAttrLabel: label]
         var attrs: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits: 256,
-            kSecAttrIsPermanent: true,
-            kSecAttrLabel: label,
+            kSecPublicKeyAttrs: [kSecAttrIsPermanent: false] as [CFString: Any],
         ]
         if secureEnclave {
             // A Secure Enclave key needs an access control that allows
@@ -44,8 +47,9 @@ public enum KeychainIdentity {
                 throw error!.takeRetainedValue() as Error
             }
             attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
-            attrs[kSecPrivateKeyAttrs] = [kSecAttrIsPermanent: true, kSecAttrLabel: label, kSecAttrAccessControl: access] as [CFString: Any]
+            privateAttrs[kSecAttrAccessControl] = access
         }
+        attrs[kSecPrivateKeyAttrs] = privateAttrs
         #if os(macOS)
         if !secureEnclave { attrs[kSecUseDataProtectionKeychain] = false }
         #endif
@@ -92,6 +96,16 @@ public enum KeychainIdentity {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Removes public keys stored under label, as makeKey stored them
+    /// before: they could stand in for the private key in an identity.
+    public static func removePublicKeys(label: String) {
+        var query: [CFString: Any] = [kSecClass: kSecClassKey, kSecAttrLabel: label, kSecAttrKeyClass: kSecAttrKeyClassPublic]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain] = false
+        #endif
+        SecItemDelete(query as CFDictionary)
+    }
+
     /// Removes the certificates stored under label, before a new one
     /// replaces them.
     public static func removeCertificates(label: String) {
@@ -130,6 +144,7 @@ public enum KeychainIdentity {
         guard s == errSecSuccess, let identity else { throw Failure.keychain(s) }
         return identity
         #else
+        removePublicKeys(label: label)
         var out: CFTypeRef?
         let s = SecItemCopyMatching([kSecClass: kSecClassIdentity, kSecAttrLabel: label, kSecReturnRef: true] as CFDictionary, &out)
         guard s == errSecSuccess, let out else { throw Failure.keychain(s) }
