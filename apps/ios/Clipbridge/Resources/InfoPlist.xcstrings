@@ -14,6 +14,16 @@
         }
       }
     },
+    "NSFaceIDUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipbridge спрашивает Face ID перед подписью ключом вашей группы: чтобы добавить или удалить устройство."
+          }
+        }
+      }
+    },
     "NSLocalNetworkUsageDescription": {
       "localizations": {
         "ru": {

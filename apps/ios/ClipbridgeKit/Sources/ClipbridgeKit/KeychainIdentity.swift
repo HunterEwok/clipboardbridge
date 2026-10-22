@@ -3,6 +3,9 @@
 #if canImport(Security) && canImport(Network)
 import Crypto
 import Foundation
+#if canImport(LocalAuthentication)
+import LocalAuthentication
+#endif
 import Security
 
 /// Turns a certificate and its private key into the SecIdentity that TLS
@@ -23,7 +26,9 @@ public enum KeychainIdentity {
 
     /// Creates a P-256 key in the keychain under label: in the Secure
     /// Enclave with secureEnclave (on a device), a keychain key otherwise.
-    public static func makeKey(label: String, secureEnclave: Bool = false) throws -> SecKey {
+    /// With userPresence, a Secure Enclave key signs only after Face ID,
+    /// Touch ID or the passcode (an evaluated LAContext that loadKey takes).
+    public static func makeKey(label: String, secureEnclave: Bool = false, userPresence: Bool = false) throws -> SecKey {
         var attrs: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits: 256,
@@ -34,7 +39,8 @@ public enum KeychainIdentity {
             // A Secure Enclave key needs an access control that allows
             // signing; it stays on this device and works while unlocked.
             var error: Unmanaged<CFError>?
-            guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, .privateKeyUsage, &error) else {
+            let flags: SecAccessControlCreateFlags = userPresence ? [.privateKeyUsage, .userPresence] : .privateKeyUsage
+            guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, &error) else {
                 throw error!.takeRetainedValue() as Error
             }
             attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
@@ -51,13 +57,22 @@ public enum KeychainIdentity {
     }
 
     /// The key that makeKey created under label, or nil.
-    public static func loadKey(label: String) throws -> SecKey? {
+    public static func loadKey(label: String) throws -> SecKey? { try loadKey(label: label, context: nil) }
+
+    /// The same, signing with an authentication context: one that the
+    /// user already passed signs without asking again, and one that does
+    /// not allow interaction makes a key that needs the user fail instead
+    /// of asking.
+    public static func loadKey(label: String, context: AnyObject?) throws -> SecKey? {
         var query: [CFString: Any] = [
             kSecClass: kSecClassKey,
             kSecAttrLabel: label,
             kSecAttrKeyClass: kSecAttrKeyClassPrivate,
             kSecReturnRef: true,
         ]
+        #if canImport(LocalAuthentication)
+        if let context = context as? LAContext { query[kSecUseAuthenticationContext] = context }
+        #endif
         #if os(macOS)
         query[kSecUseDataProtectionKeychain] = false
         #endif

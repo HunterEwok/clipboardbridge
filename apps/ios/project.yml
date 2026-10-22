@@ -39,9 +39,12 @@ targets:
         NSBonjourServices: [_clipbridge._tcp]
         NSLocalNetworkUsageDescription: clipbridge finds your computers on the home network and keeps their clipboard in sync with this phone.
         NSCameraUsageDescription: clipbridge scans the QR code a computer shows, to add it to your group.
+        NSFaceIDUsageDescription: clipbridge asks for Face ID before it signs with your group's key, to add or remove a device.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipbridge
+        # Drawn by tools/icon.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
   ClipbridgeTests:
     type: bundle.unit-test

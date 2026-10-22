@@ -17,6 +17,10 @@ All notable changes to clipbridge are documented in this file. The format follow
   admin CA under the phone's root, keep that CA with their identity, send it in member
   handshakes and take it from a pairing Welcome; the phone app makes admin CAs, verifies
   such chains and reads and signs records through an admin CA (docs/protocol.md, section 10).
+- The phone app asks for Face ID (or the passcode) before it signs with the group's key in
+  the Secure Enclave, once per action: adding a computer, removing a device, renewing its
+  own certificate. It renews the computers' certificates only while that check lasts.
+- The phone app's icon, drawn by `tools/icon` from the design tokens.
 
 ## [0.2.0] - 2026-10-21
 
