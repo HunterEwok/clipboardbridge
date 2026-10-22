@@ -21,6 +21,16 @@
         }
       }
     },
+    "Add a computer to your group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить компьютер в вашу группу"
+          }
+        }
+      }
+    },
     "Add a device": {
       "localizations": {
         "ru": {
@@ -241,12 +251,32 @@
         }
       }
     },
+    "Remove a device from your group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить устройство из вашей группы"
+          }
+        }
+      }
+    },
     "Removed. The other devices refuse it from now on.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Удалено. Остальные устройства больше его не принимают."
+          }
+        }
+      }
+    },
+    "Renew this phone's certificate": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продлить сертификат этого телефона"
           }
         }
       }

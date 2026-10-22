@@ -54,6 +54,8 @@ jobs:
         run: go run ./tools/repocheck
       - name: design tokens up to date and readable
         run: go run ./tools/tokens -check
+      - name: app icon up to date
+        run: go run ./tools/icon -check
 
   test:
     name: test (${{ matrix.os }})

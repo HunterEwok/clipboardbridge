@@ -742,8 +742,9 @@ a computer keep working as they do today.
   StrongBox that cannot be exported, with the certificate profile of section 2 except
   path length 1 (MaxPathLen 1), CN `clipbridge group root YYYY-MM-DD`. Below it every admin
   phone has an admin CA (section 10). Computers get member certificates only and never hold
-  a CA key; only admin phones admit devices. Implemented: ClipbridgeKit's `PhoneGroup`
-  creates this root and admits computers with it, and Go accepts a group CA with path
+  a CA key; only admin phones admit devices. The iPhone app asks for Face ID or the passcode
+  before it signs with the root key, once per action. Implemented: ClipbridgeKit's
+  `PhoneGroup` creates this root and admits computers with it, and Go accepts a group CA with path
   length 0 or 1 (`checkCA`). Admin CAs below the root are supported on both sides
   (section 10); a second phone joining as an admin comes with the app. The
   Linux side is in place: a Welcome without CA keys makes a Linux member without them
