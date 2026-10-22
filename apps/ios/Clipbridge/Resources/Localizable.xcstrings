@@ -81,6 +81,16 @@
         }
       }
     },
+    "Could not reach the computer. Is it on the same network as this phone?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось связаться с компьютером. Он в той же сети, что и телефон?"
+          }
+        }
+      }
+    },
     "Devices": {
       "localizations": {
         "ru": {
@@ -277,6 +287,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Терминал"
+          }
+        }
+      }
+    },
+    "The code did not match. Run clipbridge join on the computer again and scan the new code.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код не совпал. Запустите clipbridge join на компьютере ещё раз и отсканируйте новый код."
+          }
+        }
+      }
+    },
+    "The computer joined but did not confirm it. Check clipbridge status on it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер присоединился, но не подтвердил это. Проверьте clipbridge status на нём."
+          }
+        }
+      }
+    },
+    "The computer refused. Run clipbridge join on it again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер отказал. Запустите на нём clipbridge join ещё раз."
           }
         }
       }

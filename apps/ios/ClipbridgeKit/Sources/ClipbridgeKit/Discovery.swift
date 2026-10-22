@@ -95,7 +95,7 @@ public actor MemberDialer {
         while stillWanted(m.device), !Task.isCancelled {
             let started = ProcessInfo.processInfo.systemUptime
             if let t = try? await dial(m) {
-                try? await node.serve(t)
+                try? await node.serve(t, peer: m.device)
                 if ProcessInfo.processInfo.systemUptime - started > maxWait { wait = firstWait }
             }
             guard stillWanted(m.device), !Task.isCancelled else { break }

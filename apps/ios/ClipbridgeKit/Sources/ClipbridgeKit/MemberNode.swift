@@ -38,6 +38,12 @@ public actor MemberNode {
     /// The number of connections whose peer sent its hello.
     public var peers: Int { conns.values.filter { $0.peerRole != nil }.count }
 
+    /// The device IDs of the connected members that sent their hello, where
+    /// the caller of serve named them.
+    public var connected: Set<String> {
+        Set(conns.values.compactMap { $0.peerRole != nil ? $0.peer : nil })
+    }
+
     /// Sends a text this phone copied to every connected member.
     @discardableResult
     public func send(text: String, kind: Member.Kind, via: Member.Via = .iphone) -> Member.Event {
@@ -49,8 +55,8 @@ public actor MemberNode {
     /// Runs a connection whose TLS handshake is done until it ends, and
     /// closes it. It returns normally when the peer says goodbye or this
     /// side closed it (closeAll).
-    public func serve(_ t: ClosableTransport) async throws {
-        let c = Conn(transport: t)
+    public func serve(_ t: ClosableTransport, peer: String? = nil) async throws {
+        let c = Conn(transport: t, peer: peer)
         let id = ObjectIdentifier(c)
         conns[id] = c
         c.enqueue(.hello(role, engine.hello(name: name)))
@@ -109,6 +115,8 @@ public actor MemberNode {
     /// last read and write for the ping and the timeout.
     final class Conn: @unchecked Sendable {
         let transport: ClosableTransport
+        /// The peer's device ID, when the dialer knows it.
+        let peer: String?
         private let lock = NSLock()
         private var queue: [Member.Message] = []
         private var waiter: CheckedContinuation<Void, Never>?
@@ -122,7 +130,7 @@ public actor MemberNode {
         }
         private var _peerRole: Member.Role?
 
-        init(transport: ClosableTransport) { self.transport = transport }
+        init(transport: ClosableTransport, peer: String?) { (self.transport, self.peer) = (transport, peer) }
 
         func enqueue(_ m: Member.Message) {
             let w: CheckedContinuation<Void, Never>? = lock.withLock {

@@ -43,14 +43,16 @@ public enum GroupCertificates {
     static let oidClientAuth = "1.3.6.1.5.5.7.3.2"
 
     /// A new group CA certificate for the signer's key: self-signed, a CA
-    /// with path length 0 for certificate and CRL signing, valid from a day
-    /// ago for 20 years.
-    public static func groupCA(signer: CertificateSigner, now: Date) throws -> Data {
+    /// for certificate and CRL signing, valid from a day ago for 20 years.
+    /// With path length 0 it is a group CA as a computer makes it; with 1 it
+    /// is the root a phone makes, which can certify admin CAs later
+    /// (docs/protocol.md, sections 9 and 10).
+    public static func groupCA(signer: CertificateSigner, now: Date, pathLength: Int = 0) throws -> Data {
         let day = ISO8601DateFormatter.string(from: now, timeZone: TimeZone(identifier: "UTC")!, formatOptions: [.withFullDate])
-        let name = distinguishedName("clipbridge group CA \(day)")
+        let name = distinguishedName((pathLength == 0 ? "clipbridge group CA " : "clipbridge group root ") + day)
         let ski = keyIdentifier(signer.publicKeyDER)
         let extensions = [
-            ext(oidBasicConstraints, critical: true, DER.sequence([DER.bool(true), DER.integer(0)])),
+            ext(oidBasicConstraints, critical: true, DER.sequence([DER.bool(true), DER.integer(pathLength)])),
             // keyCertSign (bit 5) and cRLSign (bit 6).
             ext(oidKeyUsage, critical: true, DER.bitString([0x06], unused: 1)),
             ext(oidSubjectKeyID, critical: false, DER.octetString(ski)),

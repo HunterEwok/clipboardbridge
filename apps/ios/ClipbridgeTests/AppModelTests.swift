@@ -30,6 +30,7 @@ final class AppModelTests: XCTestCase {
             computers = [.init(id: "a", name: "pi", online: true)]
         }
         func sync() async throws -> AppModel.SyncResult { .sent }
+        func refresh() async {}
     }
 
     func testScanGoesHome() async {
@@ -54,6 +55,19 @@ final class AppModelTests: XCTestCase {
         let ok = await m.scanned(qr)
         XCTAssertFalse(ok)
         XCTAssertEqual(m.message, AppModel.describe(PendingGroup.Failure.notReady))
+    }
+
+    func testSplit() {
+        XCTAssertEqual(LiveGroup.split("192.168.1.20:8767")?.0, "192.168.1.20")
+        XCTAssertEqual(LiveGroup.split("192.168.1.20:8767")?.1, 8767)
+        XCTAssertEqual(LiveGroup.split("[fd00::5]:8767")?.0, "fd00::5")
+        XCTAssertNil(LiveGroup.split("host"))
+        XCTAssertNil(LiveGroup.split(":80"))
+    }
+
+    func testDescribe() {
+        XCTAssertNotEqual(AppModel.describe(PairingMember.Failure.refused(.wrongCode)), AppModel.describe(PairingMember.Failure.refused(.busy)))
+        XCTAssertEqual(AppModel.describe(LiveGroup.Failure.unreachable), AppModel.describe(TLSTransport.Failure.closed))
     }
 
     func testThemes() {

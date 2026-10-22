@@ -97,6 +97,9 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
 				t.Errorf("the joiner holds another group CA than the phone made")
 			}
+			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipbridge group root ") {
+				t.Errorf("the phone's group CA is %q with path length %d, want its root with 1", ca.Subject.CommonName, ca.MaxPathLen)
+			}
 		})
 	}
 }
@@ -192,6 +195,9 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			caDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.String()))
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
 				t.Errorf("the joiner holds another group CA than the phone made")
+			}
+			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipbridge group root ") {
+				t.Errorf("the phone's group CA is %q with path length %d, want its root with 1", ca.Subject.CommonName, ca.MaxPathLen)
 			}
 		})
 	}
