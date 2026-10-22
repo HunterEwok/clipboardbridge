@@ -87,7 +87,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
 
     /// A name that the records accept: 1 to 64 bytes without control
     /// characters, or "iPhone".
-    static func validName(_ s: String) -> String {
+    public static func validName(_ s: String) -> String {
         var out = ""
         for ch in s where !ch.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
             if (out + String(ch)).utf8.count > 64 { break }

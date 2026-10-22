@@ -4,19 +4,24 @@ import ClipbridgeKit
 import Foundation
 import SwiftUI
 
-/// The group as the app sees it: whether there is one, its computers, and
-/// admitting a computer. LiveGroup is the real one; PendingGroup stands in
-/// for previews.
+/// The group as the app sees it: whether there is one, its computers,
+/// admitting a device and joining another phone's group. LiveGroup is the
+/// real one; PendingGroup stands in for previews.
 @MainActor
 protocol GroupController: AnyObject {
     var hasGroup: Bool { get }
+    /// Whether this phone may add and remove devices.
+    var isAdmin: Bool { get }
     var computers: [AppModel.Computer] { get }
     /// Every device of the group, this phone included.
     var devices: [AppModel.Computer] { get }
     /// Removes a device from the group.
     func remove(_ id: String) async throws
-    /// Admits the computer whose QR code the user scanned.
+    /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
+    /// Joins another phone's group: listens, hands show the QR code for the
+    /// other phone to scan, and returns once this phone is in the group.
+    func join(show: @escaping @MainActor (JoinCode) -> Void) async throws
     /// Sends what this phone holds, or fetches the computers' recent copy.
     func sync() async throws -> AppModel.SyncResult
     /// Updates which computers are online.
@@ -26,7 +31,7 @@ protocol GroupController: AnyObject {
 /// What the app shows and does; the views only read it and call it.
 @MainActor
 final class AppModel: ObservableObject {
-    enum Phase: Equatable { case start, home }
+    enum Phase: Equatable { case start, joining, home }
 
     /// A device of the group: a computer, or this phone.
     struct Computer: Identifiable, Equatable {
@@ -35,6 +40,10 @@ final class AppModel: ObservableObject {
         var online: Bool
         var role = "linux"
         var isSelf = false
+        /// An admin phone: it may add and remove devices.
+        var admin = false
+        /// The phone that made the group; it cannot be removed yet.
+        var isRoot = false
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -50,6 +59,9 @@ final class AppModel: ObservableObject {
     /// One line about the last action, in plain words.
     @Published var message: String?
     @Published private(set) var busy = false
+    /// The QR code this phone shows while it waits to join a group.
+    @Published private(set) var joinCode: JoinCode?
+    @Published private(set) var isAdmin = true
 
     let group: GroupController
 
@@ -61,6 +73,7 @@ final class AppModel: ObservableObject {
         phase = group.hasGroup ? .home : .start
         computers = group.computers
         devices = group.devices
+        isAdmin = group.isAdmin
     }
 
     /// Reads what the camera saw, or what the user typed: the text of the QR
@@ -89,6 +102,36 @@ final class AppModel: ObservableObject {
             message = Self.describe(error)
             return false
         }
+    }
+
+    /// Opens the screen that joins another phone's group.
+    func startJoining() {
+        message = nil
+        phase = .joining
+    }
+
+    /// Joins another phone's group: shows this phone's QR code until an
+    /// admin phone scans it, then goes Home. The join screen runs it as its
+    /// task, so leaving the screen cancels it and stops listening.
+    func join() async {
+        do {
+            try await group.join { [weak self] code in self?.joinCode = code }
+            computers = group.computers
+            devices = group.devices
+            isAdmin = group.isAdmin
+            phase = .home
+        } catch is CancellationError {
+        } catch {
+            message = Self.describe(error)
+        }
+        joinCode = nil
+    }
+
+    /// Leaves the join screen without joining.
+    func cancelJoin() {
+        joinCode = nil
+        message = nil
+        phase = .start
     }
 
     /// The one big button.
@@ -124,6 +167,7 @@ final class AppModel: ObservableObject {
         }
         computers = group.computers
         devices = group.devices
+        isAdmin = group.isAdmin
     }
 
     static func describe(_ error: Error) -> String {
@@ -139,6 +183,21 @@ final class AppModel: ObservableObject {
         if let f = error as? LiveGroup.Failure, f == .notConfirmed {
             return String(localized: "The computer joined but did not confirm it. Check clipbridge status on it.")
         }
+        if let f = error as? LiveGroup.Failure {
+            switch f {
+            case .noNetwork: return String(localized: "Connect this phone to your home Wi-Fi, then try again.")
+            case .timedOut: return String(localized: "No phone scanned the code in five minutes. Try again.")
+            case .tooManyWrongCodes: return String(localized: "Too many wrong codes. Try again with a new code.")
+            case .notAdmin: return String(localized: "Only an admin phone can do this.")
+            default: break
+            }
+        }
+        if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
+            return String(localized: "The phone that made the group cannot be removed yet.")
+        }
+        if error is PairingJoiner.Failure {
+            return String(localized: "The other phone's group could not be joined. Try again.")
+        }
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
             return String(localized: "Could not reach the computer. Is it on the same network as this phone?")
         }
@@ -151,10 +210,12 @@ final class AppModel: ObservableObject {
 final class PendingGroup: GroupController {
     enum Failure: Error { case notReady, noComputers }
     var hasGroup: Bool { false }
+    var isAdmin: Bool { true }
     var computers: [AppModel.Computer] { [] }
     var devices: [AppModel.Computer] { [] }
     func remove(_ id: String) async throws {}
     func admit(_ code: JoinCode) async throws { throw Failure.notReady }
+    func join(show: @escaping @MainActor (JoinCode) -> Void) async throws { throw Failure.notReady }
     func sync() async throws -> AppModel.SyncResult { throw Failure.noComputers }
     func refresh() async {}
 }

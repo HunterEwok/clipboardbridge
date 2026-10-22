@@ -166,4 +166,23 @@ public struct JoinCode: Equatable {
 
     /// Whether the code is six digits, as the computer expects.
     public var codeIsValid: Bool { code.count == 6 && code.allSatisfy { $0.isASCII && $0.isNumber } }
+
+    /// The text of the QR code, as clipbridge join shows it.
+    public var qrText: String {
+        var u = URLComponents()
+        (u.scheme, u.host) = ("clipbridge", "join")
+        u.queryItems = [URLQueryItem(name: "code", value: code)] + addrs.prefix(Self.maxAddrs).map { URLQueryItem(name: "addr", value: $0) }
+            + [URLQueryItem(name: "fp", value: fingerprint)]
+        return u.string ?? ""
+    }
+
+    /// A new six-digit code.
+    public static func newCode() -> String {
+        String(format: "%06d", Int.random(in: 0..<1_000_000))
+    }
+
+    /// host:port, or [IPv6]:port, as a QR code carries an address.
+    public static func address(host: String, port: UInt16) -> String {
+        host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
+    }
 }

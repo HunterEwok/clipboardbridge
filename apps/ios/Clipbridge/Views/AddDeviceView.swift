@@ -19,7 +19,7 @@ struct AddDeviceView: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Tokens.radiusCard, style: .continuous))
                     .frame(maxHeight: 360)
-                    Text("Point the camera at the QR code of clipbridge join.")
+                    Text("Point the camera at the QR code of clipbridge join, or at the one your other phone shows.")
                         .multilineTextAlignment(.center)
                 } else {
                     Text("Paste the text of the QR code of clipbridge join.")

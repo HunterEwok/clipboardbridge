@@ -91,6 +91,16 @@
         }
       }
     },
+    "Connect this phone to your home Wi-Fi, then try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключите телефон к домашнему Wi-Fi и попробуйте снова."
+          }
+        }
+      }
+    },
     "Could not reach the computer. Is it on the same network as this phone?": {
       "localizations": {
         "ru": {
@@ -131,6 +141,26 @@
         }
       }
     },
+    "Join a group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти в группу"
+          }
+        }
+      }
+    },
+    "Join another phone's group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти в группу другого телефона"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "ru": {
@@ -147,6 +177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Светлая"
+          }
+        }
+      }
+    },
+    "Lost a phone? Make a second phone an admin: on it, tap Join another phone's group, then scan its code here with +.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Потеряли телефон? Сделайте второй телефон админом: нажмите на нём «Войти в группу другого телефона», а здесь отсканируйте его код через +."
           }
         }
       }
@@ -171,6 +211,16 @@
         }
       }
     },
+    "No phone scanned the code in five minutes. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "За пять минут код никто не отсканировал. Попробуйте снова."
+          }
+        }
+      }
+    },
     "Not a clipbridge QR code.": {
       "localizations": {
         "ru": {
@@ -191,12 +241,42 @@
         }
       }
     },
+    "On your other phone, tap + and scan this code. Keep this screen open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На другом телефоне нажмите + и отсканируйте этот код. Не закрывайте этот экран."
+          }
+        }
+      }
+    },
     "One clipboard for your phone and your computers. On a computer, run clipbridge join and scan its QR code.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Один буфер обмена для телефона и компьютеров. На компьютере запустите clipbridge join и отсканируйте его QR-код."
+          }
+        }
+      }
+    },
+    "Only an admin phone can add or remove devices.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавлять и удалять устройства может только телефон-админ."
+          }
+        }
+      }
+    },
+    "Only an admin phone can do this.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это может только телефон-админ."
           }
         }
       }
@@ -211,12 +291,12 @@
         }
       }
     },
-    "Point the camera at the QR code of clipbridge join.": {
+    "Point the camera at the QR code of clipbridge join, or at the one your other phone shows.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наведите камеру на QR-код clipbridge join."
+            "value": "Наведите камеру на QR-код clipbridge join или на код, который показывает ваш другой телефон."
           }
         }
       }
@@ -227,6 +307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Текст QR-кода"
+          }
+        }
+      }
+    },
+    "QR code to join the group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR-код для входа в группу"
           }
         }
       }
@@ -391,12 +481,42 @@
         }
       }
     },
+    "The other phone's group could not be joined. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось войти в группу другого телефона. Попробуйте снова."
+          }
+        }
+      }
+    },
+    "The phone that made the group cannot be removed yet.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Телефон, создавший группу, пока нельзя удалить."
+          }
+        }
+      }
+    },
     "Theme": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Тема"
+          }
+        }
+      }
+    },
+    "This phone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон"
           }
         }
       }
@@ -411,12 +531,32 @@
         }
       }
     },
+    "Too many wrong codes. Try again with a new code.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слишком много неверных кодов. Попробуйте снова с новым кодом."
+          }
+        }
+      }
+    },
     "Version": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Версия"
+          }
+        }
+      }
+    },
+    "admin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "админ"
           }
         }
       }

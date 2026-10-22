@@ -15,9 +15,15 @@ import UniformTypeIdentifiers
 /// keeps a connection to each, and syncs with them.
 @MainActor
 final class LiveGroup: GroupController {
-    enum Failure: Error { case unreachable, notConfirmed }
+    enum Failure: Error { case unreachable, notConfirmed, noNetwork, timedOut, tooManyWrongCodes, notAdmin }
 
     nonisolated static let caLabel = "io.github.hunterewok.clipbridge.group-root"
+    /// The admin key of a phone that joined another phone's group.
+    nonisolated static let adminLabel = "io.github.hunterewok.clipbridge.admin"
+    /// How long the join QR code is good for, and how many wrong codes it
+    /// takes, as for clipbridge join (docs/protocol.md, section 6).
+    static let joinWindow: TimeInterval = 300
+    static let joinAttempts = 3
     /// How long one Face ID check covers the root key's signatures for the
     /// actions that follow it.
     static let authorizedFor: TimeInterval = 300
@@ -63,14 +69,25 @@ final class LiveGroup: GroupController {
 
     var hasGroup: Bool { state != nil }
 
+    /// Whether this phone may add and remove devices: it made the group, or
+    /// the phone that did made it an admin. A phone without a group makes
+    /// one when it adds a computer.
+    var isAdmin: Bool { state?.isAdmin ?? true }
+
+    /// The label of the key this phone signs with: the root key, or the
+    /// admin key of a phone that joined.
+    nonisolated static func signingLabel(_ g: PhoneGroup?) -> String { g?.isRoot == false ? adminLabel : caLabel }
+
     var computers: [AppModel.Computer] {
         devices.filter { !$0.isSelf }
     }
 
     var devices: [AppModel.Computer] {
         guard let g = state else { return [] }
+        let root = g.records.rootDevice
         return g.devices.map {
-            .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, isSelf: $0.id == g.device)
+            .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, isSelf: $0.id == g.device,
+                  admin: $0.admin || $0.id == root, isRoot: $0.id == root)
         }
     }
 
@@ -85,12 +102,15 @@ final class LiveGroup: GroupController {
         return try KeychainIdentity.makeKey(label: label, secureEnclave: secureEnclave)
     }
 
-    /// The root key's signer for an action the user asked for. In the
-    /// Secure Enclave the key signs only after Face ID, Touch ID or the
-    /// passcode: asked once, and good for the signatures of the next few
-    /// minutes. A key made before the app asked is asked for too.
+    /// The signer of this phone's root or admin key for an action the user
+    /// asked for. In the Secure Enclave the key signs only after Face ID,
+    /// Touch ID or the passcode: asked once, and good for the signatures of
+    /// the next few minutes. A key made before the app asked is asked for
+    /// too. A phone that is no admin has no such key.
     private func caSigner(reason: String) async throws -> SecKeySigner {
-        guard SecureEnclave.isAvailable else { return try SecKeySigner(key(label: Self.caLabel, secureEnclave: false)) }
+        guard isAdmin else { throw Failure.notAdmin }
+        let label = Self.signingLabel(state)
+        guard SecureEnclave.isAvailable else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
         let context: LAContext
         if let a = authorized, Date().timeIntervalSince(a.at) < Self.authorizedFor {
             context = a.context
@@ -100,10 +120,10 @@ final class LiveGroup: GroupController {
             authorized = (context, Date())
             renewer?.context = context
         }
-        if try KeychainIdentity.loadKey(label: Self.caLabel) == nil {
-            _ = try KeychainIdentity.makeKey(label: Self.caLabel, secureEnclave: true, userPresence: true)
+        if try KeychainIdentity.loadKey(label: label) == nil {
+            _ = try KeychainIdentity.makeKey(label: label, secureEnclave: true, userPresence: true)
         }
-        guard let k = try KeychainIdentity.loadKey(label: Self.caLabel, context: context) else { throw KeychainIdentity.Failure.noIdentity }
+        guard let k = try KeychainIdentity.loadKey(label: label, context: context) else { throw KeychainIdentity.Failure.noIdentity }
         return try SecKeySigner(k)
     }
 
@@ -112,9 +132,17 @@ final class LiveGroup: GroupController {
     }
 
     private func identity(_ g: PhoneGroup, _ member: SecKeySigner) throws -> SecIdentity {
-        KeychainIdentity.removeCertificates(label: Self.memberLabel)
-        return try KeychainIdentity.identity(certificate: g.memberCert, key: member.key, label: Self.memberLabel, storeKey: false)
+        try identity(certificate: g.memberCert, member)
     }
+
+    private func identity(certificate: Data, _ member: SecKeySigner) throws -> SecIdentity {
+        KeychainIdentity.removeCertificates(label: Self.memberLabel)
+        return try KeychainIdentity.identity(certificate: certificate, key: member.key, label: Self.memberLabel, storeKey: false)
+    }
+
+    /// The certificates this phone sends after its own in TLS: the admin CA
+    /// that issued it, if one did.
+    private static func chain(_ g: PhoneGroup) -> [Data] { g.memberIssuer.map { [$0] } ?? [] }
 
     // MARK: Admitting
 
@@ -126,7 +154,7 @@ final class LiveGroup: GroupController {
         var lastError: Error = Failure.unreachable
         for addr in code.addrs {
             guard let (host, port) = Self.split(addr) else { continue }
-            let tls = TLSTransport(host: host, port: port, alpn: Pairing.alpn, identity: id) { leaf in
+            let tls = TLSTransport(host: host, port: port, alpn: Pairing.alpn, identity: id, chain: Self.chain(g)) { leaf in
                 Pairing.fingerprint(cert: leaf) == code.fingerprint
             }
             do {
@@ -160,11 +188,76 @@ final class LiveGroup: GroupController {
         return host.isEmpty ? nil : (host, port)
     }
 
+    // MARK: Joining
+
+    /// Joins another phone's group (docs/protocol.md, section 6, "The
+    /// joiner listens"): makes this phone's admin key, listens, hands show
+    /// the QR code to put on screen, and waits up to five minutes for an
+    /// admin phone to scan it and admit this one. Three wrong codes end it,
+    /// as does cancelling the task.
+    func join(show: @escaping @MainActor (JoinCode) -> Void) async throws {
+        guard state == nil else { return }
+        let member = try memberSigner()
+        // The admin key, in the Secure Enclave behind Face ID like the root
+        // key; reading its public key asks for nothing.
+        let se = SecureEnclave.isAvailable
+        let admin = try SecKeySigner(KeychainIdentity.loadKey(label: Self.adminLabel)
+            ?? KeychainIdentity.makeKey(label: Self.adminLabel, secureEnclave: se, userPresence: se))
+        let device = SyncEngine.newID()
+        let cert = try GroupCertificates.selfSigned(device: device, signer: member)
+        let id = try identity(certificate: cert, member)
+        let listener = try TLSListener(alpn: Pairing.alpn, identity: id) { !$0.isEmpty }
+        let port = try await listener.start()
+        let addrs = LocalAddresses.current().map { JoinCode.address(host: $0, port: port) }
+        guard !addrs.isEmpty else {
+            listener.stop()
+            throw Failure.noNetwork
+        }
+        let code = JoinCode(code: JoinCode.newCode(), addrs: addrs, fingerprint: Pairing.fingerprint(cert: cert))
+        show(code)
+        let info = Pairing.Info(name: PhoneGroup.validName(UIDevice.current.name), os: "ios", adminKey: admin.publicKeyDER)
+        let file = file
+        let timer = Task {
+            try await Task.sleep(for: .seconds(Self.joinWindow))
+            listener.stop()
+        }
+        defer {
+            timer.cancel()
+            listener.stop()
+        }
+        var wrong = 0
+        let joined: PairingJoiner.Joined? = try await withTaskCancellationHandler {
+            while let t = await listener.next() {
+                do {
+                    try await t.start()
+                    defer { t.close() }
+                    guard let leaf = t.peerCertificate, let sid = t.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { continue }
+                    return try await PairingJoiner.accept(over: t, code: code.code, info: info, memberCert: leaf, joinerCert: cert,
+                                                          sessionID: sid, now: Date()) { try PhoneGroup.joined($0).save(to: file) }
+                } catch PairingJoiner.Failure.refused(.wrongCode) {
+                    wrong += 1
+                    if wrong >= Self.joinAttempts { throw Failure.tooManyWrongCodes }
+                } catch {
+                    continue // another device, or a dropped connection: the code is not spent
+                }
+            }
+            return nil
+        } onCancel: {
+            listener.stop()
+        }
+        guard let joined else {
+            if Task.isCancelled { throw CancellationError() }
+            throw Failure.timedOut
+        }
+        state = PhoneGroup.joined(joined)
+        try startSync()
+    }
+
     // MARK: Removing
 
-    /// Removes a device from the group: a revocation signed with the root
-    /// key, sent to every connected computer, which refuse the device from
-    /// then on. The phone stops dialing it.
+    /// Removes a device from the group: a revocation signed with this
+    /// phone's root or admin key, sent to every connected computer, which
+    /// refuse the device from then on. The phone stops dialing it.
     func remove(_ id: String) async throws {
         guard state != nil else { return }
         let ca = try await caSigner(reason: String(localized: "Remove a device from your group"))
@@ -181,7 +274,14 @@ final class LiveGroup: GroupController {
     private func groupChanged() {
         guard let g = state else { return }
         recordBox?.replace(g.records)
-        relay?.allowed = Set(g.devices.map(\.id))
+        relay?.allowed = Self.allowed(g)
+    }
+
+    /// The devices the phone dials: those in the list. A phone that joined
+    /// has no records until a computer sends them, so it dials every member
+    /// of the group until then; TLS still checks each against the group CA.
+    nonisolated static func allowed(_ g: PhoneGroup) -> Set<String>? {
+        g.records.records.isEmpty ? nil : Set(g.devices.map(\.id))
     }
 
     /// Takes in records a computer sent.
@@ -191,7 +291,7 @@ final class LiveGroup: GroupController {
         guard g != state else { return }
         try? g.save(to: file)
         state = g
-        relay?.allowed = Set(g.devices.map(\.id))
+        relay?.allowed = Self.allowed(g)
     }
 
     // MARK: Syncing
@@ -202,17 +302,16 @@ final class LiveGroup: GroupController {
         let id = try identity(g, memberSigner())
         let box = RecordBox(groupCA: g.groupCA, set: g.records)
         box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
-        // The phone holds the group's key, so it renews the computers'
-        // certificates when they connect and are due (docs/protocol.md,
-        // section 2).
+        // An admin phone renews the computers' certificates when they
+        // connect and are due (docs/protocol.md, section 2).
         let renewer = Renewer(group: g, secureEnclave: SecureEnclave.isAvailable)
         renewer.context = authorized?.context
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
                               records: box, renew: { renewer.renew($0) })
         let relay = Relay()
-        relay.allowed = Set(g.devices.map(\.id))
+        relay.allowed = Self.allowed(g)
         let browser = BonjourBrowser { found in relay.update(found) }
-        let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, groupCA: g.groupCA))
+        let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), groupCA: g.groupCA))
         relay.dialer = dialer
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer) = (node, browser, dialer, relay, box, renewer)
@@ -227,7 +326,7 @@ final class LiveGroup: GroupController {
         try? startSync()
     }
 
-    /// Issues renewed member certificates with the root key, without
+    /// Issues renewed member certificates with the root or admin key, without
     /// asking: in the Secure Enclave only while the context of the user's
     /// last Face ID check in this run lasts, so a computer that is due and
     /// connects before that gets its renewal on a later connection.
@@ -253,7 +352,8 @@ final class LiveGroup: GroupController {
                 quiet.interactionNotAllowed = true // a key that needs the user fails instead of asking
                 ctx = quiet
             }
-            guard let k = try? KeychainIdentity.loadKey(label: LiveGroup.caLabel, context: ctx), let signer = try? SecKeySigner(k) else { return nil }
+            guard let k = try? KeychainIdentity.loadKey(label: LiveGroup.signingLabel(group), context: ctx),
+                  let signer = try? SecKeySigner(k) else { return nil }
             return group.renewal(chain: chain, caSigner: signer, now: Date())
         }
     }
@@ -287,13 +387,14 @@ final class LiveGroup: GroupController {
     final class Relay: @unchecked Sendable {
         private let lock = NSLock()
         private var _dialer: MemberDialer?
-        private var _allowed: Set<String> = []
+        private var _allowed: Set<String>? = []
         private var last: Set<FoundMember> = []
         var dialer: MemberDialer? {
             get { lock.withLock { _dialer } }
             set { lock.withLock { _dialer = newValue } }
         }
-        var allowed: Set<String> {
+        /// The device IDs to dial; nil dials every member found.
+        var allowed: Set<String>? {
             get { lock.withLock { _allowed } }
             set {
                 lock.withLock { _allowed = newValue }
@@ -303,7 +404,7 @@ final class LiveGroup: GroupController {
         func update(_ found: Set<FoundMember>) {
             let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {
                 last = found
-                return (_dialer, found.filter { _allowed.contains($0.device) })
+                return (_dialer, _allowed.map { a in found.filter { a.contains($0.device) } } ?? found)
             }
             guard let d else { return }
             Task { await d.update(members) }

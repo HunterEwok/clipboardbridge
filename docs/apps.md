@@ -92,6 +92,12 @@ the group", not a status code), never a dialog that must be dismissed.
   (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
   `_clipbridge._tcp` under `NSBonjourServices` and explains the use in
   `NSLocalNetworkUsageDescription`.
+- A phone joins another phone's group from its Start screen ("Join another phone's group"):
+  it makes its admin key, listens with `TLSListener` on a port the system picks, and shows
+  the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
+  it in "Add a device". The root phone makes every phone it admits an admin; an admin that
+  is not the root admits phones as plain members. Removing the root phone waits for `root`
+  records.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
   `apps/ios/Clipbridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the

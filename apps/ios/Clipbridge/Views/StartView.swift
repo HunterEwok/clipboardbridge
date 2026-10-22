@@ -2,8 +2,9 @@
 
 import SwiftUI
 
-/// No group yet: one sentence and one button.
+/// No group yet: one sentence, one button, and joining another phone's group.
 struct StartView: View {
+    @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
     @State private var adding = false
 
@@ -19,6 +20,8 @@ struct StartView: View {
             Spacer()
             Button("Scan a computer") { adding = true }
                 .buttonStyle(AccentButtonStyle())
+            Button("Join another phone's group") { model.startJoining() }
+                .foregroundStyle(palette.accent)
         }
         .padding(Tokens.spacingLarge)
         .sheet(isPresented: $adding) { AddDeviceView() }
