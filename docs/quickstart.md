@@ -15,11 +15,12 @@ Any Linux with systemd: a Raspberry Pi, a laptop, a server, a Steam Deck.
 curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
 ```
 
-The script checks the download, starts the service and opens clipbridge's ports in ufw for
-the home network only. Log out and in again once, so your user may use clipbridge.
+The script checks the download, starts the service and opens clipbridge's ports in ufw or
+firewalld for the home network only; with another firewall it prints what to allow. Log out
+and in again once, so your user may use clipbridge.
 
-If you turn ufw on later, run the installer again (it is also how you update): it adds the
-rules each time. By hand, from your home network, for example `192.168.0.0/24`:
+If you turn a firewall on later, run the installer again (it is also how you update): it adds
+the rules each time. By hand with ufw, from your home network, for example `192.168.0.0/24`:
 
 ```sh
 sudo ufw allow proto tcp from 192.168.0.0/24 to any port 8764:8767 comment clipbridge

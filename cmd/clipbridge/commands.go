@@ -281,7 +281,7 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
 		fmt.Fprintln(stdout, "Without a phone: run clipbridge pair on a Linux member and clipbridge join -code here.")
 		fmt.Fprintln(stdout, "If the phone cannot connect, a firewall may be in the way: TCP 8764-8767 must be open")
-		fmt.Fprintln(stdout, "to the home network; the installer opens them in ufw (docs/quickstart.md).")
+		fmt.Fprintln(stdout, "to the home network; the installer opens them in ufw or firewalld (docs/quickstart.md).")
 		if _, err := c.Receive(); err != nil {
 			return fail(stderr, err)
 		}

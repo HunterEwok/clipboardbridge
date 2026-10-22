@@ -16,9 +16,12 @@ All notable changes to clipbridge are documented in this file. The format follow
   simulator cannot make a Secure Enclave key that needs Face ID.
 - `clipbridge join` names the app's "Connect a new device" and prints the QR code's text
   as well, to paste into the app on a phone without a camera.
-- The Linux installer opens clipbridge's ports in ufw on every run, not only from `get.sh`, so
-  an update fixes a firewall turned on after the first install; `CLIPBRIDGE_FIREWALL=no`
-  leaves it alone. `clipbridge join` names the firewall when the phone cannot connect.
+- The Linux installer opens clipbridge's ports from the home network on every run, not only
+  from `get.sh`, so an update fixes a firewall turned on after the first install: in ufw as
+  before, and now in firewalld too (a `clipbridge` service and rules for the home network);
+  under a bare nftables or iptables setup that drops input it prints the commands.
+  `CLIPBRIDGE_FIREWALL=no` leaves the firewall alone. `clipbridge join` names the firewall
+  when the phone cannot connect.
 - The phone app's Start screen says what to do in plain words: "Connect a new device" (a
   computer or another phone) and "I already use clipbridge on another phone". Its buttons
   and cards use Liquid Glass from iOS 26, with materials before.

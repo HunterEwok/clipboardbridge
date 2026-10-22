@@ -7,13 +7,13 @@
 #   curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
 #
 # Options go after "sh -s --": --console also starts tmux after a login on
-# the text console; --no-firewall leaves ufw alone. CLIPBRIDGE_VERSION=v1.2.3
+# the text console; --no-firewall leaves the firewall alone. CLIPBRIDGE_VERSION=v1.2.3
 # picks a release instead of the latest; CLIPBRIDGE_RELEASE_DIR, for tests,
 # takes the files from a directory instead of downloading them.
 #
 # It downloads the archive for this machine's architecture and SHA256SUMS
 # from the release, checks the archive against it, runs install.sh from the
-# archive, which, when ufw is active, allows clipbridge's ports from the home
+# archive, which, when ufw or firewalld is active, allows clipbridge's ports from the home
 # network only.
 set -eu
 
