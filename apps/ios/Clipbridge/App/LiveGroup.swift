@@ -28,6 +28,16 @@ final class LiveGroup: GroupController {
     /// actions that follow it.
     static let authorizedFor: TimeInterval = 300
     static let memberLabel = "io.github.hunterewok.clipbridge.member"
+    /// Whether the root and admin keys live in the Secure Enclave behind
+    /// Face ID. The simulator reports a Secure Enclave but cannot make a key
+    /// that needs user presence, so there they are keychain keys.
+    nonisolated static var secureEnclave: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return SecureEnclave.isAvailable
+        #endif
+    }
     /// How recent a computer's copy must be for the button to fetch it
     /// first, as for the shortcut (internal/phone/sync.go).
     static let recentCopyMS: Int64 = 45_000
@@ -119,7 +129,7 @@ final class LiveGroup: GroupController {
 
     /// The signer of the key under label, after Face ID as caSigner asks.
     private func signer(label: String, reason: String) async throws -> SecKeySigner {
-        guard SecureEnclave.isAvailable else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
+        guard Self.secureEnclave else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
         let context: LAContext
         if let a = authorized, Date().timeIntervalSince(a.at) < Self.authorizedFor {
             context = a.context
@@ -209,7 +219,7 @@ final class LiveGroup: GroupController {
         let member = try memberSigner()
         // The admin key, in the Secure Enclave behind Face ID like the root
         // key; reading its public key asks for nothing.
-        let se = SecureEnclave.isAvailable
+        let se = Self.secureEnclave
         let admin = try SecKeySigner(KeychainIdentity.loadKey(label: Self.adminLabel)
             ?? KeychainIdentity.makeKey(label: Self.adminLabel, secureEnclave: se, userPresence: se))
         let device = SyncEngine.newID()
@@ -308,7 +318,7 @@ final class LiveGroup: GroupController {
         let admin = try await signer(label: Self.adminLabel, reason: reason)
         // A root key left from a group this phone made before goes.
         KeychainIdentity.removeKey(label: Self.caLabel)
-        let se = SecureEnclave.isAvailable
+        let se = Self.secureEnclave
         _ = try KeychainIdentity.makeKey(label: Self.caLabel, secureEnclave: se, userPresence: se)
         let root = try await signer(label: Self.caLabel, reason: reason)
         guard var g = state else { return }
@@ -360,7 +370,7 @@ final class LiveGroup: GroupController {
         box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
         // An admin phone renews the computers' certificates when they
         // connect and are due (docs/protocol.md, section 2).
-        let renewer = Renewer(group: g, secureEnclave: SecureEnclave.isAvailable)
+        let renewer = Renewer(group: g, secureEnclave: Self.secureEnclave)
         renewer.context = authorized?.context
         // The root sends a computer it made an admin its admin CA again
         // when the computer still offers the key.

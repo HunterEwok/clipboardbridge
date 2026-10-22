@@ -12,6 +12,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   group, so that it can certify admin phones later (docs/protocol.md, sections 9 and 10).
 - The phone app logs every error it shows, and a debug build (or the `ShowErrorDetails`
   default) puts the error itself under the message, to find out what failed.
+- In the iOS simulator the app keeps its root and admin keys in the keychain, since the
+  simulator cannot make a Secure Enclave key that needs Face ID.
 
 ### Added
 
