@@ -9,6 +9,7 @@ struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
     @State private var removing: AppModel.Computer?
+    @State private var promoting: AppModel.Computer?
 
     var body: some View {
         List {
@@ -36,8 +37,14 @@ struct DevicesView: View {
                     if canRemove(d) {
                         Button(role: .destructive) { removing = d } label: { Text("Remove") }
                     }
+                    if d.canMakeAdmin {
+                        Button { promoting = d } label: { Text("Make it an admin") }
+                    }
                 }
                 .contextMenu {
+                    if d.canMakeAdmin {
+                        Button { promoting = d } label: { Text("Make it an admin") }
+                    }
                     if canRemove(d) {
                         Button(role: .destructive) { removing = d } label: { Text("Remove") }
                     }
@@ -70,6 +77,16 @@ struct DevicesView: View {
             } else {
                 Text("It will no longer sync with your devices. To add it again, scan its QR code again.")
             }
+        }
+        .confirmationDialog(Text("Make \(promoting?.name ?? "") an admin?"), isPresented: Binding(
+            get: { promoting != nil }, set: { if !$0 { promoting = nil } }
+        ), titleVisibility: .visible) {
+            Button {
+                if let d = promoting { Task { await model.makeAdmin(d.id) } }
+                promoting = nil
+            } label: { Text("Make it an admin") }
+        } message: {
+            Text("It can then add and remove devices with clipbridge pair and clipbridge revoke. Its key is a file on the computer, so do this only for a computer you keep safe.")
         }
     }
 

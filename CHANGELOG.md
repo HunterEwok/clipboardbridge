@@ -44,6 +44,9 @@ All notable changes to clipbridge are documented in this file. The format follow
   `clipbridge pair`, removes devices with `clipbridge revoke` and renews certificates from
   its admin CA; it never removes the root phone (docs/protocol.md, section 10, "A computer
   as admin").
+- The phone app makes a computer an admin: on the root phone, "Make it an admin" on a
+  computer's row in Devices asks for Face ID, sends the computer its admin CA and lists it
+  as an admin; a computer that missed it gets it when it connects again.
 
 ## [0.2.0] - 2026-10-21
 

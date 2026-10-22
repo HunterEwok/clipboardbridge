@@ -33,8 +33,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// The group's signed device and revocation records; admin phones sign
     /// them, and they spread to every member.
     public var records = RecordSet()
+    /// The admin CAs this phone, as the root, issued to computers, DER, by
+    /// device ID: sent again to a computer that offers the same admin key
+    /// (section 10, "A computer as admin").
+    public var computerAdmins: [String: Data] = [:]
 
-    enum CodingKeys: String, CodingKey { case device, groupCA, roots, memberCert, memberIssuer, isRoot, adminCA, computers, records }
+    enum CodingKeys: String, CodingKey {
+        case device, groupCA, roots, memberCert, memberIssuer, isRoot, adminCA, computers, records, computerAdmins
+    }
 
     init(device: String, groupCA: Data, memberCert: Data, computers: [Computer]) {
         (self.device, self.groupCA, self.memberCert, self.computers) = (device, groupCA, memberCert, computers)
@@ -52,6 +58,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         adminCA = try c.decodeIfPresent(Data.self, forKey: .adminCA)
         computers = try c.decode([Computer].self, forKey: .computers)
         records = try c.decodeIfPresent(RecordSet.self, forKey: .records) ?? RecordSet()
+        computerAdmins = try c.decodeIfPresent([String: Data].self, forKey: .computerAdmins) ?? [:]
         // Sets saved before root records do not name their group CA.
         if records.groupCA == nil, !records.records.isEmpty { records.groupCA = groupCA }
     }
@@ -121,7 +128,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return g
     }
 
-    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot }
+    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer }
 
     /// Adds records from other members, then follows the roots they lead
     /// to when they go further than this phone's; returns the new records.
@@ -226,7 +233,32 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let r = try Records.revoke(keys, keep: keep, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)
         computers.removeAll { $0.device == device }
+        computerAdmins[device] = nil
         return r
+    }
+
+    /// Makes a computer an admin (section 10, "A computer as admin"): the
+    /// root issues an admin CA for the admin key the computer's hello
+    /// offered (a SubjectPublicKeyInfo) and signs its device record again,
+    /// naming that CA. It returns the admin CA, for the admin message, and
+    /// the record to send. Only the root makes admins.
+    public mutating func makeAdmin(device: String, adminKey: Data, rootSigner: CertificateSigner,
+                                   now: Date) throws -> (adminCA: Data, record: Member.Record) {
+        guard isRoot else { throw Failure.notRoot }
+        guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
+        guard d.role == "linux" || d.role == "mac" else { throw Failure.notAComputer }
+        let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
+        let r = try record(device: device, name: d.name, role: d.role, key: d.key, admin: Records.keyHash(cert: ca),
+                           caSigner: rootSigner, now: now)
+        computerAdmins[device] = ca
+        return (ca, r)
+    }
+
+    /// The admin CA this phone issued for an admin key a computer offers,
+    /// while that computer is still listed as an admin.
+    public func computerAdminCA(for adminKey: Data) -> Data? {
+        let listed = Set(devices.filter(\.admin).map(\.id))
+        return computerAdmins.first { listed.contains($0.key) && (try? CertificateInfo(der: $0.value).publicKey) == adminKey }?.value
     }
 
     /// Admits a listening device over a pairing connection whose TLS
