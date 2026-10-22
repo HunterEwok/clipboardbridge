@@ -1093,3 +1093,37 @@ func TestJoinerTakesAnAdminWelcome(t *testing.T) {
 		}
 	}
 }
+
+// TestJoinerTakesAWelcomeAfterAHandover checks a welcome in a phone group
+// that a root record handed to a new root: the group CA still names the
+// group, and the certificates come from the new root and an admin CA under
+// it.
+func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
+	first, _ := phoneRoot(t)
+	newRoot, admin := phoneRoot(t)
+	j := newJoiner(t, "linux")
+	phoneKey, _ := group.NewKey()
+	phone := group.NewDeviceID()
+	phoneCert, err := newRoot.IssueMember(phone, &phoneKey.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := admin.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}}
+	member := memberAD{Device: phone, Group: group.Tag(first.Cert)}
+	id, err := j.identity(w, phoneCert, member)
+	if err != nil {
+		t.Fatalf("a welcome after a handover: %v", err)
+	}
+	if len(id.Roots) != 1 || !id.Root().Equal(newRoot.Cert) {
+		t.Error("the identity does not keep the new root")
+	}
+	bad := *w
+	bad.Roots = nil
+	if _, err := j.identity(&bad, phoneCert, member); err == nil {
+		t.Error("accepted certificates from a root the welcome does not name")
+	}
+}

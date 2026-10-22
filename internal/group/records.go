@@ -204,6 +204,8 @@ type signedRecord struct {
 	Record
 	body   RecordBody
 	signer KeyHash
+	anchor KeyHash           // the root it was signed under: the signer, or the root of its admin CA
+	root   *x509.Certificate // the new root of a root record
 }
 
 // Records is the set of a group's records. It only grows; what it says
@@ -214,15 +216,21 @@ type Records struct {
 	tag     string
 	caKey   KeyHash
 	byID    map[[sha256.Size]byte]*signedRecord
+	// roots are the roots records may be signed under: the group CA and
+	// the new root of every root record in the set.
+	roots map[KeyHash]*x509.Certificate
 }
 
-// NewRecords returns an empty set for the group of groupCA.
+// NewRecords returns an empty set for the group of groupCA, the group's
+// first root, which names the group for good.
 func NewRecords(groupCA *x509.Certificate) *Records {
+	caKey := KeyHashOf(groupCA)
 	return &Records{
 		groupCA: groupCA,
 		tag:     Tag(groupCA),
-		caKey:   KeyHashOf(groupCA),
+		caKey:   caKey,
 		byID:    map[[sha256.Size]byte]*signedRecord{},
+		roots:   map[KeyHash]*x509.Certificate{caKey: groupCA},
 	}
 }
 
@@ -244,7 +252,40 @@ func (s *Records) Add(r Record) (bool, error) {
 		return false, err
 	}
 	s.byID[id] = sr
+	if sr.root != nil {
+		if k := KeyHashOf(sr.root); s.roots[k] == nil {
+			s.roots[k] = sr.root
+		}
+	}
 	return true, nil
+}
+
+// AddAll adds the valid records among rs and returns those that were new,
+// and an error for each record that is not valid. A record signed under a
+// new root is taken once the root record that names that root is in the
+// set, so the result does not depend on the order of rs.
+func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
+	pending := rs
+	for {
+		var rest []Record
+		errs = errs[:0]
+		rooted := false
+		for _, r := range pending {
+			isNew, err := s.Add(r)
+			switch {
+			case err != nil:
+				rest = append(rest, r)
+				errs = append(errs, err)
+			case isNew:
+				fresh = append(fresh, r)
+				rooted = rooted || r.Type() == RecordRoot
+			}
+		}
+		if !rooted || len(rest) == 0 {
+			return fresh, errs
+		}
+		pending = rest
+	}
 }
 
 func (s *Records) verify(r Record) (*signedRecord, error) {
@@ -261,38 +302,123 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 	if body.Group != s.tag {
 		return nil, errors.New("group: the record is for another group")
 	}
-	if body.Type == RecordRoot {
-		// Handing a group to a new root comes with the phone apps.
-		return nil, errors.New("group: root records are not supported yet")
-	}
-	pub, signer, err := s.signerKey(r.Chain)
-	if err != nil {
-		return nil, err
-	}
+	sr := &signedRecord{Record: r, body: body}
 	sum := sha256.Sum256(r.Body)
-	if !ecdsa.VerifyASN1(pub, sum[:], r.Sig) {
-		return nil, errors.New("group: the record's signature is not valid")
+	switch len(r.Chain) {
+	case 0:
+		// Signed by a root's own key.
+		for k, root := range s.roots {
+			if ecdsa.VerifyASN1(root.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
+				sr.signer, sr.anchor = k, k
+				break
+			}
+		}
+		if sr.signer == (KeyHash{}) {
+			return nil, errors.New("group: the record's signature is not valid")
+		}
+	case 1:
+		admin, err := x509.ParseCertificate(r.Chain[0])
+		if err != nil {
+			return nil, fmt.Errorf("group: a record's signer: %w", err)
+		}
+		anchor, ok := KeyHash{}, false
+		err = errors.New("group: the signer is not an admin CA of the group")
+		for k, root := range s.roots {
+			if err = checkAdminCA(admin, root); err == nil {
+				anchor, ok = k, true
+				break
+			}
+		}
+		if !ok {
+			return nil, err
+		}
+		if !ecdsa.VerifyASN1(admin.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
+			return nil, errors.New("group: the record's signature is not valid")
+		}
+		sr.signer, sr.anchor = KeyHashOf(admin), anchor
+	default:
+		return nil, errors.New("group: a record's chain is too long")
 	}
-	return &signedRecord{Record: r, body: body, signer: signer}, nil
+	if body.Type == RecordRoot {
+		if s.roots[sr.anchor].MaxPathLen != 1 {
+			return nil, errors.New("group: only a group whose root is a phone is handed to a new root")
+		}
+		root, err := x509.ParseCertificate(body.Root)
+		if err != nil {
+			return nil, fmt.Errorf("group: a root record: %w", err)
+		}
+		if err := checkRoot(root); err != nil {
+			return nil, err
+		}
+		sr.root = root
+	}
+	return sr, nil
 }
 
-// signerKey returns the key that must have signed a record with chain: the
-// group CA's, or that of an admin CA the group CA certified.
-func (s *Records) signerKey(chain [][]byte) (*ecdsa.PublicKey, KeyHash, error) {
-	switch len(chain) {
-	case 0:
-		return s.groupCA.PublicKey.(*ecdsa.PublicKey), s.caKey, nil
-	case 1:
-		admin, err := x509.ParseCertificate(chain[0])
-		if err != nil {
-			return nil, KeyHash{}, fmt.Errorf("group: a record's signer: %w", err)
-		}
-		if err := checkAdminCA(admin, s.groupCA); err != nil {
-			return nil, KeyHash{}, err
-		}
-		return admin.PublicKey.(*ecdsa.PublicKey), KeyHashOf(admin), nil
+// checkRoot checks the new root of a root record: a self-signed CA with
+// path length 1 and a P-256 key, as the root a phone creates.
+func checkRoot(c *x509.Certificate) error {
+	if err := checkCA(&CA{Cert: c}, "new root", maxGroupCAPath); err != nil {
+		return err
 	}
-	return nil, KeyHash{}, errors.New("group: a record's chain is too long")
+	if c.MaxPathLen != 1 || c.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return errors.New("group: the new root does not certify admin CAs")
+	}
+	return nil
+}
+
+// path returns the roots the group went through, from the group CA to the
+// current root (docs/protocol.md, section 10, rule 5): from each root, the
+// root record signed under it that counts and whose new root has the
+// smallest SHA-256 leads to the next.
+func (s *Records) path() []*x509.Certificate {
+	path := []*x509.Certificate{s.groupCA}
+	on := map[KeyHash]bool{s.caKey: true}
+	for {
+		cur := KeyHashOf(path[len(path)-1])
+		var next *signedRecord
+		var best [sha256.Size]byte
+		for _, r := range s.byID {
+			if r.root == nil || r.anchor != cur || on[KeyHashOf(r.root)] || s.Revoked(r.signer) || !s.fromRoot(r) {
+				continue
+			}
+			if sum := sha256.Sum256(r.root.Raw); next == nil || bytes.Compare(sum[:], best[:]) < 0 {
+				next, best = r, sum
+			}
+		}
+		if next == nil {
+			return path
+		}
+		path = append(path, next.root)
+		on[KeyHashOf(next.root)] = true
+	}
+}
+
+// Roots returns the roots that took the group over from the group CA, in
+// order; the last is the current root. It is empty in a group that was
+// never handed over.
+func (s *Records) Roots() []*x509.Certificate { return s.path()[1:] }
+
+// onPath returns the keys of the roots on the path.
+func (s *Records) onPath() map[KeyHash]bool {
+	on := map[KeyHash]bool{}
+	for _, c := range s.path() {
+		on[KeyHashOf(c)] = true
+	}
+	return on
+}
+
+// fromRoot reports whether the admin CA that signed a record still stands
+// under its root: the root is not revoked, or every record that revoked it
+// keeps the admin CA. A root's own signature always does.
+func (s *Records) fromRoot(r *signedRecord) bool {
+	return r.signer == r.anchor || s.issued(r.anchor, r.signer)
+}
+
+// issued reports whether what issuer certified, the key k, still stands:
+// the issuer is not revoked, or every record that revoked it keeps k.
+func (s *Records) issued(issuer, k KeyHash) bool {
+	return !s.Revoked(issuer) || s.kept(issuer, k)
 }
 
 // CheckAdminCA checks that c is an admin CA certified by root: a CA with
@@ -330,11 +456,13 @@ func (s *Records) Revoked(k KeyHash) bool {
 	return false
 }
 
-// counts reports whether a device record counts: its signer's key is not
-// revoked, or every record that revoked it keeps the device's key, as when
-// an admin is removed and the devices it admitted stay.
-func (s *Records) counts(r *signedRecord) bool {
-	return !s.Revoked(r.signer) || s.kept(r.signer, *r.body.Key)
+// counts reports whether a device record counts: it was signed under a
+// root on the path, by an admin CA that still stands under it, and its
+// signer's key is not revoked, or every record that revoked it keeps the
+// device's key, as when an admin is removed and the devices it admitted
+// stay.
+func (s *Records) counts(r *signedRecord, on map[KeyHash]bool) bool {
+	return on[r.anchor] && s.fromRoot(r) && s.issued(r.signer, *r.body.Key)
 }
 
 // kept reports whether admin is revoked only by records that keep the key
@@ -355,7 +483,10 @@ func (s *Records) kept(admin, leaf KeyHash) bool {
 
 // Refused reports why a member certificate chain (leaf first, then its
 // issuer when that is an admin CA) is refused, or nil. The chain is assumed
-// to be verified to the group CA already.
+// to be verified to one of the group's roots already. A certificate is
+// refused when its key is revoked, or when its issuer's key is revoked and
+// not every record that revoked the issuer keeps it: for the leaf and, when
+// an admin CA issued it, for that admin CA under its root.
 func (s *Records) Refused(chain []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("group: no certificate")
@@ -364,11 +495,21 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	if s.Revoked(leaf) {
 		return errors.New("group: the device was removed from the group")
 	}
-	if len(chain) < 2 {
-		return nil
+	top := chain[0]
+	if len(chain) >= 2 {
+		admin := KeyHashOf(chain[1])
+		if !s.issued(admin, leaf) {
+			return errors.New("group: the admin that admitted the device was removed")
+		}
+		top, leaf = chain[1], admin
 	}
-	if admin := KeyHashOf(chain[1]); s.Revoked(admin) && !s.kept(admin, leaf) {
-		return errors.New("group: the admin that admitted the device was removed")
+	for _, root := range s.path() {
+		if top.CheckSignatureFrom(root) == nil {
+			if !s.issued(KeyHashOf(root), leaf) {
+				return errors.New("group: the certificate is from a root that handed the group over")
+			}
+			break
+		}
 	}
 	return nil
 }
@@ -391,8 +532,9 @@ type Device struct {
 func (s *Records) Devices() []Device {
 	latest := map[DeviceID]*signedRecord{}
 	first := map[DeviceID]int64{}
+	on := s.onPath()
 	for _, r := range s.byID {
-		if r.body.Type != RecordDevice || !s.counts(r) {
+		if r.body.Type != RecordDevice || !s.counts(r, on) {
 			continue
 		}
 		d := r.body.Device
@@ -493,8 +635,6 @@ func LoadRecords(dir string, groupCA *x509.Certificate) (*Records, error) {
 	if err := json.Unmarshal(data, &all); err != nil {
 		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, RecordsFileName), err)
 	}
-	for _, r := range all {
-		_, _ = s.Add(r) // records of another group are dropped
-	}
+	s.AddAll(all) // records of another group are dropped
 	return s, nil
 }

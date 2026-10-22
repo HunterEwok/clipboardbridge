@@ -97,7 +97,8 @@ screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGro
 Next steps, roughly in order:
 
 1. **`root` records**: handing the root role to another admin phone, so that a lost root
-   phone can be removed (Go refuses them for now; `PhoneGroup.revoke` refuses the root).
+   phone can be removed. Go accepts them (docs/protocol.md, section 10, "Roots"); the kit
+   and the app do not yet (`PhoneGroup.revoke` refuses the root).
 2. Renewing the certificates of devices a removed admin admitted from another admin's CA
    (needs the `cert` message to carry the issuer; today the root renews them).
 3. A computer as admin in a phone group, if wanted.

@@ -22,6 +22,13 @@ type phoneGroup struct {
 
 func newPhoneGroup(t *testing.T) phoneGroup {
 	t.Helper()
+	root := newRoot(t)
+	return phoneGroup{root: root, a: adminCA(t, root), b: adminCA(t, root)}
+}
+
+// newRoot makes a phone's root CA.
+func newRoot(t *testing.T) *CA {
+	t.Helper()
 	rootKey, err := NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -39,8 +46,7 @@ func newPhoneGroup(t *testing.T) phoneGroup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := &CA{Cert: rootCert, Key: rootKey}
-	return phoneGroup{root: root, a: adminCA(t, root), b: adminCA(t, root)}
+	return &CA{Cert: rootCert, Key: rootKey}
 }
 
 func adminCA(t *testing.T, root *CA) *CA {

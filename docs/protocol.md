@@ -471,16 +471,17 @@ put words in front of the user.
 |-------|------|---------|
 | `cert` | bytes, DER | always: a member certificate from the group CA, or from `issuer`, for the key of the joiner's TLS certificate and its device ID |
 | `issuer` | bytes, DER | only from an admin phone: its admin CA (section 10), which issued `cert` |
-| `group_ca` | bytes, DER | always |
+| `group_ca` | bytes, DER | always: the group's first root, which names the group |
+| `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
 | `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 | `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
 
 The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
-admin CA under `group_ca` (section 10); the member's TLS certificate is signed by `issuer`
-or by `group_ca` and names ADb `device` (section 2); `cert` verifies to `group_ca`, through
-`issuer` when present, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
+admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
+signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
+verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
 match. A Linux joiner that got them then issues its own `clipbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
@@ -793,8 +794,10 @@ chains and records signed through one are implemented on both sides: Go's
 `Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipbridgeKit's
 `GroupCertificates.adminCA`, `verifyMember(chain:)`, `RecordSet` and `Records.sign` with
 `adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
-ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). Planned, with the apps:
-`root` records.
+ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
+implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
+`testdata/interop/go-root.json` holds a handover for the phone kit to check); the phone kit
+and the app follow.
 
 ### Admin CA and chains
 
@@ -850,23 +853,49 @@ Validity and evaluation, which depend only on the set of records, never on their
 2. The **revoked set** is the union of `keys` of every `revoke` record signed by an admin,
    including records whose signer is itself revoked. So two admins that revoke each other
    are both revoked.
-3. A `device` or `root` record counts only when its signer's key is not revoked; a
+3. A `device` or `root` record counts only when its signer's key is not revoked, and,
+   when an admin CA signed it, that admin CA still stands under its root (rule 4); a
    `device` record also counts when every record that revoked its signer keeps the
-   device's key, so the devices a removed admin admitted stay in the list.
-4. A certificate is refused when its key is revoked, or when its issuer is an admin CA
-   whose key is revoked and not every record that revoked that admin CA keeps the
-   certificate's key.
-5. A `root` record signed under the current root replaces the group CA: the member trusts
-   the new root alone, keeps its records (re-signed records are not needed, since records
-   are checked against the root they were signed under, which the member keeps as history),
-   and expects new certificates from an admin. When two valid `root` records exist under the
-   same root, the one whose new root certificate has the smaller SHA-256 wins.
+   device's key, so the devices a removed admin admitted stay in the list. A `device`
+   record counts only when it was signed under a root on the path (rule 5).
+4. A certificate is refused when its key is revoked, or when its issuer's key is revoked
+   and not every record that revoked that issuer keeps the certificate's key. This holds for
+   a member certificate and its issuer (a root or an admin CA), and for an admin CA and its
+   root.
+5. **Roots.** The group CA is the group's first root and names the group for good: the
+   group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
+   only in a phone group (its root has path length 1), and its `root` is a self-signed CA
+   with path length 1 and a P-256 key. Records are signed under any root the set knows: the
+   group CA and the new root of every valid `root` record; a member adds a batch of records
+   until nothing new is added, so a record signed under a new root is taken together with
+   the record that names that root. The **path** starts at the group CA; from each root,
+   of the `root` records signed under it that count (rule 3) and whose new root is not on
+   the path yet, the one whose new root certificate has the smallest SHA-256 leads to the
+   next root. The last root on the path is the current root. A member trusts every root on
+   the path for member certificates and admin CAs (certificates from earlier roots stay
+   valid until they expire or rule 4 refuses them), takes renewals from any of them, and
+   keeps the path next to its identity. A new member gets the path in the Welcome's `roots`.
+
+**Handing the group over.** When the root phone is lost, an admin phone takes over:
+
+1. It creates a new root (as in section 9) and signs a `root` record naming it, with its
+   admin CA under the current root.
+2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
+   lost phone's member and admin keys, and whose `keep` names every other key the old root
+   certified: the member keys of the listed devices it admitted and the admin CA keys of the
+   other admin phones. By rule 4 nothing the old root's key signs from then on counts:
+   neither new certificates nor new admin CAs, `device` records nor `root` records.
+3. It signs a `device` record for itself under the new root (by = itself), which marks it
+   as the root in the list, and from then on renews certificates from the new root.
+
+A computer that gets the `root` record starts trusting the new root and saves it with its
+identity.
 
 The devices list is, for each device, the `device` record that counts with the largest
 `time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
 record names an admin CA whose key is not revoked. A Linux member that holds the CA keys is
 an admin in a group a computer created. Go keeps the records in `records.json` next to the
-identity (mode 0600) and refuses `root` records until the apps implement them.
+identity (mode 0600) and the path in the identity file's `roots`.
 
 ### Exchange in the member protocol
 

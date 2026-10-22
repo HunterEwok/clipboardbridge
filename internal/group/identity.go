@@ -37,8 +37,14 @@ type Identity struct {
 	// Issuer is the admin CA that issued Cert, in a group whose root is a
 	// phone and where another admin phone admitted this device; nil when
 	// the group CA issued it (docs/protocol.md, section 10).
-	Issuer  *x509.Certificate
+	Issuer *x509.Certificate
+	// GroupCA is the group's first root, which names the group (its tag)
+	// for good.
 	GroupCA CA
+	// Roots are the roots that took a phone group over from GroupCA, in
+	// order, as the root records say; the last is the current root. Empty
+	// in a group that was never handed over (docs/protocol.md, section 10).
+	Roots   []*x509.Certificate
 	PhoneCA *CA               // nil on a Mac
 	Phone   *x509.Certificate // the clipbridge.local certificate, with Key; nil on a Mac
 }
@@ -70,6 +76,21 @@ func Create(now time.Time) (*Identity, error) {
 	return &Identity{ID: id, Key: key, Cert: cert, GroupCA: *groupCA, PhoneCA: phoneCA, Phone: phone}, nil
 }
 
+// Root returns the group's current root: the last of Roots, or the group
+// CA.
+func (id *Identity) Root() *x509.Certificate {
+	if n := len(id.Roots); n > 0 {
+		return id.Roots[n-1]
+	}
+	return id.GroupCA.Cert
+}
+
+// Trusted returns every root the group had, the group CA first: member
+// certificates and admin CAs from any of them verify.
+func (id *Identity) Trusted() []*x509.Certificate {
+	return append([]*x509.Certificate{id.GroupCA.Cert}, id.Roots...)
+}
+
 // Admin reports whether this device holds the CA keys and can admit
 // devices, renew certificates and serve the iPhone.
 func (id *Identity) Admin() bool {
@@ -89,14 +110,34 @@ func (id *Identity) Check() error {
 	if err := checkCA(&id.GroupCA, "group CA", maxGroupCAPath); err != nil {
 		return err
 	}
-	issuer := id.GroupCA.Cert
-	if id.Issuer != nil {
-		if err := checkAdminCA(id.Issuer, id.GroupCA.Cert); err != nil {
+	if len(id.Roots) > 0 && (id.GroupCA.Key != nil || id.GroupCA.Cert.MaxPathLen != 1) {
+		return errors.New("group: only a group whose root is a phone has later roots")
+	}
+	for _, r := range id.Roots {
+		if err := checkRoot(r); err != nil {
 			return err
 		}
-		issuer = id.Issuer
 	}
-	if err := checkLeaf(id.Cert, issuer, id.Key, "member certificate"); err != nil {
+	issuers := id.Trusted()
+	if id.Issuer != nil {
+		err := errors.New("group: the issuer is not an admin CA of the group")
+		for _, root := range issuers {
+			if err = checkAdminCA(id.Issuer, root); err == nil {
+				break
+			}
+		}
+		if err != nil {
+			return err
+		}
+		issuers = []*x509.Certificate{id.Issuer}
+	}
+	var err error
+	for _, issuer := range issuers {
+		if err = checkLeaf(id.Cert, issuer, id.Key, "member certificate"); err == nil {
+			break
+		}
+	}
+	if err != nil {
 		return err
 	}
 	if dev, err := DeviceOf(id.Cert); err != nil || dev != id.ID {
@@ -228,8 +269,8 @@ func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (*x509.Ce
 
 // WithCert returns the identity with a member certificate that another
 // member renewed for it. The certificate must be from the issuer of the
-// current one, or from the group CA itself, name this device and its key,
-// and end later than the current one.
+// current one, or from one of the group's roots, name this device and its
+// key, and end later than the current one.
 func (id *Identity) WithCert(der []byte) (*Identity, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
@@ -241,7 +282,7 @@ func (id *Identity) WithCert(der []byte) (*Identity, error) {
 		if id.Issuer == nil {
 			return nil, err
 		}
-		// The root renewed a certificate that an admin CA had issued.
+		// A root renewed a certificate that an admin CA had issued.
 		next.Issuer = nil
 		if next.Check() != nil {
 			return nil, err
@@ -269,16 +310,17 @@ func renewable(c, ca *x509.Certificate, now time.Time, before time.Duration) boo
 // identityFile is the format of the identity file. Keys are PKCS #8 and
 // certificates DER, both base64 in JSON.
 type identityFile struct {
-	Version    int    `json:"v"`
-	Device     string `json:"device"`
-	Key        []byte `json:"key"`
-	Cert       []byte `json:"cert"`
-	Issuer     []byte `json:"issuer,omitempty"`
-	GroupCA    []byte `json:"group_ca"`
-	GroupCAKey []byte `json:"group_ca_key,omitempty"`
-	PhoneCA    []byte `json:"phone_ca,omitempty"`
-	PhoneCAKey []byte `json:"phone_ca_key,omitempty"`
-	Phone      []byte `json:"phone,omitempty"`
+	Version    int      `json:"v"`
+	Device     string   `json:"device"`
+	Key        []byte   `json:"key"`
+	Cert       []byte   `json:"cert"`
+	Issuer     []byte   `json:"issuer,omitempty"`
+	GroupCA    []byte   `json:"group_ca"`
+	Roots      [][]byte `json:"roots,omitempty"`
+	GroupCAKey []byte   `json:"group_ca_key,omitempty"`
+	PhoneCA    []byte   `json:"phone_ca,omitempty"`
+	PhoneCAKey []byte   `json:"phone_ca_key,omitempty"`
+	Phone      []byte   `json:"phone,omitempty"`
 }
 
 const fileVersion = 1
@@ -298,6 +340,9 @@ func (id *Identity) Save(dir string) error {
 	}
 	if id.Issuer != nil {
 		f.Issuer = id.Issuer.Raw
+	}
+	for _, r := range id.Roots {
+		f.Roots = append(f.Roots, r.Raw)
 	}
 	var err error
 	if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
@@ -363,6 +408,13 @@ func parseIdentity(data []byte) (*Identity, error) {
 	}
 	if id.GroupCA, err = parseCA(f.GroupCA, f.GroupCAKey); err != nil {
 		return nil, err
+	}
+	for _, der := range f.Roots {
+		r, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, err
+		}
+		id.Roots = append(id.Roots, r)
 	}
 	if f.PhoneCA != nil || f.PhoneCAKey != nil || f.Phone != nil {
 		phoneCA, err := parseCA(f.PhoneCA, f.PhoneCAKey)

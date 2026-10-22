@@ -8,12 +8,15 @@ import (
 	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+var update = flag.Bool("update", false, "rewrite the interop test vectors")
 
 // TestSwiftCertificates checks the group CA and member certificate that the
 // phone app's ClipbridgeKit issues (testdata/interop/swift-certs.json,
@@ -249,4 +252,133 @@ func TestSwiftAdmin(t *testing.T) {
 	if err := s.Refused([]*x509.Certificate{cert, admin}); err != nil {
 		t.Errorf("the computer is refused: %v", err)
 	}
+}
+
+// rootVectors is testdata/interop/go-root.json: the records of a handover
+// (TestRootHandover) and what a member makes of them, for the phone kit's
+// RecordSet to agree with.
+type rootVectors struct {
+	GroupCA []byte       `json:"group_ca"`
+	Records []Record     `json:"records"` // in an order where records signed under the new root come first
+	Roots   [][]byte     `json:"roots"`
+	Devices []rootDevice `json:"devices"`
+	Chains  []rootChain  `json:"chains"`
+	Digest  string       `json:"digest"`
+}
+
+type rootDevice struct {
+	ID    DeviceID `json:"id"`
+	Name  string   `json:"name"`
+	Admin bool     `json:"admin"`
+}
+
+type rootChain struct {
+	Name    string   `json:"name"`
+	Chain   [][]byte `json:"chain"` // leaf first, then its admin CA
+	Refused bool     `json:"refused"`
+}
+
+// TestGoRootVectors writes (with -update) and checks
+// testdata/interop/go-root.json.
+func TestGoRootVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-root.json")
+	if *update {
+		h := newHandover(t)
+		s := h.records(t)
+		thiefCA := adminCA(t, h.pg.root)
+		v := rootVectors{GroupCA: h.pg.root.Cert.Raw, Digest: s.Digest()}
+		for i := len(h.all) - 1; i >= 0; i-- {
+			v.Records = append(v.Records, h.all[i])
+		}
+		for _, r := range s.Roots() {
+			v.Roots = append(v.Roots, r.Raw)
+		}
+		for _, d := range s.Devices() {
+			v.Devices = append(v.Devices, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+		}
+		for _, c := range []struct {
+			name  string
+			chain []*x509.Certificate
+		}{
+			{"the lost phone", []*x509.Certificate{h.lost}},
+			{"the computer the old root admitted", []*x509.Certificate{h.byRoot}},
+			{"the computer B admitted", []*x509.Certificate{h.byB, h.pg.b.Cert}},
+			{"phone B", []*x509.Certificate{h.b, h.pg.b.Cert}},
+			{"a device from the new root", []*x509.Certificate{member(t, h.newRoot)}},
+			{"a new certificate from the old root", []*x509.Certificate{member(t, h.pg.root)}},
+			{"a new admin CA under the old root", []*x509.Certificate{member(t, thiefCA), thiefCA.Cert}},
+		} {
+			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
+			for _, cert := range c.chain {
+				rc.Chain = append(rc.Chain, cert.Raw)
+			}
+			v.Chains = append(v.Chains, rc)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v rootVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if s.Digest() != v.Digest {
+		t.Error("the digest differs")
+	}
+	roots := s.Roots()
+	if len(roots) != len(v.Roots) || len(roots) == 0 || string(roots[0].Raw) != string(v.Roots[0]) {
+		t.Fatalf("%d roots, the file has %d", len(roots), len(v.Roots))
+	}
+	var got []rootDevice
+	for _, d := range s.Devices() {
+		got = append(got, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+	}
+	if a, b := mustJSON(t, got), mustJSON(t, v.Devices); a != b {
+		t.Errorf("devices %s, the file has %s", a, b)
+	}
+	refused := 0
+	for _, c := range v.Chains {
+		var chain []*x509.Certificate
+		for _, der := range c.Chain {
+			cert, err := x509.ParseCertificate(der)
+			if err != nil {
+				t.Fatal(err)
+			}
+			chain = append(chain, cert)
+		}
+		if (s.Refused(chain) != nil) != c.Refused {
+			t.Errorf("%s: refused %v, the file says %v", c.Name, !c.Refused, c.Refused)
+		}
+		if c.Refused {
+			refused++
+		}
+	}
+	if refused != 3 {
+		t.Errorf("%d chains refused, want the lost phone and the two from the old root's key", refused)
+	}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
