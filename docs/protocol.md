@@ -767,7 +767,9 @@ a computer keep working as they do today.
 The wire side of "Admin phones, the devices list and revocation (planned)" in
 [design.md](design.md). Implemented in Go: the records, their exchange, refusing revoked
 keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
-`internal/node`, `internal/service/devices.go`). Planned, with the apps: admin CAs in member
+`internal/node`, `internal/service/devices.go`). ClipbridgeKit signs device and revocation
+records with the phone's root key and exchanges them in the member protocol (`Records.swift`,
+`MemberNode`); the Go tests check that Go reads them as Swift does. Planned, with the apps: admin CAs in member
 chains (Go verifies records signed by one already) and `root` records.
 
 ### Admin CA and chains (planned)

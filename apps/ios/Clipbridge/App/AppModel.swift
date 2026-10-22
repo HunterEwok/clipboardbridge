@@ -11,6 +11,10 @@ import SwiftUI
 protocol GroupController: AnyObject {
     var hasGroup: Bool { get }
     var computers: [AppModel.Computer] { get }
+    /// Every device of the group, this phone included.
+    var devices: [AppModel.Computer] { get }
+    /// Removes a device from the group.
+    func remove(_ id: String) async throws
     /// Admits the computer whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Sends what this phone holds, or fetches the computers' recent copy.
@@ -24,10 +28,13 @@ protocol GroupController: AnyObject {
 final class AppModel: ObservableObject {
     enum Phase: Equatable { case start, home }
 
+    /// A device of the group: a computer, or this phone.
     struct Computer: Identifiable, Equatable {
         let id: String
         var name: String
         var online: Bool
+        var role = "linux"
+        var isSelf = false
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -39,6 +46,7 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var phase: Phase
     @Published private(set) var computers: [Computer] = []
+    @Published private(set) var devices: [Computer] = []
     /// One line about the last action, in plain words.
     @Published var message: String?
     @Published private(set) var busy = false
@@ -52,6 +60,7 @@ final class AppModel: ObservableObject {
         self.group = group
         phase = group.hasGroup ? .home : .start
         computers = group.computers
+        devices = group.devices
     }
 
     /// Reads what the camera saw, or what the user typed: the text of the QR
@@ -72,6 +81,7 @@ final class AppModel: ObservableObject {
         do {
             try await group.admit(jc)
             computers = group.computers
+            devices = group.devices
             phase = .home
             message = nil
             return true
@@ -101,6 +111,19 @@ final class AppModel: ObservableObject {
     func refresh() async {
         await group.refresh()
         computers = group.computers
+        devices = group.devices
+    }
+
+    /// Removes a device from the group.
+    func remove(_ id: String) async {
+        do {
+            try await group.remove(id)
+            message = String(localized: "Removed. The other devices refuse it from now on.")
+        } catch {
+            message = Self.describe(error)
+        }
+        computers = group.computers
+        devices = group.devices
     }
 
     static func describe(_ error: Error) -> String {
@@ -129,6 +152,8 @@ final class PendingGroup: GroupController {
     enum Failure: Error { case notReady, noComputers }
     var hasGroup: Bool { false }
     var computers: [AppModel.Computer] { [] }
+    var devices: [AppModel.Computer] { [] }
+    func remove(_ id: String) async throws {}
     func admit(_ code: JoinCode) async throws { throw Failure.notReady }
     func sync() async throws -> AppModel.SyncResult { throw Failure.noComputers }
     func refresh() async {}

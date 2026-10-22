@@ -8,6 +8,17 @@ public protocol ClosableTransport: FrameTransport {
     func close()
 }
 
+/// Keeps the group's signed records for a node (docs/protocol.md, section
+/// 10). Its methods are called from the node's actor.
+public protocol RecordStore: AnyObject, Sendable {
+    /// The digest a hello carries; nil without records.
+    var digest: String? { get }
+    /// Every record, for a peer whose digest differs.
+    var all: [Member.Record] { get }
+    /// Takes records a peer sent and returns those that were new and valid.
+    func add(_ records: [Member.Record]) -> [Member.Record]
+}
+
 /// The phone as a member: its sync engine and its connections to the Linux
 /// members, which it dials (it never listens; docs/protocol.md, section 9).
 /// Each connection runs the member protocol of section 4: a hello first,
@@ -20,13 +31,15 @@ public actor MemberNode {
     private var conns: [ObjectIdentifier: Conn] = [:]
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
+    private let records: RecordStore?
 
     /// onChange gets the new current event when a peer's event becomes it;
-    /// onCert gets a renewed member certificate a peer sent for this phone.
-    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone,
+    /// onCert gets a renewed member certificate a peer sent for this phone;
+    /// records keeps the group's records and exchanges them with the peers.
+    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
-        (self.engine, self.name, self.role, self.onChange, self.onCert) = (engine, name, role, onChange, onCert)
+        (self.engine, self.name, self.role, self.records, self.onChange, self.onCert) = (engine, name, role, records, onChange, onCert)
     }
 
     /// The current event with its age as of now.
@@ -59,7 +72,9 @@ public actor MemberNode {
         let c = Conn(transport: t, peer: peer)
         let id = ObjectIdentifier(c)
         conns[id] = c
-        c.enqueue(.hello(role, engine.hello(name: name)))
+        var hello = engine.hello(name: name)
+        hello.records = records?.digest
+        c.enqueue(.hello(role, hello))
         let writer = Task { await c.runWriter() }
         let watchdog = Task { await c.runWatchdog() }
         defer {
@@ -82,6 +97,9 @@ public actor MemberNode {
                 first = false
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
+                if let store = records, let mine = store.digest, mine != h.records {
+                    c.enqueue(.records(store.all))
+                }
                 continue
             }
             switch m {
@@ -89,10 +107,15 @@ public actor MemberNode {
                 apply(engine.received(e), from: id)
             case let .cert(der):
                 onCert(der)
+            case let .records(rs):
+                if let store = records, !rs.isEmpty {
+                    let fresh = store.add(rs)
+                    if !fresh.isEmpty { sendRecords(fresh, except: id) }
+                }
             case .bye:
                 return
             default:
-                break // a ping, records, an event that did not decode, or a newer type
+                break // a ping, an event that did not decode, or a newer type
             }
         }
     }
@@ -100,6 +123,18 @@ public actor MemberNode {
     /// Says goodbye on every connection and closes it.
     public func closeAll() {
         for c in conns.values { c.goodbye() }
+    }
+
+    /// Closes the connections to a device, for example one just removed.
+    public func close(peer: String) {
+        for c in conns.values where c.peer == peer { c.goodbye() }
+    }
+
+    /// Sends records made on this phone to every connected member.
+    public func sendRecords(_ rs: [Member.Record]) { sendRecords(rs, except: nil) }
+
+    private func sendRecords(_ rs: [Member.Record], except: ObjectIdentifier?) {
+        for (id, c) in conns where id != except && c.peerRole != nil { c.enqueue(.records(rs)) }
     }
 
     private func apply(_ r: SyncEngine.Result, from: ObjectIdentifier) {

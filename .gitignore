@@ -28,3 +28,4 @@ go.work.sum
 # The iPhone app's generated Xcode project
 /apps/ios/*.xcodeproj/
 /apps/ios/Clipbridge/Info.plist
+/interop-out/

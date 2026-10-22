@@ -111,6 +111,16 @@
         }
       }
     },
+    "It will no longer sync with your devices. To add it again, scan its QR code again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он больше не будет синхронизироваться с вашими устройствами. Чтобы вернуть его, отсканируйте его QR-код снова."
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "ru": {
@@ -207,6 +217,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Текст QR-кода"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить"
+          }
+        }
+      }
+    },
+    "Remove %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить %@?"
+          }
+        }
+      }
+    },
+    "Removed. The other devices refuse it from now on.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалено. Остальные устройства больше его не принимают."
           }
         }
       }
@@ -327,6 +367,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тема"
+          }
+        }
+      }
+    },
+    "This phone · admin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон · админ"
           }
         }
       }

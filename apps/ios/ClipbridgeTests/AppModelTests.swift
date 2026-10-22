@@ -31,6 +31,8 @@ final class AppModelTests: XCTestCase {
         }
         func sync() async throws -> AppModel.SyncResult { .sent }
         func refresh() async {}
+        var devices: [AppModel.Computer] { computers + [.init(id: "me", name: "iPhone", online: true, role: "phone", isSelf: true)] }
+        func remove(_ id: String) async throws { computers.removeAll { $0.id == id } }
     }
 
     func testScanGoesHome() async {
@@ -47,6 +49,10 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(m.message)
         await m.sync()
         XCTAssertNotNil(m.message)
+        XCTAssertEqual(m.devices.count, 2)
+        await m.remove("a")
+        XCTAssertEqual(m.devices.map(\.id), ["me"])
+        XCTAssertTrue(m.computers.isEmpty)
     }
 
     func testPendingGroup() async {
