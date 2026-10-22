@@ -23,7 +23,9 @@ import (
 // so a silent connection is a dead one. A member that holds the group CA key
 // sends a cert message with a renewed certificate to a peer whose
 // certificate is due for renewal. The group's signed records travel in
-// records messages to a peer whose hello names other records.
+// records messages to a peer whose hello names other records. The root
+// phone sends an admin message with an admin CA to a computer whose hello
+// offers an admin key.
 const (
 	typeHello = "hello"
 	typeEvent = "event"
@@ -31,6 +33,7 @@ const (
 	typeBye   = "bye"
 	typeCert  = "cert"
 	typeRecs  = "records"
+	typeAdmin = "admin"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -75,6 +78,9 @@ type message struct {
 	Issuer []byte `json:"issuer,omitempty"`
 
 	Records []group.Record `json:"records,omitempty"` // in a records message
+	// AdminCA, in an admin message from the root phone, is the receiver's
+	// admin CA for the admin key its hello offered, DER.
+	AdminCA []byte `json:"admin_ca,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to
@@ -87,11 +93,15 @@ type helloBody struct {
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
-// of its records and its name.
+// of its records, its name and the admin key it offers.
 type helloOut struct {
 	clip.Hello
 	Records string `json:"records,omitempty"`
 	Name    string `json:"name,omitempty"`
+	// AdminKey is the SubjectPublicKeyInfo of the admin key of a computer
+	// of a phone group that is no admin yet, DER, for the root phone to
+	// certify when it makes the computer an admin.
+	AdminKey []byte `json:"admin_key,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.

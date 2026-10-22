@@ -460,19 +460,19 @@ func TestRenewMember(t *testing.T) {
 	mac := join(t, admin, false, t0)
 	other := newGroup(t)
 	// Half a year in, nothing is due.
-	if c, err := admin.RenewMember(mac.Cert, t0.AddDate(0, 6, 0)); c != nil || err != nil {
+	if c, _, err := admin.RenewMember(mac.Cert, t0.AddDate(0, 6, 0)); c != nil || err != nil {
 		t.Errorf("RenewMember half a year in = %v, %v", c, err)
 	}
 	at := t0.AddDate(1, 6, 0)
 	// Only a member with the group CA key renews.
-	if c, err := mac.RenewMember(admin.Cert, at); c != nil || err != nil {
+	if c, _, err := mac.RenewMember(admin.Cert, at); c != nil || err != nil {
 		t.Errorf("a Mac renewed a certificate: %v, %v", c, err)
 	}
 	// A certificate of another group is not renewed.
-	if c, err := admin.RenewMember(other.Cert, at); c != nil || err == nil {
+	if c, _, err := admin.RenewMember(other.Cert, at); c != nil || err == nil {
 		t.Errorf("RenewMember renewed another group's certificate: %v, %v", c, err)
 	}
-	cert, err := admin.RenewMember(mac.Cert, at)
+	cert, _, err := admin.RenewMember(mac.Cert, at)
 	if err != nil || cert == nil {
 		t.Fatalf("RenewMember = %v, %v", cert, err)
 	}

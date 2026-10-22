@@ -117,9 +117,11 @@ func TestRootHandover(t *testing.T) {
 
 	var h hub
 	a := startIn(t, &h, &testService{name: "holder", dir: holderDir, role: node.Linux})
-	if id, err := group.Load(holderDir); err != nil || len(id.Roots) != 1 {
-		t.Fatalf("the holder did not keep the new root: %v", err)
-	}
+	// The control socket answers before the group has started.
+	waitFor(t, "the holder keeps the new root", func() bool {
+		id, err := group.Load(holderDir)
+		return err == nil && len(id.Roots) == 1
+	})
 	b := startIn(t, &h, &testService{name: "later", dir: laterDir, role: node.Linux})
 	waitFor(t, "the later one has the new root", func() bool {
 		id, err := group.Load(laterDir)

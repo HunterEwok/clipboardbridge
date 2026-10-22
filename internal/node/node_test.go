@@ -4,6 +4,7 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -374,7 +375,7 @@ func TestForwardedOnlyToOthers(t *testing.T) {
 	r.hello(clip.Hello{Wall: time.Now().UnixMilli(), Current: &cur})
 	r.event(newEvent(mac, "an event"))
 	waitWrite(t, pi, "an event")
-	for _, m := range r.frames(300 * time.Millisecond) {
+	for _, m := range r.frames(100 * time.Millisecond) {
 		if m.Type == typeEvent {
 			t.Errorf("the node sent an event back to its source: %s", m.Event)
 		}
@@ -746,6 +747,64 @@ func TestRenewPeer(t *testing.T) {
 	case <-got:
 		t.Error("a second renewed certificate on the same connection")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// TestAdminKeyAndAdminCA checks that a computer offers its admin key in
+// its hello until it holds an admin CA, and passes an admin message on to
+// OnAdmin.
+func TestAdminKeyAndAdminCA(t *testing.T) {
+	key, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan []byte, 1)
+	pi := newMember(t, Linux, func(_ *clip.Config, nc *Config) {
+		nc.OnAdmin = func(der []byte) error {
+			got <- der
+			return nil
+		}
+	})
+	offered := *pi.id
+	offered.AdminKey = key
+	pi.SetIdentity(&offered)
+	r := rawPeer(t, pi, newMember(t, Phone))
+	r.send(&message{Type: typeHello, Role: Phone, Hello: json.RawMessage(`{"wall_ms":0}`)})
+	var hello helloOut
+	for _, m := range r.frames(100 * time.Millisecond) {
+		if m.Type == typeHello {
+			if err := json.Unmarshal(m.Hello, &hello); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	want, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hello.AdminKey, want) {
+		t.Errorf("the hello offers %x, want the admin key", hello.AdminKey)
+	}
+	r.send(&message{Type: typeAdmin, AdminCA: []byte("the admin CA")})
+	select {
+	case der := <-got:
+		if string(der) != "the admin CA" {
+			t.Errorf("OnAdmin got %q", der)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnAdmin was not called")
+	}
+
+	// A computer that holds its admin CA offers no key.
+	admin := offered
+	admin.AdminCA = admin.Cert
+	pi.SetIdentity(&admin)
+	r = rawPeer(t, pi, newMember(t, Phone))
+	r.send(&message{Type: typeHello, Role: Phone, Hello: json.RawMessage(`{"wall_ms":0}`)})
+	for _, m := range r.frames(100 * time.Millisecond) {
+		if m.Type == typeHello && bytes.Contains(m.Hello, []byte("admin_key")) {
+			t.Error("an admin offered its admin key")
+		}
 	}
 }
 

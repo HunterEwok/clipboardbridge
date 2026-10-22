@@ -95,11 +95,14 @@ shows the devices and removes them, renews certificates (any admin renews any de
 (records, chains, Welcome `issuer`); a second phone joins from its Start
 screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`);
 an admin phone removes a lost root phone by taking the group over with `root` records
-(`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`).
+(`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`);
+in Go, a computer of a phone group can be an admin (`Identity.AdminKey`/`AdminCA`, the
+hello's `admin_key`, the `admin` message).
 
 Next steps, roughly in order:
 
-1. A computer as admin in a phone group, if wanted.
+1. A computer as admin in the app: "Make it an admin" on the root phone for a computer whose
+   hello offers `admin_key` (the owner wants it; the Go side is done).
 2. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
 

@@ -521,8 +521,11 @@ type Device struct {
 	Role  string
 	Key   KeyHash
 	Admin bool
-	By    DeviceID // the admin that admitted it, as its record says
-	Since time.Time
+	// AdminKey is the key of its admin CA, as its record names it; nil
+	// when it has none.
+	AdminKey *KeyHash
+	By       DeviceID // the admin that admitted it, as its record says
+	Since    time.Time
 }
 
 // Devices returns the devices list: the latest device record that counts
@@ -551,13 +554,14 @@ func (s *Records) Devices() []Device {
 			continue
 		}
 		out = append(out, Device{
-			ID:    id,
-			Name:  r.body.Name,
-			Role:  r.body.Role,
-			Key:   *r.body.Key,
-			Admin: r.body.Admin != nil && !s.Revoked(*r.body.Admin),
-			By:    r.body.By,
-			Since: time.UnixMilli(first[id]),
+			ID:       id,
+			Name:     r.body.Name,
+			Role:     r.body.Role,
+			Key:      *r.body.Key,
+			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin),
+			AdminKey: r.body.Admin,
+			By:       r.body.By,
+			Since:    time.UnixMilli(first[id]),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -567,6 +571,39 @@ func (s *Records) Devices() []Device {
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+// Admitted returns the keys of the devices whose records the admin with
+// key admin signed: what a revocation of that admin keeps, so the devices
+// it admitted stay in the group.
+func (s *Records) Admitted(admin KeyHash) []KeyHash {
+	var out []KeyHash
+	for _, id := range s.sortedIDs() {
+		r := s.byID[id]
+		if r.body.Type == RecordDevice && r.signer == admin && !slices.Contains(out, *r.body.Key) {
+			out = append(out, *r.body.Key)
+		}
+	}
+	return out
+}
+
+// RootDevice returns the phone that holds the group's current root: the one
+// whose own device record the current root's key signed, the latest of
+// them; "" when there is none, as in a group a computer created.
+func (s *Records) RootDevice() DeviceID {
+	path := s.path()
+	cur := KeyHashOf(path[len(path)-1])
+	var best *signedRecord
+	for _, r := range s.byID {
+		b := r.body
+		if b.Type == RecordDevice && r.signer == cur && b.Role == RolePhone && b.Device == b.By && (best == nil || newer(r, best)) {
+			best = r
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.body.Device
 }
 
 func newer(a, b *signedRecord) bool {

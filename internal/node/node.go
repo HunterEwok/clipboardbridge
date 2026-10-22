@@ -67,6 +67,11 @@ type Config struct {
 	// SetIdentity. An error is logged.
 	OnCert func(der, issuer []byte) error
 
+	// OnAdmin, if set, is called with the admin CA that a peer, the root
+	// phone, sent for this member's admin key; it checks it, keeps it and
+	// passes the new identity to SetIdentity. An error is logged.
+	OnAdmin func(der []byte) error
+
 	// Allow, if set, rejects peers, for example revoked devices. Recheck
 	// asks it again for the running connections.
 	Allow func(group.DeviceID, []*x509.Certificate) error
@@ -349,7 +354,7 @@ func (n *Node) Peers() []Peer {
 }
 
 // RenewPeers sends a renewed certificate to every connected member whose
-// certificate is due for renewal, if this member holds the group CA key.
+// certificate is due for renewal, if this member is an admin.
 // Peers are also checked when their hello arrives; this covers connections
 // that last for months.
 func (n *Node) RenewPeers() {
@@ -368,8 +373,14 @@ func (n *Node) RenewPeers() {
 
 // renewPeer sends the peer of c a renewed certificate if it is due, once
 // per connection: the connection keeps the certificate of its handshake.
+// An admin computer of a phone group renews only computers; the phones
+// renew their own.
 func (n *Node) renewPeer(c *conn) {
-	cert, err := n.identity().RenewMember(c.peerCert, n.cfg.Now())
+	id := n.identity()
+	if role := c.role(); id.AdminCA != nil && role != Linux && role != Mac {
+		return
+	}
+	cert, issuer, err := id.RenewMember(c.peerCert, n.cfg.Now())
 	if err != nil {
 		n.cfg.Logf("node: renewing the certificate of %s: %v", c.id, err)
 		return
@@ -383,7 +394,7 @@ func (n *Node) renewPeer(c *conn) {
 	c.mu.Unlock()
 	if !sent {
 		n.cfg.Logf("node: sending %s a renewed certificate, valid until %s", c.id, cert.NotAfter.UTC().Format(time.DateOnly))
-		c.enqueue(outgoing{cert: cert})
+		c.enqueue(outgoing{cert: cert, issuer: issuer})
 	}
 }
 
@@ -500,6 +511,7 @@ type outgoing struct {
 	hello   *clip.Hello
 	event   *clip.Event
 	cert    *x509.Certificate
+	issuer  *x509.Certificate // the admin CA that issued cert; nil for the group CA
 	records []group.Record
 	queued  time.Duration
 }
@@ -609,6 +621,13 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h.Current = &ev
 		}
 		out := helloOut{Hello: h, Name: c.n.cfg.Name}
+		if id := c.n.identity(); id.AdminKey != nil && id.AdminCA == nil {
+			spki, err := x509.MarshalPKIXPublicKey(&id.AdminKey.PublicKey)
+			if err != nil {
+				return nil, err
+			}
+			out.AdminKey = spki
+		}
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
@@ -618,7 +637,11 @@ func (c *conn) message(o outgoing) (*message, error) {
 		}
 		return &message{Type: typeHello, Role: c.n.cfg.Role, Hello: data}, nil
 	case o.cert != nil:
-		return &message{Type: typeCert, Cert: o.cert.Raw}, nil
+		m := &message{Type: typeCert, Cert: o.cert.Raw}
+		if o.issuer != nil {
+			m.Issuer = o.issuer.Raw
+		}
+		return m, nil
 	case o.records != nil:
 		return &message{Type: typeRecs, Records: o.records}, nil
 	default:
@@ -759,6 +782,13 @@ func (c *conn) reader() error {
 			}
 			if err := c.n.cfg.OnCert(m.Cert, m.Issuer); err != nil {
 				c.n.cfg.Logf("node: a renewed certificate from %s: %v", c.id, err)
+			}
+		case typeAdmin:
+			if c.n.cfg.OnAdmin == nil {
+				continue
+			}
+			if err := c.n.cfg.OnAdmin(m.AdminCA); err != nil {
+				c.n.cfg.Logf("node: an admin CA from %s: %v", c.id, err)
 			}
 		case typeRecs:
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {

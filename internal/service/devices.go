@@ -19,8 +19,9 @@ import (
 
 // The group's devices list and revocation (docs/protocol.md, section 10):
 // the member keeps the group's signed records, gives them to its peers,
-// refuses the devices they revoke, and, where it holds the group CA key,
-// records the devices it admits and removes devices on request.
+// refuses the devices they revoke, and, where it is an admin (it holds the
+// group CA key, or an admin CA from the root phone), records the devices it
+// admits and removes devices on request.
 
 // recordStore is the service as the node's store of records.
 type recordStore struct{ s *Service }
@@ -151,18 +152,20 @@ func (s *Service) allow(_ group.DeviceID, chain []*x509.Certificate) error {
 	return s.records.Refused(chain)
 }
 
-// signRecord signs a record with the group CA key of id, for this group.
+// signRecord signs a record for this group with the group CA key of id, or
+// with its admin CA.
 func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.Record, error) {
-	if id.GroupCA.Key == nil {
+	ca, chain := id.Signer()
+	if ca == nil {
 		return group.Record{}, errNotAdmin
 	}
 	body.Group = group.Tag(id.GroupCA.Cert)
 	body.TimeMS = s.cfg.now().UnixMilli()
 	body.By = id.ID
-	return group.SignRecord(body, id.GroupCA.Key)
+	return group.SignRecord(body, ca.Key, chain...)
 }
 
-var errNotAdmin = errors.New("only a member that holds the group's keys can change the devices list; run this on a Linux member of the group")
+var errNotAdmin = errors.New("only an admin can change the devices list: a Linux member of a group a computer made, an admin phone, or a computer the root phone made an admin")
 
 // publish adds records made on this member and sends them to the peers.
 func (s *Service) publish(nd *node.Node, rs ...group.Record) {
@@ -171,13 +174,15 @@ func (s *Service) publish(nd *node.Node, rs ...group.Record) {
 	}
 }
 
-// recordDevice records a device this member admitted, if it holds the group
-// CA key.
+// recordDevice records a device this member admitted, if it is an admin.
 func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.KeyHash) {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
-	if id == nil || id.GroupCA.Key == nil {
+	if id == nil {
+		return
+	}
+	if ca, _ := id.Signer(); ca == nil {
 		return
 	}
 	if !group.ValidName(name) {
@@ -324,7 +329,7 @@ func (s *Service) devices() ([]control.Device, error) {
 			d.LastSeenMS = t.UnixMilli()
 		}
 		if d.Self {
-			d.Admin = id.Admin()
+			d.Admin = id.Admin() || id.AdminCA != nil
 		}
 		out = append(out, d)
 		shown[dev] = true
@@ -374,25 +379,55 @@ func (s *Service) revoke(target string) (string, error) {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
+	s.recMu.Lock()
+	root := s.records.RootDevice()
+	s.recMu.Unlock()
 	switch {
-	case id.GroupCA.Key == nil:
+	case !id.Admin() && id.AdminCA == nil:
 		return "", errNotAdmin
 	case d.Self:
 		return "", errors.New("a device cannot remove itself; run clipbridge revoke on another member")
 	case d.Role == group.RoleLinux && id.GroupCA.Cert.MaxPathLen == 0:
 		return "", errors.New("a Linux member holds the group's keys, so removing it needs a new group; this is not supported yet")
+	case d.ID == string(root):
+		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	}
 	key, ok := s.keyOf(group.DeviceID(d.ID), nd)
 	if !ok {
 		return "", fmt.Errorf("the key of %s is unknown", d.ID)
 	}
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{key}})
+	// An admin goes with its admin key, and the devices it admitted stay.
+	body := group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{key}}
+	if admin := s.adminKeyOf(group.DeviceID(d.ID)); admin != nil {
+		body.Keys = append(body.Keys, *admin)
+		s.recMu.Lock()
+		for _, k := range s.records.Admitted(*admin) {
+			if k != key {
+				body.Keep = append(body.Keep, k)
+			}
+		}
+		s.recMu.Unlock()
+	}
+	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
 	}
 	s.publish(nd, r)
 	s.logf("clipbridge: removed %s (%s) from the group", d.Name, d.ID)
 	return d.Name, nil
+}
+
+// adminKeyOf returns the key of a listed device's admin CA, nil when it has
+// none.
+func (s *Service) adminKeyOf(dev group.DeviceID) *group.KeyHash {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	for _, d := range s.records.Devices() {
+		if d.ID == dev {
+			return d.AdminKey
+		}
+	}
+	return nil
 }
 
 // keyOf returns the key of a device: from its record, or from its

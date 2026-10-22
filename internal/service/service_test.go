@@ -1271,7 +1271,7 @@ func TestDevicesAndRevoke(t *testing.T) {
 		}
 	}
 
-	if _, err := mac.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "holds the group's keys") {
+	if _, err := mac.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
 		t.Errorf("revoke on the Mac: %v", err)
 	}
 	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "needs a new group") {
