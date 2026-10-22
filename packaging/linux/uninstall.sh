@@ -12,6 +12,8 @@
 # group, in /var/lib/clipbridge, stay for a reinstall unless --purge; the
 # clipbridge user and group stay too, since files may still belong to them.
 set -eu
+# The firewall tools answer in the user's language; what this reads is English.
+export LC_ALL=C
 
 purge=no
 case ${1:-} in

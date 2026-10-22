@@ -18,6 +18,8 @@
 # CLIPBRIDGE_FIREWALL=no leaves the firewall alone. uninstall.sh removes it
 # all again.
 set -eu
+# The firewall tools answer in the user's language; what this reads is English.
+export LC_ALL=C
 
 usage() {
 	echo "usage: sudo sh install.sh [--console] [--port N] path/to/clipbridge" >&2

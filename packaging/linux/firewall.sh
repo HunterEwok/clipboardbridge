@@ -14,6 +14,8 @@
 # first closes, and a changed port leaves no old rule behind. install.sh and
 # uninstall.sh run it.
 set -eu
+# The firewall tools answer in the user's language; what this reads is English.
+export LC_ALL=C
 
 state=/etc/clipbridge/firewall
 
