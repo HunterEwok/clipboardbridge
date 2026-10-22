@@ -193,7 +193,7 @@ final class AppModel: ObservableObject {
     /// failed: on in debug builds, off in release ones, and either way the
     /// ShowErrorDetails default when it is set (in Xcode, the launch
     /// argument -ShowErrorDetails YES or NO).
-    static var showsErrorDetails: Bool {
+    nonisolated static var showsErrorDetails: Bool {
         if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
         #if DEBUG
         return true
