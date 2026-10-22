@@ -4,6 +4,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -87,6 +88,55 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 		return err
 	}
 	s.logf("clipbridge: got a renewed member certificate, valid until %s", next.Cert.NotAfter.UTC().Format(time.DateOnly))
+	return nil
+}
+
+// withAdminKey gives a computer of a phone group the admin key that its
+// hello offers, so that the root phone can make it an admin
+// (docs/protocol.md, section 10). Without one it carries on as it is.
+func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
+	if !id.PhoneGroup() || id.AdminKey != nil {
+		return id
+	}
+	next, err := id.WithAdminKey()
+	if err == nil {
+		err = next.Save(s.cfg.StateDir)
+	}
+	if err != nil {
+		s.logf("clipbridge: making the admin key: %v", err)
+		return id
+	}
+	return next
+}
+
+// becomeAdmin keeps the admin CA that the root phone sent for this
+// computer's admin key: from then on it admits and removes devices and
+// renews certificates with it.
+func (s *Service) becomeAdmin(der []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.id == nil {
+		return errors.New("this device is in no group")
+	}
+	if s.id.AdminCA != nil && bytes.Equal(s.id.AdminCA.Raw, der) {
+		return nil
+	}
+	if err := s.adoptRootsLocked(); err != nil {
+		return err
+	}
+	next, err := s.id.WithAdminCA(der, s.cfg.now())
+	if err != nil {
+		return err
+	}
+	// An admin CA the records refuse, as from a root that handed the
+	// group over, would make records nobody takes.
+	if err := s.allow(next.ID, []*x509.Certificate{next.AdminCA}); err != nil {
+		return err
+	}
+	if err := s.setIdentityLocked(next); err != nil {
+		return err
+	}
+	s.logf("clipbridge: this computer is now an admin of the group: it can admit and remove devices")
 	return nil
 }
 

@@ -1127,3 +1127,79 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 		t.Error("accepted certificates from a root the welcome does not name")
 	}
 }
+
+// computerAdmin returns a computer of a phone group whose root made it an
+// admin, with the root.
+func computerAdmin(t *testing.T) (*group.Identity, *group.CA) {
+	t.Helper()
+	root, _ := phoneRoot(t)
+	key, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := group.NewDeviceID()
+	cert, err := root.IssueMember(dev, &key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := (&group.Identity{ID: dev, Key: key, Cert: cert, GroupCA: group.CA{Cert: root.Cert}}).WithAdminKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: group.AdminName(dev)},
+		NotBefore:             root.Cert.NotBefore,
+		NotAfter:              root.Cert.NotAfter,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		MaxPathLenZero:        true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, root.Cert, &id.AdminKey.PublicKey, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err = id.WithAdminCA(der, t0); err != nil {
+		t.Fatal(err)
+	}
+	return id, root
+}
+
+// TestComputerAdminAdmits checks a pairing window on a computer that the
+// root phone made an admin: the new device's certificate comes from its
+// admin CA, which the welcome carries, with no CA keys.
+func TestComputerAdminAdmits(t *testing.T) {
+	for _, os := range []string{"linux", "darwin"} {
+		t.Run(os, func(t *testing.T) {
+			admin, root := computerAdmin(t)
+			clk := &clock{up: time.Hour}
+			code := NewCode()
+			w, err := Open(admin, code, Options{Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Close)
+			f := &fixture{admin: admin, window: w, code: code, clock: clk}
+			out := f.attempt(t, newJoiner(t, os), code, nil)
+			if out.joinErr != nil || out.serveErr != nil {
+				t.Fatalf("join %v, serve %v", out.joinErr, out.serveErr)
+			}
+			id := out.id
+			if id.Issuer == nil || !id.Issuer.Equal(admin.AdminCA) || id.Cert.CheckSignatureFrom(admin.AdminCA) != nil {
+				t.Error("the certificate is not from the admin CA")
+			}
+			if id.Admin() || id.GroupCA.Key != nil || id.PhoneCA != nil || !id.GroupCA.Cert.Equal(root.Cert) {
+				t.Error("the new device got CA keys or another group")
+			}
+			assertMembers(t, id, admin)
+		})
+	}
+	// Without its admin CA, the computer opens no window.
+	admin, _ := computerAdmin(t)
+	plain := *admin
+	plain.AdminCA, plain.Issuer, plain.Cert = nil, nil, nil
+	if _, err := Open(&plain, NewCode(), Options{}); err == nil {
+		t.Error("a computer that is no admin opened a window")
+	}
+}

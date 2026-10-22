@@ -39,6 +39,11 @@ All notable changes to clipbridge are documented in this file. The format follow
 - The phone app removes a lost phone that made the group: on an admin phone, Remove on that
   phone takes the group over with a new key in the Secure Enclave, and the computers and the
   other phones follow it.
+- A computer can be an admin of a phone group: it keeps an admin key and offers it to the
+  root phone, which can certify it as an admin CA. An admin computer admits computers with
+  `clipbridge pair`, removes devices with `clipbridge revoke` and renews certificates from
+  its admin CA; it never removes the root phone (docs/protocol.md, section 10, "A computer
+  as admin").
 
 ## [0.2.0] - 2026-10-21
 

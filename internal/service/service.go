@@ -258,6 +258,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	case s.id != nil:
 		return errors.New("this device is already in a group")
 	}
+	id = s.withAdminKey(id)
 	gctx, cancel := context.WithCancel(context.Background())
 	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
 	s.recMu.Lock()
@@ -265,7 +266,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.recMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, Engine: eng,
-		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, Now: s.cfg.now, Logf: s.logf,
+		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 	})
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}

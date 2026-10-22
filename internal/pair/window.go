@@ -32,7 +32,8 @@ type Options struct {
 	AfterFunc func(time.Duration, func()) func() bool // the expiry timer, returning its Stop; time.AfterFunc if nil
 }
 
-// A Window is an open pairing window on a member that holds the CA keys.
+// A Window is an open pairing window on an admin: a member that holds the
+// CA keys, or a computer that the root phone made an admin.
 type Window struct {
 	admin    *group.Identity
 	code     []byte
@@ -65,8 +66,8 @@ type Result struct {
 
 // Open opens a pairing window for the code.
 func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
-	if !admin.Admin() {
-		return nil, errors.New("pair: only a Linux member that holds the CA keys can admit devices")
+	if ca, _ := admin.Signer(); ca == nil {
+		return nil, errors.New("pair: only an admin can admit devices: a Linux member of a group a computer made, or a computer the group's root phone made an admin")
 	}
 	code, err := NormalizeCode(code)
 	if err != nil {
@@ -393,11 +394,12 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 	// The joiner knows the code. Certify the key it proved it holds in the
 	// TLS handshake.
 	pub := cs.PeerCertificates[0].PublicKey.(*ecdsa.PublicKey)
-	cert, err := w.admin.GroupCA.IssueMember(joiner, pub, w.now())
+	ca, _ := w.admin.Signer()
+	cert, err := ca.IssueMember(joiner, pub, w.now())
 	if err != nil {
 		return nil, true, err
 	}
-	welcome, err := w.welcome(cert, info.OS == "linux" && !w.noCAKeys)
+	welcome, err := w.welcome(cert, info.OS == "linux" && !w.noCAKeys && w.admin.Admin())
 	if err != nil {
 		return nil, true, err
 	}
@@ -427,6 +429,13 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 
 func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
+	// An admin computer of a phone group issues from its admin CA.
+	if w.admin.AdminCA != nil {
+		wel.Issuer = w.admin.AdminCA.Raw
+	}
+	for _, r := range w.admin.Roots {
+		wel.Roots = append(wel.Roots, r.Raw)
+	}
 	if !keys {
 		return wel, nil
 	}

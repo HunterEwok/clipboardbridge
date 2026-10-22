@@ -47,6 +47,12 @@ type Identity struct {
 	Roots   []*x509.Certificate
 	PhoneCA *CA               // nil on a Mac
 	Phone   *x509.Certificate // the clipbridge.local certificate, with Key; nil on a Mac
+	// AdminKey is the key a computer of a phone group signs with once the
+	// root phone makes it an admin: the hello offers it until AdminCA, from
+	// the root, certifies it (docs/protocol.md, section 10). Both are nil
+	// in a group a computer created.
+	AdminKey *ecdsa.PrivateKey
+	AdminCA  *x509.Certificate
 }
 
 // Create creates a new group on this device: a device ID, a key, both CAs
@@ -97,6 +103,67 @@ func (id *Identity) Admin() bool {
 	return id.GroupCA.Key != nil && id.PhoneCA != nil && id.PhoneCA.Key != nil && id.Phone != nil
 }
 
+// PhoneGroup reports whether the group's root is a phone: its CA allows
+// admin CAs below it.
+func (id *Identity) PhoneGroup() bool { return id.GroupCA.Cert.MaxPathLen == 1 }
+
+// Signer returns the CA this device admits devices and signs records with,
+// and the chain its records carry: the group CA on a Linux member that
+// holds the CA keys, the admin CA on a computer that the root phone made an
+// admin. It returns nil when this device is no admin.
+func (id *Identity) Signer() (*CA, []*x509.Certificate) {
+	switch {
+	case id.GroupCA.Key != nil:
+		return &id.GroupCA, nil
+	case id.AdminCA != nil:
+		return &CA{Cert: id.AdminCA, Key: id.AdminKey}, []*x509.Certificate{id.AdminCA}
+	}
+	return nil, nil
+}
+
+// WithAdminKey returns the identity with a new admin key, for a computer of
+// a phone group that has none yet.
+func (id *Identity) WithAdminKey() (*Identity, error) {
+	if !id.PhoneGroup() || id.AdminKey != nil {
+		return nil, errors.New("group: only a computer of a phone group without one gets an admin key")
+	}
+	key, err := NewKey()
+	if err != nil {
+		return nil, err
+	}
+	next := *id
+	next.AdminKey = key
+	return &next, nil
+}
+
+// WithAdminCA returns the identity with the admin CA that the root phone
+// issued for its admin key, which makes this computer an admin, and a new
+// member certificate from that admin CA: a device it admits then checks
+// both against the one issuer in the Welcome.
+func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, fmt.Errorf("group: the admin CA: %w", err)
+	}
+	next := *id
+	next.AdminCA = c
+	if err := next.checkAdmin(); err != nil {
+		return nil, err
+	}
+	ca, _ := next.Signer()
+	if next.Cert, err = ca.IssueMember(id.ID, &id.Key.PublicKey, now); err != nil {
+		return nil, err
+	}
+	next.Issuer = c
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
+// AdminName is the subject CN of the admin CA of a device.
+func AdminName(dev DeviceID) string { return "clipbridge admin " + string(dev) }
+
 // Check reports whether the parts of the identity belong together: the
 // certificates name this device and its key and were signed by the CAs, and
 // the CA keys match the CA certificates. It does not check expiry.
@@ -146,6 +213,9 @@ func (id *Identity) Check() error {
 	if !hasUsage(id.Cert, x509.ExtKeyUsageServerAuth) || !hasUsage(id.Cert, x509.ExtKeyUsageClientAuth) {
 		return errors.New("group: the member certificate is not for client and server use")
 	}
+	if err := id.checkAdmin(); err != nil {
+		return err
+	}
 	// A Linux member holds all of the admin parts, a Mac none of them.
 	admin := id.GroupCA.Key != nil
 	if (id.PhoneCA != nil) != admin || (id.PhoneCA != nil && id.PhoneCA.Key == nil) || (id.Phone != nil) != admin {
@@ -164,6 +234,39 @@ func (id *Identity) Check() error {
 		return fmt.Errorf("group: %w", err)
 	}
 	return nil
+}
+
+// checkAdmin checks the admin key and the admin CA: only in a phone group,
+// the CA for that key, under one of the group's roots, naming this device.
+func (id *Identity) checkAdmin() error {
+	if id.AdminKey == nil {
+		if id.AdminCA != nil {
+			return errors.New("group: the identity has an admin CA but no admin key")
+		}
+		return nil
+	}
+	if !id.PhoneGroup() || id.GroupCA.Key != nil {
+		return errors.New("group: only a computer of a phone group has an admin key")
+	}
+	if id.AdminKey.Curve != elliptic.P256() {
+		return errors.New("group: the admin key is not a P-256 key")
+	}
+	if id.AdminCA == nil {
+		return nil
+	}
+	if !id.AdminKey.PublicKey.Equal(id.AdminCA.PublicKey) {
+		return errors.New("group: the admin CA is not for this device's admin key")
+	}
+	if id.AdminCA.Subject.CommonName != AdminName(id.ID) {
+		return fmt.Errorf("group: the admin CA does not name the device %s", id.ID)
+	}
+	err := errors.New("group: the admin CA is not from a root of the group")
+	for _, root := range id.Trusted() {
+		if err = checkAdminCA(id.AdminCA, root); err == nil {
+			break
+		}
+	}
+	return err
 }
 
 // maxGroupCAPath is the longest path a group CA may allow: 0 for a group a
@@ -222,8 +325,9 @@ func hasUsage(c *x509.Certificate, u x509.ExtKeyUsage) bool {
 // clipbridge.local certificate that starts in the future, issued while the
 // clock was ahead, is replaced too, since the iPhone would reject it. A
 // certificate that already ends with its CA is kept: a new one could not
-// last longer. Only a device that holds the CA keys renews its own
-// certificates; others get theirs from a member that does (RenewMember).
+// last longer. Only a device that holds the CA keys, or an admin CA, renews
+// its own certificates; others get theirs from a member that does
+// (RenewMember).
 func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 	next := *id
 	changed := false
@@ -233,6 +337,14 @@ func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 			return id, false, err
 		}
 		next.Cert, changed = cert, true
+	}
+	if id.AdminCA != nil && renewable(id.Cert, id.AdminCA, now, memberRenewBefore) {
+		ca, _ := id.Signer()
+		cert, err := ca.IssueMember(id.ID, &id.Key.PublicKey, now)
+		if err != nil {
+			return id, false, err
+		}
+		next.Cert, next.Issuer, changed = cert, id.AdminCA, true
 	}
 	if id.Phone != nil && id.PhoneCA.Key != nil && renewable(id.Phone, id.PhoneCA.Cert, now, phoneRenewBefore) {
 		cert, err := id.PhoneCA.IssuePhone(&id.Key.PublicKey, now)
@@ -245,26 +357,34 @@ func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 }
 
 // RenewMember returns a new member certificate for the member at the other
-// end of a connection, whose certificate peer is from the group CA and ends
-// within its renewal period, for the same device and key. It returns nil
-// when the certificate is not due, or this device does not hold the group
-// CA key: then another member renews it.
-func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (*x509.Certificate, error) {
-	if id.GroupCA.Key == nil || !renewable(peer, id.GroupCA.Cert, now, memberRenewBefore) {
-		return nil, nil
+// end of a connection, whose certificate peer ends within its renewal
+// period, for the same device and key, and the admin CA that issued it, nil
+// for the group CA. It returns nil when the certificate is not due, or this
+// device is no admin: then another member renews it. An admin computer
+// renews any member's certificate, as an admin phone does; the TLS
+// handshake already checked that peer is from the group.
+func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (cert, issuer *x509.Certificate, err error) {
+	ca, chain := id.Signer()
+	if ca == nil || !renewable(peer, ca.Cert, now, memberRenewBefore) {
+		return nil, nil, nil
 	}
-	if err := peer.CheckSignatureFrom(id.GroupCA.Cert); err != nil {
-		return nil, fmt.Errorf("group: the certificate to renew is not from the group CA: %w", err)
+	if chain == nil {
+		if err := peer.CheckSignatureFrom(ca.Cert); err != nil {
+			return nil, nil, fmt.Errorf("group: the certificate to renew is not from the group CA: %w", err)
+		}
 	}
 	dev, err := DeviceOf(peer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pub, ok := peer.PublicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, errors.New("group: the certificate to renew has no ECDSA key")
+		return nil, nil, errors.New("group: the certificate to renew has no ECDSA key")
 	}
-	return id.GroupCA.IssueMember(dev, pub, now)
+	if cert, err = ca.IssueMember(dev, pub, now); err != nil {
+		return nil, nil, err
+	}
+	return cert, id.AdminCA, nil
 }
 
 // WithCert returns the identity with a member certificate that another
@@ -333,6 +453,8 @@ type identityFile struct {
 	PhoneCA    []byte   `json:"phone_ca,omitempty"`
 	PhoneCAKey []byte   `json:"phone_ca_key,omitempty"`
 	Phone      []byte   `json:"phone,omitempty"`
+	AdminKey   []byte   `json:"admin_key,omitempty"`
+	AdminCA    []byte   `json:"admin_ca,omitempty"`
 }
 
 const fileVersion = 1
@@ -372,6 +494,14 @@ func (id *Identity) Save(dir string) error {
 				return err
 			}
 		}
+	}
+	if id.AdminKey != nil {
+		if f.AdminKey, err = x509.MarshalPKCS8PrivateKey(id.AdminKey); err != nil {
+			return err
+		}
+	}
+	if id.AdminCA != nil {
+		f.AdminCA = id.AdminCA.Raw
 	}
 	data, err := json.MarshalIndent(f, "", "\t")
 	if err != nil {
@@ -435,6 +565,16 @@ func parseIdentity(data []byte) (*Identity, error) {
 		}
 		id.PhoneCA = &phoneCA
 		if id.Phone, err = x509.ParseCertificate(f.Phone); err != nil {
+			return nil, err
+		}
+	}
+	if f.AdminKey != nil {
+		if id.AdminKey, err = parseKey(f.AdminKey); err != nil {
+			return nil, err
+		}
+	}
+	if f.AdminCA != nil {
+		if id.AdminCA, err = x509.ParseCertificate(f.AdminCA); err != nil {
 			return nil, err
 		}
 	}

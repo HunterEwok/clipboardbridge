@@ -3,9 +3,10 @@
 
 // Package pair admits a new computer to a group with a six-digit code.
 //
-// A Linux member that holds the CA keys opens a pairing window: a code,
-// valid for five minutes, one attempt at a time, closed after a success or
-// the third failed attempt. The new device connects to the member's port
+// An admin opens a pairing window: a Linux member that holds the CA keys,
+// or a computer that the root phone of a phone group made an admin. The
+// window has a code, valid for five minutes, one attempt at a time, closed
+// after a success or the third failed attempt. The new device connects to the member's port
 // over TLS 1.3 with the ALPN protocol clipbridge-pair/1 and presents a
 // self-signed certificate for the key it will keep. Neither side can check
 // the other's certificate yet; instead both run the CPace
@@ -180,7 +181,7 @@ type memberAD struct {
 // Welcome is what a new device receives after a successful exchange.
 type Welcome struct {
 	Cert    []byte `json:"cert"`             // the new member certificate, DER
-	Issuer  []byte `json:"issuer,omitempty"` // the admin CA that issued it and the member's own certificate, DER; absent when the group CA did
+	Issuer  []byte `json:"issuer,omitempty"` // the admin CA that issued it, DER; absent when a root did
 	GroupCA []byte `json:"group_ca"`         // DER: the group's first root, which names it
 	// Roots are the roots that took a phone group over from GroupCA, in
 	// order, DER; absent when it was never handed over.

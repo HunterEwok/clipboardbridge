@@ -611,7 +611,8 @@ Every app and the command line show it:
   each row has "Remove".
 - The command line on Linux and the Mac: `clipbridge devices` prints the same list;
   `clipbridge revoke <name or ID>` removes a device; it runs where the device is an admin (a
-  Linux member in a group that a computer created; on a Mac, the command says so).
+  Linux member in a group that a computer created, or a computer the root phone made an
+  admin; elsewhere the command says so).
 - The Windows connector and later apps show the same list from the same records.
 
 **Revoking a device.** An admin signs a revocation record naming the device's keys: its
@@ -635,6 +636,16 @@ so no device has to be paired again. A thief who knows the lost phone's passcode
 an admin until the phone is removed; when two admins revoke each other, both lose admin
 rights (the rule depends only on the set of records), and the user starts the group anew from
 the phone in hand.
+
+**A computer as admin.** The root phone can also make a computer of its group an admin, for
+a user who would rather admit and remove devices from a terminal. Every computer of a phone
+group keeps an admin key next to its identity and offers its public key in the member
+protocol; "Make it an admin" on the root phone certifies it as an admin CA and sends that to
+the computer. From then on the computer admits computers with `clipbridge pair`, removes
+devices with `clipbridge revoke` and renews certificates, as an admin phone does; it makes no
+admins and never removes the root phone. Its key is a file, so a thief with the computer can
+act as an admin until another admin removes it; that is the price of the convenience, and
+why it is a choice, not the default.
 
 **Groups that a computer created** keep working as today (the CA keys on the Linux members):
 the device records and revocation records exist there too, signed with the group CA key, so
@@ -706,3 +717,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-33 | Several equal admin phones: a root CA with path length 1 certifies an admin CA per phone, each key in its own Secure Enclave or StrongBox, instead of one CA key copied between phones or backed up to a cloud. Only the root makes admins; a remaining admin becomes the root with a signed root record. |
 | D-34 | The devices list and revocations are signed records in a set that only grows and spreads through the member protocol; what it says depends on the set alone, so the group converges. Two admins that revoke each other both lose admin rights. |
 | D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |
+| D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |

@@ -225,13 +225,14 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert` or `records` |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records` or `admin` |
 | `role` | string | hello | `linux`, `mac`, `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
-| `issuer` | string | cert | from an admin phone: its admin CA, which issued `cert`, DER in base64; absent when a root did (section 10) |
+| `issuer` | string | cert | from an admin phone or computer: its admin CA, which issued `cert`, DER in base64; absent when a root did (section 10) |
 | `records` | array | records | signed records (section 10) |
+| `admin_ca` | string | admin | from the root phone: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "A computer as admin") |
 
 ```json
 {"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -244,8 +245,8 @@ Message object:
 ### Message order
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
-2. Then events follow, in any number, interleaved with pings, records messages and at most
-   one `cert`.
+2. Then events follow, in any number, interleaved with pings, records messages, `admin`
+   messages and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -279,6 +280,7 @@ never dialed; the Linux members treat it as a Mac (it never holds `clipbridge.lo
 | `current` | Event or absent | the sender's current event with its age as of sending; for a secret only its mark (text `""`), whatever its age; absent when there is none |
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
+| `admin_key` | string or absent | from a computer of a phone group that is no admin yet: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "A computer as admin") |
 
 ### Event
 
@@ -473,7 +475,7 @@ put words in front of the user.
 | Field | Type | Present |
 |-------|------|---------|
 | `cert` | bytes, DER | always: a member certificate from the group CA, or from `issuer`, for the key of the joiner's TLS certificate and its device ID |
-| `issuer` | bytes, DER | only from an admin phone: its admin CA (section 10), which issued `cert` |
+| `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
 | `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
@@ -488,8 +490,9 @@ verifies to one of them, through `issuer` when present, the joiner keeps `roots`
 or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
 match. A Linux joiner that got them then issues its own `clipbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
-phone (section 9): it publishes and listens, but admits nobody, serves no iPhone and never
-holds `clipbridge.local`.
+phone (section 9): it publishes and listens, but admits nobody until the root phone makes it
+an admin (section 10, "A computer as admin"), serves no iPhone and never holds
+`clipbridge.local`.
 
 Note: design.md (lines 100-103) says the new member also receives the group state and, on
 Linux, the token hashes; the Welcome has neither (`internal/pair/pair.go:181`). Tokens need no
@@ -757,8 +760,8 @@ a computer keep working as they do today.
 - **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
   StrongBox that cannot be exported, with the certificate profile of section 2 except
   path length 1 (MaxPathLen 1), CN `clipbridge group root YYYY-MM-DD`. Below it every admin
-  phone has an admin CA (section 10). Computers get member certificates only and never hold
-  a CA key; only admin phones admit devices. The iPhone app asks for Face ID or the passcode
+  phone has an admin CA (section 10). Computers get member certificates; a computer holds a
+  CA key only when the root phone makes it an admin (section 10, "A computer as admin"). The iPhone app asks for Face ID or the passcode
   before it signs with the root key, once per action. Implemented: ClipbridgeKit's
   `PhoneGroup` creates this root and admits computers with it, and Go accepts a group CA with path
   length 0 or 1 (`checkCA`). Admin CAs below the root are supported on both sides
@@ -801,7 +804,9 @@ ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records 
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
 `testdata/interop/go-root.json` holds a handover for the phone kit to check) and in
 ClipbridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
-`roots`; `TestSwiftRoot` checks a takeover the kit signs).
+`roots`; `TestSwiftRoot` checks a takeover the kit signs). A computer as admin is
+implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, the hello's
+`admin_key`, the `admin` message).
 
 ### Admin CA and chains
 
@@ -823,6 +828,34 @@ ClipbridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the
   certificate from the issuer of its current one or from a root.
 - A member certificate issued by an admin CA has the profile of section 2, issuer the admin
   CA, NotBefore = the admin CA's NotBefore.
+
+### A computer as admin
+
+A computer of a phone group can be an admin too, so that devices can be admitted and removed
+from its command line. Its admin key is a file next to its identity, not a Secure Enclave
+key, so a thief with the computer can act as an admin until another admin removes it.
+
+- Every computer of a phone group makes a P-256 admin key when it starts in the group and
+  keeps it in the identity file (`admin_key`, PKCS #8). Until it holds an admin CA, its hello
+  carries `admin_key`: the key's SubjectPublicKeyInfo.
+- The root phone makes it an admin: it issues the computer's admin CA for that key (the
+  profile above, CN `clipbridge admin <device ID>`), sends `{"t":"admin","admin_ca":...}`
+  on its connection to the computer, and signs a `device` record for the computer that names
+  that admin CA in `admin`.
+- The computer checks that the admin CA is for its admin key, names its device ID and stands
+  under one of the group's roots, and that the records do not refuse it; it keeps it in the
+  identity file (`admin_ca`) and issues itself a new member certificate from it, so the
+  `issuer` of its Welcome also issued its own certificate. Its hello no longer carries
+  `admin_key`.
+- From then on it acts as an admin phone does, with its admin CA: a Linux one opens pairing
+  windows (`clipbridge pair`) and admits computers, never phones, with a Welcome that carries
+  `issuer` and `roots` and no CA keys; it signs the `device` record of each device it admits
+  and `revoke` records (`clipbridge revoke`), which for an admin also name its admin key and
+  keep the devices it admitted; it renews its own certificate and those of the computers it
+  is connected to. It never removes the root phone, makes no admins and does not take the
+  group over.
+- It is removed as an admin phone is: a revocation of its member key and its admin key that
+  keeps the devices it admitted.
 - In the member handshake (section 4) a member MUST send its certificate followed by its
   issuer when the issuer is not the group CA. Checking a peer: the chain MUST verify to the
   group CA through at most one intermediate that is a CA with path length 0, with the time
@@ -928,4 +961,4 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
-| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on a member that holds the group CA key; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation") |
+| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
