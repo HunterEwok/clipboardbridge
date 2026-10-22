@@ -73,7 +73,7 @@ final class LiveGroup: GroupController {
     /// asks for Face ID, and then connects again with it.
     private func renewOwnCertificate() async {
         guard var g = state, GroupCertificates.isDue(g.memberCert, groupCA: g.adminCA ?? g.currentRoot, now: Date()),
-              let ca = try? await caSigner(reason: String(localized: "Renew this phone's certificate")),
+              let ca = try? await caSigner(reason: String(localized: "Renew this phone's certificate", bundle: .app)),
               (try? g.renewOwnCertificate(caSigner: ca, now: Date())) == true else { return }
         try? g.save(to: file)
         state = g
@@ -146,6 +146,10 @@ final class LiveGroup: GroupController {
         return try SecKeySigner(k)
     }
 
+    func prepare() throws {
+        _ = try memberSigner()
+    }
+
     private func memberSigner() throws -> SecKeySigner {
         try SecKeySigner(key(label: Self.memberLabel, secureEnclave: false))
     }
@@ -166,7 +170,7 @@ final class LiveGroup: GroupController {
     // MARK: Admitting
 
     func admit(_ code: JoinCode) async throws {
-        let ca = try await caSigner(reason: String(localized: "Add a computer to your group"))
+        let ca = try await caSigner(reason: String(localized: "Add a computer to your group", bundle: .app))
         let member = try memberSigner()
         var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
@@ -283,7 +287,7 @@ final class LiveGroup: GroupController {
             try await takeOver(from: id)
             return
         }
-        let ca = try await caSigner(reason: String(localized: "Remove a device from your group"))
+        let ca = try await caSigner(reason: String(localized: "Remove a device from your group", bundle: .app))
         guard var g = state else { return }
         let r = try g.revoke(device: id, caSigner: ca, now: Date())
         try g.save(to: file)
@@ -299,7 +303,7 @@ final class LiveGroup: GroupController {
     /// new record.
     func makeAdmin(_ id: String) async throws {
         guard state?.isRoot == true, let key = offers[id] else { throw Failure.notAdmin }
-        let root = try await caSigner(reason: String(localized: "Make a computer an admin"))
+        let root = try await caSigner(reason: String(localized: "Make a computer an admin", bundle: .app))
         guard var g = state else { return }
         let (ca, r) = try g.makeAdmin(device: id, adminKey: key, rootSigner: root, now: Date())
         try g.save(to: file)
@@ -314,7 +318,7 @@ final class LiveGroup: GroupController {
     /// ID, and takes the group over (docs/protocol.md, section 10, "Handing
     /// the group over"). From then on it signs with that key.
     private func takeOver(from id: String) async throws {
-        let reason = String(localized: "Take the group over from the lost phone")
+        let reason = String(localized: "Take the group over from the lost phone", bundle: .app)
         let admin = try await signer(label: Self.adminLabel, reason: reason)
         // A root key left from a group this phone made before goes.
         KeychainIdentity.removeKey(label: Self.caLabel)

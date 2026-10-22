@@ -71,12 +71,12 @@
         }
       }
     },
-    "Change in the system settings": {
+    "Close": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Меняется в настройках системы"
+            "value": "Закрыть"
           }
         }
       }
@@ -87,6 +87,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Компьютеры"
+          }
+        }
+      }
+    },
+    "Connect a new device": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключить новое устройство"
           }
         }
       }
@@ -121,12 +131,32 @@
         }
       }
     },
+    "Done": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово"
+          }
+        }
+      }
+    },
     "Fetched from the computers.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Получено с компьютеров."
+          }
+        }
+      }
+    },
+    "I already use clipbridge on another phone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У меня уже есть clipbridge на другом телефоне"
           }
         }
       }
@@ -147,6 +177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Теперь это админ: он добавляет и удаляет устройства командами clipbridge pair и clipbridge revoke."
+          }
+        }
+      }
+    },
+    "It made its own secret key, which never leaves it and lets your devices recognise this phone. Now connect a device: tap Connect a new device and scan the QR code it shows.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он создал свой секретный ключ: ключ никогда не покидает телефон, и по нему ваши устройства узнают этот телефон. Теперь подключите устройство: нажмите «Подключить новое устройство» и отсканируйте QR-код, который оно покажет."
           }
         }
       }
@@ -181,16 +221,6 @@
         }
       }
     },
-    "Join another phone's group": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Войти в группу другого телефона"
-          }
-        }
-      }
-    },
     "Language": {
       "localizations": {
         "ru": {
@@ -211,12 +241,12 @@
         }
       }
     },
-    "Lost a phone? Make a second phone an admin: on it, tap Join another phone's group, then scan its code here with +.": {
+    "Lost a phone? Make a second phone an admin: on it, tap I already use clipbridge on another phone, then scan its code here with +.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Потеряли телефон? Сделайте второй телефон админом: нажмите на нём «Войти в группу другого телефона», а здесь отсканируйте его код через +."
+            "value": "Потеряли телефон? Сделайте второй телефон админом: на нём нажмите «У меня уже есть clipbridge на другом телефоне» и отсканируйте его код здесь через +."
           }
         }
       }
@@ -301,6 +331,16 @@
         }
       }
     },
+    "On a computer, run clipbridge join and scan the code it shows.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На компьютере запустите clipbridge join и отсканируйте код, который он покажет."
+          }
+        }
+      }
+    },
     "On your other phone, tap + and scan this code. Keep this screen open.": {
       "localizations": {
         "ru": {
@@ -311,12 +351,12 @@
         }
       }
     },
-    "One clipboard for your phone and your computers. On a computer, run clipbridge join and scan its QR code.": {
+    "One clipboard for this phone and your computers.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Один буфер обмена для телефона и компьютеров. На компьютере запустите clipbridge join и отсканируйте его QR-код."
+            "value": "Один буфер обмена для этого телефона и ваших компьютеров."
           }
         }
       }
@@ -427,16 +467,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Продлить сертификат этого телефона"
-          }
-        }
-      }
-    },
-    "Scan a computer": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сканировать компьютер"
           }
         }
       }
@@ -587,6 +617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Этот телефон"
+          }
+        }
+      }
+    },
+    "This phone is ready": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Телефон готов"
           }
         }
       }

@@ -14,9 +14,17 @@ All notable changes to clipbridge are documented in this file. The format follow
   default) puts the error itself under the message, to find out what failed.
 - In the iOS simulator the app keeps its root and admin keys in the keychain, since the
   simulator cannot make a Secure Enclave key that needs Face ID.
+- The phone app's Start screen says what to do in plain words: "Connect a new device" (a
+  computer or another phone) and "I already use clipbridge on another phone". Its buttons
+  and cards use Liquid Glass from iOS 26, with materials before.
 
 ### Added
 
+- The phone app's language can be chosen in the app (System, English, Russian), in Settings
+  and, when the system's language has no translation, on the Start screen; Settings, with
+  the theme, opens from the Start screen too.
+- At the first launch the phone app makes its own key and says once that the phone is
+  ready and that the next step is to connect a device.
 - Groundwork for a second admin phone: members accept a member certificate issued by an
   admin CA under the phone's root, keep that CA with their identity, send it in member
   handshakes and take it from a pairing Welcome; the phone app makes admin CAs, verifies

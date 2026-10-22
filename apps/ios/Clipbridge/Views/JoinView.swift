@@ -36,7 +36,7 @@ struct JoinView: View {
             }
             Spacer()
             Button("Cancel") { model.cancelJoin() }
-                .buttonStyle(AccentButtonStyle())
+                .buttonStyle(GlassButtonStyle())
         }
         .padding(Tokens.spacingLarge)
         .task { await model.join() }

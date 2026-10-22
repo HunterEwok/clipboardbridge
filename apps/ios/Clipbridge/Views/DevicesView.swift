@@ -54,7 +54,7 @@ struct DevicesView: View {
             if !model.isAdmin {
                 Text("Only an admin phone can add or remove devices.").foregroundStyle(palette.textDim).listRowBackground(Color.clear)
             } else if model.devices.filter({ $0.admin }).count == 1 {
-                Text("Lost a phone? Make a second phone an admin: on it, tap Join another phone's group, then scan its code here with +.")
+                Text("Lost a phone? Make a second phone an admin: on it, tap I already use clipbridge on another phone, then scan its code here with +.")
                     .foregroundStyle(palette.textDim).listRowBackground(Color.clear)
             }
             if let message = model.message {

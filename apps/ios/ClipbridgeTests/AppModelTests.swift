@@ -23,6 +23,8 @@ final class AppModelTests: XCTestCase {
     final class FakeGroup: GroupController {
         var hasGroup = false
         var isAdmin = true
+        var prepared = 0
+        func prepare() throws { prepared += 1 }
         var joinCode = JoinCode(code: "135790", addrs: ["192.168.1.30:50000"], fingerprint: "fp")
         var shown: [JoinCode] = []
         func join(show: @escaping @MainActor (JoinCode) -> Void) async throws {
@@ -138,5 +140,70 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(ThemeChoice.system.palette(for: .light), Tokens.light)
         XCTAssertEqual(ThemeChoice.amber.palette(for: .light), Tokens.amber)
         XCTAssertEqual(Set(ThemeChoice.allCases.map { $0.palette(for: .dark).dark }), [true, false])
+    }
+
+    /// A fresh defaults domain per test, removed after it.
+    private func freshDefaults() -> UserDefaults {
+        let name = "clipbridge-tests-\(UUID().uuidString)"
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        return UserDefaults(suiteName: name)!
+    }
+
+    func testWelcomeOnce() {
+        let defaults = freshDefaults()
+        let g = FakeGroup()
+        let m = AppModel(group: g, defaults: defaults)
+        m.prepare()
+        XCTAssertTrue(m.welcome)
+        XCTAssertEqual(g.prepared, 1)
+        m.dismissWelcome()
+        XCTAssertFalse(m.welcome)
+        let again = AppModel(group: g, defaults: defaults)
+        again.prepare()
+        XCTAssertFalse(again.welcome, "the note shows only at the first launch")
+        XCTAssertEqual(g.prepared, 1)
+    }
+
+    func testNoWelcomeWithAGroup() {
+        let g = FakeGroup()
+        g.hasGroup = true
+        let m = AppModel(group: g, defaults: freshDefaults())
+        m.prepare()
+        XCTAssertFalse(m.welcome)
+        XCTAssertEqual(g.prepared, 0)
+    }
+
+    func testJoiningEndsTheWelcome() {
+        let defaults = freshDefaults()
+        let m = AppModel(group: FakeGroup(), defaults: defaults)
+        m.prepare()
+        m.startJoining()
+        XCTAssertFalse(m.welcome)
+        XCTAssertTrue(defaults.bool(forKey: AppModel.welcomedKey))
+    }
+
+    func testLanguageOfferedOnStart() {
+        let ours = ["Base", "en", "ru"]
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["en-GB", "de"], localizations: ours, chosen: .system))
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["ru-RU"], localizations: ours, chosen: .system))
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["de-DE", "en"], localizations: ours, chosen: .system),
+                      "German is not translated, so the app shows English and offers the choice")
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["pt_BR"], localizations: ours, chosen: .system))
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["ru"], localizations: ours, chosen: .en),
+                      "a language the user picked stays changeable")
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: [], localizations: ours, chosen: .system))
+    }
+
+    func testLanguageChoice() {
+        let defaults = freshDefaults()
+        XCTAssertEqual(LanguageChoice.current(defaults), .system)
+        defaults.set("ru", forKey: LanguageChoice.key)
+        XCTAssertEqual(LanguageChoice.current(defaults), .ru)
+        defaults.set("xx", forKey: LanguageChoice.key)
+        XCTAssertEqual(LanguageChoice.current(defaults), .system)
+        XCTAssertNil(LanguageChoice.system.locale)
+        XCTAssertEqual(LanguageChoice.ru.locale?.identifier, "ru")
+        XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.ru.bundle), "\u{0422}\u{0435}\u{043C}\u{0430}")
+        XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.en.bundle), "Theme")
     }
 }

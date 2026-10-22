@@ -24,12 +24,12 @@ struct AddDeviceView: View {
                 } else {
                     Text("Paste the text of the QR code of clipbridge join.")
                         .multilineTextAlignment(.center)
-                    TextField(String(localized: "QR code text"), text: $typed, axis: .vertical)
+                    TextField(String(localized: "QR code text", bundle: .app), text: $typed, axis: .vertical)
                         .font(.system(.body, design: .monospaced))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .padding(Tokens.spacingMedium)
-                        .background(palette.surface, in: RoundedRectangle(cornerRadius: Tokens.radiusCard))
+                        .glassCard()
                     Button("Add") {
                         Task { if await model.scanned(typed) { dismiss() } }
                     }
