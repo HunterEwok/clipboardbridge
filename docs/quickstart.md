@@ -18,6 +18,14 @@ curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get
 The script checks the download, starts the service and opens clipbridge's ports in ufw for
 the home network only. Log out and in again once, so your user may use clipbridge.
 
+If you turn ufw on later, run the installer again (it is also how you update): it adds the
+rules each time. By hand, from your home network, for example `192.168.0.0/24`:
+
+```sh
+sudo ufw allow proto tcp from 192.168.0.0/24 to any port 8764:8767 comment clipbridge
+sudo ufw allow proto udp from 192.168.0.0/24 to any port 5353 comment 'clipbridge mDNS'
+```
+
 ## 2. Make the group and pair the iPhone
 
 On that machine:

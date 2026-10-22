@@ -13,7 +13,7 @@
 #
 # It downloads the archive for this machine's architecture and SHA256SUMS
 # from the release, checks the archive against it, runs install.sh from the
-# archive, and, when ufw is active, allows clipbridge's ports from the home
+# archive, which, when ufw is active, allows clipbridge's ports from the home
 # network only.
 set -eu
 
@@ -78,19 +78,5 @@ got=$(sha256sum "$tmp/$archive" | cut -d' ' -f1)
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 # shellcheck disable=SC2086 # $console is one word or none
-sh "$tmp/clipbridge/packaging/linux/install.sh" $console "$tmp/clipbridge/clipbridge"
+CLIPBRIDGE_FIREWALL=$firewall sh "$tmp/clipbridge/packaging/linux/install.sh" $console "$tmp/clipbridge/clipbridge"
 
-# ufw drops what it does not allow, and clipbridge needs mDNS and its ports
-# from the other devices at home: allow them from the home network only.
-if [ "$firewall" = yes ] && command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-	nets=$(ip -o -f inet route show scope link 2>/dev/null | awk '
-		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u)
-	for net in $nets fe80::/10 fc00::/7; do
-		ufw allow proto udp from "$net" to any port 5353 comment 'clipbridge mDNS' >/dev/null
-		ufw allow proto tcp from "$net" to any port 8764:8767 comment clipbridge >/dev/null
-	done
-	echo "ufw: allowed mDNS and TCP 8764-8767 from $(echo "$nets" | tr '\n' ' ')and local IPv6."
-elif [ "$firewall" = yes ] && command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-	echo "firewalld is running: allow mDNS and TCP 8764-8767 in the zone of the home network, for example"
-	echo "  sudo firewall-cmd --permanent --zone=home --add-service=mdns --add-port=8764-8767/tcp && sudo firewall-cmd --reload"
-fi

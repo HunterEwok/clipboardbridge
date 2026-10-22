@@ -9,7 +9,10 @@
 # It installs the binary to /usr/local/bin, the service user, the systemd
 # unit, the desktop autostart entry and the tmux configuration, adds the user
 # who ran sudo to the clipbridge group, and starts or restarts the service. --console also starts tmux after
-# a login on the text console.
+# a login on the text console. When ufw is active it allows clipbridge's
+# ports from the home network, on every run, so that an update fixes a
+# firewall turned on after the first install; CLIPBRIDGE_FIREWALL=no leaves
+# the firewall alone.
 set -eu
 
 console=no
@@ -64,6 +67,22 @@ fi
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	usermod -a -G clipbridge "$SUDO_USER"
 	echo "Added $SUDO_USER to the clipbridge group; log in again to use clipbridge copy and paste."
+fi
+
+# ufw drops what it does not allow, and clipbridge needs mDNS and its ports
+# from the other devices at home: allow them from the home network only. ufw
+# skips a rule it already has.
+if [ "${CLIPBRIDGE_FIREWALL:-yes}" != no ] && command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+	nets=$(ip -o -f inet route show scope link 2>/dev/null | awk '
+		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u)
+	for net in $nets fe80::/10 fc00::/7; do
+		ufw allow proto udp from "$net" to any port 5353 comment 'clipbridge mDNS' >/dev/null
+		ufw allow proto tcp from "$net" to any port 8764:8767 comment clipbridge >/dev/null
+	done
+	echo "ufw: allowed mDNS and TCP 8764-8767 from $(echo "$nets" | tr '\n' ' ')and local IPv6."
+elif [ "${CLIPBRIDGE_FIREWALL:-yes}" != no ] && command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+	echo "firewalld is running: allow mDNS and TCP 8764-8767 in the zone of the home network, for example"
+	echo "  sudo firewall-cmd --permanent --zone=home --add-service=mdns --add-port=8764-8767/tcp && sudo firewall-cmd --reload"
 fi
 
 systemctl daemon-reload
