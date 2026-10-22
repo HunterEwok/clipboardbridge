@@ -119,3 +119,44 @@ func TestAdminIssuedRenewal(t *testing.T) {
 		t.Error("accepted a renewal from another admin CA")
 	}
 }
+
+// TestRenewalFromAnotherAdmin checks a certificate that one admin CA issued
+// and another renews, sending its admin CA along, as after the first admin
+// was removed: the identity takes it with the new issuer, and nothing that
+// does not chain up.
+func TestRenewalFromAnotherAdmin(t *testing.T) {
+	pg := newPhoneGroup(t)
+	id := adminIdentity(t, pg, pg.a)
+	later := t0.Add(24 * time.Hour)
+	fromB, err := pg.b.IssueMember(id.ID, &id.Key.PublicKey, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := id.WithCertFrom(fromB.Raw, pg.b.Cert.Raw)
+	if err != nil {
+		t.Fatalf("renewed by another admin CA: %v", err)
+	}
+	if !next.Issuer.Equal(pg.b.Cert) {
+		t.Error("the identity did not take the new issuer")
+	}
+	dir := t.TempDir()
+	if err := next.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	other := newPhoneGroup(t)
+	fromOther, err := other.a.IssueMember(id.ID, &id.Key.PublicKey, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string][2][]byte{
+		"the wrong issuer":           {fromB.Raw, pg.a.Cert.Raw},
+		"another group's admin CA":   {fromOther.Raw, other.a.Cert.Raw},
+		"a member as issuer":         {fromB.Raw, member(t, pg.root).Raw},
+		"a corrupt issuer":           {fromB.Raw, []byte("junk")},
+		"an issuer for a root's one": {member(t, pg.root).Raw, pg.b.Cert.Raw},
+	} {
+		if _, err := id.WithCertFrom(c[0], c[1]); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

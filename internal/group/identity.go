@@ -271,15 +271,27 @@ func (id *Identity) RenewMember(peer *x509.Certificate, now time.Time) (*x509.Ce
 // member renewed for it. The certificate must be from the issuer of the
 // current one, or from one of the group's roots, name this device and its
 // key, and end later than the current one.
-func (id *Identity) WithCert(der []byte) (*Identity, error) {
+func (id *Identity) WithCert(der []byte) (*Identity, error) { return id.WithCertFrom(der, nil) }
+
+// WithCertFrom is WithCert for a certificate that the admin CA issuer
+// issued, as an admin phone renews the certificates of devices that
+// another admin admitted (docs/protocol.md, section 10): issuer must be an
+// admin CA under one of the group's roots, and becomes the identity's
+// Issuer. Without issuer it is WithCert.
+func (id *Identity) WithCertFrom(der, issuer []byte) (*Identity, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, fmt.Errorf("group: the renewed certificate: %w", err)
 	}
 	next := *id
 	next.Cert = cert
+	if issuer != nil {
+		if next.Issuer, err = x509.ParseCertificate(issuer); err != nil {
+			return nil, fmt.Errorf("group: the renewed certificate's issuer: %w", err)
+		}
+	}
 	if err := next.Check(); err != nil {
-		if id.Issuer == nil {
+		if id.Issuer == nil || issuer != nil {
 			return nil, err
 		}
 		// A root renewed a certificate that an admin CA had issued.

@@ -196,11 +196,13 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     }
 
     /// A renewed certificate for a peer's chain (leaf first) when it is due
-    /// and this phone may renew it: the root renews any, an admin what its
-    /// own admin CA issued.
-    public func renewal(chain: [Data], caSigner: CertificateSigner, now: Date) -> Data? {
-        guard isAdmin else { return nil }
-        return try? GroupCertificates.renewal(chain: chain, roots: trusted, caSigner: caSigner, adminCA: adminCA, now: now)
+    /// and this phone is an admin: the root issues it from its root, an
+    /// admin from its admin CA, which the cert message carries, whoever
+    /// issued the old one (as a removed admin did).
+    public func renewal(chain: [Data], caSigner: CertificateSigner, now: Date) -> MemberNode.Renewal? {
+        guard isAdmin, let cert = try? GroupCertificates.renewal(chain: chain, roots: trusted, caSigner: caSigner, adminCA: adminCA, now: now)
+        else { return nil }
+        return MemberNode.Renewal(cert: cert, issuer: adminCA)
     }
 
     /// The devices of the group, from the records.

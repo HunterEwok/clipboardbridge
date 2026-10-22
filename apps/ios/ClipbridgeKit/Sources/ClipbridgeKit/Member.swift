@@ -173,8 +173,9 @@ public enum Member {
         case event(Event?)
         case ping
         case bye
-        /// A renewed member certificate for the receiver, DER.
-        case cert(Data)
+        /// A renewed member certificate for the receiver, DER, and the
+        /// admin CA that issued it when an admin phone did.
+        case cert(Data, issuer: Data? = nil)
         case records([Record])
         /// A type from a newer version, ignored.
         case unknown(String)
@@ -215,7 +216,7 @@ public enum Member {
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
-        case "cert": return .cert(w.cert ?? Data())
+        case "cert": return .cert(w.cert ?? Data(), issuer: w.issuer)
         case "records": return .records(w.records ?? [])
         default: return .unknown(w.t)
         }
@@ -241,6 +242,7 @@ public enum Member {
         var hello: WireHello?
         var event: Lenient<Event>?
         var cert: Data?
+        var issuer: Data?
         var records: [Record]?
     }
 
@@ -248,7 +250,7 @@ public enum Member {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, records }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records }
         enum HelloKeys: String, CodingKey { case wall_ms, current, records, name }
 
         func encode(to encoder: Encoder) throws {
@@ -267,9 +269,10 @@ public enum Member {
                 try c.encodeIfPresent(e, forKey: .event)
             case .ping: try c.encode("ping", forKey: .t)
             case .bye: try c.encode("bye", forKey: .t)
-            case let .cert(d):
+            case let .cert(d, issuer):
                 try c.encode("cert", forKey: .t)
                 try c.encode(d, forKey: .cert)
+                try c.encodeIfPresent(issuer, forKey: .issuer)
             case let .records(rs):
                 try c.encode("records", forKey: .t)
                 try c.encode(rs, forKey: .records)

@@ -146,6 +146,10 @@ func TestSwiftRenewal(t *testing.T) {
 		Key     []byte `json:"key"`
 		Cert    []byte `json:"cert"`
 		Renewed []byte `json:"renewed"`
+		// From an admin phone, with its admin CA as the cert message's
+		// issuer; absent in copies written before it.
+		AdminCA      []byte `json:"admin_ca"`
+		AdminRenewed []byte `json:"admin_renewed"`
 	}
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
@@ -175,6 +179,16 @@ func TestSwiftRenewal(t *testing.T) {
 	}
 	if !next.Cert.NotAfter.After(cert.NotAfter) {
 		t.Errorf("the renewal ends %v, not after %v", next.Cert.NotAfter, cert.NotAfter)
+	}
+	if v.AdminRenewed == nil {
+		return
+	}
+	byAdmin, err := id.WithCertFrom(v.AdminRenewed, v.AdminCA)
+	if err != nil {
+		t.Fatalf("the certificate an admin phone renewed: %v", err)
+	}
+	if byAdmin.Issuer == nil || string(byAdmin.Issuer.Raw) != string(v.AdminCA) {
+		t.Error("the member did not take the admin CA as its issuer")
 	}
 }
 

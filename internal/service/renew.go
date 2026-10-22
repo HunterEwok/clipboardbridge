@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"time"
 
@@ -57,8 +58,8 @@ func (s *Service) renew(now time.Time) {
 }
 
 // certRenewed keeps a member certificate that another member renewed for
-// this one.
-func (s *Service) certRenewed(der []byte) error {
+// this one, from issuer when an admin phone sent its admin CA.
+func (s *Service) certRenewed(der, issuer []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.id == nil {
@@ -69,8 +70,17 @@ func (s *Service) certRenewed(der []byte) error {
 	if err := s.adoptRootsLocked(); err != nil {
 		return err
 	}
-	next, err := s.id.WithCert(der)
+	next, err := s.id.WithCertFrom(der, issuer)
 	if err != nil {
+		return err
+	}
+	// A certificate the records refuse, as from a removed admin, would
+	// cut this member off.
+	chain := []*x509.Certificate{next.Cert}
+	if next.Issuer != nil {
+		chain = append(chain, next.Issuer)
+	}
+	if err := s.allow(next.ID, chain); err != nil {
 		return err
 	}
 	if err := s.setIdentityLocked(next); err != nil {

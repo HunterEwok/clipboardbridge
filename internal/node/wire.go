@@ -70,6 +70,9 @@ type message struct {
 	Hello json.RawMessage `json:"hello,omitempty"` // in a hello: clip.Hello
 	Event json.RawMessage `json:"event,omitempty"` // in an event: clip.Event
 	Cert  []byte          `json:"cert,omitempty"`  // in a cert: the renewed member certificate, DER
+	// Issuer, in a cert from an admin phone, is its admin CA, which
+	// issued Cert; absent when a root did.
+	Issuer []byte `json:"issuer,omitempty"`
 
 	Records []group.Record `json:"records,omitempty"` // in a records message
 }

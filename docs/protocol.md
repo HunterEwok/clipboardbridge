@@ -79,8 +79,10 @@ peer's hello arrives, and every 12 hours for the running connections, it checks 
 certificate the peer presented in the handshake and, when it is due, sends a `cert` message
 (section 4) with a new certificate for the same device ID and key, at most once per
 connection. A member without the CA keys keeps a certificate from a `cert` message only when
-it verifies to the group CA, names its own device ID and key, has client and server use and
-ends later than its current one; otherwise it logs and ignores it. A certificate that has
+it verifies to the group CA (or to one of the group's roots, through the message's `issuer`
+when present, section 10), names its own device ID and key, has client and server use, ends
+later than its current one and is not refused by the records; otherwise it logs and ignores
+it. A certificate that has
 already expired cannot be renewed this way, since the handshake fails; the device pairs again.
 
 Fingerprint (shown to the user): SHA-256 over the certificate DER as upper-case hex bytes
@@ -228,6 +230,7 @@ Message object:
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
+| `issuer` | string | cert | from an admin phone: its admin CA, which issued `cert`, DER in base64; absent when a root did (section 10) |
 | `records` | array | records | signed records (section 10) |
 
 ```json
@@ -812,9 +815,12 @@ ClipbridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the
   its own admin CA, role `phone`). The root phone signs with the root key itself and has no
   admin CA. A second phone gets its first member certificate from the phone that admitted it
   and issues the next from its own admin CA when it is due.
-- Renewal (section 2): the root renews any member certificate, from the root; an admin phone
-  renews only those its own admin CA issued, from that CA, since a member takes a renewal
-  only from the issuer of its certificate or from the root (Go's `Identity.WithCert`).
+- Renewal (section 2): the root renews any member certificate, from the current root; an
+  admin phone renews any member certificate too, from its admin CA, and its `cert` message
+  carries that admin CA in `issuer`. The member then keeps the new issuer with its
+  certificate (Go's `Identity.WithCertFrom`). So the devices a removed admin admitted get
+  their next certificates from another admin. A member that receives no `issuer` takes a
+  certificate from the issuer of its current one or from a root.
 - A member certificate issued by an admin CA has the profile of section 2, issuer the admin
   CA, NotBefore = the admin CA's NotBefore.
 - In the member handshake (section 4) a member MUST send its certificate followed by its

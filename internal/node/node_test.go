@@ -723,7 +723,7 @@ func TestRenewPeer(t *testing.T) {
 	got := make(chan *group.Identity, 2)
 	var mac *member
 	mac = newMember(t, Mac, func(_ *clip.Config, nc *Config) {
-		nc.OnCert = func(der []byte) error {
+		nc.OnCert = func(der, _ []byte) error {
 			next, err := mac.id.WithCert(der)
 			if err == nil {
 				got <- next
