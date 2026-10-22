@@ -8,6 +8,8 @@ import XCTest
 /// certifies the admin key that a computer's hello offers.
 final class ComputerAdminTests: XCTestCase {
     let t0 = Date()
+    /// Later than t0, so that the admin record replaces the computer's first.
+    var t1: Date { t0.addingTimeInterval(1) }
 
     /// The root phone's group with one computer, pi, in its list.
     func group() throws -> (g: PhoneGroup, root: SoftwareSigner, pi: String, piKey: Data) {
@@ -41,7 +43,7 @@ final class ComputerAdminTests: XCTestCase {
         var g = t.g
         let (root, pi, piKey) = (t.root, t.pi, t.piKey)
         let adminKey = SoftwareSigner()
-        let (ca, r) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0)
+        let (ca, r) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1)
         XCTAssertEqual(try CertificateInfo(der: ca).publicKey, adminKey.publicKeyDER)
         let d = try XCTUnwrap(g.devices.first { $0.id == pi })
         XCTAssertTrue(d.admin)
@@ -120,7 +122,7 @@ final class ComputerAdminTests: XCTestCase {
         var g = t.g
         let (root, pi) = (t.root, t.pi)
         let adminKey = SoftwareSigner()
-        let (ca, _) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0)
+        let (ca, _) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1)
         struct Out: Encodable {
             var group_ca: Data
             var device: String
