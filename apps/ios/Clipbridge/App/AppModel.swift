@@ -5,8 +5,8 @@ import Foundation
 import SwiftUI
 
 /// The group as the app sees it: whether there is one, its computers, and
-/// admitting a computer. The phone's group CA in the Secure Enclave
-/// implements it; until then PendingGroup stands in.
+/// admitting a computer. LiveGroup is the real one; PendingGroup stands in
+/// for previews.
 @MainActor
 protocol GroupController: AnyObject {
     var hasGroup: Bool { get }
@@ -15,6 +15,8 @@ protocol GroupController: AnyObject {
     func admit(_ code: JoinCode) async throws
     /// Sends what this phone holds, or fetches the computers' recent copy.
     func sync() async throws -> AppModel.SyncResult
+    /// Updates which computers are online.
+    func refresh() async
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -95,16 +97,33 @@ final class AppModel: ObservableObject {
         computers = group.computers
     }
 
+    /// Updates which computers are online.
+    func refresh() async {
+        await group.refresh()
+        computers = group.computers
+    }
+
     static func describe(_ error: Error) -> String {
-        switch error as? PendingGroup.Failure {
-        case .notReady: String(localized: "Adding a computer is not ready yet.")
-        case .noComputers: String(localized: "No computers connected.")
-        case nil: String(localized: "Something went wrong. Try again.")
+        if let f = error as? PendingGroup.Failure {
+            return f == .notReady ? String(localized: "Adding a computer is not ready yet.") : String(localized: "No computers connected.")
         }
+        if let f = error as? PairingMember.Failure {
+            if case .refused(.wrongCode) = f {
+                return String(localized: "The code did not match. Run clipbridge join on the computer again and scan the new code.")
+            }
+            return String(localized: "The computer refused. Run clipbridge join on it again.")
+        }
+        if let f = error as? LiveGroup.Failure, f == .notConfirmed {
+            return String(localized: "The computer joined but did not confirm it. Check clipbridge status on it.")
+        }
+        if error is LiveGroup.Failure || error is TLSTransport.Failure {
+            return String(localized: "Could not reach the computer. Is it on the same network as this phone?")
+        }
+        return String(localized: "Something went wrong. Try again.")
     }
 }
 
-/// Stands in for the group until the phone holds a group CA.
+/// Stands in for the group in previews and tests: no group, no computers.
 @MainActor
 final class PendingGroup: GroupController {
     enum Failure: Error { case notReady, noComputers }
@@ -112,4 +131,5 @@ final class PendingGroup: GroupController {
     var computers: [AppModel.Computer] { [] }
     func admit(_ code: JoinCode) async throws { throw Failure.notReady }
     func sync() async throws -> AppModel.SyncResult { throw Failure.noComputers }
+    func refresh() async {}
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // clipbridge-interop plays the phone against the Go code in tests
-// (internal/pair, TestSwiftMemberAdmitsGoJoiner): it creates a group, dials
+// (internal/pair, TestSwiftMemberAdmitsGoJoiner): it creates a group as the
+// app does (PhoneGroup, a root CA with path length 1), dials
 // a Go joiner over plain TCP, exchanges certificates in place of a TLS
 // handshake, and admits the joiner with PairingMember.
 //
@@ -151,22 +152,19 @@ guard args.count >= 5, let port = UInt16(args[3]),
 do {
     let now = Date()
     let caSigner = SoftwareSigner()
-    let ca = try GroupCertificates.groupCA(signer: caSigner, now: now)
-    let phoneKey = SoftwareSigner()
-    let phoneID = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
-    var phoneCert = try GroupCertificates.member(device: phoneID, publicKey: phoneKey.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
     let t: FrameTransport
     let joinerCert: Data
     let sid: [UInt8]
+    var group: PhoneGroup
     if args[1] == "admit-tls" {
         #if canImport(Network)
         let fp = args[5]
-        // The key is made in the keychain, as the app makes its key in the
-        // Secure Enclave, and the certificate is issued for it.
-        let label = "clipbridge-interop-\(phoneID)"
+        // The member key is made in the keychain, as the app makes it, and
+        // the group's certificate is issued for it.
+        let label = "clipbridge-interop-\(SyncEngine.newID())"
         let signer = try SecKeySigner(try KeychainIdentity.makeKey(label: label))
-        phoneCert = try GroupCertificates.member(device: phoneID, publicKey: signer.publicKeyDER, ca: ca, caSigner: caSigner, now: now)
-        let identity = try KeychainIdentity.identity(certificate: phoneCert, key: signer.key, label: label, storeKey: false)
+        group = try PhoneGroup.create(caSigner: caSigner, memberKey: signer.publicKeyDER, now: now)
+        let identity = try KeychainIdentity.identity(certificate: group.memberCert, key: signer.key, label: label, storeKey: false)
         let tls = TLSTransport(host: args[2], port: port, alpn: Pairing.alpn, identity: identity) { leaf in
             Pairing.fingerprint(cert: leaf) == fp
         }
@@ -181,27 +179,20 @@ do {
         exit(2)
         #endif
     } else {
+        group = try PhoneGroup.create(caSigner: caSigner, memberKey: SoftwareSigner().publicKeyDER, now: now)
         let s = try SocketTransport(host: args[2], port: port)
         // In place of the TLS handshake: the member's certificate, then the
         // joiner's; the session ID is fixed.
-        try await s.writeBlob(phoneCert)
+        try await s.writeBlob(group.memberCert)
         (t, joinerCert, sid) = (s, try await s.readBlob(), [UInt8](repeating: 0, count: 32))
     }
-    let tag = GroupCertificates.tag(groupCA: ca)
-    let admitted = try await PairingMember.admit(
-        over: t, code: args[4], memberCert: phoneCert, joinerCert: joinerCert,
-        sessionID: sid,
-        memberAD: Pairing.MemberAD(device: phoneID, group: tag)
-    ) { device, publicKey, _ in
-        Pairing.Welcome(cert: try GroupCertificates.member(device: device, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now), groupCA: ca)
-    }
-    guard admitted.confirmed else {
+    let admitted = try await group.admit(over: t, code: args[4], joinerCert: joinerCert, sessionID: sid, caSigner: caSigner, now: now)
+    guard admitted.confirmed, group.computers.map(\.device) == [admitted.device] else {
         FileHandle.standardError.write("the joiner did not confirm\n".data(using: .utf8)!)
         exit(1)
     }
-    print(ca.base64EncodedString())
+    print(group.groupCA.base64EncodedString())
 } catch {
     FileHandle.standardError.write("clipbridge-interop: \(error)\n".data(using: .utf8)!)
     exit(1)
 }
-

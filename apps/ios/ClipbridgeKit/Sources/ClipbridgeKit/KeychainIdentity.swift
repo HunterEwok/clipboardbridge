@@ -30,7 +30,16 @@ public enum KeychainIdentity {
             kSecAttrIsPermanent: true,
             kSecAttrLabel: label,
         ]
-        if secureEnclave { attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave }
+        if secureEnclave {
+            // A Secure Enclave key needs an access control that allows
+            // signing; it stays on this device and works while unlocked.
+            var error: Unmanaged<CFError>?
+            guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, .privateKeyUsage, &error) else {
+                throw error!.takeRetainedValue() as Error
+            }
+            attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
+            attrs[kSecPrivateKeyAttrs] = [kSecAttrIsPermanent: true, kSecAttrLabel: label, kSecAttrAccessControl: access] as [CFString: Any]
+        }
         #if os(macOS)
         if !secureEnclave { attrs[kSecUseDataProtectionKeychain] = false }
         #endif
@@ -39,6 +48,34 @@ public enum KeychainIdentity {
             throw error!.takeRetainedValue() as Error
         }
         return key
+    }
+
+    /// The key that makeKey created under label, or nil.
+    public static func loadKey(label: String) throws -> SecKey? {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassKey,
+            kSecAttrLabel: label,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecReturnRef: true,
+        ]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain] = false
+        #endif
+        var out: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let out else { throw Failure.keychain(status) }
+        return (out as! SecKey)
+    }
+
+    /// Removes the certificates stored under label, before a new one
+    /// replaces them.
+    public static func removeCertificates(label: String) {
+        var query: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecAttrLabel: label]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain] = false
+        #endif
+        SecItemDelete(query as CFDictionary)
     }
 
     /// Stores the key (unless it is in the keychain already, as a Secure

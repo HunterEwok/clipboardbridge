@@ -82,7 +82,7 @@ func (id *Identity) Check() error {
 	if id.Key == nil || id.Key.Curve != elliptic.P256() {
 		return errors.New("group: the device key is not a P-256 key")
 	}
-	if err := checkCA(&id.GroupCA, "group CA"); err != nil {
+	if err := checkCA(&id.GroupCA, "group CA", maxGroupCAPath); err != nil {
 		return err
 	}
 	if err := checkLeaf(id.Cert, id.GroupCA.Cert, id.Key, "member certificate"); err != nil {
@@ -102,7 +102,7 @@ func (id *Identity) Check() error {
 	if !admin {
 		return nil
 	}
-	if err := checkCA(id.PhoneCA, "iPhone CA"); err != nil {
+	if err := checkCA(id.PhoneCA, "iPhone CA", 0); err != nil {
 		return err
 	}
 	if err := checkLeaf(id.Phone, id.PhoneCA.Cert, id.Key, "clipbridge.local certificate"); err != nil {
@@ -114,10 +114,18 @@ func (id *Identity) Check() error {
 	return nil
 }
 
-func checkCA(ca *CA, what string) error {
+// maxGroupCAPath is the longest path a group CA may allow: 0 for a group a
+// computer created, 1 for the root a phone creates, which certifies admin
+// CAs (docs/protocol.md, sections 9 and 10).
+const maxGroupCAPath = 1
+
+// checkCA checks a CA certificate: self-signed, a P-256 key, and a path
+// length from 0 to maxPath.
+func checkCA(ca *CA, what string, maxPath int) error {
 	c := ca.Cert
-	if c == nil || !c.IsCA || !c.BasicConstraintsValid || c.MaxPathLen != 0 {
-		return fmt.Errorf("group: the %s certificate is not a CA with path length 0", what)
+	if c == nil || !c.IsCA || !c.BasicConstraintsValid || c.MaxPathLen < 0 || c.MaxPathLen > maxPath ||
+		(c.MaxPathLen == 0 && !c.MaxPathLenZero) {
+		return fmt.Errorf("group: the %s certificate is not a CA with a path length of at most %d", what, maxPath)
 	}
 	if pub, ok := c.PublicKey.(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
 		return fmt.Errorf("group: the %s key is not a P-256 key", what)

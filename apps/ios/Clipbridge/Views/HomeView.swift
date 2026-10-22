@@ -47,6 +47,13 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $adding) { AddDeviceView() }
+            .task {
+                // The live dots: which computers are connected now.
+                while !Task.isCancelled {
+                    await model.refresh()
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
         }
     }
 }

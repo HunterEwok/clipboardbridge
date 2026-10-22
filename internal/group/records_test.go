@@ -333,3 +333,42 @@ func names(ds []Device) string {
 	}
 	return strings.Join(n, " ")
 }
+
+// TestPhoneRootIdentity checks that a member of a group rooted in a phone,
+// whose group CA has path length 1, is a valid identity, and that a longer
+// or unlimited path is not.
+func TestPhoneRootIdentity(t *testing.T) {
+	pg := newPhoneGroup(t)
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := NewDeviceID()
+	cert, err := pg.root.IssueMember(dev, &key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := &Identity{ID: dev, Key: key, Cert: cert, GroupCA: CA{Cert: pg.root.Cert}}
+	if err := id.Check(); err != nil {
+		t.Fatalf("a member of a phone's group: %v", err)
+	}
+	for name, mod := range map[string]func(*x509.Certificate){
+		"path length 2": func(c *x509.Certificate) { c.MaxPathLen = 2 },
+		"no path limit": func(c *x509.Certificate) { c.MaxPathLen = -1 },
+	} {
+		tmpl := *pg.root.Cert
+		mod(&tmpl)
+		root, err := create(&tmpl, &tmpl, &pg.root.Key.PublicKey, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert, err := (&CA{Cert: root, Key: pg.root.Key}).IssueMember(dev, &key.PublicKey, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := &Identity{ID: dev, Key: key, Cert: cert, GroupCA: CA{Cert: root}}
+		if bad.Check() == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
