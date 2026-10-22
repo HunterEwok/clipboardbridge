@@ -6,6 +6,13 @@ import Foundation
 /// fail: a TLS connection in the app, a socket in tests.
 public protocol ClosableTransport: FrameTransport {
     func close()
+    /// The peer's leaf certificate from the TLS handshake, DER; nil when
+    /// there is none.
+    var peerCertificate: Data? { get }
+}
+
+extension ClosableTransport {
+    public var peerCertificate: Data? { nil }
 }
 
 /// Keeps the group's signed records for a node (docs/protocol.md, section
@@ -32,14 +39,20 @@ public actor MemberNode {
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
+    private let renew: (@Sendable (Data) -> Data?)?
 
     /// onChange gets the new current event when a peer's event becomes it;
     /// onCert gets a renewed member certificate a peer sent for this phone;
-    /// records keeps the group's records and exchanges them with the peers.
+    /// records keeps the group's records and exchanges them with the peers;
+    /// renew, on the phone that holds the group's key, gets each peer's
+    /// certificate after its hello and returns a renewed one when it is due,
+    /// which the peer then gets in a cert message (section 2).
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
+                renew: (@Sendable (Data) -> Data?)? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
-        (self.engine, self.name, self.role, self.records, self.onChange, self.onCert) = (engine, name, role, records, onChange, onCert)
+        (self.engine, self.name, self.role, self.records, self.renew, self.onChange, self.onCert) =
+            (engine, name, role, records, renew, onChange, onCert)
     }
 
     /// The current event with its age as of now.
@@ -99,6 +112,9 @@ public actor MemberNode {
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
                     c.enqueue(.records(store.all))
+                }
+                if let renew, let cert = t.peerCertificate, let renewed = renew(cert) {
+                    c.enqueue(.cert(renewed))
                 }
                 continue
             }

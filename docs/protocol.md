@@ -759,7 +759,9 @@ a computer keep working as they do today.
   profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.
 - **Renewal and revocation.** Certificate renewal (section 2) moves to the admin phones,
-  which send `cert` messages as a Linux member does today; revocation and the devices list
+  which send `cert` messages as a Linux member does today (implemented in ClipbridgeKit:
+  `GroupCertificates.renewal`, `MemberNode`'s `renew`; the app also renews its own certificate
+  at start); revocation and the devices list
   are section 10, and a second admin phone is the way back when a phone is lost.
 
 ## 10. Admin CAs, device records and revocation

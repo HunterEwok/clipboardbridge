@@ -270,6 +270,8 @@ final class Pipe: ClosableTransport, @unchecked Sendable {
     private var closed = false
     private var waiter: CheckedContinuation<Void, Never>?
     weak var peer: Pipe?
+    /// What a TLS transport would report as the peer's certificate.
+    var peerCertificate: Data?
 
     static func pair() -> (Pipe, Pipe) {
         let a = Pipe(), b = Pipe()
