@@ -7,7 +7,8 @@
 #   curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
 #
 # Options go after "sh -s --": --console also starts tmux after a login on
-# the text console; --no-firewall leaves the firewall alone. CLIPBRIDGE_VERSION=v1.2.3
+# the text console; --port N moves the member port from 8764 to N;
+# --no-firewall leaves the firewall alone. CLIPBRIDGE_VERSION=v1.2.3
 # picks a release instead of the latest; CLIPBRIDGE_RELEASE_DIR, for tests,
 # takes the files from a directory instead of downloading them.
 #
@@ -19,16 +20,26 @@ set -eu
 
 repo=https://github.com/HunterEwok/clipbridge
 console=
+port=
 firewall=yes
-for arg in "$@"; do
-	case $arg in
+while [ $# -gt 0 ]; do
+	case $1 in
 	--console) console=--console ;;
+	--port)
+		[ $# -gt 1 ] || {
+			echo "get.sh: --port needs a port number" >&2
+			exit 2
+		}
+		port="--port $2"
+		shift
+		;;
 	--no-firewall) firewall=no ;;
 	*)
-		echo "get.sh: unknown option $arg (known: --console, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --console, --port N, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
+	shift
 done
 
 fail() {
@@ -77,6 +88,6 @@ got=$(sha256sum "$tmp/$archive" | cut -d' ' -f1)
 [ "$want" = "$got" ] || fail "$archive does not match SHA256SUMS; not installing it"
 tar -xzf "$tmp/$archive" -C "$tmp"
 
-# shellcheck disable=SC2086 # $console is one word or none
-CLIPBRIDGE_FIREWALL=$firewall sh "$tmp/clipbridge/packaging/linux/install.sh" $console "$tmp/clipbridge/clipbridge"
+# shellcheck disable=SC2086 # $console and $port are words or none
+CLIPBRIDGE_FIREWALL=$firewall sh "$tmp/clipbridge/packaging/linux/install.sh" $console $port "$tmp/clipbridge/clipbridge"
 

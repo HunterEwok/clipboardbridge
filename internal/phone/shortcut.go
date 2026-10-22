@@ -67,7 +67,7 @@ func UnsignedShortcut() []byte {
 	})
 	paired := output("pair", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": paired.uuid, "WFURL": "https://clipbridge.local:8765/pair", "WFHTTPMethod": "POST",
+		"UUID": paired.uuid, "WFURL": "https://clipbridge.local:8764/pair", "WFHTTPMethod": "POST",
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("code", "", code)),
 	})
 	tok := output("token", "Dictionary Value")
@@ -88,7 +88,7 @@ func UnsignedShortcut() []byte {
 	add("is.workflow.actions.getclipboard", map[string]any{"UUID": clipboard.uuid})
 	synced := output("sync", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": synced.uuid, "WFURL": "https://clipbridge.local:8765/sync", "WFHTTPMethod": "POST",
+		"UUID": synced.uuid, "WFURL": "https://clipbridge.local:8764/sync", "WFHTTPMethod": "POST",
 		"ShowHeaders": true, "WFHTTPHeaders": fields(textField("Authorization", "Bearer ", file)),
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("text", "", clipboard)),
 	})
@@ -133,7 +133,7 @@ func UnsignedAdmitShortcut() []byte {
 	add("is.workflow.actions.scanbarcode", map[string]any{"UUID": scanned.uuid})
 	admitted := output("add-admit", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": admitted.uuid, "WFURL": "https://clipbridge.local:8765/admit", "WFHTTPMethod": "POST",
+		"UUID": admitted.uuid, "WFURL": "https://clipbridge.local:8764/admit", "WFHTTPMethod": "POST",
 		"ShowHeaders": true, "WFHTTPHeaders": fields(textField("Authorization", "Bearer ", file)),
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("code", "", scanned)),
 	})

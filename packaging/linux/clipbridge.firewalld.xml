@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- clipbridge's TCP ports, for firewalld; install.sh allows it from the home network. -->
-<service>
-  <short>clipbridge</short>
-  <description>clipbridge: one clipboard for your phone and your computers on the home network.</description>
-  <port protocol="tcp" port="8764-8767"/>
-</service>

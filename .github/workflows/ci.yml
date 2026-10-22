@@ -210,7 +210,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
@@ -237,6 +237,24 @@ jobs:
           echo tampered >>"$rel/clipbridge-linux-amd64.tar.gz"
           if sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall; then
             echo "get.sh installed an archive that does not match SHA256SUMS" >&2
+            exit 1
+          fi
+      - name: install.sh keeps a port, and uninstall.sh removes it all
+        run: |
+          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 9000'
+          grep -qx 'CLIPBRIDGE_PORT=9000' /etc/clipbridge/clipbridge.env
+          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 9000'
+          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh --port 8764 "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 8764'
+          test ! -e /etc/clipbridge/clipbridge.env
+          sudo sh /usr/local/share/clipbridge/uninstall.sh --purge
+          for f in /usr/local/bin/clipbridge /etc/systemd/system/clipbridge.service /usr/local/share/clipbridge /etc/clipbridge /var/lib/clipbridge; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
+          if grep -q clipbridge /etc/tmux.conf; then
+            echo "uninstall.sh left the tmux line" >&2
             exit 1
           fi
 

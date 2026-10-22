@@ -22,12 +22,24 @@ All notable changes to clipbridge are documented in this file. The format follow
   under a bare nftables or iptables setup that drops input it prints the commands.
   `CLIPBRIDGE_FIREWALL=no` leaves the firewall alone. `clipbridge join` names the firewall
   when the phone cannot connect.
+- clipbridge needs one TCP port, 8764: a listening `clipbridge join` waits on it (the
+  computer is in no group yet), and the iPhone shortcut's HTTPS and the profile moved there
+  from 8765 and 8766; the member port tells the connections apart by their first bytes.
+  Installed shortcuts stop working: run `clipbridge pair -phone` and add the new one from
+  its page.
+- The Linux installer keeps track of the firewall rules it adds and removes them before
+  adding new ones, so a changed port leaves nothing open; it never touches other rules.
 - The phone app's Start screen says what to do in plain words: "Connect a new device" (a
   computer or another phone) and "I already use clipbridge on another phone". Its buttons
   and cards use Liquid Glass from iOS 26, with materials before.
 
 ### Added
 
+- `install.sh --port N` (and `get.sh --port N`) moves the member port from 8764; it is kept
+  in `/etc/clipbridge/clipbridge.env` as `CLIPBRIDGE_PORT` for later updates, and the
+  installer says to allow it in other firewalls. The phone app needs no setting.
+- `uninstall.sh`, installed to `/usr/local/share/clipbridge`, removes clipbridge and the
+  firewall rules its installer added; `--purge` also deletes the device's keys.
 - The phone app's language can be chosen in the app (System, English, Russian), in Settings
   and, when the system's language has no translation, on the Start screen; Settings, with
   the theme, opens from the Start screen too.

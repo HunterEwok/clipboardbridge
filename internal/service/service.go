@@ -9,6 +9,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -44,31 +45,26 @@ type Config struct {
 	// a Mac in browse-only mode. Tests replace it.
 	Discover func(DiscoveryConfig) (Discovery, error)
 
-	// listen opens the member port; MemberPort, or any free port, on all
-	// addresses if nil.
+	// listen opens the member port; the one Port names, or any free port,
+	// on all addresses if nil.
 	listen func() (net.Listener, error)
 	// now is the clock for certificates; time.Now if nil.
 	now func() time.Time
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
-	// joinListen opens the port a listening join waits at, JoinPort or any
+	// joinListen opens the port a listening join waits at, the member port or any
 	// free port on all addresses if nil; joinAddrs returns the addresses for its QR code,
 	// joinAddresses if nil.
 	joinListen func() (net.Listener, error)
 	joinAddrs  func(port uint16) []string
-	// phoneListen and profileListen open the iPhone's ports; PhonePort and
-	// ProfilePort on all addresses if nil.
-	phoneListen, profileListen func() (net.Listener, error)
 }
 
-// MemberPort and JoinPort are the ports the member port and a listening
-// join prefer, so a firewall can open them; when one is taken, any free
-// port does, since discovery and the QR code carry the port.
-const (
-	MemberPort = 8764
-	JoinPort   = 8767
-)
+// MemberPort is the member port by default (CLIPBRIDGE_PORT moves it, see
+// Port), so a firewall can open it; a listening join, which comes before
+// the device is in a group, waits there too. When it is taken, any free port
+// does, since discovery and the QR code carry the port.
+const MemberPort = 8764
 
 // listenPreferring listens on port on all addresses, or on any free port if
 // that one is taken.
@@ -124,9 +120,12 @@ type Service struct {
 	dialWindow    *pair.Window // not announced; dials a listening joiner for the phone
 	opening       bool         // a pairing window is being opened, maybe with a new group
 	phoneWindow   *phone.Window
-	phoneOpening  bool // an iPhone pairing window is being opened
-	joining       bool // a join is running
-	stopping      bool // the service is stopping: no new group, no election
+	phoneOpening  bool          // an iPhone pairing window is being opened
+	phoneConns    *connListener // the shortcut's HTTPS on the member port; nil if not served
+	phoneTLS      *tls.Config   // the shortcut's TLS, with phoneConns
+	profileConns  *connListener // the profile's plain HTTP while an iPhone pairing window is open
+	joining       bool          // a join is running
+	stopping      bool          // the service is stopping: no new group, no election
 	holder        bool
 	dialers       map[group.DeviceID]*dialer
 	watchers      map[*watcher]bool
@@ -161,20 +160,20 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.browseFor == 0 {
 		cfg.browseFor = 10 * time.Second
 	}
-	if cfg.listen == nil {
-		cfg.listen = func() (net.Listener, error) { return listenPreferring(MemberPort) }
-	}
-	if cfg.joinListen == nil {
-		cfg.joinListen = func() (net.Listener, error) { return listenPreferring(JoinPort) }
+	if cfg.listen == nil || cfg.joinListen == nil {
+		port, err := Port()
+		if err != nil {
+			return err
+		}
+		if cfg.listen == nil {
+			cfg.listen = func() (net.Listener, error) { return listenPreferring(port) }
+		}
+		if cfg.joinListen == nil {
+			cfg.joinListen = func() (net.Listener, error) { return listenPreferring(port) }
+		}
 	}
 	if cfg.joinAddrs == nil {
 		cfg.joinAddrs = joinAddresses
-	}
-	if cfg.phoneListen == nil {
-		cfg.phoneListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", PhonePort)) }
-	}
-	if cfg.profileListen == nil {
-		cfg.profileListen = func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf(":%d", ProfilePort)) }
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
 		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}}
@@ -311,7 +310,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		}()
 		go func() {
 			defer s.wg.Done()
-			s.servePhone(gctx)
+			s.servePhone(gctx, ln.Addr())
 		}()
 	}
 	// Discovery has its own context, so it can say goodbye for

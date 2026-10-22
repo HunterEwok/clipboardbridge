@@ -18,9 +18,10 @@ curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get
 ```
 
 It checks the download against the release's `SHA256SUMS`, installs the service and, when
-ufw or firewalld is active, allows clipbridge's ports (mDNS and TCP 8764 to 8767) from the
-home network only. Add `-s -- --console` after `sh` to also start tmux on the text console, or
-`--no-firewall` to leave the firewall alone. Every release file has a build provenance attestation:
+ufw or firewalld is active, allows mDNS and clipbridge's one port, TCP 8764, from the home
+network only. Add `-s -- --console` after `sh` to also start tmux on the text console,
+`--port N` for another port, or `--no-firewall` to leave the firewall alone;
+`sudo sh /usr/local/share/clipbridge/uninstall.sh` removes it again, with the rules it added. Every release file has a build provenance attestation:
 `gh attestation verify FILE --repo HunterEwok/clipbridge`.
 
 On a Mac (Apple silicon; `amd64` instead of `arm64` for Intel), in Terminal, so that the

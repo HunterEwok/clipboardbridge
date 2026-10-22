@@ -172,29 +172,16 @@ type testService struct {
 	accepted atomic.Int32 // member connections accepted
 	cfg      func(*Config)
 
-	mu          sync.Mutex
-	phoneAddr   string // where the iPhone port listens
-	profileAddr string // where the profile port listens, while open
+	mu         sync.Mutex
+	memberAddr string // where the member port listens
 }
 
+// addrs returns where the shortcut's HTTPS and the profile are: both on the
+// member port.
 func (s *testService) addrs() (phone, profile string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.phoneAddr, s.profileAddr
-}
-
-// listenOn returns a listen function on a free loopback port that records
-// the address in *addr.
-func (s *testService) listenOn(addr *string) func() (net.Listener, error) {
-	return func() (net.Listener, error) {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err == nil {
-			s.mu.Lock()
-			*addr = ln.Addr().String()
-			s.mu.Unlock()
-		}
-		return ln, err
-	}
+	return s.memberAddr, s.memberAddr
 }
 
 func startService(t *testing.T, h *hub, name string) *testService {
@@ -248,13 +235,17 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 		Logf: func(f string, a ...any) { t.Logf(name+": "+f, a...) },
 		listen: func() (net.Listener, error) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
-			return countingListener{ln, &s.accepted}, err
+			if err != nil {
+				return nil, err
+			}
+			s.mu.Lock()
+			s.memberAddr = ln.Addr().String()
+			s.mu.Unlock()
+			return countingListener{ln, &s.accepted}, nil
 		},
-		browseFor:     2 * time.Second,
-		joinListen:    func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
-		joinAddrs:     func(port uint16) []string { return []string{fmt.Sprintf("127.0.0.1:%d", port)} },
-		phoneListen:   s.listenOn(&s.phoneAddr),
-		profileListen: s.listenOn(&s.profileAddr),
+		browseFor:  2 * time.Second,
+		joinListen: func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
+		joinAddrs:  func(port uint16) []string { return []string{fmt.Sprintf("127.0.0.1:%d", port)} },
 	}
 	if s.cfg != nil {
 		s.cfg(&cfg)
