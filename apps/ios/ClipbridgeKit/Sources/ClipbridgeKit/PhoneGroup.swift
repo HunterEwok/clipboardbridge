@@ -78,6 +78,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return r
     }
 
+    /// Renews this phone's own member certificate when it is due; reports
+    /// whether it did, after which the TLS identity must be made again.
+    public mutating func renewOwnCertificate(caSigner: CertificateSigner, now: Date) throws -> Bool {
+        guard let renewed = try GroupCertificates.renewal(of: memberCert, groupCA: groupCA, caSigner: caSigner, now: now) else { return false }
+        memberCert = renewed
+        return true
+    }
+
     /// The devices of the group, from the records.
     public var devices: [RecordSet.Device] { records.devices }
 

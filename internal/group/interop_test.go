@@ -124,3 +124,53 @@ func TestSwiftRecords(t *testing.T) {
 		}
 	}
 }
+
+// TestSwiftRenewal checks that a member keeps a certificate that the phone
+// app renewed for it (testdata/interop/swift-renewal.json, or the file in
+// CLIPBRIDGE_INTEROP_OUT), as it does when a cert message arrives.
+func TestSwiftRenewal(t *testing.T) {
+	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-renewal.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Device  string `json:"device"`
+		GroupCA []byte `json:"group_ca"`
+		Key     []byte `json:"key"`
+		Cert    []byte `json:"cert"`
+		Renewed []byte `json:"renewed"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(v.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := x509.ParsePKCS8PrivateKey(v.Key)
+	var key *ecdsa.PrivateKey
+	if err == nil {
+		key, _ = k.(*ecdsa.PrivateKey)
+	} else if key, err = x509.ParseECPrivateKey(v.Key); err != nil {
+		t.Fatalf("the key: %v", err)
+	}
+	id := &Identity{ID: DeviceID(v.Device), Key: key, Cert: cert, GroupCA: CA{Cert: ca}}
+	if err := id.Check(); err != nil {
+		t.Fatalf("the member before the renewal: %v", err)
+	}
+	next, err := id.WithCert(v.Renewed)
+	if err != nil {
+		t.Fatalf("the renewed certificate: %v", err)
+	}
+	if !next.Cert.NotAfter.After(cert.NotAfter) {
+		t.Errorf("the renewal ends %v, not after %v", next.Cert.NotAfter, cert.NotAfter)
+	}
+}

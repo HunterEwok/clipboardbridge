@@ -39,7 +39,16 @@ final class LiveGroup: GroupController {
     init(file: URL = LiveGroup.defaultFile) {
         self.file = file
         state = try? PhoneGroup.load(from: file)
+        renewOwnCertificate()
         try? startSync()
+    }
+
+    /// Renews this phone's own member certificate when it is due, before
+    /// the connections present it.
+    private func renewOwnCertificate() {
+        guard var g = state, let ca = try? caSigner(), (try? g.renewOwnCertificate(caSigner: ca, now: Date())) == true else { return }
+        try? g.save(to: file)
+        state = g
     }
 
     var hasGroup: Bool { state != nil }
@@ -163,7 +172,12 @@ final class LiveGroup: GroupController {
         let id = try identity(g, memberSigner())
         let box = RecordBox(groupCA: g.groupCA, set: g.records)
         box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
-        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, records: box)
+        // The phone holds the group's key, so it renews the computers'
+        // certificates when they connect and are due (docs/protocol.md,
+        // section 2).
+        let renewer = Renewer(groupCA: g.groupCA, signer: try caSigner())
+        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
+                              records: box, renew: { renewer.renew($0) })
         let relay = Relay()
         relay.allowed = Set(g.devices.map(\.id))
         let browser = BonjourBrowser { found in relay.update(found) }
@@ -171,6 +185,16 @@ final class LiveGroup: GroupController {
         relay.dialer = dialer
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox) = (node, browser, dialer, relay, box)
+    }
+
+    /// Issues renewed member certificates with the root key.
+    final class Renewer: @unchecked Sendable {
+        let groupCA: Data
+        let signer: SecKeySigner
+        init(groupCA: Data, signer: SecKeySigner) { (self.groupCA, self.signer) = (groupCA, signer) }
+        func renew(_ cert: Data) -> Data? {
+            try? GroupCertificates.renewal(of: cert, groupCA: groupCA, caSigner: signer, now: Date())
+        }
     }
 
     /// The group's records for the node, which exchanges them with the

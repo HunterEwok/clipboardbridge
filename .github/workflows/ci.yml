@@ -267,10 +267,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
-          # swift test just wrote testdata/interop/swift-member.json, and
-          # interop-out/swift-records.json with records it signed.
+          # swift test just wrote testdata/interop/swift-member.json, and to
+          # interop-out the records it signed and a certificate it renewed.
           go test ./internal/node -run TestSwiftMemberFrames -v
-          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run TestSwiftRecords -v
+          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal' -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit

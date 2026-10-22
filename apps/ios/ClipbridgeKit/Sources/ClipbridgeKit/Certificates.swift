@@ -132,6 +132,25 @@ public enum GroupCertificates {
 
     public enum CertificateError: Error { case badDeviceID, outsideCALifetime, malformed }
 
+    /// A member certificate is renewed when less than this much remains.
+    public static let renewBefore: TimeInterval = 240 * 24 * 3600
+
+    /// Whether a member certificate is due for renewal, as Go's renewable
+    /// decides: less than 240 days left, and its CA lasts longer than it. A
+    /// clock before the CA's start is wrong, and nothing is due then.
+    public static func isDue(_ cert: Data, groupCA: Data, now: Date) -> Bool {
+        guard let c = try? CertificateInfo(der: cert), let ca = try? CertificateInfo(der: groupCA), now >= ca.notBefore else { return false }
+        return now > c.notAfter.addingTimeInterval(-renewBefore) && ca.notAfter > c.notAfter
+    }
+
+    /// A renewed member certificate for the device and key of cert, which
+    /// the group CA issued, or nil when it is not due (or not from the CA).
+    public static func renewal(of cert: Data, groupCA: Data, caSigner: CertificateSigner, now: Date) throws -> Data? {
+        guard isDue(cert, groupCA: groupCA, now: now),
+              let device = try? verifyMember(cert, groupCA: groupCA, now: now) else { return nil }
+        return try member(device: device, publicKey: CertificateInfo(der: cert).publicKey, ca: groupCA, caSigner: caSigner, now: now)
+    }
+
     public enum VerifyError: Error, Equatable {
         case notFromGroupCA, expired, notYetValid, badName, isCA
     }
