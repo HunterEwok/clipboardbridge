@@ -14,6 +14,8 @@ All notable changes to clipbridge are documented in this file. The format follow
   default) puts the error itself under the message, to find out what failed.
 - In the iOS simulator the app keeps its root and admin keys in the keychain, since the
   simulator cannot make a Secure Enclave key that needs Face ID.
+- `clipbridge join` names the app's "Connect a new device" and prints the QR code's text
+  as well, to paste into the app on a phone without a camera.
 - The phone app's Start screen says what to do in plain words: "Connect a new device" (a
   computer or another phone) and "I already use clipbridge on another phone". Its buttons
   and cards use Liquid Glass from iOS 26, with materials before.

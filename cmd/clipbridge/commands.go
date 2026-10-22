@@ -267,12 +267,17 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if len(m.Addrs) == 0 {
 			return fail(stderr, errors.New("this device has no address on the home network; connect it to the network, or use clipbridge join -code"))
 		}
-		fmt.Fprintln(stdout, "On the iPhone, run the shortcut \"clipbridge: add a computer\" and scan this:")
+		fmt.Fprintln(stdout, "In the clipbridge app, tap \"Connect a new device\" (or run the shortcut")
+		fmt.Fprintln(stdout, "\"clipbridge: add a computer\") and scan this:")
 		fmt.Fprintln(stdout)
 		jc := phone.JoinCode{Code: h.Code, Addrs: m.Addrs, Fingerprint: m.Fingerprint}
-		if err := writeQR(stdout, phone.JoinQR(jc)); err != nil {
+		text := phone.JoinQR(jc)
+		if err := writeQR(stdout, text); err != nil {
 			return fail(stderr, err)
 		}
+		// The same code as text, for a phone without a camera, such as the
+		// app in the iOS simulator.
+		fmt.Fprintf(stdout, "\nOr paste this into the app: %s\n", text)
 		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
 		fmt.Fprintln(stdout, "Without a phone: run clipbridge pair on a Linux member and clipbridge join -code here.")
 		if _, err := c.Receive(); err != nil {

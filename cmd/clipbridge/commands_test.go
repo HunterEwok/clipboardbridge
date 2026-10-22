@@ -158,7 +158,8 @@ func TestJoinWithThePhone(t *testing.T) {
 	if m.Op != control.OpJoin || len(m.Code) != 6 || m.Expires != 300 || m.Address != "" || !m.Listen {
 		t.Errorf("join sent %+v", m.Header)
 	}
-	if !strings.Contains(stdout.String(), "add a computer") || !strings.Contains(stdout.String(), "\x1b[") ||
+	if !strings.Contains(stdout.String(), "Connect a new device") || !strings.Contains(stdout.String(), "\x1b[") ||
+		!strings.Contains(stdout.String(), "paste this into the app: clipbridge://") ||
 		!strings.Contains(stdout.String(), "Joined the group") {
 		t.Errorf("join printed:\n%s", stdout.String())
 	}
