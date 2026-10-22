@@ -90,18 +90,17 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
 
 Done: the Go service (0.2.0 released); the app makes its own group (root key in the Secure
 Enclave, Face ID before each signing action), admits computers by QR code, syncs with them,
-shows the devices and removes them, renews certificates; admin CAs under the root work in Go
-and in the kit (records, chains, Welcome `issuer`); a second phone joins from its Start
+shows the devices and removes them, renews certificates (any admin renews any device, the
+`cert` message carrying its admin CA); admin CAs under the root work in Go and in the kit
+(records, chains, Welcome `issuer`); a second phone joins from its Start
 screen and the root makes it an admin (`PairingJoiner`, `TLSListener`, `PhoneGroup.joined`);
 an admin phone removes a lost root phone by taking the group over with `root` records
 (`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`).
 
 Next steps, roughly in order:
 
-1. Renewing the certificates of devices a removed admin admitted from another admin's CA
-   (needs the `cert` message to carry the issuer; today the root renews them).
-2. A computer as admin in a phone group, if wanted.
-3. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
+1. A computer as admin in a phone group, if wanted.
+2. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the

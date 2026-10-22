@@ -378,7 +378,7 @@ final class LiveGroup: GroupController {
 
         /// A renewal for a peer's chain, leaf first, when it is due and this
         /// phone may renew it.
-        func renew(_ chain: [Data]) -> Data? {
+        func renew(_ chain: [Data]) -> MemberNode.Renewal? {
             guard group.isAdmin, let cert = chain.first,
                   GroupCertificates.isDue(cert, groupCA: group.adminCA ?? group.currentRoot, now: Date()) else { return nil }
             var ctx = context

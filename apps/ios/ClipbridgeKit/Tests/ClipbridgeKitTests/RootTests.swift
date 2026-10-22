@@ -86,7 +86,7 @@ final class RootTests: XCTestCase {
         XCTAssertEqual(try GroupCertificates.verifyMember(chain: [three.cert], roots: g.b.trusted, now: t0), three.device)
         XCTAssertNil(set.refused(chain: [three.cert]))
         let later = t0.addingTimeInterval(500 * 24 * 3600)
-        let renewed = try XCTUnwrap(g.b.renewal(chain: [g.one.cert], caSigner: g.newRootKey, now: later))
+        let renewed = try XCTUnwrap(g.b.renewal(chain: [g.one.cert], caSigner: g.newRootKey, now: later)).cert
         XCTAssertEqual(try GroupCertificates.verifyMember(renewed, groupCA: g.b.currentRoot, now: later), g.one.device)
     }
 

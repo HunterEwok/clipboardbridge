@@ -90,9 +90,12 @@ final class PhoneJoinTests: XCTestCase {
         let later = t0.addingTimeInterval(500 * 24 * 3600)
         let pcChain = [pcJoined.welcome.cert, adminCA]
         let byAdmin = try XCTUnwrap(admin.renewal(chain: pcChain, caSigner: adminKey, now: later))
-        XCTAssertEqual(try GroupCertificates.verifyMember(byAdmin, groupCA: root.groupCA, issuer: adminCA, now: later), pc.device)
-        XCTAssertNil(admin.renewal(chain: [root.memberCert], caSigner: adminKey, now: later), "the root issued that one")
-        let byRoot = try XCTUnwrap(root.renewal(chain: pcChain, caSigner: rootKey, now: later))
+        XCTAssertEqual(byAdmin.issuer, adminCA)
+        XCTAssertEqual(try GroupCertificates.verifyMember(byAdmin.cert, groupCA: root.groupCA, issuer: adminCA, now: later), pc.device)
+        // An admin renews what the root issued too, from its own admin CA.
+        let rootsOne = try XCTUnwrap(admin.renewal(chain: [root.memberCert], caSigner: adminKey, now: later))
+        XCTAssertEqual(try GroupCertificates.verifyMember(rootsOne.cert, groupCA: root.groupCA, issuer: adminCA, now: later), root.device)
+        let byRoot = try XCTUnwrap(root.renewal(chain: pcChain, caSigner: rootKey, now: later)).cert
         XCTAssertEqual(try GroupCertificates.verifyMember(byRoot, groupCA: root.groupCA, now: later), pc.device)
         XCTAssertTrue(try admin.renewOwnCertificate(caSigner: adminKey, now: later))
         XCTAssertEqual(admin.memberIssuer, adminCA)

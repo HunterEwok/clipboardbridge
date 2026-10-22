@@ -217,12 +217,11 @@ public enum GroupCertificates {
     /// A renewed member certificate for the device and key of cert, which
     /// the group CA issued (or issuer, an admin CA under it), or nil when it
     /// is not due (or not from the CA). The renewed one is from the group CA,
-    /// or from adminCA when caSigner holds that admin CA's key: an admin
-    /// phone renews only what its own admin CA issued, since a member takes
-    /// a renewal only from the issuer of its certificate or from the root.
+    /// or from adminCA when caSigner holds that admin CA's key, which the
+    /// cert message then carries (section 10), so an admin phone renews any
+    /// member's certificate, also one another admin issued.
     public static func renewal(of cert: Data, groupCA: Data, issuer: Data? = nil, caSigner: CertificateSigner, adminCA: Data? = nil,
                                now: Date) throws -> Data? {
-        if let adminCA, issuer != adminCA { return nil }
         guard isDue(cert, groupCA: groupCA, now: now),
               let device = try? verifyMember(cert, groupCA: groupCA, issuer: issuer, now: now) else { return nil }
         return try member(device: device, publicKey: CertificateInfo(der: cert).publicKey, ca: adminCA ?? groupCA, caSigner: caSigner, now: now)
@@ -242,7 +241,6 @@ public enum GroupCertificates {
         guard let leaf = chain.first, let current = roots.last else { return nil }
         for root in roots {
             let issuer = chain.dropFirst().first { (try? checkAdminCA($0, root: root)) != nil }
-            if let adminCA, issuer != adminCA { continue }
             guard let device = try? verifyMember(leaf, groupCA: root, issuer: issuer, now: now) else { continue }
             let ca = adminCA ?? current
             guard isDue(leaf, groupCA: ca, now: now) else { return nil }

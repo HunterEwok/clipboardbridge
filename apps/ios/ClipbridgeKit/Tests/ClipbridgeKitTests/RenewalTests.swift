@@ -42,7 +42,7 @@ final class RenewalTests: XCTestCase {
         let later = t0.addingTimeInterval(500 * day)
         let groupCA = g.groupCA
         let phone = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: "iPhone",
-                               renew: { try? GroupCertificates.renewal(chain: $0, groupCA: groupCA, caSigner: ca, now: later) })
+                               renew: { (try? GroupCertificates.renewal(chain: $0, groupCA: groupCA, caSigner: ca, now: later)).map { MemberNode.Renewal(cert: $0) } })
         let got = Changes()
         let peer = MemberNode(engine: SyncEngine(device: pc, clock: HybridClock()), name: "pi", role: .linux,
                               onCert: { got.add($0.base64EncodedString()) })
@@ -72,10 +72,18 @@ final class RenewalTests: XCTestCase {
         let pc = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: pc, publicKey: key.publicKeyDER, ca: g.groupCA, caSigner: ca, now: t0)
         let renewed = try XCTUnwrap(GroupCertificates.renewal(of: cert, groupCA: g.groupCA, caSigner: ca, now: t0.addingTimeInterval(500 * day)))
-        struct Out: Encodable { var device: String; var group_ca, key, cert, renewed: Data }
+        // An admin phone renews the same certificate from its admin CA,
+        // which the cert message carries.
+        let adminKey = SoftwareSigner()
+        let adminCA = try GroupCertificates.adminCA(device: SyncEngine.newID(), publicKey: adminKey.publicKeyDER, root: g.groupCA,
+                                                    rootSigner: ca)
+        let byAdmin = try XCTUnwrap(GroupCertificates.renewal(chain: [cert], groupCA: g.groupCA, caSigner: adminKey, adminCA: adminCA,
+                                                              now: t0.addingTimeInterval(500 * day)))
+        struct Out: Encodable { var device: String; var group_ca, key, cert, renewed, admin_ca, admin_renewed: Data }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let out = Out(device: pc, group_ca: g.groupCA, key: key.key.derRepresentation, cert: cert, renewed: renewed)
+        let out = Out(device: pc, group_ca: g.groupCA, key: key.key.derRepresentation, cert: cert, renewed: renewed,
+                      admin_ca: adminCA, admin_renewed: byAdmin)
         try (enc.encode(out) + Data("\n".utf8)).write(to: URL(fileURLWithPath: dir).appendingPathComponent("swift-renewal.json"))
     }
 }

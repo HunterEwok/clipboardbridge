@@ -62,9 +62,10 @@ type Config struct {
 	OnPeers func()
 
 	// OnCert, if set, is called with a renewed member certificate that a
-	// peer sent for this member; it checks it, keeps it and passes the new
-	// identity to SetIdentity. An error is logged.
-	OnCert func(der []byte) error
+	// peer sent for this member, and the admin CA that issued it when the
+	// peer sent one; it checks it, keeps it and passes the new identity to
+	// SetIdentity. An error is logged.
+	OnCert func(der, issuer []byte) error
 
 	// Allow, if set, rejects peers, for example revoked devices. Recheck
 	// asks it again for the running connections.
@@ -756,7 +757,7 @@ func (c *conn) reader() error {
 			if c.n.cfg.OnCert == nil {
 				continue
 			}
-			if err := c.n.cfg.OnCert(m.Cert); err != nil {
+			if err := c.n.cfg.OnCert(m.Cert, m.Issuer); err != nil {
 				c.n.cfg.Logf("node: a renewed certificate from %s: %v", c.id, err)
 			}
 		case typeRecs:

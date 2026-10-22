@@ -43,16 +43,24 @@ public actor MemberNode {
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
-    private let renew: (@Sendable ([Data]) -> Data?)?
+    private let renew: (@Sendable ([Data]) -> Renewal?)?
+
+    /// A renewed member certificate for a peer, DER, and the admin CA that
+    /// issued it; nil when a root did.
+    public struct Renewal: Equatable, Sendable {
+        public var cert: Data
+        public var issuer: Data?
+        public init(cert: Data, issuer: Data? = nil) { (self.cert, self.issuer) = (cert, issuer) }
+    }
 
     /// onChange gets the new current event when a peer's event becomes it;
     /// onCert gets a renewed member certificate a peer sent for this phone;
     /// records keeps the group's records and exchanges them with the peers;
     /// renew, on an admin phone, gets each peer's certificate chain (leaf
-    /// first) after its hello and returns a renewed leaf when it is due,
-    /// which the peer then gets in a cert message (section 2).
+    /// first) after its hello and returns a renewal when it is due, which
+    /// the peer then gets in a cert message (section 2).
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
-                renew: (@Sendable ([Data]) -> Data?)? = nil,
+                renew: (@Sendable ([Data]) -> Renewal?)? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.onChange, self.onCert) =
@@ -118,14 +126,14 @@ public actor MemberNode {
                     c.enqueue(.records(store.all))
                 }
                 if let renew, !t.peerChain.isEmpty, let renewed = renew(t.peerChain) {
-                    c.enqueue(.cert(renewed))
+                    c.enqueue(.cert(renewed.cert, issuer: renewed.issuer))
                 }
                 continue
             }
             switch m {
             case let .event(e?):
                 apply(engine.received(e), from: id)
-            case let .cert(der):
+            case let .cert(der, _):
                 onCert(der)
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
