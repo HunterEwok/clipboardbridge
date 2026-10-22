@@ -38,7 +38,7 @@ func (o TLSOptions) now() time.Time {
 func (id *Identity) ServerTLS(opt TLSOptions) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{id.tlsCert(id.Cert)},
+		Certificates: []tls.Certificate{id.memberTLSCert()},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    id.groupPool(),
 		NextProtos:   []string{MemberProtocol},
@@ -59,7 +59,7 @@ func (id *Identity) ServerTLS(opt TLSOptions) *tls.Config {
 func (id *Identity) ClientTLS(peer DeviceID, opt TLSOptions) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{id.tlsCert(id.Cert)},
+		Certificates: []tls.Certificate{id.memberTLSCert()},
 		RootCAs:      id.groupPool(),
 		ServerName:   peer.HostName(),
 		NextProtos:   []string{MemberProtocol},
@@ -123,6 +123,17 @@ func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID,
 		}
 	}
 	return peer, nil
+}
+
+// memberTLSCert is the member certificate for member connections, with its
+// admin CA when one issued it, so that the peer can build the chain to the
+// group CA.
+func (id *Identity) memberTLSCert() tls.Certificate {
+	cert := id.tlsCert(id.Cert)
+	if id.Issuer != nil {
+		cert.Certificate = append(cert.Certificate, id.Issuer.Raw)
+	}
+	return cert
 }
 
 func (id *Identity) tlsCert(leaf *x509.Certificate) tls.Certificate {

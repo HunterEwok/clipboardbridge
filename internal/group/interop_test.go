@@ -174,3 +174,79 @@ func TestSwiftRenewal(t *testing.T) {
 		t.Errorf("the renewal ends %v, not after %v", next.Cert.NotAfter, cert.NotAfter)
 	}
 }
+
+// TestSwiftAdmin checks what an admin phone makes in the phone app's
+// ClipbridgeKit (testdata/interop/swift-admin.json, or the file in
+// CLIPBRIDGE_INTEROP_OUT): its admin CA under the root, a computer's
+// certificate from that CA, which the computer takes as its identity, and
+// records signed through the admin CA.
+func TestSwiftAdmin(t *testing.T) {
+	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-admin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		GroupCA []byte   `json:"group_ca"`
+		AdminCA []byte   `json:"admin_ca"`
+		Cert    []byte   `json:"cert"`
+		Key     []byte   `json:"key"`
+		Device  string   `json:"device"`
+		Records []Record `json:"records"`
+		Devices []string `json:"devices"`
+		Digest  string   `json:"digest"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := x509.ParseCertificate(v.AdminCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAdminCA(admin, ca); err != nil {
+		t.Fatalf("the phone's admin CA: %v", err)
+	}
+	cert, err := x509.ParseCertificate(v.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := x509.ParsePKCS8PrivateKey(v.Key)
+	key, ok := k.(*ecdsa.PrivateKey)
+	if err != nil || !ok {
+		t.Fatalf("the key: %v", err)
+	}
+	id := &Identity{ID: DeviceID(v.Device), Key: key, Cert: cert, Issuer: admin, GroupCA: CA{Cert: ca}}
+	if err := id.Check(); err != nil {
+		t.Fatalf("a computer refuses a certificate from the admin CA: %v", err)
+	}
+	at := TLSOptions{Now: func() time.Time { return cert.NotBefore.Add(48 * time.Hour) }}
+	if _, _, cerr, serr := handshake(t, id.ClientTLS(id.ID, at), id.ServerTLS(at)); cerr != nil || serr != nil {
+		t.Fatalf("member TLS through the admin CA: client %v, server %v", cerr, serr)
+	}
+	s := NewRecords(ca)
+	for i, r := range v.Records {
+		if _, err := s.Add(r); err != nil {
+			t.Fatalf("record %d: %v", i, err)
+		}
+	}
+	if s.Digest() != v.Digest {
+		t.Errorf("digest %s, Swift says %s", s.Digest(), v.Digest)
+	}
+	var got []string
+	for _, d := range s.Devices() {
+		got = append(got, string(d.ID))
+	}
+	if strings.Join(got, ",") != strings.Join(v.Devices, ",") {
+		t.Errorf("devices %v, Swift says %v", got, v.Devices)
+	}
+	if err := s.Refused([]*x509.Certificate{cert, admin}); err != nil {
+		t.Errorf("the computer is refused: %v", err)
+	}
+}

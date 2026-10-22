@@ -84,6 +84,44 @@ public enum GroupCertificates {
                         notBefore: caInfo.notBefore, notAfter: notAfter, extensions: extensions, signer: caSigner)
     }
 
+    /// An admin CA certificate for another admin phone's key (a
+    /// SubjectPublicKeyInfo), signed by the group's root: a CA with path
+    /// length 0 that issues member certificates and signs records, valid as
+    /// long as the root (docs/protocol.md, section 10). device names the
+    /// admin phone in its CN.
+    public static func adminCA(device: String, publicKey: Data, root: Data, rootSigner: CertificateSigner) throws -> Data {
+        guard isDeviceID(device) else { throw CertificateError.badDeviceID }
+        let rootInfo = try CertificateInfo(der: root)
+        let extensions = [
+            ext(oidBasicConstraints, critical: true, DER.sequence([DER.bool(true), DER.integer(0)])),
+            ext(oidKeyUsage, critical: true, DER.bitString([0x06], unused: 1)),
+            ext(oidSubjectKeyID, critical: false, DER.octetString(keyIdentifier(publicKey))),
+            ext(oidAuthorityKeyID, critical: false, DER.sequence([DER.context(0, constructed: false, keyIdentifier(rootSigner.publicKeyDER))])),
+        ]
+        return try sign(subject: distinguishedName("clipbridge admin " + device), issuer: rootInfo.rawSubject, publicKey: publicKey,
+                        notBefore: rootInfo.notBefore, notAfter: rootInfo.notAfter, extensions: extensions, signer: rootSigner)
+    }
+
+    /// Checks an admin CA as Go's checkAdminCA does: a CA with path length 0
+    /// that may sign certificates, with a P-256 key, signed by a root whose
+    /// path length is at least 1.
+    public static func checkAdminCA(_ der: Data, root: Data) throws {
+        let c = try ParsedCertificate(der: der), r = try ParsedCertificate(der: root)
+        guard c.isCA, c.pathLength == 0, c.canSignCertificates,
+              (try? P256.Signing.PublicKey(derRepresentation: c.info.publicKey)) != nil else { throw VerifyError.notAdminCA }
+        // A root without a path length limit is refused, as in Go.
+        guard (r.pathLength ?? -1) >= 1 else { throw VerifyError.notAdminCA }
+        guard signed(c, by: r.info) else { throw VerifyError.notFromGroupCA }
+    }
+
+    static func signed(_ cert: ParsedCertificate, by issuer: CertificateInfo) -> Bool {
+        guard cert.rawIssuer == issuer.rawSubject,
+              let key = try? P256.Signing.PublicKey(derRepresentation: issuer.publicKey),
+              let sig = try? P256.Signing.ECDSASignature(derRepresentation: cert.signature),
+              cert.signatureAlgorithm == DER.oid(oidECDSAWithSHA256) else { return false }
+        return key.isValidSignature(sig, for: cert.tbs)
+    }
+
     /// The group tag: the first 8 bytes of SHA-256 over the group CA
     /// certificate, in hex. Members publish it, and the welcome names it.
     public static func tag(groupCA: Data) -> String {
@@ -144,35 +182,51 @@ public enum GroupCertificates {
     }
 
     /// A renewed member certificate for the device and key of cert, which
-    /// the group CA issued, or nil when it is not due (or not from the CA).
-    public static func renewal(of cert: Data, groupCA: Data, caSigner: CertificateSigner, now: Date) throws -> Data? {
+    /// the group CA issued (or issuer, an admin CA under it), or nil when it
+    /// is not due (or not from the CA). The renewed one is from the group CA.
+    public static func renewal(of cert: Data, groupCA: Data, issuer: Data? = nil, caSigner: CertificateSigner, now: Date) throws -> Data? {
         guard isDue(cert, groupCA: groupCA, now: now),
-              let device = try? verifyMember(cert, groupCA: groupCA, now: now) else { return nil }
+              let device = try? verifyMember(cert, groupCA: groupCA, issuer: issuer, now: now) else { return nil }
         return try member(device: device, publicKey: CertificateInfo(der: cert).publicKey, ca: groupCA, caSigner: caSigner, now: now)
     }
 
     public enum VerifyError: Error, Equatable {
-        case notFromGroupCA, expired, notYetValid, badName, isCA
+        case notFromGroupCA, expired, notYetValid, badName, isCA, notAdminCA
     }
 
     /// Checks a member certificate as Go's checkPeer does (docs/protocol.md,
-    /// section 2): signed by the group CA, valid at max(now, the CA's
-    /// start), not a CA, its CN a device ID and its one DNS name
-    /// cb-<ID>.local. It returns the device ID.
-    public static func verifyMember(_ der: Data, groupCA: Data, now: Date) throws -> String {
+    /// section 2): signed by the group CA, or by issuer when that is an
+    /// admin CA under it, valid at max(now, the CA's start), not a CA, its
+    /// CN a device ID and its one DNS name cb-<ID>.local. It returns the
+    /// device ID.
+    public static func verifyMember(_ der: Data, groupCA: Data, issuer: Data? = nil, now: Date) throws -> String {
         let ca = try CertificateInfo(der: groupCA)
+        var signer = ca
+        if let issuer {
+            try checkAdminCA(issuer, root: groupCA)
+            signer = try CertificateInfo(der: issuer)
+        }
         let cert = try ParsedCertificate(der: der)
-        guard cert.rawIssuer == ca.rawSubject,
-              let key = try? P256.Signing.PublicKey(derRepresentation: ca.publicKey),
-              let sig = try? P256.Signing.ECDSASignature(derRepresentation: cert.signature),
-              cert.signatureAlgorithm == DER.oid(oidECDSAWithSHA256),
-              key.isValidSignature(sig, for: cert.tbs) else { throw VerifyError.notFromGroupCA }
+        guard signed(cert, by: signer) else { throw VerifyError.notFromGroupCA }
         let t = max(now, ca.notBefore)
         guard t >= cert.info.notBefore else { throw VerifyError.notYetValid }
         guard t <= cert.info.notAfter else { throw VerifyError.expired }
         guard !cert.isCA else { throw VerifyError.isCA }
         guard let id = cert.info.commonName, isDeviceID(id), cert.dnsNames == ["cb-\(id).local"] else { throw VerifyError.badName }
         return id
+    }
+
+    /// Checks a peer's certificate chain from a TLS handshake, leaf first:
+    /// the leaf from the group CA, or from the admin CA that follows it.
+    /// Other certificates after the leaf are ignored, as Go's verifier
+    /// ignores what it does not need.
+    public static func verifyMember(chain: [Data], groupCA: Data, now: Date) throws -> String {
+        guard let leaf = chain.first else { throw VerifyError.notFromGroupCA }
+        if let id = try? verifyMember(leaf, groupCA: groupCA, now: now) { return id }
+        for issuer in chain.dropFirst() {
+            if let id = try? verifyMember(leaf, groupCA: groupCA, issuer: issuer, now: now) { return id }
+        }
+        return try verifyMember(leaf, groupCA: groupCA, now: now)
     }
 }
 
@@ -186,6 +240,10 @@ struct ParsedCertificate {
     let rawIssuer: [UInt8]
     let dnsNames: [String]
     let isCA: Bool
+    /// The path length limit of a CA; nil without one.
+    let pathLength: Int?
+    /// Whether key usage allows signing certificates.
+    let canSignCertificates: Bool
 
     init(der: Data) throws {
         info = try CertificateInfo(der: der)
@@ -206,6 +264,8 @@ struct ParsedCertificate {
         _ = try body.readAny() // public key
         var names: [String] = []
         var ca = false
+        var pathLen: Int?
+        var certSign = false
         while let tag = body.peek {
             var e = try body.readAny()
             guard tag == 0xa3 else { continue } // extensions
@@ -224,10 +284,14 @@ struct ParsedCertificate {
                 } else if oid == DER.oid(GroupCertificates.oidBasicConstraints) {
                     var seq = try value.read(0x30)
                     if seq.peek == 0x01 { ca = try seq.readAny().bytes != [0] }
+                    if seq.peek == 0x02 { pathLen = try seq.readAny().bytes.reduce(0) { $0 << 8 | Int($1) } }
+                } else if oid == DER.oid(GroupCertificates.oidKeyUsage) {
+                    let bits = try value.read(0x03).bytes
+                    certSign = bits.count > 1 && bits[1] & 0x04 != 0 // keyCertSign, bit 5
                 }
             }
         }
-        (dnsNames, isCA) = (names, ca)
+        (dnsNames, isCA, pathLength, canSignCertificates) = (names, ca, pathLen, certSign)
     }
 }
 

@@ -467,14 +467,17 @@ put words in front of the user.
 
 | Field | Type | Present |
 |-------|------|---------|
-| `cert` | bytes, DER | always: a member certificate from the group CA for the key of the joiner's TLS certificate and its device ID |
+| `cert` | bytes, DER | always: a member certificate from the group CA, or from `issuer`, for the key of the joiner's TLS certificate and its device ID |
+| `issuer` | bytes, DER | only from an admin phone: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always |
 | `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 
-The joiner checks: the tag of `group_ca` equals ADb `group`; the member's TLS certificate is
-signed by `group_ca` and names ADb `device` (section 2); the three CA fields are all present
+The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
+admin CA under `group_ca` (section 10); the member's TLS certificate is signed by `issuer`
+or by `group_ca` and names ADb `device` (section 2); `cert` verifies to `group_ca`, through
+`issuer` when present, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
 match. A Linux joiner that got them then issues its own `clipbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
@@ -741,7 +744,8 @@ a computer keep working as they do today.
   phone has an admin CA (section 10). Computers get member certificates only and never hold
   a CA key; only admin phones admit devices. Implemented: ClipbridgeKit's `PhoneGroup`
   creates this root and admits computers with it, and Go accepts a group CA with path
-  length 0 or 1 (`checkCA`); admin CAs below the root come later. The
+  length 0 or 1 (`checkCA`). Admin CAs below the root are supported on both sides
+  (section 10); a second phone joining as an admin comes with the app. The
   Linux side is in place: a Welcome without CA keys makes a Linux member without them
   (section 6), and such members never hold `clipbridge.local`. There is no iPhone CA in such
   a group.
@@ -771,10 +775,14 @@ The wire side of "Admin phones, the devices list and revocation (planned)" in
 keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
 `internal/node`, `internal/service/devices.go`). ClipbridgeKit signs device and revocation
 records with the phone's root key and exchanges them in the member protocol (`Records.swift`,
-`MemberNode`); the Go tests check that Go reads them as Swift does. Planned, with the apps: admin CAs in member
-chains (Go verifies records signed by one already) and `root` records.
+`MemberNode`); the Go tests check that Go reads them as Swift does. Admin CAs in member
+chains and records signed through one are implemented on both sides: Go's
+`Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipbridgeKit's
+`GroupCertificates.adminCA`, `verifyMember(chain:)`, `RecordSet` and `Records.sign` with
+`adminCA` (cross-checked by `TestSwiftAdmin`). Planned, with the apps: a second phone joining
+as an admin, and `root` records.
 
-### Admin CA and chains (planned)
+### Admin CA and chains
 
 | Certificate | Subject CN | Validity | Extensions |
 |-------------|-----------|----------|------------|

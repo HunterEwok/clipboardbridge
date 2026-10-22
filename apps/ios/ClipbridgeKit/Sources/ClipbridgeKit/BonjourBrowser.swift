@@ -50,8 +50,8 @@ public final class BonjourBrowser: @unchecked Sendable {
     public func dialer(identity: SecIdentity, groupCA: Data) -> MemberDialer.Dial {
         { [weak self] m in
             guard let ep = self?.endpoint(of: m.device) else { throw TLSTransport.Failure.notReady("not found") }
-            let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity) { leaf in
-                (try? GroupCertificates.verifyMember(leaf, groupCA: groupCA, now: Date())) == m.device
+            let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity) { chain in
+                (try? GroupCertificates.verifyMember(chain: chain, groupCA: groupCA, now: Date())) == m.device
             }
             try await t.start()
             return t

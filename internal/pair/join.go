@@ -246,10 +246,24 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	if group.Tag(id.GroupCA.Cert) != member.Group {
 		return nil, errors.New("pair: the member sent another group CA than it announced")
 	}
-	// The member's own certificate is from the same group CA and names the
+	// An admin phone issues with its admin CA, under the group's root.
+	issuer := id.GroupCA.Cert
+	if w.Issuer != nil {
+		if id.Issuer, err = x509.ParseCertificate(w.Issuer); err != nil {
+			return nil, err
+		}
+		if err := group.CheckAdminCA(id.Issuer, id.GroupCA.Cert); err != nil {
+			return nil, fmt.Errorf("pair: the member's issuer: %w", err)
+		}
+		issuer = id.Issuer
+	}
+	// The member's own certificate is from that CA, or from the group CA
+	// (an admin phone whose root renewed its certificate), and names the
 	// device it announced.
-	if err := memberCert.CheckSignatureFrom(id.GroupCA.Cert); err != nil {
-		return nil, fmt.Errorf("pair: the member's certificate is not from the group CA: %w", err)
+	if err := memberCert.CheckSignatureFrom(issuer); err != nil {
+		if issuer == id.GroupCA.Cert || memberCert.CheckSignatureFrom(id.GroupCA.Cert) != nil {
+			return nil, fmt.Errorf("pair: the member's certificate is not from the group CA: %w", err)
+		}
 	}
 	if dev, err := group.DeviceOf(memberCert); err != nil || dev != member.Device {
 		return nil, errors.New("pair: the member's certificate does not name the member")

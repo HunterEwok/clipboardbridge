@@ -268,9 +268,10 @@ jobs:
         run: |
           CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
           # swift test just wrote testdata/interop/swift-member.json, and to
-          # interop-out the records it signed and a certificate it renewed.
+          # interop-out the records it signed, a certificate it renewed and
+          # what an admin phone makes.
           go test ./internal/node -run TestSwiftMemberFrames -v
-          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal' -v
+          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin' -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit
