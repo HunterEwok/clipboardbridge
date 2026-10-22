@@ -10,6 +10,8 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 - Members accept a group CA with path length 1, the root that the phone app creates for its
   group, so that it can certify admin phones later (docs/protocol.md, sections 9 and 10).
+- The phone app names an unexpected error in its message and logs it, so that a report says
+  what failed.
 
 ### Added
 

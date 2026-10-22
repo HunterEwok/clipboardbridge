@@ -2,7 +2,10 @@
 
 import ClipbridgeKit
 import Foundation
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "io.github.hunterewok.clipbridge", category: "app")
 
 /// The group as the app sees it: whether there is one, its computers,
 /// admitting a device and joining another phone's group. LiveGroup is the
@@ -217,7 +220,11 @@ final class AppModel: ObservableObject {
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
             return String(localized: "Could not reach the computer. Is it on the same network as this phone?")
         }
-        return String(localized: "Something went wrong. Try again.")
+        // Any other error is unexpected: name it, so that a report says
+        // what failed.
+        let detail = String(reflecting: error)
+        log.error("unexpected error: \(detail, privacy: .public)")
+        return String(localized: "Something went wrong (\(detail)). Try again.")
     }
 }
 
