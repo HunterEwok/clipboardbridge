@@ -42,7 +42,7 @@ final class RenewalTests: XCTestCase {
         let later = t0.addingTimeInterval(500 * day)
         let groupCA = g.groupCA
         let phone = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: "iPhone",
-                               renew: { try? GroupCertificates.renewal(of: $0, groupCA: groupCA, caSigner: ca, now: later) })
+                               renew: { try? GroupCertificates.renewal(chain: $0, groupCA: groupCA, caSigner: ca, now: later) })
         let got = Changes()
         let peer = MemberNode(engine: SyncEngine(device: pc, clock: HybridClock()), name: "pi", role: .linux,
                               onCert: { got.add($0.base64EncodedString()) })

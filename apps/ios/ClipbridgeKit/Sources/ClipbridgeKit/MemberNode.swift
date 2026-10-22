@@ -9,10 +9,14 @@ public protocol ClosableTransport: FrameTransport {
     /// The peer's leaf certificate from the TLS handshake, DER; nil when
     /// there is none.
     var peerCertificate: Data? { get }
+    /// The peer's certificate chain from the TLS handshake, DER, leaf
+    /// first: the leaf, then its admin CA when one issued it.
+    var peerChain: [Data] { get }
 }
 
 extension ClosableTransport {
     public var peerCertificate: Data? { nil }
+    public var peerChain: [Data] { peerCertificate.map { [$0] } ?? [] }
 }
 
 /// Keeps the group's signed records for a node (docs/protocol.md, section
@@ -39,16 +43,16 @@ public actor MemberNode {
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
-    private let renew: (@Sendable (Data) -> Data?)?
+    private let renew: (@Sendable ([Data]) -> Data?)?
 
     /// onChange gets the new current event when a peer's event becomes it;
     /// onCert gets a renewed member certificate a peer sent for this phone;
     /// records keeps the group's records and exchanges them with the peers;
-    /// renew, on the phone that holds the group's key, gets each peer's
-    /// certificate after its hello and returns a renewed one when it is due,
+    /// renew, on an admin phone, gets each peer's certificate chain (leaf
+    /// first) after its hello and returns a renewed leaf when it is due,
     /// which the peer then gets in a cert message (section 2).
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
-                renew: (@Sendable (Data) -> Data?)? = nil,
+                renew: (@Sendable ([Data]) -> Data?)? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.onChange, self.onCert) =
@@ -113,7 +117,7 @@ public actor MemberNode {
                 if let store = records, let mine = store.digest, mine != h.records {
                     c.enqueue(.records(store.all))
                 }
-                if let renew, let cert = t.peerCertificate, let renewed = renew(cert) {
+                if let renew, !t.peerChain.isEmpty, let renewed = renew(t.peerChain) {
                     c.enqueue(.cert(renewed))
                 }
                 continue

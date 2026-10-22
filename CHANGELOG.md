@@ -21,6 +21,10 @@ All notable changes to clipbridge are documented in this file. The format follow
   the Secure Enclave, once per action: adding a computer, removing a device, renewing its
   own certificate. It renews the computers' certificates only while that check lasts.
 - The phone app's icon, drawn by `tools/icon` from the design tokens.
+- The phone kit lets a second phone join a phone group: it listens and shows a join QR code,
+  an admin phone scans it, and the root makes the new phone an admin with an admin CA for
+  the admin key it sent. Admin phones admit and renew through their admin CA, and removing
+  an admin phone keeps the devices it admitted (docs/protocol.md, sections 6 and 10).
 
 ## [0.2.0] - 2026-10-21
 

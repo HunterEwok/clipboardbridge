@@ -102,6 +102,22 @@ public enum GroupCertificates {
                         notBefore: rootInfo.notBefore, notAfter: rootInfo.notAfter, extensions: extensions, signer: rootSigner)
     }
 
+    /// The self-signed certificate a joining device presents in pairing, as
+    /// Go's joiner makes it: the device ID as its CN, valid from 1970 to
+    /// 9999. Nobody trusts it; the QR code's fingerprint names it, and the
+    /// pairing exchange binds it.
+    public static func selfSigned(device: String, signer: CertificateSigner) throws -> Data {
+        guard isDeviceID(device) else { throw CertificateError.badDeviceID }
+        let name = distinguishedName(device)
+        let extensions = [
+            ext(oidKeyUsage, critical: true, DER.bitString([0x80], unused: 7)),
+            ext(oidBasicConstraints, critical: true, DER.sequence([])),
+        ]
+        let end = Calendar.utc.date(from: DateComponents(year: 9999, month: 12, day: 31, hour: 23, minute: 59, second: 59))!
+        return try sign(subject: name, issuer: name, publicKey: signer.publicKeyDER, notBefore: Date(timeIntervalSince1970: 0),
+                        notAfter: end, extensions: extensions, signer: signer)
+    }
+
     /// Checks an admin CA as Go's checkAdminCA does: a CA with path length 0
     /// that may sign certificates, with a P-256 key, signed by a root whose
     /// path length is at least 1.
@@ -183,11 +199,24 @@ public enum GroupCertificates {
 
     /// A renewed member certificate for the device and key of cert, which
     /// the group CA issued (or issuer, an admin CA under it), or nil when it
-    /// is not due (or not from the CA). The renewed one is from the group CA.
-    public static func renewal(of cert: Data, groupCA: Data, issuer: Data? = nil, caSigner: CertificateSigner, now: Date) throws -> Data? {
+    /// is not due (or not from the CA). The renewed one is from the group CA,
+    /// or from adminCA when caSigner holds that admin CA's key: an admin
+    /// phone renews only what its own admin CA issued, since a member takes
+    /// a renewal only from the issuer of its certificate or from the root.
+    public static func renewal(of cert: Data, groupCA: Data, issuer: Data? = nil, caSigner: CertificateSigner, adminCA: Data? = nil,
+                               now: Date) throws -> Data? {
+        if let adminCA, issuer != adminCA { return nil }
         guard isDue(cert, groupCA: groupCA, now: now),
               let device = try? verifyMember(cert, groupCA: groupCA, issuer: issuer, now: now) else { return nil }
-        return try member(device: device, publicKey: CertificateInfo(der: cert).publicKey, ca: groupCA, caSigner: caSigner, now: now)
+        return try member(device: device, publicKey: CertificateInfo(der: cert).publicKey, ca: adminCA ?? groupCA, caSigner: caSigner, now: now)
+    }
+
+    /// renewal(of:...) for a peer's chain from a TLS handshake, leaf first:
+    /// the certificate after the leaf, when there is one, is its issuer.
+    public static func renewal(chain: [Data], groupCA: Data, caSigner: CertificateSigner, adminCA: Data? = nil, now: Date) throws -> Data? {
+        guard let leaf = chain.first else { return nil }
+        let issuer = chain.dropFirst().first { (try? checkAdminCA($0, root: groupCA)) != nil }
+        return try renewal(of: leaf, groupCA: groupCA, issuer: issuer, caSigner: caSigner, adminCA: adminCA, now: now)
     }
 
     public enum VerifyError: Error, Equatable {

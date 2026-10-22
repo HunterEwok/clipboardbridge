@@ -90,6 +90,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var key: Data
         /// Whether it is an admin phone whose admin CA is not revoked.
         public var admin = false
+        /// The key hash of its admin CA, for an admin phone.
+        public var adminKey: Data?
     }
 
     /// Adds a record that the group CA signed, or an admin CA the group CA
@@ -187,8 +189,26 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return latest.compactMap { d, rb -> Device? in
             guard let key = rb.1.key, !revoked.contains(key) else { return nil }
             return Device(id: d, name: rb.1.name ?? d, role: rb.1.role ?? "", key: key,
-                          admin: rb.1.admin.map { !revoked.contains($0) } ?? false)
+                          admin: rb.1.admin.map { !revoked.contains($0) } ?? false, adminKey: rb.1.admin)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+    }
+
+    /// The keys of the devices whose records the admin CA with key hash
+    /// admin signed: the devices that admin admitted, which stay when it is
+    /// removed.
+    public func admitted(by admin: Data) -> [Data] {
+        var keys: [Data] = []
+        for e in entries where e.body.type == "device" && e.signer == admin {
+            if let k = e.body.key, !keys.contains(k) { keys.append(k) }
+        }
+        return keys
+    }
+
+    /// The phone that holds the root: the one whose own record the group
+    /// CA signed (a phone records itself when it makes the group).
+    public var rootDevice: String? {
+        entries.first { $0.signer == nil && $0.body.type == "device" && $0.body.role == "phone" && $0.body.device != nil
+            && $0.body.device == $0.body.by }?.body.device
     }
 
     /// SHA-256 over the sorted record IDs, base64, as the hello carries it;

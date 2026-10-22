@@ -205,7 +205,7 @@ final class LiveGroup: GroupController {
         // The phone holds the group's key, so it renews the computers'
         // certificates when they connect and are due (docs/protocol.md,
         // section 2).
-        let renewer = Renewer(groupCA: g.groupCA, secureEnclave: SecureEnclave.isAvailable)
+        let renewer = Renewer(group: g, secureEnclave: SecureEnclave.isAvailable)
         renewer.context = authorized?.context
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
                               records: box, renew: { renewer.renew($0) })
@@ -232,7 +232,7 @@ final class LiveGroup: GroupController {
     /// last Face ID check in this run lasts, so a computer that is due and
     /// connects before that gets its renewal on a later connection.
     final class Renewer: @unchecked Sendable {
-        let groupCA: Data
+        let group: PhoneGroup
         let secureEnclave: Bool
         private let lock = NSLock()
         private var _context: LAContext?
@@ -241,10 +241,12 @@ final class LiveGroup: GroupController {
             set { lock.withLock { _context = newValue } }
         }
 
-        init(groupCA: Data, secureEnclave: Bool) { (self.groupCA, self.secureEnclave) = (groupCA, secureEnclave) }
+        init(group: PhoneGroup, secureEnclave: Bool) { (self.group, self.secureEnclave) = (group, secureEnclave) }
 
-        func renew(_ cert: Data) -> Data? {
-            guard GroupCertificates.isDue(cert, groupCA: groupCA, now: Date()) else { return nil }
+        /// A renewal for a peer's chain, leaf first, when it is due and this
+        /// phone may renew it.
+        func renew(_ chain: [Data]) -> Data? {
+            guard group.isAdmin, let cert = chain.first, GroupCertificates.isDue(cert, groupCA: group.groupCA, now: Date()) else { return nil }
             var ctx = context
             if secureEnclave && ctx == nil {
                 let quiet = LAContext()
@@ -252,7 +254,7 @@ final class LiveGroup: GroupController {
                 ctx = quiet
             }
             guard let k = try? KeychainIdentity.loadKey(label: LiveGroup.caLabel, context: ctx), let signer = try? SecKeySigner(k) else { return nil }
-            return try? GroupCertificates.renewal(of: cert, groupCA: groupCA, caSigner: signer, now: Date())
+            return group.renewal(chain: chain, caSigner: signer, now: Date())
         }
     }
 
