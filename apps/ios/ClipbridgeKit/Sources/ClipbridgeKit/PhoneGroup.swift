@@ -14,6 +14,24 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// This phone's member certificate, DER, from the group CA.
     public var memberCert: Data
     public var computers: [Computer]
+    /// The group's signed device and revocation records; this phone signs
+    /// them, and they spread to every member.
+    public var records = RecordSet()
+
+    enum CodingKeys: String, CodingKey { case device, groupCA, memberCert, computers, records }
+
+    init(device: String, groupCA: Data, memberCert: Data, computers: [Computer]) {
+        (self.device, self.groupCA, self.memberCert, self.computers) = (device, groupCA, memberCert, computers)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        device = try c.decode(String.self, forKey: .device)
+        groupCA = try c.decode(Data.self, forKey: .groupCA)
+        memberCert = try c.decode(Data.self, forKey: .memberCert)
+        computers = try c.decode([Computer].self, forKey: .computers)
+        records = try c.decodeIfPresent(RecordSet.self, forKey: .records) ?? RecordSet()
+    }
 
     /// A computer this phone admitted.
     public struct Computer: Codable, Equatable, Sendable, Identifiable {
@@ -29,14 +47,52 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// The group tag the computers publish.
     public var tag: String { GroupCertificates.tag(groupCA: groupCA) }
 
-    /// Creates a group: a root CA for caSigner's key and a member
-    /// certificate for this phone's member key (a SubjectPublicKeyInfo).
-    public static func create(caSigner: CertificateSigner, memberKey: Data, now: Date) throws -> PhoneGroup {
+    /// Creates a group: a root CA for caSigner's key, a member certificate
+    /// for this phone's member key (a SubjectPublicKeyInfo), and the phone's
+    /// own device record under name.
+    public static func create(caSigner: CertificateSigner, memberKey: Data, name: String = "iPhone", now: Date) throws -> PhoneGroup {
         let ca = try GroupCertificates.groupCA(signer: caSigner, now: now, pathLength: 1)
         let device = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: device, publicKey: memberKey, ca: ca, caSigner: caSigner, now: now)
-        return PhoneGroup(device: device, groupCA: ca, memberCert: cert, computers: [])
+        var g = PhoneGroup(device: device, groupCA: ca, memberCert: cert, computers: [])
+        _ = try g.record(device: device, name: Self.validName(name), role: "phone", key: Records.keyHash(spki: memberKey),
+                         caSigner: caSigner, now: now)
+        return g
     }
+
+    /// A name that the records accept: 1 to 64 bytes without control
+    /// characters, or "iPhone".
+    static func validName(_ s: String) -> String {
+        var out = ""
+        for ch in s where !ch.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+            if (out + String(ch)).utf8.count > 64 { break }
+            out.append(ch)
+        }
+        return out.isEmpty ? "iPhone" : out
+    }
+
+    /// Signs and adds a device record.
+    mutating func record(device: String, name: String, role: String, key: Data, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        let r = try Records.device(device, name: name, role: role, key: key, group: tag, by: self.device, now: now, signer: caSigner)
+        records.add(r, groupCA: groupCA)
+        return r
+    }
+
+    /// The devices of the group, from the records.
+    public var devices: [RecordSet.Device] { records.devices }
+
+    /// Removes a device from the group: signs a revocation of its key,
+    /// which every member then refuses, and returns the record to send.
+    public mutating func revoke(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard device != self.device else { throw Failure.cannotRemoveItself }
+        guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
+        let r = try Records.revoke([d.key], group: tag, by: self.device, now: now, signer: caSigner)
+        records.add(r, groupCA: groupCA)
+        computers.removeAll { $0.device == device }
+        return r
+    }
+
+    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice }
 
     /// Admits a listening computer over a pairing connection whose TLS
     /// handshake is done (section 6, "The joiner listens"): joinerCert is
@@ -55,6 +111,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         }
         computers.removeAll { $0.device == admitted.device }
         computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now))
+        _ = try record(device: admitted.device, name: Self.validName(admitted.info.name), role: admitted.info.os == "darwin" ? "mac" : "linux",
+                       key: Records.keyHash(cert: admitted.cert), caSigner: caSigner, now: now)
         return admitted
     }
 

@@ -27,6 +27,8 @@ final class LiveGroup: GroupController {
     private var node: MemberNode?
     private var browser: BonjourBrowser?
     private var dialer: MemberDialer?
+    private var relay: Relay?
+    private var recordBox: RecordBox?
     private var online: Set<String> = []
 
     nonisolated static var defaultFile: URL {
@@ -43,7 +45,14 @@ final class LiveGroup: GroupController {
     var hasGroup: Bool { state != nil }
 
     var computers: [AppModel.Computer] {
-        (state?.computers ?? []).map { .init(id: $0.device, name: $0.name, online: online.contains($0.device)) }
+        devices.filter { !$0.isSelf }
+    }
+
+    var devices: [AppModel.Computer] {
+        guard let g = state else { return [] }
+        return g.devices.map {
+            .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, isSelf: $0.id == g.device)
+        }
     }
 
     func refresh() async {
@@ -75,7 +84,7 @@ final class LiveGroup: GroupController {
     func admit(_ code: JoinCode) async throws {
         let ca = try caSigner()
         let member = try memberSigner()
-        var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, now: Date())
+        var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
         var lastError: Error = Failure.unreachable
         for addr in code.addrs {
@@ -92,6 +101,8 @@ final class LiveGroup: GroupController {
                 try g.save(to: file)
                 state = g
                 try startSync()
+                groupChanged()
+                await node?.sendRecords(g.records.records)
                 guard admitted.confirmed else { throw Failure.notConfirmed }
                 return
             } catch let e as PairingMember.Failure {
@@ -112,32 +123,105 @@ final class LiveGroup: GroupController {
         return host.isEmpty ? nil : (host, port)
     }
 
+    // MARK: Removing
+
+    /// Removes a device from the group: a revocation signed with the root
+    /// key, sent to every connected computer, which refuse the device from
+    /// then on. The phone stops dialing it.
+    func remove(_ id: String) async throws {
+        guard var g = state else { return }
+        let r = try g.revoke(device: id, caSigner: caSigner(), now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+        await node?.close(peer: id)
+    }
+
+    /// Passes a changed group to the parts that run with it.
+    private func groupChanged() {
+        guard let g = state else { return }
+        recordBox?.replace(g.records)
+        relay?.allowed = Set(g.devices.map(\.id))
+    }
+
+    /// Takes in records a computer sent.
+    private func adopt(_ set: RecordSet) {
+        guard var g = state else { return }
+        for r in set.records { g.records.add(r, groupCA: g.groupCA) }
+        guard g != state else { return }
+        try? g.save(to: file)
+        state = g
+        relay?.allowed = Set(g.devices.map(\.id))
+    }
+
     // MARK: Syncing
 
     /// Starts finding and dialing the computers, once there is a group.
     private func startSync() throws {
         guard let g = state, node == nil else { return }
         let id = try identity(g, memberSigner())
-        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name)
+        let box = RecordBox(groupCA: g.groupCA, set: g.records)
+        box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
+        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, records: box)
         let relay = Relay()
+        relay.allowed = Set(g.devices.map(\.id))
         let browser = BonjourBrowser { found in relay.update(found) }
         let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, groupCA: g.groupCA))
         relay.dialer = dialer
         browser.start()
-        (self.node, self.browser, self.dialer) = (node, browser, dialer)
+        (self.node, self.browser, self.dialer, self.relay, self.recordBox) = (node, browser, dialer, relay, box)
     }
 
-    /// Passes what the browser finds to the dialer.
+    /// The group's records for the node, which exchanges them with the
+    /// computers.
+    final class RecordBox: RecordStore, @unchecked Sendable {
+        private let lock = NSLock()
+        private var set: RecordSet
+        let groupCA: Data
+        var onAdd: (@Sendable (RecordSet) -> Void)?
+
+        init(groupCA: Data, set: RecordSet) { (self.groupCA, self.set) = (groupCA, set) }
+
+        var digest: String? { lock.withLock { set.digest } }
+        var all: [Member.Record] { lock.withLock { set.records } }
+
+        func add(_ rs: [Member.Record]) -> [Member.Record] {
+            let (fresh, now): ([Member.Record], RecordSet) = lock.withLock {
+                (rs.filter { set.add($0, groupCA: groupCA) }, set)
+            }
+            if !fresh.isEmpty { onAdd?(now) }
+            return fresh
+        }
+
+        func replace(_ new: RecordSet) { lock.withLock { set = new } }
+    }
+
+    /// Passes what the browser finds to the dialer, only the devices that
+    /// are in the group's list: a removed computer is not dialed.
     final class Relay: @unchecked Sendable {
         private let lock = NSLock()
         private var _dialer: MemberDialer?
+        private var _allowed: Set<String> = []
+        private var last: Set<FoundMember> = []
         var dialer: MemberDialer? {
             get { lock.withLock { _dialer } }
             set { lock.withLock { _dialer = newValue } }
         }
+        var allowed: Set<String> {
+            get { lock.withLock { _allowed } }
+            set {
+                lock.withLock { _allowed = newValue }
+                update(lock.withLock { last })
+            }
+        }
         func update(_ found: Set<FoundMember>) {
-            guard let d = dialer else { return }
-            Task { await d.update(found) }
+            let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {
+                last = found
+                return (_dialer, found.filter { _allowed.contains($0.device) })
+            }
+            guard let d else { return }
+            Task { await d.update(members) }
         }
     }
 

@@ -253,7 +253,8 @@ jobs:
       - name: swift test (in the Swift container on Linux)
         if: runner.os == 'Linux'
         run: |
-          docker run --rm -v "$PWD:/src" -w /src/apps/ios/ClipbridgeKit swift:6.2-noble sh -euc '
+          mkdir interop-out
+          docker run --rm -v "$PWD:/src" -w /src/apps/ios/ClipbridgeKit -e CLIPBRIDGE_INTEROP_OUT=/src/interop-out swift:6.2-noble sh -euc '
             swift test
             swift build -c release --product clipbridge-interop --static-swift-stdlib
             cp "$(swift build -c release --show-bin-path)/clipbridge-interop" /src/clipbridge-interop'
@@ -266,8 +267,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
-          # swift test just wrote testdata/interop/swift-member.json.
+          # swift test just wrote testdata/interop/swift-member.json, and
+          # interop-out/swift-records.json with records it signed.
           go test ./internal/node -run TestSwiftMemberFrames -v
+          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run TestSwiftRecords -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipbridgeKit

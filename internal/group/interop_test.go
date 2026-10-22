@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,5 +64,63 @@ func TestSwiftCertificates(t *testing.T) {
 	}
 	if got, _ := PeerID(scs); got != id.ID {
 		t.Errorf("server saw %s", got)
+	}
+}
+
+// TestSwiftRecords reads the records the phone app's ClipbridgeKit signs
+// (testdata/interop/swift-records.json, or the file in the directory
+// CLIPBRIDGE_INTEROP_OUT names, which CI fills from a fresh Swift run) and
+// checks that Go reads the same devices, revocations and digest.
+func TestSwiftRecords(t *testing.T) {
+	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-records.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		GroupCA []byte   `json:"group_ca"`
+		Records []Record `json:"records"`
+		Digest  string   `json:"digest"`
+		Devices []string `json:"devices"`
+		Revoked [][]byte `json:"revoked"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ca.MaxPathLen != 1 {
+		t.Errorf("the phone's root has path length %d, want 1", ca.MaxPathLen)
+	}
+	s := NewRecords(ca)
+	for i, r := range v.Records {
+		if _, err := s.Add(r); err != nil {
+			t.Fatalf("record %d: %v", i, err)
+		}
+	}
+	if s.Digest() != v.Digest {
+		t.Errorf("digest %s, Swift says %s", s.Digest(), v.Digest)
+	}
+	var got []string
+	for _, d := range s.Devices() {
+		got = append(got, string(d.ID))
+		if d.Role != RolePhone {
+			t.Errorf("device %s has role %q", d.ID, d.Role)
+		}
+	}
+	if strings.Join(got, ",") != strings.Join(v.Devices, ",") {
+		t.Errorf("devices %v, Swift says %v", got, v.Devices)
+	}
+	for _, k := range v.Revoked {
+		var h KeyHash
+		copy(h[:], k)
+		if len(k) != len(h) || !s.Revoked(h) {
+			t.Errorf("key %x is not revoked in Go", k)
+		}
 	}
 }
