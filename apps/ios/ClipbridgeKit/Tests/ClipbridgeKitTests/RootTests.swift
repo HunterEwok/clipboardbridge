@@ -107,11 +107,12 @@ final class RootTests: XCTestCase {
         XCTAssertNotNil(set.refused(chain: [stolen.cert]))
         XCTAssertNotNil(set.refused(chain: [viaThief, thiefCA]))
         let otherRoot = try GroupCertificates.groupCA(signer: SoftwareSigner(), now: t0, pathLength: 1)
+        let thirdRoot = try GroupCertificates.groupCA(signer: SoftwareSigner(), now: t0, pathLength: 1)
         for r in [
             try Records.device(stolen.device, name: "stolen", role: "linux", key: stolen.keyHash, group: g.b.tag, by: g.root.device,
                                now: t0, signer: g.rootKey),
             try Records.root(otherRoot, group: g.b.tag, by: g.root.device, now: t0, signer: g.rootKey),
-            try Records.root(otherRoot, group: g.b.tag, by: g.root.device, now: t0, signer: thiefKey, adminCA: thiefCA),
+            try Records.root(thirdRoot, group: g.b.tag, by: g.root.device, now: t0, signer: thiefKey, adminCA: thiefCA),
         ] { XCTAssertTrue(set.add(r, groupCA: g.root.groupCA)) }
         XCTAssertEqual(set.devices.map(\.name), ["B", "one", "two"])
         XCTAssertEqual(set.roots, g.b.roots)
