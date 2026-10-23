@@ -6,25 +6,17 @@
 //! dials the Linux members, as a Mac does, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
-mod certs;
-mod clip;
 mod control;
 mod discovery;
 mod error;
 mod files;
-mod hlc;
 mod identity;
 mod node;
 mod pair;
 mod records;
 mod service;
-mod third_party {
-    pub mod cpace;
-}
 mod tls;
 mod uptime;
-#[cfg(test)]
-mod vectors;
 mod wire;
 
 use std::io::{Read, Write};
@@ -33,7 +25,9 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use cbb_core::{certs, clip, hlc};
 use error::{Context, Error, Result};
+use identity::Stored as _;
 
 const USAGE: &str = "Usage: cbb-lite [-state dir] [-socket path] [-debug] <command> [arguments]
 
@@ -65,6 +59,7 @@ struct Global {
 }
 
 fn main() {
+    error::from_env();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut g = Global {
         state: std::env::var_os("CBB_STATE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/var/lib/cbb-lite")),
@@ -184,7 +179,7 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
             let code = pair::normalize_code(line.trim())?;
             let sock = TcpStream::connect_timeout(&resolve(&a)?, Duration::from_secs(10))
                 .context(format!("cannot connect to {a}"))?;
-            joiner.join(sock, &code, &save)?
+            pair::join(&joiner, sock, &code, &save)?
         }
         None => {
             let ln = TcpListener::bind(("::", port))

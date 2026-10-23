@@ -19,8 +19,10 @@ use crate::error::{Context, Error, Result};
 use crate::files;
 use crate::hlc::{Clock, Timestamp};
 use crate::identity::Identity;
+use crate::identity::Stored as _;
 use crate::node::{Node, WriteReq};
 use crate::records::Records;
+use crate::records::Stored as _;
 use crate::uptime;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

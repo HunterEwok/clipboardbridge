@@ -503,9 +503,10 @@ The order may change.
     member on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members. Started for Linux in `lite/` (`cbb-lite`, tested on a
-    Raspberry Pi); the ESP32 comes next, so the protocol core there stays free of the
-    operating system where it can.
+    Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the
+    Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
+    crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
+    place of ring), which CI builds for RISC-V; TLS and the networking on the chip follow.
 12. Sync away from home; see "Sync away from home (planned)" below.
 
 ### Future research (not planned)

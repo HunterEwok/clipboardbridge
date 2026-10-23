@@ -6,16 +6,20 @@
 //! Go's package clip, so a lite member behaves as the others do; it only
 //! decides, and the caller does the networking.
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Mutex;
-use std::time::Duration;
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
+use alloc::format;
+use alloc::string::{String, ToString};
+use core::time::Duration;
 
-use ring::hmac;
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 
 use crate::certs::{is_id, random_bytes, random_id};
 use crate::error::{Error, Result};
 use crate::hlc::{Clock, Timestamp};
+use crate::sync::Mutex;
 
 /// The largest text, in bytes, that the group carries.
 pub const MAX_TEXT: usize = 1 << 20;
@@ -151,13 +155,13 @@ struct Inner {
     current: Event,
     copied_at: Duration,
     local: Local,
-    seen: HashSet<String>,
+    seen: BTreeSet<String>,
     seen_order: VecDeque<String>,
     written: VecDeque<(Sum, Duration)>,
-    secrets: HashMap<Sum, Duration>,
+    secrets: BTreeMap<Sum, Duration>,
     seq: u64,
-    skews: HashMap<String, i64>,
-    peers: HashMap<String, usize>,
+    skews: BTreeMap<String, i64>,
+    peers: BTreeMap<String, usize>,
     synced: bool,
     offline_copy: bool,
     rejoined: bool,
@@ -170,7 +174,7 @@ pub struct Engine {
     clock: Clock,
     wall: Box<dyn Fn() -> i64 + Send + Sync>,
     uptime: Box<dyn Fn() -> Duration + Send + Sync>,
-    key: hmac::Key,
+    key: [u8; 32],
     inner: Mutex<Inner>,
 }
 
@@ -186,18 +190,18 @@ impl Engine {
             clock,
             wall,
             uptime,
-            key: hmac::Key::new(hmac::HMAC_SHA256, &random_bytes::<32>()),
+            key: random_bytes::<32>(),
             inner: Mutex::new(Inner {
                 current: Event::default(),
                 copied_at: Duration::ZERO,
                 local: Local::default(),
-                seen: HashSet::new(),
+                seen: BTreeSet::new(),
                 seen_order: VecDeque::new(),
                 written: VecDeque::new(),
-                secrets: HashMap::new(),
+                secrets: BTreeMap::new(),
                 seq: 0,
-                skews: HashMap::new(),
-                peers: HashMap::new(),
+                skews: BTreeMap::new(),
+                peers: BTreeMap::new(),
                 synced: false,
                 offline_copy: false,
                 rejoined: false,
@@ -207,14 +211,16 @@ impl Engine {
     }
 
     fn sum(&self, text: &str) -> Sum {
-        hmac::sign(&self.key, text.as_bytes()).as_ref().try_into().unwrap()
+        let mut m = Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC takes a key of any length");
+        m.update(text.as_bytes());
+        m.finalize().into_bytes().into()
     }
 
     /// The group's current event with its age as of now, unless there is
     /// none or it is a secret that expired or is known only by its mark.
     #[allow(dead_code)]
     pub fn current(&self) -> Option<Event> {
-        let st = self.inner.lock().unwrap();
+        let st = self.inner.lock();
         let now = (self.uptime)();
         self.live(&st, now).then(|| self.with_age(&st, now))
     }
@@ -222,14 +228,14 @@ impl Engine {
     /// The text of this member's own clipboard, its kind, and how long ago
     /// it was copied; None when unknown or an expired secret.
     pub fn local(&self) -> Option<(String, Kind, Duration)> {
-        let st = self.inner.lock().unwrap();
+        let st = self.inner.lock();
         let now = (self.uptime)();
         local_live(&st, now).then(|| (st.local.text.clone(), st.local.kind, now.saturating_sub(st.local.at)))
     }
 
     /// Records what the local clipboard holds without making an event.
     pub fn clipboard_is(&self, text: &str, kind: Kind) {
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         if check_text(text).is_err() {
             st.local = Local::default();
             return;
@@ -246,7 +252,7 @@ impl Engine {
     /// the group.
     pub fn copied(&self, text: &str, kind: Kind, via: Via) -> Result<Option<Event>> {
         check_text(text)?;
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         let now = (self.uptime)();
         settle(&mut st, now);
         let sum = self.sum(text);
@@ -270,7 +276,7 @@ impl Engine {
     /// outcome tells whether to write it to the member's own clipboard.
     pub fn send(&self, text: &str, mut kind: Kind, via: Via) -> Result<(Event, Outcome)> {
         check_text(text)?;
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         let now = (self.uptime)();
         settle(&mut st, now);
         let sum = self.sum(text);
@@ -312,14 +318,14 @@ impl Engine {
     /// Applies an event a peer delivered.
     pub fn received(&self, ev: Event) -> Result<Outcome> {
         ev.validate()?;
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         Ok(self.receive(&mut st, ev))
     }
 
     /// Records an open connection to peer and returns the hello to send on
     /// it.
     pub fn connected(&self, peer: &str) -> Hello {
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         *st.peers.entry(peer.to_string()).or_default() += 1;
         let mut h = Hello { wall: (self.wall)(), current: None };
         if !st.current.id.is_empty() {
@@ -334,7 +340,7 @@ impl Engine {
 
     /// Records that a connection to peer is gone.
     pub fn disconnected(&self, peer: &str) {
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         match st.peers.get_mut(peer) {
             Some(n) if *n > 1 => {
                 *n -= 1;
@@ -352,7 +358,7 @@ impl Engine {
 
     /// Records that this member itself was away: the service just started.
     pub fn rejoin(&self) {
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         let now = (self.uptime)();
         settle(&mut st, now);
         st.rejoined = true;
@@ -368,7 +374,7 @@ impl Engine {
                 return Err(Error::msg("a hello must not carry a secret's text"));
             }
         }
-        let mut st = self.inner.lock().unwrap();
+        let mut st = self.inner.lock();
         let known = st.skews.contains_key(peer);
         if h.wall > 0 && (known || st.skews.len() < 1024) {
             let skew = h.wall - (self.wall)();
@@ -384,8 +390,8 @@ impl Engine {
 
     /// For each connected peer, how far its wall clock was ahead of this
     /// member's, in milliseconds, when its hello arrived.
-    pub fn skews(&self) -> HashMap<String, i64> {
-        self.inner.lock().unwrap().skews.clone()
+    pub fn skews(&self) -> BTreeMap<String, i64> {
+        self.inner.lock().skews.clone()
     }
 
     fn receive(&self, st: &mut Inner, ev: Event) -> Outcome {
