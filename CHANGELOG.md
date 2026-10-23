@@ -43,6 +43,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A new app icon, a clipboard with a key: light, and dark in the system's dark mode
+  (iOS 18 and later).
 - The phone app's "Sync clipboard" action, in Shortcuts and Spotlight without setting
   anything up: Back Tap or the Action button sends or fetches by the Home button's rule
   without opening the app, and says what it did.
