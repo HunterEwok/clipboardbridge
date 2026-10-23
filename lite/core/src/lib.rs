@@ -8,6 +8,9 @@
 //! allocator and a source of randomness, so the same code runs in cbb-lite
 //! on Linux and on a microcontroller such as the ESP32.
 //!
+//! With the tls feature it has the members' TLS as well (rustls without
+//! the standard library, a RustCrypto provider and a session without I/O).
+//!
 //! Randomness comes from the getrandom crate: on Linux from the kernel, on a
 //! microcontroller from the function the firmware registers as getrandom's
 //! custom backend. Without the std feature the locks are spin locks.
@@ -27,6 +30,8 @@ pub mod sync;
 pub mod third_party {
     pub mod cpace;
 }
+#[cfg(feature = "tls")]
+pub mod tls;
 #[cfg(test)]
 mod vectors;
 pub mod wire;
