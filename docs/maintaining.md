@@ -30,7 +30,9 @@ a checked box means the setting is in place.
 - [x] **Private vulnerability reporting**. [SECURITY.md](../SECURITY.md) relies on it.
 - [x] **Dependency graph**, **Dependabot alerts** and **Dependabot security updates**.
 - [x] **Secret scanning** and **Push protection**.
-- [x] **CodeQL** default setup for Go and GitHub Actions.
+- [ ] **CodeQL** default setup off: the workflow `.github/workflows/codeql.yml` (advanced
+  setup) scans GitHub Actions, Go, Rust, Swift and Kotlin, and GitHub rejects its results
+  while the default setup is on. The default setup cannot build the Kotlin app.
 
 **Settings → Actions → General**
 
