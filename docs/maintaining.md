@@ -126,3 +126,34 @@ Rules for workflows:
   check the result by importing it on an iPhone, and commit the signed file.
 - Published with `SHA256SUMS` and a build provenance attestation
   (`actions/attest-build-provenance`), which users can check with `gh attestation verify`.
+
+## Homebrew
+
+The tap is the repository
+[HunterEwok/homebrew-tap](https://github.com/HunterEwok/homebrew-tap),
+the one tap for all of the owner's formulae; clipboardbridge's is `Formula/clipboardbridge.rb`, and users install with
+`brew install hunterewok/tap/clipboardbridge`. After each release (not a
+pre-release) the `homebrew` job of `.github/workflows/release.yml` writes the formula with
+`packaging/homebrew/formula.sh` from the release's `SHA256SUMS` and pushes it to the tap's
+`main`. The formula installs the release archives as they are, so it needs no Apple signing,
+and CI's `homebrew` job installs one with it on macOS on every pull request.
+
+Setting it up, once:
+
+- [ ] Create the public repository `HunterEwok/homebrew-tap`, empty (no README,
+  license or `.gitignore`).
+- [ ] Make a key for it, on any computer:
+  `ssh-keygen -t ed25519 -N '' -C homebrew-tap -f homebrew-tap`.
+- [ ] In the tap, **Settings → Deploy keys → Add deploy key**: the contents of
+  `homebrew-tap.pub`, with **Allow write access**. It can write to the tap and nothing else.
+- [ ] In this repository, **Settings → Secrets and variables → Actions → New repository
+  secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
+  delete both files.
+
+To check the key without a release, run the release workflow from a branch (**Actions →
+release → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
+fails unless the key may write there.
+
+Without the secret the release still succeeds and warns that the tap kept its formula. To
+fill the tap for a release made before, run `formula.sh` with that tag and its
+`SHA256SUMS` and commit the output to the tap by hand.

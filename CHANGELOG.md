@@ -55,6 +55,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Homebrew, on macOS and Linux (x86-64, ARM64):
+  `brew install hunterewok/tap/clipboardbridge`. The formula installs the
+  release archive as it is, so it needs no Apple signing, and the release workflow updates
+  the tap after each release (`packaging/homebrew/formula.sh`, docs/maintaining.md). On a
+  Mac, `install.sh --in-place` runs the service and the agent from Homebrew's binary, so a
+  `brew upgrade` followed by the same command updates them.
+
+- `packaging/macos/uninstall.sh` removes clipboardbridge from a Mac, keeping its keys unless
+  `--purge`.
+
 - **Windows 10 (1809 or later) and 11, x86-64 and ARM64.** The service runs as a Windows
   service under its own virtual account and listens like a Linux member; the agent
   (`cbbw.exe agent`, started with every sign-in) links the clipboard, skips and writes the
