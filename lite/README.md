@@ -145,6 +145,29 @@ Without mDNS on the network, name the full members: edit the unit's `ExecStart` 
 `/usr/local/bin/cbb-lite run -peer 192.168.0.10:8764 -peer ...`. `run -port` moves the
 member port, `-no-listen` turns it off (the device then only dials the computers).
 
+## ZX Spectrum Next
+
+On the Accelerated ZX Spectrum Next, `cbb-lite` runs on the Raspberry Pi wired to the
+Next's second UART (docs/roadmap.md, item 14), and the Next's `.cbb` dot command
+types `cbb-lite next ...` at NextPi's shell (`SUP>`) on that UART, as NextPi's own tools
+do. These commands answer in frames a Z80 reads without a parser:
+
+- Every line ends in CR (13). Every answer ends in one status line: `CBBOK`, or
+  `CBBERR <message>` in printable ASCII (with the cause after it in debug mode). Lines that
+  start with `CBB#` are notes to skip.
+- Texts are in the Spectrum character set: printable ASCII, CR for a new line, the pound
+  sign at 0x60 and the copyright sign at 0x7F. Every other character becomes `?` on the way
+  to the Next (the backtick too); from the Next, block graphics, UDGs and BASIC tokens
+  become `?` and CR LF is one new line. Cyrillic comes later.
+- CRC-32 is IEEE 802.3, as zlib and PiTools' `.crc32` compute it, in 8 lowercase hex
+  digits.
+
+| Command | Answer |
+| --- | --- |
+| `cbb-lite next paste [-max bytes]` | `CBB1 <len> <crc32>`, then len bytes of the latest text (cut to bytes), then CR, then the status line. |
+| `cbb-lite next copy <len> <crc32>` | `CBBGO` once the service answers; the Next then sends exactly len bytes, which `cbb-lite` reads with the terminal in raw mode (no echo, no CR to LF; it gives up after 10 s without a byte), checks the CRC-32 and sends to the group; then the status line. |
+| `cbb-lite next join [-name name] [-port port] [-addr host[:port]]...` | `CBBQ <size>`, then size rows of the QR code for the phone app, each of (size + 3) / 4 hex digits with the leftmost module in the high bit of the first digit and a set bit dark; the Next draws it, the phone scans it, and after the pairing the status line (up to 5 minutes). A join payload makes a code of about 41 modules, which fits the 192 lines of the screen at 4 pixels per module. |
+
 ## Errors
 
 Every error has a short message. `-debug` (before the command), `CBB_DEBUG=1`, or a debug
