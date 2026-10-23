@@ -462,7 +462,7 @@ and lifetimes. The installer enables what the device needs.
 | A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
 | A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipboardbridge` group; single-line injection by default with control characters removed |
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home (planned) only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
-| Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and keeps each group on its own endpoint |
+| Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -617,18 +617,26 @@ For homes behind carrier-grade NAT, and for clients without IPv6, the project ru
 forwarder on its own server for all users. It holds no keys and only passes encrypted
 WireGuard packets between a group's clients and that group's hub.
 
-- **One endpoint per group.** Each group gets its own address and port on the forwarder: on
-  IPv6 its own address from the server's /64, on IPv4 its own port (about 60 000 groups per
-  IPv4 address; more addresses or more servers beyond that). A packet that arrives at a
-  group's endpoint can go only to that group's hub; there is no shared path between groups.
-  The hub receives its endpoint when it registers and passes it to its clients, so groups can
-  be spread over any number of addresses and servers. Clients behind one shared address are
-  told apart by address and port, as the hub's own WireGuard does. A group tag inside the
-  packets on one shared port was rejected: it would show on the network and link a group's
-  devices.
-- **Registration.** The hub keeps one connection out to the forwarder and claims its endpoint by
-  proving its membership (its member key with the chain to the group CA); nobody else can
-  take the endpoint over. The forwarder knows a group only by its tag, the hash of the CA
+- **One port for all groups, routed by `mac1`.** Every WireGuard handshake initiation
+  carries `mac1`, a MAC keyed with the responder's public key. The forwarder knows each hub's
+  public key from its registration, so it finds the group by checking `mac1` against the
+  registered keys; it still holds no key that decrypts anything. Nothing is added to the
+  packets, and `mac1` looks random to anyone who does not know the hub's public key, so the
+  network cannot tell groups apart. Data packets then carry the receiver index the hub chose
+  in the handshake, which the forwarder maps to the group together with the client's address.
+  The check costs one BLAKE2s per registered group per handshake (a client's handshake comes
+  every two minutes while it is active), tens of milliseconds for 100 000 groups; beyond that,
+  groups are spread over several servers. Whether AmneziaWG keeps `mac1` usable for this is to
+  be checked; in VLESS mode the group is known from its VLESS user ID inside REALITY's TLS.
+- **Fallback: an endpoint per group.** If `mac1` routing does not hold up, each group gets its
+  own address on the server's IPv6 /64, or its own port on IPv4 (about 60 000 per address).
+  A visible group tag in the packets was rejected: it would link a group's devices.
+- Clients behind one shared address are told apart by address and port, as the hub's own
+  WireGuard does. A packet is passed only to its own group's hub; there is no shared path
+  between groups.
+- **Registration.** The hub keeps one connection out to the forwarder and registers its
+  WireGuard public key by proving its membership (its member key with the chain to the group
+  CA); nobody else can take its place. The forwarder knows a group only by its tag, the hash of the CA
   certificate, and stores nothing on disk: its state is the open connections.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
   memory. A group that reaches a limit is slowed down alone.
@@ -909,7 +917,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
 | D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |
 | D-38 | Away from home: a star of WireGuard tunnels to a hub, a member at home, with WireGuard in user space inside `cbb` and the apps and the member TLS inside; no third-party services; a feature that cannot keep the data fully protected is not built. |
-| D-39 | Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and gives each group its own address or port, with limits per group. |
+| D-39 | Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart), with limits per group. |
 | D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
 | D-41 | Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
 | D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |
