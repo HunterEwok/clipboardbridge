@@ -16,40 +16,19 @@ import (
 	"errors"
 	"math/big"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
 )
 
 var t0 = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 
-// socketPair returns the two ends of a connected Unix socket, which buffers
-// like TCP and needs no port.
-func socketPair(t *testing.T) (net.Conn, net.Conn) {
-	t.Helper()
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn := func(fd int) net.Conn {
-		f := os.NewFile(uintptr(fd), "socketpair")
-		defer f.Close()
-		c, err := net.FileConn(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { c.Close() })
-		return c
-	}
-	return conn(fds[0]), conn(fds[1])
-}
+func socketPair(t *testing.T) (net.Conn, net.Conn) { return testnet.SocketPair(t) }
 
 // clock is the uptime clock of a test window, and its expiry timer.
 type clock struct {

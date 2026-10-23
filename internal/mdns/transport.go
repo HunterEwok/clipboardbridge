@@ -10,12 +10,12 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"sync"
 	"syscall"
 
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	"golang.org/x/sys/unix"
 )
 
 // packet is a received datagram and the interface it arrived on.
@@ -54,6 +54,7 @@ type udp struct {
 	mu      sync.Mutex
 	joined4 map[int]bool
 	joined6 map[int]bool
+	ifaces  []iface // the last list, to find a packet's interface without control messages
 	closed  bool
 }
 
@@ -62,12 +63,7 @@ type udp struct {
 func listen(logf func(string, ...any)) (*udp, error) {
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
 		var serr error
-		err := c.Control(func(fd uintptr) {
-			serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
-			if serr == nil {
-				serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
-			}
-		})
+		err := c.Control(func(fd uintptr) { serr = reuse(fd) })
 		if err != nil {
 			return err
 		}
@@ -115,15 +111,21 @@ func listen(logf func(string, ...any)) (*udp, error) {
 
 // setup4 and setup6 set the hop limit of 255 that RFC 6762 requires, keep
 // multicast loopback on so other responders on this host see the member,
-// and ask for the interface of each packet.
+// and ask for the interface of each packet where the system can tell it.
 func setup4(c *ipv4.PacketConn) error {
-	return errors.Join(c.SetMulticastTTL(255), c.SetTTL(255), c.SetMulticastLoopback(true),
-		c.SetControlMessage(ipv4.FlagInterface, true))
+	err := errors.Join(c.SetMulticastTTL(255), c.SetTTL(255), c.SetMulticastLoopback(true))
+	if controlMessages {
+		err = errors.Join(err, c.SetControlMessage(ipv4.FlagInterface, true))
+	}
+	return err
 }
 
 func setup6(c *ipv6.PacketConn) error {
-	return errors.Join(c.SetMulticastHopLimit(255), c.SetHopLimit(255), c.SetMulticastLoopback(true),
-		c.SetControlMessage(ipv6.FlagInterface, true))
+	err := errors.Join(c.SetMulticastHopLimit(255), c.SetHopLimit(255), c.SetMulticastLoopback(true))
+	if controlMessages {
+		err = errors.Join(err, c.SetControlMessage(ipv6.FlagInterface, true))
+	}
+	return err
 }
 
 func (u *udp) read4() {
@@ -164,7 +166,13 @@ func ifIndex6(cm *ipv6.ControlMessage) int {
 
 func (u *udp) deliver(data []byte, ok bool, ifIndex int, src net.Addr) {
 	ua, isUDP := src.(*net.UDPAddr)
-	if !ok || ifIndex == 0 || !isUDP {
+	if !isUDP {
+		return
+	}
+	if !controlMessages {
+		ifIndex, ok = u.lookup(ua), true
+	}
+	if !ok || ifIndex == 0 {
 		return
 	}
 	select {
@@ -208,8 +216,45 @@ func (u *udp) send(data []byte, ifIndex int, dst netip.AddrPort) error {
 	if u.c6 == nil {
 		return errors.New("no IPv6 socket")
 	}
+	if !controlMessages && dst.Addr().IsMulticast() {
+		ifi, err := net.InterfaceByIndex(ifIndex)
+		if err != nil {
+			return err
+		}
+		if err := u.c6.SetMulticastInterface(ifi); err != nil {
+			return err
+		}
+	}
 	_, err := u.c6.WriteTo(data, &ipv6.ControlMessage{IfIndex: ifIndex, HopLimit: 255}, addr)
 	return err
+}
+
+// lookup finds the interface a packet came in on from its source address,
+// for a system that does not tell: the interface of a link-local source's
+// zone, or the one whose network holds the source. It returns 0 for none.
+func (u *udp) lookup(src *net.UDPAddr) int {
+	a, ok := netip.AddrFromSlice(src.IP)
+	if !ok {
+		return 0
+	}
+	a = a.Unmap()
+	if a.Is6() && a.IsLinkLocalUnicast() {
+		if ifi, err := net.InterfaceByName(src.Zone); err == nil {
+			return ifi.Index
+		}
+		n, _ := strconv.Atoi(src.Zone)
+		return n
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, f := range u.ifaces {
+		for _, p := range f.prefixes {
+			if p.Contains(a) {
+				return f.index
+			}
+		}
+	}
+	return 0
 }
 
 // interfaces lists the interfaces that are up, can multicast and are not
@@ -233,6 +278,9 @@ func (u *udp) interfaces() ([]iface, error) {
 		u.join(ifi, f)
 		out = append(out, f)
 	}
+	u.mu.Lock()
+	u.ifaces = out
+	u.mu.Unlock()
 	return out, nil
 }
 

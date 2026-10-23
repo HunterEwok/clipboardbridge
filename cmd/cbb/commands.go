@@ -315,18 +315,27 @@ func readLine(r io.Reader) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-// cmdAgent links the Mac's pasteboard to the service; launchd starts it in
-// the user's session.
+// cmdAgent links the Mac's pasteboard or the Windows clipboard to the
+// service; launchd starts it in the user's session on a Mac, and the sign-in
+// on Windows.
 func cmdAgent(args []string, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "cbb: agent takes no arguments")
 		return 2
 	}
-	if runtime.GOOS != "darwin" {
-		return fail(stderr, errors.New("the pasteboard agent is for macOS; on Linux the desktop connector links the clipboard"))
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return fail(stderr, errors.New("the agent is for macOS and Windows; on Linux the desktop connector links the clipboard"))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	stderr, closeLog, err := agentLog(stderr)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer closeLog()
+	if !firstAgent() {
+		return 0 // another agent links this session's clipboard already
+	}
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 	b := pasteboard.General()
 	if _, _, err := b.Read(); errors.Is(err, pasteboard.ErrUnsupported) {
@@ -365,27 +374,14 @@ func cmdService(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: service takes only flags")
 		return 2
 	}
+	// Windows listens like Linux, so it speaks as a Linux member.
 	role := node.Linux
 	if runtime.GOOS == "darwin" {
 		role = node.Mac
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
-	if err := service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: role, Logf: logf}); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
-}
-
-func defaultStateDir() string {
-	if d := os.Getenv("STATE_DIRECTORY"); d != "" { // set by systemd
-		return d
-	}
-	if runtime.GOOS == "darwin" {
-		return "/Library/Application Support/clipboardbridge/state"
-	}
-	return "/var/lib/clipboardbridge"
+	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
+		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: role, Logf: logf})
+	})
 }
 
 func fail(stderr io.Writer, err error) int {
