@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <resources>
     <string name="app_name" translatable="false">clipboardbridge</string>
+    <string name="send_launcher" translatable="false">cbb send</string>
     <string name="tagline">One clipboard for this phone and your computers.</string>
     <string name="welcome_title">This phone is ready</string>
     <string name="welcome_body">It made its own secret key, which never leaves it and lets your devices recognise this phone. Now connect a device: tap Connect a new device and scan the QR code it shows.</string>
@@ -75,4 +76,18 @@
     <string name="about">About</string>
     <string name="version">Version</string>
     <string name="source">Source code and license (AGPL-3.0)</string>
+    <string name="channel_sync">Syncing with your computers</string>
+    <string name="notification_title">Syncing with your computers</string>
+    <string name="notification_text">What they copy comes to this phone. Send sends what this phone copied.</string>
+    <string name="send">Send</string>
+    <string name="send_share">Send to the computers</string>
+    <string name="tile_label">Send clipboard</string>
+    <string name="accessibility_label">Send my copies by themselves</string>
+    <string name="accessibility_description">Notices when you copy text, then reads the clipboard for a moment and sends the text to your computers. It reads nothing else on the screen.</string>
+    <string name="auto_send_body">Android lets an app read the clipboard only while it is in front. Turn clipboardbridge on in Accessibility, and what you copy goes to your computers without a tap; Android then says \"clipboardbridge pasted from your clipboard\" each time. Without it, use the Send clipboard tile, the notification\'s Send button, or Share.</string>
+    <string name="auto_send_on">On</string>
+    <string name="auto_send_off">Off</string>
+    <string name="open_accessibility">Open Accessibility settings</string>
+    <string name="restricted_hint">If Android says the setting is restricted: open App info, tap ⋮, choose Allow restricted settings, then try again.</string>
+    <string name="app_info">App info</string>
 </resources>

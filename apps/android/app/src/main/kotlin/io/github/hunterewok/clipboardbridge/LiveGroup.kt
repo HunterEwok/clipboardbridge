@@ -377,6 +377,12 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             records = Records(),
             renew = ::renew,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
+            // A copy of a moment ago from another device; an older one, as a
+            // hello brings it on connecting, would overwrite what the phone
+            // copied since.
+            onChange = { e ->
+                if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS) onCopy?.invoke(e.text, e.kind)
+            },
         )
         val b = NsdBrowser(context) { members ->
             synchronized(lock) { found = members }
@@ -497,6 +503,24 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             }
         }
     }
+
+    /** Whether a computer is connected now. */
+    val online: Boolean get() = currentNode?.connected?.isNotEmpty() == true
+
+    /** Sends a text the user shared or selected, unless it is the group's current text already. */
+    fun send(text: String): SyncResult {
+        val n = currentNode ?: throw Failure(Failure.Kind.NO_COMPUTERS)
+        if (n.connected.isEmpty()) throw Failure(Failure.Kind.NO_COMPUTERS)
+        if (n.usable?.first == text) return SyncResult.NOTHING_NEW
+        n.send(text, Member.Kind.TEXT)
+        return SyncResult.SENT
+    }
+
+    /**
+     * Gets each text a computer copied, as it arrives, to put on the
+     * phone's clipboard; on the node's thread.
+     */
+    @Volatile var onCopy: ((String, Member.Kind) -> Unit)? = null
 
     companion object {
         /** How long admitting a device may take once it is dialed: a computer that stops answering mid-pairing fails then. */
