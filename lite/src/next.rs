@@ -44,7 +44,7 @@ pub fn run(g: &Global, args: &[String]) -> i32 {
 /// An error message on one line of printable ASCII, so the Next can show it.
 fn status_text(s: &str) -> String {
     let t = to_spectrum(&s.replace('\n', "; "));
-    String::from_utf8_lossy(&t).into_owned()
+    t.iter().map(|&b| if b == 0x60 || b == 0x7F { '?' } else { b as char }).collect()
 }
 
 /// Writes the latest text: `CBB1 <len> <crc32>` CR, len bytes, CR.
@@ -275,5 +275,6 @@ mod tests {
     #[test]
     fn status_text_is_one_ascii_line() {
         assert_eq!(status_text("bad\nthing «x»"), "bad; thing ?x?");
+        assert_eq!(status_text("£1 ©"), "?1 ?");
     }
 }

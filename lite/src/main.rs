@@ -210,8 +210,16 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
             let code = pair::new_code();
             let shown = |text: &str| {
                 if for_next {
+                    let frame = next::qr_frame(text);
                     let mut out = std::io::stdout();
-                    out.write_all(&next::qr_frame(text)).ok();
+                    if frame.is_empty() {
+                        // Fail now rather than leave the Next waiting for a
+                        // pairing nobody can start.
+                        out.write_all(b"CBBERR cannot make the QR code\r").ok();
+                        out.flush().ok();
+                        std::process::exit(1);
+                    }
+                    out.write_all(&frame).ok();
                     out.flush().ok();
                     return;
                 }
