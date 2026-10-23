@@ -52,6 +52,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   group (making admins, renewals, removal, the takeover); Go checks its renewals, admin CAs
   and `root` records. An Android phone joins with `os` `android` and an admin phone admits it
   as a phone, and both kits record a lite member (`"role":"lite"` in its Info) with role `lite`.
+  TLS 1.3 comes from Conscrypt (bundled in the app), with ALPN and the exporter: in CI, Go
+  pairs with the Kotlin kit over plain TCP and over TLS, and syncs with it as a member.
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).

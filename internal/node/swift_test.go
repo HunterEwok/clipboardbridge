@@ -94,7 +94,7 @@ func TestSwiftMemberTLS(t *testing.T) {
 	go func() { served <- server.Serve(context.Background(), tls.Server(raw, server.ServerTLS())) }()
 
 	waitWrite(t, server, "from swift")
-	if p := server.Peers(); len(p) != 1 || p[0].ID != phoneID || p[0].Role != Phone || p[0].Name != "iPhone" {
+	if p := server.Peers(); len(p) != 1 || p[0].ID != phoneID || p[0].Role != Phone || (p[0].Name != "iPhone" && p[0].Name != "Android") {
 		fail("peers %+v, want the phone", p)
 	}
 	if err := server.Send("from go", clip.Text, clip.Copy); err != nil {
