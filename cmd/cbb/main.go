@@ -21,6 +21,8 @@ Commands:
   status                  Show the group and the connected members.
   devices                 List the devices of the group.
   revoke <name or ID>     Remove a device from the group.
+  away [on|off]           Show, or turn on or off, sync away from home on this device.
+  away hub address:port   Make this device the group's hub for sync away from home.
   pair                    Admit a new computer: show a code for cbb join.
   pair -phone             Pair an iPhone or iPad with the shortcut.
   join                    Join a group: show a QR code for the phone to scan.
@@ -62,6 +64,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdStatus(rest, stdout, stderr)
 	case "devices":
 		return cmdDevices(rest, stdout, stderr)
+	case "away":
+		return cmdAway(rest, stdin, stdout, stderr)
 	case "revoke":
 		return cmdRevoke(rest, stdout, stderr)
 	case "pair":

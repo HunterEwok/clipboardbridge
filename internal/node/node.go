@@ -15,6 +15,7 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -133,8 +134,9 @@ type Peer struct {
 
 // A Node is a member's set of connections.
 type Node struct {
-	cfg Config
-	id  atomic.Pointer[group.Identity] // the current identity; renewal replaces it
+	cfg       Config
+	id        atomic.Pointer[group.Identity] // the current identity; renewal replaces it
+	tunnelKey atomic.Pointer[[]byte]         // what the hello offers the hub; nil for none
 
 	rejoinMu sync.Mutex // one Rejoin at a time
 
@@ -167,8 +169,24 @@ func New(cfg Config) *Node {
 	}
 	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn)}
 	n.id.Store(cfg.Identity)
+	n.SetTunnelKey(cfg.TunnelKey)
 	return n
 }
+
+// SetTunnelKey replaces the tunnel key that hellos offer the group's hub;
+// nil offers none. Connections made from now on carry it (see Reconnect).
+func (n *Node) SetTunnelKey(key []byte) {
+	if len(key) == 0 {
+		n.tunnelKey.Store(nil)
+		return
+	}
+	k := bytes.Clone(key)
+	n.tunnelKey.Store(&k)
+}
+
+// Reconnect closes every connection, so that the members connect again
+// and their hellos carry what changed, such as a new tunnel key.
+func (n *Node) Reconnect() { n.closeAll() }
 
 // identity returns the member's current identity.
 func (n *Node) identity() *group.Identity { return n.id.Load() }
@@ -194,6 +212,13 @@ func (n *Node) Dial(ctx context.Context, peer group.DeviceID, addr string) error
 	if err != nil {
 		return err
 	}
+	return n.Serve(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())))
+}
+
+// DialConn runs a member connection to peer over raw, a connection that is
+// already open, such as one through the tunnel to the group's hub, until it
+// ends.
+func (n *Node) DialConn(ctx context.Context, peer group.DeviceID, raw net.Conn) error {
 	return n.Serve(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())))
 }
 
@@ -658,7 +683,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
-		out.TunnelKey = c.n.cfg.TunnelKey
+		if k := c.n.tunnelKey.Load(); k != nil {
+			out.TunnelKey = *k
+		}
 		data, err := encode(out)
 		if err != nil {
 			return nil, err

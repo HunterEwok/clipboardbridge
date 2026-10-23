@@ -4,16 +4,23 @@
 package service
 
 import (
+	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
+	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 // The tunnel keys travel inside the member protocol (docs/protocol.md,
@@ -34,12 +41,25 @@ func (s *Service) loadTunnel(id *group.Identity) *tunnel.State {
 		return nil
 	}
 	st, err := tunnel.LoadState(s.cfg.StateDir)
-	if err == nil && st.ForGroup(group.Tag(id.GroupCA.Cert)) {
-		err = st.Save(s.cfg.StateDir)
-	}
 	if err != nil {
-		s.logf("cbb: the tunnel for sync away from home is off: %v", err)
+		s.logf("cbb: sync away from home is off: %v", err)
 		return nil
+	}
+	tag := group.Tag(id.GroupCA.Cert)
+	if st.Group != "" && st.Group != tag {
+		// It was turned on for another group; this one has to ask again.
+		if err := os.Remove(filepath.Join(s.cfg.StateDir, tunnel.StateFile)); err != nil {
+			s.logf("cbb: sync away from home is off: %v", err)
+		} else {
+			s.logf("cbb: sync away from home is off, since this device is in another group now")
+		}
+		return nil
+	}
+	if st.ForGroup(tag) {
+		if err := st.Save(s.cfg.StateDir); err != nil {
+			s.logf("cbb: sync away from home is off: %v", err)
+			return nil
+		}
 	}
 	return st
 }
@@ -84,6 +104,7 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 			return nil
 		}
 		s.logf("cbb: %s can reach this hub away from home", peer)
+		s.hubPeersLocked()
 	}
 	hub := st.Key.Public()
 	o := &node.TunnelOffer{HubKey: hub[:], PSK: m.PresharedKey[:]}
@@ -128,6 +149,8 @@ func (s *Service) tunnelOffered(from group.DeviceID, o node.TunnelOffer) error {
 	if old == nil || old.Device != h.Device {
 		s.logf("cbb: %s is the group's hub for sync away from home", from)
 	}
+	s.stopTunnelLocked()
+	s.runTunnelLocked()
 	return nil
 }
 
@@ -159,4 +182,358 @@ func (s *Service) pruneTunnel() {
 	if err := st.Save(s.cfg.StateDir); err != nil {
 		s.logf("cbb: saving the tunnel state: %v", err)
 	}
+	s.hubPeersLocked()
+}
+
+// awayCheck is how often a member that is not reaching its hub through
+// the tunnel looks again whether it has to: while the hub is on the home
+// network, it syncs there without the tunnel.
+const awayCheck = 5 * time.Second
+
+// tunRun is the tunnel at work: the hub, or this member's link to it.
+type tunRun struct {
+	cancel context.CancelFunc
+	hub    *tunnel.Hub
+	client *tunnel.Client
+}
+
+// runTunnelLocked starts the tunnel the state asks for: the hub, or the
+// link to the hub once the hub offered it. It fails closed: when the tunnel
+// cannot start, the member syncs at home only and status says why.
+func (s *Service) runTunnelLocked() {
+	st, gctx := s.tunnel, s.tunCtx
+	if st == nil || gctx == nil || s.tunRun != nil {
+		return
+	}
+	self, err := tunnel.Addr(s.tunSelf)
+	if err != nil {
+		s.tunFailedLocked("this device has no tunnel address", err)
+		return
+	}
+	ctx, cancel := context.WithCancel(gctx)
+	switch {
+	case st.IsHub:
+		port := st.ListenPort
+		if port == 0 {
+			port = tunnel.Port
+		}
+		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: st.Peers(), Logf: s.logf})
+		if err != nil {
+			cancel()
+			s.tunFailedLocked(fmt.Sprintf("the hub could not listen on UDP port %d", port), err)
+			return
+		}
+		s.tunRun = &tunRun{cancel: cancel, hub: h}
+		s.tunFailedLocked("", nil)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.acceptTunnel(ctx, h.Listener())
+		}()
+	case st.ToHub != nil:
+		link := *st.ToHub
+		if len(link.Endpoints) == 0 {
+			cancel()
+			s.tunFailedLocked("the hub has no address away from home yet; run cbb away hub with its addresses there", nil)
+			return
+		}
+		hubAddr, err := tunnel.Addr(link.Device)
+		if err != nil {
+			cancel()
+			s.tunFailedLocked("the hub's offer names no device", err)
+			return
+		}
+		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: st.Key, PresharedKey: link.PresharedKey, Addr: self,
+			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Logf: s.logf})
+		if err != nil {
+			cancel()
+			s.tunFailedLocked("the tunnel to the hub could not start", err)
+			return
+		}
+		s.tunRun = &tunRun{cancel: cancel, client: c}
+		s.tunFailedLocked("", nil)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.reachHub(ctx, c, link)
+		}()
+	default:
+		cancel() // waits for the hub's offer, which comes at home
+	}
+}
+
+// stopTunnelLocked stops the hub or the link to it, with every connection
+// through it.
+func (s *Service) stopTunnelLocked() {
+	r := s.tunRun
+	if r == nil {
+		return
+	}
+	s.tunRun, s.tunThrough = nil, false
+	r.cancel()
+	if r.hub != nil {
+		r.hub.Close()
+	}
+	if r.client != nil {
+		r.client.Close()
+	}
+}
+
+// tunFailedLocked keeps what went wrong for status, and logs it; an empty
+// msg clears it.
+func (s *Service) tunFailedLocked(msg string, err error) {
+	s.tunErr, s.tunDetail = msg, ""
+	if err != nil {
+		s.tunDetail = err.Error()
+	}
+	if msg != "" {
+		if err != nil {
+			s.logf("cbb: sync away from home: %s: %v", msg, err)
+		} else {
+			s.logf("cbb: sync away from home: %s", msg)
+		}
+	}
+}
+
+// hubPeersLocked gives the running hub the clients the state admits now.
+func (s *Service) hubPeersLocked() {
+	if r := s.tunRun; r != nil && r.hub != nil {
+		if err := r.hub.SetPeers(s.tunnel.Peers()); err != nil {
+			s.tunFailedLocked("the hub could not take its clients", err)
+		}
+	}
+}
+
+// acceptTunnel serves, on the hub, the member connections that come through
+// the tunnel: the member protocol only, from the device whose WireGuard key
+// the connection came with.
+func (s *Service) acceptTunnel(ctx context.Context, ln net.Listener) {
+	slots := make(chan struct{}, maxHandshakes)
+	acceptLoop(ctx, ln, s.logf, "the tunnel", func(raw net.Conn) {
+		select {
+		case slots <- struct{}{}:
+		default:
+			raw.Close()
+			return
+		}
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.serveTunnelMember(ctx, raw, func() { <-slots })
+		}()
+	})
+}
+
+func (s *Service) serveTunnelMember(ctx context.Context, raw net.Conn, release func()) {
+	s.mu.Lock()
+	nd := s.nd
+	s.mu.Unlock()
+	if nd == nil {
+		release()
+		raw.Close()
+		return
+	}
+	tc := tls.Server(raw, nd.ServerTLS())
+	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	err := tc.HandshakeContext(hctx)
+	cancel()
+	release()
+	if err != nil {
+		raw.Close()
+		return
+	}
+	id, err := group.PeerID(tc.ConnectionState())
+	from, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
+	if want, aerr := tunnel.Addr(string(id)); err != nil || aerr != nil || from.Addr() != want {
+		s.logf("cbb: a member connection through the tunnel from %v is not from the device of that key; closed", from.Addr())
+		raw.Close()
+		return
+	}
+	if err := nd.Serve(ctx, tc); err != nil && ctx.Err() == nil {
+		s.logf("cbb: connection from %s through the tunnel: %v", id, err)
+	}
+}
+
+// reachHub connects to the group's hub through the tunnel whenever the hub
+// is not on this network: neither found by discovery nor connected. It
+// tries the hub's addresses in turn.
+func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.HubLink) {
+	hub := group.DeviceID(link.Device)
+	backoff := minBackoff
+	for i := 0; ctx.Err() == nil; i++ {
+		s.mu.Lock()
+		nd, near := s.nd, s.nearby[hub]
+		s.mu.Unlock()
+		if nd == nil {
+			return
+		}
+		if near || slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == hub }) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(awayCheck):
+			}
+			continue
+		}
+		ep := link.Endpoints[i%len(link.Endpoints)]
+		err := c.SetEndpoint(ep)
+		var raw net.Conn
+		if err == nil {
+			dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+			raw, err = c.Dial(dctx)
+			cancel()
+		}
+		if err == nil {
+			start := uptime.Now()
+			s.tunMu.Lock()
+			s.tunThrough = true
+			s.tunFailedLocked("", nil)
+			s.tunMu.Unlock()
+			err = nd.DialConn(ctx, hub, raw)
+			s.tunMu.Lock()
+			s.tunThrough = false
+			s.tunMu.Unlock()
+			if uptime.Now()-start > maxBackoff {
+				backoff = minBackoff
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		s.tunMu.Lock()
+		if s.tunRun != nil && s.tunRun.client == c {
+			s.tunFailedLocked(fmt.Sprintf("the hub did not answer at %v", ep), err)
+		}
+		s.tunMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(2*backoff, maxBackoff)
+	}
+}
+
+// keysInFile tells whether this device keeps its keys in files, not in
+// hardware; every computer does until the keys move to a TPM or a Secure
+// Enclave (docs/design.md, "Device keys in hardware").
+const keysInFile = true
+
+// away turns sync away from home on or off on this device, or makes it the
+// group's hub (docs/design.md, "Turning it on, step by step").
+func (s *Service) away(m *control.Message) error {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil {
+		return s.errNoGroup()
+	}
+	reconnect, key, err := s.awayLocked(m, group.Tag(id.GroupCA.Cert))
+	if err != nil {
+		return err
+	}
+	if reconnect {
+		// The members connect again, so their hellos carry the new key or
+		// the hub's new offer.
+		nd.SetTunnelKey(key)
+		nd.Reconnect()
+	}
+	return nil
+}
+
+func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, key []byte, err error) {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	path := filepath.Join(s.cfg.StateDir, tunnel.StateFile)
+	switch m.Name {
+	case "on":
+		if s.tunnel != nil {
+			return false, nil, nil
+		}
+		if keysInFile && !m.Consent {
+			return false, nil, errors.New("this device keeps its keys in files, so sync away from home needs your consent; run cbb away on and read what it says")
+		}
+		st, err := tunnel.NewState()
+		if err != nil {
+			return false, nil, err
+		}
+		st.ForGroup(tag)
+		st.KeysInFile = keysInFile
+		if err := st.Save(s.cfg.StateDir); err != nil {
+			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
+		}
+		s.tunnel = st
+		s.logf("cbb: sync away from home is on")
+		return true, tunnelKey(st), nil
+	case "off":
+		if s.tunnel == nil {
+			return false, nil, nil
+		}
+		s.stopTunnelLocked()
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, nil, err
+		}
+		s.tunnel = nil
+		s.tunFailedLocked("", nil)
+		s.logf("cbb: sync away from home is off; its keys are gone")
+		return true, nil, nil
+	case "hub":
+		st := s.tunnel
+		if st == nil {
+			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb away on")
+		}
+		if m.Port < 0 || m.Port > 65535 {
+			return false, nil, fmt.Errorf("a bad port %d", m.Port)
+		}
+		var eps []netip.AddrPort
+		for _, a := range m.Addrs {
+			ep, err := netip.ParseAddrPort(a)
+			if err != nil || ep.Port() == 0 {
+				return false, nil, fmt.Errorf("%q is not an address with a port, such as 203.0.113.7:8764 or [2001:db8::7]:8764", a)
+			}
+			eps = append(eps, netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()))
+		}
+		if len(eps) > 8 {
+			return false, nil, errors.New("at most 8 addresses")
+		}
+		old := *st
+		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort = true, nil, eps, m.Port
+		if err := st.Save(s.cfg.StateDir); err != nil {
+			*st = old
+			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
+		}
+		s.stopTunnelLocked()
+		s.runTunnelLocked()
+		s.logf("cbb: this device is the group's hub for sync away from home")
+		return true, tunnelKey(st), nil
+	}
+	return false, nil, fmt.Errorf("unknown away request %q", m.Name)
+}
+
+// awayStatus describes sync away from home for status; nil while it is
+// off.
+func (s *Service) awayStatus() *control.Away {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	st := s.tunnel
+	if st == nil {
+		return nil
+	}
+	a := &control.Away{Hub: st.IsHub, KeysInFile: st.KeysInFile, Error: s.tunErr, Detail: s.tunDetail}
+	switch {
+	case st.IsHub:
+		a.Port, a.Clients = st.ListenPort, len(st.Members)
+		if a.Port == 0 {
+			a.Port = tunnel.Port
+		}
+		for _, ep := range st.Endpoints {
+			a.Endpoints = append(a.Endpoints, ep.String())
+		}
+	case st.ToHub != nil:
+		a.HubDevice, a.Through = st.ToHub.Device, s.tunThrough
+		for _, ep := range st.ToHub.Endpoints {
+			a.Endpoints = append(a.Endpoints, ep.String())
+		}
+	}
+	return a
 }

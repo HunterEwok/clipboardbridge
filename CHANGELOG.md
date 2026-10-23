@@ -63,6 +63,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Sync away from home for computers, off by default. `cbb away on` turns it on after a
+  warning that the device keeps its keys in files; `cbb away hub address:port` makes an
+  always-on computer the group's hub, which takes the others through the group's own
+  WireGuard tunnel, in user space inside `cbb`, with member TLS inside it. A member uses the
+  tunnel only when the hub is not on its network; `cbb away` and `cbb status` show the
+  state and what went wrong (with the underlying error in a development build or with
+  `CBB_DEBUG=1`); `cbb away off` forgets the keys.
+
 - Homebrew, on macOS and Linux (x86-64, ARM64):
   `brew install hunterewok/tap/clipboardbridge`. The formula installs the
   release archive as it is, so it needs no Apple signing, and the release workflow updates

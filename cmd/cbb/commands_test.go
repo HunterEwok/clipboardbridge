@@ -186,3 +186,28 @@ func TestWriteDevices(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteAway(t *testing.T) {
+	a := &control.Away{HubDevice: "abc", Endpoints: []string{"203.0.113.7:8764"}, KeysInFile: true,
+		Error: "the hub did not answer at 203.0.113.7:8764", Detail: "i/o timeout"}
+	for _, tc := range []struct {
+		debug  string
+		detail bool
+	}{{"1", true}, {"0", false}} {
+		t.Setenv("CBB_DEBUG", tc.debug)
+		var b strings.Builder
+		writeAway(&b, a)
+		out := b.String()
+		if !strings.Contains(out, "Problem: the hub did not answer") || !strings.Contains(out, "keys in files") {
+			t.Errorf("CBB_DEBUG=%s: %q", tc.debug, out)
+		}
+		if got := strings.Contains(out, "i/o timeout"); got != tc.detail {
+			t.Errorf("CBB_DEBUG=%s: detail shown %v, want %v: %q", tc.debug, got, tc.detail, out)
+		}
+	}
+	var b strings.Builder
+	writeAway(&b, nil)
+	if !strings.Contains(b.String(), "off") {
+		t.Errorf("off: %q", b.String())
+	}
+}

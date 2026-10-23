@@ -140,6 +140,23 @@ home network. See "Joining from another network" in [design.md](design.md).
 - **Without a desktop**: `cbb copy` and `cbb paste`, or copy and paste inside
   tmux.
 
+## Sync away from home (optional)
+
+Off by default: the group syncs on the home network only. To sync when a computer is away,
+one computer that is always on at home becomes the hub, and each computer that should reach
+it from afar turns sync away from home on. Do it while the computers are at home:
+
+```sh
+cbb away on                                  # on the hub and on each computer; read what it says
+cbb away hub 203.0.113.7:8764                # on the hub: the address the internet reaches it at
+cbb away                                     # what it does now, and what went wrong
+```
+
+The router must forward UDP port 8764 to the hub, and the hub's firewall must allow it.
+The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted;
+nobody else's server is involved. `cbb away off` turns it off again and forgets its keys.
+The phones cannot sync away from home yet.
+
 ## 5. Look after the group
 
 ```sh

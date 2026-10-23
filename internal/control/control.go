@@ -35,6 +35,7 @@ const (
 	OpJoin      = "join"       // client → service: join a group with a code
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
+	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
 	OpCopied    = "copied"     // watcher → service: the clipboard changed
 	OpClipboard = "clipboard"  // watcher → service: what the clipboard holds, without a change
@@ -70,6 +71,8 @@ type Header struct {
 	Listen      bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
 	Name        string   `json:"name,omitempty"`        // a device name
 	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
+	Port        int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
+	Consent     bool     `json:"consent,omitempty"`     // away on: the user agreed to what the warning says
 	Status      *Status  `json:"status,omitempty"`
 	Devices     []Device `json:"devices,omitempty"`
 }
@@ -81,7 +84,21 @@ type Status struct {
 	Role    string   `json:"role"`
 	Holder  bool     `json:"holder,omitempty"` // answers for clipboardbridge.local
 	Peers   []Device `json:"peers,omitempty"`
+	Away    *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
 	Version string   `json:"version"`
+}
+
+// Away describes sync away from home on this device.
+type Away struct {
+	Hub        bool     `json:"hub,omitempty"`        // this device is the group's hub
+	Port       int      `json:"port,omitempty"`       // the hub's UDP port
+	Endpoints  []string `json:"endpoints,omitempty"`  // the hub's addresses away from home
+	Clients    int      `json:"clients,omitempty"`    // on the hub: the devices it admitted
+	HubDevice  string   `json:"hub_device,omitempty"` // on a client: the hub; "" until the hub offered its tunnel
+	Through    bool     `json:"through,omitempty"`    // on a client: connected to the hub through the tunnel now
+	KeysInFile bool     `json:"keys_in_file,omitempty"`
+	Error      string   `json:"error,omitempty"`  // what went wrong last, for the user
+	Detail     string   `json:"detail,omitempty"` // the underlying error, for debugging
 }
 
 // Device is a member as status shows it, or a device of the group as
