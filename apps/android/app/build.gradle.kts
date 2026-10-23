@@ -40,6 +40,11 @@ dependencies {
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    // The QR scanner: CameraX for the frames, ZXing to read them, without Google Play services.
+    implementation("androidx.camera:camera-camera2:1.6.2")
+    implementation("androidx.camera:camera-lifecycle:1.6.2")
+    implementation("androidx.camera:camera-view:1.6.2")
+    implementation("com.google.zxing:core:3.5.4")
 
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")
