@@ -364,7 +364,12 @@ func pairWith(t *testing.T, admin, s *testService) {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	waitUpTo(t, 10*time.Second, what, ok)
+}
+
+func waitUpTo(t *testing.T, d time.Duration, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
 	for !ok() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)

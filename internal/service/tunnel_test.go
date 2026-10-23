@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -179,7 +180,10 @@ func TestAwayFromHome(t *testing.T) {
 	deck.stop()
 	h.hide(deckID)
 	deck = restartService(t, &h, deck)
-	waitFor(t, "the deck reaches the hub through the tunnel", func() bool {
+	// A first WireGuard handshake that is lost is sent again after the
+	// rekey timeout of 5 s, and the TCP connection inside waits for it with
+	// its own backoff; on Windows CI that has taken more than 10 s.
+	waitUpTo(t, 30*time.Second, "the deck reaches the hub through the tunnel", func() bool {
 		st := deck.status(t)
 		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
 	})
