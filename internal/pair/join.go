@@ -123,7 +123,29 @@ func (j *Joiner) Join(ctx context.Context, conn net.Conn, code string, save func
 		conn.Close()
 		return nil, err
 	}
-	return j.join(ctx, tls.Client(conn, cfg), code, false, save)
+	code, err = NormalizeCode(code)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return j.join(ctx, tls.Client(conn, cfg), []byte(code), 0, false, save)
+}
+
+// JoinSecret runs the joining side of a pairing like Join, with the secret
+// of a remote invitation in place of a typed code. The member then asks
+// its admin to confirm the device before it admits it, so the joiner waits
+// up to wait longer than for a code.
+func (j *Joiner) JoinSecret(ctx context.Context, conn net.Conn, secret []byte, wait time.Duration, save func(*group.Identity) error) (*group.Identity, error) {
+	cfg, err := j.tlsConfigVerifiedByCPace()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if len(secret) < MinSecret {
+		conn.Close()
+		return nil, errors.New("pair: the invitation's secret is too short")
+	}
+	return j.join(ctx, tls.Client(conn, cfg), secret, wait, false, save)
 }
 
 // Accept runs the joining side of a pairing over conn, a connection that a
@@ -137,18 +159,20 @@ func (j *Joiner) Accept(ctx context.Context, conn net.Conn, code string, save fu
 		conn.Close()
 		return nil, err
 	}
-	return j.join(ctx, tls.Server(conn, cfg), code, true, save)
-}
-
-// join runs the exchange. With memberFirst the member confirms the key
-// before the joiner does.
-func (j *Joiner) join(ctx context.Context, tc *tls.Conn, code string, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
-	defer tc.Close()
-	code, err := NormalizeCode(code)
+	code, err = NormalizeCode(code)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	return j.join(ctx, tls.Server(conn, cfg), []byte(code), 0, true, save)
+}
+
+// join runs the exchange with the password: the code, or an invitation's
+// secret. With memberFirst the member confirms the key before the joiner
+// does; wait is the time the member may take to confirm the device.
+func (j *Joiner) join(ctx context.Context, tc *tls.Conn, password []byte, wait time.Duration, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
+	defer tc.Close()
+	ctx, cancel := context.WithTimeout(ctx, attemptTimeout+wait)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { tc.SetDeadline(time.Unix(1, 0)) })
 	defer stop()
@@ -168,17 +192,17 @@ func (j *Joiner) join(ctx context.Context, tc *tls.Conn, code string, memberFirs
 	if err != nil {
 		return nil, err
 	}
-	return j.exchange(tc, code, ci, sid, memberCert, memberFirst, save)
+	return j.exchange(tc, password, ci, sid, memberCert, memberFirst, save)
 }
 
 // exchange runs the frames of the exchange over rw, bound to a channel by ci
 // and sid, with the member whose certificate is memberCert.
-func (j *Joiner) exchange(tc io.ReadWriter, code string, ci, sid []byte, memberCert *x509.Certificate, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
+func (j *Joiner) exchange(tc io.ReadWriter, password []byte, ci, sid []byte, memberCert *x509.Certificate, memberFirst bool, save func(*group.Identity) error) (*group.Identity, error) {
 	ad, err := json.Marshal(j.Info)
 	if err != nil {
 		return nil, err
 	}
-	st, msg, err := cpace.Start(&cpace.Config{Role: cpace.Initiator, Password: []byte(code), ChannelID: ci, SessionID: sid, AD: ad})
+	st, msg, err := cpace.Start(&cpace.Config{Role: cpace.Initiator, Password: password, ChannelID: ci, SessionID: sid, AD: ad})
 	if err != nil {
 		return nil, err
 	}

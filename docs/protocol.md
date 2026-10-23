@@ -446,6 +446,18 @@ after a success or after the third failed attempt (`too-many`). An attempt fails
 when it fails after the member sent its CPace message; errors before that (bad AD, bad
 certificate, a dropped connection) do not count. Each attempt has 30 s on both sides.
 
+A window for a remote invitation (design.md, "Joining from another network") differs:
+
+- Its password is the invitation's secret, at least 16 random bytes (128 bits), in place
+  of the code. The joiner gets it from the invitation and never types it.
+- It lives as long as the invitation, up to a day.
+- Its joiner gets no CA keys, whatever its `os`.
+- After Ta verifies, and before it makes the certificate, the member asks its admin to
+  confirm the device: its name, `os`, device ID and key fingerprint (SHA-256 of the joiner's
+  TLS certificate DER, base64url without padding, as the joiner shows it). It sends frame 4
+  only after a yes; a no sends `{"error": "declined"}` and counts as a failed attempt.
+- Each attempt then has 30 s plus the time allowed for the admin's answer, on both sides.
+
 ### TLS
 
 - Joiner (client): TLS 1.3, ALPN `clipboardbridge-pair/1`, presents its self-signed certificate
@@ -464,7 +476,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | Input | Value |
 |-------|-------|
 | Roles | joiner = initiator, member = responder |
-| PRS (password) | the six ASCII digits of the code |
+| PRS (password) | the six ASCII digits of the code, or a remote invitation's secret (its raw bytes) |
 | CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
 | ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux` and `darwin` |
@@ -503,7 +515,8 @@ Fields, all optional, each frame using some: `msg` (bytes), `ad` (bytes), `tag` 
   whether or not frame 5 arrives. Frame 5 only reports whether the joiner stored its
   identity.
 
-Error codes: `wrong-code`, `closed`, `busy`, `expired`, `too-many`, `refused`. An unknown
+Error codes: `wrong-code`, `closed`, `busy`, `expired`, `too-many`, `refused`, `declined`
+(the admin did not confirm the device of a remote invitation). An unknown
 code is treated as `refused`. Errors carry no free text, so an unauthenticated peer cannot
 put words in front of the user.
 

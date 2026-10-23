@@ -76,6 +76,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   state and what went wrong (with the underlying error in a development build or with
   `CBB_DEBUG=1`); `cbb away off` forgets the keys.
 
+- The first part of remote invitations: a pairing window can take an invitation's 128-bit
+  secret in place of the six-digit code, live up to a day, and ask its admin to confirm the
+  device (name, system, key fingerprint) before it admits it; an invited device never gets
+  the CA keys. `cbb invite` and the guest tunnel follow.
+
 - Homebrew, on macOS and Linux (x86-64, ARM64):
   `brew install hunterewok/tap/clipboardbridge`. The formula installs the
   release archive as it is, so it needs no Apple signing, and the release workflow updates

@@ -67,6 +67,9 @@ const (
 	Lifetime = 5 * time.Minute
 	// MaxFailures is the number of failed attempts that closes a window.
 	MaxFailures = 3
+	// MinSecret is the length in bytes of the shortest secret a remote
+	// invitation may carry in place of a code: 128 bits.
+	MinSecret = 16
 
 	attemptTimeout = 30 * time.Second
 	refuseTimeout  = 10 * time.Second
@@ -82,6 +85,7 @@ var (
 	ErrExpired   = errors.New("pair: the pairing window expired")
 	ErrTooMany   = errors.New("pair: three failed attempts; the pairing window is closed")
 	ErrRefused   = errors.New("pair: the other device refused the pairing")
+	ErrDeclined  = errors.New("pair: the admin did not confirm the device")
 )
 
 // spentError is an attempt that failed after the joiner sent its
@@ -106,6 +110,7 @@ var errorCodes = map[string]error{
 	"busy":       ErrBusy,
 	"expired":    ErrExpired,
 	"too-many":   ErrTooMany,
+	"declined":   ErrDeclined,
 }
 
 // codeOf returns the code that tells the peer about err.
