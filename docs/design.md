@@ -559,8 +559,10 @@ Away from home, and between subnets that mDNS does not reach (for example a Pi o
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
 group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
-each other) and the exchange of its keys among Go members where it was turned on (no
-command turns it on yet); nothing carries traffic through it yet.
+each other), the exchange of its keys among Go members, and `cbb away`, which turns it on
+with the consent below and makes a computer the hub; Go members sync through it when the
+hub is not on their network. The phones, the forwarder and the rest of the order of work
+below are not built yet.
 
 ### Turning it on, step by step
 
@@ -868,8 +870,8 @@ only adds to it.
 2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
    at home (done).
 3. The service: turning sync away from home on and off (the hub, each device, the consent
-   for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`,
-   and the member dial after a join by address.
+   for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`
+   (done), and the member dial after a join by address.
 4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation).
 5. The forwarder.
 6. The blind relay, self-hosted only.

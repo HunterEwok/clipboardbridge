@@ -49,7 +49,7 @@ func Write(path string, data []byte, perm fs.FileMode) (err error) {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := rename(tmp, path); err != nil {
 		return err
 	}
 	if err := syncDir(dir); err != nil {

@@ -747,6 +747,8 @@ Header fields (all omitted when empty):
 | `expires` | integer | seconds a window stays open; for a listening `join`, seconds to wait (at most 300) |
 | `listen` | bool | `join`: listen for a member instead of dialing one |
 | `addrs` | array of strings | the first answer of a listening `join`: where it listens |
+| `port` | integer | `away hub`: the UDP port; 0 for 8764 |
+| `consent` | bool | `away on`: the user agreed to the warning about keys in files |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
 
@@ -760,7 +762,7 @@ A connection carries one request: the service reads the first message and dispat
 |------|---------|---------|
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
-| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], version}` |
+| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail}` (section 11) |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}` or `{code, listen, expires}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. Hanging up cancels |
@@ -1002,23 +1004,26 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
+| `away` | `{name: "on", consent}`, `{name: "off"}` or `{name: "hub", addrs, port}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`, at most 8) on UDP `port`. Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
 
 ## 11. Tunnel keys
 
 The keys of the group's WireGuard tunnel for sync away from home ([design.md](design.md),
 "Sync away from home"). Implemented in Go (`internal/tunnel`, `internal/node`,
-`internal/service/tunnel.go`); the tunnel itself is not used yet, and the phones and the
-lite member do not take part yet.
+`internal/service/tunnel.go`); the tunnel carries the member protocol between Go members
+("Through the tunnel" below); the phones and the lite member do not take part yet.
 
 - Sync away from home is off by default; nothing in this section happens on a device until
-  the user turns it on there. Go turns it on by writing `tunnel.json` next to the identity
+  the user turns it on there (`cbb away on`, the control operation `away`). Go turns it on
+  by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
   rest of this section's state.
 - Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member where sync
   away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
   only.
-- The group's hub is one member, chosen on that member (`is_hub` in its `tunnel.json`). When
+- The group's hub is one member, chosen on that member (`cbb away hub`; `is_hub`,
+  `endpoints` and `listen_port` in its `tunnel.json`). When
   a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
   with the certificate chain the peer presented in this connection's TLS handshake, and
   answers with `{"t":"tunnel","tunnel":{"hub_key":...,"psk":...,"endpoints":[...]}}`:
@@ -1041,6 +1046,22 @@ lite member do not take part yet.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met
   the hub as a member, with the key that member sent, and joining from the internet is not
   possible. No signed record binds the key: the member certificate already does.
-- A member that moves to another group keeps its key and forgets the rest (`group` in
-  `tunnel.json`).
+- A member that moves to another group turns sync away from home off: it deletes
+  `tunnel.json` (whose `group` names the old group), and the user turns it on again.
+
+### Through the tunnel
+
+- The hub runs WireGuard in user space on UDP `listen_port` (8764 when 0), with one peer per
+  admitted device: its key, its preshared key, and its tunnel address as the only allowed
+  address. Inside the tunnel the hub listens only on TCP 8764 at its own tunnel address,
+  for the member protocol (section 4) and nothing else: no pairing, no shortcut.
+- After the member TLS handshake the hub checks that the device ID of the client
+  certificate gives the tunnel address the connection came from, and closes it otherwise,
+  so a device cannot use another device's tunnel key.
+- A member that keeps a hub's offer runs the other end, with the hub as its only peer and
+  a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member TLS
+  whenever the hub is neither found by discovery nor connected on the home network, trying
+  the offer's endpoints in turn, with the dialers' backoff (1 s, doubling to 30 s).
+- It fails closed: when the hub or the link cannot start, or the hub does not answer, the
+  member syncs at home only, and `status` says why (`error`, with `detail` for debugging).
 

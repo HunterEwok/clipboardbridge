@@ -115,6 +115,7 @@ type HubConfig struct {
 	ListenPort int        // the UDP port; 0 picks a free one
 	Peers      []Peer
 	Logf       func(format string, args ...any)
+	Verbose    bool // also log WireGuard's own messages, such as each handshake
 }
 
 // Hub is the end of every client's tunnel.
@@ -153,7 +154,7 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 			return nil, err
 		}
 	}
-	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "hub"))
+	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "hub", cfg.Verbose))
 	h := &Hub{dev: dev, addr: cfg.Addr, port: port}
 	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", cfg.PrivateKey.hex(), port)
 	if err := dev.IpcSet(ipc + peersConfig(cfg.Peers)); err != nil {
@@ -209,6 +210,7 @@ type ClientConfig struct {
 	HubAddr      netip.Addr     // the hub's tunnel address
 	Endpoint     netip.AddrPort // where the hub's UDP port is reached
 	Logf         func(format string, args ...any)
+	Verbose      bool // also log WireGuard's own messages, such as each handshake
 }
 
 // Client is one device's tunnel to the hub.
@@ -241,7 +243,7 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: %w", err)
 	}
-	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "client"))
+	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "client", cfg.Verbose))
 	ipc := fmt.Sprintf("private_key=%s\npublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=%d\n",
 		cfg.PrivateKey.hex(), cfg.HubPublicKey.hex(), cfg.PresharedKey.hex(),
 		cfg.Endpoint, netip.PrefixFrom(cfg.HubAddr, 128), Keepalive)
@@ -325,12 +327,17 @@ func peersConfig(peers []Peer) string {
 	return b.String()
 }
 
-// wgLogger passes wireguard-go's errors to logf; its verbose log stays off.
-func wgLogger(logf func(string, ...any), who string) *device.Logger {
-	return &device.Logger{
+// wgLogger passes wireguard-go's errors to logf, and with verbose its other
+// messages too.
+func wgLogger(logf func(string, ...any), who string, verbose bool) *device.Logger {
+	l := &device.Logger{
 		Verbosef: device.DiscardLogf,
 		Errorf: func(format string, args ...any) {
 			logf("tunnel: "+who+": "+format, args...)
 		},
 	}
+	if verbose {
+		l.Verbosef = l.Errorf
+	}
+	return l
 }

@@ -48,6 +48,20 @@ type hub struct {
 	// restarts within a record's lifetime.
 	sticky bool
 	ghosts map[string]mdns.Peer
+	// hidden members neither see the others nor are seen, as on another
+	// network.
+	hidden map[string]bool
+}
+
+// hide puts the member with this device ID on another network.
+func (h *hub) hide(id string) {
+	h.mu.Lock()
+	if h.hidden == nil {
+		h.hidden = map[string]bool{}
+	}
+	h.hidden[id] = true
+	h.mu.Unlock()
+	h.update()
 }
 
 type fakeDiscovery struct {
@@ -141,7 +155,7 @@ func (h *hub) update() {
 	var members []*fakeDiscovery
 	for m := range h.members {
 		members = append(members, m)
-		if !m.cfg.BrowseOnly {
+		if !m.cfg.BrowseOnly && !h.hidden[m.cfg.ID] {
 			all = append(all, m.peer())
 		}
 	}
@@ -151,6 +165,9 @@ func (h *hub) update() {
 	slices.SortFunc(all, func(a, b mdns.Peer) int { return strings.Compare(a.ID, b.ID) })
 	for _, m := range members {
 		others := slices.DeleteFunc(slices.Clone(all), func(p mdns.Peer) bool { return p.ID == m.cfg.ID })
+		if h.hidden[m.cfg.ID] {
+			others = nil
+		}
 		m.mu.Lock()
 		m.latest, m.fresh = others, true
 		m.mu.Unlock()
@@ -347,7 +364,12 @@ func pairWith(t *testing.T, admin, s *testService) {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	waitUpTo(t, 10*time.Second, what, ok)
+}
+
+func waitUpTo(t *testing.T, d time.Duration, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
 	for !ok() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)

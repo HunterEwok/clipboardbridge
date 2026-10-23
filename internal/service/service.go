@@ -129,6 +129,7 @@ type Service struct {
 	stopping      bool          // the service is stopping: no new group, no election
 	holder        bool
 	dialers       map[group.DeviceID]*dialer
+	nearby        map[group.DeviceID]bool // the members of the group that discovery finds on this network
 	watchers      map[*watcher]bool
 	lastSeq       uint64
 	pending       *node.Write                  // a write that no watcher got, for the next one
@@ -139,8 +140,14 @@ type Service struct {
 	recMu   sync.Mutex     // guards records; taken after mu, never before
 	records *group.Records // the group's device records; nil while in no group
 
-	tunMu  sync.Mutex    // guards tunnel; taken after mu, before recMu
-	tunnel *tunnel.State // the tunnel keys (tunnel.go); nil while in no group or unreadable
+	tunMu      sync.Mutex      // guards tunnel and the rest of the tun fields; taken after mu, before recMu
+	tunnel     *tunnel.State   // the tunnel keys (tunnel.go); nil while sync away from home is off
+	tunCtx     context.Context // the group's context, for the tunnel; nil while in no group
+	tunSelf    string          // this device's ID, for its tunnel address
+	tunRun     *tunRun         // the hub or the link to it, while it runs
+	tunThrough bool            // connected to the hub through the tunnel now
+	tunErr     string          // what went wrong last, for status; "" if nothing
+	tunDetail  string          // the underlying error
 
 	groupCtx    context.Context
 	groupCancel context.CancelFunc
@@ -269,7 +276,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.recMu.Unlock()
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()
-	s.tunnel = tun
+	s.tunnel, s.tunCtx, s.tunSelf = tun, gctx, string(id.ID)
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, Engine: eng,
@@ -329,6 +336,9 @@ func (s *Service) startGroup(id *group.Identity) error {
 		}
 	}(s.discoveryDone)
 	s.electLocked() // alone, a Linux member holds clipboardbridge.local at once
+	s.tunMu.Lock()
+	s.runTunnelLocked()
+	s.tunMu.Unlock()
 	return nil
 }
 
@@ -357,6 +367,9 @@ func (s *Service) stopGroup() {
 	if nd != nil {
 		nd.Close()
 	}
+	s.tunMu.Lock()
+	s.stopTunnelLocked()
+	s.tunMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}

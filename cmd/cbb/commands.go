@@ -124,6 +124,7 @@ func writeStatus(w io.Writer, st *control.Status) {
 	if st.Holder {
 		fmt.Fprintln(w, "This member answers for clipboardbridge.local.")
 	}
+	writeAway(w, st.Away)
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")
 		return

@@ -134,6 +134,7 @@ func (s *Service) found(peers []mdns.Peer) {
 	}
 	tag := group.Tag(s.id.GroupCA.Cert)
 	want := map[group.DeviceID][]string{}
+	s.nearby = map[group.DeviceID]bool{}
 	for _, p := range peers {
 		id, err := group.ParseDeviceID(p.ID)
 		if err != nil || id == s.id.ID {
@@ -142,6 +143,7 @@ func (s *Service) found(peers []mdns.Peer) {
 		if g, _ := p.TXTValue("g"); g != tag {
 			continue // another group, or an old CA
 		}
+		s.nearby[id] = true
 		r, _ := p.TXTValue("r")
 		mac, lite := strings.EqualFold(r, "mac"), strings.EqualFold(r, "lite")
 		switch {

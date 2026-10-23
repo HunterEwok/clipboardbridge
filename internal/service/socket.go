@@ -92,6 +92,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Devices: devs, Done: true}, nil)
+	case control.OpAway:
+		if err := s.away(m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpRevoke:
 		name, err := s.revoke(m.Name)
 		if err != nil {
@@ -167,6 +173,7 @@ func (s *Service) status() *control.Status {
 	for _, p := range s.nd.Peers() {
 		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), SkewMS: skews[string(p.ID)].Milliseconds()})
 	}
+	st.Away = s.awayStatus()
 	return st
 }
 

@@ -60,10 +60,17 @@ type State struct {
 
 	// IsHub tells whether this member is the group's hub, which admits
 	// the other members' keys. Endpoints are the hub's addresses that it
-	// gives its clients.
-	IsHub     bool
-	Endpoints []netip.AddrPort
-	Members   []Member
+	// gives its clients, and ListenPort the UDP port it listens on (0 for
+	// Port).
+	IsHub      bool
+	Endpoints  []netip.AddrPort
+	ListenPort int
+	Members    []Member
+
+	// KeysInFile records that the user agreed to sync away from home
+	// although this device keeps its keys in files, not in hardware
+	// (docs/design.md, "Turning it on, step by step").
+	KeysInFile bool
 }
 
 // HubLink is what a client keeps of its hub.
@@ -85,13 +92,15 @@ type Member struct {
 }
 
 type stateFile struct {
-	Version   int              `json:"v"`
-	Key       Key              `json:"key"`
-	Group     string           `json:"group,omitempty"`
-	ToHub     *hubFile         `json:"to_hub,omitempty"`
-	IsHub     bool             `json:"is_hub,omitempty"`
-	Endpoints []netip.AddrPort `json:"endpoints,omitempty"`
-	Members   []memberFile     `json:"members,omitempty"`
+	Version    int              `json:"v"`
+	Key        Key              `json:"key"`
+	Group      string           `json:"group,omitempty"`
+	ToHub      *hubFile         `json:"to_hub,omitempty"`
+	IsHub      bool             `json:"is_hub,omitempty"`
+	Endpoints  []netip.AddrPort `json:"endpoints,omitempty"`
+	ListenPort int              `json:"listen_port,omitempty"`
+	Members    []memberFile     `json:"members,omitempty"`
+	KeysInFile bool             `json:"keys_in_file,omitempty"`
 }
 
 type hubFile struct {
@@ -138,7 +147,7 @@ func LoadState(dir string) (*State, error) {
 	if f.Version != 1 {
 		return nil, fmt.Errorf("%s: unknown version %d", StateFile, f.Version)
 	}
-	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints}
+	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile}
 	if f.ToHub != nil {
 		s.ToHub = &HubLink{Device: f.ToHub.Device, PublicKey: f.ToHub.PublicKey, PresharedKey: f.ToHub.PresharedKey, Endpoints: f.ToHub.Endpoints}
 	}
@@ -153,7 +162,7 @@ func LoadState(dir string) (*State, error) {
 
 // Save writes the state to dir, readable only by its owner.
 func (s *State) Save(dir string) error {
-	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints}
+	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile}
 	if h := s.ToHub; h != nil {
 		f.ToHub = &hubFile{Device: h.Device, PublicKey: h.PublicKey, PresharedKey: h.PresharedKey, Endpoints: h.Endpoints}
 	}
@@ -174,6 +183,9 @@ func (s *State) check() error {
 	}
 	if len(s.Endpoints) > maxEndpoints {
 		return errors.New("too many endpoints")
+	}
+	if s.ListenPort < 0 || s.ListenPort > 65535 {
+		return fmt.Errorf("a bad listen port %d", s.ListenPort)
 	}
 	if h := s.ToHub; h != nil {
 		if err := h.check(); err != nil {
