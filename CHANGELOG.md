@@ -59,6 +59,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   minutes after the fingerprint, the face or the screen lock.
   It finds the computers with NsdManager and keeps a connection to each (the kit's
   `MemberDialer`), and reads QR codes with CameraX and ZXing, without Google Play services.
+  Its screens follow the iPhone app's: Start with the one-time "This phone is ready" note,
+  joining another phone's group by showing a QR code, Home with the Send-or-fetch button and
+  the computers' live dots, Devices (remove, make a computer an admin, take the group over
+  from a lost root phone), Add a device (the camera or pasted text) and Settings; the four
+  themes of `apps/design/tokens.json` (`tools/tokens` now writes Kotlin too) and Material
+  You, in English and Russian. The app asks for the local network permission Android 17
+  needs.
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).
