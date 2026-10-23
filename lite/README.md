@@ -36,7 +36,7 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
 ```
 
 For a Raspberry Pi Zero, Zero W or Pi 1 (ARMv6, 32-bit Raspberry Pi OS): a static binary,
-with clang and llvm-ar and no cross toolchain (`.cargo/config.toml` holds the settings):
+with clang and llvm-ar (`apt install clang llvm`) and no cross toolchain (`.cargo/config.toml` holds the settings):
 
 ```sh
 rustup target add arm-unknown-linux-musleabihf
