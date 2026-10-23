@@ -167,7 +167,9 @@ mod tests {
         let e = Error::with("cannot read the identity", io).context("cannot start");
         assert_eq!(e.message(), "cannot start");
         let d = e.details();
-        assert!(d.starts_with("cannot read the identity\ndenied (std::io::error::Error: "), "{d}");
+        // The type's path differs between Rust versions (std:: or core::).
+        assert!(d.starts_with("cannot read the identity\ndenied ("), "{d}");
+        assert!(d.contains("io::error::Error: "), "{d}");
         assert!(e.for_log().starts_with("cannot start: cannot read the identity: denied"), "{}", e.for_log());
 
         set_show_details(false);
