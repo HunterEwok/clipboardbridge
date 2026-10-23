@@ -3,8 +3,8 @@
 
 // Package service is the clipboardbridge service: it holds the device's identity,
 // the sync engine and the member connections, publishes and browses with
-// mDNS on Linux and only browses on a Mac (D-32), admits devices, and serves
-// the local control socket.
+// mDNS (D-12, D-32; a Mac publishes itself with r=mac, D-46), admits devices,
+// and serves the local control socket.
 package service
 
 import (
@@ -38,12 +38,12 @@ const markFile = "hlc.mark"
 type Config struct {
 	StateDir string    // identity and clock mark
 	Socket   string    // the control socket
-	Role     node.Role // Linux listens and publishes; a Mac only dials
+	Role     node.Role // every role listens and publishes; only Linux holds clipboardbridge.local
 	Name     string    // this device's name, shown to the others; the host name if empty
 	Logf     func(format string, args ...any)
 
-	// Discover publishes this member and finds the others; mDNS if nil, on
-	// a Mac in browse-only mode. Tests replace it.
+	// Discover publishes this member and finds the others; mDNS if nil.
+	// Tests replace it.
 	Discover func(DiscoveryConfig) (Discovery, error)
 
 	// listen opens the member port; the one Port names, or any free port,
@@ -254,9 +254,8 @@ func loadMark(dir string) (hlc.Timestamp, error) {
 }
 
 // startGroup starts the network part with an identity: the member
-// connections and discovery; on Linux also the member port, publishing and
-// clipboardbridge.local. A Mac only browses. Its state is set only when all of it
-// started.
+// connections, discovery and the member port; on Linux also
+// clipboardbridge.local. Its state is set only when all of it started.
 //
 // The group's context does not derive from Run's: only stopGroup ends it,
 // after the goodbyes, so a stopping service leaves in order.
@@ -369,6 +368,7 @@ func (s *Service) stopGroup() {
 		nd.Close()
 	}
 	s.tunMu.Lock()
+	s.tunCtx = nil // a control request still running may not start the tunnel again
 	s.stopTunnelLocked()
 	s.tunMu.Unlock()
 	if cancel != nil {

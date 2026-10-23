@@ -815,8 +815,8 @@ The `devices` and `revoke` operations are in section 10.
 
 ## 9. The phone as the root
 
-In a group that a phone app creates, the phone is the root of trust ("Target architecture
-with the phone apps" in [design.md](design.md)). Sections 1-8 hold for it too; groups
+In a group that a phone app creates, the phone is the root of trust ("The phone apps" in
+[design.md](design.md)). Sections 1-8 hold for it too; groups
 created by a computer (`cbb pair`, `cbb pair -phone`) keep working as before.
 
 - **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
@@ -848,7 +848,7 @@ created by a computer (`cbb pair`, `cbb pair -phone`) keep working as before.
 
 ## 10. Admin CAs, device records and revocation
 
-The wire side of "Admin phones, the devices list and revocation (planned)" in
+The wire side of "Admin phones, the devices list and revocation" in
 [design.md](design.md). Implemented in Go: the records, their exchange, refusing revoked
 keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
 `internal/node`, `internal/service/devices.go`). ClipboardBridgeKit signs device and revocation

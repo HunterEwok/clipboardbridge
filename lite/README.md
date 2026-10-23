@@ -80,7 +80,10 @@ cargo build --release --target arm-unknown-linux-musleabihf
 ```
 
 CI builds both for every pull request: the `cbb-lite-linux-arm64` and `cbb-lite-linux-armv6`
-artifacts of the `lite member (Rust)` job.
+artifacts of the `lite member (Rust)` job. A release builds static musl binaries for x86-64,
+ARM64 and ARMv6 with Rust's own linker (`.cargo/config.toml`), each in an archive with
+`THIRD_PARTY_NOTICES`, the licenses of the crates it is built from
+(`packaging/notices.sh`).
 
 The e2e test runs the lite member among Go members: it joins through the phone's QR code,
 gets no CA keys and syncs both ways.
@@ -90,6 +93,19 @@ cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite go test ./internal/service -
 ```
 
 ## Install
+
+Each release has a static build for x86-64, ARM64 and ARMv6 (which also runs on ARMv7):
+`cbb-lite-linux-amd64.tar.gz`, `-arm64` and `-armv6`. On the device, for example a
+Raspberry Pi Zero:
+
+```sh
+curl -fsSLO https://github.com/HunterEwok/clipboardbridge/releases/latest/download/cbb-lite-linux-armv6.tar.gz
+tar -xzf cbb-lite-linux-armv6.tar.gz && cd cbb-lite
+```
+
+Check the download against the release's `SHA256SUMS` if you like (see the release notes).
+Then, in that directory (for a binary you built, in `lite/`, with its path in place of
+`cbb-lite` on the first line):
 
 ```sh
 sudo install -m 0755 cbb-lite /usr/local/bin/

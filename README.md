@@ -3,67 +3,33 @@
 One clipboard for your Apple devices, Android phones and every Linux and Windows computer on
 your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
-> **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
-> shortcut work; Windows is new and not yet tested on a real PC; the iPhone and Android apps
-> and the lite member are built and tested in CI but not yet on a real device; sync away
-> from home works for computers, not yet for the phones. The design is in
-> [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
+> **Status: early development.** What works, and what has been tried on real devices, is
+> in the [status table](#status) below.
 
 ## Install
 
-New here? The [quick start](docs/quickstart.md) walks through installing and pairing step
-by step.
-
-On Linux with systemd (x86-64, ARM64, ARMv7, ARMv6), from the latest release:
+The [quick start](docs/quickstart.md) walks through installing and pairing step by step.
+In short, from the latest release:
 
 ```sh
+# Linux with systemd (x86-64, ARM64, ARMv7, ARMv6)
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
-```
 
-It checks the download against the release's `SHA256SUMS`, installs the service and, when
-ufw or firewalld is active, allows mDNS and clipboardbridge's one port, TCP 8764, from the home
-network only. Add `-s -- --console` after `sh` to also start tmux on the text console,
-`--port N` for another port, or `--no-firewall` to leave the firewall alone;
-`sudo sh /usr/local/share/clipboardbridge/uninstall.sh` removes it again, with the rules it added. Every release file has a build provenance attestation:
-`gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
-
-On a Mac (Apple silicon; `amd64` instead of `arm64` for Intel), in Terminal, so that the
-unsigned binary is not quarantined as a browser download would be:
-
-```sh
-curl -fsSLO https://github.com/HunterEwok/clipboardbridge/releases/latest/download/clipboardbridge-darwin-arm64.tar.gz
-tar -xzf clipboardbridge-darwin-arm64.tar.gz
-sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
-```
-
-Or with [Homebrew](https://brew.sh), which also updates it:
-
-```sh
+# macOS, with Homebrew (the second line starts the service; run it again after brew upgrade)
 brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
 ```
 
-The second line starts the service and the pasteboard agent; run it again after each
-`brew upgrade`. Either way, `uninstall.sh` beside that `install.sh` removes them again
-(before `brew uninstall`).
-
-On Windows 10 (1809 or later) or 11, x86-64 or ARM64, in a PowerShell opened with "Run as
-administrator":
-
 ```powershell
+# Windows 10 (1809 or later) or 11, x86-64 or ARM64, in an administrator PowerShell
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
 ```
 
-It checks the download against `SHA256SUMS`, installs the service and the clipboard agent,
-adds you to the `clipboardbridge` group and allows TCP 8764 and mDNS from the local network
-in Windows Firewall. `$env:CBB_PORT = "9000"` before it picks another port,
-`$env:CBB_FIREWALL = "no"` leaves the firewall alone. Settings, Apps, clipboardbridge,
-Uninstall removes it again, with the rules it added.
-
-Then pair with the iPhone on a Linux machine with `cbb pair -phone`, and add each
-further computer with `cbb join` and the shortcut "clipboardbridge: add a computer"; see
-the [quick start](docs/quickstart.md). `cbb devices` lists the group, and
-`cbb revoke` removes a lost device.
+The installers check the download against the release's `SHA256SUMS` and allow
+clipboardbridge's one port, TCP 8764, and mDNS from the home network in the firewall; their
+options are in the [command reference](docs/cli.md#installers). Every release file has a
+build provenance attestation: `gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
+Then make a group and add your devices, as the quick start says.
 
 ## What it does
 
@@ -115,6 +81,34 @@ On Linux it works with and without a desktop:
 | iOS and iPadOS                                                           | the app, or a shortcut in the Shortcuts app     |
 | Android                                                                  | the app (an APK in every release)               |
 | Small Linux devices (routers, boards)                                    | the lite member, `cbb-lite` ([lite/README.md](lite/README.md)) |
+
+## Status
+
+| Part | State | On real devices |
+|---|---|---|
+| Linux service, desktop clipboard (X11, Wayland), tmux, `cbb copy`/`paste` | works | yes (Raspberry Pi, Steam Deck) |
+| macOS service and pasteboard agent | works | yes |
+| Windows service, clipboard agent, installer | built, CI on windows-latest | not yet |
+| iPhone shortcut (Action button, Back Tap) | works | yes |
+| iPhone app (the phone as the root, admin phones, devices list) | built, CI on a simulator | not yet |
+| Android app | built, CI; APK in every release | not yet |
+| Lite member `cbb-lite` on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
+| Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
+| Sync away from home between computers (`cbb away`, `cbb invite`) | built | not yet |
+| Sync away from home for the phones and the lite member | planned | |
+| Console paste on a key press | planned | |
+| Homebrew | set up; the tap gets its first formula with the next release | not yet |
+| Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |
+
+The order of what comes next is the [roadmap](docs/roadmap.md).
+
+## Documentation
+
+The [documentation index](docs/README.md) lists every document and who it is for: the
+[quick start](docs/quickstart.md), the [phone apps](docs/apps-guide.md), the
+[commands](docs/cli.md), [troubleshooting](docs/troubleshooting.md), the
+[lite member](lite/README.md), and for developers the [design](docs/design.md) and the
+[protocol](docs/protocol.md).
 
 ## License
 

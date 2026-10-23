@@ -32,69 +32,10 @@ Read [README.md](README.md), [docs/design.md](docs/design.md),
 
 ## Build and test
 
-Go, from the repository root (the same as CI's `check` and `test` jobs):
-
-```sh
-gofmt -l .
-go vet ./...
-go tool staticcheck ./...
-go tool govulncheck ./...
-go tool actionlint
-go run ./tools/repocheck
-go run ./tools/tokens -check   # apps/design/tokens.json -> Swift, WCAG contrast
-go run ./tools/icon -check     # the app icon
-go test -race ./...
-```
-
-The lite member (Rust, the `lite` job in CI):
-
-```sh
-cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS
-cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
-  go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
-```
-
-The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
-no Android dependencies and builds anywhere; the app needs the Android SDK and Google's Maven
-repository (CI, or a Mac with Android Studio):
-
-```sh
-cd apps/android && ./gradlew -p kit test
-cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
-```
-
-The phone kit (Swift package, runs on Linux too):
-
-```sh
-cd apps/ios/ClipboardBridgeKit && swift test
-```
-
-Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
-
-- `CBB_INTEROP_OUT=<dir> swift test` writes fresh `swift-records.json`,
-  `swift-renewal.json` and `swift-admin.json`; then
-  `CBB_INTEROP_OUT=<dir> go test ./internal/group -run 'TestSwift'` reads them.
-  Without the variable Go reads the committed copies in `testdata/interop`.
-- `CBB_SWIFT_INTEROP=<path to clipboardbridge-interop>` runs
-  `TestSwiftMemberAdmitsGoJoiner` (pairing over plain TCP); on macOS
-  `CBB_SWIFT_INTEROP_TLS` runs the real-TLS pairing and member tests (see the
-  `phone kit` job in `.github/workflows/ci.yml` for the keychain setup).
-- The Kotlin kit does the same: `CBB_INTEROP_OUT=<dir> ./gradlew -p kit test` writes the
-  same files, and `./gradlew -p kit interopScript` builds
-  `kit/build/interop/clipboardbridge-interop`, which plays the Android phone in those three
-  Go tests on Linux too (TLS from Conscrypt; the `Android app` job runs them).
-
-The app (macOS with Xcode):
-
-```sh
-brew install xcodegen
-cd apps/ios && xcodegen generate   # ClipboardBridge.xcodeproj and Info.plist are not committed
-xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \
-  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=  # any installed iPhone simulator
-```
-
-To run it on a phone, open the project in Xcode, pick your team under Signing, and run.
+The commands for every part (Go, the lite member in Rust, the Android app, the phone kit, the
+cross tests between Go, Swift and Kotlin, the iPhone app) are in
+[CONTRIBUTING.md](CONTRIBUTING.md), "Development"; run the ones for what you changed before
+pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH` may be older.
 
 ## Layout
 
@@ -150,7 +91,7 @@ Next steps, roughly in order:
 
 1. TestFlight (needs the Apple account), a signed macOS `.pkg`, sync away from home for
    the phones and the lite member (it works between computers: `cbb away`, docs/protocol.md
-   section 11), the lite member on the ESP32 (see docs/design.md, "Roadmap").
+   section 11), the lite member on the ESP32 (see docs/roadmap.md).
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
 tested on a real PC.

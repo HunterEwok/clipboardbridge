@@ -72,7 +72,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 - **check**: `gofmt`, `go mod tidy`, `go mod verify`, `go vet`, `staticcheck`,
   `govulncheck`, `actionlint` for the workflows,
   [the repository rules](../tools/repocheck/main.go) (English only, apart from the apps'
-  translations; license headers in Go files; copied code with its license), and the design
+  translations; license headers in Go and Rust files; copied code with its license; the documentation's
+  links, the old name and the command reference), and the design
   tokens (`go run ./tools/tokens -check`);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every Linux and Windows target, static
@@ -129,7 +130,10 @@ Rules for workflows:
   hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
-  binary, `LICENSE` and `packaging/`.
+  binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code
+  and Go itself, written by `packaging/archive.sh`) and `packaging/`. The `cbb-lite-linux-*`
+  archives hold `cbb-lite/` in the same way, with the crates' licenses
+  (`lite/packaging/notices.sh`).
 - The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
   Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist` or
   `clipboardbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:
@@ -170,3 +174,25 @@ fails unless the key may write there.
 Without the secret the release still succeeds and warns that the tap kept its formula. To
 fill the tap for a release made before, run `formula.sh` with that tag and its
 `SHA256SUMS` and commit the output to the tap by hand.
+
+## Android signing key
+
+The release workflow builds `clipboardbridge-X.Y.Z.apk` from the tag (version code
+`X*10000 + Y*100 + Z`) and signs it with the project's release key, which lives only in the
+repository's Actions secrets. Android installs an update only when it is signed with the same
+key, so the key is made once and kept, with a backup, for good:
+
+```sh
+keytool -genkeypair -v -keystore clipboardbridge-release.jks -alias clipboardbridge \
+  -keyalg EC -groupname secp256r1 -validity 36500 -dname "CN=clipboardbridge"
+base64 -i clipboardbridge-release.jks | pbcopy   # macOS; Linux: base64 -w0 clipboardbridge-release.jks
+```
+
+The secrets: `CBB_ANDROID_KEYSTORE_BASE64` (the keystore, in base64),
+`CBB_ANDROID_KEYSTORE_PASSWORD`, `CBB_ANDROID_KEY_ALIAS` (`clipboardbridge`) and
+`CBB_ANDROID_KEY_PASSWORD` (the same as the keystore's for a PKCS12 keystore). Without them
+the release has no APK. F-Droid, later, builds and signs with its own key.
+
+To check the key without a release, run the release workflow by hand from a branch (Actions,
+"release", "Run workflow"): it builds everything, checks the APK's signature and keeps the
+files as the run's artifacts, and publishes nothing.
