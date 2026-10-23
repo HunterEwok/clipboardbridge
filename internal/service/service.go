@@ -368,6 +368,7 @@ func (s *Service) stopGroup() {
 		nd.Close()
 	}
 	s.tunMu.Lock()
+	s.tunCtx = nil // a control request still running may not start the tunnel again
 	s.stopTunnelLocked()
 	s.tunMu.Unlock()
 	if cancel != nil {
