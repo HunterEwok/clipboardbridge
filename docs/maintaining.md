@@ -75,9 +75,9 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   translations; license headers in Go files; copied code with its license), and the design
   tokens (`go run ./tools/tokens -check`);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
-- **build**: a cgo-free build (`CGO_ENABLED=0`) for every target, static on Linux, including
-  ARMv6 for the Raspberry Pi Zero W. When the macOS agent arrives, the macOS targets move to
-  macOS runners with cgo (see the Build section of [the design](design.md#build));
+- **build**: a cgo-free build (`CGO_ENABLED=0`) for every Linux and Windows target, static
+  on Linux, including ARMv6 for the Raspberry Pi Zero W; the macOS targets on macOS runners
+  with cgo, for the pasteboard agent (see the Build section of [the design](design.md#build));
 - **mdns with avahi**: the mDNS tests on real sockets, beside avahi-daemon, in a Debian
   container;
 - **e2e**: the built binary as three members and an avahi resolver in Docker containers:
@@ -87,10 +87,20 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   client under Xvfb, against wl-clipboard and xclip;
 - **packaging**: shellcheck for the scripts, `systemd-analyze verify` and `security` for the
   unit, and the desktop entry;
+- **homebrew**: the formula written by `packaging/homebrew/formula.sh`, installed with
+  Homebrew on macOS;
+- **windows installer**: `install.ps1`, the service, the agent and `uninstall.ps1` on
+  windows-latest;
 - **phone kit**: ClipboardBridgeKit's tests on Linux and macOS, and its cross tests with the Go
   code (pairing over plain TCP on Linux; pairing and a member connection over TLS on macOS);
 - **iPhone app**: the Xcode project from XcodeGen, built and tested on an iPhone simulator
   without signing;
+- **Android app**: the Kotlin kit's tests and its cross tests with the Go code, and the app
+  built, unit-tested and linted;
+- **lite member (Rust)**: `cargo fmt`, `clippy` and the tests of `lite/`, the ARM64 and
+  ARMv6 builds, and the e2e test of `cbb-lite` among Go members;
+- **lite core on the ESP32**: the lite protocol core with its TLS built for the ESP32-C6 (RISC-V) and the
+  ESP32-S3 (Xtensa);
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:
@@ -143,13 +153,13 @@ and CI's `homebrew` job installs one with it on macOS on every pull request.
 
 Setting it up, once:
 
-- [ ] Create the public repository `HunterEwok/homebrew-tap`, empty (no README,
+- [x] Create the public repository `HunterEwok/homebrew-tap`, empty (no README,
   license or `.gitignore`).
-- [ ] Make a key for it, on any computer:
+- [x] Make a key for it, on any computer:
   `ssh-keygen -t ed25519 -N '' -C homebrew-tap -f homebrew-tap`.
-- [ ] In the tap, **Settings → Deploy keys → Add deploy key**: the contents of
+- [x] In the tap, **Settings → Deploy keys → Add deploy key**: the contents of
   `homebrew-tap.pub`, with **Allow write access**. It can write to the tap and nothing else.
-- [ ] In this repository, **Settings → Secrets and variables → Actions → New repository
+- [x] In this repository, **Settings → Secrets and variables → Actions → New repository
   secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
   delete both files.
 

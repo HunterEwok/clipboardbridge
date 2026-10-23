@@ -213,8 +213,9 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   connect to each other; so a phone syncs with a lite member or a Mac with no other
   computer on.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
-  sync through the internet, over a VPN between them (see design.md, "Sync away from home");
-  until then a lite member can be given a member's address with `-peer`.
+  reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
+  home"). The phones and the lite member do not use the tunnel yet; a lite member can be
+  given a member's address with `-peer`.
 - A computer that joined at an address the user gave (`cbb join -code ADDRESS`, as through
   an SSH forward or a VPN) also dials the member that admitted it at that address, whatever
   the rules above say, while discovery does not find that member and no other connection to
@@ -812,43 +813,38 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
 
 The `devices` and `revoke` operations are in section 10.
 
-## 9. Planned: the phone as the root (not implemented)
+## 9. The phone as the root
 
-This section fixes the wire changes for the phone apps ("Target architecture with the phone
-apps" in [design.md](design.md)), so that the Go foundation and the apps are built to the
-same plan. Nothing here is implemented yet; sections 1-8 stay valid, and groups created by
-a computer keep working as they do today.
+In a group that a phone app creates, the phone is the root of trust ("Target architecture
+with the phone apps" in [design.md](design.md)). Sections 1-8 hold for it too; groups
+created by a computer (`cbb pair`, `cbb pair -phone`) keep working as before.
 
 - **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
   StrongBox that cannot be exported, with the certificate profile of section 2 except
   path length 1 (MaxPathLen 1), CN `clipboardbridge group root YYYY-MM-DD`. Below it every admin
   phone has an admin CA (section 10). Computers get member certificates; a computer holds a
-  CA key only when the root phone makes it an admin (section 10, "A computer as admin"). The iPhone app asks for Face ID or the passcode
-  before it signs with the root key, once per action. Implemented: ClipboardBridgeKit's
-  `PhoneGroup` creates this root and admits computers with it, and Go accepts a group CA with path
-  length 0 or 1 (`checkCA`). Admin CAs below the root are supported on both sides
-  (section 10); a second phone joining as an admin comes with the app. The
-  Linux side is in place: a Welcome without CA keys makes a Linux member without them
-  (section 6), and such members never hold `clipboardbridge.local`. There is no iPhone CA in such
-  a group.
+  CA key only when the root phone makes it an admin (section 10, "A computer as admin").
+  The iPhone app asks for Face ID or the passcode before it signs with the root key, once
+  per action. Go accepts a group CA with path length 0 or 1 (`checkCA`). A Welcome without
+  CA keys makes a Linux member without them (section 6), and such members never hold
+  `clipboardbridge.local`. There is no iPhone CA in such a group.
 - **The app is a member.** It holds a member certificate of its own group with role
-  `phone` and speaks the member protocol of section 4. It always dials and never listens
-  (a phone cannot accept connections in the background), so members MUST NOT dial a
-  `phone` member; it publishes no mDNS records. The roles `phone` and `lite` are already
-  accepted (section 4).
-- **Join QR code and pairing direction.** Already implemented: `cbb join` listens
-  and shows its addresses and certificate fingerprint, and the admitting side dials it and
-  confirms first (section 6, "The joiner listens"). Today a Linux member dials, when the
-  shortcut posts the QR code to `/admit`; the app will dial by itself, as the admitting
-  side, and send a Welcome with a member certificate signed by the phone's CA.
+  `phone` and speaks the member protocol of section 4. It dials and never listens for
+  members (a phone cannot accept connections in the background), so members MUST NOT dial a
+  `phone` member; it publishes no mDNS records. It listens only for pairing, while another
+  phone joins it (section 6, "The joiner listens").
+- **Join QR code and pairing direction.** `cbb join` listens and shows its addresses and
+  certificate fingerprint; the app dials it as the admitting side, confirms first (section
+  6, "The joiner listens") and sends a Welcome with a member certificate signed by its CA.
+  When the shortcut posts the QR code to `/admit`, a Linux member dials instead.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
-  profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
+  profile, no iPhone CA and no token; it finds members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.
-- **Renewal and revocation.** Certificate renewal (section 2) moves to the admin phones,
-  which send `cert` messages as a Linux member does today (implemented in ClipboardBridgeKit:
-  `GroupCertificates.renewal`, `MemberNode`'s `renew`; the app also renews its own certificate
-  at start); revocation and the devices list
-  are section 10, and a second admin phone is the way back when a phone is lost.
+- **Renewal and revocation.** The admin phones renew certificates with `cert` messages, as
+  a Linux member does in a group it created (ClipboardBridgeKit's
+  `GroupCertificates.renewal` and `MemberNode`'s `renew`; the app also renews its own
+  certificate at start). Revocation and the devices list are section 10, and a second admin
+  phone is the way back when a phone is lost.
 
 ## 10. Admin CAs, device records and revocation
 
