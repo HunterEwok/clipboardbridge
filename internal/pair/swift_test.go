@@ -76,7 +76,7 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 				t.Fatal(err)
 			}
 			saved := 0
-			id, joinErr := j.exchange(conn, tc.code, channelID(memberDER, own), make([]byte, 32), memberCert, true,
+			id, joinErr := j.exchange(conn, []byte(tc.code), channelID(memberDER, own), make([]byte, 32), memberCert, true,
 				func(*group.Identity) error { saved++; return nil })
 			conn.Close()
 			toolErr := cmd.Wait()
