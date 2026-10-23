@@ -30,9 +30,11 @@ a checked box means the setting is in place.
 - [x] **Private vulnerability reporting**. [SECURITY.md](../SECURITY.md) relies on it.
 - [x] **Dependency graph**, **Dependabot alerts** and **Dependabot security updates**.
 - [x] **Secret scanning** and **Push protection**.
-- [ ] **CodeQL** default setup off: the workflow `.github/workflows/codeql.yml` (advanced
-  setup) scans GitHub Actions, Go, Rust, Swift and Kotlin, and GitHub rejects its results
-  while the default setup is on. The default setup cannot build the Kotlin app.
+- [ ] **CodeQL** default setup off: the workflows `.github/workflows/codeql.yml` (advanced
+  setup) scan GitHub Actions, Go, Rust and Kotlin on every pull request, and
+  `codeql-swift.yml` scans the iPhone app and its kit when `apps/ios` changes, weekly, by
+  hand and before each release. GitHub rejects their results while the default setup is on.
+  The default setup cannot build the Kotlin app and builds only the kit, not the iPhone app.
 
 **Settings → Actions → General**
 
@@ -111,7 +113,8 @@ Rules for workflows:
   (`packaging/release-notes.sh`), which fails the release if it is missing.
 - Built by CI from a tag, never on a laptop: push a tag `vX.Y.Z` on main
   (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
-  `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and
+  `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and,
+  once the iPhone app's CodeQL analysis passes on the tag (about 45 minutes),
   publishes the release, with notes generated from the merged pull requests. A tag with a
   hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
