@@ -548,7 +548,8 @@ Away from home, and between subnets that mDNS does not reach (for example a Pi o
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
 group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
-each other); nothing uses it yet.
+each other) and the exchange of its keys among Go members; nothing carries traffic through
+it yet.
 
 ### Rules
 
@@ -659,9 +660,12 @@ WireGuard packets between a group's clients and that group's hub.
   appears in a QR code.
 - A device gets the hub's public key and addresses, the forwarder's address and port, and
   its preshared key inside the member TLS, at home, when it joins or later on request; its
-  public key reaches the hub the same way. The phone, as the root, signs a record that binds
-  the device's WireGuard key to its device ID, and the hub admits only keys in such records.
-  Joining a group from the internet is not possible.
+  public key reaches the hub the same way, in its hello. The hub admits a key only from a
+  member connection, for the device ID and certificate chain of that connection, so the
+  member certificate binds the key and no extra signed record is needed (one would ask the
+  root phone for Face ID for every device and add nothing the certificate does not prove).
+  Joining a group from the internet is not possible. The wire format is in
+  [protocol.md](protocol.md), section 11.
 - Removing a device (the revocation records) makes the hub drop its key at once. A new
   preshared key can be issued through the tunnel at any time.
 

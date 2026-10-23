@@ -267,7 +267,7 @@ Message object:
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
 2. Then events follow, in any number, interleaved with pings, records messages, `admin`
-   messages and at most one `cert`.
+   and `tunnel` messages and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -304,6 +304,7 @@ Mac: neither holds `clipboardbridge.local`.
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
 | `admin_key` | string or absent | from a computer of a phone group that is no admin yet: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "A computer as admin") |
+| `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
 
 ### Event
 
@@ -996,3 +997,41 @@ identity (mode 0600) and the path in the identity file's `roots`.
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
+
+## 11. Tunnel keys
+
+The keys of the group's WireGuard tunnel for sync away from home ([design.md](design.md),
+"Sync away from home"). Implemented in Go (`internal/tunnel`, `internal/node`,
+`internal/service/tunnel.go`); the tunnel itself is not used yet, and the phones and the
+lite member do not take part yet.
+
+- Each device makes its own Curve25519 key pair and keeps the private key. Go keeps it in
+  `tunnel.json` next to the identity (mode 0600), with the rest of this section's state.
+- Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member whose
+  tunnel state cannot be read sends none, and syncs at home only.
+- The group's hub is one member, chosen on that member (`is_hub` in its `tunnel.json`). When
+  a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
+  with the certificate chain the peer presented in this connection's TLS handshake, and
+  answers with `{"t":"tunnel","tunnel":{"hub_key":...,"psk":...,"endpoints":[...]}}`:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `hub_key` | bytes | the hub's public key, 32 bytes |
+| `psk` | bytes | the member's own WireGuard preshared key, 32 random bytes |
+| `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8 |
+
+- The hub keeps one preshared key per device and makes a new one when the device offers a
+  new key. It refuses a key that another device or the hub itself has, and keeps at most
+  256 devices. It sends the offer on every connection whose hello carries a key, so a member
+  learns new endpoints and a new preshared key the next time it connects.
+- A member keeps the offer of the last hub that sent one, with the hub's device ID; a hub
+  ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
+  by the first 96 bits of the ID), so the offer does not carry them.
+- When records revoke a device (section 10, rule 4, on the chain it presented), the hub
+  forgets its key at once.
+- All of this happens inside member TLS, so a device gets into the tunnel only after it met
+  the hub as a member, with the key that member sent, and joining from the internet is not
+  possible. No signed record binds the key: the member certificate already does.
+- A member that moves to another group keeps its key and forgets the rest (`group` in
+  `tunnel.json`).
+

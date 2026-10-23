@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -940,5 +941,90 @@ func TestChunkRecords(t *testing.T) {
 	}
 	if chunkRecords(nil) != nil {
 		t.Error("no records make a chunk")
+	}
+}
+
+// TestTunnelKeyAndOffer checks that a member offers its tunnel key in its
+// hello, that the hub's OnTunnelKey gets it with the chain the member
+// presented, and that the member's OnTunnel gets the hub's offer.
+func TestTunnelKeyAndOffer(t *testing.T) {
+	type offered struct {
+		peer  group.DeviceID
+		chain []*x509.Certificate
+		key   []byte
+	}
+	keys := make(chan offered, 4)
+	offers := make(chan TunnelOffer, 4)
+	from := make(chan group.DeviceID, 4)
+	offer := TunnelOffer{HubKey: bytes.Repeat([]byte{1}, 32), PSK: bytes.Repeat([]byte{2}, 32), Endpoints: []string{"192.0.2.1:8764"}}
+	hub := newMember(t, Linux, func(_ *clip.Config, nc *Config) {
+		nc.TunnelKey = bytes.Repeat([]byte{3}, 32)
+		nc.OnTunnelKey = func(peer group.DeviceID, chain []*x509.Certificate, key []byte) *TunnelOffer {
+			keys <- offered{peer, chain, key}
+			return &offer
+		}
+	})
+	mac := newMember(t, Mac, func(_ *clip.Config, nc *Config) {
+		nc.TunnelKey = bytes.Repeat([]byte{4}, 32)
+		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte) *TunnelOffer { return nil }
+		nc.OnTunnel = func(id group.DeviceID, o TunnelOffer) error {
+			from <- id
+			offers <- o
+			return nil
+		}
+	})
+	link(t, mac, hub)
+	select {
+	case k := <-keys:
+		if k.peer != mac.id.ID || !bytes.Equal(k.key, bytes.Repeat([]byte{4}, 32)) {
+			t.Errorf("the hub got key %x from %s", k.key, k.peer)
+		}
+		if len(k.chain) == 0 || !k.chain[0].Equal(mac.id.Cert) {
+			t.Error("the hub did not get the member's certificate")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnTunnelKey was not called")
+	}
+	select {
+	case o := <-offers:
+		if id := <-from; id != hub.id.ID {
+			t.Errorf("the offer came from %s", id)
+		}
+		if !bytes.Equal(o.HubKey, offer.HubKey) || !bytes.Equal(o.PSK, offer.PSK) || !slices.Equal(o.Endpoints, offer.Endpoints) {
+			t.Errorf("the member got %+v, want %+v", o, offer)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnTunnel was not called")
+	}
+	// The member's own OnTunnelKey answered nil: the hub gets no offer.
+	noOffer := time.After(200 * time.Millisecond)
+	select {
+	case <-offers:
+		t.Fatal("a second offer arrived")
+	case <-noOffer:
+	}
+}
+
+// TestNoTunnelKey checks that a member without a tunnel key sends none
+// and that a hello without one asks nothing of OnTunnelKey.
+func TestNoTunnelKey(t *testing.T) {
+	called := make(chan struct{}, 1)
+	pi := newMember(t, Linux, func(_ *clip.Config, nc *Config) {
+		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte) *TunnelOffer {
+			called <- struct{}{}
+			return nil
+		}
+	})
+	r := rawPeer(t, pi, newMember(t, Phone))
+	r.send(&message{Type: typeHello, Role: Phone, Hello: json.RawMessage(`{"wall_ms":0}`)})
+	for _, m := range r.frames(100 * time.Millisecond) {
+		if m.Type == typeHello && bytes.Contains(m.Hello, []byte("tunnel_key")) {
+			t.Error("a member without a tunnel key offered one")
+		}
+	}
+	select {
+	case <-called:
+		t.Error("OnTunnelKey was called for a hello without a key")
+	default:
 	}
 }
