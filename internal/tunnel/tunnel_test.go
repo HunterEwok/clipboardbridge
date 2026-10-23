@@ -281,10 +281,18 @@ func TestRemovedClientIsDropped(t *testing.T) {
 func TestSetEndpoint(t *testing.T) {
 	a := newDevice(t)
 	h := startHub(t, a.peer())
+	// The first endpoint takes packets and never answers, like a hub's old
+	// address. (A closed port would answer with ICMP, which Windows reports
+	// as receive errors.)
+	sink, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sink.Close()
 	c, err := StartClient(ClientConfig{
 		PrivateKey: a.priv, PresharedKey: a.psk, Addr: a.addr,
 		HubPublicKey: h.dev.priv.Public(), HubAddr: h.dev.addr,
-		Endpoint: netip.MustParseAddrPort("127.0.0.1:9"), // nothing there
+		Endpoint: sink.LocalAddr().(*net.UDPAddr).AddrPort(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +301,9 @@ func TestSetEndpoint(t *testing.T) {
 	if err := c.SetEndpoint(h.endpoint()); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// A handshake already sent to the old endpoint is retried after
+	// WireGuard's rekey timeout of 5 s.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if _, err := roundTrip(ctx, c); err != nil {
 		t.Fatal(err)
