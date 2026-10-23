@@ -3,11 +3,8 @@
 One clipboard for your Apple devices, Android phones and every Linux and Windows computer on
 your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
-> **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
-> shortcut work; Windows is new and not yet tested on a real PC; the iPhone and Android apps
-> and the lite member are built and tested in CI but not yet on a real device; sync away
-> from home works for computers, not yet for the phones. The design is in
-> [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
+> **Status: early development.** What works, and what has been tried on real devices, is
+> in the [status table](#status) below.
 
 ## Install
 
@@ -115,6 +112,26 @@ On Linux it works with and without a desktop:
 | iOS and iPadOS                                                           | the app, or a shortcut in the Shortcuts app     |
 | Android                                                                  | the app (an APK in every release)               |
 | Small Linux devices (routers, boards)                                    | the lite member, `cbb-lite` ([lite/README.md](lite/README.md)) |
+
+## Status
+
+| Part | State | On real devices |
+|---|---|---|
+| Linux service, desktop clipboard (X11, Wayland), tmux, `cbb copy`/`paste` | works | yes (Raspberry Pi, Steam Deck) |
+| macOS service and pasteboard agent | works | yes |
+| Windows service, clipboard agent, installer | built, CI on windows-latest | not yet |
+| iPhone shortcut (Action button, Back Tap) | works | yes |
+| iPhone app (the phone as the root, admin phones, devices list) | built, CI on a simulator | not yet |
+| Android app | built, CI; APK in every release | not yet |
+| Lite member `cbb-lite` on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
+| Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
+| Sync away from home between computers (`cbb away`) | built | not yet |
+| Sync away from home for the phones and the lite member | planned | |
+| Console paste on a key press | planned | |
+| Homebrew | set up; the tap gets its first formula with the next release | not yet |
+| Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |
+
+The order of what comes next is the [roadmap](docs/design.md#roadmap).
 
 ## License
 
