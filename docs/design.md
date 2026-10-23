@@ -688,9 +688,19 @@ WireGuard packets between a group's clients and that group's hub.
   every two minutes while it is active), tens of milliseconds for 100 000 groups; beyond that,
   groups are spread over several servers. Whether AmneziaWG keeps `mac1` usable for this is to
   be checked; in VLESS mode the group is known from its VLESS user ID inside REALITY's TLS.
-- **Fallback: an endpoint per group.** If `mac1` routing does not hold up, each group gets its
-  own address on the server's IPv6 /64, or its own port on IPv4 (about 60 000 per address).
-  A visible group tag in the packets was rejected: it would link a group's devices.
+- **Fallback: a port computed by the group.** If `mac1` routing does not hold up, the hub and
+  its clients compute the group's port themselves, from a secret of the group and the current
+  hour, as an authenticator app computes its codes; there is no request that names the group.
+  The hub claims the port for the coming hours over its registration connection and tells its
+  clients inside the tunnel which one it holds. When two groups' ports collide, the forwarder
+  gives the port to one and the other takes the next of its two or three candidates; a client
+  that was offline sends its handshake to all of them at once, and only its own hub answers.
+  A handshake that reaches another group's port is dropped by the forwarder, whose `mac1` check
+  does not match, and would be dropped by that hub anyway, since it does not know the client's
+  key. The port changes every hour, so it links a group's devices only for that hour; on IPv6
+  the computed value picks an address of the server's /64 instead, so collisions do not come up.
+  A fixed port per group was rejected: it would link a group's devices for good, and so would a
+  visible group tag in the packets or a request that asks the forwarder for a port.
 - Clients behind one shared address are told apart by address and port, as the hub's own
   WireGuard does. A packet is passed only to its own group's hub; there is no shared path
   between groups.
@@ -702,9 +712,17 @@ WireGuard packets between a group's clients and that group's hub.
   memory. A group that reaches a limit is slowed down alone.
 - **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
   the network and can at most stop forwarding.
-- It learns the group tag, the addresses of the hub and its clients, and the timing and
-  sizes of packets; logs keep no addresses beyond what abuse handling needs, and only for
-  days.
+- It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
+  clients, and the timing and sizes of packets: any forwarder has to know which hub a client's
+  packets go to. It does not learn the texts, the devices' names, or which address is which
+  device. It writes nothing to disk, logs included; what it knows lives in memory while the
+  connections last. The clients' addresses cannot be hidden from it, since they are where its
+  answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
+  complexity that the project does not take on.
+- **Optional, off by default:** the hub can change its WireGuard key on a schedule, for
+  example weekly, handing the new key to its clients inside the tunnel, so that the forwarder
+  cannot link a group's traffic from one period to the next. The project's own forwarder does
+  not rely on it.
 - The forwarder is `cbb` in a mode that holds no keys. A hub never runs on a rented server:
   that would put the decrypted clipboard on someone else's hardware.
 
@@ -842,6 +860,10 @@ sing-box is not used (GPL).
 
 Frames over the tunnel are padded to a few fixed sizes, so that the length of a text does not
 show; the wire format goes into `docs/protocol.md` with the code.
+
+Cover traffic is an option, off by default: a client and the hub send padded empty frames on a
+timer, so that neither the network nor the forwarder sees when a text is copied. It costs
+traffic and, on a phone, battery, so the user turns it on per device.
 
 ### Direct links between clients (later)
 
@@ -1112,7 +1134,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
 | D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |
 | D-38 | Away from home: a star of WireGuard tunnels to a hub, a member at home, with WireGuard in user space inside `cbb` and the apps and the member TLS inside; no third-party services; a feature that cannot keep the data fully protected is not built. |
-| D-39 | Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart), with limits per group. |
+| D-39 | Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart; if that fails, by a port the group computes from its secret and the hour, never by a fixed port or a request naming the group), with limits per group. It keeps nothing on disk. The hub registers with its member certificate; changing the hub's WireGuard key on a schedule and cover traffic are options, off by default. |
 | D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
 | D-41 | Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
 | D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |
