@@ -511,7 +511,9 @@ The order may change.
     Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the
     Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
     crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
-    place of ring), which CI builds for RISC-V; TLS and the networking on the chip follow.
+    place of ring), with the member TLS in it (rustls without std and a RustCrypto
+    provider; `cbb-lite` uses the same code), which CI builds for the ESP32-C6 (RISC-V)
+    and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
 12. Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home (planned)" below.
 
