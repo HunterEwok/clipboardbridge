@@ -85,6 +85,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   themes of `apps/design/tokens.json` (`tools/tokens` now writes Kotlin too) and Material
   You, in English and Russian. The app asks for the local network permission Android 17
   needs.
+  While there is a group a foreground service keeps the connections, and what a computer
+  copies lands on the phone's clipboard by itself. The phone's copies go with one tap: the
+  Quick Settings tile "Send clipboard", the notification's Send button, Share and the
+  selection menu, and a "cbb send" launcher entry for Quick Tap or a back-tap app; or with
+  none, with the accessibility service "Send my copies by themselves", which notices a copy
+  and takes the input focus for a moment to read the clipboard (Settings explains it and
+  opens the system's page).
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).

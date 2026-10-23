@@ -72,6 +72,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -281,6 +283,7 @@ private fun HomeScreen(model: AppModel) {
         }
     }
     LaunchedEffect(Unit) { model.group.renewOwnCertificate() }
+    BackgroundSync()
     when (page) {
         HomePage.DEVICES -> {
             BackHandler { page = HomePage.MAIN }
@@ -330,6 +333,26 @@ private fun ComputerList(computers: List<LiveGroup.Device>, modifier: Modifier) 
                 Box(Modifier.size(8.dp).clip(CircleShape).background(if (c.online) palette.accent else palette.textDim))
                 Text(c.name, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = Tokens.spacingSmall))
             }
+        }
+    }
+}
+
+/**
+ * Keeps syncing in the background: the service, and on Android 13 and later
+ * the permission for its notification, asked once.
+ */
+@Composable
+private fun BackgroundSync() {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { SyncService.start(context) }
+    LaunchedEffect(Unit) {
+        val permission = Manifest.permission.POST_NOTIFICATIONS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        ) {
+            launcher.launch(permission)
+        } else {
+            SyncService.start(context)
         }
     }
 }
@@ -558,6 +581,7 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
                 }
             }
         }
+        if (model.phase == AppModel.Phase.HOME) AutoSend()
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
             Row(Modifier.fillMaxWidth().padding(Tokens.spacingMedium)) {
@@ -572,6 +596,39 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge")))
                 }.padding(Tokens.spacingMedium),
             )
+        }
+    }
+}
+
+/** The setup of CopyWatcher: what it is for, whether it is on, and the way to the system's settings. */
+@Composable
+private fun AutoSend() {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    var on by remember { mutableStateOf(CopyWatcher.isOn(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { on = CopyWatcher.isOn(context) }
+    Section(stringResource(R.string.accessibility_label)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Text(
+                stringResource(if (on) R.string.auto_send_on else R.string.auto_send_off),
+                color = if (on) palette.accent else palette.textDim,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(stringResource(R.string.auto_send_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+            if (!on) {
+                TextButton(onClick = {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Text(stringResource(R.string.open_accessibility), color = palette.accent) }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Text(stringResource(R.string.restricted_hint), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
+                    TextButton(onClick = {
+                        context.startActivity(
+                            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }) { Text(stringResource(R.string.app_info), color = palette.accent) }
+                }
+            }
         }
     }
 }

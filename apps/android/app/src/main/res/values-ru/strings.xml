@@ -74,4 +74,18 @@
     <string name="about">О программе</string>
     <string name="version">Версия</string>
     <string name="source">Исходный код и лицензия (AGPL-3.0)</string>
+    <string name="channel_sync">Синхронизация с компьютерами</string>
+    <string name="notification_title">Синхронизация с компьютерами</string>
+    <string name="notification_text">Скопированное на них приходит на телефон. «Отправить» отправляет скопированное на телефоне.</string>
+    <string name="send">Отправить</string>
+    <string name="send_share">Отправить на компьютеры</string>
+    <string name="tile_label">Отправить буфер</string>
+    <string name="accessibility_label">Отправлять скопированное само</string>
+    <string name="accessibility_description">Замечает, когда вы копируете текст, на мгновение читает буфер обмена и отправляет текст на ваши компьютеры. Больше ничего на экране не читает.</string>
+    <string name="auto_send_body">Android даёт приложению читать буфер обмена, только пока оно на экране. Включите clipboardbridge в спец. возможностях, и скопированное будет уходить на компьютеры без нажатий; Android при этом каждый раз пишет «clipboardbridge вставил из буфера обмена». Без этого пользуйтесь плиткой «Отправить буфер», кнопкой «Отправить» в уведомлении или меню «Поделиться».</string>
+    <string name="auto_send_on">Включено</string>
+    <string name="auto_send_off">Выключено</string>
+    <string name="open_accessibility">Открыть спец. возможности</string>
+    <string name="restricted_hint">Если Android пишет, что настройка ограничена: откройте «О приложении», нажмите ⋮, выберите «Разрешить ограниченные настройки» и попробуйте снова.</string>
+    <string name="app_info">О приложении</string>
 </resources>

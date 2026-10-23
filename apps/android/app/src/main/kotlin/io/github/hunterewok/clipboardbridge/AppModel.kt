@@ -3,27 +3,21 @@
 
 package io.github.hunterewok.clipboardbridge
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.os.PersistableBundle
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
-import io.github.hunterewok.clipboardbridge.kit.Member
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
 import io.github.hunterewok.clipboardbridge.kit.PairingMember
 import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
-import io.github.hunterewok.clipboardbridge.kit.SyncEngine
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -37,7 +31,7 @@ class AppModel(private val app: Context) {
     data class Note(@StringRes val text: Int, val detail: String? = null, val error: Boolean = false)
 
     val settings = Settings(app)
-    val group = LiveGroup(app)
+    val group = LiveGroup(app).also { g -> g.onCopy = { text, kind -> Clipboard.write(app, text, kind) } }
 
     var phase by mutableStateOf(if (group.hasGroup) Phase.HOME else Phase.START)
         private set
@@ -144,10 +138,9 @@ class AppModel(private val app: Context) {
     suspend fun sync() {
         busy = true
         try {
-            val cm = app.getSystemService(ClipboardManager::class.java)
-            val board = runCatching { cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() }.getOrNull()
+            val board = Clipboard.read(app)
             val (result, fetched) = withContext(Dispatchers.IO) { group.sync(board) }
-            fetched?.let { (text, kind) -> write(cm, text, kind) }
+            fetched?.let { (text, kind) -> Clipboard.write(app, text, kind) }
             message = Note(
                 when (result) {
                     LiveGroup.SyncResult.SENT -> R.string.sent
@@ -166,24 +159,26 @@ class AppModel(private val app: Context) {
     }
 
     /**
-     * Puts a text into the phone's clipboard; a secret is marked sensitive,
-     * so the system shows no preview of it, and goes after its remaining
-     * minute while it is still there.
+     * The one button without the app: the tile, the notification, Share
+     * and the selection menu. With the app perhaps just started for it, it
+     * waits up to waitMS for a computer to connect; then it sends text, or
+     * syncs by the button's rule. Returns what it says.
      */
-    private fun write(cm: ClipboardManager, text: String, kind: Member.Kind) {
-        val clip = ClipData.newPlainText("clipboardbridge", text)
-        if (kind == Member.Kind.SECRET) {
-            clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+    suspend fun syncFromOutside(text: String?, waitMS: Long = 5_000): Note {
+        val deadline = System.currentTimeMillis() + waitMS
+        while (group.hasGroup && System.currentTimeMillis() < deadline && !withContext(Dispatchers.IO) { group.online }) delay(250)
+        if (text == null) {
+            sync()
+            return message ?: Note(R.string.nothing_new)
         }
-        cm.setPrimaryClip(clip)
-        if (kind == Member.Kind.SECRET) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                // Only the secret itself goes: the app can read the clipboard
-                // only while it is in front, and another copy stays.
-                val now = runCatching { cm.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
-                if (now == text) cm.clearPrimaryClip()
-            }, SyncEngine.SECRET_TTL_MS)
+        message = try {
+            Note(if (withContext(Dispatchers.IO) { group.send(text) } == LiveGroup.SyncResult.SENT) R.string.sent else R.string.nothing_new)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
         }
+        return message!!
     }
 
     /** Updates the devices and which of them are online. */
