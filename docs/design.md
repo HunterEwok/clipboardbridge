@@ -576,8 +576,23 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 
 ### The hub
 
-- One member of the group, normally the always-on Linux member at home, is the hub. Any Go
-  member can be one; phones and lite members are clients.
+- One member of the group, a computer of the user's that is at home and usually on, is the
+  hub: a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
+  dials today and becomes able to be the hub once it gets a listening mode, the next piece
+  of work. Phones and lite members are clients: a phone is not always on
+  and cannot accept connections in the background, and a lite member has no room for it.
+- Why sync over the internet needs a computer of the user's: the hub must be on and
+  reachable all the time, it must be at home so that the devices hand it their keys there
+  (below), and it is a full member that reads the texts, so it must be the user's own
+  device. Any other meeting point is someone else's server, which learns at least which
+  devices talk and when; the user's own hub lets nothing out but encrypted packets. A group
+  without such a computer syncs at home only, unless the user runs a blind relay of their
+  own (below).
+- Changing the hub means making another device the hub, for example when the old one
+  breaks. The new hub starts with no keys and learns each device's key when that device next
+  meets it at home; a device that stays away meanwhile cannot reach it until it comes home.
+  A new address, provider or forwarder is not a change of hub: the hub keeps its key and
+  tells its clients the new address.
 - The hub runs WireGuard in user space inside `cbb` (wireguard-go with its in-process network
   stack, gVisor netstack), as do the Go clients. The operating system sees only encrypted UDP
   on one port: there is no `wg0` interface, no route, no IP forwarding and no firewall rule
@@ -668,6 +683,31 @@ WireGuard packets between a group's clients and that group's hub.
   [protocol.md](protocol.md), section 11.
 - Removing a device (the revocation records) makes the hub drop its key at once. A new
   preshared key can be issued through the tunnel at any time.
+- Joining a group happens only on the home network, never over the internet: pairing
+  rests on a short code, which only someone already on the user's network can try, while
+  over the internet anyone could; and before it joins, a device has neither a certificate
+  nor a tunnel. The order is: the device joins at home, meets the hub at home and hands it
+  its key, and from then on syncs from anywhere. Keys and preshared keys can be renewed
+  later through the tunnel, since the member TLS runs inside it.
+
+### Groups that sync at home only
+
+At home no hub is needed: the members sync directly over the home network, with the phone as
+the root and any computers and lite members. Some member has to accept connections: a Linux
+member, a Windows PC or a lite member. Phones and Macs only dial, so a group of a phone and
+Macs alone does not connect until Macs get their listening mode.
+
+### Blind relay (self-hosted only)
+
+For a user with no computer that could be the hub, a blind relay can stand in as the meeting
+point. It is a `cbb` mode on a server the user runs: it holds none of the group's keys, ends
+the clients' WireGuard tunnels, and joins the member TLS of two clients of one group end to
+end, so it reads nothing. It is still a star: clients reach only the relay, and the relay
+decides which two connections to join. What it learns, and what the user's own hub would
+not let out: which devices of the group talk, when, and how much. Both devices must be
+online at once, since it stores nothing. It is built as an option for those who run it
+themselves and is never switched on in the project's own forwarder, which collects nothing
+about who talks to whom. Its details are designed when it is built.
 
 ### Blocked networks
 
@@ -735,12 +775,15 @@ only adds to it.
 
 ### Order of work
 
-1. The hub and the Go client: WireGuard in `cbb`, the key records and pairing, tests with
-   several clients that prove they cannot reach each other.
-2. The forwarder.
-3. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub.
-4. Blocked networks: AmneziaWG, then VLESS with REALITY.
-5. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
+1. WireGuard in `cbb` (done) and the key exchange (done).
+2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
+   at home.
+3. The service: hub mode, dialing through the tunnel, failing closed, `cbb status`.
+4. The forwarder.
+5. The blind relay, self-hosted only.
+6. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub.
+7. Blocked networks: AmneziaWG, then VLESS with REALITY.
+8. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Target architecture with the phone apps
 
