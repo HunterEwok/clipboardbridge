@@ -150,6 +150,10 @@ Setting it up, once:
   secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
   delete both files.
 
+To check the key without a release, run the release workflow from a branch (**Actions →
+release → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
+fails unless the key may write there.
+
 Without the secret the release still succeeds and warns that the tap kept its formula. To
 fill the tap for a release made before, run `formula.sh` with that tag and its
 `SHA256SUMS` and commit the output to the tap by hand.

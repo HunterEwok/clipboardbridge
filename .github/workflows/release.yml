@@ -164,7 +164,11 @@ jobs:
 
   homebrew:
     # A pre-release stays out of the tap, as it stays out of releases/latest.
-    if: github.ref_type == 'tag' && !contains(github.ref_name, '-')
+    # Run from a branch, it only checks that the key in the secrets may push
+    # to the tap, with git push --dry-run.
+    if: >-
+      !cancelled() && (github.event_name == 'workflow_dispatch' ||
+      (needs.release.result == 'success' && !contains(github.ref_name, '-')))
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -173,6 +177,7 @@ jobs:
         with:
           persist-credentials: false
       - name: the formula, from the published SHA256SUMS
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -186,6 +191,10 @@ jobs:
           TAP_KEY: ${{ secrets.CBB_HOMEBREW_TAP_KEY }}
         run: |
           if [ -z "$TAP_KEY" ]; then
+            if [ "$GITHUB_REF_TYPE" != tag ]; then
+              echo "::error::no CBB_HOMEBREW_TAP_KEY in the secrets"
+              exit 1
+            fi
             echo "::warning::no CBB_HOMEBREW_TAP_KEY in the secrets; the Homebrew tap keeps its formula"
             exit 0
           fi
@@ -198,7 +207,14 @@ jobs:
           tap="$RUNNER_TEMP/tap"
           git clone --depth 1 git@github.com:HunterEwok/homebrew-tap.git "$tap"
           mkdir -p "$tap/Formula"
-          cp "$RUNNER_TEMP/clipboardbridge.rb" "$tap/Formula/clipboardbridge.rb"
+          dry=
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            # A stand-in that never leaves the runner.
+            echo "# a check of the deploy key" >"$tap/Formula/clipboardbridge.rb"
+            dry=--dry-run
+          else
+            cp "$RUNNER_TEMP/clipboardbridge.rb" "$tap/Formula/clipboardbridge.rb"
+          fi
           cd "$tap"
           git add Formula/clipboardbridge.rb
           if git diff --cached --quiet; then
@@ -207,4 +223,5 @@ jobs:
           fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "clipboardbridge $GITHUB_REF_NAME"
-          git push origin HEAD:main
+          # shellcheck disable=SC2086 # $dry is one word or none
+          git push $dry origin HEAD:main
