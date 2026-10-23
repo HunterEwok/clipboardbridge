@@ -233,6 +233,65 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 	}
 }
 
+// dialJoined keeps a member connection up to the member that admitted this
+// device at the address the user gave for the join, such as an SSH forward
+// or a VPN address, which discovery cannot find. Then that member syncs
+// with it at once, and when it is the group's hub it learns this device's
+// tunnel key as soon as sync away from home is turned on here. It dials
+// only while discovery does not see the member and no other connection to
+// it is up, and stops for good once this device knows the group's hub, or
+// when the service stops.
+func (s *Service) dialJoined(id group.DeviceID, addr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.groupCtx == nil || s.stopping {
+		return
+	}
+	ctx := s.groupCtx
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.keepJoined(ctx, id, addr)
+	}()
+}
+
+func (s *Service) keepJoined(ctx context.Context, id group.DeviceID, addr string) {
+	backoff := minBackoff
+	for ctx.Err() == nil {
+		s.tunMu.Lock()
+		hub := s.tunnel != nil && s.tunnel.ToHub != nil
+		s.tunMu.Unlock()
+		if hub {
+			return // the tunnel reaches the hub from here on
+		}
+		s.mu.Lock()
+		nd, near := s.nd, s.nearby[id]
+		s.mu.Unlock()
+		if nd == nil {
+			return
+		}
+		wait := awayCheck
+		if !near && !slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id }) {
+			start := uptime.Now()
+			err := nd.Dial(ctx, id, addr)
+			if ctx.Err() != nil {
+				return
+			}
+			if uptime.Now()-start > maxBackoff {
+				backoff = minBackoff
+			}
+			s.logf("cbb: connection to %s at %s, where it joined: %v", id, addr, err)
+			wait = backoff
+			backoff = min(2*backoff, maxBackoff)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
 // peersChanged elects the holder of clipboardbridge.local: the Linux member with
 // the lowest device ID among this one and the Linux members it is
 // connected to.

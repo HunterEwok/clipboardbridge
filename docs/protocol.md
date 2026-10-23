@@ -215,6 +215,11 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   sync through the internet, over a VPN between them (see design.md, "Sync away from home");
   until then a lite member can be given a member's address with `-peer`.
+- A computer that joined at an address the user gave (`cbb join -code ADDRESS`, as through
+  an SSH forward or a VPN) also dials the member that admitted it at that address, whatever
+  the rules above say, while discovery does not find that member and no other connection to
+  it is up. It keeps doing so, with the same waits, until it holds the hub's tunnel offer
+  (section 11) or the service stops; the address is not stored.
 - Addresses come from discovery, never from resolving a `.local` name. They are tried IPv4
   first, then routable IPv6, then link-local IPv6. After a round of failures the dialer waits
   1 s, doubling to 30 s; a connection that lasted more than 30 s resets the wait.

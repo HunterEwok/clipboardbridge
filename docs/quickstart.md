@@ -127,8 +127,10 @@ A computer that is not on the home network joins the same way through a path you
   setting up the VPN, so its firewall rules allow the VPN's network.
 
 The pairing code never travels in the clear: the pairing runs inside SSH or your VPN, and
-inside TLS. Until sync away from home is built, the new computer syncs once it is on the
-home network. See "Joining from another network" in [design.md](design.md).
+inside TLS. The new computer then syncs with that machine through the same path while it
+is up (until the service restarts). To keep syncing after that, turn on sync away from
+home (below) on both before you close the SSH session; the machine you joined at should be
+the hub. See "Joining from another network" in [design.md](design.md).
 
 ## 4. Use it
 
