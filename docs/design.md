@@ -175,14 +175,17 @@ any member may be switched off at any time.
   there. A received record lives no longer than clipboardbridge's own records of its type, and
   only names in the form of device IDs count as members. Names are not probed: device IDs
   are random, and the election, not a probe, decides who holds `clipboardbridge.local`. Macs
-  browse with the same code without publishing; a test on macOS showed that it shares port
-  5353 with mDNSResponder and that the system's `dns-sd` sees what it publishes, so no
-  Bonjour binding is needed.
+  publish and browse with the same code, with `r=mac` in the TXT and never holding
+  `clipboardbridge.local`; a test on macOS showed that it shares port 5353 with
+  mDNSResponder and that the system's `dns-sd` sees what it publishes, so no Bonjour
+  binding is needed.
 - Members connect to the addresses from discovery, never by resolving a `.local` name: a
   static Linux binary cannot resolve `.local` itself. Peers are authenticated by the group
   CA, not by name. A home group is small: Linux members connect to each other, every Mac
-  connects to every Linux member, and Macs never connect to each other. A Mac is alone
-  whenever no Linux member is reachable.
+  dials every Linux and lite member (so a Mac whose firewall blocks incoming connections
+  still reaches them), two Macs connect once, the lower device ID dialing, and phones dial
+  every member. With no Linux member on, the Macs, the lite members and the phones still
+  sync among themselves.
 - The iPhone uses one address for the whole group: **`clipboardbridge.local`**, with a record
   lifetime of 10 seconds. The live Linux member with the lowest device ID holds it. Macs
   never hold it: they sleep and roam, and when no Linux member is up the iPhone and the Mac
@@ -380,7 +383,11 @@ and lifetimes. The installer enables what the device needs.
 
 - **Service**: the same service as on Linux, as a LaunchDaemon under a hidden service account.
   macOS grants local network access to daemons without a prompt. It listens on UDP 5353
-  for mDNS (D-32) and dials out to Linux members; it accepts no connections.
+  for mDNS (D-32), dials out to the Linux and lite members, and takes connections on the
+  member port from phones and the other Macs, from the home network only, like a Linux
+  member; it never admits devices or holds `clipboardbridge.local`. `install.sh` lists the
+  service in the application firewall (`socketfilterfw --add` and `--unblockapp`), and
+  `uninstall.sh` takes it away; `CBB_FIREWALL=no` leaves the firewall alone.
 - **Pasteboard agent**: a LaunchAgent in the user's session, linked to the service over a
   local socket. It checks the pasteboard change counter every 0.5 seconds on the main thread
   and reads the text only after a change.
@@ -391,7 +398,7 @@ and lifetimes. The installer enables what the device needs.
   `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
   Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
   only, so clipboard histories skip them and they do not travel over Universal Clipboard.
-- Finds Linux members with clipboardbridge's own mDNS code, browsing without publishing, and
+- Finds the members with clipboardbridge's own mDNS code, publishing itself with `r=mac`, and
   trusts only the group CA, in its own configuration; the system keychain is not changed.
 - Installing needs administrator rights once. Later: a menu bar item with pause, status and
   devices.
@@ -776,8 +783,8 @@ the pairing itself; the third is planned.
 
 At home no hub is needed: the members sync directly over the home network, with the phone as
 the root and any computers and lite members. Some member has to accept connections: a Linux
-member, a Windows PC or a lite member. Phones and Macs only dial, so a group of a phone and
-Macs alone does not connect until Macs get their listening mode.
+member, a Windows PC, a Mac or a lite member; only phones never do. So any group with a
+computer or a lite member besides its phones syncs at home.
 
 ### Blind relay (self-hosted only)
 
@@ -859,7 +866,7 @@ only adds to it.
 
 1. WireGuard in `cbb` (done) and the key exchange (done).
 2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
-   at home.
+   at home (done).
 3. The service: turning sync away from home on and off (the hub, each device, the consent
    for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`,
    and the member dial after a join by address.
@@ -899,6 +906,17 @@ The plan:
   (the certificate renewal and a new tunnel key through the tunnel), so a copied key stops
   working even when nobody noticed the theft.
 - Removing a device stays the main answer to a stolen key in every case.
+- **Attestation (planned, off by default).** A TPM can sign that a key was made inside it and
+  cannot leave it, with a chain up to its maker's certificate (the endorsement key);
+  Android's Key Attestation does the same with Google's root. The admin checks that chain
+  when the device joins, and the device then carries a mark "key in hardware, proven". It
+  is checked only offline, with the makers' roots shipped in `cbb` and the apps: a TPM
+  whose endorsement certificate must be fetched from its maker's server (some Intel and AMD
+  firmware TPMs) does not pass, and Apple offers no attestation that works without its
+  servers or MDM, so Macs and iPhones are never marked. It is off by default and not used
+  in the project's own setup; the user turns it on at the hub, which then lets only marked
+  devices sync away from home. What it does not do: it does not stop malware on the device
+  itself from using the key while it runs there, and it is no stronger than the chip.
 
 ## Target architecture with the phone apps
 
@@ -1058,7 +1076,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
 | D-11 | One advertised port serves members, pairing and the iPhone, told apart by the first bytes. |
 | D-12 | Own mDNS responder on Linux: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
-| D-13 | Only Linux members hold `clipboardbridge.local`; Macs only dial out.                            |
+| D-13 | Only Linux members hold `clipboardbridge.local`; Macs never hold it (since D-46 they listen too). |
 | D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |
 | D-15 | macOS runs the service as a LaunchDaemon plus a pasteboard LaunchAgent, which avoids the Local Network prompt; installing needs administrator rights. |
 | D-16 | Desktop clipboard in pure Go: Wayland data-control (both protocol variants) and X11 through `jezek/xgb`; no `wl-clipboard`. |
@@ -1091,3 +1109,5 @@ These need experiments on real devices; CI cannot answer them.
 | D-43 | A device away from the group joins by SSH, by the user's own VPN, or by a remote invitation: a QR code or a file, never typed, with a one-time guest WireGuard key that reaches only the pairing and a 128-bit secret, and admitted only after the admin confirms the device. The six-digit code never faces the open internet. |
 | D-44 | Computers keep their keys in the TPM or the Secure Enclave where they have one, and otherwise in a file sealed as far as the system allows, shown as such in `cbb status`; keys are renewed on a schedule. |
 | D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
+| D-46 | Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
+| D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |

@@ -7,8 +7,9 @@
 #   sudo sh uninstall.sh [--purge]
 #
 # It stops the service and the pasteboard agent of every user and removes
-# their plists, the binary in /usr/local/bin (but not Homebrew's link there:
-# brew uninstall removes that) and the logs. The device's keys and group, in
+# their plists, the service's entry in the application firewall, the binary
+# in /usr/local/bin (but not Homebrew's link there: brew uninstall removes
+# that) and the logs. The device's keys and group, in
 # /Library/Application Support/clipboardbridge/state, stay for a reinstall
 # unless --purge; the hidden _clipboardbridge user and group stay too, since
 # files may still belong to them.
@@ -44,6 +45,13 @@ if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 fi
 rm -rf /Library/Logs/clipboardbridge
 support="/Library/Application Support/clipboardbridge"
+fw=/usr/libexec/ApplicationFirewall/socketfilterfw
+if [ -f "$support/firewall" ]; then
+	if [ -x "$fw" ]; then
+		"$fw" --remove "$(cat "$support/firewall")" >/dev/null 2>&1 || true
+	fi
+	rm -f "$support/firewall"
+fi
 if [ "$purge" = yes ]; then
 	rm -rf "$support"
 	echo "clipboardbridge is removed, with this Mac's keys; it left its group."

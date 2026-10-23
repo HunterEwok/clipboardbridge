@@ -88,7 +88,9 @@ separated by spaces; the short form is the first 8 bytes (23 characters).
 
 ## 3. Discovery (mDNS)
 
-Linux and lite members publish and browse; Macs, phones and joining devices only browse.
+Linux members, Macs and lite members publish and browse; phones and joining devices only
+browse. A Mac publishes the records of a Linux member with `r=mac` in its TXT and never
+holds `clipboardbridge.local`.
 RFC 6762 and RFC 6763 apply where this section is silent. Source: `internal/mdns`; a lite
 member publishes and browses with the `mdns-sd` crate (`lite/src/discovery.rs`), which
 follows the same RFCs but not every detail below: it publishes the PTR, SRV, TXT and A/AAAA
@@ -115,13 +117,14 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
-| `r` | `lite` | present only on a lite member, which Linux members do not dial (section 4) |
+| `r` | `lite` or `mac` | present only on a lite member or a Mac, which Linux members do not dial (section 4) |
 
-The Go code publishes them in the order `v=1`, `g=<tag>`, `p=1`; a lite member publishes
-`v=1`, `g=<tag>`, `r=lite`. Keys are matched without
+The Go code publishes them in the order `v=1`, `g=<tag>`, `r=mac` (on a Mac), `p=1`; a lite
+member publishes `v=1`, `g=<tag>`, `r=lite`. Keys are matched without
 regard to case; the value is what follows the first `=`.
 
-Note: browsers check only `g` (when dialing), `r` (when dialing, on Linux and lite members)
+Note: browsers check only `g` (when dialing), `r` (when dialing, on Linux members, Macs and
+lite members)
 and `p` (when joining); nothing checks `v` (`internal/service/members.go`,
 `internal/service/socket.go`, `lite/src/discovery.rs`).
 
@@ -199,13 +202,16 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 
 - A Linux member dials every found Linux member whose device ID is greater than its own and
   whose `g` matches its group tag; the other side accepts. It dials no lite member (TXT
-  `r=lite`): the lite member dials it.
+  `r=lite`) and no Mac (TXT `r=mac`): they dial it.
 - A lite member dials every found Linux member with a matching `g`, and every found lite
   member whose device ID is greater than its own; it accepts the others, and phones and
-  Macs.
-- A Mac or a phone app dials every found member, Linux or lite, with a matching `g`. Macs and
-  phones accept nothing, and never connect to each other; so a phone and a lite member sync
-  with no computer on.
+  Macs. It dials no Mac.
+- A Mac dials every found Linux and lite member with a matching `g`, since its firewall may
+  keep them from reaching it, and every found Mac whose device ID is greater than its own;
+  it accepts phones and the other Macs.
+- A phone app dials every found member with a matching `g`. Phones accept nothing and never
+  connect to each other; so a phone syncs with a lite member or a Mac with no other
+  computer on.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   sync through the internet, over a VPN between them (see design.md, "Sync away from home");
   until then a lite member can be given a member's address with `-peer`.
@@ -290,7 +296,7 @@ Rules for the receiver:
 - A peer whose outgoing queue (256 messages) is full is disconnected; it gets the current
   event again in the next hello.
 
-Roles: a `phone` member dials as a Mac does, publishes nothing and is never dialed. A `lite`
+Roles: a `phone` member dials every member, publishes nothing and is never dialed. A `lite`
 member publishes itself with `r=lite`, dials Linux members and accepts phones, Macs and lite
 members with a lower device ID (above, "Who dials whom"). The Linux members treat both as a
 Mac: neither holds `clipboardbridge.local`.

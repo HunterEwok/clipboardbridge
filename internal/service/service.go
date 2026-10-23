@@ -277,21 +277,19 @@ func (s *Service) startGroup(id *group.Identity) error {
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 	})
-	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
-	var ln net.Listener
-	if s.cfg.Role == node.Linux {
-		var err error
-		if ln, err = s.cfg.listen(); err != nil {
-			cancel()
-			return err
-		}
-		dc.Port = uint16(ln.Addr().(*net.TCPAddr).Port)
+	// Every member listens: a Mac too, so that phones, other Macs and lite
+	// members reach it with no Linux member on (it still dials the Linux
+	// members itself, see found).
+	ln, err := s.cfg.listen()
+	if err != nil {
+		cancel()
+		return err
 	}
+	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.cfg.Role, false), OnPeers: s.found, Logf: s.logf,
+		Port: uint16(ln.Addr().(*net.TCPAddr).Port)}
 	r, err := s.cfg.Discover(dc)
 	if err != nil {
-		if ln != nil {
-			ln.Close()
-		}
+		ln.Close()
 		cancel()
 		return err
 	}
@@ -311,17 +309,15 @@ func (s *Service) startGroup(id *group.Identity) error {
 		defer s.wg.Done()
 		s.ensureListed()
 	}()
-	if ln != nil {
-		s.wg.Add(2)
-		go func() {
-			defer s.wg.Done()
-			s.accept(gctx, ln)
-		}()
-		go func() {
-			defer s.wg.Done()
-			s.servePhone(gctx, ln.Addr())
-		}()
-	}
+	s.wg.Add(2)
+	go func() {
+		defer s.wg.Done()
+		s.accept(gctx, ln)
+	}()
+	go func() {
+		defer s.wg.Done()
+		s.servePhone(gctx, ln.Addr())
+	}()
 	// Discovery has its own context, so it can say goodbye for
 	// clipboardbridge.local before the member connections close.
 	dctx, dcancel := context.WithCancel(gctx)
@@ -368,12 +364,15 @@ func (s *Service) stopGroup() {
 }
 
 // txtLocked returns the TXT record of this member.
-func (s *Service) txtLocked() []string { return txt(s.id, s.window != nil) }
+func (s *Service) txtLocked() []string { return txt(s.id, s.cfg.Role, s.window != nil) }
 
-// txt returns a TXT record: the protocol version, the group tag, and
-// whether a pairing window is open.
-func txt(id *group.Identity, window bool) []string {
+// txt returns a TXT record: the protocol version, the group tag, r=mac on
+// a Mac, and whether a pairing window is open.
+func txt(id *group.Identity, role node.Role, window bool) []string {
 	t := []string{"v=1", "g=" + group.Tag(id.GroupCA.Cert)}
+	if role == node.Mac {
+		t = append(t, "r=mac") // the Linux members leave it to dial them
+	}
 	if window {
 		t = append(t, "p=1")
 	}

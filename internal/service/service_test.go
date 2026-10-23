@@ -1299,3 +1299,32 @@ func TestDevicesAndRevoke(t *testing.T) {
 		t.Errorf("after a restart the pi lists %q", got)
 	}
 }
+
+// TestMacsListen checks that a Mac publishes itself with r=mac and takes
+// connections, so two Macs keep syncing when no Linux member is on.
+func TestMacsListen(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startRole(t, &h, "mac-a", node.Mac)
+	b := startRole(t, &h, "mac-b", node.Mac)
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	for _, s := range []*testService{a, b} {
+		if txt := h.txtOf(s.status(t).Device); !slices.Contains(txt, "r=mac") {
+			t.Errorf("%s publishes %q, want r=mac", s.name, txt)
+		}
+		waitFor(t, s.name+" meets the pi and the other Mac", func() bool { return len(s.status(t).Peers) == 2 })
+	}
+	if txt := h.txtOf(pi.status(t).Device); slices.Contains(txt, "r=mac") {
+		t.Errorf("the pi publishes %q", txt)
+	}
+
+	pi.stop()
+	waitFor(t, "the Macs are alone together", func() bool {
+		return len(a.status(t).Peers) == 1 && len(b.status(t).Peers) == 1
+	})
+	if _, err := a.do(t, control.Header{Op: control.OpCopy}, "from one Mac"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the other Mac has it", func() bool { return b.paste(t) == "from one Mac" })
+}

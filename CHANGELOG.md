@@ -8,6 +8,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A Mac now takes connections on the member port and publishes itself on mDNS with
+  `r=mac`, so phones, other Macs and lite members reach it with no Linux member on; it
+  still dials the Linux and lite members itself, so a firewall that blocks incoming
+  connections never cuts it off from them. `install.sh` lists the service in the macOS
+  application firewall (`CBB_FIREWALL=no` leaves the firewall alone) and `uninstall.sh`
+  takes it away. Linux members and `cbb-lite` no longer dial a Mac; update `cbb-lite`
+  together with the Macs.
+
 - The lite member's TLS is in its protocol core and needs no operating system, the first
   step to a lite member on the ESP32: rustls without the standard library, with a small
   crypto provider of RustCrypto code (TLS 1.3, ChaCha20-Poly1305 or AES-128-GCM, X25519,

@@ -8,7 +8,8 @@
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
-# a LaunchAgent, adds the user who ran sudo to the group, and starts or
+# a LaunchAgent, adds the user who ran sudo to the group, lets the service
+# take connections through the application firewall, and starts or
 # restarts both. With --in-place both run the binary where it is instead of
 # a copy, for Homebrew, whose upgrades replace it there: the formula's
 # caveats pass its opt path, and running this again after an upgrade
@@ -115,6 +116,25 @@ done
 user=${SUDO_USER:-}
 if [ -n "$user" ] && [ "$user" != root ]; then
 	dseditgroup -o edit -a "$user" -t user "$name"
+fi
+
+# The service takes connections from phones, other Macs and lite members at
+# home. With the application firewall on, an unsigned program gets none until
+# it is listed; the firewall knows the program by its real path, not a link.
+# CBB_FIREWALL=no leaves the firewall alone. uninstall.sh takes the entry away.
+fw=/usr/libexec/ApplicationFirewall/socketfilterfw
+listed="/Library/Application Support/clipboardbridge/firewall"
+if [ -x "$fw" ]; then
+	if [ -f "$listed" ]; then
+		"$fw" --remove "$(cat "$listed")" >/dev/null 2>&1 || true
+		rm -f "$listed"
+	fi
+	if [ "${CBB_FIREWALL:-yes}" != no ]; then
+		real=$(readlink -f "$run" 2>/dev/null || echo "$run")
+		"$fw" --add "$real" >/dev/null
+		"$fw" --unblockapp "$real" >/dev/null
+		echo "$real" >"$listed"
+	fi
 fi
 
 launchctl bootout "system/$daemon" 2>/dev/null || true
