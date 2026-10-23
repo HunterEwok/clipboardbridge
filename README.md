@@ -35,6 +35,17 @@ tar -xzf clipboardbridge-darwin-arm64.tar.gz
 sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
 ```
 
+Or with [Homebrew](https://brew.sh), which also updates it:
+
+```sh
+brew install hunterewok/tap/clipboardbridge
+sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
+```
+
+The second line starts the service and the pasteboard agent; run it again after each
+`brew upgrade`. Either way, `uninstall.sh` beside that `install.sh` removes them again
+(before `brew uninstall`).
+
 On Windows 10 (1809 or later) or 11, x86-64 or ARM64, in a PowerShell opened with "Run as
 administrator":
 
