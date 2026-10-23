@@ -85,7 +85,8 @@ Remove-Item -Recurse -Force $programDir -ErrorAction SilentlyContinue
 if ($Purge) {
 	$step = "removing $dataDir and the $name group"
 	Remove-Item -Recurse -Force $dataDir -ErrorAction SilentlyContinue
-	& net.exe localgroup $name /delete 2>&1 | Out-Null
+	# With errors allowed: Windows PowerShell 5.1 stops on a program's error output.
+	& { $ErrorActionPreference = 'Continue'; & net.exe localgroup $name /delete 2>&1 | Out-Null }
 	Write-Host "clipboardbridge is removed, with this device's keys; it left its group."
 } else {
 	Remove-Item -Recurse -Force (Join-Path $dataDir 'run') -ErrorAction SilentlyContinue

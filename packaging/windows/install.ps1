@@ -54,14 +54,24 @@ trap {
 	exit 1
 }
 
+# run runs a program and returns its exit code and output. Windows
+# PowerShell 5.1 turns a program's error output into an error, which stops
+# the script, so the error output is collected with errors allowed.
+function run {
+	param([string]$file, [string[]]$arguments)
+	$ErrorActionPreference = 'Continue'
+	$out = & $file @arguments 2>&1 | Out-String
+	return [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out.Trim() }
+}
+
 # exe runs a program and fails with its output when it fails.
 function exe {
 	param([string]$file, [string[]]$arguments)
-	$out = & $file @arguments 2>&1 | Out-String
-	if ($LASTEXITCODE -ne 0) {
-		throw "$file $($arguments -join ' ') exited with $LASTEXITCODE`: $($out.Trim())"
+	$r = run $file $arguments
+	if ($r.Code -ne 0) {
+		throw "$file $($arguments -join ' ') exited with $($r.Code)`: $($r.Out)"
 	}
-	return $out
+	return $r.Out
 }
 
 $step = 'checking for administrator rights'
@@ -139,10 +149,10 @@ if (-not $exists) {
 	$group.SetInfo()
 }
 $step = "adding $user to the $name group"
-$out = & net.exe localgroup $name $user /add 2>&1 | Out-String
+$r = run net.exe @('localgroup', $name, $user, '/add')
 # 1378: already a member.
-if ($LASTEXITCODE -ne 0 -and $out -notmatch '1378') {
-	throw "net localgroup $name $user /add exited with $LASTEXITCODE`: $($out.Trim())"
+if ($r.Code -ne 0 -and $r.Out -notmatch '1378') {
+	throw "net localgroup $name $user /add exited with $($r.Code)`: $($r.Out)"
 }
 
 $step = 'creating the service'
