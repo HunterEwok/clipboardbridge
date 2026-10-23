@@ -25,7 +25,8 @@ import (
 // certificate is due for renewal. The group's signed records travel in
 // records messages to a peer whose hello names other records. The root
 // phone sends an admin message with an admin CA to a computer whose hello
-// offers an admin key.
+// offers an admin key. The group's hub sends a tunnel message to a member
+// whose hello offers a tunnel key.
 const (
 	typeHello = "hello"
 	typeEvent = "event"
@@ -34,6 +35,7 @@ const (
 	typeCert  = "cert"
 	typeRecs  = "records"
 	typeAdmin = "admin"
+	typeTun   = "tunnel"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -81,6 +83,18 @@ type message struct {
 	// AdminCA, in an admin message from the root phone, is the receiver's
 	// admin CA for the admin key its hello offered, DER.
 	AdminCA []byte `json:"admin_ca,omitempty"`
+	// Tunnel, in a tunnel message from the group's hub, is its offer for
+	// the tunnel key the receiver's hello carried.
+	Tunnel *TunnelOffer `json:"tunnel,omitempty"`
+}
+
+// TunnelOffer is the group's hub's answer to a member's tunnel key
+// (docs/protocol.md, section 11): the hub's WireGuard public key, the
+// member's own preshared key and the hub's addresses away from home.
+type TunnelOffer struct {
+	HubKey    []byte   `json:"hub_key"`
+	PSK       []byte   `json:"psk"`
+	Endpoints []string `json:"endpoints,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to
@@ -90,10 +104,12 @@ type helloBody struct {
 	Current json.RawMessage `json:"current,omitempty"`
 	Records string          `json:"records,omitempty"` // the digest of the sender's records
 	Name    string          `json:"name,omitempty"`    // the sender's device name
+	// TunnelKey is the sender's WireGuard public key, for the hub.
+	TunnelKey []byte `json:"tunnel_key,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
-// of its records, its name and the admin key it offers.
+// of its records, its name, the admin key it offers and its tunnel key.
 type helloOut struct {
 	clip.Hello
 	Records string `json:"records,omitempty"`
@@ -102,6 +118,8 @@ type helloOut struct {
 	// of a phone group that is no admin yet, DER, for the root phone to
 	// certify when it makes the computer an admin.
 	AdminKey []byte `json:"admin_key,omitempty"`
+	// TunnelKey is this member's WireGuard public key, for the group's hub.
+	TunnelKey []byte `json:"tunnel_key,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.

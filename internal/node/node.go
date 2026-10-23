@@ -79,6 +79,21 @@ type Config struct {
 	// Records, if set, keeps the group's signed records.
 	Records RecordStore
 
+	// TunnelKey, if set, is this member's WireGuard public key, which its
+	// hello offers the group's hub.
+	TunnelKey []byte
+
+	// OnTunnelKey, if set, is called with the tunnel key a peer's hello
+	// offered and the certificate chain the peer presented. On the group's
+	// hub it admits the key and returns the offer to send the peer; on
+	// other members it returns nil.
+	OnTunnelKey func(peer group.DeviceID, chain []*x509.Certificate, key []byte) *TunnelOffer
+
+	// OnTunnel, if set, is called with the offer a peer, the group's hub,
+	// sent for this member's tunnel key; it checks it and keeps it. An
+	// error is logged.
+	OnTunnel func(from group.DeviceID, o TunnelOffer) error
+
 	PingEvery time.Duration        // defaultPingEvery if zero
 	Timeout   time.Duration        // defaultTimeout if zero
 	Uptime    func() time.Duration // uptime.Now if nil
@@ -413,6 +428,17 @@ func (n *Node) offerRecords(c *conn, digest string) {
 	}
 }
 
+// offerTunnel passes the tunnel key the peer of c offered to OnTunnelKey
+// and sends the peer the hub's offer, if any.
+func (n *Node) offerTunnel(c *conn, key []byte) {
+	if n.cfg.OnTunnelKey == nil || len(key) == 0 {
+		return
+	}
+	if o := n.cfg.OnTunnelKey(c.id, c.peerChain, key); o != nil {
+		c.enqueue(outgoing{tunnel: o})
+	}
+}
+
 // SendRecords sends records to every connected member, for example a
 // revocation made on this member.
 func (n *Node) SendRecords(rs []group.Record) { n.sendRecords(rs, nil) }
@@ -505,14 +531,15 @@ type conn struct {
 	finished chan struct{} // closed when Serve has cleaned up
 }
 
-// outgoing is a queued message: a hello, an event, a renewed certificate
-// or records.
+// outgoing is a queued message: a hello, an event, a renewed certificate,
+// records or a tunnel offer.
 type outgoing struct {
 	hello   *clip.Hello
 	event   *clip.Event
 	cert    *x509.Certificate
 	issuer  *x509.Certificate // the admin CA that issued cert; nil for the group CA
 	records []group.Record
+	tunnel  *TunnelOffer
 	queued  time.Duration
 }
 
@@ -631,6 +658,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
+		out.TunnelKey = c.n.cfg.TunnelKey
 		data, err := encode(out)
 		if err != nil {
 			return nil, err
@@ -644,6 +672,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return m, nil
 	case o.records != nil:
 		return &message{Type: typeRecs, Records: o.records}, nil
+	case o.tunnel != nil:
+		return &message{Type: typeTun, Tunnel: o.tunnel}, nil
 	default:
 		ev := *o.event
 		ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
@@ -761,6 +791,7 @@ func (c *conn) reader() error {
 			c.n.apply(res, c)
 			c.n.renewPeer(c)
 			c.n.offerRecords(c, extra.Records)
+			c.n.offerTunnel(c, extra.TunnelKey)
 			continue
 		}
 		switch m.Type {
@@ -789,6 +820,13 @@ func (c *conn) reader() error {
 			}
 			if err := c.n.cfg.OnAdmin(m.AdminCA); err != nil {
 				c.n.cfg.Logf("node: an admin CA from %s: %v", c.id, err)
+			}
+		case typeTun:
+			if c.n.cfg.OnTunnel == nil || m.Tunnel == nil {
+				continue
+			}
+			if err := c.n.cfg.OnTunnel(c.id, *m.Tunnel); err != nil {
+				c.n.cfg.Logf("node: a tunnel offer from %s: %v", c.id, err)
 			}
 		case typeRecs:
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {

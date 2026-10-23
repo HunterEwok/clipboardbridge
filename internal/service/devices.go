@@ -136,6 +136,7 @@ func (s *Service) afterRevocation() {
 	if nd != nil {
 		nd.Recheck()
 	}
+	s.pruneTunnel()
 	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
 		s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
 	}

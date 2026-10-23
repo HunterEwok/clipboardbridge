@@ -28,6 +28,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
 // markFile holds the hybrid clock's saved mark, in the state directory.
@@ -137,6 +138,9 @@ type Service struct {
 	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
 	recMu   sync.Mutex     // guards records; taken after mu, never before
 	records *group.Records // the group's device records; nil while in no group
+
+	tunMu  sync.Mutex    // guards tunnel; taken after mu, before recMu
+	tunnel *tunnel.State // the tunnel keys (tunnel.go); nil while in no group or unreadable
 
 	groupCtx    context.Context
 	groupCancel context.CancelFunc
@@ -263,10 +267,15 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
 	s.recMu.Unlock()
+	tun := s.loadTunnel(id)
+	s.tunMu.Lock()
+	s.tunnel = tun
+	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
+		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 	})
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, false), OnPeers: s.found, Logf: s.logf, BrowseOnly: s.cfg.Role != node.Linux}
 	var ln net.Listener
