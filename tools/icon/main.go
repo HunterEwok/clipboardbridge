@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Command icon draws the iPhone app's icon from the terminal theme of the
-// design tokens: two clipboards joined by a bridge, on the theme's grid.
-// It writes a 1024 by 1024 opaque PNG, which the asset catalog scales.
+// Command icon makes the iPhone app's icons from the drawn art in
+// apps/design/icon: the light one, which iOS shows by default, and the dark
+// one for dark mode. Each puts the art's clipboard, without its transparent
+// margin, in the middle of a square of its own background colour, as large
+// as the system's rounded mask allows, and writes a 1024 by 1024 opaque PNG
+// (the App Store refuses an icon with transparency).
 //
-//	go run ./tools/icon          rewrite the icon
-//	go run ./tools/icon -check   fail if it is out of date
+//	go run ./tools/icon          rewrite the icons
+//	go run ./tools/icon -check   fail if they are out of date
 package main
 
 import (
@@ -18,114 +21,117 @@ import (
 	"image/png"
 	"math"
 	"os"
-	"strconv"
 )
 
 const (
-	iconFile = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-	size     = 1024
-	samples  = 4 // per axis, for smooth edges
+	size = 1024
+	// fill is the share of the icon's height the clipboard takes; the
+	// rounded corners of the mask stay clear of it.
+	fill = 0.86
+	set  = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
 )
 
-// The terminal theme's colours (apps/design/tokens.json).
-var (
-	background = hex("#0A0F0C")
-	grid       = hex("#1A261F")
-	board      = hex("#E4F2E8")
-	line       = hex("#8EA596")
-	accent     = hex("#3DFF8A")
-)
+type variant struct {
+	art, icon  string
+	background color.NRGBA
+}
 
-type rgb struct{ r, g, b float64 }
+var variants = []variant{
+	{"apps/design/icon/cbb-light.png", set + "AppIcon.png", color.NRGBA{0xF7, 0xF2, 0xE6, 0xff}},
+	// The terminal theme's background (apps/design/tokens.json).
+	{"apps/design/icon/cbb-dark.png", set + "AppIcon-dark.png", color.NRGBA{0x0A, 0x0F, 0x0C, 0xff}},
+}
 
-func hex(s string) rgb {
-	v, err := strconv.ParseUint(s[1:], 16, 32)
+// bounds is the box of the art's pixels that are at least half opaque: the
+// clipboard without its faint shadow.
+func bounds(img image.Image) image.Rectangle {
+	b := img.Bounds()
+	box := image.Rectangle{Min: b.Max, Max: b.Min}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a >= 0x8000 {
+				box = box.Union(image.Rect(x, y, x+1, y+1))
+			}
+		}
+	}
+	return box
+}
+
+// sample is the art's colour at (x, y), premultiplied, between pixels by
+// bilinear interpolation, and transparent outside it.
+func sample(img image.Image, x, y float64) (r, g, b, a float64) {
+	x0, y0 := math.Floor(x-0.5), math.Floor(y-0.5)
+	fx, fy := x-0.5-x0, y-0.5-y0
+	for _, p := range [4]struct{ dx, dy, w float64 }{
+		{0, 0, (1 - fx) * (1 - fy)}, {1, 0, fx * (1 - fy)}, {0, 1, (1 - fx) * fy}, {1, 1, fx * fy},
+	} {
+		px, py := int(x0+p.dx), int(y0+p.dy)
+		if !image.Pt(px, py).In(img.Bounds()) {
+			continue
+		}
+		cr, cg, cb, ca := img.At(px, py).RGBA()
+		r, g, b, a = r+p.w*float64(cr), g+p.w*float64(cg), b+p.w*float64(cb), a+p.w*float64(ca)
+	}
+	return r / 0xffff, g / 0xffff, b / 0xffff, a / 0xffff
+}
+
+func render(v variant) ([]byte, error) {
+	f, err := os.Open(v.art)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return rgb{float64(v >> 16 & 0xff), float64(v >> 8 & 0xff), float64(v & 0xff)}
-}
-
-// roundRect is the signed distance from (x, y) to a rectangle with centre
-// (cx, cy), half sizes (hx, hy) and corner radius r.
-func roundRect(x, y, cx, cy, hx, hy, r float64) float64 {
-	qx := math.Abs(x-cx) - (hx - r)
-	qy := math.Abs(y-cy) - (hy - r)
-	out := math.Hypot(math.Max(qx, 0), math.Max(qy, 0))
-	return out + math.Min(math.Max(qx, qy), 0) - r
-}
-
-// shade is the colour at a point; later shapes paint over earlier ones.
-func shade(x, y float64) rgb {
-	c := background
-	if math.Mod(x, 64) < 2 || math.Mod(y, 64) < 2 {
-		c = grid
+	defer f.Close()
+	art, err := png.Decode(f)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", v.art, err)
 	}
-	for _, cx := range []float64{318, 706} {
-		// The board's outline, then its clip and its lines of text.
-		if math.Abs(roundRect(x, y, cx, 600, 168, 230, 44)) < 14 {
-			c = board
-		}
-		if roundRect(x, y, cx, 372, 76, 34, 20) < 0 {
-			c = board
-		}
-		ink := line
-		if cx > size/2 {
-			ink = accent
-		}
-		for i, w := range []float64{96, 72, 96, 48} {
-			if roundRect(x, y, cx-96+w, 500+float64(i)*72, w, 12, 12) < 0 {
-				c = ink
+	box := bounds(art)
+	if box.Empty() {
+		return nil, fmt.Errorf("%s: no opaque pixels", v.art)
+	}
+	scale := fill * size / float64(box.Dy())
+	if w := scale * float64(box.Dx()); w > fill*size {
+		scale = fill * size / float64(box.Dx())
+	}
+	cx, cy := float64(box.Min.X+box.Max.X)/2, float64(box.Min.Y+box.Max.Y)/2
+	out := image.NewNRGBA(image.Rect(0, 0, size, size))
+	bg := v.background
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			r, g, b, a := sample(art, cx+(float64(x)+0.5-size/2)/scale, cy+(float64(y)+0.5-size/2)/scale)
+			mix := func(c float64, under uint8) uint8 {
+				return uint8(math.Round(math.Min(255, c*255+float64(under)*(1-a))))
 			}
-		}
-	}
-	// The bridge: half a ring from one clip to the other, with round ends.
-	const bx, by, br, bw = 512, 372, 194, 34
-	if (y <= by && math.Abs(math.Hypot(x-bx, y-by)-br) < bw/2) ||
-		math.Hypot(x-(bx-br), y-by) < bw/2 || math.Hypot(x-(bx+br), y-by) < bw/2 {
-		c = accent
-	}
-	return c
-}
-
-func draw() []byte {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	for py := 0; py < size; py++ {
-		for px := 0; px < size; px++ {
-			var sum rgb
-			for sy := 0; sy < samples; sy++ {
-				for sx := 0; sx < samples; sx++ {
-					c := shade(float64(px)+(float64(sx)+0.5)/samples, float64(py)+(float64(sy)+0.5)/samples)
-					sum.r, sum.g, sum.b = sum.r+c.r, sum.g+c.g, sum.b+c.b
-				}
-			}
-			n := float64(samples * samples)
-			img.SetRGBA(px, py, color.RGBA{uint8(sum.r/n + 0.5), uint8(sum.g/n + 0.5), uint8(sum.b/n + 0.5), 0xff})
+			out.SetNRGBA(x, y, color.NRGBA{mix(r, bg.R), mix(g, bg.G), mix(b, bg.B), 0xff})
 		}
 	}
 	var buf bytes.Buffer
-	// The image is opaque, so the encoder writes it without an alpha
-	// channel, as the App Store requires.
-	if err := png.Encode(&buf, img); err != nil {
-		panic(err)
+	// Every pixel is opaque, so the encoder writes no alpha channel.
+	if err := png.Encode(&buf, out); err != nil {
+		return nil, err
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 func main() {
-	check := flag.Bool("check", false, "fail if the icon is out of date")
+	check := flag.Bool("check", false, "fail if the icons are out of date")
 	flag.Parse()
-	out := draw()
-	if *check {
-		cur, err := os.ReadFile(iconFile)
-		if err != nil || !bytes.Equal(cur, out) {
-			fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", iconFile)
+	for _, v := range variants {
+		out, err := render(v)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
 			os.Exit(1)
 		}
-		return
-	}
-	if err := os.WriteFile(iconFile, out, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "icon:", err)
-		os.Exit(1)
+		if *check {
+			if cur, err := os.ReadFile(v.icon); err != nil || !bytes.Equal(cur, out) {
+				fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", v.icon)
+				os.Exit(1)
+			}
+			continue
+		}
+		if err := os.WriteFile(v.icon, out, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
+			os.Exit(1)
+		}
 	}
 }

@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The iPhone app's icon is the cbb clipboard with a key: a light icon, and a dark one that iOS
+  shows in dark mode. `tools/icon` makes both from the art in `apps/design/icon`.
 - **clipbridge is now clipboardbridge, and its command is `cbb`.** Everything is renamed: the
   repository, the binary (`/usr/local/bin/cbb`), the service (`clipboardbridge.service`, on
   macOS `io.github.hunterewok.clipboardbridge`), the user and group, the directories, the

@@ -42,7 +42,7 @@ go tool govulncheck ./...
 go tool actionlint
 go run ./tools/repocheck
 go run ./tools/tokens -check   # apps/design/tokens.json -> Swift, WCAG contrast
-go run ./tools/icon -check     # the app icon
+go run ./tools/icon -check     # the app icons, from apps/design/icon
 go test -race ./...
 ```
 

@@ -118,7 +118,10 @@ the group", not a status code), never a dialog that must be dismissed.
   group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
-- `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
+- `apps/design/` — tokens and the icon art: `icon/cbb-light.png` and `icon/cbb-dark.png`, the
+  clipboard on transparency, from which `go run ./tools/icon` makes the iPhone app's light and
+  dark icons (the clipboard enlarged on a square of its own colour, opaque, as iOS needs; iOS
+  shows the dark one in dark mode), and CI checks that they are up to date; `go run ./tools/tokens` turns `tokens.json` into
   `apps/ios/ClipboardBridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
   WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
