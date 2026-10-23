@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
+//go:build linux
+
 // Package wl is a minimal Wayland client: the wire protocol, the core
 // objects it needs (display, registry, callback, seat) and nothing that
 // draws. The desktop connector uses it for the data-control protocols.

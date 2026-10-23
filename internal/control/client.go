@@ -30,7 +30,7 @@ func Dial(path string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.New("no permission to use the clipboardbridge service; add your user to the " + Group + " group and log in again")
+			return nil, errors.New("no permission to use the clipboardbridge service; " + permissionHint)
 		}
 		return nil, errors.New("the clipboardbridge service is not running (" + err.Error() + ")")
 	}

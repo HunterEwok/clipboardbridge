@@ -12,39 +12,20 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
-func socketPair(t *testing.T) (net.Conn, net.Conn) {
-	t.Helper()
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn := func(fd int) net.Conn {
-		f := os.NewFile(uintptr(fd), "socketpair")
-		defer f.Close()
-		c, err := net.FileConn(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { c.Close() })
-		return c
-	}
-	return conn(fds[0]), conn(fds[1])
-}
+func socketPair(t *testing.T) (net.Conn, net.Conn) { return testnet.SocketPair(t) }
 
 // clock is an uptime clock a test moves by hand.
 type clock struct{ d atomic.Int64 }
