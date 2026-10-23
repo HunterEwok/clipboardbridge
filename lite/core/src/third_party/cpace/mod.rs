@@ -28,7 +28,11 @@
 
 mod field;
 
-use ring::{digest, hmac};
+use alloc::vec;
+use alloc::vec::Vec;
+
+use hmac::{KeyInit, Mac};
+use sha2::{Digest, Sha512};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Suite constants for CPACE-X25519-SHA512.
@@ -75,13 +79,13 @@ pub struct Config<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Error(&'static str);
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.0)
     }
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 /// One party's state during a CPace exchange.
 pub struct State {
@@ -103,8 +107,7 @@ pub fn start(cfg: &Config) -> Result<(State, Vec<u8>), Error> {
     // G.sample_scalar is 32 uniformly random bytes; X25519 clamps them as
     // RFC 7748 requires.
     let mut scalar = [0u8; ELEMENT_SIZE];
-    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut scalar)
-        .map_err(|_| Error("cpace: no randomness"))?;
+    getrandom::fill(&mut scalar).map_err(|_| Error("cpace: no randomness"))?;
     start_with(cfg, scalar)
 }
 
@@ -164,12 +167,12 @@ impl State {
         // ISK = H.hash(lv_cat(G.DSI || "_ISK", sid, K) || transcript(Ya, ADa, Yb, ADb))
         let mut b = lv_cat(Vec::new(), &[DSI_ISK, &self.sid, &k]);
         b = self.transcript(b, ya, ada, yb, adb);
-        let isk = digest::digest(&digest::SHA512, &b).as_ref().to_vec();
+        let isk = Sha512::digest(&b).to_vec();
         b.fill(0);
 
         // sid_output = H.hash("CPaceSidOutput" || transcript(Ya, ADa, Yb, ADb))
         let b = self.transcript(DSI_SID.to_vec(), ya, ada, yb, adb);
-        self.sid_output = Some(digest::digest(&digest::SHA512, &b).as_ref().to_vec());
+        self.sid_output = Some(Sha512::digest(&b).to_vec());
 
         // Key confirmation tags, each computed over the message its sender
         // sent: mac_key = H.hash("CPaceMac" || sid || ISK),
@@ -178,7 +181,7 @@ impl State {
         b.extend_from_slice(DSI_MAC);
         b.extend_from_slice(&self.sid);
         b.extend_from_slice(&isk);
-        let mac_key = digest::digest(&digest::SHA512, &b);
+        let mac_key = Sha512::digest(&b);
         b.fill(0);
         self.tag = Some(mac(mac_key.as_ref(), &self.msg, &self.ad));
         self.peer_tag = Some(mac(mac_key.as_ref(), msg, ad));
@@ -225,8 +228,9 @@ impl State {
 
 /// Returns MAC(key, lv_cat(msg, ad)).
 fn mac(key: &[u8], msg: &[u8], ad: &[u8]) -> Vec<u8> {
-    let k = hmac::Key::new(hmac::HMAC_SHA512, key);
-    hmac::sign(&k, &lv_cat(Vec::new(), &[msg, ad])).as_ref().to_vec()
+    let mut m = hmac::Hmac::<Sha512>::new_from_slice(key).expect("HMAC takes a key of any length");
+    m.update(&lv_cat(Vec::new(), &[msg, ad]));
+    m.finalize().into_bytes().to_vec()
 }
 
 /// Returns generator_string(G.DSI, PRS, CI, sid, H.s_in_bytes), which is
@@ -244,13 +248,13 @@ fn generator_string(prs: &[u8], ci: &[u8], sid: &[u8]) -> Vec<u8> {
 /// implementing G.calculate_generator.
 fn generator(prs: &[u8], ci: &[u8], sid: &[u8]) -> [u8; 32] {
     let mut b = generator_string(prs, ci, sid);
-    let h = digest::digest(&digest::SHA512, &b);
+    let h = Sha512::digest(&b);
     b.fill(0);
 
     // Interpret the first 32 bytes of the hash as a field element, as in
     // decodeUCoordinate, and map it to the curve with Elligator 2.
     let mut u = [0u8; 32];
-    u.copy_from_slice(&h.as_ref()[..ELEMENT_SIZE]);
+    u.copy_from_slice(&h[..ELEMENT_SIZE]);
     let r = field::from_bytes(&u);
     u.fill(0);
     field::elligator2(&r)
