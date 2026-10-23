@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/control"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
 )
 
 // The group's devices list and revocation (docs/protocol.md, section 10):
@@ -53,7 +53,7 @@ func (r recordStore) Add(from group.DeviceID, rs []group.Record) []group.Record 
 func (s *Service) loadRecords(id *group.Identity) *group.Records {
 	recs, err := group.LoadRecords(s.cfg.StateDir, id.GroupCA.Cert)
 	if err != nil {
-		s.logf("clipbridge: reading the device records: %v", err)
+		s.logf("cbb: reading the device records: %v", err)
 		return group.NewRecords(id.GroupCA.Cert)
 	}
 	return recs
@@ -71,7 +71,7 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 	}
 	fresh, errs := recs.AddAll(rs)
 	for _, err := range errs {
-		s.logf("clipbridge: dropped a device record from %s: %v", orThis(from), err)
+		s.logf("cbb: dropped a device record from %s: %v", orThis(from), err)
 	}
 	revoked, rooted := false, false
 	for _, r := range fresh {
@@ -80,7 +80,7 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 	}
 	if len(fresh) > 0 {
 		if err := recs.Save(s.cfg.StateDir); err != nil {
-			s.logf("clipbridge: saving the device records: %v", err)
+			s.logf("cbb: saving the device records: %v", err)
 		}
 	}
 	s.recMu.Unlock()
@@ -89,7 +89,7 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 		err := s.adoptRootsLocked()
 		s.mu.Unlock()
 		if err != nil {
-			s.logf("clipbridge: trusting the group's new root: %v", err)
+			s.logf("cbb: trusting the group's new root: %v", err)
 		}
 	}
 	if revoked || rooted {
@@ -116,7 +116,7 @@ func (s *Service) adoptRootsLocked() error {
 	if err := s.setIdentityLocked(&next); err != nil {
 		return err
 	}
-	s.logf("clipbridge: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
+	s.logf("cbb: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
 	return nil
 }
 
@@ -137,7 +137,7 @@ func (s *Service) afterRevocation() {
 		nd.Recheck()
 	}
 	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
-		s.logf("clipbridge: this device was removed from the group; the other members refuse it until it pairs again")
+		s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
 	}
 }
 
@@ -190,7 +190,7 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.
 	}
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
 	if err != nil {
-		s.logf("clipbridge: recording %s in the devices list: %v", dev, err)
+		s.logf("cbb: recording %s in the devices list: %v", dev, err)
 		return
 	}
 	s.publish(nd, r)
@@ -261,7 +261,7 @@ func (s *Service) ensureListed() {
 		}
 		r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
 		if err != nil {
-			s.logf("clipbridge: recording %s in the devices list: %v", dev, err)
+			s.logf("cbb: recording %s in the devices list: %v", dev, err)
 			return
 		}
 		rs = append(rs, r)
@@ -293,7 +293,7 @@ func (s *Service) trackSeen(peers []node.Peer) {
 	s.online = online
 }
 
-// devices returns the devices list as clipbridge devices shows it: the
+// devices returns the devices list as cbb devices shows it: the
 // devices in the records, then this device and the connected peers that
 // are not in them yet.
 func (s *Service) devices() ([]control.Device, error) {
@@ -367,7 +367,7 @@ func (s *Service) revoke(target string) (string, error) {
 	}
 	switch {
 	case len(match) == 0:
-		return "", fmt.Errorf("no device %q in the group; clipbridge devices lists them", target)
+		return "", fmt.Errorf("no device %q in the group; cbb devices lists them", target)
 	case len(match) > 1:
 		var ids []string
 		for _, d := range match {
@@ -386,7 +386,7 @@ func (s *Service) revoke(target string) (string, error) {
 	case !id.Admin() && id.AdminCA == nil:
 		return "", errNotAdmin
 	case d.Self:
-		return "", errors.New("a device cannot remove itself; run clipbridge revoke on another member")
+		return "", errors.New("a device cannot remove itself; run cbb revoke on another member")
 	case d.Role == group.RoleLinux && id.GroupCA.Cert.MaxPathLen == 0:
 		return "", errors.New("a Linux member holds the group's keys, so removing it needs a new group; this is not supported yet")
 	case d.ID == string(root):
@@ -413,7 +413,7 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", err
 	}
 	s.publish(nd, r)
-	s.logf("clipbridge: removed %s (%s) from the group", d.Name, d.ID)
+	s.logf("cbb: removed %s (%s) from the group", d.Name, d.ID)
 	return d.Name, nil
 }
 

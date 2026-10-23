@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	iconFile = "apps/ios/Clipbridge/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+	iconFile = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 	size     = 1024
 	samples  = 4 // per axis, for smooth edges
 )

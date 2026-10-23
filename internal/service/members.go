@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/mdns"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 const (
@@ -89,7 +89,7 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 			return
 		}
 		if err := w.Serve(ctx, tc); err != nil {
-			s.logf("clipbridge: pairing attempt from %s: %v", raw.RemoteAddr(), err)
+			s.logf("cbb: pairing attempt from %s: %v", raw.RemoteAddr(), err)
 		}
 		return
 	default:
@@ -108,7 +108,7 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 	release()
 	released = true
 	if err := s.nd.Serve(ctx, tc); err != nil {
-		s.logf("clipbridge: connection from %s: %v", raw.RemoteAddr(), err)
+		s.logf("cbb: connection from %s: %v", raw.RemoteAddr(), err)
 	}
 }
 
@@ -208,7 +208,7 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 			if uptime.Now()-start > maxBackoff {
 				backoff = minBackoff // the connection worked for a while
 			}
-			s.logf("clipbridge: connection to %s at %s: %v", id, addr, err)
+			s.logf("cbb: connection to %s at %s: %v", id, addr, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -219,7 +219,7 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 	}
 }
 
-// peersChanged elects the holder of clipbridge.local: the Linux member with
+// peersChanged elects the holder of clipboardbridge.local: the Linux member with
 // the lowest device ID among this one and the Linux members it is
 // connected to.
 func (s *Service) peersChanged() {
@@ -250,7 +250,7 @@ func (s *Service) electLocked() {
 	if hold != s.holder {
 		s.holder = hold
 		s.responder.SetHolder(hold)
-		s.logf("clipbridge: holds clipbridge.local: %v", hold)
+		s.logf("cbb: holds clipboardbridge.local: %v", hold)
 	}
 }
 
@@ -270,7 +270,7 @@ func (s *Service) watchSleep(ctx context.Context) {
 		case <-t.C:
 		}
 		if slept, ok := d.check(uptime.Now(), time.Now()); ok {
-			s.logf("clipbridge: the machine slept for %v", slept.Round(time.Second))
+			s.logf("cbb: the machine slept for %v", slept.Round(time.Second))
 			s.mu.Lock()
 			nd := s.nd
 			s.mu.Unlock()

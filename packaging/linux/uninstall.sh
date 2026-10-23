@@ -4,13 +4,13 @@
 
 # Removes what install.sh installed:
 #
-#   sudo sh /usr/local/share/clipbridge/uninstall.sh [--purge]
+#   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service and removes the binary, the unit, the autostart entry,
-# the tmux and console configuration, the settings in /etc/clipbridge and the
+# the tmux and console configuration, the settings in /etc/clipboardbridge and the
 # firewall rules that install.sh added, and only those. The device's keys and
-# group, in /var/lib/clipbridge, stay for a reinstall unless --purge; the
-# clipbridge user and group stay too, since files may still belong to them.
+# group, in /var/lib/clipboardbridge, stay for a reinstall unless --purge; the
+# clipboardbridge user and group stay too, since files may still belong to them.
 set -eu
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
@@ -30,27 +30,27 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
-	systemctl disable --now clipbridge.service >/dev/null 2>&1 || true
+	systemctl disable --now clipboardbridge.service >/dev/null 2>&1 || true
 fi
-share=/usr/local/share/clipbridge
+share=/usr/local/share/clipboardbridge
 if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close
 fi
-rm -f /etc/systemd/system/clipbridge.service /etc/xdg/autostart/clipbridge-desktop.desktop \
-	/etc/profile.d/clipbridge-console.sh /usr/lib/sysusers.d/clipbridge.conf /usr/local/bin/clipbridge
+rm -f /etc/systemd/system/clipboardbridge.service /etc/xdg/autostart/clipboardbridge-desktop.desktop \
+	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb
 if command -v systemctl >/dev/null 2>&1; then
 	systemctl daemon-reload || true
 fi
 if [ -f /etc/tmux.conf ]; then
-	line='source-file -q /usr/local/share/clipbridge/tmux.conf'
-	grep -vxF "$line" /etc/tmux.conf >/etc/tmux.conf.clipbridge || true
-	cat /etc/tmux.conf.clipbridge >/etc/tmux.conf
-	rm -f /etc/tmux.conf.clipbridge
+	line='source-file -q /usr/local/share/clipboardbridge/tmux.conf'
+	grep -vxF "$line" /etc/tmux.conf >/etc/tmux.conf.clipboardbridge || true
+	cat /etc/tmux.conf.clipboardbridge >/etc/tmux.conf
+	rm -f /etc/tmux.conf.clipboardbridge
 fi
-rm -rf "$share" /etc/clipbridge
+rm -rf "$share" /etc/clipboardbridge
 if [ "$purge" = yes ]; then
-	rm -rf /var/lib/clipbridge
-	echo "clipbridge is removed, with this device's keys; it left its group."
+	rm -rf /var/lib/clipboardbridge
+	echo "clipboardbridge is removed, with this device's keys; it left its group."
 else
-	echo "clipbridge is removed. Its keys stay in /var/lib/clipbridge for a reinstall; --purge removes them."
+	echo "clipboardbridge is removed. Its keys stay in /var/lib/clipboardbridge for a reinstall; --purge removes them."
 fi

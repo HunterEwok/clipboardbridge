@@ -77,13 +77,13 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 - **mdns with avahi**: the mDNS tests on real sockets, beside avahi-daemon, in a Debian
   container;
 - **e2e**: the built binary as three members and an avahi resolver in Docker containers:
-  pairing, sync, the holder of `clipbridge.local` and its handover, a wrong code
+  pairing, sync, the holder of `clipboardbridge.local` and its handover, a wrong code
   ([tools/e2e/e2e.sh](../tools/e2e/e2e.sh));
 - **desktop clipboards**: the Wayland data-control client under a headless sway and the X11
   client under Xvfb, against wl-clipboard and xclip;
 - **packaging**: shellcheck for the scripts, `systemd-analyze verify` and `security` for the
   unit, and the desktop entry;
-- **phone kit**: ClipbridgeKit's tests on Linux and macOS, and its cross tests with the Go
+- **phone kit**: ClipboardBridgeKit's tests on Linux and macOS, and its cross tests with the Go
   code (pairing over plain TCP on Linux; pairing and a member connection over TLS on macOS);
 - **iPhone app**: the Xcode project from XcodeGen, built and tested on an iPhone simulator
   without signing;
@@ -112,12 +112,12 @@ Rules for workflows:
   `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and
   publishes the release, with notes generated from the merged pull requests. A tag with a
   hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
-- The archives are `clipbridge-<os>-<arch>.tar.gz` without the version, so that
-  `releases/latest/download/` has fixed names for `get.sh`; each holds `clipbridge/` with the
+- The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
+  `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
   binary, `LICENSE` and `packaging/`.
 - The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
-  Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipbridge.plist` or
-  `clipbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:
+  Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist` or
+  `clipboardbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:
   `plutil -convert binary1 -o /tmp/NAME-unsigned.shortcut internal/phone/shortcut/NAME.plist`
   (`shortcuts sign` reads only the binary form) and
   `shortcuts sign --mode anyone --input /tmp/NAME-unsigned.shortcut --output internal/phone/shortcut/NAME.shortcut`,

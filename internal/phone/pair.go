@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 // Window is an open pairing window for an iPhone: a six-digit code that the
@@ -137,15 +137,15 @@ func Profile(ca *group.CA) []byte {
 	<array>
 		<dict>
 			<key>PayloadCertificateFileName</key>
-			<string>clipbridge-iphone-ca.cer</string>
+			<string>clipboardbridge-iphone-ca.cer</string>
 			<key>PayloadContent</key>
 			<data>` + der + `</data>
 			<key>PayloadDescription</key>
-			<string>Lets the clipbridge shortcut reach clipbridge.local. The certificate is limited to that name.</string>
+			<string>Lets the clipboardbridge shortcut reach clipboardbridge.local. The certificate is limited to that name.</string>
 			<key>PayloadDisplayName</key>
 			<string>` + template.HTMLEscapeString(ca.Cert.Subject.CommonName) + `</string>
 			<key>PayloadIdentifier</key>
-			<string>io.github.hunterewok.clipbridge.ca</string>
+			<string>io.github.hunterewok.clipboardbridge.ca</string>
 			<key>PayloadType</key>
 			<string>com.apple.security.root</string>
 			<key>PayloadUUID</key>
@@ -155,11 +155,11 @@ func Profile(ca *group.CA) []byte {
 		</dict>
 	</array>
 	<key>PayloadDescription</key>
-	<string>Trust for clipbridge on this home network.</string>
+	<string>Trust for clipboardbridge on this home network.</string>
 	<key>PayloadDisplayName</key>
-	<string>clipbridge</string>
+	<string>clipboardbridge</string>
 	<key>PayloadIdentifier</key>
-	<string>io.github.hunterewok.clipbridge</string>
+	<string>io.github.hunterewok.clipboardbridge</string>
 	<key>PayloadRemovalDisallowed</key>
 	<false/>
 	<key>PayloadType</key>
@@ -177,9 +177,9 @@ func Profile(ca *group.CA) []byte {
 // that walks the user through the steps, the profile, and the shortcut.
 func ProfileHandler(ca *group.CA) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /clipbridge.mobileconfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /clipboardbridge.mobileconfig", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-apple-aspen-config")
-		w.Header().Set("Content-Disposition", `attachment; filename="clipbridge.mobileconfig"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="clipboardbridge.mobileconfig"`)
 		w.Write(Profile(ca))
 	})
 	for _, name := range []string{SyncShortcut, AdmitShortcut} {
@@ -239,7 +239,7 @@ func PairHandler(win func() *Window) http.Handler {
 		code := r.PostFormValue("code")
 		wd := win()
 		if wd == nil {
-			page(w, codePage, map[string]string{"Error": "No pairing window is open. Run clipbridge pair -phone on a Linux member."})
+			page(w, codePage, map[string]string{"Error": "No pairing window is open. Run cbb pair -phone on a Linux member."})
 			return
 		}
 		token, err := wd.try(code)
@@ -261,11 +261,11 @@ func pairJSON(w http.ResponseWriter, r *http.Request, wd *Window) {
 	}
 	var req pairRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.V.String() != "1" {
-		reply(pairReply{Message: "The shortcut is from another version of clipbridge; install it again."})
+		reply(pairReply{Message: "The shortcut is from another version of clipboardbridge; install it again."})
 		return
 	}
 	if wd == nil {
-		reply(pairReply{Message: "No pairing window is open. Run clipbridge pair -phone on a Linux member, then the shortcut again."})
+		reply(pairReply{Message: "No pairing window is open. Run cbb pair -phone on a Linux member, then the shortcut again."})
 		return
 	}
 	var code string
@@ -291,7 +291,7 @@ func pairError(err error) string {
 	if errors.Is(err, pair.ErrWrongCode) {
 		return "Wrong code. Check it and try again."
 	}
-	return strings.TrimPrefix(err.Error(), "pair: ") + ". Run clipbridge pair -phone again."
+	return strings.TrimPrefix(err.Error(), "pair: ") + ". Run cbb pair -phone again."
 }
 
 func page(w http.ResponseWriter, t *template.Template, data map[string]string) {
@@ -304,7 +304,7 @@ func page(w http.ResponseWriter, t *template.Template, data map[string]string) {
 
 const pageHead = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>clipbridge</title>
+<title>clipboardbridge</title>
 <style>body{font:17px -apple-system,system-ui,sans-serif;margin:24px;max-width:36em;line-height:1.45}
 input,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid #888}
 code{word-break:break-all;font-size:15px}.err{color:#b00020}.fp{font:20px ui-monospace,monospace}
@@ -313,21 +313,21 @@ code{word-break:break-all;font-size:15px}.err{color:#b00020}.fp{font:20px ui-mon
 </head><body>`
 
 var profilePage = template.Must(template.New("profile").Parse(pageHead + `
-<h1>clipbridge on this iPhone</h1>
+<h1>clipboardbridge on this iPhone</h1>
 <ol>
-<li><p><a class="btn" href="/clipbridge.mobileconfig">Install the profile</a></p>
+<li><p><a class="btn" href="/clipboardbridge.mobileconfig">Install the profile</a></p>
 <p>Allow the download, then open Settings: the profile waits at the top, under <b>Profile Downloaded</b>. Tap <b>Install</b>.</p></li>
-<li><p>In Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipbridge &rsaquo; More Details, the SHA-256 fingerprint must start with what the computer shows:</p>
+<li><p>In Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipboardbridge &rsaquo; More Details, the SHA-256 fingerprint must start with what the computer shows:</p>
 <p class="fp"><b>{{.Short}}</b></p>
 <p class="small">The whole fingerprint: {{.Fingerprint}}</p>
 <p>If it does not match, stop: someone else is answering.</p></li>
-<li><p>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings: turn on <b>clipbridge</b>. Without it, the shortcut reports that it cannot make a secure connection.</p></li>
-{{if .Shortcut}}<li><p><a class="btn" href="/clipbridge.shortcut">Add the shortcut</a></p>
+<li><p>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings: turn on <b>clipboardbridge</b>. Without it, the shortcut reports that it cannot make a secure connection.</p></li>
+{{if .Shortcut}}<li><p><a class="btn" href="/clipboardbridge.shortcut">Add the shortcut</a></p>
 <p>Then run it once: it asks for the six-digit code that the computer shows, and remembers this iPhone.</p></li>
-{{else}}<li><p>Add the clipbridge shortcut from the release page, run it once, and type the six-digit code that the computer shows.</p></li>
-{{end}}{{if .Admit}}<li><p><a class="btn" href="/clipbridge-add.shortcut">Add the shortcut for new computers</a></p>
-<p>This iPhone is the group's main device: to add a computer, run <b>clipbridge join</b> there and scan its QR code with this shortcut.</p></li>
-{{end}}<li><p>Put the shortcut on Back Tap: Settings &rsaquo; Accessibility &rsaquo; Touch &rsaquo; Back Tap &rsaquo; Double Tap &rsaquo; clipbridge. On an iPhone with an Action button, use that instead.</p></li>
+{{else}}<li><p>Add the clipboardbridge shortcut from the release page, run it once, and type the six-digit code that the computer shows.</p></li>
+{{end}}{{if .Admit}}<li><p><a class="btn" href="/clipboardbridge-add.shortcut">Add the shortcut for new computers</a></p>
+<p>This iPhone is the group's main device: to add a computer, run <b>cbb join</b> there and scan its QR code with this shortcut.</p></li>
+{{end}}<li><p>Put the shortcut on Back Tap: Settings &rsaquo; Accessibility &rsaquo; Touch &rsaquo; Back Tap &rsaquo; Double Tap &rsaquo; clipboardbridge. On an iPhone with an Action button, use that instead.</p></li>
 </ol>
 </body></html>`))
 
@@ -335,7 +335,7 @@ var codePage = template.Must(template.New("code").Parse(pageHead + `
 <h1>Pair this iPhone</h1>
 {{with .Error}}<p class="err">{{.}}</p>{{end}}
 <form method="post" action="/pair">
-<p><label>The code from clipbridge pair -phone:<br>
+<p><label>The code from cbb pair -phone:<br>
 <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" maxlength="7" required autofocus></label></p>
 <p><button type="submit">Pair</button></p>
 </form>
@@ -343,7 +343,7 @@ var codePage = template.Must(template.New("code").Parse(pageHead + `
 
 var tokenPage = template.Must(template.New("token").Parse(pageHead + `
 <h1>Paired</h1>
-<p>Install the clipbridge shortcut and paste this token when it asks for it:</p>
+<p>Install the clipboardbridge shortcut and paste this token when it asks for it:</p>
 <p><code>{{.Token}}</code></p>
 <p>Keep it private: it lets the shortcut use the group's clipboard. Then assign the shortcut to the Action button or to Back Tap.</p>
 </body></html>`))

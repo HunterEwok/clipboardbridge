@@ -1,7 +1,7 @@
-# clipbridge: notes for Claude Code
+# clipboardbridge: notes for Claude Code
 
-clipbridge syncs the clipboard between Linux computers, Macs and an iPhone on the home
-network. A Go service (`cmd/clipbridge`, `internal/...`) runs on the computers; the iPhone
+clipboardbridge syncs the clipboard between Linux computers, Macs and an iPhone on the home
+network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers; the iPhone
 app (`apps/ios`) is in development, and in its groups the phone is the root of trust.
 Read [README.md](README.md), [docs/design.md](docs/design.md),
 [docs/protocol.md](docs/protocol.md) (the wire format, kept in step with the code) and
@@ -49,26 +49,26 @@ go test -race ./...
 The phone kit (Swift package, runs on Linux too):
 
 ```sh
-cd apps/ios/ClipbridgeKit && swift test
+cd apps/ios/ClipboardBridgeKit && swift test
 ```
 
 Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
 
-- `CLIPBRIDGE_INTEROP_OUT=<dir> swift test` writes fresh `swift-records.json`,
+- `CBB_INTEROP_OUT=<dir> swift test` writes fresh `swift-records.json`,
   `swift-renewal.json` and `swift-admin.json`; then
-  `CLIPBRIDGE_INTEROP_OUT=<dir> go test ./internal/group -run 'TestSwift'` reads them.
+  `CBB_INTEROP_OUT=<dir> go test ./internal/group -run 'TestSwift'` reads them.
   Without the variable Go reads the committed copies in `testdata/interop`.
-- `CLIPBRIDGE_SWIFT_INTEROP=<path to clipbridge-interop>` runs
+- `CBB_SWIFT_INTEROP=<path to clipboardbridge-interop>` runs
   `TestSwiftMemberAdmitsGoJoiner` (pairing over plain TCP); on macOS
-  `CLIPBRIDGE_SWIFT_INTEROP_TLS` runs the real-TLS pairing and member tests (see the
+  `CBB_SWIFT_INTEROP_TLS` runs the real-TLS pairing and member tests (see the
   `phone kit` job in `.github/workflows/ci.yml` for the keychain setup).
 
 The app (macOS with Xcode):
 
 ```sh
 brew install xcodegen
-cd apps/ios && xcodegen generate   # Clipbridge.xcodeproj and Info.plist are not committed
-xcodebuild test -project Clipbridge.xcodeproj -scheme Clipbridge \
+cd apps/ios && xcodegen generate   # ClipboardBridge.xcodeproj and Info.plist are not committed
+xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \
   -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=  # any installed iPhone simulator
 ```
 
@@ -80,11 +80,11 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   member TLS, signed device and revocation records.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
-- `apps/ios/ClipbridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
+- `apps/ios/ClipboardBridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
-  `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipbridge-interop` plays the phone
+  `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
-- `apps/ios/Clipbridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
+- `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
   `apps/design/tokens.json`, String Catalogs in English and Russian).
 
 ## Status

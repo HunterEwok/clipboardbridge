@@ -1,6 +1,6 @@
 # Contributing
 
-clipbridge is developed by one maintainer. Thank you for your interest.
+clipboardbridge is developed by one maintainer. Thank you for your interest.
 
 ## Issues are welcome
 
@@ -49,7 +49,7 @@ The maintainer follows these rules; they are written down to keep the history co
 
 ## Development
 
-clipbridge needs Go; `go.mod` names the exact toolchain, and the `go` command downloads it
+clipboardbridge needs Go; `go.mod` names the exact toolchain, and the `go` command downloads it
 when needed. The checks that CI runs, from the repository root (CI also vets and builds every
 target, see `.github/workflows/ci.yml`):
 
@@ -63,6 +63,6 @@ go tool govulncheck ./...
 go tool actionlint             # GitHub Actions workflows
 go run ./tools/repocheck       # English only, license headers, copied code
 go test -race ./...
-go build -o /dev/null ./cmd/clipbridge
-GOOS=linux GOARCH=arm GOARM=6 go build -o /dev/null ./cmd/clipbridge   # Raspberry Pi Zero W
+go build -o /dev/null ./cmd/cbb
+GOOS=linux GOARCH=arm GOARM=6 go build -o /dev/null ./cmd/cbb   # Raspberry Pi Zero W
 ```

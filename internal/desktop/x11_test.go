@@ -15,11 +15,11 @@ import (
 )
 
 // TestX11 runs against a real X server, such as Xvfb, and checks the
-// connector's view against xclip. It runs only when CLIPBRIDGE_TEST_X11 is
+// connector's view against xclip. It runs only when CBB_TEST_X11 is
 // set, for example in a container.
 func TestX11(t *testing.T) {
-	if os.Getenv("CLIPBRIDGE_TEST_X11") == "" {
-		t.Skip("set CLIPBRIDGE_TEST_X11 with an X server in DISPLAY and xclip installed")
+	if os.Getenv("CBB_TEST_X11") == "" {
+		t.Skip("set CBB_TEST_X11 with an X server in DISPLAY and xclip installed")
 	}
 	b, err := OpenX11(t.Logf)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestX11(t *testing.T) {
 		t.Fatalf("Next = %+v, %v, %v", it, ok, err)
 	}
 
-	text := "written by clipbridge \u043f\u0440\u0438\u0432\u0435\u0442\nline two"
+	text := "written by clipboardbridge \u043f\u0440\u0438\u0432\u0435\u0442\nline two"
 	if err := b.Write(text, false); err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +117,8 @@ func TestX11(t *testing.T) {
 }
 
 func TestX11Writes(t *testing.T) {
-	if os.Getenv("CLIPBRIDGE_TEST_X11") == "" {
-		t.Skip("set CLIPBRIDGE_TEST_X11 with an X server in DISPLAY and xclip installed")
+	if os.Getenv("CBB_TEST_X11") == "" {
+		t.Skip("set CBB_TEST_X11 with an X server in DISPLAY and xclip installed")
 	}
 	// What the clipboard holds at open is known, but no change.
 	cmd := exec.Command("xclip", "-selection", "clipboard", "-i")

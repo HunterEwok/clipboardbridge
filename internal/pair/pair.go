@@ -7,7 +7,7 @@
 // or a computer that the root phone of a phone group made an admin. The
 // window has a code, valid for five minutes, one attempt at a time, closed
 // after a success or the third failed attempt. The new device connects to the member's port
-// over TLS 1.3 with the ALPN protocol clipbridge-pair/1 and presents a
+// over TLS 1.3 with the ALPN protocol clipboardbridge-pair/1 and presents a
 // self-signed certificate for the key it will keep. Neither side can check
 // the other's certificate yet; instead both run the CPace
 // password-authenticated key exchange with the code, bound to this TLS
@@ -52,15 +52,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // Protocol is the ALPN protocol of pairing connections.
-const Protocol = "clipbridge-pair/1"
+const Protocol = "clipboardbridge-pair/1"
 
 const (
-	exporterLabel = "EXPERIMENTAL-clipbridge-pair-v1"
-	channelPrefix = "clipbridge pair v1\x00"
+	exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v1"
+	channelPrefix = "clipboardbridge pair v1\x00"
 
 	// Lifetime is how long a pairing window stays open, counting the time
 	// the machine sleeps. An attempt that has started may finish after it.
@@ -153,7 +153,7 @@ func NormalizeCode(s string) (string, error) {
 
 // Info describes the device that joins.
 type Info struct {
-	Name string `json:"name"` // shown in clipbridge devices
+	Name string `json:"name"` // shown in cbb devices
 	OS   string `json:"os"`   // "linux" or "darwin"
 }
 

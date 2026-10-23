@@ -27,8 +27,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: clipbridge version
-      description: The output of `clipbridge --version`, or the commit.
+      label: cbb version
+      description: The output of `cbb --version`, or the commit.
   - type: dropdown
     id: devices
     attributes:

@@ -12,13 +12,13 @@ import (
 )
 
 // The shortcut: UnsignedShortcut builds it as a property list, which
-// tools/shortcut writes to shortcut/clipbridge.plist. iOS imports only a
+// tools/shortcut writes to shortcut/clipboardbridge.plist. iOS imports only a
 // signed shortcut, so the maintainer converts that file to the binary form
 // and signs it on a Mac with `shortcuts sign` into
-// shortcut/clipbridge.shortcut, which the build embeds and the profile port
+// shortcut/clipboardbridge.shortcut, which the build embeds and the profile port
 // serves (see docs/maintaining.md).
 //
-// The shortcut keeps its token in iCloud Drive at Shortcuts/clipbridge/token.txt.
+// The shortcut keeps its token in iCloud Drive at Shortcuts/clipboardbridge/token.txt.
 // Without it, it asks for the pairing code, gets a token from /pair and
 // saves it. With it, it posts the clipboard to /sync and copies what comes
 // back; told that the token is unknown, it deletes the file, so the next
@@ -29,8 +29,8 @@ var shortcutFiles embed.FS
 
 // The shortcuts, by the base name of their files.
 const (
-	SyncShortcut  = "clipbridge"     // the button: sync, and pair on the first run
-	AdmitShortcut = "clipbridge-add" // add a computer by scanning its QR code
+	SyncShortcut  = "clipboardbridge"     // the button: sync, and pair on the first run
+	AdmitShortcut = "clipboardbridge-add" // add a computer by scanning its QR code
 )
 
 // Shortcut returns a signed shortcut, or nil in a build without it.
@@ -47,7 +47,7 @@ func UnsignedShortcuts() map[string][]byte {
 	return map[string][]byte{SyncShortcut: UnsignedShortcut(), AdmitShortcut: UnsignedAdmitShortcut()}
 }
 
-const tokenPath = "clipbridge/token.txt"
+const tokenPath = "clipboardbridge/token.txt"
 
 // UnsignedShortcut returns the shortcut as an XML property list.
 func UnsignedShortcut() []byte {
@@ -63,11 +63,11 @@ func UnsignedShortcut() []byte {
 	add(ifStart("paired", file, 101, "")) // does not have any value
 	code := output("code", "Provided Input")
 	add("is.workflow.actions.ask", map[string]any{
-		"UUID": code.uuid, "WFAskActionPrompt": "The six-digit code that clipbridge pair -phone shows", "WFInputType": "Number",
+		"UUID": code.uuid, "WFAskActionPrompt": "The six-digit code that cbb pair -phone shows", "WFInputType": "Number",
 	})
 	paired := output("pair", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": paired.uuid, "WFURL": "https://clipbridge.local:8764/pair", "WFHTTPMethod": "POST",
+		"UUID": paired.uuid, "WFURL": "https://clipboardbridge.local:8764/pair", "WFHTTPMethod": "POST",
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("code", "", code)),
 	})
 	tok := output("token", "Dictionary Value")
@@ -88,7 +88,7 @@ func UnsignedShortcut() []byte {
 	add("is.workflow.actions.getclipboard", map[string]any{"UUID": clipboard.uuid})
 	synced := output("sync", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": synced.uuid, "WFURL": "https://clipbridge.local:8764/sync", "WFHTTPMethod": "POST",
+		"UUID": synced.uuid, "WFURL": "https://clipboardbridge.local:8764/sync", "WFHTTPMethod": "POST",
 		"ShowHeaders": true, "WFHTTPHeaders": fields(textField("Authorization", "Bearer ", file)),
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("text", "", clipboard)),
 	})
@@ -113,8 +113,8 @@ func UnsignedShortcut() []byte {
 }
 
 // UnsignedAdmitShortcut returns the shortcut that adds a computer: it scans
-// the QR code that clipbridge join shows and posts it to /admit with the
-// token, so the member that holds clipbridge.local opens a window for it.
+// the QR code that cbb join shows and posts it to /admit with the
+// token, so the member that holds clipboardbridge.local opens a window for it.
 func UnsignedAdmitShortcut() []byte {
 	var acts []any
 	add := func(id string, params map[string]any) { acts = append(acts, action(id, params)) }
@@ -125,15 +125,15 @@ func UnsignedAdmitShortcut() []byte {
 	})
 	add(ifStart("add-paired", file, 101, "")) // does not have any value
 	add("is.workflow.actions.notification", map[string]any{
-		"UUID": uuid("add-unpaired-note"), "WFNotificationActionTitle": "clipbridge",
-		"WFNotificationActionBody": text("Pair this iPhone first: run clipbridge pair -phone on a computer, then the clipbridge shortcut.", nil),
+		"UUID": uuid("add-unpaired-note"), "WFNotificationActionTitle": "clipboardbridge",
+		"WFNotificationActionBody": text("Pair this iPhone first: run cbb pair -phone on a computer, then the clipboardbridge shortcut.", nil),
 	})
 	add(ifElse("add-paired"))
 	scanned := output("add-scan", "QR/Barcode")
 	add("is.workflow.actions.scanbarcode", map[string]any{"UUID": scanned.uuid})
 	admitted := output("add-admit", "Contents of URL")
 	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": admitted.uuid, "WFURL": "https://clipbridge.local:8764/admit", "WFHTTPMethod": "POST",
+		"UUID": admitted.uuid, "WFURL": "https://clipboardbridge.local:8764/admit", "WFHTTPMethod": "POST",
 		"ShowHeaders": true, "WFHTTPHeaders": fields(textField("Authorization", "Bearer ", file)),
 		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("code", "", scanned)),
 	})
@@ -231,7 +231,7 @@ func valueFor(o out, key string, dict out) map[string]any {
 
 func notify(msg out) (string, map[string]any) {
 	return "is.workflow.actions.notification", map[string]any{
-		"UUID": uuid("notify-" + msg.uuid), "WFNotificationActionTitle": "clipbridge", "WFNotificationActionBody": text("", &msg),
+		"UUID": uuid("notify-" + msg.uuid), "WFNotificationActionTitle": "clipboardbridge", "WFNotificationActionBody": text("", &msg),
 	}
 }
 

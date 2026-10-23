@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/HunterEwok/clipbridge/internal/connector"
-	"github.com/HunterEwok/clipbridge/internal/wl"
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/wl"
 )
 
 // The data-control protocols let a client without a window read and set
@@ -229,7 +229,7 @@ func (w *Wayland) selection(id uint32) {
 	go func() {
 		it, ok, err := w.read(id, types)
 		if err != nil {
-			w.logf("clipbridge: reading the clipboard: %v", err)
+			w.logf("cbb: reading the clipboard: %v", err)
 			return
 		}
 		w.mu.Lock()

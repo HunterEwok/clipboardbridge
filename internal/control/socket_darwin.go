@@ -4,8 +4,8 @@
 package control
 
 // DefaultSocket is where the service listens on macOS: in a directory that
-// only the _clipbridge group may enter.
-const DefaultSocket = "/Library/Application Support/clipbridge/control.sock"
+// only the _clipboardbridge group may enter.
+const DefaultSocket = "/Library/Application Support/clipboardbridge/control.sock"
 
 // Group is the group whose members may use the control socket.
-const Group = "_clipbridge"
+const Group = "_clipboardbridge"

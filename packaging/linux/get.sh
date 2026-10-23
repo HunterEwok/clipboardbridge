@@ -2,23 +2,23 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs or updates clipbridge on a Linux machine from a release:
+# Installs or updates clipboardbridge on a Linux machine from a release:
 #
-#   curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
+#   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 #
 # Options go after "sh -s --": --console also starts tmux after a login on
 # the text console; --port N moves the member port from 8764 to N;
-# --no-firewall leaves the firewall alone. CLIPBRIDGE_VERSION=v1.2.3
-# picks a release instead of the latest; CLIPBRIDGE_RELEASE_DIR, for tests,
+# --no-firewall leaves the firewall alone. CBB_VERSION=v1.2.3
+# picks a release instead of the latest; CBB_RELEASE_DIR, for tests,
 # takes the files from a directory instead of downloading them.
 #
 # It downloads the archive for this machine's architecture and SHA256SUMS
 # from the release, checks the archive against it, runs install.sh from the
-# archive, which, when ufw or firewalld is active, allows clipbridge's ports from the home
+# archive, which, when ufw or firewalld is active, allows clipboardbridge's ports from the home
 # network only.
 set -eu
 
-repo=https://github.com/HunterEwok/clipbridge
+repo=https://github.com/HunterEwok/clipboardbridge
 console=
 port=
 firewall=yes
@@ -59,8 +59,8 @@ esac
 for tool in tar sha256sum; do
 	command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
-if [ -n "${CLIPBRIDGE_RELEASE_DIR:-}" ]; then
-	fetch() { cp "$CLIPBRIDGE_RELEASE_DIR/${1##*/}" "$2"; }
+if [ -n "${CBB_RELEASE_DIR:-}" ]; then
+	fetch() { cp "$CBB_RELEASE_DIR/${1##*/}" "$2"; }
 elif command -v curl >/dev/null 2>&1; then
 	fetch() { curl -fsSL --proto '=https' --tlsv1.2 -o "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
@@ -69,13 +69,13 @@ else
 	fail "curl or wget is required"
 fi
 
-version=${CLIPBRIDGE_VERSION:-latest}
+version=${CBB_VERSION:-latest}
 case $version in
 latest) base=$repo/releases/latest/download ;;
 v*) base=$repo/releases/download/$version ;;
-*) fail "CLIPBRIDGE_VERSION must look like v1.2.3" ;;
+*) fail "CBB_VERSION must look like v1.2.3" ;;
 esac
-archive=clipbridge-linux-$arch.tar.gz
+archive=clipboardbridge-linux-$arch.tar.gz
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -89,5 +89,5 @@ got=$(sha256sum "$tmp/$archive" | cut -d' ' -f1)
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 # shellcheck disable=SC2086 # $console and $port are words or none
-CLIPBRIDGE_FIREWALL=$firewall sh "$tmp/clipbridge/packaging/linux/install.sh" $console $port "$tmp/clipbridge/clipbridge"
+CBB_FIREWALL=$firewall sh "$tmp/clipboardbridge/packaging/linux/install.sh" $console $port "$tmp/clipboardbridge/cbb"
 

@@ -12,7 +12,7 @@ import (
 )
 
 // MemberProtocol is the ALPN protocol of connections between members.
-const MemberProtocol = "clipbridge/1"
+const MemberProtocol = "clipboardbridge/1"
 
 // TLSOptions adjust the TLS configuration of member connections.
 type TLSOptions struct {
@@ -75,7 +75,7 @@ func (id *Identity) ClientTLS(peer DeviceID, opt TLSOptions) *tls.Config {
 }
 
 // PhoneTLS returns the TLS configuration for the iPhone port, with the
-// clipbridge.local certificate. It returns nil on a device without one.
+// clipboardbridge.local certificate. It returns nil on a device without one.
 func (id *Identity) PhoneTLS() *tls.Config {
 	cert := id.PhoneCertificate()
 	if cert == nil {
@@ -87,7 +87,7 @@ func (id *Identity) PhoneTLS() *tls.Config {
 	}
 }
 
-// PhoneCertificate returns the clipbridge.local certificate with its CA, for
+// PhoneCertificate returns the clipboardbridge.local certificate with its CA, for
 // the iPhone port, or nil on a device without one.
 func (id *Identity) PhoneCertificate() *tls.Certificate {
 	if id.Phone == nil {

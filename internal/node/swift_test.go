@@ -19,18 +19,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // TestSwiftMemberTLS runs the phone app's member code against this node
-// over real TLS: clipbridge-interop (apps/ios/ClipbridgeKit), named by
-// CLIPBRIDGE_SWIFT_INTEROP_TLS on macOS, makes a key in the keychain, gets
+// over real TLS: clipboardbridge-interop (apps/ios/ClipboardBridgeKit), named by
+// CBB_SWIFT_INTEROP_TLS on macOS, makes a key in the keychain, gets
 // a member certificate for it, dials, sends a text, and waits for one.
 func TestSwiftMemberTLS(t *testing.T) {
-	tool := os.Getenv("CLIPBRIDGE_SWIFT_INTEROP_TLS")
+	tool := os.Getenv("CBB_SWIFT_INTEROP_TLS")
 	if tool == "" {
-		t.Skip("CLIPBRIDGE_SWIFT_INTEROP_TLS names no clipbridge-interop binary")
+		t.Skip("CBB_SWIFT_INTEROP_TLS names no clipboardbridge-interop binary")
 	}
 	server := newMember(t, Linux)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

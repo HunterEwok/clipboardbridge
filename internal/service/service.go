@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Package service is the clipbridge service: it holds the device's identity,
+// Package service is the clipboardbridge service: it holds the device's identity,
 // the sync engine and the member connections, publishes and browses with
 // mDNS on Linux and only browses on a Mac (D-32), admits devices, and serves
 // the local control socket.
@@ -20,14 +20,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/atomicfile"
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/hlc"
-	"github.com/HunterEwok/clipbridge/internal/mdns"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/phone"
 )
 
 // markFile holds the hybrid clock's saved mark, in the state directory.
@@ -60,7 +60,7 @@ type Config struct {
 	joinAddrs  func(port uint16) []string
 }
 
-// MemberPort is the member port by default (CLIPBRIDGE_PORT moves it, see
+// MemberPort is the member port by default (CBB_PORT moves it, see
 // Port), so a firewall can open it; a listening join, which comes before
 // the device is in a group, waits there too. When it is taken, any free port
 // does, since discovery and the QR code carry the port.
@@ -101,7 +101,7 @@ func mdnsDiscovery(c DiscoveryConfig) (Discovery, error) {
 	return mdns.New(mdns.Config{ID: c.ID, Port: c.Port, TXT: c.TXT, BrowseOnly: c.BrowseOnly, OnPeers: c.OnPeers, Logf: c.Logf})
 }
 
-// Service is a running clipbridge service.
+// Service is a running clipboardbridge service.
 type Service struct {
 	cfg   Config
 	clock *hlc.Clock
@@ -185,7 +185,7 @@ func Run(ctx context.Context, cfg Config) error {
 	clock := hlc.NewClock(nil, floor, func(m hlc.Timestamp) error {
 		err := atomicfile.Write(filepath.Join(cfg.StateDir, markFile), []byte(m.String()+"\n"), 0o600)
 		if err != nil {
-			cfg.Logf("clipbridge: saving the clock mark: %v", err)
+			cfg.Logf("cbb: saving the clock mark: %v", err)
 		}
 		return err
 	})
@@ -193,7 +193,7 @@ func Run(ctx context.Context, cfg Config) error {
 	id, err := group.Load(cfg.StateDir)
 	switch {
 	case errors.Is(err, group.ErrNoGroup):
-		cfg.Logf("clipbridge: this device is in no group yet")
+		cfg.Logf("cbb: this device is in no group yet")
 		id = nil
 	case err != nil:
 		return err
@@ -243,7 +243,7 @@ func loadMark(dir string) (hlc.Timestamp, error) {
 
 // startGroup starts the network part with an identity: the member
 // connections and discovery; on Linux also the member port, publishing and
-// clipbridge.local. A Mac only browses. Its state is set only when all of it
+// clipboardbridge.local. A Mac only browses. Its state is set only when all of it
 // started.
 //
 // The group's context does not derive from Run's: only stopGroup ends it,
@@ -290,7 +290,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.id, s.eng, s.nd, s.port = id, eng, nd, dc.Port
 	s.groupCtx, s.groupCancel = gctx, cancel
 	if err := s.adoptRootsLocked(); err != nil {
-		s.logf("clipbridge: trusting the group's new root: %v", err)
+		s.logf("cbb: trusting the group's new root: %v", err)
 	}
 	nd.Rejoin() // the service just started; there are no connections yet
 	s.wg.Add(2)
@@ -314,22 +314,22 @@ func (s *Service) startGroup(id *group.Identity) error {
 		}()
 	}
 	// Discovery has its own context, so it can say goodbye for
-	// clipbridge.local before the member connections close.
+	// clipboardbridge.local before the member connections close.
 	dctx, dcancel := context.WithCancel(gctx)
 	s.responder, s.discoveryStop, s.discoveryDone = r, dcancel, make(chan struct{})
 	go func(done chan struct{}) {
 		defer close(done)
 		if err := r.Run(dctx); err != nil {
-			s.logf("clipbridge: discovery: %v", err)
+			s.logf("cbb: discovery: %v", err)
 		}
 	}(s.discoveryDone)
-	s.electLocked() // alone, a Linux member holds clipbridge.local at once
+	s.electLocked() // alone, a Linux member holds clipboardbridge.local at once
 	return nil
 }
 
 // stopGroup stops the network part: first discovery, which sends the
 // goodbyes for this member's names, then the member connections, which say
-// goodbye too, so the next holder takes clipbridge.local over at once.
+// goodbye too, so the next holder takes clipboardbridge.local over at once.
 func (s *Service) stopGroup() {
 	s.mu.Lock()
 	s.stopping = true
@@ -408,7 +408,7 @@ func acceptLoop(ctx context.Context, ln net.Listener, logf func(string, ...any),
 				return
 			}
 			pause = min(max(2*pause, 5*time.Millisecond), time.Second)
-			logf("clipbridge: %s: %v; trying again in %v", what, err, pause)
+			logf("cbb: %s: %v; trying again in %v", what, err, pause)
 			select {
 			case <-ctx.Done():
 				return

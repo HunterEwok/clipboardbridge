@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/third_party/cpace"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 // Options adjust a pairing window. The zero value uses the system clocks.

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // recentCopy is how recent a computer's copy must be for the button to
@@ -41,7 +41,7 @@ type Tokens interface {
 	// PhoneCA returns the iPhone CA, whose key checks the tokens.
 	PhoneCA() *group.CA
 	// PhoneRevoked reports whether the phone with this ID was removed
-	// from the group (clipbridge revoke).
+	// from the group (cbb revoke).
 	PhoneRevoked(phoneID string) bool
 }
 
@@ -94,7 +94,7 @@ func SyncHandler(g Group) http.Handler {
 		}
 		token := bearer(r.Header.Get("Authorization"))
 		if token == "" {
-			unpaired("the shortcut has no token; run clipbridge pair -phone and the shortcut again")
+			unpaired("the shortcut has no token; run cbb pair -phone and the shortcut again")
 			return
 		}
 		if err := checkToken(g, token); err != nil {
@@ -103,12 +103,12 @@ func SyncHandler(g Group) http.Handler {
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 		if err != nil || len(body) > maxBody {
-			fail("the text is too large; clipbridge carries up to 1 MiB")
+			fail("the text is too large; clipboardbridge carries up to 1 MiB")
 			return
 		}
 		var req syncRequest
 		if err := json.Unmarshal(body, &req); err != nil || req.V.String() != "1" {
-			fail("the shortcut is from another version of clipbridge; install it again")
+			fail("the shortcut is from another version of clipboardbridge; install it again")
 			return
 		}
 		rep, err := decide(g, req)
@@ -145,17 +145,17 @@ func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
 		}
 		token := bearer(r.Header.Get("Authorization"))
 		if token == "" || checkToken(t, token) != nil {
-			reply(syncReply{Direction: "unpaired", Message: "this iPhone is not paired with the group; run clipbridge pair -phone"})
+			reply(syncReply{Direction: "unpaired", Message: "this iPhone is not paired with the group; run cbb pair -phone"})
 			return
 		}
 		var req admitRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.V.String() != "1" {
-			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipbridge; install it again"})
+			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipboardbridge; install it again"})
 			return
 		}
 		jc, ok := ParseJoinQR(req.Code)
 		if !ok {
-			reply(syncReply{Direction: "error", Message: "this is not the QR code of clipbridge join"})
+			reply(syncReply{Direction: "error", Message: "this is not the QR code of cbb join"})
 			return
 		}
 		if err := admit(jc); err != nil {
@@ -166,7 +166,7 @@ func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
 	})
 }
 
-// A JoinCode is what the QR code of clipbridge join carries: the code, the
+// A JoinCode is what the QR code of cbb join carries: the code, the
 // addresses where the joining computer listens, and the fingerprint of its
 // certificate (pair.CertFingerprint).
 type JoinCode struct {
@@ -178,8 +178,8 @@ type JoinCode struct {
 // maxJoinAddrs bounds the addresses a member dials for one QR code.
 const maxJoinAddrs = 4
 
-// JoinQR returns the text of the QR code that clipbridge join shows: a URL,
-// clipbridge://join?code=123456&addr=192.168.1.20:40123&fp=…, which the
+// JoinQR returns the text of the QR code that cbb join shows: a URL,
+// clipboardbridge://join?code=123456&addr=192.168.1.20:40123&fp=…, which the
 // shortcut and the phone apps read alike; later fields can be added without
 // breaking either.
 func JoinQR(jc JoinCode) string {
@@ -191,7 +191,7 @@ func JoinQR(jc JoinCode) string {
 		q.Set("fp", jc.Fingerprint)
 	}
 	// The code goes first, so a person reading the text sees it at once.
-	text := "clipbridge://join?code=" + url.QueryEscape(jc.Code)
+	text := "clipboardbridge://join?code=" + url.QueryEscape(jc.Code)
 	if len(q) > 0 {
 		text += "&" + q.Encode()
 	}
@@ -203,7 +203,7 @@ func JoinQR(jc JoinCode) string {
 // addresses are kept.
 func ParseJoinQR(s string) (JoinCode, bool) {
 	u, err := url.Parse(strings.TrimSpace(s))
-	if err != nil || !strings.EqualFold(u.Scheme, "clipbridge") || !strings.EqualFold(u.Host, "join") {
+	if err != nil || !strings.EqualFold(u.Scheme, "clipboardbridge") || !strings.EqualFold(u.Host, "join") {
 		return JoinCode{}, false
 	}
 	q := u.Query()

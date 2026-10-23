@@ -9,7 +9,7 @@
 // payload, usually a clipboard text. A client sends a request and reads the
 // answers; a watcher keeps its connection open, receives writes and reports
 // copies on it. Who may connect is decided by the socket's file permissions:
-// only root and the clipbridge group.
+// only root and the clipboardbridge group.
 package control
 
 import (
@@ -74,12 +74,12 @@ type Header struct {
 	Devices     []Device `json:"devices,omitempty"`
 }
 
-// Status describes the service for clipbridge status.
+// Status describes the service for cbb status.
 type Status struct {
 	Device  string   `json:"device"`
 	Group   string   `json:"group,omitempty"` // the group tag; empty when in no group
 	Role    string   `json:"role"`
-	Holder  bool     `json:"holder,omitempty"` // answers for clipbridge.local
+	Holder  bool     `json:"holder,omitempty"` // answers for clipboardbridge.local
 	Peers   []Device `json:"peers,omitempty"`
 	Version string   `json:"version"`
 }

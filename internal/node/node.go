@@ -29,9 +29,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 const (

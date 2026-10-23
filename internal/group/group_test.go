@@ -39,7 +39,7 @@ func newGroup(t *testing.T) *Identity {
 }
 
 // join admits a new device to admin's group, as pairing does: a Linux
-// member gets the CA keys and its own clipbridge.local certificate, a Mac
+// member gets the CA keys and its own clipboardbridge.local certificate, a Mac
 // neither.
 func join(t *testing.T, admin *Identity, linux bool, now time.Time) *Identity {
 	t.Helper()
@@ -108,7 +108,7 @@ func TestCAs(t *testing.T) {
 			t.Errorf("%s: signed with %v", ca.Subject.CommonName, ca.SignatureAlgorithm)
 		}
 	}
-	if !strings.HasPrefix(id.PhoneCA.Cert.Subject.CommonName, "clipbridge iPhone CA 2026-10-21") {
+	if !strings.HasPrefix(id.PhoneCA.Cert.Subject.CommonName, "clipboardbridge iPhone CA 2026-10-21") {
 		t.Errorf("iPhone CA name %q", id.PhoneCA.Cert.Subject.CommonName)
 	}
 	if len(id.GroupCA.Cert.PermittedDNSDomains) != 0 {
@@ -140,10 +140,10 @@ func TestPhoneCANameConstraints(t *testing.T) {
 	if got := ca.PermittedDNSDomains; len(got) != 1 || got[0] != PhoneName {
 		t.Errorf("permitted DNS domains %v", got)
 	}
-	if got := ca.PermittedEmailAddresses; len(got) != 1 || got[0] != "clipbridge.invalid" {
+	if got := ca.PermittedEmailAddresses; len(got) != 1 || got[0] != "clipboardbridge.invalid" {
 		t.Errorf("permitted e-mail addresses %v", got)
 	}
-	if got := ca.PermittedURIDomains; len(got) != 1 || got[0] != "clipbridge.invalid" {
+	if got := ca.PermittedURIDomains; len(got) != 1 || got[0] != "clipboardbridge.invalid" {
 		t.Errorf("permitted URI domains %v", got)
 	}
 	if got := ca.ExcludedIPRanges; len(got) != 2 || got[0].String() != "0.0.0.0/0" || got[1].String() != "::/0" {
@@ -168,10 +168,10 @@ func TestPhoneCACannotCertifyOtherSites(t *testing.T) {
 		tmpl x509.Certificate
 		ok   bool
 	}{
-		{name: "clipbridge.local", tmpl: x509.Certificate{DNSNames: []string{PhoneName}}, ok: true},
+		{name: "clipboardbridge.local", tmpl: x509.Certificate{DNSNames: []string{PhoneName}}, ok: true},
 		{name: "another site", tmpl: x509.Certificate{DNSNames: []string{"www.example.com"}}},
 		{name: "another site next to ours", tmpl: x509.Certificate{DNSNames: []string{PhoneName, "mail.example.com"}}},
-		{name: "a similar name", tmpl: x509.Certificate{DNSNames: []string{"evilclipbridge.local"}}},
+		{name: "a similar name", tmpl: x509.Certificate{DNSNames: []string{"evilclipboardbridge.local"}}},
 		{name: "an IPv4 address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, IPAddresses: []net.IP{net.IPv4(192, 168, 1, 1)}}},
 		{name: "an IPv6 address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, IPAddresses: []net.IP{net.ParseIP("fe80::1")}}},
 		{name: "an e-mail address", tmpl: x509.Certificate{DNSNames: []string{PhoneName}, EmailAddresses: []string{"someone@example.com"}}},
@@ -231,7 +231,7 @@ func TestMemberCertificate(t *testing.T) {
 	}
 	// The phone certificate is not a member certificate.
 	if _, err := DeviceOf(admin.Phone); err == nil {
-		t.Error("DeviceOf accepted the clipbridge.local certificate")
+		t.Error("DeviceOf accepted the clipboardbridge.local certificate")
 	}
 }
 
@@ -328,10 +328,10 @@ func TestSaveLoad(t *testing.T) {
 			}
 			if tt.admin && (!got.GroupCA.Key.Equal(tt.id.GroupCA.Key) || !got.PhoneCA.Key.Equal(tt.id.PhoneCA.Key) ||
 				!got.Phone.Equal(tt.id.Phone)) {
-				t.Error("the loaded CA keys or the clipbridge.local certificate differ")
+				t.Error("the loaded CA keys or the clipboardbridge.local certificate differ")
 			}
 			if !tt.admin && (got.GroupCA.Key != nil || got.PhoneCA != nil || got.Phone != nil || got.PhoneTLS() != nil) {
-				t.Error("a Mac identity holds CA keys or a clipbridge.local certificate")
+				t.Error("a Mac identity holds CA keys or a clipboardbridge.local certificate")
 			}
 		})
 	}
@@ -374,10 +374,10 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 		{"the key of another CA", func(f *identityFile) { f.GroupCAKey = otherCAKey }},
 		{"the iPhone CA as the group CA", func(f *identityFile) { f.GroupCA, f.GroupCAKey = f.PhoneCA, f.PhoneCAKey }},
 		{"a member certificate as the group CA", func(f *identityFile) { f.GroupCA, f.GroupCAKey = f.Cert, nil }},
-		{"the iPhone CA without the clipbridge.local certificate", func(f *identityFile) { f.Phone = nil }},
-		{"a clipbridge.local certificate without its CA", func(f *identityFile) { f.PhoneCA, f.PhoneCAKey = nil, nil }},
-		{"the member certificate as the clipbridge.local one", func(f *identityFile) { f.Phone = f.Cert }},
-		{"a clipbridge.local certificate from another group", func(f *identityFile) { f.Phone = other.Phone.Raw }},
+		{"the iPhone CA without the clipboardbridge.local certificate", func(f *identityFile) { f.Phone = nil }},
+		{"a clipboardbridge.local certificate without its CA", func(f *identityFile) { f.PhoneCA, f.PhoneCAKey = nil, nil }},
+		{"the member certificate as the clipboardbridge.local one", func(f *identityFile) { f.Phone = f.Cert }},
+		{"a clipboardbridge.local certificate from another group", func(f *identityFile) { f.Phone = other.Phone.Raw }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -415,7 +415,7 @@ func TestRenew(t *testing.T) {
 	if next, changed, err := admin.Renew(t0.AddDate(0, 6, 0)); err != nil || changed || next.Cert != admin.Cert {
 		t.Errorf("Renew half a year in = changed %v, %v; want no change", changed, err)
 	}
-	// 11 months and 10 days in, the clipbridge.local certificate has less
+	// 11 months and 10 days in, the clipboardbridge.local certificate has less
 	// than 60 days left.
 	at := t0.AddDate(0, 11, 10)
 	next, changed, err := admin.Renew(at)
@@ -423,7 +423,7 @@ func TestRenew(t *testing.T) {
 		t.Fatalf("Renew = %v, %v", changed, err)
 	}
 	if next.Phone == admin.Phone || next.Cert != admin.Cert {
-		t.Error("Renew did not renew just the clipbridge.local certificate")
+		t.Error("Renew did not renew just the clipboardbridge.local certificate")
 	}
 	if !next.Phone.NotAfter.After(at.Add(300 * 24 * time.Hour)) {
 		t.Errorf("the renewed certificate ends at %v", next.Phone.NotAfter)
@@ -503,7 +503,7 @@ func TestRenewMember(t *testing.T) {
 }
 
 func TestRenewAfterTheClockWasAhead(t *testing.T) {
-	// The clock jumps three years ahead, Renew issues a clipbridge.local
+	// The clock jumps three years ahead, Renew issues a clipboardbridge.local
 	// certificate that starts then, and the clock is corrected: the next
 	// Renew replaces the certificate, which the iPhone would reject.
 	admin := newGroup(t)
@@ -547,12 +547,12 @@ func TestRenewNearTheEndOfTheCA(t *testing.T) {
 func TestCheckRejectsPartialAdmins(t *testing.T) {
 	admin := newGroup(t)
 	tests := map[string]func(id *Identity){
-		"group CA key without the iPhone CA":                    func(id *Identity) { id.PhoneCA, id.Phone = nil, nil },
-		"iPhone CA without its key":                             func(id *Identity) { id.PhoneCA = &CA{Cert: id.PhoneCA.Cert} },
-		"iPhone CA without the group CA key":                    func(id *Identity) { id.GroupCA.Key = nil },
-		"no clipbridge.local certificate":                       func(id *Identity) { id.Phone = nil },
-		"clipbridge.local certificate only":                     func(id *Identity) { id.PhoneCA = nil },
-		"the iPhone CA certificate as the clipbridge.local one": func(id *Identity) { id.Phone = id.PhoneCA.Cert },
+		"group CA key without the iPhone CA":                         func(id *Identity) { id.PhoneCA, id.Phone = nil, nil },
+		"iPhone CA without its key":                                  func(id *Identity) { id.PhoneCA = &CA{Cert: id.PhoneCA.Cert} },
+		"iPhone CA without the group CA key":                         func(id *Identity) { id.GroupCA.Key = nil },
+		"no clipboardbridge.local certificate":                       func(id *Identity) { id.Phone = nil },
+		"clipboardbridge.local certificate only":                     func(id *Identity) { id.PhoneCA = nil },
+		"the iPhone CA certificate as the clipboardbridge.local one": func(id *Identity) { id.Phone = id.PhoneCA.Cert },
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -568,11 +568,11 @@ func TestCheckRejectsPartialAdmins(t *testing.T) {
 			}
 		})
 	}
-	// A Mac holds no clipbridge.local certificate either.
+	// A Mac holds no clipboardbridge.local certificate either.
 	mac := *join(t, admin, false, t0)
 	mac.Phone = admin.Phone
 	if err := mac.Check(); err == nil {
-		t.Error("Check accepted a Mac with a clipbridge.local certificate")
+		t.Error("Check accepted a Mac with a clipboardbridge.local certificate")
 	}
 }
 

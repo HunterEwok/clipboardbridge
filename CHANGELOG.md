@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to clipbridge are documented in this file. The format follows
+All notable changes to clipboardbridge are documented in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
@@ -8,29 +8,37 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 ### Changed
 
+- **clipbridge is now clipboardbridge, and its command is `cbb`.** Everything is renamed: the
+  repository, the binary (`/usr/local/bin/cbb`), the service (`clipboardbridge.service`, on
+  macOS `io.github.hunterewok.clipboardbridge`), the user and group, the directories, the
+  environment variables (`CBB_PORT` and the others), and the protocol's names
+  (`_clipboardbridge._tcp`, `clipboardbridge.local`, the ALPN protocols, the QR code
+  scheme, the signature labels). It does not reach 0.2.0: the installers remove clipbridge,
+  with its keys, its user and its firewall rules, and each device pairs again.
+
 - Members accept a group CA with path length 1, the root that the phone app creates for its
   group, so that it can certify admin phones later (docs/protocol.md, sections 9 and 10).
 - The phone app logs every error it shows, and a debug build (or the `ShowErrorDetails`
   default) puts the error itself under the message, to find out what failed.
 - In the iOS simulator the app keeps its root and admin keys in the keychain, since the
   simulator cannot make a Secure Enclave key that needs Face ID.
-- `clipbridge join` names the app's "Connect a new device" and prints the QR code's text
+- `cbb join` names the app's "Connect a new device" and prints the QR code's text
   as well, to paste into the app on a phone without a camera.
-- The Linux installer opens clipbridge's ports from the home network on every run, not only
+- The Linux installer opens clipboardbridge's ports from the home network on every run, not only
   from `get.sh`, so an update fixes a firewall turned on after the first install: in ufw as
-  before, and now in firewalld too (a `clipbridge` service and rules for the home network);
+  before, and now in firewalld too (a `clipboardbridge` service and rules for the home network);
   under a bare nftables or iptables setup that drops input it prints the commands.
-  `CLIPBRIDGE_FIREWALL=no` leaves the firewall alone. `clipbridge join` names the firewall
+  `CBB_FIREWALL=no` leaves the firewall alone. `cbb join` names the firewall
   when the phone cannot connect.
-- clipbridge needs one TCP port, 8764: a listening `clipbridge join` waits on it (the
+- clipboardbridge needs one TCP port, 8764: a listening `cbb join` waits on it (the
   computer is in no group yet), and the iPhone shortcut's HTTPS and the profile moved there
   from 8765 and 8766; the member port tells the connections apart by their first bytes.
-  Installed shortcuts stop working: run `clipbridge pair -phone` and add the new one from
+  Installed shortcuts stop working: run `cbb pair -phone` and add the new one from
   its page.
 - The Linux installer keeps track of the firewall rules it adds and removes them before
   adding new ones, so a changed port leaves nothing open; it never touches other rules.
 - The phone app's Start screen says what to do in plain words: "Connect a new device" (a
-  computer or another phone) and "I already use clipbridge on another phone". Its buttons
+  computer or another phone) and "I already use clipboardbridge on another phone". Its buttons
   and cards use Liquid Glass from iOS 26, with materials before.
 
 ### Added
@@ -39,9 +47,9 @@ All notable changes to clipbridge are documented in this file. The format follow
   anything up: Back Tap or the Action button sends or fetches by the Home button's rule
   without opening the app, and says what it did.
 - `install.sh --port N` (and `get.sh --port N`) moves the member port from 8764; it is kept
-  in `/etc/clipbridge/clipbridge.env` as `CLIPBRIDGE_PORT` for later updates, and the
+  in `/etc/clipboardbridge/clipboardbridge.env` as `CBB_PORT` for later updates, and the
   installer says to allow it in other firewalls. The phone app needs no setting.
-- `uninstall.sh`, installed to `/usr/local/share/clipbridge`, removes clipbridge and the
+- `uninstall.sh`, installed to `/usr/local/share/clipboardbridge`, removes clipboardbridge and the
   firewall rules its installer added; `--purge` also deletes the device's keys.
 - The phone app's language can be chosen in the app (System, English, Russian), in Settings
   and, when the system's language has no translation, on the Start screen; Settings, with
@@ -76,7 +84,7 @@ All notable changes to clipbridge are documented in this file. The format follow
   other phones follow it.
 - A computer can be an admin of a phone group: it keeps an admin key and offers it to the
   root phone, which can certify it as an admin CA. An admin computer admits computers with
-  `clipbridge pair`, removes devices with `clipbridge revoke` and renews certificates from
+  `cbb pair`, removes devices with `cbb revoke` and renews certificates from
   its admin CA; it never removes the root phone (docs/protocol.md, section 10, "A computer
   as admin").
 - The phone app makes a computer an admin: on the root phone, "Make it an admin" on a
@@ -175,6 +183,6 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipbridge/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/HunterEwok/clipbridge/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/HunterEwok/clipbridge/releases/tag/v0.1.1
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/HunterEwok/clipboardbridge/releases/tag/v0.1.1

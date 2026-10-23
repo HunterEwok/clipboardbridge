@@ -12,8 +12,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // The member protocol runs over a TLS connection made with the group's
@@ -49,7 +49,7 @@ const (
 type Role string
 
 const (
-	Linux Role = "linux" // listens, can hold clipbridge.local
+	Linux Role = "linux" // listens, can hold clipboardbridge.local
 	Mac   Role = "mac"   // only dials
 	Phone Role = "phone" // a phone app: only dials, never dialed
 	Lite  Role = "lite"  // a lite member for small devices: only dials

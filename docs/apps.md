@@ -26,9 +26,9 @@ they look, so both apps are built to the same plan.
 ## Screens
 
 1. **Start** (no group yet): one sentence, the big button "Connect a new device" with a hint
-   below it (on a computer, run `clipbridge join` and scan the code it shows; `clipbridge
+   below it (on a computer, run `cbb join` and scan the code it shows; `clipboardbridge
    pair -phone` in the mode without the app), and a second button, "I already use
-   clipbridge on another phone", which joins that phone's group. The camera opens at once;
+   clipboardbridge on another phone", which joins that phone's group. The camera opens at once;
    after the scan the app creates the group key in the Secure Enclave or StrongBox, admits
    the device and goes to Home. At the first launch the app makes this phone's own key and
    says so once, in a card: "This phone is ready", what the key is for in plain words, and
@@ -44,20 +44,20 @@ they look, so both apps are built to the same plan.
    a few seconds for a computer to connect and says what it did in one line.
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
-   QR code ("I already use clipbridge on another phone" on its Start screen) and this phone
+   QR code ("I already use clipboardbridge on another phone" on its Start screen) and this phone
    scans it.
 4. **Devices**: the whole group, one row per device: its name, an icon for the role (Linux,
    Mac, phone, lite, iPhone shortcut), an "admin" mark, a live dot when it is online and
    "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
    device records (section 10 of [protocol.md](protocol.md)), so every app and
-   `clipbridge devices` show the same. On an admin phone, a row opens the device: rename,
+   `cbb devices` show the same. On an admin phone, a row opens the device: rename,
    "Make it an admin" (phones only, on the root phone), and "Remove", which asks once, then
    needs Face ID, the fingerprint or the passcode, and is done; removing an admin phone shows
    the devices it had admitted, which stay. On the root phone a computer's row also offers
    "Make it an admin" when the computer offers an admin key (docs/protocol.md, section 10,
    "A computer as admin"): it asks once, warns that the key is a file on the computer, needs
-   Face ID, and the computer then adds and removes devices with `clipbridge pair` and
-   `clipbridge revoke`. If the removed phone held the root, this phone
+   Face ID, and the computer then adds and removes devices with `cbb pair` and
+   `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A phone that is not an admin shows the list without
    actions and says which phones are admins.
 5. **Settings**: theme, language, about. Nothing else.
@@ -97,18 +97,18 @@ the group", not a status code), never a dialog that must be dismissed.
 - `apps/ios/` — the app (SwiftUI): `project.yml` describes the Xcode project for XcodeGen
   (`cd apps/ios && xcodegen generate`; the generated project is not committed), built and
   tested on an iPhone simulator in CI without signing; and
-  `apps/ios/ClipbridgeKit`, the Swift package with the protocol core (CPace, the pairing
+  `apps/ios/ClipboardBridgeKit`, the Swift package with the protocol core (CPace, the pairing
   frames, the join QR code, the member protocol and the phone's sync engine). It has no UI
   and runs on Linux too; its tests check it against the vectors that the Go tests write to
   `testdata/interop/` (`go test ./internal/pair ./internal/phone ./internal/node -update`
   regenerates them), and CI runs it against the Go code: pairing over plain TCP on Linux,
   pairing and a member connection over real TLS on macOS.
-- The app finds the Linux members by browsing `_clipbridge._tcp` (ClipbridgeKit's
+- The app finds the Linux members by browsing `_clipboardbridge._tcp` (ClipboardBridgeKit's
   `BonjourBrowser` on iOS) and keeps one connection to each member of its group
   (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
-  `_clipbridge._tcp` under `NSBonjourServices` and explains the use in
+  `_clipboardbridge._tcp` under `NSBonjourServices` and explains the use in
   `NSLocalNetworkUsageDescription`.
-- A phone joins another phone's group from its Start screen ("I already use clipbridge on
+- A phone joins another phone's group from its Start screen ("I already use clipboardbridge on
   another phone"):
   it makes its admin key, listens with `TLSListener` on a port the system picks, and shows
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
@@ -119,7 +119,7 @@ the group", not a status code), never a dialog that must be dismissed.
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
-  `apps/ios/Clipbridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
+  `apps/ios/ClipboardBridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
   WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
 - The protocol both apps speak is [protocol.md](protocol.md).

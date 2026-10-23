@@ -4,9 +4,9 @@
 
 # Packs a built binary into the release archive for its platform:
 #
-#   sh packaging/archive.sh path/to/clipbridge linux|darwin NAME OUTDIR
+#   sh packaging/archive.sh path/to/cbb linux|darwin NAME OUTDIR
 #
-# writes OUTDIR/clipbridge-<os>-<NAME>.tar.gz, which holds clipbridge/ with
+# writes OUTDIR/clipboardbridge-<os>-<NAME>.tar.gz, which holds clipboardbridge/ with
 # the binary, LICENSE and packaging/ (the platform's installer and tmux). The
 # release workflow and CI both use it, so a wrong path fails on every pull
 # request, not only at a release.
@@ -28,10 +28,10 @@ darwin) dir=macos ;;
 esac
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/clipbridge/packaging" "$out"
-cp "$bin" "$work/clipbridge/clipbridge"
-cp "$root/LICENSE" "$work/clipbridge/"
-cp -R "$root/packaging/$dir" "$root/packaging/tmux" "$work/clipbridge/packaging/"
+mkdir -p "$work/clipboardbridge/packaging" "$out"
+cp "$bin" "$work/clipboardbridge/cbb"
+cp "$root/LICENSE" "$work/clipboardbridge/"
+cp -R "$root/packaging/$dir" "$root/packaging/tmux" "$work/clipboardbridge/packaging/"
 # No AppleDouble files from macOS tar.
-COPYFILE_DISABLE=1 tar -czf "$out/clipbridge-$os-$name.tar.gz" -C "$work" clipbridge
-echo "$out/clipbridge-$os-$name.tar.gz"
+COPYFILE_DISABLE=1 tar -czf "$out/clipboardbridge-$os-$name.tar.gz" -C "$work" clipboardbridge
+echo "$out/clipboardbridge-$os-$name.tar.gz"

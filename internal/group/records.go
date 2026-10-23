@@ -23,7 +23,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/HunterEwok/clipbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 )
 
 // RecordsFileName is the name of the records file in the state directory.

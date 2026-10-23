@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 // testCA makes a CA as a phone does: a root with path length 1 when parent
@@ -27,7 +27,7 @@ func testCA(t *testing.T, parent *group.CA) *group.CA {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
-		Subject:               pkix.Name{CommonName: "clipbridge group root 2026-10-22"},
+		Subject:               pkix.Name{CommonName: "clipboardbridge group root 2026-10-22"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(20, 0, 0),
 		IsCA:                  true,
@@ -37,7 +37,7 @@ func testCA(t *testing.T, parent *group.CA) *group.CA {
 	}
 	parentCert, parentKey := tmpl, key
 	if parent != nil {
-		tmpl.Subject.CommonName = "clipbridge admin " + string(group.NewDeviceID())
+		tmpl.Subject.CommonName = "clipboardbridge admin " + string(group.NewDeviceID())
 		tmpl.MaxPathLen, tmpl.MaxPathLenZero = 0, true
 		parentCert, parentKey = parent.Cert, parent.Key
 	}

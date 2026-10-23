@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/control"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/mdns"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/phone"
-	"github.com/HunterEwok/clipbridge/internal/version"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/version"
 )
 
 // listenControl listens on the control socket with mode 0660: only the
@@ -87,9 +87,9 @@ func fail(c net.Conn, err error) {
 // errNoGroup is the error for a request that needs a group.
 func (s *Service) errNoGroup() error {
 	if s.cfg.Role == node.Linux {
-		return errors.New("this device is in no group; run clipbridge pair here to start one, or clipbridge join to join one")
+		return errors.New("this device is in no group; run cbb pair here to start one, or cbb join to join one")
 	}
-	return errors.New("this device is in no group; run clipbridge pair on a Linux member, then clipbridge join here")
+	return errors.New("this device is in no group; run cbb pair on a Linux member, then cbb join here")
 }
 
 func (s *Service) handleControl(ctx context.Context, c net.Conn) {
@@ -261,7 +261,7 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 // pair again at once.
 func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, *group.Identity, func(), error) {
 	if s.cfg.Role != node.Linux {
-		return nil, nil, nil, errors.New("only a Linux member can admit devices; run clipbridge pair on one")
+		return nil, nil, nil, errors.New("only a Linux member can admit devices; run cbb pair on one")
 	}
 	s.mu.Lock()
 	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
@@ -346,7 +346,7 @@ func (s *Service) createGroup() (*group.Identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating the group: %w", err)
 	}
-	s.logf("clipbridge: created a new group %s", group.Tag(id.GroupCA.Cert))
+	s.logf("cbb: created a new group %s", group.Tag(id.GroupCA.Cert))
 	return id, nil
 }
 
@@ -359,10 +359,10 @@ func (s *Service) windowResult(w *pair.Window) (*pair.Result, error) {
 	if !res.Confirmed {
 		// It holds a certificate, and on Linux the CA keys, but may not
 		// have stored them.
-		s.logf("clipbridge: %s (%s) got its certificate but did not confirm it stored it", res.Info.Name, res.Device)
-		return nil, fmt.Errorf("%s got its certificate but did not confirm that it stored it; check it with clipbridge status there, and pair it again if needed", res.Info.Name)
+		s.logf("cbb: %s (%s) got its certificate but did not confirm it stored it", res.Info.Name, res.Device)
+		return nil, fmt.Errorf("%s got its certificate but did not confirm that it stored it; check it with cbb status there, and pair it again if needed", res.Info.Name)
 	}
-	s.logf("clipbridge: %s (%s) joined the group", res.Info.Name, res.Device)
+	s.logf("cbb: %s (%s) joined the group", res.Info.Name, res.Device)
 	s.recordAdmitted(res)
 	return res, nil
 }
@@ -377,13 +377,13 @@ func (s *Service) admit(jc phone.JoinCode) error {
 		return err
 	}
 	if len(jc.Addrs) == 0 || jc.Fingerprint == "" {
-		return errors.New("the QR code is from an older clipbridge; update clipbridge on the computer")
+		return errors.New("the QR code is from an older clipboardbridge; update clipboardbridge on the computer")
 	}
 	w, _, end, err := s.openWindow(jc.Code, false, false)
 	if err != nil {
 		return err
 	}
-	s.logf("clipbridge: the iPhone asked to add a computer at %s", strings.Join(jc.Addrs, ", "))
+	s.logf("cbb: the iPhone asked to add a computer at %s", strings.Join(jc.Addrs, ", "))
 	go func() {
 		defer end()
 		ctx, cancel := context.WithTimeout(context.Background(), joinTimeout)
@@ -403,11 +403,11 @@ func (s *Service) admit(jc phone.JoinCode) error {
 			}
 		}
 		if !closed(w) {
-			s.logf("clipbridge: adding a computer from the iPhone: %v", lastErr)
+			s.logf("cbb: adding a computer from the iPhone: %v", lastErr)
 			return
 		}
 		if _, err := s.windowResult(w); err != nil {
-			s.logf("clipbridge: adding a computer from the iPhone: %v", err)
+			s.logf("cbb: adding a computer from the iPhone: %v", err)
 		}
 	}()
 	return nil
@@ -588,7 +588,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 		raw, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run clipbridge pair on a Linux member and clipbridge join -code here")
+				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run cbb pair on a Linux member and cbb join -code here")
 			}
 			return nil, err
 		}
@@ -601,7 +601,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 		if err == nil {
 			return id, nil
 		}
-		s.logf("clipbridge: a pairing attempt from %s failed: %v", ap.Addr(), err)
+		s.logf("cbb: a pairing attempt from %s failed: %v", ap.Addr(), err)
 		switch {
 		case ctx.Err() != nil:
 			return nil, fmt.Errorf("the join was cancelled or took too long: %w", err)
@@ -680,11 +680,11 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 			for _, p := range open {
 				ids = append(ids, p.ID)
 			}
-			return nil, fmt.Errorf("%d devices announce a pairing window (%s); give the address that clipbridge pair showed", len(open), strings.Join(ids, ", "))
+			return nil, fmt.Errorf("%d devices announce a pairing window (%s); give the address that cbb pair showed", len(open), strings.Join(ids, ", "))
 		}
 		return addresses(open[0]), nil
 	case <-ctx.Done():
-		return nil, errors.New("no member with an open pairing window found; run clipbridge pair on a Linux member, or give its address")
+		return nil, errors.New("no member with an open pairing window found; run cbb pair on a Linux member, or give its address")
 	}
 }
 
@@ -734,7 +734,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	}
 	if !replay && len(m.Payload) > 0 {
 		if kind, _, err := parseKind(m.Kind, m.Via); err != nil {
-			s.logf("clipbridge: a watcher reported a clipboard that is not understood: %v", err)
+			s.logf("cbb: a watcher reported a clipboard that is not understood: %v", err)
 		} else {
 			eng.ClipboardIs(string(m.Payload), kind)
 		}
@@ -757,7 +757,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			}
 			kind, via, err := parseKind(m.Kind, m.Via)
 			if err != nil {
-				s.logf("clipbridge: a watcher's report is not understood: %v", err)
+				s.logf("cbb: a watcher's report is not understood: %v", err)
 				continue
 			}
 			switch m.Op {
@@ -771,7 +771,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 					e.ClipboardIs(string(m.Payload), kind)
 				}
 			default:
-				s.logf("clipbridge: a watcher sent %q, which is not a report", m.Op)
+				s.logf("cbb: a watcher sent %q, which is not a report", m.Op)
 			}
 		}
 	}()

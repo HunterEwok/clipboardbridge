@@ -15,7 +15,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // A token is what the shortcut sends in its Authorization header. It is
@@ -44,7 +44,7 @@ func tokenKey(ca *group.CA) ([]byte, error) {
 		return nil, err
 	}
 	salt := sha256.Sum256(ca.Cert.Raw)
-	return hkdf.Key(sha256.New, priv.Bytes(), salt[:], "clipbridge iPhone token v1", 32)
+	return hkdf.Key(sha256.New, priv.Bytes(), salt[:], "clipboardbridge iPhone token v1", 32)
 }
 
 func mac(key []byte, id []byte) []byte {
@@ -54,7 +54,7 @@ func mac(key []byte, id []byte) []byte {
 }
 
 // NewToken issues a token for a new phone and returns it with the phone's
-// ID, which names it in clipbridge devices.
+// ID, which names it in cbb devices.
 func NewToken(ca *group.CA) (token, phoneID string, err error) {
 	key, err := tokenKey(ca)
 	if err != nil {

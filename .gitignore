@@ -1,5 +1,5 @@
 # Build output
-/clipbridge
+/clipboardbridge
 /bin/
 /dist/
 *.exe
@@ -27,5 +27,5 @@ go.work.sum
 
 # The iPhone app's generated Xcode project
 /apps/ios/*.xcodeproj/
-/apps/ios/Clipbridge/Info.plist
+/apps/ios/ClipboardBridge/Info.plist
 /interop-out/

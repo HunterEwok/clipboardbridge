@@ -12,13 +12,13 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/control"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/mdns"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/phone"
 )
 
 // phoneGroup is the member as the iPhone endpoint sees it.
@@ -90,12 +90,12 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 	}()
 	// The connections come with their TLS handshake done.
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		s.logf("clipbridge: the shortcut's HTTPS: %v", err)
+		s.logf("cbb: the shortcut's HTTPS: %v", err)
 	}
 }
 
 // pairPhone opens an iPhone pairing window on the member that answers for
-// clipbridge.local, serves the profile while it is open, and reports the
+// clipboardbridge.local, serves the profile while it is open, and reports the
 // end; a client that hangs up closes the window.
 func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) {
 	// The phone is the group's main device: pairing it with the first
@@ -115,10 +115,10 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 	s.mu.Unlock()
 	switch {
 	case id == nil || !id.Admin():
-		fail(c, errors.New("only a Linux member in a group can pair an iPhone; run clipbridge pair on it first"))
+		fail(c, errors.New("only a Linux member in a group can pair an iPhone; run cbb pair on it first"))
 		return
 	case !holder:
-		fail(c, errors.New("this member does not answer for clipbridge.local; run clipbridge pair -phone on the member that clipbridge status shows as holding it"))
+		fail(c, errors.New("this member does not answer for clipboardbridge.local; run cbb pair -phone on the member that cbb status shows as holding it"))
 		return
 	case busy:
 		fail(c, errors.New("an iPhone pairing window is already open"))
@@ -190,7 +190,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 		abort(err)
 		return
 	}
-	s.logf("clipbridge: an iPhone (%s) was paired", phoneID)
+	s.logf("cbb: an iPhone (%s) was paired", phoneID)
 	s.recordPhone(phoneID)
 	end()
 	reply(c, control.Header{Name: phoneID, Done: true}, nil)

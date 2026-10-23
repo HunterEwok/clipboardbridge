@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
 
 // pollEvery is how often the agent looks at the change counter.

@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/third_party/cpace"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
 )
 
 // A Joiner is a device that joins a group: its new device ID and key.

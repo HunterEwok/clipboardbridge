@@ -21,10 +21,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/hlc"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 func socketPair(t *testing.T) (net.Conn, net.Conn) {
