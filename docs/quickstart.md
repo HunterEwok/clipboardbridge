@@ -83,6 +83,14 @@ Install on each computer first.
   sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
   ```
 
+  Or with Homebrew, which also updates it; run the second line again after each
+  `brew upgrade`:
+
+  ```sh
+  brew install hunterewok/tap/clipboardbridge
+  sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
+  ```
+
 - **Windows** 10 (1809 or later) or 11, in a PowerShell opened with "Run as
   administrator":
 
@@ -140,6 +148,17 @@ It stops the service and removes the program and its settings. It also removes t
 rules the installer added, and only those. The device's keys stay in `/var/lib/clipboardbridge`,
 so a reinstall comes back into the group. Add `--purge` to delete them too; then remove the
 device from the group on another one (`cbb revoke NAME`, or Devices in the app).
+
+On a Mac, with the `uninstall.sh` beside the `install.sh` you ran (from Homebrew:
+`$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/uninstall.sh`,
+then `brew uninstall clipboardbridge`):
+
+```sh
+sudo sh clipboardbridge/packaging/macos/uninstall.sh
+```
+
+It stops the service and the agent and removes them and the program. The keys stay in
+`/Library/Application Support/clipboardbridge/state`; `--purge` deletes them too.
 
 On Windows: Settings, Apps, clipboardbridge, Uninstall; or, as administrator,
 
