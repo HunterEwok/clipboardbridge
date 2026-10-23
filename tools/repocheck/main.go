@@ -7,10 +7,12 @@
 //   - every tracked text file is in English: no Cyrillic letters, except the
 //     translations of the apps (String Catalogs, *.xcstrings, and Android's
 //     res/values-<language>/strings.xml);
-//   - every Go file, except generated code, starts with the license header;
+//   - every Go and Rust file, except generated Go code, starts with the
+//     license header;
 //   - code copied from other projects lives in a directory below a
 //     third_party directory, with its LICENSE file next to it, and each of
-//     its Go files keeps its own copyright notice instead of the header.
+//     its Go and Rust files keeps its own copyright notice instead of the
+//     header.
 //
 // Run it anywhere inside the repository:
 //
@@ -153,10 +155,10 @@ func check(name string, data []byte, listed map[string]bool) []string {
 			problems = append(problems, fmt.Sprintf("%s:%d: Cyrillic letter %q; the repository is in English only", name, i+1, r))
 		}
 	}
-	if !strings.HasSuffix(name, ".go") {
+	if !strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, ".rs") {
 		return problems
 	}
-	generated := isGenerated(data)
+	generated := strings.HasSuffix(name, ".go") && isGenerated(data)
 	if dir := thirdPartyDir(name); dir != "" {
 		if !listed[dir+"/LICENSE"] {
 			problems = append(problems, fmt.Sprintf("%s:1: copied code without %s/LICENSE", name, dir))

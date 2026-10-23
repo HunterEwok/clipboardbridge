@@ -399,7 +399,7 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 	if err != nil {
 		return nil, true, err
 	}
-	welcome, err := w.welcome(cert, info.OS == "linux" && !w.noCAKeys && w.admin.Admin())
+	welcome, err := w.welcome(cert, info.OS == "linux" && info.Role != RoleLite && !w.noCAKeys && w.admin.Admin())
 	if err != nil {
 		return nil, true, err
 	}
