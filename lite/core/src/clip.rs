@@ -47,7 +47,9 @@ pub enum Via {
     #[default]
     #[serde(rename = "copy")]
     Copy,
-    #[serde(rename = "iphone")]
+    /// Sent from a phone: the app, or the iPhone shortcut. "iphone" is the
+    /// name before phones other than the iPhone.
+    #[serde(rename = "phone", alias = "iphone")]
     Phone,
     #[serde(rename = "universal-clipboard")]
     Universal,

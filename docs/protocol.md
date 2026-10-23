@@ -88,8 +88,12 @@ separated by spaces; the short form is the first 8 bytes (23 characters).
 
 ## 3. Discovery (mDNS)
 
-Linux members publish and browse; Macs and joining devices only browse. RFC 6762 and
-RFC 6763 apply where this section is silent. Source: `internal/mdns`.
+Linux and lite members publish and browse; Macs, phones and joining devices only browse.
+RFC 6762 and RFC 6763 apply where this section is silent. Source: `internal/mdns`; a lite
+member publishes and browses with the `mdns-sd` crate (`lite/src/discovery.rs`), which
+follows the same RFCs but not every detail below: it publishes the PTR, SRV, TXT and A/AAAA
+records of the table (the TXT with `r=lite`), with the addresses of its interfaces except
+loopback, and never holds `clipboardbridge.local`.
 
 ### Records a Linux member publishes
 
@@ -111,12 +115,15 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
+| `r` | `lite` | present only on a lite member, which Linux members do not dial (section 4) |
 
-The Go code publishes them in the order `v=1`, `g=<tag>`, `p=1`. Keys are matched without
+The Go code publishes them in the order `v=1`, `g=<tag>`, `p=1`; a lite member publishes
+`v=1`, `g=<tag>`, `r=lite`. Keys are matched without
 regard to case; the value is what follows the first `=`.
 
-Note: browsers check only `g` (when dialing) and `p` (when joining); nothing checks `v`
-(`internal/service/members.go:99`, `internal/service/socket.go:502`).
+Note: browsers check only `g` (when dialing), `r` (when dialing, on Linux and lite members)
+and `p` (when joining); nothing checks `v` (`internal/service/members.go`,
+`internal/service/socket.go`, `lite/src/discovery.rs`).
 
 NSEC (RFC 6762 section 6.1): owner the host name; RDATA is the host name itself in
 uncompressed wire format, then window 0 with a bitmap that has bit A (type 1, byte 0 mask
@@ -190,9 +197,18 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 
 ### Who dials whom
 
-- A Linux member dials every found member whose device ID is greater than its own and whose
-  `g` matches its group tag; the other side accepts. A Mac dials every found Linux member
-  with a matching `g`. Macs accept nothing, and Macs never connect to each other.
+- A Linux member dials every found Linux member whose device ID is greater than its own and
+  whose `g` matches its group tag; the other side accepts. It dials no lite member (TXT
+  `r=lite`): the lite member dials it.
+- A lite member dials every found Linux member with a matching `g`, and every found lite
+  member whose device ID is greater than its own; it accepts the others, and phones and
+  Macs.
+- A Mac or a phone app dials every found member, Linux or lite, with a matching `g`. Macs and
+  phones accept nothing, and never connect to each other; so a phone and a lite member sync
+  with no computer on.
+- Members on another network than the home one (another subnet, where mDNS does not reach)
+  sync through the internet, over a VPN between them (see design.md, "Sync away from home");
+  until then a lite member can be given a member's address with `-peer`.
 - Addresses come from discovery, never from resolving a `.local` name. They are tried IPv4
   first, then routable IPv6, then link-local IPv6. After a round of failures the dialer waits
   1 s, doubling to 30 s; a connection that lasted more than 30 s resets the wait.
@@ -209,6 +225,9 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 - Both sides check the peer as in section 2, and that the negotiated version is TLS 1.3 and
   the ALPN protocol is `clipboardbridge/1`. A connection to one's own device ID is closed.
 - The handshake must finish within 10 s.
+- A lite member listens on the member port for the member protocol only: TLS with ALPN
+  `clipboardbridge/1`, from home network addresses, at most 16 handshakes at once. It has
+  no pairing window and no iPhone endpoints.
 - The member port tells its connections apart by their first bytes. One that does not start
   with a TLS handshake record (0x16) is plain HTTP for the profile (section 7) while an
   iPhone pairing window is open, and is closed otherwise. Over TLS, a ClientHello that
@@ -238,7 +257,7 @@ Message object:
 
 ```json
 {"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
-{"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"iphone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
+{"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"phone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
 {"t":"ping"}
 {"t":"bye"}
 {"t":"cert","cert":"MIIB..."}
@@ -271,8 +290,10 @@ Rules for the receiver:
 - A peer whose outgoing queue (256 messages) is full is disconnected; it gets the current
   event again in the next hello.
 
-Roles: a `phone` or `lite` member dials Linux members as a Mac does, publishes nothing and is
-never dialed; the Linux members treat it as a Mac (it never holds `clipboardbridge.local`).
+Roles: a `phone` member dials as a Mac does, publishes nothing and is never dialed. A `lite`
+member publishes itself with `r=lite`, dials Linux members and accepts phones, Macs and lite
+members with a lower device ID (above, "Who dials whom"). The Linux members treat both as a
+Mac: neither holds `clipboardbridge.local`.
 
 ### Hello
 
@@ -290,7 +311,7 @@ never dialed; the Linux members treat it as a Mac (it never holds `clipboardbrid
 |-------|------|---------|
 | `id` | string | event ID, 32 lowercase hex characters |
 | `origin` | string | device ID of the member that made the event |
-| `via` | string | `copy` (copied on that member), `iphone` (the iPhone button) or `universal-clipboard` (reached a Mac through Universal Clipboard). Omitted for `copy`; absent means `copy` |
+| `via` | string | `copy` (copied on that member), `phone` (sent from a phone: the app, iPhone or Android, or the iPhone shortcut's button) or `universal-clipboard` (reached a Mac through Universal Clipboard). Omitted for `copy`; absent means `copy`. Receivers also take `iphone`, the name of `phone` before phones other than the iPhone |
 | `time` | string | hybrid timestamp `"<wall>.<logical>"` (section 5) |
 | `age_ms` | integer | milliseconds since the copy, as of the moment the frame is written |
 | `kind` | string | `text` or `secret`; always present |
@@ -363,7 +384,7 @@ frames like any other event.
   `universal-clipboard` and the text equals the live current event (a Mac receiving the
   group's own text back); or the text is a remembered secret reported as `text` (a clipboard
   manager restoring it), which also clears the known local text.
-- Deliberate actions (`copy` on the control socket, the iPhone button) always make an event;
+- Deliberate actions (`copy` on the control socket, sending from a phone) always make an event;
   a text remembered as a secret is sent as a secret. The text is also written to the
   member's own clipboard unless it already holds it.
 
@@ -442,7 +463,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 The AD bytes are used exactly as they travel in the `ad` field. The member checks ADa: `os`
 is `linux` or `darwin` (an admin phone also takes `ios`); `name` is 1 to 64 bytes of
 printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key; `role`,
-when present, is `lite`. A lite member (a Linux device that only dials, like a Mac) gets
+when present, is `lite`. A lite member (a Linux device without CA keys) gets
 no CA keys and is recorded with role `lite`. Go members
 take no `ios` joiner: only admin phones admit phones.
 
@@ -557,6 +578,10 @@ the QR code dials the computer, and nothing is announced:
 
 Source: `internal/phone`, `internal/service/iphone.go`.
 
+These endpoints serve the iPhone shortcut, for an iPhone without the app, so their names keep
+the word: the iPhone CA, the `iphone` token role, `to_iphone` and `from_iphone`. A phone
+with the app, iPhone or Android, is a member (section 4) and uses none of them.
+
 ### iPhone endpoints on the member port
 
 The shortcuts name `https://clipboardbridge.local:8764`, so they work only with the default
@@ -615,7 +640,7 @@ or `v` other than 1 gives `error`. Then the direction, in order (`phone.decide`)
 1. The group's current event is live, has `via` `copy`, is younger than 45 s and differs from
    `text`: `to_iphone` with that text (and its kind's expiry).
 2. `text` is non-empty and differs from both the current event's text and the member's own
-   clipboard text: a deliberate event with `via` `iphone` (secret if `secret` is true, or if
+   clipboard text: a deliberate event with `via` `phone` (secret if `secret` is true, or if
    the text is a remembered secret), also written to the member's own clipboard;
    `from_iphone`.
 3. The member's own clipboard holds a live text that differs from `text`: `to_iphone` with it.
@@ -702,7 +727,7 @@ Header fields (all omitted when empty):
 |-------|------|---------|
 | `op` | string | the operation |
 | `kind` | string | `text` (default) or `secret` |
-| `via` | string | `copy` (default), `iphone` or `universal-clipboard` |
+| `via` | string | `copy` (default), `phone` or `universal-clipboard`; `iphone` is taken as `phone` |
 | `seq` | integer | order of writes |
 | `ttl_ms` | integer | how long a written secret may stay in the clipboard |
 | `len` | integer | payload length |

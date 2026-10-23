@@ -110,7 +110,7 @@ public final class SyncEngine {
 
     /// Makes an event of a text this phone copied or sent, which becomes
     /// the current event. It goes to every connection.
-    public func local(text: String, kind: Member.Kind, via: Member.Via = .iphone) -> Member.Event {
+    public func local(text: String, kind: Member.Kind, via: Member.Via = .phone) -> Member.Event {
         let e = Member.Event(id: Self.newID(), origin: device, via: via, time: clock.now(), ageMS: 0, kind: kind, text: text)
         remember(e.id)
         current = e

@@ -5,13 +5,17 @@ Pi, a router, a small board. It speaks the member protocol of
 [docs/protocol.md](../docs/protocol.md), but unlike `cbb` it
 
 - never holds CA keys, so it never admits devices;
-- only dials the full members (found by mDNS, or named with `-peer`), like a Mac;
+- dials the computers (found by mDNS, or named with `-peer`), and publishes itself in mDNS
+  and listens on the member port, TCP 8764, so that phones, Macs and other lite members
+  dial it: a phone syncs with it directly, with no computer on;
 - never holds `clipboardbridge.local` or serves the shortcut, the Apple Shortcuts action an
   iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);
 - has no desktop clipboard of its own: other programs use `copy`, `paste` and `watch`.
 
-It needs at least one full member (`cbb` on a computer) to be on. Full members list it
-with role `lite`.
+Full members list it with role `lite`. A device on another network than the phone (another
+subnet, where mDNS does not reach) syncs through the internet, over a VPN between the
+devices; see "Sync away from home" in [docs/design.md](../docs/design.md). Until then, name
+a computer there with `-peer`.
 
 The protocol core is its own crate, [`core`](core) (`cbb_core`): certificates, records,
 the hybrid clock, the sync engine, the frames and the joiner's side of the pairing, with
@@ -74,6 +78,7 @@ cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite go test ./internal/service -
 sudo install -m 0755 cbb-lite /usr/local/bin/
 sudo install -m 0644 packaging/cbb-lite.sysusers /usr/lib/sysusers.d/cbb-lite.conf
 sudo systemd-sysusers
+sudo install -d -o cbb-lite -g cbb-lite -m 0700 /var/lib/cbb-lite
 sudo install -m 0644 packaging/cbb-lite.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cbb-lite
@@ -88,8 +93,8 @@ sudo -u cbb-lite cbb-lite join -name pi
 
 It shows a QR code: in the clipboardbridge app (iPhone or Android) tap "Connect a new device"
 (or, on an iPhone with the shortcut, run "clipboardbridge: add a computer") and scan it. The phone reaches the device on
-TCP port 8764 (`-port` to change it); open that port from the home network if a firewall
-drops it. In a group without a phone, run `cbb pair` on a Linux member and
+TCP port 8764 (`-port` to change it), while it joins and afterwards to sync; open that port
+from the home network if a firewall drops it. In a group without a phone, run `cbb pair` on a Linux member and
 `sudo -u cbb-lite cbb-lite join -code <that member>:8764` here, then type the code.
 
 Add yourself to the `cbb-lite` group to use the control socket without `sudo`:
@@ -104,7 +109,8 @@ cbb-lite watch                      # one line per text the group sends here
 ```
 
 Without mDNS on the network, name the full members: edit the unit's `ExecStart` to
-`/usr/local/bin/cbb-lite run -peer 192.168.0.10:8764 -peer ...`.
+`/usr/local/bin/cbb-lite run -peer 192.168.0.10:8764 -peer ...`. `run -port` moves the
+member port, `-no-listen` turns it off (the device then only dials the computers).
 
 ## Errors
 

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The lite member's service: the control socket, the identity, the sync
-//! engine and the connections to the Linux members.
+//! engine and the connections to the other members.
 
 use std::net::SocketAddr;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -37,8 +37,11 @@ pub struct Config {
     /// Members to dial by address, for networks where multicast does not
     /// reach.
     pub peers: Vec<SocketAddr>,
-    /// Find the members with mDNS.
+    /// Find the members with mDNS, and publish this one.
     pub mdns: bool,
+    /// The member port, where phones, Macs and other lite members dial
+    /// this one; None listens nowhere.
+    pub port: Option<u16>,
 }
 
 struct Service {
@@ -128,7 +131,11 @@ pub fn run(cfg: Config) -> Result<()> {
     };
     engine.rejoin();
     *svc.node.write().unwrap() = Some(node.clone());
-    discovery::start(node.clone(), tag, cfg.peers.clone(), cfg.mdns, log.clone());
+    let port = cfg.port.and_then(|p| discovery::listen(node.clone(), p, log.clone()));
+    if let Some(p) = port {
+        log(&format!("cbb-lite: listening on port {p}"));
+    }
+    discovery::start(node.clone(), tag, cfg.peers.clone(), cfg.mdns, port, log.clone());
 
     while !STOP.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(200));
@@ -201,7 +208,7 @@ fn kind_of(s: &str) -> Result<Kind> {
 fn via_of(s: &str) -> Result<Via> {
     match s {
         "" | "copy" => Ok(Via::Copy),
-        "iphone" => Ok(Via::Phone),
+        "phone" | "iphone" => Ok(Via::Phone),
         "universal-clipboard" => Ok(Via::Universal),
         _ => Err(Error::msg(format!("unknown via {s:?}"))),
     }
@@ -217,7 +224,7 @@ fn kind_name(k: Kind) -> &'static str {
 fn via_name(v: Via) -> &'static str {
     match v {
         Via::Copy => "copy",
-        Via::Phone => "iphone",
+        Via::Phone => "phone",
         Via::Universal => "universal-clipboard",
     }
 }

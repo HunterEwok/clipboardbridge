@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# CodeQL code scanning (advanced setup) for every language in the repository.
+#
+# GitHub's default setup cannot build the Android app: it tries Java/Kotlin without a build,
+# which finds nothing in a Kotlin project and fails. Here Kotlin is built with Gradle, and the
+# other languages run as the default setup ran them. The default setup must stay off (Settings
+# → Advanced Security → CodeQL analysis), or GitHub rejects these results.
+#
+# Not required by the ruleset of main (only ci's "ci-ok" is), so a slow Swift analysis never
+# holds a merge. Alerts show under Security → Code scanning.
+name: codeql
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1" # weekly, for new queries on unchanged code
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+            runner: ubuntu-latest
+          - language: go
+            build-mode: autobuild
+            runner: ubuntu-latest
+          - language: rust
+            build-mode: none
+            runner: ubuntu-latest
+          - language: swift
+            build-mode: autobuild
+            runner: macos-latest
+          - language: java-kotlin
+            build-mode: manual
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        if: matrix.build-mode == 'autobuild'
+      - name: build the Android app and the kit
+        if: matrix.language == 'java-kotlin'
+        working-directory: apps/android
+        # CodeQL sees only what is compiled while it watches, so no daemon, no build cache
+        # and the Kotlin compiler inside Gradle's process. The runner image has the Android SDK.
+        run: |
+          ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
+            :app:assembleDebug :app:compileDebugUnitTestKotlin
+          ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
+            -p kit testClasses
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:${{ matrix.language }}

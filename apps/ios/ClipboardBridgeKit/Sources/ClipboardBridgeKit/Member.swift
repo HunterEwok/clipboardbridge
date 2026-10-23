@@ -27,8 +27,18 @@ public enum Member {
     /// How a text reached the member that made the event.
     public enum Via: String, Codable, Sendable {
         case copy
-        case iphone
+        /// Sent from a phone: the app, or the iPhone shortcut.
+        case phone
         case universalClipboard = "universal-clipboard"
+
+        /// Also takes "iphone", the name before phones other than the iPhone.
+        public init(from decoder: Decoder) throws {
+            let s = try decoder.singleValueContainer().decode(String.self)
+            guard let via = Via(rawValue: s == "iphone" ? Via.phone.rawValue : s) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "unknown via \(s)"))
+            }
+            self = via
+        }
     }
 
     /// A hybrid logical clock timestamp: milliseconds since the Unix epoch

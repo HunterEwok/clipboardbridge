@@ -47,7 +47,7 @@ const (
 	KindText     = "text"
 	KindSecret   = "secret"
 	ViaCopy      = "copy"                // copied on the member
-	ViaPhone     = "iphone"              // sent by the iPhone button
+	ViaPhone     = "phone"               // sent from a phone: the app, or the iPhone shortcut
 	ViaUniversal = "universal-clipboard" // reached a Mac through Universal Clipboard
 )
 
