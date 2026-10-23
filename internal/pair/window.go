@@ -27,6 +27,18 @@ type Options struct {
 	// cannot admit devices: the welcome of a group whose root is the phone.
 	NoCAKeys bool
 
+	// Secret, when set, is the password in place of a six-digit code: the
+	// secret of a remote invitation, at least MinSecret bytes.
+	Secret []byte
+	// Lifetime is how long the window stays open; Lifetime if zero.
+	Lifetime time.Duration
+	// Confirm, when set, is asked whether to admit a device that proved it
+	// knows the code, before its certificate is made; an error refuses it,
+	// and the attempt counts as failed. It may wait up to ConfirmWait for
+	// the admin's answer, and should stop when ctx ends.
+	Confirm     func(ctx context.Context, r Request) error
+	ConfirmWait time.Duration
+
 	Now       func() time.Time                        // for the certificates; time.Now if nil
 	Uptime    func() time.Duration                    // for the window's lifetime; uptime.Now if nil
 	AfterFunc func(time.Duration, func()) func() bool // the expiry timer, returning its Stop; time.AfterFunc if nil
@@ -36,8 +48,10 @@ type Options struct {
 // CA keys, or a computer that the root phone made an admin.
 type Window struct {
 	admin    *group.Identity
-	code     []byte
+	code     []byte // the password: the six digits, or a secret
 	noCAKeys bool
+	confirm  func(context.Context, Request) error
+	wait     time.Duration // how long confirm may take
 	now      func() time.Time
 	uptime   func() time.Duration
 
@@ -51,6 +65,16 @@ type Window struct {
 	result    *Result
 	done      chan struct{}
 	stopTimer func() bool
+}
+
+// Request is a device that proved it knows the code, for the admin to
+// confirm.
+type Request struct {
+	Device group.DeviceID
+	Info   Info
+	// Fingerprint is the fingerprint of the device's key, as
+	// Joiner.Fingerprint shows it on the device.
+	Fingerprint string
 }
 
 // Result is a device the window admitted.
@@ -69,9 +93,20 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if ca, _ := admin.Signer(); ca == nil {
 		return nil, errors.New("pair: only an admin can admit devices: a Linux member of a group a computer made, or a computer the group's root phone made an admin")
 	}
-	code, err := NormalizeCode(code)
-	if err != nil {
-		return nil, err
+	switch {
+	case opt.Secret != nil && len(opt.Secret) < MinSecret:
+		return nil, errors.New("pair: the secret is too short")
+	case opt.Secret != nil:
+		code = string(opt.Secret)
+	default:
+		var err error
+		if code, err = NormalizeCode(code); err != nil {
+			return nil, err
+		}
+	}
+	lifetime := opt.Lifetime
+	if lifetime <= 0 {
+		lifetime = Lifetime
 	}
 	if opt.Now == nil {
 		opt.Now = time.Now
@@ -82,16 +117,17 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, now: opt.Now, uptime: opt.Uptime,
-		expires: opt.Uptime() + Lifetime, done: make(chan struct{})}
-	stop := opt.AfterFunc(Lifetime, w.expire)
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, confirm: opt.Confirm, wait: opt.ConfirmWait,
+		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
+	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
 	w.stopTimer = stop
 	w.mu.Unlock()
 	return w, nil
 }
 
-// Code returns the window's code, normalized to six digits.
+// Code returns the window's code, normalized to six digits; for a window
+// with a secret, the secret.
 func (w *Window) Code() string { return string(w.code) }
 
 // Done is closed when the window closes.
@@ -301,7 +337,7 @@ func (w *Window) Dial(ctx context.Context, conn net.Conn, fp string) error {
 // attempt runs one attempt; with dialed, the member confirms first.
 func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error {
 	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	ctx, cancel := context.WithTimeout(ctx, attemptTimeout+w.wait)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Unix(1, 0)) })
 	defer stop()
@@ -315,7 +351,7 @@ func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error
 		writeFrame(conn, &frame{Error: codeOf(err)})
 		return err
 	}
-	res, started, err := w.serve(conn, dialed)
+	res, started, err := w.serve(ctx, conn, dialed)
 	if res != nil {
 		w.succeed(res)
 		if !res.Confirmed {
@@ -337,7 +373,7 @@ func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error
 // failure counts. With memberFirst the member sends its confirmation tag
 // with its CPace message, and the joiner answers with its own tag or an
 // error.
-func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started bool, err error) {
+func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (res *Result, started bool, err error) {
 	cs := conn.ConnectionState()
 	joiner, err := joinerID(cs)
 	if err != nil {
@@ -390,6 +426,15 @@ func (w *Window) serve(conn *tls.Conn, memberFirst bool) (res *Result, started b
 	}
 	if err := st.Verify(confirm.Tag); err != nil {
 		return nil, true, ErrWrongCode
+	}
+	if w.confirm != nil {
+		r := Request{Device: joiner, Info: info, Fingerprint: CertFingerprint(cs.PeerCertificates[0].Raw)}
+		if err := w.confirm(ctx, r); err != nil {
+			if ctx.Err() != nil {
+				return nil, true, ctx.Err()
+			}
+			return nil, true, ErrDeclined
+		}
 	}
 	// The joiner knows the code. Certify the key it proved it holds in the
 	// TLS handshake.

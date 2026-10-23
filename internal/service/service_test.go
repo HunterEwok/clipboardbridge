@@ -801,6 +801,24 @@ func TestJoinRefusesTwoWindows(t *testing.T) {
 	}
 }
 
+// memberAddr returns the loopback address of the member port of the
+// service with this device ID, once its discovery runs.
+func (h *hub) memberAddr(t *testing.T, id string) string {
+	t.Helper()
+	addr := ""
+	waitFor(t, "the member's discovery runs", func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for m := range h.members {
+			if m.cfg.ID == id {
+				addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(m.cfg.Port)))
+			}
+		}
+		return addr != ""
+	})
+	return addr
+}
+
 func TestJoinAClosedWindow(t *testing.T) {
 	// At a member's address with no window, the joiner hears that the
 	// window is closed, not a TLS error.
@@ -809,14 +827,7 @@ func TestJoinAClosedWindow(t *testing.T) {
 	b := startService(t, &h, "beta")
 	c := startService(t, &h, "gamma")
 	pairWith(t, a, b)
-	id, addr := a.status(t).Device, ""
-	h.mu.Lock()
-	for m := range h.members {
-		if m.cfg.ID == id {
-			addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(m.cfg.Port)))
-		}
-	}
-	h.mu.Unlock()
+	addr := h.memberAddr(t, a.status(t).Device)
 	if _, err := c.do(t, control.Header{Op: control.OpJoin, Code: "123456", Address: addr}, ""); err == nil || !strings.Contains(err.Error(), pair.ErrClosed.Error()) {
 		t.Errorf("join at %s without a window: %v", addr, err)
 	}
