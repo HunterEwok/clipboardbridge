@@ -8,59 +8,28 @@ your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
 ## Install
 
-New here? The [quick start](docs/quickstart.md) walks through installing and pairing step
-by step.
-
-On Linux with systemd (x86-64, ARM64, ARMv7, ARMv6), from the latest release:
+The [quick start](docs/quickstart.md) walks through installing and pairing step by step.
+In short, from the latest release:
 
 ```sh
+# Linux with systemd (x86-64, ARM64, ARMv7, ARMv6)
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
-```
 
-It checks the download against the release's `SHA256SUMS`, installs the service and, when
-ufw or firewalld is active, allows mDNS and clipboardbridge's one port, TCP 8764, from the home
-network only. Add `-s -- --console` after `sh` to also start tmux on the text console,
-`--port N` for another port, or `--no-firewall` to leave the firewall alone;
-`sudo sh /usr/local/share/clipboardbridge/uninstall.sh` removes it again, with the rules it added. Every release file has a build provenance attestation:
-`gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
-
-On a Mac (Apple silicon; `amd64` instead of `arm64` for Intel), in Terminal, so that the
-unsigned binary is not quarantined as a browser download would be:
-
-```sh
-curl -fsSLO https://github.com/HunterEwok/clipboardbridge/releases/latest/download/clipboardbridge-darwin-arm64.tar.gz
-tar -xzf clipboardbridge-darwin-arm64.tar.gz
-sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
-```
-
-Or with [Homebrew](https://brew.sh), which also updates it:
-
-```sh
+# macOS, with Homebrew (the second line starts the service; run it again after brew upgrade)
 brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
 ```
 
-The second line starts the service and the pasteboard agent; run it again after each
-`brew upgrade`. Either way, `uninstall.sh` beside that `install.sh` removes them again
-(before `brew uninstall`).
-
-On Windows 10 (1809 or later) or 11, x86-64 or ARM64, in a PowerShell opened with "Run as
-administrator":
-
 ```powershell
+# Windows 10 (1809 or later) or 11, x86-64 or ARM64, in an administrator PowerShell
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
 ```
 
-It checks the download against `SHA256SUMS`, installs the service and the clipboard agent,
-adds you to the `clipboardbridge` group and allows TCP 8764 and mDNS from the local network
-in Windows Firewall. `$env:CBB_PORT = "9000"` before it picks another port,
-`$env:CBB_FIREWALL = "no"` leaves the firewall alone. Settings, Apps, clipboardbridge,
-Uninstall removes it again, with the rules it added.
-
-Then pair with the iPhone on a Linux machine with `cbb pair -phone`, and add each
-further computer with `cbb join` and the shortcut "clipboardbridge: add a computer"; see
-the [quick start](docs/quickstart.md). `cbb devices` lists the group, and
-`cbb revoke` removes a lost device.
+The installers check the download against the release's `SHA256SUMS` and allow
+clipboardbridge's one port, TCP 8764, and mDNS from the home network in the firewall; their
+options are in the [command reference](docs/cli.md#installers). Every release file has a
+build provenance attestation: `gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
+Then make a group and add your devices, as the quick start says.
 
 ## What it does
 

@@ -170,3 +170,25 @@ fails unless the key may write there.
 Without the secret the release still succeeds and warns that the tap kept its formula. To
 fill the tap for a release made before, run `formula.sh` with that tag and its
 `SHA256SUMS` and commit the output to the tap by hand.
+
+## Android signing key
+
+The release workflow builds `clipboardbridge-X.Y.Z.apk` from the tag (version code
+`X*10000 + Y*100 + Z`) and signs it with the project's release key, which lives only in the
+repository's Actions secrets. Android installs an update only when it is signed with the same
+key, so the key is made once and kept, with a backup, for good:
+
+```sh
+keytool -genkeypair -v -keystore clipboardbridge-release.jks -alias clipboardbridge \
+  -keyalg EC -groupname secp256r1 -validity 36500 -dname "CN=clipboardbridge"
+base64 -i clipboardbridge-release.jks | pbcopy   # macOS; Linux: base64 -w0 clipboardbridge-release.jks
+```
+
+The secrets: `CBB_ANDROID_KEYSTORE_BASE64` (the keystore, in base64),
+`CBB_ANDROID_KEYSTORE_PASSWORD`, `CBB_ANDROID_KEY_ALIAS` (`clipboardbridge`) and
+`CBB_ANDROID_KEY_PASSWORD` (the same as the keystore's for a PKCS12 keystore). Without them
+the release has no APK. F-Droid, later, builds and signs with its own key.
+
+To check the key without a release, run the release workflow by hand from a branch (Actions,
+"release", "Run workflow"): it builds everything, checks the APK's signature and keeps the
+files as the run's artifacts, and publishes nothing.
