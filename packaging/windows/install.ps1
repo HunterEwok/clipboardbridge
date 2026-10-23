@@ -126,9 +126,17 @@ if (($path -split ';') -notcontains $programDir) {
 }
 
 $step = "making the $name group"
-& net.exe localgroup $name 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-	exe net.exe @('localgroup', $name, '/add', '/comment:May use the clipboardbridge service: cbb and the clipboard agent.') | Out-Null
+$computer = [ADSI]"WinNT://$env:COMPUTERNAME,computer"
+$exists = $false
+foreach ($child in $computer.Children) {
+	if ($child.SchemaClassName -eq 'Group' -and $child.Name -eq $name) {
+		$exists = $true
+	}
+}
+if (-not $exists) {
+	$group = $computer.Create('group', $name)
+	$group.Put('Description', 'May use the clipboardbridge service: cbb and the clipboard agent.')
+	$group.SetInfo()
 }
 $step = "adding $user to the $name group"
 $out = & net.exe localgroup $name $user /add 2>&1 | Out-String

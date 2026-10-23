@@ -136,7 +136,6 @@ func (b *Board) Write(text string, secret bool) (int64, error) {
 		text = text[:i]
 	}
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
-	var change int64
 	err := onThread(func(hwnd uintptr) error {
 		if err := open(hwnd); err != nil {
 			return err
@@ -160,28 +159,27 @@ func (b *Board) Write(text string, secret bool) (int64, error) {
 				return err
 			}
 		}
-		change = b.ChangeCount()
 		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
-	return change, nil
+	// Closing the clipboard counts as changes too, as Windows adds the
+	// formats it converts the text to, so the counter is read after it.
+	return b.ChangeCount(), nil
 }
 
 // Clear empties the clipboard, for a secret that expired.
 func (b *Board) Clear() int64 {
-	var change int64
 	onThread(func(hwnd uintptr) error {
 		if err := open(hwnd); err != nil {
 			return err
 		}
 		defer procCloseClipboard.Call()
 		procEmptyClipboard.Call()
-		change = b.ChangeCount()
 		return nil
 	})
-	return change
+	return b.ChangeCount()
 }
 
 // open opens the clipboard, waiting a little while another program has it

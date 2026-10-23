@@ -895,9 +895,7 @@ func TestControlSocketMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != 0o660 {
-		t.Errorf("socket mode %v", fi.Mode())
-	}
+	checkSocketAccess(t, path, fi)
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("left behind: %v", entries)
 	}
