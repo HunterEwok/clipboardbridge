@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.os.Build
 import android.service.quicksettings.Tile
@@ -18,6 +19,8 @@ class SendTileService : TileService() {
         }
     }
 
+    // The Intent form, only below Android 14, where the PendingIntent one does not exist.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
         val intent = SendActivity.intent(this)
