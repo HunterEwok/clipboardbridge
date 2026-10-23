@@ -20,8 +20,10 @@ UMask=0007
 Restart=on-failure
 RestartSec=2s
 
-# The lite member needs no privileges: it only dials the full members and
-# browses mDNS on UDP 5353, which it shares with avahi-daemon or resolved.
+# The lite member needs no privileges: it dials the computers, listens on
+# the member port (8764, above 1024) for phones, Macs and other lite members,
+# and publishes and browses mDNS on UDP 5353, which it shares with
+# avahi-daemon or resolved.
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -49,10 +51,9 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
 
-# Only the home network: private IPv4, unique-local and link-local IPv6,
-# and the mDNS multicast groups.
-IPAddressDeny=any
-IPAddressAllow=localhost link-local multicast 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
+# No IPAddressDeny/IPAddressAllow: the BPF maps they need fail on small
+# boards such as the Pi Zero, and the member port itself takes only home
+# network addresses.
 
 [Install]
 WantedBy=multi-user.target

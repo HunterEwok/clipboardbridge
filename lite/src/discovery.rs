@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//! Finding the Linux members and dialing them (docs/protocol.md, sections 3
-//! and 4). A lite member only browses, as a Mac does: it publishes nothing
-//! and listens for nobody. Members can also be given by address, for a
-//! network where multicast does not reach.
+//! Finding the members and dialing them, and taking the connections of
+//! those that dial this one (docs/protocol.md, sections 3 and 4). A lite
+//! member publishes itself with `r=lite` and listens on the member port, so
+//! that phones and Macs reach it without a computer; it dials the Linux
+//! members, and the lite members whose device ID is greater than its own.
+//! Members can also be given by address, for a network where multicast
+//! does not reach.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr, SocketAddrV6};
+use std::net::{IpAddr, SocketAddr, SocketAddrV6, TcpListener};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,6 +23,8 @@ use crate::uptime;
 const SERVICE: &str = "_clipboardbridge._tcp.local.";
 const MAX_WAIT: Duration = Duration::from_secs(30);
 const STEADY: Duration = Duration::from_secs(30);
+/// At most this many connections may be in their TLS handshake at once.
+const MAX_HANDSHAKES: usize = 16;
 
 /// The addresses of a found member; None once it is gone.
 type Addrs = Arc<Mutex<Option<Vec<SocketAddr>>>>;
@@ -56,9 +62,63 @@ fn dial_loop(node: Arc<Node>, addrs: Addrs, peer: Option<DeviceId>) {
     }
 }
 
+/// Listens on the member port, on all addresses, for the members that dial
+/// this one; only home network addresses may connect. It returns the port,
+/// or None when it cannot listen: the lite member then only dials.
+pub fn listen(node: Arc<Node>, port: u16, log: Arc<dyn Fn(&str) + Send + Sync>) -> Option<u16> {
+    let ln = match TcpListener::bind(("::", port)).or_else(|_| TcpListener::bind(("0.0.0.0", port))) {
+        Ok(ln) => ln,
+        Err(e) => {
+            log(&format!(
+                "cbb-lite: cannot listen on port {port}: {e}; phones reach this device only through a computer \
+                 until the port is free (-port to change it)"
+            ));
+            return None;
+        }
+    };
+    let port = ln.local_addr().map(|a| a.port()).unwrap_or(port);
+    let busy = Arc::new(AtomicUsize::new(0));
+    std::thread::spawn(move || {
+        for conn in ln.incoming() {
+            if node.is_closed() {
+                return;
+            }
+            let Ok(sock) = conn else { continue };
+            let Ok(addr) = sock.peer_addr() else { continue };
+            if !home_address(addr.ip()) || busy.load(Ordering::SeqCst) >= MAX_HANDSHAKES {
+                continue; // dropping the socket closes it
+            }
+            busy.fetch_add(1, Ordering::SeqCst);
+            let (node, busy, log) = (node.clone(), busy.clone(), log.clone());
+            std::thread::spawn(move || {
+                let mut slot = Some(busy);
+                let mut release = || {
+                    if let Some(b) = slot.take() {
+                        b.fetch_sub(1, Ordering::SeqCst);
+                    }
+                };
+                let res = node.accept(sock, addr, &mut release);
+                release();
+                if let Err(e) = res {
+                    log(&format!("cbb-lite: connection from {addr}: {}", e.for_log()));
+                }
+            });
+        }
+    });
+    Some(port)
+}
+
 /// Starts dialing: the members at the given addresses, and, with mdns, the
-/// Linux members of the group tag that browsing finds.
-pub fn start(node: Arc<Node>, tag: String, statics: Vec<SocketAddr>, mdns: bool, log: Arc<dyn Fn(&str) + Send + Sync>) {
+/// members of the group tag that browsing finds. With a port, it also
+/// publishes this member there.
+pub fn start(
+    node: Arc<Node>,
+    tag: String,
+    statics: Vec<SocketAddr>,
+    mdns: bool,
+    port: Option<u16>,
+    log: Arc<dyn Fn(&str) + Send + Sync>,
+) {
     for a in statics {
         let node = node.clone();
         std::thread::spawn(move || dial_loop(node, Arc::new(Mutex::new(Some(vec![a]))), None));
@@ -67,14 +127,30 @@ pub fn start(node: Arc<Node>, tag: String, statics: Vec<SocketAddr>, mdns: bool,
         return;
     }
     std::thread::spawn(move || {
-        if let Err(e) = browse(node, &tag, &*log) {
+        if let Err(e) = browse(node, &tag, port, &*log) {
             log(&format!("cbb-lite: finding the members failed: {e}; give them with -peer"));
         }
     });
 }
 
-fn browse(node: Arc<Node>, tag: &str, log: &(dyn Fn(&str) + Send + Sync)) -> Result<(), mdns_sd::Error> {
+fn browse(
+    node: Arc<Node>,
+    tag: &str,
+    port: Option<u16>,
+    log: &(dyn Fn(&str) + Send + Sync),
+) -> Result<(), mdns_sd::Error> {
     let daemon = mdns_sd::ServiceDaemon::new()?;
+    // As Go's responder: no loopback interfaces.
+    let _ = daemon.disable_interface(vec![mdns_sd::IfKind::LoopbackV4, mdns_sd::IfKind::LoopbackV6]);
+    let me = node.identity().id.clone();
+    if let Some(port) = port {
+        // The protocol version, the group tag and the role.
+        let txt = [("v", "1"), ("g", tag), ("r", "lite")];
+        let info =
+            mdns_sd::ServiceInfo::new(SERVICE, me.as_str(), &format!("{}.", me.host_name()), "", port, &txt[..])?
+                .enable_addr_auto();
+        daemon.register(info)?;
+    }
     let events = daemon.browse(SERVICE)?;
     let mut found: HashMap<DeviceId, Addrs> = HashMap::new();
     while let Ok(ev) = events.recv() {
@@ -84,8 +160,12 @@ fn browse(node: Arc<Node>, tag: &str, log: &(dyn Fn(&str) + Send + Sync)) -> Res
         match ev {
             mdns_sd::ServiceEvent::ServiceResolved(info) => {
                 let Some(id) = instance_id(&info.fullname) else { continue };
-                // Members of another group, or of a replaced CA, are ignored.
-                if info.get_property_val_str("g") != Some(tag) {
+                // Members of another group, or of a replaced CA, are ignored;
+                // of two lite members the one with the lower ID dials.
+                if id == me
+                    || info.get_property_val_str("g") != Some(tag)
+                    || (lite(info.get_property_val_str("r")) && id < me)
+                {
                     continue;
                 }
                 let addrs = order(info.get_addresses().iter().map(|ip| match ip {
@@ -122,6 +202,12 @@ fn browse(node: Arc<Node>, tag: &str, log: &(dyn Fn(&str) + Send + Sync)) -> Res
     Ok(())
 }
 
+/// Reports whether a TXT `r` value names a lite member; keys and values
+/// are compared without regard to case.
+fn lite(r: Option<&str>) -> bool {
+    r.is_some_and(|v| v.eq_ignore_ascii_case("lite"))
+}
+
 /// The device ID in an instance name, <device ID>._clipboardbridge._tcp.local.
 fn instance_id(fullname: &str) -> Option<DeviceId> {
     let label = fullname.strip_suffix(SERVICE)?.strip_suffix('.')?;
@@ -151,6 +237,12 @@ mod tests {
         assert_eq!(instance_id(&format!("{id}._clipboardbridge._tcp.local.")).unwrap().as_str(), id);
         assert!(instance_id("printer._clipboardbridge._tcp.local.").is_none());
         assert!(instance_id(&format!("{id}._http._tcp.local.")).is_none());
+    }
+
+    #[test]
+    fn lite_role() {
+        assert!(lite(Some("lite")) && lite(Some("LITE")));
+        assert!(!lite(None) && !lite(Some("linux")) && !lite(Some("")));
     }
 
     #[test]

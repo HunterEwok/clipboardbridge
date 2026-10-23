@@ -110,8 +110,8 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
-- `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, only dials, joins by the
-  phone's QR code. Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
+- `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, joins by the phone's QR code,
+  dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
   `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, CPace under `src/third_party`, the
   interop vectors): no_std with alloc, RustCrypto, no I/O, for the ESP32; `lite/src` adds
   the files, TLS (rustls), mDNS and the control socket.
