@@ -479,6 +479,9 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		fail(c, err)
 		return
 	}
+	if !m.Listen && m.Address != "" && j.Member != "" {
+		s.dialJoined(j.Member, m.Address)
+	}
 	reply(c, control.Header{Done: true}, nil)
 }
 

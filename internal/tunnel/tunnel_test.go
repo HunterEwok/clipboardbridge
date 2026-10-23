@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
@@ -167,7 +166,7 @@ func rawClient(t *testing.T, h testHub, d testDevice, local netip.Addr) *netstac
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev := device.NewDevice(tdev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
+	dev := device.NewDevice(tdev, newBind(), device.NewLogger(device.LogLevelSilent, ""))
 	t.Cleanup(dev.Close)
 	cfg := fmt.Sprintf("private_key=%s\npublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=::/0\n",
 		d.priv.hex(), h.dev.priv.Public().hex(), d.psk.hex(), h.endpoint())

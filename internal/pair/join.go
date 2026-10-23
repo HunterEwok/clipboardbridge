@@ -32,6 +32,10 @@ type Joiner struct {
 	Info Info
 	Now  func() time.Time // time.Now if nil
 
+	// Member is the device ID of the member that admitted this device,
+	// once a join succeeded.
+	Member group.DeviceID
+
 	certOnce sync.Once
 	certDER  []byte // the self-signed certificate for Key, made once
 	certErr  error
@@ -230,6 +234,7 @@ func (j *Joiner) exchange(tc io.ReadWriter, code string, ci, sid []byte, memberC
 	// The identity is stored, and the member admitted the device when it
 	// sent the welcome, whether or not it hears this.
 	writeFrame(tc, &frame{OK: true})
+	j.Member, _ = group.DeviceOf(memberCert)
 	return id, nil
 }
 

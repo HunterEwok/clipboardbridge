@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A computer that joins at an address (`cbb join -code ADDRESS`, as through an SSH
+  forward or a VPN of your own) now connects to the member that admitted it at that
+  address and syncs at once, and so meets the hub to sync away from home, where before it
+  synced only once it was on the home network.
+
 - A Mac now takes connections on the member port and publishes itself on mDNS with
   `r=mac`, so phones, other Macs and lite members reach it with no Linux member on; it
   still dials the Linux and lite members itself, so a firewall that blocks incoming
