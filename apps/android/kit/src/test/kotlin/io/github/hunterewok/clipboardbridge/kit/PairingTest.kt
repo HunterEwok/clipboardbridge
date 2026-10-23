@@ -58,6 +58,10 @@ class PairingTest {
         assertFalse(Pairing.Info("pi", "windows").isValid)
         assertTrue(Pairing.Info("Pixel", "android", SoftwareSigner().publicKeyDER).isValid)
         assertFalse(Pairing.Info("pi", "linux", SoftwareSigner().publicKeyDER).isValid)
+        assertTrue(Pairing.Info("router", "linux", role = Pairing.Info.LITE).isValid)
+        assertFalse(Pairing.Info("router", "linux", role = "full").isValid)
+        val lite = Pairing.Info("router", "linux", role = Pairing.Info.LITE)
+        assertEquals(lite, Pairing.Info.decode(lite.encode()))
         assertTrue(JoinCode.newCode().let { JoinCode(it, emptyList(), "").codeIsValid })
         assertEquals("[fd00::1]:8764", JoinCode.address("fd00::1", 8764))
     }

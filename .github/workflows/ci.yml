@@ -360,7 +360,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Go reads what the Kotlin kit signed
-        run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords$' -v
+        run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
       - name: build the app and run its unit tests
         working-directory: apps/android
         # The runner image has the Android SDK; Gradle fetches a missing platform.
