@@ -63,6 +63,9 @@ tar -xzf clipboardbridge-darwin-arm64.tar.gz
 sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
 \`\`\`
 
+**Android** 10 or later: open \`clipboardbridge-$version.apk\` on the phone and allow the
+install. The app makes its own group and adds the computers by their \`cbb join\` QR code.
+
 Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb pair -phone\`
 on a Linux machine for the iPhone, and \`cbb join\` on each further computer.
 
@@ -87,6 +90,7 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`clipboardbridge-linux-armv6.tar.gz\` | Linux, ARMv6 (Raspberry Pi Zero W, 1) |
 | \`clipboardbridge-darwin-arm64.tar.gz\` | macOS, Apple silicon |
 | \`clipboardbridge-darwin-amd64.tar.gz\` | macOS, Intel |
+| \`clipboardbridge-$version.apk\` | Android 10 and later, signed with the project's release key |
 | \`get.sh\` | the Linux installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
