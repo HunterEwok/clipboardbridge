@@ -102,6 +102,8 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   member TLS, signed device and revocation records.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
+- `internal/tunnel`: WireGuard for sync away from home (wireguard-go with gVisor netstack in
+  the process): the hub, which opens only the member port to its clients, and the client.
 - Windows: `cmd/cbb/platform_windows.go` (the Windows service, logs),
   `internal/service/control_windows.go` (the socket's access list),
   `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `packaging/windows`
