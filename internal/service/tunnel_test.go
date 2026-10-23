@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -234,14 +233,7 @@ func TestJoinByAddress(t *testing.T) {
 	defer c.Close()
 	piID := pi.status(t).Device
 	h.hide(piID) // the deck is on another network
-	addr := ""
-	h.mu.Lock()
-	for m := range h.members {
-		if m.cfg.ID == piID {
-			addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(m.cfg.Port)))
-		}
-	}
-	h.mu.Unlock()
+	addr := h.memberAddr(t, piID)
 	if _, err := deck.do(t, control.Header{Op: control.OpJoin, Code: code, Address: addr}, ""); err != nil {
 		t.Fatal(err)
 	}
