@@ -1,19 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# The Raspberry Pi Zero and Pi 1 (ARMv6, 32-bit): a static musl binary, built
-# with clang and linked with Rust's own lld, so no cross toolchain is needed.
+# The Raspberry Pi Zero and Pi 1 (ARMv6, 32-bit): a static musl binary, all
+# Rust, linked with Rust's own lld, so no cross toolchain is needed.
 # cargo build --release --target arm-unknown-linux-musleabihf
 [target.arm-unknown-linux-musleabihf]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld"]
 
-[env]
-CC_arm_unknown_linux_musleabihf = "clang"
-CFLAGS_arm_unknown_linux_musleabihf = "--target=arm-linux-musleabihf -march=armv6kz -mfpu=vfp -mfloat-abi=hard -marm"
-AR_arm_unknown_linux_musleabihf = "llvm-ar"
-
 # The core on a microcontroller: the firmware supplies getrandom's source of
 # randomness (its custom backend, the chip's random number generator).
 [target.riscv32imac-unknown-none-elf]
+rustflags = ["--cfg", 'getrandom_backend="custom"']
+
+[target.xtensa-esp32s3-none-elf]
 rustflags = ["--cfg", 'getrandom_backend="custom"']

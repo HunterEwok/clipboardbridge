@@ -117,8 +117,11 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
 - `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
   `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, CPace under `src/third_party`, the
-  interop vectors): no_std with alloc, RustCrypto, no I/O, for the ESP32; `lite/src` adds
-  the files, TLS (rustls), mDNS and the control socket.
+  interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
+  provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
+  no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
+  C6 (RISC-V) and the S3 (Xtensa); `lite/src` adds the files, the sockets around the
+  core's TLS, mDNS and the control socket.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
