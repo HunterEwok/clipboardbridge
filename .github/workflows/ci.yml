@@ -107,17 +107,17 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go build
-        run: go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
+        run: go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
       - name: the release archive
         run: |
           name=$GOARCH
           if [ -n "$GOARM" ]; then name=armv$GOARM; fi
-          sh packaging/archive.sh "$RUNNER_TEMP/clipbridge" "$GOOS" "$name" "$RUNNER_TEMP/dist"
-          tar -tzf "$RUNNER_TEMP/dist/clipbridge-$GOOS-$name.tar.gz" | grep -qx "clipbridge/clipbridge"
+          sh packaging/archive.sh "$RUNNER_TEMP/cbb" "$GOOS" "$name" "$RUNNER_TEMP/dist"
+          tar -tzf "$RUNNER_TEMP/dist/clipboardbridge-$GOOS-$name.tar.gz" | grep -qx "clipboardbridge/cbb"
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
         # Without cgo the agent would start and fail; this build must link AppKit.
-        run: otool -L "$RUNNER_TEMP/clipbridge" | grep -q AppKit.framework
+        run: otool -L "$RUNNER_TEMP/cbb" | grep -q AppKit.framework
 
   avahi:
     name: mdns with avahi
@@ -144,7 +144,7 @@ jobs:
             dbus-daemon --system --fork
             avahi-daemon --daemonize --no-chroot
             sleep 2
-            CLIPBRIDGE_TEST_AVAHI=1 /t/mdns.test -test.v -test.run "TestAvahi|TestSystemNetwork"
+            CBB_TEST_AVAHI=1 /t/mdns.test -test.v -test.run "TestAvahi|TestSystemNetwork"
           '
 
   e2e:
@@ -162,9 +162,9 @@ jobs:
       - name: go build
         env:
           CGO_ENABLED: "0"
-        run: go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
+        run: go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
       - name: three members and a resolver in containers
-        run: sh tools/e2e/e2e.sh "$RUNNER_TEMP/clipbridge"
+        run: sh tools/e2e/e2e.sh "$RUNNER_TEMP/cbb"
 
   desktop:
     name: desktop clipboards
@@ -195,7 +195,7 @@ jobs:
             sleep 0.1
           done
           export WAYLAND_DISPLAY DISPLAY=:5
-          CLIPBRIDGE_TEST_WAYLAND=1 CLIPBRIDGE_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.v
+          CBB_TEST_WAYLAND=1 CBB_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.v
 
   packaging:
     name: packaging
@@ -210,50 +210,50 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/tmux/clipbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/tmux/clipboardbridge-console.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
-          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/clipbridge" ./cmd/clipbridge
-          sudo install -m 0755 "$RUNNER_TEMP/clipbridge" /usr/local/bin/clipbridge
-          sudo systemd-sysusers "$PWD/packaging/linux/clipbridge.sysusers"
-          systemd-analyze verify packaging/linux/clipbridge.service
-          systemd-analyze security --offline=true packaging/linux/clipbridge.service --threshold=30 # 3.0 on the scale it prints
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          sudo install -m 0755 "$RUNNER_TEMP/cbb" /usr/local/bin/cbb
+          sudo systemd-sysusers "$PWD/packaging/linux/clipboardbridge.sysusers"
+          systemd-analyze verify packaging/linux/clipboardbridge.service
+          systemd-analyze security --offline=true packaging/linux/clipboardbridge.service --threshold=30 # 3.0 on the scale it prints
       - name: release notes
         run: sh packaging/release-notes.sh v0.1.1 >/dev/null
       - name: desktop entry
         run: |
           sudo apt-get install -y -qq desktop-file-utils >/dev/null
-          desktop-file-validate packaging/linux/clipbridge-desktop.desktop
+          desktop-file-validate packaging/linux/clipboardbridge-desktop.desktop
       - name: get.sh installs a release archive and refuses a changed one
         run: |
           # The archive as the release workflow makes it.
           rel="$RUNNER_TEMP/release"
-          sh packaging/archive.sh "$RUNNER_TEMP/clipbridge" linux amd64 "$rel"
+          sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
-          sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall
-          systemctl is-active clipbridge.service
-          for _ in $(seq 20); do sudo clipbridge status && break; sleep 0.5; done
-          sudo clipbridge status | grep -q 'Not in a group'
-          echo tampered >>"$rel/clipbridge-linux-amd64.tar.gz"
-          if sudo CLIPBRIDGE_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall; then
+          sudo CBB_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall
+          systemctl is-active clipboardbridge.service
+          for _ in $(seq 20); do sudo cbb status && break; sleep 0.5; done
+          sudo cbb status | grep -q 'Not in a group'
+          echo tampered >>"$rel/clipboardbridge-linux-amd64.tar.gz"
+          if sudo CBB_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall; then
             echo "get.sh installed an archive that does not match SHA256SUMS" >&2
             exit 1
           fi
       - name: install.sh keeps a port, and uninstall.sh removes it all
         run: |
-          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 9000'
-          grep -qx 'CLIPBRIDGE_PORT=9000' /etc/clipbridge/clipbridge.env
-          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 9000'
-          sudo CLIPBRIDGE_FIREWALL=no sh packaging/linux/install.sh --port 8764 "$RUNNER_TEMP/clipbridge" | grep -q 'TCP port 8764'
-          test ! -e /etc/clipbridge/clipbridge.env
-          sudo sh /usr/local/share/clipbridge/uninstall.sh --purge
-          for f in /usr/local/bin/clipbridge /etc/systemd/system/clipbridge.service /usr/local/share/clipbridge /etc/clipbridge /var/lib/clipbridge; do
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
+          grep -qx 'CBB_PORT=9000' /etc/clipboardbridge/clipboardbridge.env
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 8764 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 8764'
+          test ! -e /etc/clipboardbridge/clipboardbridge.env
+          sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge; do
             if [ -e "$f" ]; then
               echo "uninstall.sh left $f" >&2
               exit 1
             fi
           done
-          if grep -q clipbridge /etc/tmux.conf; then
+          if grep -q clipboardbridge /etc/tmux.conf; then
             echo "uninstall.sh left the tmux line" >&2
             exit 1
           fi
@@ -274,10 +274,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir interop-out
-          docker run --rm -v "$PWD:/src" -w /src/apps/ios/ClipbridgeKit -e CLIPBRIDGE_INTEROP_OUT=/src/interop-out swift:6.2-noble sh -euc '
+          docker run --rm -v "$PWD:/src" -w /src/apps/ios/ClipboardBridgeKit -e CBB_INTEROP_OUT=/src/interop-out swift:6.2-noble sh -euc '
             swift test
-            swift build -c release --product clipbridge-interop --static-swift-stdlib
-            cp "$(swift build -c release --show-bin-path)/clipbridge-interop" /src/clipbridge-interop'
+            swift build -c release --product clipboardbridge-interop --static-swift-stdlib
+            cp "$(swift build -c release --show-bin-path)/clipboardbridge-interop" /src/clipboardbridge-interop'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: runner.os == 'Linux'
         with:
@@ -286,19 +286,19 @@ jobs:
       - name: the Swift phone admits the Go joiner, and Go reads its member frames
         if: runner.os == 'Linux'
         run: |
-          CLIPBRIDGE_SWIFT_INTEROP="$PWD/clipbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
+          CBB_SWIFT_INTEROP="$PWD/clipboardbridge-interop" go test ./internal/pair -run TestSwiftMemberAdmitsGoJoiner -v
           # swift test just wrote testdata/interop/swift-member.json, and to
           # interop-out the records it signed, a certificate it renewed and
           # what an admin phone makes.
           go test ./internal/node -run TestSwiftMemberFrames -v
-          CLIPBRIDGE_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
+          CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
       - name: swift test
         if: runner.os == 'macOS'
-        working-directory: apps/ios/ClipbridgeKit
+        working-directory: apps/ios/ClipboardBridgeKit
         run: |
           swift test
-          swift build --product clipbridge-interop
-          cp "$(swift build --show-bin-path)/clipbridge-interop" "$GITHUB_WORKSPACE/clipbridge-interop"
+          swift build --product clipboardbridge-interop
+          cp "$(swift build --show-bin-path)/clipboardbridge-interop" "$GITHUB_WORKSPACE/clipboardbridge-interop"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: runner.os == 'macOS'
         with:
@@ -313,8 +313,8 @@ jobs:
           security default-keychain -s ci.keychain
           security unlock-keychain -p ci ci.keychain
           security set-keychain-settings ci.keychain
-          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
-          CLIPBRIDGE_SWIFT_INTEROP_TLS="$PWD/clipbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
+          CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
 
   app:
     name: iPhone app
@@ -340,7 +340,7 @@ jobs:
           print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")))')
           # Ad hoc signing needs no Apple account, and without a signature the
           # simulator gives the app no keychain (-34018), which its TLS tests use.
-          xcodebuild test -project Clipbridge.xcodeproj -scheme Clipbridge -destination "id=$udid" \
+          xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$udid" \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
   ci-ok:

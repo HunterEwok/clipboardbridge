@@ -6,7 +6,7 @@
 #
 #   sh packaging/release-notes.sh v1.2.3
 #
-# what clipbridge is, the version's section of CHANGELOG.md, how to install
+# what clipboardbridge is, the version's section of CHANGELOG.md, how to install
 # it, how to verify the files, where the source and the license are, and
 # where to report problems. The release workflow publishes them; GitHub
 # appends the list of merged pull requests.
@@ -19,7 +19,7 @@ fi
 tag=$1
 version=${tag#v}
 root=$(cd "$(dirname "$0")/.." && pwd)
-repo=https://github.com/HunterEwok/clipbridge
+repo=https://github.com/HunterEwok/clipboardbridge
 
 # The version's section, without its heading, up to the next one.
 changes=$(awk -v v="$version" '
@@ -36,7 +36,7 @@ if [ -z "$(printf '%s' "$changes" | tr -d '[:space:]')" ]; then
 fi
 
 cat <<NOTES
-clipbridge is one clipboard for your Apple devices and every Linux machine on your home
+clipboardbridge is one clipboard for your Apple devices and every Linux machine on your home
 network: copy on one device, paste on another. It works only on the local network, with
 no cloud, accounts or telemetry, and all traffic is end-to-end encrypted between paired
 devices.
@@ -53,18 +53,18 @@ curl -fsSL $repo/releases/download/$tag/get.sh | sudo sh
 \`\`\`
 
 \`get.sh\` downloads the archive for the machine, checks it against \`SHA256SUMS\`, installs
-the service and, when ufw is active, allows clipbridge's ports from the home network only.
+the service and, when ufw is active, allows clipboardbridge's ports from the home network only.
 
 **macOS** (Apple silicon; \`amd64\` instead of \`arm64\` for Intel), in Terminal:
 
 \`\`\`sh
-curl -fsSLO $repo/releases/download/$tag/clipbridge-darwin-arm64.tar.gz
-tar -xzf clipbridge-darwin-arm64.tar.gz
-sudo sh clipbridge/packaging/macos/install.sh clipbridge/clipbridge
+curl -fsSLO $repo/releases/download/$tag/clipboardbridge-darwin-arm64.tar.gz
+tar -xzf clipboardbridge-darwin-arm64.tar.gz
+sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
 \`\`\`
 
-Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`clipbridge pair -phone\`
-on a Linux machine for the iPhone, and \`clipbridge join\` on each further computer.
+Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb pair -phone\`
+on a Linux machine for the iPhone, and \`cbb join\` on each further computer.
 
 ## Verify the downloads
 
@@ -74,28 +74,28 @@ it:
 
 \`\`\`sh
 sha256sum --ignore-missing -c SHA256SUMS            # macOS: shasum -a 256 -c SHA256SUMS
-gh attestation verify clipbridge-linux-arm64.tar.gz --repo HunterEwok/clipbridge
+gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipboardbridge
 \`\`\`
 
 ## Files
 
 | File | For |
 |------|-----|
-| \`clipbridge-linux-amd64.tar.gz\` | Linux, x86-64 |
-| \`clipbridge-linux-arm64.tar.gz\` | Linux, ARM64 (Raspberry Pi 3, 4, 5 with a 64-bit system) |
-| \`clipbridge-linux-armv7.tar.gz\` | Linux, ARMv7 (Raspberry Pi 2, 3, 4 with a 32-bit system) |
-| \`clipbridge-linux-armv6.tar.gz\` | Linux, ARMv6 (Raspberry Pi Zero W, 1) |
-| \`clipbridge-darwin-arm64.tar.gz\` | macOS, Apple silicon |
-| \`clipbridge-darwin-amd64.tar.gz\` | macOS, Intel |
+| \`clipboardbridge-linux-amd64.tar.gz\` | Linux, x86-64 |
+| \`clipboardbridge-linux-arm64.tar.gz\` | Linux, ARM64 (Raspberry Pi 3, 4, 5 with a 64-bit system) |
+| \`clipboardbridge-linux-armv7.tar.gz\` | Linux, ARMv7 (Raspberry Pi 2, 3, 4 with a 32-bit system) |
+| \`clipboardbridge-linux-armv6.tar.gz\` | Linux, ARMv6 (Raspberry Pi Zero W, 1) |
+| \`clipboardbridge-darwin-arm64.tar.gz\` | macOS, Apple silicon |
+| \`clipboardbridge-darwin-amd64.tar.gz\` | macOS, Intel |
 | \`get.sh\` | the Linux installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
-Each archive holds \`clipbridge/\`: the program, \`LICENSE\`, and \`packaging/\` with the
+Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, and \`packaging/\` with the
 installer for its system.
 
 ## Source and license
 
-clipbridge is free software under the [GNU Affero General Public License, version 3
+clipboardbridge is free software under the [GNU Affero General Public License, version 3
 only]($repo/blob/$tag/LICENSE). The complete source of this release is the tag
 [\`$tag\`]($repo/tree/$tag) and the source archives below, from which these files are built
 by [the release workflow]($repo/blob/$tag/.github/workflows/release.yml).

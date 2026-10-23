@@ -24,8 +24,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/third_party/cpace"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
 )
 
 var t0 = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
@@ -206,7 +206,7 @@ func TestPairLinux(t *testing.T) {
 		t.Fatal("a Linux member did not get the CA keys")
 	}
 	if !id.Phone.PublicKey.(*ecdsa.PublicKey).Equal(&j.Key.PublicKey) {
-		t.Error("the clipbridge.local certificate is not for the device's key")
+		t.Error("the clipboardbridge.local certificate is not for the device's key")
 	}
 	assertMembers(t, id, f.admin)
 }
@@ -1043,8 +1043,8 @@ func phoneRoot(t *testing.T) (root, admin *group.CA) {
 		}
 		return &group.CA{Cert: c, Key: key}
 	}
-	root = mk("clipbridge group root 2026-10-21", 1, nil)
-	return root, mk("clipbridge admin "+string(group.NewDeviceID()), 0, root)
+	root = mk("clipboardbridge group root 2026-10-21", 1, nil)
+	return root, mk("clipboardbridge admin "+string(group.NewDeviceID()), 0, root)
 }
 
 // TestJoinerTakesAnAdminWelcome checks a welcome from an admin phone: the

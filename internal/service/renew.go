@@ -10,7 +10,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // renewEvery is how often a member checks whether certificates are due for
@@ -50,9 +50,9 @@ func (s *Service) renew(now time.Time) {
 	s.mu.Unlock()
 	switch {
 	case err != nil:
-		s.logf("clipbridge: renewing the certificates: %v", err)
+		s.logf("cbb: renewing the certificates: %v", err)
 	case changed:
-		s.logf("clipbridge: renewed this member's certificates; the member certificate is valid until %s",
+		s.logf("cbb: renewed this member's certificates; the member certificate is valid until %s",
 			next.Cert.NotAfter.UTC().Format(time.DateOnly))
 	}
 	nd.RenewPeers()
@@ -87,7 +87,7 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
-	s.logf("clipbridge: got a renewed member certificate, valid until %s", next.Cert.NotAfter.UTC().Format(time.DateOnly))
+	s.logf("cbb: got a renewed member certificate, valid until %s", next.Cert.NotAfter.UTC().Format(time.DateOnly))
 	return nil
 }
 
@@ -103,7 +103,7 @@ func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
 		err = next.Save(s.cfg.StateDir)
 	}
 	if err != nil {
-		s.logf("clipbridge: making the admin key: %v", err)
+		s.logf("cbb: making the admin key: %v", err)
 		return id
 	}
 	return next
@@ -136,7 +136,7 @@ func (s *Service) becomeAdmin(der []byte) error {
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
-	s.logf("clipbridge: this computer is now an admin of the group: it can admit and remove devices")
+	s.logf("cbb: this computer is now an admin of the group: it can admit and remove devices")
 	return nil
 }
 

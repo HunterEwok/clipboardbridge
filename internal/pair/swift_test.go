@@ -17,20 +17,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // TestSwiftMemberAdmitsGoJoiner runs the phone app's pairing code against
-// this joiner: clipbridge-interop (apps/ios/ClipbridgeKit), named by
-// CLIPBRIDGE_SWIFT_INTEROP, creates a group as the phone does, dials, and
+// this joiner: clipboardbridge-interop (apps/ios/ClipboardBridgeKit), named by
+// CBB_SWIFT_INTEROP, creates a group as the phone does, dials, and
 // admits the Linux joiner without CA keys. The two exchange certificates
 // over plain TCP in place of a TLS handshake, with a fixed session ID; the
 // CPace exchange, the frames, the welcome and the certificates are the real
 // ones.
 func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
-	tool := os.Getenv("CLIPBRIDGE_SWIFT_INTEROP")
+	tool := os.Getenv("CBB_SWIFT_INTEROP")
 	if tool == "" {
-		t.Skip("CLIPBRIDGE_SWIFT_INTEROP names no clipbridge-interop binary")
+		t.Skip("CBB_SWIFT_INTEROP names no clipboardbridge-interop binary")
 	}
 	for _, tc := range []struct {
 		name, code, toolCode string
@@ -97,7 +97,7 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
 				t.Errorf("the joiner holds another group CA than the phone made")
 			}
-			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipbridge group root ") {
+			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipboardbridge group root ") {
 				t.Errorf("the phone's group CA is %q with path length %d, want its root with 1", ca.Subject.CommonName, ca.MaxPathLen)
 			}
 		})
@@ -134,14 +134,14 @@ func writeBlob(w io.Writer, b []byte) error {
 }
 
 // TestSwiftMemberAdmitsGoJoinerTLS is the same with real TLS: the joiner
-// listens with Accept, as clipbridge join does, and the phone app's code
+// listens with Accept, as cbb join does, and the phone app's code
 // dials it with Network.framework, checks the QR code's fingerprint and
-// binds CPace to the TLS exporter. It needs macOS (CLIPBRIDGE_SWIFT_INTEROP_TLS
+// binds CPace to the TLS exporter. It needs macOS (CBB_SWIFT_INTEROP_TLS
 // names the tool there).
 func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
-	tool := os.Getenv("CLIPBRIDGE_SWIFT_INTEROP_TLS")
+	tool := os.Getenv("CBB_SWIFT_INTEROP_TLS")
 	if tool == "" {
-		t.Skip("CLIPBRIDGE_SWIFT_INTEROP_TLS names no clipbridge-interop binary")
+		t.Skip("CBB_SWIFT_INTEROP_TLS names no clipboardbridge-interop binary")
 	}
 	for _, tc := range []struct {
 		name   string
@@ -196,7 +196,7 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
 				t.Errorf("the joiner holds another group CA than the phone made")
 			}
-			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipbridge group root ") {
+			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipboardbridge group root ") {
 				t.Errorf("the phone's group CA is %q with path length %d, want its root with 1", ca.Subject.CommonName, ca.MaxPathLen)
 			}
 		})

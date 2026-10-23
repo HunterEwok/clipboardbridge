@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -68,18 +68,18 @@ func TestLimits(t *testing.T) {
 }
 
 func TestSocketPath(t *testing.T) {
-	t.Setenv("CLIPBRIDGE_SOCKET", "")
+	t.Setenv("CBB_SOCKET", "")
 	if SocketPath() != DefaultSocket {
 		t.Errorf("SocketPath() = %q", SocketPath())
 	}
-	t.Setenv("CLIPBRIDGE_SOCKET", "/tmp/x.sock")
+	t.Setenv("CBB_SOCKET", "/tmp/x.sock")
 	if SocketPath() != "/tmp/x.sock" {
 		t.Errorf("SocketPath() = %q", SocketPath())
 	}
 }
 
 func TestDialErrors(t *testing.T) {
-	_, err := Dial("/nonexistent/clipbridge.sock")
+	_, err := Dial("/nonexistent/clipboardbridge.sock")
 	if err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("Dial of a missing socket: %v", err)
 	}

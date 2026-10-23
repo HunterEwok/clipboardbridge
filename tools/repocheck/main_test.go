@@ -26,7 +26,7 @@ func TestCheck(t *testing.T) {
 		// The problems must contain these strings, in order; none means no problems.
 		want []string
 	}{
-		{name: "English text", file: "README.md", content: "# clipbridge\n\nOne clipboard.\n"},
+		{name: "English text", file: "README.md", content: "# clipboardbridge\n\nOne clipboard.\n"},
 		{name: "symbols are fine", file: "docs/design.md", content: "Mac \u2192 Linux, 10\u201320 s, \u2318C\n"},
 		{
 			name: "Cyrillic text", file: "docs/notes.md", content: "line one\n" + cyrillicWord + "\n",
@@ -37,7 +37,7 @@ func TestCheck(t *testing.T) {
 			want: []string{"a.txt:1:", "a.txt:3:"},
 		},
 		{name: "binary file", file: "logo.png", content: "\x89PNG\x00\x00" + cyrillicWord},
-		{name: "a String Catalog", file: "apps/ios/Clipbridge/Resources/Localizable.xcstrings", content: `{"ru":"` + cyrillicWord + `"}`},
+		{name: "a String Catalog", file: "apps/ios/ClipboardBridge/Resources/Localizable.xcstrings", content: `{"ru":"` + cyrillicWord + `"}`},
 		{name: "an Android translation", file: "apps/android/app/src/main/res/values-ru/strings.xml", content: "<string>" + cyrillicWord + "</string>\n"},
 		{
 			name: "the default Android strings", file: "apps/android/app/src/main/res/values/strings.xml", content: "<string>" + cyrillicWord + "</string>\n",

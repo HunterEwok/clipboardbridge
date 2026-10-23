@@ -2,27 +2,27 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs clipbridge on a Linux machine with systemd:
+# Installs clipboardbridge on a Linux machine with systemd:
 #
-#   sudo sh install.sh [--console] [--port N] path/to/clipbridge
+#   sudo sh install.sh [--console] [--port N] path/to/cbb
 #
 # It installs the binary to /usr/local/bin, the service user, the systemd
 # unit, the desktop autostart entry and the tmux configuration, adds the user
-# who ran sudo to the clipbridge group, and starts or restarts the service.
+# who ran sudo to the clipboardbridge group, and starts or restarts the service.
 # --console also starts tmux after a login on the text console. --port moves
-# the member port from 8764 to N, kept in /etc/clipbridge/clipbridge.env
+# the member port from 8764 to N, kept in /etc/clipboardbridge/clipboardbridge.env
 # until the next --port; --port 8764 goes back. When ufw or firewalld is
-# active it allows mDNS and clipbridge's port from the home network, on every run, so
+# active it allows mDNS and clipboardbridge's port from the home network, on every run, so
 # that an update fixes a firewall turned on after the first install, and
 # removes the rules it added before, so an old port stays closed;
-# CLIPBRIDGE_FIREWALL=no leaves the firewall alone. uninstall.sh removes it
+# CBB_FIREWALL=no leaves the firewall alone. uninstall.sh removes it
 # all again.
 set -eu
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
 
 usage() {
-	echo "usage: sudo sh install.sh [--console] [--port N] path/to/clipbridge" >&2
+	echo "usage: sudo sh install.sh [--console] [--port N] path/to/cbb" >&2
 	exit 2
 }
 console=no
@@ -70,63 +70,93 @@ if ! "$bin" version >/dev/null 2>&1; then
 	exit 1
 fi
 
-install -m 0755 "$bin" /usr/local/bin/clipbridge
-install -m 0644 "$here/clipbridge.sysusers" /usr/lib/sysusers.d/clipbridge.conf
-systemd-sysusers /usr/lib/sysusers.d/clipbridge.conf
-install -m 0644 "$here/clipbridge.service" /etc/systemd/system/clipbridge.service
+# Up to 0.2.0 clipboardbridge was called clipbridge, and its protocol does
+# not reach this one: remove it, with its keys, user and firewall rules, so
+# this device pairs again.
+if [ -e /usr/local/bin/clipbridge ] || [ -e /etc/systemd/system/clipbridge.service ]; then
+	if [ -f /usr/local/share/clipbridge/uninstall.sh ]; then
+		sh /usr/local/share/clipbridge/uninstall.sh --purge >/dev/null
+	else
+		systemctl disable --now clipbridge.service >/dev/null 2>&1 || true
+		if command -v ufw >/dev/null 2>&1; then
+			old=$(ufw status numbered 2>/dev/null |
+				sed -n 's/^\[ *\([0-9][0-9]*\)\].*# clipbridge\( mDNS\)\{0,1\} *$/\1/p' | sort -rn)
+			for n in $old; do
+				ufw --force delete "$n" >/dev/null
+			done
+		fi
+		rm -f /etc/systemd/system/clipbridge.service /etc/xdg/autostart/clipbridge-desktop.desktop \
+			/etc/profile.d/clipbridge-console.sh /usr/lib/sysusers.d/clipbridge.conf /usr/local/bin/clipbridge
+		systemctl daemon-reload || true
+		rm -rf /usr/local/share/clipbridge /etc/clipbridge /var/lib/clipbridge
+	fi
+	if [ -f /etc/tmux.conf ]; then
+		grep -vxF 'source-file -q /usr/local/share/clipbridge/tmux.conf' /etc/tmux.conf >/etc/tmux.conf.old || true
+		cat /etc/tmux.conf.old >/etc/tmux.conf
+		rm -f /etc/tmux.conf.old
+	fi
+	userdel clipbridge 2>/dev/null || true
+	groupdel clipbridge 2>/dev/null || true
+	echo "Removed clipbridge, as clipboardbridge was called before; pair this device again."
+fi
+
+install -m 0755 "$bin" /usr/local/bin/cbb
+install -m 0644 "$here/clipboardbridge.sysusers" /usr/lib/sysusers.d/clipboardbridge.conf
+systemd-sysusers /usr/lib/sysusers.d/clipboardbridge.conf
+install -m 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.service
 # Desktop sessions start the connector with the session.
 install -d -m 0755 /etc/xdg/autostart
-install -m 0644 "$here/clipbridge-desktop.desktop" /etc/xdg/autostart/clipbridge-desktop.desktop
+install -m 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
 
-# tmux reads /etc/tmux.conf; source the clipbridge part from there once.
-install -d -m 0755 /usr/local/share/clipbridge
-install -m 0644 "$here/../tmux/clipbridge.conf" /usr/local/share/clipbridge/tmux.conf
-line='source-file -q /usr/local/share/clipbridge/tmux.conf'
+# tmux reads /etc/tmux.conf; source the clipboardbridge part from there once.
+install -d -m 0755 /usr/local/share/clipboardbridge
+install -m 0644 "$here/../tmux/clipboardbridge.conf" /usr/local/share/clipboardbridge/tmux.conf
+line='source-file -q /usr/local/share/clipboardbridge/tmux.conf'
 if ! grep -qsF "$line" /etc/tmux.conf; then
 	echo "$line" >>/etc/tmux.conf
 fi
 if [ "$console" = yes ]; then
-	install -m 0644 "$here/../tmux/clipbridge-console.sh" /etc/profile.d/clipbridge-console.sh
+	install -m 0644 "$here/../tmux/clipboardbridge-console.sh" /etc/profile.d/clipboardbridge-console.sh
 fi
 
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
-	usermod -a -G clipbridge "$SUDO_USER"
-	echo "Added $SUDO_USER to the clipbridge group; log in again to use clipbridge copy and paste."
+	usermod -a -G clipboardbridge "$SUDO_USER"
+	echo "Added $SUDO_USER to the clipboardbridge group; log in again to use cbb copy and paste."
 fi
 
 # The port: the one given, else the one kept from before, else 8764.
-env=/etc/clipbridge/clipbridge.env
-install -d -m 0755 /etc/clipbridge
+env=/etc/clipboardbridge/clipboardbridge.env
+install -d -m 0755 /etc/clipboardbridge
 if [ -n "$port" ]; then
 	if [ "$port" -eq 8764 ]; then
 		rm -f "$env"
 	else
 		{
-			echo "# Written by clipbridge's install.sh; change it with install.sh --port N."
-			echo "CLIPBRIDGE_PORT=$port"
+			echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N."
+			echo "CBB_PORT=$port"
 		} >"$env"
 		chmod 0644 "$env"
 	fi
 fi
-port=$(sed -n 's/^CLIPBRIDGE_PORT=//p' "$env" 2>/dev/null | tail -n 1)
+port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
 port=${port:-8764}
 
-# A firewall drops what it does not allow, and clipbridge needs mDNS and its
+# A firewall drops what it does not allow, and clipboardbridge needs mDNS and its
 # port from the other devices at home. firewall.sh first takes away what it
 # opened before, so a changed port leaves nothing open behind it.
-install -m 0644 "$here/firewall.sh" /usr/local/share/clipbridge/firewall.sh
-install -m 0644 "$here/uninstall.sh" /usr/local/share/clipbridge/uninstall.sh
-if [ "${CLIPBRIDGE_FIREWALL:-yes}" != no ]; then
-	sh /usr/local/share/clipbridge/firewall.sh open "$port"
+install -m 0644 "$here/firewall.sh" /usr/local/share/clipboardbridge/firewall.sh
+install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
+if [ "${CBB_FIREWALL:-yes}" != no ]; then
+	sh /usr/local/share/clipboardbridge/firewall.sh open "$port"
 fi
 if [ "$port" != 8764 ]; then
-	echo "clipbridge uses TCP port $port instead of 8764. If a firewall here or on the network"
+	echo "clipboardbridge uses TCP port $port instead of 8764. If a firewall here or on the network"
 	echo "limits incoming connections, allow TCP $port from the home network. The iPhone shortcut"
-	echo "works only with 8764; the clipbridge app takes any port."
+	echo "works only with 8764; the clipboardbridge app takes any port."
 fi
 
 systemctl daemon-reload
-systemctl enable clipbridge.service
-systemctl restart clipbridge.service # also takes a new binary on a reinstall
-echo "clipbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipbridge/uninstall.sh"
-echo "Next: see docs/quickstart.md; in short, clipbridge pair -phone on the first Linux machine, clipbridge join on the others."
+systemctl enable clipboardbridge.service
+systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
+echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
+echo "Next: see docs/quickstart.md; in short, cbb pair -phone on the first Linux machine, cbb join on the others."

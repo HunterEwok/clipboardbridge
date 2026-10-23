@@ -23,7 +23,7 @@ import (
 
 const (
 	tokensFile = "apps/design/tokens.json"
-	swiftFile  = "apps/ios/Clipbridge/Theme/Tokens.swift"
+	swiftFile  = "apps/ios/ClipboardBridge/Theme/Tokens.swift"
 )
 
 // Palette is one theme's colours, "#RRGGBB".

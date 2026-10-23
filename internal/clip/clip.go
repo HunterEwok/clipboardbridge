@@ -40,8 +40,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/HunterEwok/clipbridge/internal/hlc"
-	"github.com/HunterEwok/clipbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
 const (
@@ -248,7 +248,7 @@ type Engine struct {
 	rejoinAt    time.Duration  // uptime of the last Rejoin
 }
 
-// localText is the text of the member's own clipboard, as far as clipbridge
+// localText is the text of the member's own clipboard, as far as clipboardbridge
 // knows it: the last local copy or the last text it wrote there.
 type localText struct {
 	text string // empty when unknown
@@ -300,8 +300,8 @@ func (e *Engine) Current() (Event, bool) {
 	return e.withAge(), true
 }
 
-// Local returns the text of this member's own clipboard, as far as clipbridge
-// knows it, and how long ago it was copied. clipbridge paste and the iPhone
+// Local returns the text of this member's own clipboard, as far as clipboardbridge
+// knows it, and how long ago it was copied. cbb paste and the iPhone
 // button use it. It reports false when unknown or an expired secret.
 func (e *Engine) Local() (string, Kind, time.Duration, bool) {
 	e.mu.Lock()
@@ -375,7 +375,7 @@ func (e *Engine) Copied(text string, kind Kind, via Via) (Event, bool, error) {
 }
 
 // Send makes an event from a deliberate action: the iPhone button,
-// clipbridge copy, tmux, or "send even if secret" on a Mac. It always makes an
+// cbb copy, tmux, or "send even if secret" on a Mac. It always makes an
 // event, and the text also goes to this member's own clipboard: Result.Write
 // tells whether it must be written there. A text that was recently a secret
 // stays a secret.

@@ -13,13 +13,13 @@ import (
 
 // Names and lifetimes of the records, after RFC 6762 and RFC 6763.
 const (
-	ServiceName  = "_clipbridge._tcp.local."
-	PhoneName    = "clipbridge.local."
+	ServiceName  = "_clipboardbridge._tcp.local."
+	PhoneName    = "clipboardbridge.local."
 	servicesName = "_services._dns-sd._udp.local."
 
 	hostTTL    = 120  // records that name a host: SRV, A, AAAA
 	otherTTL   = 4500 // PTR and TXT
-	phoneTTL   = 10   // clipbridge.local, so the iPhone follows a handover quickly
+	phoneTTL   = 10   // clipboardbridge.local, so the iPhone follows a handover quickly
 	legacyTTL  = 10   // the most a legacy unicast answer may carry
 	cacheFlush = 0x8000
 	classIN    = dnsmessage.ClassINET
@@ -27,13 +27,13 @@ const (
 )
 
 // zone is what one member publishes: its service instance, its own host
-// name and, while it holds it, clipbridge.local.
+// name and, while it holds it, clipboardbridge.local.
 type zone struct {
-	instance string // <device ID>._clipbridge._tcp.local.
+	instance string // <device ID>._clipboardbridge._tcp.local.
 	host     string // cb-<device ID>.local.
 	port     uint16
 	txt      []string
-	holder   bool // answers for clipbridge.local
+	holder   bool // answers for clipboardbridge.local
 }
 
 func newZone(id string, port uint16, txt []string) *zone {

@@ -15,18 +15,18 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 )
 
 // FileName is the name of the identity file in the state directory.
 const FileName = "identity.json"
 
 // ErrNoGroup reports that the device is in no group yet.
-var ErrNoGroup = errors.New("group: this device is in no group; run clipbridge pair or clipbridge join")
+var ErrNoGroup = errors.New("group: this device is in no group; run cbb pair or cbb join")
 
 // An Identity is this device's place in a group: its device ID, its key,
 // its member certificate and the group CA. A Linux member also holds the
-// keys of both CAs and its own clipbridge.local certificate, so it can admit
+// keys of both CAs and its own clipboardbridge.local certificate, so it can admit
 // devices and serve the iPhone; a Mac holds neither.
 //
 // An Identity is not changed after it is made; renewing returns a new one.
@@ -46,7 +46,7 @@ type Identity struct {
 	// in a group that was never handed over (docs/protocol.md, section 10).
 	Roots   []*x509.Certificate
 	PhoneCA *CA               // nil on a Mac
-	Phone   *x509.Certificate // the clipbridge.local certificate, with Key; nil on a Mac
+	Phone   *x509.Certificate // the clipboardbridge.local certificate, with Key; nil on a Mac
 	// AdminKey is the key a computer of a phone group signs with once the
 	// root phone makes it an admin: the hello offers it until AdminCA, from
 	// the root, certifies it (docs/protocol.md, section 10). Both are nil
@@ -162,7 +162,7 @@ func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
 }
 
 // AdminName is the subject CN of the admin CA of a device.
-func AdminName(dev DeviceID) string { return "clipbridge admin " + string(dev) }
+func AdminName(dev DeviceID) string { return "clipboardbridge admin " + string(dev) }
 
 // Check reports whether the parts of the identity belong together: the
 // certificates name this device and its key and were signed by the CAs, and
@@ -219,7 +219,7 @@ func (id *Identity) Check() error {
 	// A Linux member holds all of the admin parts, a Mac none of them.
 	admin := id.GroupCA.Key != nil
 	if (id.PhoneCA != nil) != admin || (id.PhoneCA != nil && id.PhoneCA.Key == nil) || (id.Phone != nil) != admin {
-		return errors.New("group: the identity holds only some of the CA keys and the clipbridge.local certificate")
+		return errors.New("group: the identity holds only some of the CA keys and the clipboardbridge.local certificate")
 	}
 	if !admin {
 		return nil
@@ -227,7 +227,7 @@ func (id *Identity) Check() error {
 	if err := checkCA(id.PhoneCA, "iPhone CA", 0); err != nil {
 		return err
 	}
-	if err := checkLeaf(id.Phone, id.PhoneCA.Cert, id.Key, "clipbridge.local certificate"); err != nil {
+	if err := checkLeaf(id.Phone, id.PhoneCA.Cert, id.Key, "clipboardbridge.local certificate"); err != nil {
 		return err
 	}
 	if err := id.Phone.VerifyHostname(PhoneName); err != nil {
@@ -321,8 +321,8 @@ func hasUsage(c *x509.Certificate, u x509.ExtKeyUsage) bool {
 
 // Renew returns an identity with new certificates for those that end
 // within their renewal period (240 days for the member certificate, 60 days
-// for the clipbridge.local one), and reports whether anything changed. A
-// clipbridge.local certificate that starts in the future, issued while the
+// for the clipboardbridge.local one), and reports whether anything changed. A
+// clipboardbridge.local certificate that starts in the future, issued while the
 // clock was ahead, is replaced too, since the iPhone would reject it. A
 // certificate that already ends with its CA is kept: a new one could not
 // last longer. Only a device that holds the CA keys, or an admin CA, renews

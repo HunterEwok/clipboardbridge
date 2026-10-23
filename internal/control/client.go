@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// SocketPath returns the control socket to use: $CLIPBRIDGE_SOCKET, or
+// SocketPath returns the control socket to use: $CBB_SOCKET, or
 // DefaultSocket.
 func SocketPath() string {
-	if p := os.Getenv("CLIPBRIDGE_SOCKET"); p != "" {
+	if p := os.Getenv("CBB_SOCKET"); p != "" {
 		return p
 	}
 	return DefaultSocket
@@ -30,9 +30,9 @@ func Dial(path string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.New("no permission to use the clipbridge service; add your user to the " + Group + " group and log in again")
+			return nil, errors.New("no permission to use the clipboardbridge service; add your user to the " + Group + " group and log in again")
 		}
-		return nil, errors.New("the clipbridge service is not running (" + err.Error() + ")")
+		return nil, errors.New("the clipboardbridge service is not running (" + err.Error() + ")")
 	}
 	return &Client{c: c, r: NewReader(c)}, nil
 }

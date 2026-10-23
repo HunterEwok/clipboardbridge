@@ -18,7 +18,7 @@ import (
 	"github.com/jezek/xgb/xfixes"
 	"github.com/jezek/xgb/xproto"
 
-	"github.com/HunterEwok/clipbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
 
 // X11 is the clipboard of an X11 session, or of XWayland on GNOME: the
@@ -85,7 +85,7 @@ type sendKey struct {
 }
 
 var x11Atoms = []string{"CLIPBOARD", "PRIMARY", "TARGETS", "UTF8_STRING", "STRING", "TEXT", "text/plain;charset=utf-8",
-	"text/plain", "INCR", "ATOM", "TIMESTAMP", secretType, "CLIPBRIDGE_SELECTION", "MULTIPLE"}
+	"text/plain", "INCR", "ATOM", "TIMESTAMP", secretType, "CBB_SELECTION", "MULTIPLE"}
 
 // OpenX11 connects to the X server in $DISPLAY.
 func OpenX11(logf func(string, ...any)) (*X11, error) {
@@ -155,7 +155,7 @@ func (b *X11) request(f func()) {
 	b.mu.Lock()
 	b.queued = append(b.queued, f)
 	b.mu.Unlock()
-	ev := xproto.ClientMessageEvent{Format: 32, Window: b.win, Type: b.atoms["CLIPBRIDGE_SELECTION"],
+	ev := xproto.ClientMessageEvent{Format: 32, Window: b.win, Type: b.atoms["CBB_SELECTION"],
 		Data: xproto.ClientMessageDataUnionData32New(make([]uint32, 5))}
 	xproto.SendEvent(b.x, false, b.win, 0, string(ev.Bytes()))
 }
@@ -171,7 +171,7 @@ func (b *X11) loop() {
 			return
 		}
 		if err != nil {
-			b.logf("clipbridge: X11 error: %v", err)
+			b.logf("cbb: X11 error: %v", err)
 			continue
 		}
 		switch e := ev.(type) {
@@ -221,7 +221,7 @@ func (b *X11) ownerChanged(e xfixes.SelectionNotifyEvent) {
 
 func (b *X11) startRead() {
 	b.read = &x11Read{stage: readTargets, started: time.Now()}
-	xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], b.atoms["TARGETS"], b.atoms["CLIPBRIDGE_SELECTION"], xproto.TimeCurrentTime)
+	xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], b.atoms["TARGETS"], b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
 }
 
 // finishRead ends a read, reports its item, and starts the next one if the
@@ -272,7 +272,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 	if prop.BytesAfter > 0 {
 		// More than the group carries, in one piece: skip it rather than
 		// report the beginning as the whole text.
-		b.logf("clipbridge: the clipboard holds more than %d bytes", maxText)
+		b.logf("cbb: the clipboard holds more than %d bytes", maxText)
 		b.finishRead(connector.Item{}, false)
 		return
 	}
@@ -295,7 +295,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 			target = b.atoms["UTF8_STRING"]
 		}
 		r.stage = readText
-		xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], target, b.atoms["CLIPBRIDGE_SELECTION"], xproto.TimeCurrentTime)
+		xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], target, b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
 	case readText:
 		if prop.Type == b.atoms["INCR"] {
 			r.stage = readIncr // the pieces follow as property changes
@@ -308,7 +308,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 // property handles property changes: the pieces of an INCR read on our
 // window, and the requests for the next piece of an INCR send.
 func (b *X11) property(e xproto.PropertyNotifyEvent) {
-	if e.Window == b.win && e.Atom == b.atoms["CLIPBRIDGE_SELECTION"] && e.State == xproto.PropertyNewValue {
+	if e.Window == b.win && e.Atom == b.atoms["CBB_SELECTION"] && e.State == xproto.PropertyNewValue {
 		r := b.read
 		if r == nil || r.stage != readIncr {
 			return
@@ -324,7 +324,7 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 		}
 		r.data = append(r.data, prop.Value...)
 		if len(r.data) > maxText {
-			b.logf("clipbridge: the clipboard holds more than %d bytes", maxText)
+			b.logf("cbb: the clipboard holds more than %d bytes", maxText)
 			b.finishRead(connector.Item{}, false)
 		}
 		return

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Package group holds the certificates and keys of a clipbridge group: the
+// Package group holds the certificates and keys of a clipboardbridge group: the
 // group CA, which certifies the members, the iPhone CA, which certifies the
-// clipbridge.local address for the iPhone, and this device's own identity.
+// clipboardbridge.local address for the iPhone, and this device's own identity.
 //
 // Every certificate uses ECDSA P-256. The CAs have a path length of 0, so
 // they sign only end certificates. The iPhone CA carries critical name
-// constraints: an iPhone that trusts it accepts it for clipbridge.local
+// constraints: an iPhone that trusts it accepts it for clipboardbridge.local
 // only, never for another site or an IP address.
 package group
 
@@ -27,7 +27,7 @@ import (
 )
 
 // PhoneName is the DNS name the iPhone uses for the group.
-const PhoneName = "clipbridge.local"
+const PhoneName = "clipboardbridge.local"
 
 // Lifetimes of the certificates, and how long before its end a certificate
 // is renewed.
@@ -38,9 +38,9 @@ const (
 	phoneLifetime      = 397 * 24 * time.Hour // below the 825 days iOS allows
 	phoneRenewBefore   = 60 * 24 * time.Hour
 	backdate           = 24 * time.Hour // for a device whose clock is a little behind
-	phoneCAName        = "clipbridge iPhone CA"
-	groupCAName        = "clipbridge group CA"
-	notPermittedDomain = "clipbridge.invalid"
+	phoneCAName        = "clipboardbridge iPhone CA"
+	groupCAName        = "clipboardbridge group CA"
+	notPermittedDomain = "clipboardbridge.invalid"
 )
 
 // A DeviceID identifies a device: 128 random bits as 32 lowercase hex
@@ -86,8 +86,8 @@ func NewGroupCA(now time.Time) (*CA, error) {
 }
 
 // NewPhoneCA creates an iPhone CA. Its name constraints permit only the DNS
-// name clipbridge.local and its subdomains, and URI and e-mail names under
-// clipbridge.invalid, a domain that never exists; they exclude every IP
+// name clipboardbridge.local and its subdomains, and URI and e-mail names under
+// clipboardbridge.invalid, a domain that never exists; they exclude every IP
 // address. The constraints are critical, so a client that does not
 // understand them rejects the certificates instead of ignoring the limits.
 func NewPhoneCA(now time.Time) (*CA, error) {
@@ -139,7 +139,7 @@ func (ca *CA) IssueMember(id DeviceID, pub *ecdsa.PublicKey, now time.Time) (*x5
 	}, pub, now)
 }
 
-// IssuePhone certifies a Linux member's public key for clipbridge.local,
+// IssuePhone certifies a Linux member's public key for clipboardbridge.local,
 // for 397 days.
 func (ca *CA) IssuePhone(pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
 	notBefore := maxTime(now.Add(-backdate), ca.Cert.NotBefore)

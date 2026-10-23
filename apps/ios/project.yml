@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # The iPhone app's Xcode project, for XcodeGen: cd apps/ios && xcodegen generate.
-# The generated Clipbridge.xcodeproj and Info.plist are not committed.
-name: Clipbridge
+# The generated ClipboardBridge.xcodeproj and Info.plist are not committed.
+name: ClipboardBridge
 options:
   bundleIdPrefix: io.github.hunterewok
   deploymentTarget:
@@ -9,8 +9,8 @@ options:
   developmentLanguage: en
   createIntermediateGroups: true
 packages:
-  ClipbridgeKit:
-    path: ClipbridgeKit
+  ClipboardBridgeKit:
+    path: ClipboardBridgeKit
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -19,48 +19,48 @@ settings:
     SWIFT_EMIT_LOC_STRINGS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 targets:
-  Clipbridge:
+  ClipboardBridge:
     type: application
     platform: iOS
     sources:
-      - Clipbridge
+      - ClipboardBridge
     dependencies:
-      - package: ClipbridgeKit
+      - package: ClipboardBridgeKit
     info:
-      path: Clipbridge/Info.plist
+      path: ClipboardBridge/Info.plist
       properties:
-        CFBundleDisplayName: clipbridge
+        CFBundleDisplayName: clipboardbridge
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ru]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        NSBonjourServices: [_clipbridge._tcp]
-        NSLocalNetworkUsageDescription: clipbridge finds your computers on the home network and keeps their clipboard in sync with this phone.
-        NSCameraUsageDescription: clipbridge scans the QR code a computer shows, to add it to your group.
-        NSFaceIDUsageDescription: clipbridge asks for Face ID before it signs with your group's key, to add or remove a device.
+        NSBonjourServices: [_clipboardbridge._tcp]
+        NSLocalNetworkUsageDescription: clipboardbridge finds your computers on the home network and keeps their clipboard in sync with this phone.
+        NSCameraUsageDescription: clipboardbridge scans the QR code a computer shows, to add it to your group.
+        NSFaceIDUsageDescription: clipboardbridge asks for Face ID before it signs with your group's key, to add or remove a device.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipbridge
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge
         # Drawn by tools/icon.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
-  ClipbridgeTests:
+  ClipboardBridgeTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - ClipbridgeTests
+      - ClipboardBridgeTests
     dependencies:
-      - target: Clipbridge
+      - target: ClipboardBridge
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
 schemes:
-  Clipbridge:
+  ClipboardBridge:
     build:
       targets:
-        Clipbridge: all
+        ClipboardBridge: all
     test:
       targets:
-        - ClipbridgeTests
+        - ClipboardBridgeTests

@@ -17,16 +17,16 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/HunterEwok/clipbridge/internal/wl"
+	"github.com/HunterEwok/clipboardbridge/internal/wl"
 )
 
 // TestWayland runs against a real compositor with data-control, such as a
 // headless sway, and checks the connector's view against wl-clipboard. It
-// runs only when CLIPBRIDGE_TEST_WAYLAND is set, for example in a
+// runs only when CBB_TEST_WAYLAND is set, for example in a
 // container.
 func TestWayland(t *testing.T) {
-	if os.Getenv("CLIPBRIDGE_TEST_WAYLAND") == "" {
-		t.Skip("set CLIPBRIDGE_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
+	if os.Getenv("CBB_TEST_WAYLAND") == "" {
+		t.Skip("set CBB_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
 	}
 	w, err := OpenWayland(t.Logf)
 	if err != nil {
@@ -54,7 +54,7 @@ func TestWayland(t *testing.T) {
 	// The connector writes: other programs paste it, from the clipboard and
 	// from the primary selection, and the write does not come back as a
 	// change.
-	text := "written by clipbridge \u043f\u0440\u0438\u0432\u0435\u0442\nline two"
+	text := "written by clipboardbridge \u043f\u0440\u0438\u0432\u0435\u0442\nline two"
 	if err := w.Write(text, false); err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +111,8 @@ func TestWayland(t *testing.T) {
 // TestWaylandStuckSource checks that a program that offers a text and never
 // writes it cannot hold the connector's read.
 func TestWaylandStuckSource(t *testing.T) {
-	if os.Getenv("CLIPBRIDGE_TEST_WAYLAND") == "" {
-		t.Skip("set CLIPBRIDGE_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
+	if os.Getenv("CBB_TEST_WAYLAND") == "" {
+		t.Skip("set CBB_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
 	}
 	logged := make(chan string, 8)
 	w, err := OpenWayland(func(f string, a ...any) {
@@ -165,8 +165,8 @@ func TestWaylandStuckSource(t *testing.T) {
 }
 
 func TestWaylandWrites(t *testing.T) {
-	if os.Getenv("CLIPBRIDGE_TEST_WAYLAND") == "" {
-		t.Skip("set CLIPBRIDGE_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
+	if os.Getenv("CBB_TEST_WAYLAND") == "" {
+		t.Skip("set CBB_TEST_WAYLAND in a session with a data-control compositor and wl-clipboard")
 	}
 	// What the clipboard holds at open is known, but no change.
 	if err := exec.Command("wl-copy", "there before").Run(); err != nil {

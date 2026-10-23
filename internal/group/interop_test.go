@@ -19,7 +19,7 @@ import (
 var update = flag.Bool("update", false, "rewrite the interop test vectors")
 
 // TestSwiftCertificates checks the group CA and member certificate that the
-// phone app's ClipbridgeKit issues (testdata/interop/swift-certs.json,
+// phone app's ClipboardBridgeKit issues (testdata/interop/swift-certs.json,
 // written by its CertificateTests): a computer must take them as its own
 // identity and use them in member TLS.
 func TestSwiftCertificates(t *testing.T) {
@@ -70,12 +70,12 @@ func TestSwiftCertificates(t *testing.T) {
 	}
 }
 
-// TestSwiftRecords reads the records the phone app's ClipbridgeKit signs
+// TestSwiftRecords reads the records the phone app's ClipboardBridgeKit signs
 // (testdata/interop/swift-records.json, or the file in the directory
-// CLIPBRIDGE_INTEROP_OUT names, which CI fills from a fresh Swift run) and
+// CBB_INTEROP_OUT names, which CI fills from a fresh Swift run) and
 // checks that Go reads the same devices, revocations and digest.
 func TestSwiftRecords(t *testing.T) {
-	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
 		dir = filepath.Join("..", "..", "testdata", "interop")
 	}
@@ -130,9 +130,9 @@ func TestSwiftRecords(t *testing.T) {
 
 // TestSwiftRenewal checks that a member keeps a certificate that the phone
 // app renewed for it (testdata/interop/swift-renewal.json, or the file in
-// CLIPBRIDGE_INTEROP_OUT), as it does when a cert message arrives.
+// CBB_INTEROP_OUT), as it does when a cert message arrives.
 func TestSwiftRenewal(t *testing.T) {
-	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
 		dir = filepath.Join("..", "..", "testdata", "interop")
 	}
@@ -193,12 +193,12 @@ func TestSwiftRenewal(t *testing.T) {
 }
 
 // TestSwiftAdmin checks what an admin phone makes in the phone app's
-// ClipbridgeKit (testdata/interop/swift-admin.json, or the file in
-// CLIPBRIDGE_INTEROP_OUT): its admin CA under the root, a computer's
+// ClipboardBridgeKit (testdata/interop/swift-admin.json, or the file in
+// CBB_INTEROP_OUT): its admin CA under the root, a computer's
 // certificate from that CA, which the computer takes as its identity, and
 // records signed through the admin CA.
 func TestSwiftAdmin(t *testing.T) {
-	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
 		dir = filepath.Join("..", "..", "testdata", "interop")
 	}
@@ -398,16 +398,16 @@ func mustJSON(t *testing.T, v any) string {
 }
 
 // TestSwiftRoot reads a takeover that the phone kit signs (swift-root.json
-// from its RootTests, in the directory CLIPBRIDGE_INTEROP_OUT names, or
+// from its RootTests, in the directory CBB_INTEROP_OUT names, or
 // testdata/interop): Go must follow it to the same root and devices, refuse
 // the lost phone and keep the computer the old root admitted.
 func TestSwiftRoot(t *testing.T) {
-	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
 		dir = filepath.Join("..", "..", "testdata", "interop")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "swift-root.json"))
-	if os.IsNotExist(err) && os.Getenv("CLIPBRIDGE_INTEROP_OUT") == "" {
+	if os.IsNotExist(err) && os.Getenv("CBB_INTEROP_OUT") == "" {
 		t.Skip("no swift-root.json; the phone kit's tests write it")
 	}
 	if err != nil {
@@ -468,12 +468,12 @@ func TestSwiftRoot(t *testing.T) {
 // computer as an admin (ComputerAdminTests.testComputerAdminForGo): the CA
 // is the one an Identity takes, and Go lists the computer as an admin.
 func TestSwiftComputerAdmin(t *testing.T) {
-	dir := os.Getenv("CLIPBRIDGE_INTEROP_OUT")
+	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
 		dir = filepath.Join("..", "..", "testdata", "interop")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "swift-computer-admin.json"))
-	if os.IsNotExist(err) && os.Getenv("CLIPBRIDGE_INTEROP_OUT") == "" {
+	if os.IsNotExist(err) && os.Getenv("CBB_INTEROP_OUT") == "" {
 		t.Skip("no swift-computer-admin.json; the phone kit's tests write it")
 	}
 	if err != nil {

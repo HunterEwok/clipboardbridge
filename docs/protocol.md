@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-# clipbridge protocol
+# clipboardbridge protocol
 
-This document specifies protocol version 1 of clipbridge as the Go code in this repository
+This document specifies protocol version 1 of clipboardbridge as the Go code in this repository
 implements it, so that another implementation (an iPhone or Android app, a Rust lite member)
 can interoperate with it. The Go code is the source of truth; where [design.md](design.md)
 says something different, a "Note:" line says so. [design.md](design.md) explains why the
@@ -22,14 +22,14 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Phone ID | 16 random bytes, shown as 32 lowercase hex characters; embedded in the token | `internal/phone/token.go` |
 | Group tag | first 8 bytes of SHA-256 over the group CA certificate (DER), as 16 lowercase hex characters | `group.Tag` |
 | Member host name | `cb-<device ID>.local` (mDNS host name and the only DNS name in the member certificate) | `DeviceID.HostName` |
-| Service instance | `<device ID>._clipbridge._tcp.local` | `internal/mdns/zone.go` |
-| Shared iPhone name | `clipbridge.local` | `group.PhoneName` |
-| Member port | TCP 8764, or `CLIPBRIDGE_PORT` (the Linux installer's `--port`), when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only. clipbridge's only port: it also serves pairing, the iPhone endpoints and the profile (section 7), and a listening join waits there | `internal/service/service.go`, `internal/service/demux.go` |
+| Service instance | `<device ID>._clipboardbridge._tcp.local` | `internal/mdns/zone.go` |
+| Shared iPhone name | `clipboardbridge.local` | `group.PhoneName` |
+| Member port | TCP 8764, or `CBB_PORT` (the Linux installer's `--port`), when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only. clipboardbridge's only port: it also serves pairing, the iPhone endpoints and the profile (section 7), and a listening join waits there | `internal/service/service.go`, `internal/service/demux.go` |
 | mDNS | UDP 5353, groups 224.0.0.251 and ff02::fb | `internal/mdns/mdns.go` |
-| Member ALPN | `clipbridge/1` | `group.MemberProtocol` |
-| Pairing ALPN | `clipbridge-pair/1` | `pair.Protocol` |
+| Member ALPN | `clipboardbridge/1` | `group.MemberProtocol` |
+| Pairing ALPN | `clipboardbridge-pair/1` | `pair.Protocol` |
 | Pairing code | six ASCII digits; users may type spaces and dashes, which are removed | `pair.NormalizeCode` |
-| Join QR text | `clipbridge://join?code=` followed by the six-digit code; unknown query fields are ignored | `phone.JoinQR`, `phone.ParseJoinQR` |
+| Join QR text | `clipboardbridge://join?code=` followed by the six-digit code; unknown query fields are ignored | `phone.JoinQR`, `phone.ParseJoinQR` |
 
 Device IDs, event IDs and group tags compare as byte strings. Accepting peers: the member
 port accepts TCP connections only from addresses that mDNS would publish (private IPv4,
@@ -45,20 +45,20 @@ rely on them. Source: `internal/group/cert.go`, `internal/group/tls.go`, `intern
 
 | Certificate | Subject CN | SAN | Validity | Extensions |
 |-------------|-----------|-----|----------|------------|
-| Group CA | `clipbridge group CA YYYY-MM-DD` (UTC creation date) | none | NotBefore = creation - 24 h; NotAfter = creation + 20 years | CA, path length 0 (MaxPathLen 0); key usage certSign, cRLSign |
-| iPhone CA | `clipbridge iPhone CA YYYY-MM-DD` | none | as the group CA | as the group CA, plus critical name constraints (below) |
+| Group CA | `clipboardbridge group CA YYYY-MM-DD` (UTC creation date) | none | NotBefore = creation - 24 h; NotAfter = creation + 20 years | CA, path length 0 (MaxPathLen 0); key usage certSign, cRLSign |
+| iPhone CA | `clipboardbridge iPhone CA YYYY-MM-DD` | none | as the group CA | as the group CA, plus critical name constraints (below) |
 | Member certificate (from the group CA) | the device ID | DNS `cb-<device ID>.local`, exactly one | NotBefore = the group CA's NotBefore; NotAfter = min(issue + 2 years, CA NotAfter) | key usage digitalSignature; EKU serverAuth and clientAuth; not a CA |
-| `clipbridge.local` server certificate (from the iPhone CA) | `clipbridge.local` | DNS `clipbridge.local` | NotBefore = max(issue - 24 h, CA NotBefore); NotAfter = min(NotBefore + 397 days, CA NotAfter) | key usage digitalSignature; EKU serverAuth; not a CA |
+| `clipboardbridge.local` server certificate (from the iPhone CA) | `clipboardbridge.local` | DNS `clipboardbridge.local` | NotBefore = max(issue - 24 h, CA NotBefore); NotAfter = min(NotBefore + 397 days, CA NotAfter) | key usage digitalSignature; EKU serverAuth; not a CA |
 | Joiner's self-signed certificate (pairing only) | the joiner's new device ID | none | 1970-01-01T00:00:00Z to 9999-12-31T23:59:59Z | none set |
 
-iPhone CA name constraints, marked critical: permitted DNS domains `clipbridge.local` (the
-name and names below it); permitted e-mail and URI domains `clipbridge.invalid` (a domain
+iPhone CA name constraints, marked critical: permitted DNS domains `clipboardbridge.local` (the
+name and names below it); permitted e-mail and URI domains `clipboardbridge.invalid` (a domain
 that never exists, so no such name is valid); excluded IP ranges `0.0.0.0/0` and `::/0`.
 
-A device has one key. The member certificate and, on a Linux member, the `clipbridge.local`
+A device has one key. The member certificate and, on a Linux member, the `clipboardbridge.local`
 certificate certify the same key. A CA refuses to issue when the local clock is outside its
 own validity. A Linux member holds both CA keys; a Mac holds neither and has no
-`clipbridge.local` certificate. The joiner's certificate carries the key that the member
+`clipboardbridge.local` certificate. The joiner's certificate carries the key that the member
 certifies in the welcome (section 6).
 
 Checking a member certificate (`checkPeer`, `DeviceOf`): the chain MUST verify to the group
@@ -67,7 +67,7 @@ it, while an expired certificate is rejected. The subject CN MUST be a device ID
 certificate MUST carry exactly one DNS name, `cb-<that ID>.local`.
 
 Renewal rules (`Identity.Renew`): a member certificate is renewed when less than 240 days
-remain, a `clipbridge.local` certificate when less than 60 days remain or when its NotBefore
+remain, a `clipboardbridge.local` certificate when less than 60 days remain or when its NotBefore
 is in the future; neither is renewed when it already ends with its CA.
 
 When renewal runs: a member that holds the CA keys checks its own certificates when the group
@@ -95,14 +95,14 @@ RFC 6763 apply where this section is silent. Source: `internal/mdns`.
 
 | Name | Type | Data | TTL | Cache-flush |
 |------|------|------|-----|-------------|
-| `_clipbridge._tcp.local` | PTR | `<id>._clipbridge._tcp.local` | 4500 s | no (shared) |
-| `<id>._clipbridge._tcp.local` | SRV | priority 0, weight 0, member port, target `cb-<id>.local` | 120 s | yes |
-| `<id>._clipbridge._tcp.local` | TXT | see below | 4500 s | yes |
+| `_clipboardbridge._tcp.local` | PTR | `<id>._clipboardbridge._tcp.local` | 4500 s | no (shared) |
+| `<id>._clipboardbridge._tcp.local` | SRV | priority 0, weight 0, member port, target `cb-<id>.local` | 120 s | yes |
+| `<id>._clipboardbridge._tcp.local` | TXT | see below | 4500 s | yes |
 | `cb-<id>.local` | A / AAAA | the addresses of the interface | 120 s | yes |
 | `cb-<id>.local` | NSEC | see below | 120 s | yes |
-| `clipbridge.local` (holder only) | A / AAAA | the addresses of the interface | 10 s | yes |
-| `clipbridge.local` (holder only) | NSEC | see below | 10 s | yes |
-| `_services._dns-sd._udp.local` | PTR | `_clipbridge._tcp.local` | 4500 s | no; only in answers, never announced |
+| `clipboardbridge.local` (holder only) | A / AAAA | the addresses of the interface | 10 s | yes |
+| `clipboardbridge.local` (holder only) | NSEC | see below | 10 s | yes |
+| `_services._dns-sd._udp.local` | PTR | `_clipboardbridge._tcp.local` | 4500 s | no; only in answers, never announced |
 
 TXT strings (each at most 255 bytes):
 
@@ -133,10 +133,10 @@ rescanned every 10 s.
   IPv6 link-local address) are processed. Only PTR, SRV, TXT, A and AAAA records are read;
   a record that does not decode, such as an instance name with a dot in a label, is skipped
   alone. At most 32 questions of a query are answered.
-- A PTR question for `_clipbridge._tcp.local` gets the PTR as answer and SRV, TXT, A/AAAA
+- A PTR question for `_clipboardbridge._tcp.local` gets the PTR as answer and SRV, TXT, A/AAAA
   and NSEC of the host as additionals. A question for the instance gets SRV (with the host
   addresses as additionals) and/or TXT. A question for the host name, or for
-  `clipbridge.local` on the holder, gets its A or AAAA records, or the NSEC record when the
+  `clipboardbridge.local` on the holder, gets its A or AAAA records, or the NSEC record when the
   name has no address of the asked type. Type ANY gets everything that matches.
 - Known-answer suppression: a record listed in the query with at least half of its TTL is
   left out. A record already multicast on the interface within the last second is left out.
@@ -152,30 +152,30 @@ rescanned every 10 s.
 - All records are announced twice, one second apart, at start, on a new interface or new
   addresses, after a TXT change and when the member becomes the holder.
 - Addresses that go away get a goodbye (TTL 0) for the host name and, on the holder, for
-  `clipbridge.local`.
-- Giving up `clipbridge.local` sends a goodbye for its A/AAAA and NSEC records.
+  `clipboardbridge.local`.
+- Giving up `clipboardbridge.local` sends a goodbye for its A/AAAA and NSEC records.
 - On stop, every record gets a goodbye. Goodbyes never carry the cache-flush bit, so they end
   only their own record. A service that stops sends its mDNS goodbyes before the member
   goodbyes (section 4).
 
 ### Browsing
 
-- Query PTR `_clipbridge._tcp.local` at start, then after 1 s, doubling up to one hour,
+- Query PTR `_clipboardbridge._tcp.local` at start, then after 1 s, doubling up to one hour,
   listing the PTR records known with more than half their TTL as known answers.
 - Each cached record of a found member (its PTR, SRV, TXT and host addresses) is queried
   again at 80, 85, 90 and 95 percent of its lifetime, plus 0 to 2 percent at random.
 - Received records are kept only if relevant: PTR of the service, SRV/TXT of an instance
   whose first label is a device ID, A/AAAA of `cb-<device ID>.local`. Their TTL is capped at
-  what clipbridge itself uses (4500 s for PTR and TXT, 120 s otherwise). A goodbye expires the
+  what clipboardbridge itself uses (4500 s for PTR and TXT, 120 s otherwise). A goodbye expires the
   record after 1 s; a cache-flush record expires older records of its name and type after
   1 s.
 - A member is found when a live PTR names an instance that has a live SRV; its addresses
   are the live A/AAAA records of the SRV target that would be published. TXT is optional.
 
-### The holder of `clipbridge.local`
+### The holder of `clipboardbridge.local`
 
 Election (`electLocked`, `internal/service/members.go`): a Linux member holds
-`clipbridge.local` when no connected peer that has sent its hello has role `linux` and a
+`clipboardbridge.local` when no connected peer that has sent its hello has role `linux` and a
 lower device ID. A member alone holds it at once. Macs never hold it, nor do Linux members
 without the CA keys. A group's Linux members either all hold the keys (its root is a Linux
 member) or none do (its root is the phone), so the rule needs to know no more about peers. The election runs
@@ -200,20 +200,20 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 
 ### TLS
 
-- TLS 1.3 only, ALPN `clipbridge/1` on both sides. Both sides present their member
+- TLS 1.3 only, ALPN `clipboardbridge/1` on both sides. Both sides present their member
   certificate (leaf only).
 - Server: requires and verifies a client certificate from the group CA; session tickets off.
 - Client: verifies the server against the group CA with server name `cb-<peer ID>.local`,
   where the peer ID is the one found in discovery, and MUST check that the certificate names
   exactly that device.
 - Both sides check the peer as in section 2, and that the negotiated version is TLS 1.3 and
-  the ALPN protocol is `clipbridge/1`. A connection to one's own device ID is closed.
+  the ALPN protocol is `clipboardbridge/1`. A connection to one's own device ID is closed.
 - The handshake must finish within 10 s.
 - The member port tells its connections apart by their first bytes. One that does not start
   with a TLS handshake record (0x16) is plain HTTP for the profile (section 7) while an
   iPhone pairing window is open, and is closed otherwise. Over TLS, a ClientHello that
-  offers `clipbridge-pair/1` gets the pairing configuration (section 6), whether or not a
-  window is open; one that offers `clipbridge/1` the member configuration; any other, on a
+  offers `clipboardbridge-pair/1` gets the pairing configuration (section 6), whether or not a
+  window is open; one that offers `clipboardbridge/1` the member configuration; any other, on a
   member that serves the iPhone, the iPhone endpoints' (section 7, ALPN `http/1.1`).
 
 ### Framing
@@ -272,13 +272,13 @@ Rules for the receiver:
   event again in the next hello.
 
 Roles: a `phone` or `lite` member dials Linux members as a Mac does, publishes nothing and is
-never dialed; the Linux members treat it as a Mac (it never holds `clipbridge.local`).
+never dialed; the Linux members treat it as a Mac (it never holds `clipboardbridge.local`).
 
 ### Hello
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `wall_ms` | integer | the sender's wall clock, milliseconds since the Unix epoch; for skew reports only (`clipbridge status` shows `skew_ms`); 0 or absent means unknown |
+| `wall_ms` | integer | the sender's wall clock, milliseconds since the Unix epoch; for skew reports only (`cbb status` shows `skew_ms`); 0 or absent means unknown |
 | `current` | Event or absent | the sender's current event with its age as of sending; for a secret only its mark (text `""`), whatever its age; absent when there is none |
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
@@ -415,10 +415,10 @@ certificate, a dropped connection) do not count. Each attempt has 30 s on both s
 
 ### TLS
 
-- Joiner (client): TLS 1.3, ALPN `clipbridge-pair/1`, presents its self-signed certificate
+- Joiner (client): TLS 1.3, ALPN `clipboardbridge-pair/1`, presents its self-signed certificate
   (section 2) for the P-256 key it will keep, with its new device ID as CN; it does not
   verify the server's certificate during the handshake.
-- Member (server): TLS 1.3, ALPN `clipbridge-pair/1`, presents its member certificate (leaf
+- Member (server): TLS 1.3, ALPN `clipboardbridge-pair/1`, presents its member certificate (leaf
   only), requires any client certificate, session tickets off. It rejects the connection
   unless the client sent exactly one certificate with a P-256 key and a device ID as CN that
   differs from its own.
@@ -432,8 +432,8 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 |-------|-------|
 | Roles | joiner = initiator, member = responder |
 | PRS (password) | the six ASCII digits of the code |
-| CI (channel identifier) | `"clipbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
-| sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipbridge-pair-v1`, empty context |
+| CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
+| sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
 | ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"}`; a phone with the app (`ios`) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER) |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
@@ -490,11 +490,11 @@ admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certi
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
 verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
-match. A Linux joiner that got them then issues its own `clipbridge.local` certificate from
+match. A Linux joiner that got them then issues its own `clipboardbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
 phone (section 9): it publishes and listens, but admits nobody until the root phone makes it
 an admin (section 10, "A computer as admin"), serves no iPhone and never holds
-`clipbridge.local`.
+`clipboardbridge.local`.
 
 Note: design.md (lines 100-103) says the new member also receives the group state and, on
 Linux, the token hashes; the Welcome has neither (`internal/pair/pair.go:181`). Tokens need no
@@ -513,14 +513,14 @@ plus the browse time.
 
 ### The joiner listens (for the phone)
 
-`clipbridge join` without `-code` turns the direction round, so that the device that scans
+`cbb join` without `-code` turns the direction round, so that the device that scans
 the QR code dials the computer, and nothing is announced:
 
 - The joiner listens on its member port, which nothing holds while it is in no group, when
   free, otherwise on a port the OS chooses (all
   addresses; only home network addresses may connect, as on the member port) for up to
   5 minutes, and shows the QR code
-  `clipbridge://join?code=<code>&addr=<host:port>&fp=<fingerprint>` (section 7): its
+  `clipboardbridge://join?code=<code>&addr=<host:port>&fp=<fingerprint>` (section 7): its
   addresses that mDNS would publish, IPv4 first, without link-local ones, at most four; and
   the fingerprint of its self-signed certificate, SHA-256 over the DER in base64url without
   padding.
@@ -545,7 +545,7 @@ the QR code dials the computer, and nothing is announced:
 - On the member the window counts attempts as above. It is not announced (`p` stays unset)
   and takes no pairing connections on the member port, so the code is good only against the
   computer whose certificate `fp` names.
-- A phone joins a phone group the same way (ClipbridgeKit's `PairingJoiner`): it listens
+- A phone joins a phone group the same way (ClipboardBridgeKit's `PairingJoiner`): it listens
   while its "Join a group" screen is open, shows this QR code, and an admin phone scans it
   and dials. The phone makes its admin key before it listens and sends it in ADa; the root
   phone, when the user makes the new phone an admin (the default), answers with `admin_ca`.
@@ -557,13 +557,13 @@ Source: `internal/phone`, `internal/service/iphone.go`.
 
 ### iPhone endpoints on the member port
 
-The shortcuts name `https://clipbridge.local:8764`, so they work only with the default
+The shortcuts name `https://clipboardbridge.local:8764`, so they work only with the default
 member port; up to 0.2.0 these endpoints had their own port, 8765.
 
-HTTPS, TLS 1.3 only, no client certificate; the server presents the `clipbridge.local`
+HTTPS, TLS 1.3 only, no client certificate; the server presents the `clipboardbridge.local`
 certificate followed by the iPhone CA certificate. Server timeouts: 10 s for the request
 header, 30 s for reading and writing; headers at most 16 KiB. The client MUST trust only the
-iPhone CA for `clipbridge.local`. Paths are exact; others get 404.
+iPhone CA for `clipboardbridge.local`. Paths are exact; others get 404.
 
 ### Tokens
 
@@ -571,7 +571,7 @@ iPhone CA for `clipbridge.local`. Paths are exact; others get 404.
 token = "cb1." base64url_nopad( phone_id[16] || HMAC-SHA-256(K, phone_id)[0:16] )
 K     = HKDF-SHA-256(IKM = iPhone CA private scalar (32 bytes, big-endian),
                      salt = SHA-256(iPhone CA certificate DER),
-                     info = "clipbridge iPhone token v1", length 32)
+                     info = "clipboardbridge iPhone token v1", length 32)
 ```
 
 Every Linux member holds the iPhone CA key, so each checks any token without a stored list:
@@ -627,7 +627,7 @@ through Universal Clipboard).
 ### GET and POST /pair
 
 Needs no token. An iPhone pairing window is opened by `pair-phone` on the control socket, on
-the holder of `clipbridge.local` only; it has the limits of a computer window (5 minutes,
+the holder of `clipboardbridge.local` only; it has the limits of a computer window (5 minutes,
 one success, three wrong codes; any code that is not six digits counts as wrong).
 
 - `GET /pair`: an HTML form that posts the field `code`.
@@ -647,7 +647,7 @@ one success, three wrong codes; any code that is not six digits counts as wrong)
 ### POST /admit
 
 Lets a paired phone add a computer. Request body (at most 4096 bytes), with
-`Authorization`: `{"v": 1, "code": "clipbridge://join?code=123456&addr=...&fp=..."}` (the
+`Authorization`: `{"v": 1, "code": "clipboardbridge://join?code=123456&addr=...&fp=..."}` (the
 scanned QR text; unknown query fields are ignored, at most four `addr` are used). The member
 opens an unannounced window with that code and dials the addresses in order, pairing with
 the computer whose certificate `fp` names (section 6, "The joiner listens"). The reply has
@@ -663,12 +663,12 @@ pairing window is open, same address restriction:
 | Path | Content |
 |------|---------|
 | `GET /` | an HTML page with the steps and the iPhone CA fingerprint |
-| `GET /clipbridge.mobileconfig` | the configuration profile, `application/x-apple-aspen-config` |
-| `GET /clipbridge.shortcut` | the signed sync shortcut, `application/octet-stream` (404 if the build has none) |
-| `GET /clipbridge-add.shortcut` | the signed shortcut that adds a computer (404 if none) |
+| `GET /clipboardbridge.mobileconfig` | the configuration profile, `application/x-apple-aspen-config` |
+| `GET /clipboardbridge.shortcut` | the signed sync shortcut, `application/octet-stream` (404 if the build has none) |
+| `GET /clipboardbridge-add.shortcut` | the signed shortcut that adds a computer (404 if none) |
 
-The profile has the fixed identifier `io.github.hunterewok.clipbridge` with one payload of
-type `com.apple.security.root` (identifier `io.github.hunterewok.clipbridge.ca`) carrying
+The profile has the fixed identifier `io.github.hunterewok.clipboardbridge` with one payload of
+type `com.apple.security.root` (identifier `io.github.hunterewok.clipboardbridge.ca`) carrying
 the iPhone CA certificate. Its UUIDs are derived from SHA-256 of the CA certificate, so a new
 CA's profile replaces the old one.
 
@@ -683,10 +683,10 @@ Source: `internal/control`, `internal/service/socket.go`, `internal/connector/co
 
 | Platform | Path | Group |
 |----------|------|-------|
-| Linux | `/run/clipbridge/control.sock` | `clipbridge` |
-| macOS | `/Library/Application Support/clipbridge/control.sock` | `_clipbridge` |
+| Linux | `/run/clipboardbridge/control.sock` | `clipboardbridge` |
+| macOS | `/Library/Application Support/clipboardbridge/control.sock` | `_clipboardbridge` |
 
-`CLIPBRIDGE_SOCKET` overrides the path for clients. The socket is a Unix stream socket with
+`CBB_SOCKET` overrides the path for clients. The socket is a Unix stream socket with
 mode 0660, made in a private temporary directory and renamed into place, so only root, the
 service's user and members of the group can connect; secrets travel only to them.
 
@@ -728,7 +728,7 @@ A connection carries one request: the service reads the first message and dispat
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
 | `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], version}` |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
-| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipbridge.local`. Hanging up closes the window |
+| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}` or `{code, listen, expires}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. Hanging up cancels |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
@@ -766,22 +766,22 @@ a computer keep working as they do today.
 
 - **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
   StrongBox that cannot be exported, with the certificate profile of section 2 except
-  path length 1 (MaxPathLen 1), CN `clipbridge group root YYYY-MM-DD`. Below it every admin
+  path length 1 (MaxPathLen 1), CN `clipboardbridge group root YYYY-MM-DD`. Below it every admin
   phone has an admin CA (section 10). Computers get member certificates; a computer holds a
   CA key only when the root phone makes it an admin (section 10, "A computer as admin"). The iPhone app asks for Face ID or the passcode
-  before it signs with the root key, once per action. Implemented: ClipbridgeKit's
+  before it signs with the root key, once per action. Implemented: ClipboardBridgeKit's
   `PhoneGroup` creates this root and admits computers with it, and Go accepts a group CA with path
   length 0 or 1 (`checkCA`). Admin CAs below the root are supported on both sides
   (section 10); a second phone joining as an admin comes with the app. The
   Linux side is in place: a Welcome without CA keys makes a Linux member without them
-  (section 6), and such members never hold `clipbridge.local`. There is no iPhone CA in such
+  (section 6), and such members never hold `clipboardbridge.local`. There is no iPhone CA in such
   a group.
 - **The app is a member.** It holds a member certificate of its own group with role
   `phone` and speaks the member protocol of section 4. It always dials and never listens
   (a phone cannot accept connections in the background), so members MUST NOT dial a
   `phone` member; it publishes no mDNS records. The roles `phone` and `lite` are already
   accepted (section 4).
-- **Join QR code and pairing direction.** Already implemented: `clipbridge join` listens
+- **Join QR code and pairing direction.** Already implemented: `cbb join` listens
   and shows its addresses and certificate fingerprint, and the admitting side dials it and
   confirms first (section 6, "The joiner listens"). Today a Linux member dials, when the
   shortcut posts the QR code to `/admit`; the app will dial by itself, as the admitting
@@ -790,7 +790,7 @@ a computer keep working as they do today.
   profile, no iPhone CA and no token; it reaches members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.
 - **Renewal and revocation.** Certificate renewal (section 2) moves to the admin phones,
-  which send `cert` messages as a Linux member does today (implemented in ClipbridgeKit:
+  which send `cert` messages as a Linux member does today (implemented in ClipboardBridgeKit:
   `GroupCertificates.renewal`, `MemberNode`'s `renew`; the app also renews its own certificate
   at start); revocation and the devices list
   are section 10, and a second admin phone is the way back when a phone is lost.
@@ -800,17 +800,17 @@ a computer keep working as they do today.
 The wire side of "Admin phones, the devices list and revocation (planned)" in
 [design.md](design.md). Implemented in Go: the records, their exchange, refusing revoked
 keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
-`internal/node`, `internal/service/devices.go`). ClipbridgeKit signs device and revocation
+`internal/node`, `internal/service/devices.go`). ClipboardBridgeKit signs device and revocation
 records with the phone's root key and exchanges them in the member protocol (`Records.swift`,
 `MemberNode`); the Go tests check that Go reads them as Swift does. Admin CAs in member
 chains and records signed through one are implemented on both sides: Go's
-`Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipbridgeKit's
+`Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipboardBridgeKit's
 `GroupCertificates.adminCA`, `verifyMember(chain:)`, `RecordSet` and `Records.sign` with
 `adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
-ClipbridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
+ClipboardBridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
 `testdata/interop/go-root.json` holds a handover for the phone kit to check) and in
-ClipbridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
+ClipboardBridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
 `roots`; `TestSwiftRoot` checks a takeover the kit signs). A computer as admin is
 implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, the hello's
 `admin_key`, the `admin` message).
@@ -819,8 +819,8 @@ implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, t
 
 | Certificate | Subject CN | Validity | Extensions |
 |-------------|-----------|----------|------------|
-| Group root CA (phone groups) | `clipbridge group root YYYY-MM-DD` | as the group CA | CA, path length 1; key usage certSign, cRLSign |
-| Admin CA | `clipbridge admin <device ID>`, the admin phone's device ID | NotBefore = the root's NotBefore; NotAfter = the root's NotAfter | CA, path length 0; key usage certSign, cRLSign; issued by the root |
+| Group root CA (phone groups) | `clipboardbridge group root YYYY-MM-DD` | as the group CA | CA, path length 1; key usage certSign, cRLSign |
+| Admin CA | `clipboardbridge admin <device ID>`, the admin phone's device ID | NotBefore = the root's NotBefore; NotAfter = the root's NotAfter | CA, path length 0; key usage certSign, cRLSign; issued by the root |
 
 - An admin phone has two keys: its admin key (certified by the admin CA, used only to sign
   certificates and records, behind a user-presence check) and its member key (certified by
@@ -846,7 +846,7 @@ key, so a thief with the computer can act as an admin until another admin remove
   keeps it in the identity file (`admin_key`, PKCS #8). Until it holds an admin CA, its hello
   carries `admin_key`: the key's SubjectPublicKeyInfo.
 - The root phone makes it an admin: it issues the computer's admin CA for that key (the
-  profile above, CN `clipbridge admin <device ID>`), sends `{"t":"admin","admin_ca":...}`
+  profile above, CN `clipboardbridge admin <device ID>`), sends `{"t":"admin","admin_ca":...}`
   on its connection to the computer, and signs a `device` record for the computer that names
   that admin CA in `admin`.
 - The computer checks that the admin CA is for its admin key, names its device ID and stands
@@ -855,9 +855,9 @@ key, so a thief with the computer can act as an admin until another admin remove
   `issuer` of its Welcome also issued its own certificate. Its hello no longer carries
   `admin_key`.
 - From then on it acts as an admin phone does, with its admin CA: a Linux one opens pairing
-  windows (`clipbridge pair`) and admits computers, never phones, with a Welcome that carries
+  windows (`cbb pair`) and admits computers, never phones, with a Welcome that carries
   `issuer` and `roots` and no CA keys; it signs the `device` record of each device it admits
-  and `revoke` records (`clipbridge revoke`), which for an admin also name its admin key and
+  and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
   keep the devices it admitted; it renews its own certificate and those of the computers it
   is connected to. It never removes the root phone, makes no admins and does not take the
   group over.

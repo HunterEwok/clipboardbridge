@@ -1,0 +1,39 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "shouldTranslate": false
+    },
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipboardbridge сканирует QR-код, который показывает компьютер, чтобы добавить его в вашу группу."
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipboardbridge спрашивает Face ID перед подписью ключом вашей группы: чтобы добавить или удалить устройство."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clipboardbridge находит ваши компьютеры в домашней сети и синхронизирует их буфер обмена с этим телефоном."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

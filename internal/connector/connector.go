@@ -20,8 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 )
 
 // ErrBoardGone is the error a Board returns when its display connection is
@@ -84,7 +84,7 @@ func Run(ctx context.Context, cfg Config) error {
 		if time.Since(start) > maxBackoff {
 			backoff = minBackoff
 		}
-		cfg.Logf("clipbridge: the service connection ended: %v; trying again in %v", err, backoff)
+		cfg.Logf("cbb: the service connection ended: %v; trying again in %v", err, backoff)
 		select {
 		case <-ctx.Done():
 			exp.now()
@@ -131,7 +131,7 @@ func (e *expiry) now() {
 
 func (e *expiry) clear() {
 	if err := e.b.ClearIfUnchanged(); err != nil {
-		e.logf("clipbridge: giving up an expired secret: %v", err)
+		e.logf("cbb: giving up an expired secret: %v", err)
 	}
 }
 
@@ -202,7 +202,7 @@ func watch(ctx context.Context, b Board, send func(*control.Message) error, logf
 		m := report(control.OpCopied, it)
 		if m == nil {
 			if it.Text != "" {
-				logf("clipbridge: a copy of %d bytes is not synced: larger than 1 MiB, or not UTF-8 text", len(it.Text))
+				logf("cbb: a copy of %d bytes is not synced: larger than 1 MiB, or not UTF-8 text", len(it.Text))
 			}
 			continue
 		}
@@ -230,7 +230,7 @@ func apply(ctx context.Context, b Board, c *control.Client, exp *expiry, logf fu
 		last = m.Seq
 		secret := m.Kind == control.KindSecret
 		if err := b.Write(string(m.Payload), secret); err != nil {
-			logf("clipbridge: writing the clipboard: %v", err)
+			logf("cbb: writing the clipboard: %v", err)
 			continue
 		}
 		ttl := time.Duration(m.TTLMS) * time.Millisecond

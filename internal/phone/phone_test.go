@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/clip"
-	"github.com/HunterEwok/clipbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 var t0 = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
@@ -274,25 +274,25 @@ func TestAdmit(t *testing.T) {
 }
 
 func TestJoinQR(t *testing.T) {
-	if got := JoinQR(JoinCode{Code: "012345"}); got != "clipbridge://join?code=012345" {
+	if got := JoinQR(JoinCode{Code: "012345"}); got != "clipboardbridge://join?code=012345" {
 		t.Errorf("JoinQR = %q", got)
 	}
 	full := JoinCode{Code: "246802", Addrs: []string{"192.168.1.20:40123", "[fd00::5]:40123"}, Fingerprint: "q83vEjRWeJA"}
-	if got := JoinQR(full); !strings.HasPrefix(got, "clipbridge://join?code=246802&") {
+	if got := JoinQR(full); !strings.HasPrefix(got, "clipboardbridge://join?code=246802&") {
 		t.Errorf("JoinQR = %q", got)
 	}
 	for in, want := range map[string]JoinCode{
-		JoinQR(full):                                      full,
-		" clipbridge://join?code=135790\n":                {Code: "135790"},
-		"CLIPBRIDGE://JOIN?code=111111":                   {Code: "111111"},
-		"clipbridge://join?code=222222&addr=10.0.0.2&x=1": {Code: "222222"}, // no port
-		"clipbridge://join?code=3&addr=a:1&addr=b:1&addr=c:1&addr=d:1&addr=e:1": {Code: "3", Addrs: []string{"a:1", "b:1", "c:1", "d:1"}},
+		JoinQR(full):                                                                 full,
+		" clipboardbridge://join?code=135790\n":                                      {Code: "135790"},
+		"CLIPBOARDBRIDGE://JOIN?code=111111":                                         {Code: "111111"},
+		"clipboardbridge://join?code=222222&addr=10.0.0.2&x=1":                       {Code: "222222"}, // no port
+		"clipboardbridge://join?code=3&addr=a:1&addr=b:1&addr=c:1&addr=d:1&addr=e:1": {Code: "3", Addrs: []string{"a:1", "b:1", "c:1", "d:1"}},
 	} {
 		if jc, ok := ParseJoinQR(in); !ok || !reflect.DeepEqual(jc, want) {
 			t.Errorf("ParseJoinQR(%q) = %+v, %v", in, jc, ok)
 		}
 	}
-	for _, in := range []string{"", "123456", "clipbridge-join:123456", "clipbridge://pair?code=1", "clipbridge://join", "https://join/?code=1"} {
+	for _, in := range []string{"", "123456", "clipboardbridge-join:123456", "clipboardbridge://pair?code=1", "clipboardbridge://join", "https://join/?code=1"} {
 		if jc, ok := ParseJoinQR(in); ok {
 			t.Errorf("ParseJoinQR(%q) = %+v, true", in, jc)
 		}

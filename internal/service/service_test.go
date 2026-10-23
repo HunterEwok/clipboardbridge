@@ -29,12 +29,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HunterEwok/clipbridge/internal/control"
-	"github.com/HunterEwok/clipbridge/internal/group"
-	"github.com/HunterEwok/clipbridge/internal/mdns"
-	"github.com/HunterEwok/clipbridge/internal/node"
-	"github.com/HunterEwok/clipbridge/internal/pair"
-	"github.com/HunterEwok/clipbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/phone"
 )
 
 // hub is a fake network for discovery: every member sees the others on the
@@ -385,7 +385,7 @@ func TestThreeMembers(t *testing.T) {
 	for _, s := range []*testService{a, b, c} {
 		waitFor(t, s.name+" has the text", func() bool { return s.paste(t) == "from alpha" })
 	}
-	// Exactly one member holds clipbridge.local: the lowest device ID.
+	// Exactly one member holds clipboardbridge.local: the lowest device ID.
 	holders := func() []string {
 		var out []string
 		for _, s := range []*testService{a, b, c} {
@@ -532,13 +532,13 @@ func TestWatcherKeepsTheNewestWrite(t *testing.T) {
 
 func TestAloneHoldsTheName(t *testing.T) {
 	// A single Linux member, with an iPhone and no other computer, answers
-	// for clipbridge.local.
+	// for clipboardbridge.local.
 	var h hub
 	a := startService(t, &h, "alpha")
 	b := startService(t, &h, "beta")
 	pairWith(t, a, b)
 	b.stop()
-	waitFor(t, "alpha holds clipbridge.local alone", func() bool { return a.status(t).Holder })
+	waitFor(t, "alpha holds clipboardbridge.local alone", func() bool { return a.status(t).Holder })
 	a.stop()
 	a2 := restartService(t, &h, a)
 	waitFor(t, "alpha holds it right after a restart", func() bool { return a2.status(t).Holder })
@@ -563,7 +563,7 @@ func TestRestartWithANewPort(t *testing.T) {
 
 func TestMac(t *testing.T) {
 	// A Mac joins through a Linux member, cannot admit devices itself, and
-	// syncs in both directions; it never holds clipbridge.local. Its rules
+	// syncs in both directions; it never holds clipboardbridge.local. Its rules
 	// must hold whichever device ID is lower, so the test runs until it saw
 	// both orders.
 	seen := map[bool]bool{}
@@ -593,7 +593,7 @@ func TestMac(t *testing.T) {
 		}
 		waitFor(t, "the Mac has it", func() bool { return mac.paste(t) == "from the pi" })
 		if mac.status(t).Holder || !pi.status(t).Holder {
-			t.Error("the Mac holds clipbridge.local, or the pi does not")
+			t.Error("the Mac holds clipboardbridge.local, or the pi does not")
 		}
 		pi.stop()
 		mac.stop()
@@ -630,7 +630,7 @@ func TestRenewal(t *testing.T) {
 	}
 	id, _ := group.Load(pi.dir)
 	if !id.Phone.NotAfter.After(before["pi"].Phone.NotAfter) {
-		t.Error("the pi did not renew its clipbridge.local certificate")
+		t.Error("the pi did not renew its clipboardbridge.local certificate")
 	}
 	// The renewed certificates work: the members connect again.
 	mac.stop()
@@ -917,9 +917,9 @@ func TestIPhone(t *testing.T) {
 	if other.status(t).Holder {
 		holder, notHolder = other, pi
 	}
-	// Only the holder of clipbridge.local pairs an iPhone.
-	if _, err := notHolder.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "does not answer for clipbridge.local") {
-		t.Errorf("pair -phone on a member that does not hold clipbridge.local: %v", err)
+	// Only the holder of clipboardbridge.local pairs an iPhone.
+	if _, err := notHolder.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "does not answer for clipboardbridge.local") {
+		t.Errorf("pair -phone on a member that does not hold clipboardbridge.local: %v", err)
 	}
 	c := holder.dial(t)
 	defer c.Close()
@@ -934,7 +934,7 @@ func TestIPhone(t *testing.T) {
 
 	// 1. The iPhone downloads the profile over plain HTTP and trusts the
 	// CA in it, nothing else.
-	resp, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig")
+	resp, err := http.Get("http://" + profileAddr + "/clipboardbridge.mobileconfig")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -955,9 +955,9 @@ func TestIPhone(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	iphone := &http.Client{Timeout: 10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipbridge.local"}}}
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}}}
 
-	// 2. The pairing page, reached as clipbridge.local, takes the code.
+	// 2. The pairing page, reached as clipboardbridge.local, takes the code.
 	resp, err = iphone.PostForm("https://"+phoneAddr+"/pair", url.Values{"code": {m.Code}})
 	if err != nil {
 		t.Fatalf("the iPhone could not reach the pairing page: %v", err)
@@ -972,7 +972,7 @@ func TestIPhone(t *testing.T) {
 		t.Fatalf("pair -phone ended with %+v, %v", m, err)
 	}
 	// The window and the profile port closed before the answer.
-	if _, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig"); err == nil {
+	if _, err := http.Get("http://" + profileAddr + "/clipboardbridge.mobileconfig"); err == nil {
 		t.Error("the profile port is still open")
 	}
 
@@ -1064,7 +1064,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	// The iPhone port starts with the group, just after it.
 	waitFor(t, "the iPhone port", func() bool { a, _ := pi.addrs(); return a != "" })
 	phoneAddr, profileAddr := pi.addrs()
-	resp, err := http.Get("http://" + profileAddr + "/clipbridge.mobileconfig")
+	resp, err := http.Get("http://" + profileAddr + "/clipboardbridge.mobileconfig")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1079,7 +1079,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	iphone := &http.Client{Timeout: 10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipbridge.local"}}}
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}}}
 	resp, err = iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1091,7 +1091,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A new computer runs clipbridge join: it listens, shows its QR code
+	// A new computer runs cbb join: it listens, shows its QR code
 	// and waits.
 	laptop := startService(t, &h, "laptop")
 	lc := laptop.dial(t)
@@ -1122,7 +1122,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", qr); rep["direction"] != "unpaired" {
 		t.Errorf("a forged token: %v", rep)
 	}
-	if rep := admit(paired.Token, "clipbridge://join?code=246802"); rep["direction"] != "error" {
+	if rep := admit(paired.Token, "clipboardbridge://join?code=246802"); rep["direction"] != "error" {
 		t.Errorf("a QR code without an address: %v", rep)
 	}
 	if rep := admit(paired.Token, qr); rep["direction"] != "none" {
@@ -1142,7 +1142,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	waitFor(t, "the laptop connected", func() bool { return len(laptop.status(t).Peers) == 1 })
 	// The window closed: a second admit with the same code opens a new one,
 	// which nobody uses; a code that is not six digits is refused.
-	if rep := admit(paired.Token, "clipbridge://join?code=12345"); rep["direction"] != "error" {
+	if rep := admit(paired.Token, "clipboardbridge://join?code=12345"); rep["direction"] != "error" {
 		t.Errorf("five digits: %v", rep)
 	}
 }
@@ -1175,7 +1175,7 @@ func TestListenPreferring(t *testing.T) {
 
 func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	// A Linux member without the CA keys, as in a group whose root is the
-	// phone, connects and syncs, but never holds clipbridge.local, even
+	// phone, connects and syncs, but never holds clipboardbridge.local, even
 	// with the lowest device ID, and admits nobody. (A group is either one
 	// or the other, so the pi gives the name up to the lower ID here; in a
 	// group whose root is the phone nobody holds it.)
@@ -1212,7 +1212,7 @@ func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	}
 	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "from the box" })
 	if box.status(t).Holder {
-		t.Error("the member without CA keys holds clipbridge.local")
+		t.Error("the member without CA keys holds clipboardbridge.local")
 	}
 	if _, err := box.do(t, control.Header{Op: control.OpPair}, ""); err == nil {
 		t.Error("a member without CA keys opened a pairing window")

@@ -13,20 +13,20 @@ import (
 )
 
 // EnvFile is where the Linux installer keeps the settings it was given,
-// such as CLIPBRIDGE_PORT; systemd passes them to the service, and the
+// such as CBB_PORT; systemd passes them to the service, and the
 // command line reads them from here.
-var EnvFile = "/etc/clipbridge/clipbridge.env"
+var EnvFile = "/etc/clipboardbridge/clipboardbridge.env"
 
 // Port returns the member port, which a listening join uses too: a
 // device that joins is in no group yet, so nothing else holds it.
-// MemberPort, or N when CLIPBRIDGE_PORT, from the environment or else from
+// MemberPort, or N when CBB_PORT, from the environment or else from
 // EnvFile, names a port N. The iPhone shortcut names MemberPort, so it
 // works only with that one.
 func Port() (int, error) {
-	v, ok := os.LookupEnv("CLIPBRIDGE_PORT")
+	v, ok := os.LookupEnv("CBB_PORT")
 	if !ok {
 		var err error
-		if v, err = envFileValue(EnvFile, "CLIPBRIDGE_PORT"); err != nil {
+		if v, err = envFileValue(EnvFile, "CBB_PORT"); err != nil {
 			return 0, err
 		}
 	}
@@ -36,7 +36,7 @@ func Port() (int, error) {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 1024 || n > 65535 {
-		return 0, fmt.Errorf("CLIPBRIDGE_PORT=%q: want a port from 1024 to 65535", v)
+		return 0, fmt.Errorf("CBB_PORT=%q: want a port from 1024 to 65535", v)
 	}
 	return n, nil
 }
