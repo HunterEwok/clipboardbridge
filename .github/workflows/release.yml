@@ -2,6 +2,8 @@
 # Builds a release from a version tag: an archive per platform, the Android
 # app's APK, SHA256SUMS, the Linux and Windows installers and a build
 # provenance attestation for each file, and the Homebrew formula for the tap.
+# It publishes only after the iPhone app's CodeQL analysis (codeql-swift.yml)
+# passes on the tag, which takes about 45 minutes.
 name: release
 
 on:
@@ -120,9 +122,19 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  codeql-swift:
+    # The iPhone app's CodeQL analysis must pass before a release; it runs on
+    # pull requests only when the app changes.
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/codeql-swift.yml
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
   release:
     if: github.ref_type == 'tag'
-    needs: [build, android]
+    needs: [build, android, codeql-swift]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
