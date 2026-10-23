@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# The lite member's own user and group. Members of the group may use the
+# control socket: cbb-lite copy, paste, status, devices and watch.
+u cbb-lite - "clipboardbridge lite member" /var/lib/cbb-lite

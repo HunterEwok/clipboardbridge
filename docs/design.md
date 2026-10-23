@@ -464,7 +464,9 @@ The order may change.
     member on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members.
+    Rust member among Go members. Started for Linux in `lite/` (`cbb-lite`, tested on a
+    Raspberry Pi); the ESP32 comes next, so the protocol core there stays free of the
+    operating system where it can.
 12. Sync away from home; see "Sync away from home (planned)" below.
 
 ### Future research (not planned)

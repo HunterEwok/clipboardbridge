@@ -155,11 +155,20 @@ func NormalizeCode(s string) (string, error) {
 type Info struct {
 	Name string `json:"name"` // shown in cbb devices
 	OS   string `json:"os"`   // "linux" or "darwin"
+	// Role is RoleLite for a lite member, which never holds CA keys;
+	// empty for a full computer.
+	Role string `json:"role,omitempty"`
 }
+
+// RoleLite is the Info role of a lite member.
+const RoleLite = "lite"
 
 func (i Info) check() error {
 	if i.OS != "linux" && i.OS != "darwin" {
 		return fmt.Errorf("pair: unknown operating system %q", i.OS)
+	}
+	if i.Role != "" && i.Role != RoleLite {
+		return fmt.Errorf("pair: unknown device role %q", i.Role)
 	}
 	if i.Name == "" || len(i.Name) > maxNameLen || !utf8.ValidString(i.Name) {
 		return errors.New("pair: the device name must be 1 to 64 bytes of UTF-8")

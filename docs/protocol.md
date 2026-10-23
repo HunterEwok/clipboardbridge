@@ -441,7 +441,9 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 
 The AD bytes are used exactly as they travel in the `ad` field. The member checks ADa: `os`
 is `linux` or `darwin` (an admin phone also takes `ios`); `name` is 1 to 64 bytes of
-printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key. Go members
+printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key; `role`,
+when present, is `lite`. A lite member (a Linux device that only dials, like a Mac) gets
+no CA keys and is recorded with role `lite`. Go members
 take no `ios` joiner: only admin phones admit phones.
 
 ### Frames
@@ -480,7 +482,7 @@ put words in front of the user.
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
-| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux`, and not in a group whose root is the phone |
+| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux` without `role` `lite`, and not in a group whose root is the phone |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 | `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
@@ -489,7 +491,7 @@ The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when pres
 admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
 verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
-or all absent, and a `darwin` joiner refuses them; when present, the keys are P-256 and
+or all absent, and a `darwin` or lite joiner refuses them; when present, the keys are P-256 and
 match. A Linux joiner that got them then issues its own `clipboardbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
 phone (section 9): it publishes and listens, but admits nobody until the root phone makes it
@@ -957,7 +959,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
   refused (rule 4), and the TLS check refuses it from then on. A member that learns that its
   own key is revoked logs that it was removed from the group; the others refuse it.
 - A Linux member that holds the group CA key records every device it admits (its name from
-  the pairing Info, role `linux` or `mac`) and every iPhone it pairs (`iphone`, name
+  the pairing Info, role `linux`, `mac` or `lite`) and every iPhone it pairs (`iphone`, name
   `iPhone`, device = the phone ID), and, for groups made before the list existed, itself and
   every connected peer that has no record yet, with the name from the peer's hello (or the
   role and the first 8 characters of its ID).

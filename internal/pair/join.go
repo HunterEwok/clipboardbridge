@@ -287,10 +287,11 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 		return nil, errors.New("pair: the member's certificate does not name the member")
 	}
 	// A Linux device gets the CA keys, except in a group whose root is the
-	// phone, where no computer holds them; a Mac never gets them.
+	// phone, where no computer holds them; a Mac or a lite member never
+	// gets them.
 	keys := w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil
-	if keys && j.Info.OS != "linux" {
-		return nil, errors.New("pair: the member sent CA keys to a Mac")
+	if keys && (j.Info.OS != "linux" || j.Info.Role == RoleLite) {
+		return nil, errors.New("pair: the member sent CA keys to a device that never holds them")
 	}
 	if keys {
 		if w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {

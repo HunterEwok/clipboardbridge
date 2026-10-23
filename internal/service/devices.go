@@ -199,7 +199,10 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.
 // recordAdmitted records a computer that a pairing window admitted.
 func (s *Service) recordAdmitted(res *pair.Result) {
 	role := group.RoleLinux
-	if res.Info.OS == "darwin" {
+	switch {
+	case res.Info.Role == pair.RoleLite:
+		role = group.RoleLite
+	case res.Info.OS == "darwin":
 		role = group.RoleMac
 	}
 	s.recordDevice(res.Device, res.Info.Name, role, group.KeyHashOf(res.Cert))

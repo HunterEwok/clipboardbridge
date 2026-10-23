@@ -46,6 +46,14 @@ go run ./tools/icon -check     # the app icon
 go test -race ./...
 ```
 
+The lite member (Rust, the `lite` job in CI):
+
+```sh
+cd lite && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
+  go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
+```
+
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
 no Android dependencies and builds anywhere; the app needs the Android SDK and Google's Maven
 repository (CI, or a Mac with Android Studio):
@@ -97,6 +105,9 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
+- `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, only dials, joins by the
+  phone's QR code; the protocol core (`certs`, `records`, `clip`, `hlc`, `wire`, `pair`,
+  CPace under `src/third_party`) keeps away from the OS for a later ESP32 port.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
@@ -114,12 +125,13 @@ an admin phone removes a lost root phone by taking the group over with `root` re
 (`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`);
 a computer of a phone group can be an admin: the root phone's "Make it an admin" certifies
 the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go's
-`Identity.AdminKey`/`AdminCA`).
+`Identity.AdminKey`/`AdminCA`); the lite member for Linux (`lite/`, `cbb-lite`), with
+the interop vectors and an e2e test among Go members, not yet run on a real Pi.
 
 Next steps, roughly in order:
 
 1. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
-   sync away from home, the lite member (see docs/design.md, "Future research").
+   sync away from home, the lite member on the ESP32 (see docs/design.md, "Future research").
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
