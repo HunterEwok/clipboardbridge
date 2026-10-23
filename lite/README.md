@@ -12,10 +12,10 @@ Pi, a router, a small board. It speaks the member protocol of
   iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);
 - has no desktop clipboard of its own: other programs use `copy`, `paste` and `watch`.
 
-Full members list it with role `lite`. A device on another network than the phone (another
-subnet, where mDNS does not reach) syncs through the internet, over a VPN between the
-devices; see "Sync away from home" in [docs/design.md](../docs/design.md). Until then, name
-a computer there with `-peer`.
+Full members list it with role `lite`. Sync away from home, through the group's WireGuard
+tunnel to the hub ("Sync away from home" in [docs/design.md](../docs/design.md)), is not
+built into `cbb-lite` yet: for a device on another subnet, where mDNS does not reach, name a
+computer there with `-peer`.
 
 The protocol core is its own crate, [`core`](core) (`cbb_core`): certificates, records,
 the hybrid clock, the sync engine, the frames and the joiner's side of the pairing, with

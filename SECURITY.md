@@ -16,8 +16,9 @@ Use GitHub private vulnerability reporting: open the
 
 Include, if you can:
 
-- the affected component (service, desktop connector, console helper, macOS agent or iOS
-  shortcut) and the version or commit;
+- the affected component (the service on Linux, macOS or Windows, the desktop connector,
+  the macOS or Windows clipboard agent, sync away from home, the iPhone or Android app, the
+  iOS shortcut, or the lite member `cbb-lite`) and the version or commit;
 - the steps to reproduce;
 - the impact: what an attacker can read, change or run.
 
@@ -32,8 +33,9 @@ Please keep the details private until the advisory is published.
 
 ## Scope
 
-In scope: the programs in this repository, the pairing and sync protocol, the installers,
-and the published iOS shortcut.
+In scope: the programs and apps in this repository, the pairing, sync and tunnel
+protocols, the installers, the release files (archives, the Android APK, the Homebrew
+formula) and the published iOS shortcut.
 
 Out of scope:
 
