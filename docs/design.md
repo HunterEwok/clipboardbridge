@@ -749,10 +749,12 @@ the pairing itself; the third is planned.
   up the VPN the installer is run again. Only a VPN the user runs fits the rules above: the
   member port is then open to every peer of that VPN.
 - In both ways the device joins, but members find each other by mDNS, which crosses
-  neither SSH nor a VPN, so it would meet the hub only at home. The service step (see
-  "Order of work") adds the missing piece: after a join by address the new member dials
-  that address once more as a member, so a device that joined through the hub hands it its
-  tunnel key at once and syncs away from home from then on.
+  neither SSH nor a VPN, so it would meet the hub only at home. So after a join by address
+  the new member keeps dialing that address as a member while the SSH forward or the VPN
+  is up and discovery does not find the member: it syncs at once, and a device that joined
+  through the hub hands it its tunnel key as soon as sync away from home is on there, and
+  syncs away from home from then on. It stops once it holds the hub's offer; the address is
+  not kept across a restart of the service.
 - **Remote invitation (planned)**, for a device that shares no network and no SSH with the
   group. An admin makes it: the root or an admin phone, a Linux member that admits devices
   or an admin computer (`cbb invite`). It is never typed: it comes only as a QR code or as
@@ -871,7 +873,7 @@ only adds to it.
    at home (done).
 3. The service: turning sync away from home on and off (the hub, each device, the consent
    for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`
-   (done), and the member dial after a join by address.
+   and the member dial after a join by address (done).
 4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation).
 5. The forwarder.
 6. The blind relay, self-hosted only.

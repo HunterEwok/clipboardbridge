@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -219,4 +220,51 @@ func freeUDP(t *testing.T) int {
 	}
 	defer c.Close()
 	return c.LocalAddr().(*net.UDPAddr).Port
+}
+
+// TestJoinByAddress checks that a device that joined at an address, as
+// through an SSH forward or a VPN, keeps a member connection to the member
+// that admitted it although discovery cannot find it, and so meets the hub
+// and learns its offer when sync away from home is turned on.
+func TestJoinByAddress(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	c, code := openWindow(t, pi)
+	defer c.Close()
+	piID := pi.status(t).Device
+	h.hide(piID) // the deck is on another network
+	addr := ""
+	h.mu.Lock()
+	for m := range h.members {
+		if m.cfg.ID == piID {
+			addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(m.cfg.Port)))
+		}
+	}
+	h.mu.Unlock()
+	if _, err := deck.do(t, control.Header{Op: control.OpJoin, Code: code, Address: addr}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the deck connects to the pi where it joined", func() bool {
+		p := deck.status(t).Peers
+		return len(p) == 1 && p[0].ID == piID
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "from the deck"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "from the deck" })
+
+	for _, s := range []*testService{pi, deck} {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	port := freeUDP(t)
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the deck keeps the hub's offer", func() bool {
+		a := deck.status(t).Away
+		return a != nil && a.HubDevice == piID
+	})
 }

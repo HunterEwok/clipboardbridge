@@ -32,7 +32,6 @@ import (
 	"net/netip"
 	"strings"
 
-	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
@@ -154,7 +153,7 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 			return nil, err
 		}
 	}
-	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "hub", cfg.Verbose))
+	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "hub", cfg.Verbose))
 	h := &Hub{dev: dev, addr: cfg.Addr, port: port}
 	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", cfg.PrivateKey.hex(), port)
 	if err := dev.IpcSet(ipc + peersConfig(cfg.Peers)); err != nil {
@@ -243,7 +242,7 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: %w", err)
 	}
-	dev := device.NewDevice(tdev, conn.NewDefaultBind(), wgLogger(logf, "client", cfg.Verbose))
+	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "client", cfg.Verbose))
 	ipc := fmt.Sprintf("private_key=%s\npublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=%d\n",
 		cfg.PrivateKey.hex(), cfg.HubPublicKey.hex(), cfg.PresharedKey.hex(),
 		cfg.Endpoint, netip.PrefixFrom(cfg.HubAddr, 128), Keepalive)
