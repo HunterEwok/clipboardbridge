@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//! The front end for the ZX Spectrum Next (docs/design.md, roadmap item 14).
+//! The front end for the ZX Spectrum Next (docs/roadmap.md, item 14).
 //! On the Accelerated Next, cbb-lite runs on the Raspberry Pi wired to the
 //! Next's second UART, and the Next's `.cbb` dot command types `cbb-lite next
 //! ...` at NextPi's shell on that UART. These commands answer in frames the

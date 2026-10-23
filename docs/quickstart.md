@@ -5,8 +5,10 @@ The shortest way to one clipboard: install with one command, make a group, add y
 Everything stays on your home network. The program is clipboardbridge, and its command is
 `cbb`.
 
-Today a Linux machine holds the group and the iPhone uses a shortcut. When the phone apps are
-released, the phone becomes the centre of the group; that way is described at the end.
+Two ways to make a group. With the clipboardbridge app on a phone (iPhone or Android), the
+phone holds the group and adds each computer by its QR code: see "With the phone app" at the
+end. Without the app, a Linux machine holds the group and the iPhone uses a shortcut: the
+steps below.
 
 ## 1. Install on the first Linux machine
 
@@ -116,7 +118,19 @@ it. The computer joins within seconds.
 Without the iPhone: run `cbb pair` on a Linux machine of the group, then
 `cbb join -code` on the new computer and type the code it showed.
 
-A computer that is not on the home network joins the same way through a path you control:
+A computer that is not on the home network joins with an invitation, once sync away from
+home is on and a hub is set up (see "Sync away from home" below). On the hub:
+
+```sh
+cbb invite            # writes clipboardbridge.cbbinvite, valid for an hour (-for 24h at most)
+```
+
+Copy the file to the new computer through a channel you trust (it is a secret until it is
+used), and run `cbb join -invite clipboardbridge.cbbinvite` there. Both show the new
+computer's key fingerprint; on the hub, type `yes` only if they match. The new computer
+then syncs through the hub wherever it is.
+
+Or through a path you control:
 
 - **SSH** to a Linux machine of the group: on the new computer run
   `ssh -N -L 18764:localhost:8764 user@that-machine`, then `cbb pair` there (in another SSH
@@ -142,7 +156,7 @@ the hub. See "Joining from another network" in [design.md](design.md).
 - **Without a desktop**: `cbb copy` and `cbb paste`, or copy and paste inside
   tmux.
 
-## Sync away from home (optional)
+## 5. Sync away from home (optional)
 
 Off by default: the group syncs on the home network only. To sync when a computer is away,
 one computer that is always on at home becomes the hub, and each computer that should reach
@@ -161,15 +175,15 @@ The clipboard travels only inside the group's own WireGuard tunnel, end to end e
 nobody else's server is involved. `cbb away off` turns it off again and forgets its keys.
 The phones cannot sync away from home yet.
 
-## 5. Look after the group
+## 6. Look after the group
 
 ```sh
 cbb status     # this device, the group and the connected members
 cbb devices    # every device of the group, and when it was last seen
-cbb revoke NAME  # remove a lost Mac or iPhone; run it on a Linux machine
+cbb revoke NAME  # remove a lost device; on a Linux machine, or Devices in the app
 ```
 
-Something does not work? See "Problems" in the release notes, or open an issue.
+Something does not work? See [troubleshooting](troubleshooting.md), or open an issue.
 
 ## Remove clipboardbridge
 
@@ -205,16 +219,18 @@ It removes the service, the agent, the program and the firewall rules the instal
 The keys stay in `ProgramData\clipboardbridge`; `-Purge` deletes them and the
 `clipboardbridge` group.
 
-## Later: the phone at the centre (planned)
+## With the phone app
 
-When the iPhone and Android apps are released, the phone holds the group's key, and the
-computers join it:
+With the iPhone or Android app, the phone holds the group's key, and the computers join it
+(the [app guide](apps-guide.md) has more):
 
-1. Install the app and tap "Scan a computer".
+1. Install the app and tap "Connect a new device".
 2. On each computer, install clipboardbridge (step 1 or 3) and run `cbb join`; the app
    scans its QR code. No profile, no code to type.
-3. A second phone joins the same way, and the first one can make it an admin. If one phone is
-   lost, remove it from Devices on the other; the computers stay in the group.
+3. A second phone joins from its own Start screen ("I already use clipboardbridge on another
+   phone"), and the first one makes it an admin. If one phone is lost, remove it in Devices
+   on the other; the computers stay in the group.
 
-The Linux machines then take part like the Mac: they sync, and still serve the shortcut for
-phones without the app. Until then, the steps above are the way.
+The Linux machines take part like the Mac: they sync, and still serve the shortcut for
+phones without the app. The apps are built and tested in CI but not yet on a real phone;
+the Android app is an APK in each release, the iPhone app comes with TestFlight.

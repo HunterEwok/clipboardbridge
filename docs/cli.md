@@ -1,0 +1,77 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+# Command reference
+
+Every command of `cbb` (Linux, macOS, Windows) and `cbb-lite` (the lite member), with their
+flags and environment variables. `cbb help` and `cbb-lite help` print the short form.
+Commands other than `service`, `agent`, `desktop`, `version` and `help` talk to the running
+service through its control socket, so they need the `clipboardbridge` group (Linux, Windows,
+macOS) or root; `copy`, `paste` and `status` work for members of the group without `sudo`.
+
+## cbb
+
+| Command | What it does |
+|---|---|
+| `cbb copy [-secret]` | Sends standard input to the group, and to this device's own clipboard. `-secret` sends it as a secret: kept only in memory and gone 60 seconds after the copy. |
+| `cbb paste` | Prints this device's clipboard text. |
+| `cbb status` | This device, its group, the connected members, and sync away from home. |
+| `cbb devices` | Every device of the group, its role and when it was last seen. |
+| `cbb revoke NAME` | Removes a device, by name or device ID. Runs on a device that holds the group's CA keys: a Linux member in a group that a computer created, or a computer the root phone made an admin. In a phone's group, remove devices in the app (Devices). |
+| `cbb pair` | Admits a new computer: creates the group if there is none and shows a six-digit code for `cbb join -code` on the new computer. Same rule as `revoke` for who may run it. |
+| `cbb pair -phone` | Creates the group if needed and pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on a Linux machine: only Linux members serve the shortcut. |
+| `cbb join` | Joins a group by QR code: shows a QR code for the phone app, or for the shortcut "clipboardbridge: add a computer", and waits. |
+| `cbb join -code [ADDRESS]` | Joins with the code from `cbb pair`. Without an address it finds the member on the home network; with one (`host:port`) it dials it, for example through an SSH tunnel or your own VPN (see the [quick start](quickstart.md)). |
+| `cbb join -invite FILE` | Joins from afar with an invitation file from `cbb invite`, through the hub's guest tunnel. Both sides show the new device's key fingerprint; the hub admits it once its admin types `yes`. |
+| `cbb invite [-for DURATION] [-o FILE]` | Runs on the group's hub, with sync away from home on: writes an invitation for a device away from home (default `clipboardbridge.cbbinvite`, valid for 1h, at most 24h) and waits to confirm it. The file is a secret until it is used; copy it through a channel you trust. |
+| `cbb away` | Shows sync away from home on this device: on or off, the hub, the tunnel, and what went wrong. |
+| `cbb away on` | Turns sync away from home on here, after a warning about where the keys are kept. |
+| `cbb away off` | Turns it off and forgets the tunnel keys. |
+| `cbb away hub [-port N] ADDRESS:PORT...` | Makes this device the group's hub, reached from the internet at these addresses; `-port` sets the UDP port the tunnel listens on. |
+| `cbb version` | Prints the version and the platform. |
+| `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
+| `cbb agent` | Links the Mac's or Windows clipboard to the service; started at sign-in (`cbbw.exe agent` on Windows). |
+| `cbb desktop` | Links a Linux desktop's clipboard to the service; started with the desktop session. |
+
+## cbb-lite
+
+Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
+`CBB_STATE`), `-socket PATH` (default `/run/cbb-lite/control.sock`, or `CBB_SOCKET`),
+`-debug` (the details of errors). Install and use are in [lite/README.md](../lite/README.md).
+
+| Command | What it does |
+|---|---|
+| `cbb-lite join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | Joins a group by QR code, scanned by the phone app or the shortcut. `-addr` names where the phone reaches this device, when the QR code would name the wrong addresses. |
+| `cbb-lite join -code HOST:PORT` | Joins with the code from `cbb pair` on a Linux member. |
+| `cbb-lite run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
+| `cbb-lite copy [-secret]` | Sends standard input to the group. |
+| `cbb-lite paste` | Prints this member's clipboard text. |
+| `cbb-lite status` | The group and the connected members. |
+| `cbb-lite devices` | The devices of the group. |
+| `cbb-lite watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
+| `cbb-lite next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
+| `cbb-lite version`, `cbb-lite help` | The version; this help. |
+
+## Installers
+
+| Installer | Options |
+|---|---|
+| Linux `get.sh` and `install.sh` | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
+| Linux `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the program, the service and the firewall rules the installer added; `--purge` also deletes the keys in `/var/lib/clipboardbridge`. |
+| macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--in-place` runs the binary where it is (Homebrew) instead of copying it; `CBB_FIREWALL=no` leaves the application firewall alone. |
+| macOS `uninstall.sh` (beside `install.sh`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
+| Windows `get.ps1` and `install.ps1` | `$env:CBB_PORT = "9000"` another port, `$env:CBB_FIREWALL = "no"` leaves Windows Firewall alone. |
+| Windows `uninstall.ps1` (`$env:ProgramFiles\clipboardbridge`), or Settings, Apps | removes the service, the agent, the program and the firewall rules; `-Purge` also deletes the keys and the `clipboardbridge` group. |
+
+## Environment variables
+
+| Variable | Used by | Meaning |
+|---|---|---|
+| `CBB_DEBUG` | `cbb`, `cbb-lite` | `1` shows the underlying error under each message; `0` hides it in a development build, which shows it by default. The service's log always has the details. In the service's environment, also WireGuard's own messages for sync away from home. |
+| `CBB_PORT` | the service, `cbb-lite run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
+| `CBB_SOCKET` | `cbb`, `cbb-lite` | Another control socket, for tests or a second instance. |
+| `CBB_STATE` | `cbb-lite` | Another state directory. |
+| `CBB_FIREWALL` | Linux and macOS `install.sh`, Windows `install.ps1`/`get.ps1` | `no` leaves the firewall alone (`--no-firewall` for Linux `get.sh`). |
+| `CBB_VERSION` | Linux `get.sh` | A release such as `v0.2.0` instead of the latest. |
+| `CBB_ERROR_DETAILS` | Windows `install.ps1` | `1` adds the full error record to the installer's messages. |
+
+The test-only variables (`CBB_INTEROP_OUT`, `CBB_LITE`, `CBB_SWIFT_INTEROP`, …) are in
+[CONTRIBUTING.md](../CONTRIBUTING.md).

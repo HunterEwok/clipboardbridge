@@ -12,7 +12,8 @@
 //   - code copied from other projects lives in a directory below a
 //     third_party directory, with its LICENSE file next to it, and each of
 //     its Go and Rust files keeps its own copyright notice instead of the
-//     header.
+//     header;
+//   - the documentation's links, names and command reference hold (docs.go).
 //
 // Run it anywhere inside the repository:
 //
@@ -89,9 +90,15 @@ func checkRepo() (problems []string, checked int, err error) {
 			listed[name] = true
 		}
 	}
+	contents := make(map[string][]byte, len(files))
+	for _, f := range files {
+		contents[f.name] = f.data
+	}
 	for _, f := range files {
 		problems = append(problems, check(f.name, f.data, listed)...)
+		problems = append(problems, checkDocs(f.name, f.data, contents)...)
 	}
+	problems = append(problems, checkCommands(contents)...)
 	return problems, len(files), nil
 }
 

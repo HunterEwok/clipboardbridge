@@ -72,6 +72,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `cbb-lite` answers the Next's `.cbb` dot command over the internal UART in frames its
   Z80 reads (CR lines, the Spectrum character set, length and CRC-32, a QR code as hex
   rows for the phone to scan); see lite/README.md.
+- Releases carry the lite member: `cbb-lite-linux-amd64.tar.gz`, `-arm64` and `-armv6`,
+  static builds, each with the systemd unit and the licenses of the crates it is built from
+  (`THIRD_PARTY_NOTICES`).
+
 - Sync away from home for computers, off by default. `cbb away on` turns it on after a
   warning that the device keeps its keys in files; `cbb away hub address:port` makes an
   always-on computer the group's hub, which takes the others through the group's own
@@ -83,7 +87,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The first part of remote invitations: a pairing window can take an invitation's 128-bit
   secret in place of the six-digit code, live up to a day, and ask its admin to confirm the
   device (name, system, key fingerprint) before it admits it; an invited device never gets
-  the CA keys. `cbb invite` and the guest tunnel follow.
+  the CA keys.
+
+- Remote invitations for computers: `cbb invite` on the group's hub writes an invitation
+  file (`.cbbinvite`, valid for an hour, at most a day, for one device) and asks you to
+  confirm the device that uses it; `cbb join -invite FILE` joins from any network through a
+  one-time guest key that reaches only the hub's pairing, then syncs through the hub with
+  its own tunnel key. The hub's peers now change without resetting the sessions of the
+  clients that stay.
 
 - Homebrew, on macOS and Linux (x86-64, ARM64):
   `brew install hunterewok/tap/clipboardbridge`. The formula installs the
@@ -201,6 +212,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   as an admin; a computer that missed it gets it when it connects again.
 
 ### Fixed
+
+- The release archives now carry `THIRD_PARTY_NOTICES`, the licenses of the Go modules,
+  the copied CPace code and Go itself that `cbb` is built from, as their licenses require.
+- A `cbb away` request still running while the service stops no longer starts the hub or
+  the tunnel again after the stop.
 
 - Adding a device in the phone app no longer hangs when the computer does not answer: a
   connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,

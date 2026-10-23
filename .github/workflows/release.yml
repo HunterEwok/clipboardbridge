@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Builds a release from a version tag: an archive per platform, the Android
-# app's APK, SHA256SUMS, the Linux and Windows installers and a build
+# Builds a release from a version tag: an archive per platform, the lite
+# member's archives, the Android app's APK, SHA256SUMS, the Linux and Windows installers and a build
 # provenance attestation for each file, and the Homebrew formula for the tap.
 # It publishes only after the iPhone app's CodeQL analysis (codeql-swift.yml)
 # passes on the tag, which takes about 45 minutes.
@@ -132,9 +132,47 @@ jobs:
       contents: read
       security-events: write
 
+  lite:
+    name: build (cbb-lite-linux-${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, name: amd64 }
+          - { target: aarch64-unknown-linux-musl, name: arm64 }
+          - { target: arm-unknown-linux-musleabihf, name: armv6 }
+    env:
+      ARCHIVE: cbb-lite-linux-${{ matrix.name }}.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup default stable
+      - name: build (static, linked with rust-lld; see lite/.cargo/config.toml)
+        working-directory: lite
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: archive, with the crates' licenses
+        run: |
+          work=$RUNNER_TEMP/work/cbb-lite
+          mkdir -p "$work/packaging" "$RUNNER_TEMP/dist"
+          cp lite/target/${{ matrix.target }}/release/cbb-lite LICENSE lite/README.md "$work/"
+          cp lite/packaging/cbb-lite.service lite/packaging/cbb-lite.sysusers "$work/packaging/"
+          sh lite/packaging/notices.sh ${{ matrix.target }} >"$work/THIRD_PARTY_NOTICES"
+          tar -czf "$RUNNER_TEMP/dist/$ARCHIVE" -C "$RUNNER_TEMP/work" cbb-lite
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: ${{ runner.temp }}/dist/${{ env.ARCHIVE }}
+          if-no-files-found: error
+          retention-days: 1
+
   release:
     if: github.ref_type == 'tag'
-    needs: [build, android, codeql-swift]
+    needs: [build, android, lite, codeql-swift]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
