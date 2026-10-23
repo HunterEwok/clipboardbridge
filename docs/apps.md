@@ -168,7 +168,9 @@ If the overlay does not get the focus, the service starts the transparent activi
   group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
-- `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
+- `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
+  drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
+  for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into
   `apps/ios/ClipboardBridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
   WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.

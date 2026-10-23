@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Command icon draws the iPhone app's icon from the terminal theme of the
-// design tokens: two clipboards joined by a bridge, on the theme's grid.
-// It writes a 1024 by 1024 opaque PNG, which the asset catalog scales.
+// Command icon makes the iPhone app's icons from the drawings in
+// apps/design/icon: each clipboard, light and dark, cut out of its
+// transparent margin and set on a fill of its own colour, so that the
+// system's mask rounds the fill and not the drawing. It writes opaque
+// 1024 by 1024 PNGs, the light one for the system's light mode and the dark
+// one for dark mode.
 //
-//	go run ./tools/icon          rewrite the icon
-//	go run ./tools/icon -check   fail if it is out of date
+//	go run ./tools/icon          rewrite the icons
+//	go run ./tools/icon -check   fail if they are out of date
 package main
 
 import (
@@ -18,89 +21,82 @@ import (
 	"image/png"
 	"math"
 	"os"
-	"strconv"
 )
 
 const (
-	iconFile = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-	size     = 1024
-	samples  = 4 // per axis, for smooth edges
+	size    = 1024
+	height  = 0.86 // of the icon, for the clipboard
+	appIcon = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
 )
 
-// The terminal theme's colours (apps/design/tokens.json).
-var (
-	background = hex("#0A0F0C")
-	grid       = hex("#1A261F")
-	board      = hex("#E4F2E8")
-	line       = hex("#8EA596")
-	accent     = hex("#3DFF8A")
-)
-
-type rgb struct{ r, g, b float64 }
-
-func hex(s string) rgb {
-	v, err := strconv.ParseUint(s[1:], 16, 32)
-	if err != nil {
-		panic(err)
-	}
-	return rgb{float64(v >> 16 & 0xff), float64(v >> 8 & 0xff), float64(v & 0xff)}
+var icons = []struct {
+	drawing, out string
+	fill         color.RGBA
+}{
+	{"apps/design/icon/light.png", appIcon + "AppIcon.png", color.RGBA{0xF5, 0xF0, 0xE4, 0xFF}},
+	// The terminal theme's background (apps/design/tokens.json).
+	{"apps/design/icon/dark.png", appIcon + "AppIcon-Dark.png", color.RGBA{0x0A, 0x0F, 0x0C, 0xFF}},
 }
 
-// roundRect is the signed distance from (x, y) to a rectangle with centre
-// (cx, cy), half sizes (hx, hy) and corner radius r.
-func roundRect(x, y, cx, cy, hx, hy, r float64) float64 {
-	qx := math.Abs(x-cx) - (hx - r)
-	qy := math.Abs(y-cy) - (hy - r)
-	out := math.Hypot(math.Max(qx, 0), math.Max(qy, 0))
-	return out + math.Min(math.Max(qx, qy), 0) - r
-}
-
-// shade is the colour at a point; later shapes paint over earlier ones.
-func shade(x, y float64) rgb {
-	c := background
-	if math.Mod(x, 64) < 2 || math.Mod(y, 64) < 2 {
-		c = grid
-	}
-	for _, cx := range []float64{318, 706} {
-		// The board's outline, then its clip and its lines of text.
-		if math.Abs(roundRect(x, y, cx, 600, 168, 230, 44)) < 14 {
-			c = board
-		}
-		if roundRect(x, y, cx, 372, 76, 34, 20) < 0 {
-			c = board
-		}
-		ink := line
-		if cx > size/2 {
-			ink = accent
-		}
-		for i, w := range []float64{96, 72, 96, 48} {
-			if roundRect(x, y, cx-96+w, 500+float64(i)*72, w, 12, 12) < 0 {
-				c = ink
+// opaqueBounds is the smallest rectangle holding every pixel of img that is
+// not fully transparent.
+func opaqueBounds(img image.Image) image.Rectangle {
+	b := img.Bounds()
+	r := image.Rectangle{Min: b.Max, Max: b.Min}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a != 0 {
+				r = r.Union(image.Rect(x, y, x+1, y+1))
 			}
 		}
 	}
-	// The bridge: half a ring from one clip to the other, with round ends.
-	const bx, by, br, bw = 512, 372, 194, 34
-	if (y <= by && math.Abs(math.Hypot(x-bx, y-by)-br) < bw/2) ||
-		math.Hypot(x-(bx-br), y-by) < bw/2 || math.Hypot(x-(bx+br), y-by) < bw/2 {
-		c = accent
-	}
-	return c
+	return r
 }
 
-func draw() []byte {
+// sample is img's premultiplied colour at (x, y), interpolated between the
+// four nearest pixels; outside src it is transparent.
+func sample(img image.Image, src image.Rectangle, x, y float64) [4]float64 {
+	x0, y0 := math.Floor(x-0.5), math.Floor(y-0.5)
+	fx, fy := x-0.5-x0, y-0.5-y0
+	var out [4]float64
+	for _, p := range [4]struct{ dx, dy int }{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+		px, py := int(x0)+p.dx, int(y0)+p.dy
+		if !image.Pt(px, py).In(src) {
+			continue
+		}
+		wx, wy := 1-fx, 1-fy
+		if p.dx == 1 {
+			wx = fx
+		}
+		if p.dy == 1 {
+			wy = fy
+		}
+		w := wx * wy
+		r, g, b, a := img.At(px, py).RGBA()
+		out[0] += w * float64(r)
+		out[1] += w * float64(g)
+		out[2] += w * float64(b)
+		out[3] += w * float64(a)
+	}
+	return out
+}
+
+func compose(drawing image.Image, fill color.RGBA) []byte {
+	src := opaqueBounds(drawing)
+	scale := size * height / float64(src.Dy())
+	w := float64(src.Dx()) * scale
+	left, top := (size-w)/2, (size-size*height)/2
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
-			var sum rgb
-			for sy := 0; sy < samples; sy++ {
-				for sx := 0; sx < samples; sx++ {
-					c := shade(float64(px)+(float64(sx)+0.5)/samples, float64(py)+(float64(sy)+0.5)/samples)
-					sum.r, sum.g, sum.b = sum.r+c.r, sum.g+c.g, sum.b+c.b
-				}
+			x := float64(src.Min.X) + (float64(px)+0.5-left)/scale
+			y := float64(src.Min.Y) + (float64(py)+0.5-top)/scale
+			c := sample(drawing, src, x, y)
+			a := c[3] / 0xffff
+			mix := func(v float64, f uint8) uint8 {
+				return uint8(math.Round(v/0xffff*0xff + (1-a)*float64(f)))
 			}
-			n := float64(samples * samples)
-			img.SetRGBA(px, py, color.RGBA{uint8(sum.r/n + 0.5), uint8(sum.g/n + 0.5), uint8(sum.b/n + 0.5), 0xff})
+			img.SetRGBA(px, py, color.RGBA{mix(c[0], fill.R), mix(c[1], fill.G), mix(c[2], fill.B), 0xff})
 		}
 	}
 	var buf bytes.Buffer
@@ -113,19 +109,32 @@ func draw() []byte {
 }
 
 func main() {
-	check := flag.Bool("check", false, "fail if the icon is out of date")
+	check := flag.Bool("check", false, "fail if the icons are out of date")
 	flag.Parse()
-	out := draw()
-	if *check {
-		cur, err := os.ReadFile(iconFile)
-		if err != nil || !bytes.Equal(cur, out) {
-			fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", iconFile)
+	for _, icon := range icons {
+		f, err := os.Open(icon.drawing)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
 			os.Exit(1)
 		}
-		return
-	}
-	if err := os.WriteFile(iconFile, out, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "icon:", err)
-		os.Exit(1)
+		drawing, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "icon: %s: %v\n", icon.drawing, err)
+			os.Exit(1)
+		}
+		out := compose(drawing, icon.fill)
+		if *check {
+			cur, err := os.ReadFile(icon.out)
+			if err != nil || !bytes.Equal(cur, out) {
+				fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", icon.out)
+				os.Exit(1)
+			}
+			continue
+		}
+		if err := os.WriteFile(icon.out, out, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
+			os.Exit(1)
+		}
 	}
 }
