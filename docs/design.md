@@ -546,7 +546,9 @@ Questions to study before anything is planned for them.
 
 Away from home, and between subnets that mDNS does not reach (for example a Pi on
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
-group's own WireGuard tunnel in a star around one member, the hub. Nothing here is built yet.
+group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
+itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
+each other); nothing uses it yet.
 
 ### Rules
 
