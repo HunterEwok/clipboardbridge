@@ -25,7 +25,7 @@
 				"current": {
 					"id": "fedcba9876543210fedcba9876543210",
 					"origin": "0123456789abcdef0123456789abcdef",
-					"via": "iphone",
+					"via": "phone",
 					"time": "1761024000001.0",
 					"age_ms": 20,
 					"kind": "secret",
@@ -56,7 +56,7 @@
 			"event": {
 				"id": "fedcba9876543210fedcba9876543210",
 				"origin": "0123456789abcdef0123456789abcdef",
-				"via": "iphone",
+				"via": "phone",
 				"time": "1761024000001.0",
 				"age_ms": 20,
 				"kind": "secret",
@@ -192,11 +192,23 @@
 			"json": {
 				"id": "fedcba9876543210fedcba9876543210",
 				"origin": "0123456789abcdef0123456789abcdef",
-				"via": "iphone",
+				"via": "phone",
 				"time": "1.0",
 				"age_ms": 0,
 				"kind": "secret",
 				"text": ""
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"via": "iphone",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x"
 			},
 			"valid": true
 		},

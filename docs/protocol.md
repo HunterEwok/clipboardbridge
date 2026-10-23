@@ -257,7 +257,7 @@ Message object:
 
 ```json
 {"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
-{"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"iphone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
+{"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"phone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
 {"t":"ping"}
 {"t":"bye"}
 {"t":"cert","cert":"MIIB..."}
@@ -311,7 +311,7 @@ Mac: neither holds `clipboardbridge.local`.
 |-------|------|---------|
 | `id` | string | event ID, 32 lowercase hex characters |
 | `origin` | string | device ID of the member that made the event |
-| `via` | string | `copy` (copied on that member), `iphone` (the iPhone button) or `universal-clipboard` (reached a Mac through Universal Clipboard). Omitted for `copy`; absent means `copy` |
+| `via` | string | `copy` (copied on that member), `phone` (sent from a phone: the app, iPhone or Android, or the iPhone shortcut's button) or `universal-clipboard` (reached a Mac through Universal Clipboard). Omitted for `copy`; absent means `copy`. Receivers also take `iphone`, the name of `phone` before phones other than the iPhone |
 | `time` | string | hybrid timestamp `"<wall>.<logical>"` (section 5) |
 | `age_ms` | integer | milliseconds since the copy, as of the moment the frame is written |
 | `kind` | string | `text` or `secret`; always present |
@@ -384,7 +384,7 @@ frames like any other event.
   `universal-clipboard` and the text equals the live current event (a Mac receiving the
   group's own text back); or the text is a remembered secret reported as `text` (a clipboard
   manager restoring it), which also clears the known local text.
-- Deliberate actions (`copy` on the control socket, the iPhone button) always make an event;
+- Deliberate actions (`copy` on the control socket, sending from a phone) always make an event;
   a text remembered as a secret is sent as a secret. The text is also written to the
   member's own clipboard unless it already holds it.
 
@@ -578,6 +578,10 @@ the QR code dials the computer, and nothing is announced:
 
 Source: `internal/phone`, `internal/service/iphone.go`.
 
+These endpoints serve the iPhone shortcut, for an iPhone without the app, so their names keep
+the word: the iPhone CA, the `iphone` token role, `to_iphone` and `from_iphone`. A phone
+with the app, iPhone or Android, is a member (section 4) and uses none of them.
+
 ### iPhone endpoints on the member port
 
 The shortcuts name `https://clipboardbridge.local:8764`, so they work only with the default
@@ -636,7 +640,7 @@ or `v` other than 1 gives `error`. Then the direction, in order (`phone.decide`)
 1. The group's current event is live, has `via` `copy`, is younger than 45 s and differs from
    `text`: `to_iphone` with that text (and its kind's expiry).
 2. `text` is non-empty and differs from both the current event's text and the member's own
-   clipboard text: a deliberate event with `via` `iphone` (secret if `secret` is true, or if
+   clipboard text: a deliberate event with `via` `phone` (secret if `secret` is true, or if
    the text is a remembered secret), also written to the member's own clipboard;
    `from_iphone`.
 3. The member's own clipboard holds a live text that differs from `text`: `to_iphone` with it.
@@ -723,7 +727,7 @@ Header fields (all omitted when empty):
 |-------|------|---------|
 | `op` | string | the operation |
 | `kind` | string | `text` (default) or `secret` |
-| `via` | string | `copy` (default), `iphone` or `universal-clipboard` |
+| `via` | string | `copy` (default), `phone` or `universal-clipboard`; `iphone` is taken as `phone` |
 | `seq` | integer | order of writes |
 | `ttl_ms` | integer | how long a written secret may stay in the clipboard |
 | `len` | integer | payload length |

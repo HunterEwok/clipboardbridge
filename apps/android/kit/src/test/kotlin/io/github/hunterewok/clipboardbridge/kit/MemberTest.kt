@@ -38,7 +38,7 @@ class MemberTest {
         assertEquals(1500L, hello.hello.current?.ageMS)
         val mark = assertIs<Member.Message.Hello>(decoded[1]).hello.current!!
         assertTrue(mark.isMark)
-        assertEquals(Member.Via.IPHONE, mark.via)
+        assertEquals(Member.Via.PHONE, mark.via)
         assertEquals(Member.Via.UNIVERSAL_CLIPBOARD, assertIs<Member.Message.Event>(decoded[5]).event?.via)
         assertEquals(Member.Message.Ping, decoded[6])
         assertEquals(Member.Message.Bye, decoded[7])

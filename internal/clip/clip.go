@@ -106,7 +106,7 @@ type Via uint8
 
 const (
 	Copy      Via = iota // copied on that member
-	Phone                // sent by the iPhone button
+	Phone                // sent from a phone: the app, or the iPhone shortcut
 	Universal            // reached a Mac through Universal Clipboard, from an iPhone or another Mac
 )
 
@@ -116,7 +116,7 @@ func (v Via) MarshalText() ([]byte, error) {
 	case Copy:
 		return []byte("copy"), nil
 	case Phone:
-		return []byte("iphone"), nil
+		return []byte("phone"), nil
 	case Universal:
 		return []byte("universal-clipboard"), nil
 	}
@@ -128,7 +128,7 @@ func (v *Via) UnmarshalText(b []byte) error {
 	switch string(b) {
 	case "copy":
 		*v = Copy
-	case "iphone":
+	case "phone", "iphone": // iphone: the name before phones other than the iPhone
 		*v = Phone
 	case "universal-clipboard":
 		*v = Universal
