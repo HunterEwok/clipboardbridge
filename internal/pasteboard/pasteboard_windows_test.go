@@ -21,7 +21,7 @@ func private(t *testing.T) *Board {
 func TestWriteRead(t *testing.T) {
 	b := private(t)
 	before := b.ChangeCount()
-	text := "hello привет \U0001F600\nsecond line"
+	text := "hello \u043f\u0440\u0438\u0432\u0435\u0442 \U0001F600\nsecond line"
 	change, err := b.Write(text, false)
 	if err != nil {
 		t.Fatal(err)
