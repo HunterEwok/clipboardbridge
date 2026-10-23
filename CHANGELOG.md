@@ -93,6 +93,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   none, with the accessibility service "Send my copies by themselves", which notices a copy
   and takes the input focus for a moment to read the clipboard (Settings explains it and
   opens the system's page).
+  The app has its icon, and a release carries `clipboardbridge-X.Y.Z.apk`, signed with the
+  project's release key (docs/apps.md, "Releasing the Android app").
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Command icon makes the iPhone app's icons from the drawings in
-// apps/design/icon: each clipboard, light and dark, cut out of its
-// transparent margin and set on a fill of its own colour, so that the
-// system's mask rounds the fill and not the drawing. It writes opaque
-// 1024 by 1024 PNGs, the light one for the system's light mode and the dark
-// one for dark mode.
+// Command icon makes the apps' icons from the drawings in apps/design/icon:
+// each clipboard, light and dark, cut out of its transparent margin and set
+// on a fill of its own colour, so that the system's mask rounds the fill and
+// not the drawing. For the iPhone it writes opaque 1024 by 1024 PNGs, the
+// light one for the system's light mode and the dark one for dark mode. For
+// Android it writes the foreground of the adaptive icon, the light clipboard
+// on a transparent 432 by 432 canvas inside the launcher's safe zone; the
+// fill is the icon's background colour in res/values/ic_launcher.xml.
 //
 //	go run ./tools/icon          rewrite the icons
 //	go run ./tools/icon -check   fail if they are out of date
@@ -24,18 +26,24 @@ import (
 )
 
 const (
-	size    = 1024
-	height  = 0.97 // of the icon, for the clipboard
-	appIcon = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
+	appIcon     = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
+	androidIcon = "apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png"
 )
 
 var icons = []struct {
 	drawing, out string
 	fill         color.RGBA
+	// size is the image's width and height in pixels; height the
+	// clipboard's height, of the image.
+	size   int
+	height float64
 }{
-	{"apps/design/icon/light.png", appIcon + "AppIcon.png", color.RGBA{0xF5, 0xF0, 0xE4, 0xFF}},
+	{"apps/design/icon/light.png", appIcon + "AppIcon.png", color.RGBA{0xF5, 0xF0, 0xE4, 0xFF}, 1024, 0.97},
 	// The terminal theme's background (apps/design/tokens.json).
-	{"apps/design/icon/dark.png", appIcon + "AppIcon-Dark.png", color.RGBA{0x0A, 0x0F, 0x0C, 0xFF}},
+	{"apps/design/icon/dark.png", appIcon + "AppIcon-Dark.png", color.RGBA{0x0A, 0x0F, 0x0C, 0xFF}, 1024, 0.97},
+	// 108 dp with the inner 66 dp always shown, at 4 pixels a dp: a
+	// transparent fill, as the launcher draws the background below.
+	{"apps/design/icon/light.png", androidIcon, color.RGBA{}, 432, 0.58},
 }
 
 // opaqueBounds is the smallest rectangle holding every pixel of img that is
@@ -81,11 +89,14 @@ func sample(img image.Image, src image.Rectangle, x, y float64) [4]float64 {
 	return out
 }
 
-func compose(drawing image.Image, fill color.RGBA) []byte {
+// compose draws the clipboard on fill, premultiplied; a transparent fill
+// keeps the drawing's own transparency.
+func compose(drawing image.Image, fill color.RGBA, size int, height float64) []byte {
 	src := opaqueBounds(drawing)
-	scale := size * height / float64(src.Dy())
+	n := float64(size)
+	scale := n * height / float64(src.Dy())
 	w := float64(src.Dx()) * scale
-	left, top := (size-w)/2, (size-size*height)/2
+	left, top := (n-w)/2, (n-n*height)/2
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
@@ -96,12 +107,13 @@ func compose(drawing image.Image, fill color.RGBA) []byte {
 			mix := func(v float64, f uint8) uint8 {
 				return uint8(math.Round(v/0xffff*0xff + (1-a)*float64(f)))
 			}
-			img.SetRGBA(px, py, color.RGBA{mix(c[0], fill.R), mix(c[1], fill.G), mix(c[2], fill.B), 0xff})
+			alpha := uint8(math.Round(a*0xff + (1-a)*float64(fill.A)))
+			img.SetRGBA(px, py, color.RGBA{mix(c[0], fill.R), mix(c[1], fill.G), mix(c[2], fill.B), alpha})
 		}
 	}
 	var buf bytes.Buffer
-	// The image is opaque, so the encoder writes it without an alpha
-	// channel, as the App Store requires.
+	// An opaque image is written without an alpha channel, as the App
+	// Store requires.
 	if err := png.Encode(&buf, img); err != nil {
 		panic(err)
 	}
@@ -123,7 +135,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "icon: %s: %v\n", icon.drawing, err)
 			os.Exit(1)
 		}
-		out := compose(drawing, icon.fill)
+		out := compose(drawing, icon.fill, icon.size, icon.height)
 		if *check {
 			cur, err := os.ReadFile(icon.out)
 			if err != nil || !bytes.Equal(cur, out) {

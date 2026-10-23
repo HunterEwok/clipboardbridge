@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<resources>
+    <!-- The light icon's fill in tools/icon. -->
+    <color name="ic_launcher_background">#F5F0E4</color>
+</resources>

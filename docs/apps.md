@@ -117,6 +117,28 @@ focus the clipboard needs on Android 10 to 17, on a Pixel and a Samsung; which c
 each OEM's apps give; that the restricted-settings path is as described on Android 15 to 17.
 If the overlay does not get the focus, the service starts the transparent activity instead.
 
+## Releasing the Android app
+
+The release workflow builds `clipboardbridge-X.Y.Z.apk` from the tag (version code
+`X*10000 + Y*100 + Z`) and signs it with the project's release key, which lives only in the
+repository's Actions secrets. Android installs an update only when it is signed with the same
+key, so the key is made once and kept, with a backup, for good:
+
+```sh
+keytool -genkeypair -v -keystore clipboardbridge-release.jks -alias clipboardbridge \
+  -keyalg EC -groupname secp256r1 -validity 36500 -dname "CN=clipboardbridge"
+base64 -i clipboardbridge-release.jks | pbcopy   # macOS; Linux: base64 -w0 clipboardbridge-release.jks
+```
+
+The secrets: `CBB_ANDROID_KEYSTORE_BASE64` (the keystore, in base64),
+`CBB_ANDROID_KEYSTORE_PASSWORD`, `CBB_ANDROID_KEY_ALIAS` (`clipboardbridge`) and
+`CBB_ANDROID_KEY_PASSWORD` (the same as the keystore's for a PKCS12 keystore). Without them
+the release has no APK. F-Droid, later, builds and signs with its own key.
+
+To check the key without a release, run the release workflow by hand from a branch (Actions,
+"release", "Run workflow"): it builds everything, checks the APK's signature and keeps the
+files as the run's artifacts, and publishes nothing.
+
 ## Languages
 
 - Every user-facing string comes from the platform's catalog from the first screen on: a
