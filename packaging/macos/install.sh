@@ -4,17 +4,27 @@
 
 # Installs clipboardbridge on a Mac:
 #
-#   sudo sh install.sh path/to/cbb
+#   sudo sh install.sh [--in-place] path/to/cbb
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
-# a LaunchAgent, adds the user who ran sudo to the group, and starts both.
+# a LaunchAgent, adds the user who ran sudo to the group, and starts or
+# restarts both. With --in-place both run the binary where it is instead of
+# a copy, for Homebrew, whose upgrades replace it there: the formula's
+# caveats pass its opt path, and running this again after an upgrade
+# restarts them on the new one. uninstall.sh removes it all again.
 set -eu
 
-if [ $# -ne 1 ]; then
-	echo "usage: sudo sh install.sh path/to/cbb" >&2
+usage() {
+	echo "usage: sudo sh install.sh [--in-place] path/to/cbb" >&2
 	exit 2
+}
+inplace=no
+if [ "${1:-}" = --in-place ]; then
+	inplace=yes
+	shift
 fi
+[ $# -eq 1 ] || usage
 bin=$1
 # A bare file name would be looked up in PATH, not here.
 case $bin in
@@ -65,8 +75,29 @@ if ! dscl . -read "/Users/$name" >/dev/null 2>&1; then
 	dscl . -create "/Users/$name" IsHidden 1
 fi
 
-install -d -m 0755 /usr/local/bin
-install -m 0755 "$bin" /usr/local/bin/cbb
+if [ "$inplace" = yes ]; then
+	# launchd takes the path as it is: absolute, and plain enough for the plists.
+	run=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
+	case $run in
+	*[!A-Za-z0-9/._+-]*)
+		echo "install.sh: --in-place needs a path of letters, digits and / . _ + -, not $run" >&2
+		exit 2
+		;;
+	esac
+	# A copy from an install without --in-place would shadow it in PATH;
+	# on an Intel Mac /usr/local/bin/cbb is Homebrew's own link.
+	if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
+		rm -f /usr/local/bin/cbb
+	fi
+else
+	run=/usr/local/bin/cbb
+	if [ -L "$run" ]; then
+		echo "install.sh: $run is a link, likely Homebrew's; run this with --in-place $run" >&2
+		exit 1
+	fi
+	install -d -m 0755 /usr/local/bin
+	install -m 0755 "$bin" "$run"
+fi
 # The socket's directory: members of the group may reach the socket, and
 # only the service its state.
 install -d -o "$name" -g "$name" -m 0750 "/Library/Application Support/clipboardbridge"
@@ -75,8 +106,11 @@ install -d -o "$name" -g "$name" -m 0750 /Library/Logs/clipboardbridge
 
 daemon=io.github.hunterewok.clipboardbridge
 agent=io.github.hunterewok.clipboardbridge.agent
-install -m 0644 "$here/$daemon.plist" "/Library/LaunchDaemons/$daemon.plist"
-install -m 0644 "$here/$agent.plist" "/Library/LaunchAgents/$agent.plist"
+for p in "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist"; do
+	sed "s|<string>/usr/local/bin/cbb</string>|<string>$run</string>|" "$here/$(basename "$p")" >"$p.new"
+	chmod 0644 "$p.new"
+	mv "$p.new" "$p"
+done
 
 user=${SUDO_USER:-}
 if [ -n "$user" ] && [ "$user" != root ]; then
