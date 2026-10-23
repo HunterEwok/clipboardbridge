@@ -46,6 +46,15 @@ go run ./tools/icon -check     # the app icon
 go test -race ./...
 ```
 
+The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
+no Android dependencies and builds anywhere; the app needs the Android SDK and Google's Maven
+repository (CI, or a Mac with Android Studio):
+
+```sh
+cd apps/android && ./gradlew -p kit test
+cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
 The phone kit (Swift package, runs on Linux too):
 
 ```sh
@@ -62,6 +71,10 @@ Cross tests between Go and Swift: Swift tests write vectors that Go reads, and t
   `TestSwiftMemberAdmitsGoJoiner` (pairing over plain TCP); on macOS
   `CBB_SWIFT_INTEROP_TLS` runs the real-TLS pairing and member tests (see the
   `phone kit` job in `.github/workflows/ci.yml` for the keychain setup).
+- The Kotlin kit does the same: `CBB_INTEROP_OUT=<dir> ./gradlew -p kit test` writes the
+  same files, and `./gradlew -p kit interopScript` builds
+  `kit/build/interop/clipboardbridge-interop`, which plays the Android phone in those three
+  Go tests on Linux too (TLS from Conscrypt; the `Android app` job runs them).
 
 The app (macOS with Xcode):
 
@@ -88,6 +101,8 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
+- `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
+  `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
   `apps/design/tokens.json`, String Catalogs in English and Russian).
 

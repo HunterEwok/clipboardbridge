@@ -434,7 +434,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | PRS (password) | the six ASCII digits of the code |
 | CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
-| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"}`; a phone with the app (`ios`) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER) |
+| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux` and `darwin` |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
 | Tags Ta, Tb | HMAC-SHA-512, 64 bytes |

@@ -54,6 +54,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
   system's message; `-Details` or `CBB_ERROR_DETAILS=1` adds the full error. The service
   logs to `ProgramData\clipboardbridge\logs`, the agent to
   `LocalAppData\clipboardbridge\agent.log`.
+- The Android app is started in `apps/android`: a Gradle build with the protocol core in
+  Kotlin (`kit`, no Android dependencies) and a Compose app, built and tested in CI. The kit
+  has CPace over X25519 (tested with the vectors of RFC 7748 and the CPace draft), the group's
+  certificates, the member and pairing messages, the join QR code and the signed records; it
+  reads the Go and Swift vectors in `testdata/interop`, and Go checks the records it signs.
+  It also has the sync engine, the member node, pairing in both directions and the phone's
+  group (making admins, renewals, removal, the takeover); Go checks its renewals, admin CAs
+  and `root` records. An Android phone joins with `os` `android` and an admin phone admits it
+  as a phone, and both kits record a lite member (`"role":"lite"` in its Info) with role `lite`.
+  TLS 1.3 comes from Conscrypt (bundled in the app), with ALPN and the exporter: in CI, Go
+  pairs with the Kotlin kit over plain TCP and over TLS, and syncs with it as a member.
+
+- A new app icon, a clipboard with a key: light, and dark in the system's dark mode
+  (iOS 18 and later).
 - The phone app's "Sync clipboard" action, in Shortcuts and Spotlight without setting
   anything up: Back Tap or the Action button sends or fetches by the Home button's rule
   without opening the app, and says what it did.

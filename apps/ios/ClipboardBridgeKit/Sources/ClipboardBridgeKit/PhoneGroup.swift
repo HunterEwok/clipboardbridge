@@ -282,21 +282,21 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
                                     groupCA: first, issuer: issuer)
             w.roots = later.isEmpty ? nil : later
-            if info.os == "ios", let key = info.adminKey, makeAdmin, canMakeAdmins {
+            if info.isPhone, let key = info.adminKey, makeAdmin, canMakeAdmins {
                 w.adminCA = try GroupCertificates.adminCA(device: dev, publicKey: key, root: root, rootSigner: caSigner)
                 adminKey = key
             }
             return w
         }
         let name = Self.validName(admitted.info.name), key = try Records.keyHash(cert: admitted.cert)
-        if admitted.info.os == "ios" {
+        if admitted.info.isPhone {
             _ = try record(device: admitted.device, name: name, role: "phone", key: key, admin: adminKey.map(Records.keyHash(spki:)),
                            caSigner: caSigner, now: now)
             return admitted
         }
         computers.removeAll { $0.device == admitted.device }
         computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now))
-        _ = try record(device: admitted.device, name: name, role: admitted.info.os == "darwin" ? "mac" : "linux",
+        _ = try record(device: admitted.device, name: name, role: admitted.info.role == Pairing.Info.lite ? "lite" : admitted.info.os == "darwin" ? "mac" : "linux",
                        key: key, caSigner: caSigner, now: now)
         return admitted
     }

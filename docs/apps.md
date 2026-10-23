@@ -69,6 +69,54 @@ suggests making a second phone an admin.
 Errors are one line in plain words with the next step ("Turn on the computer that holds
 the group", not a status code), never a dialog that must be dismissed.
 
+## Android: the clipboard without taps
+
+Since Android 10 an app reads the clipboard only while it has the input focus, or when it is
+the default keyboard; writing works at any time. So the computers' copies reach the phone by
+themselves, and the phone's copies need either the app's focus for a moment or a tap.
+
+**Receiving, always automatic.** A foreground service (type `connectedDevice`, with the
+ongoing notification Android requires) keeps one connection to each computer of the group
+and puts what they copy on the phone's clipboard. It holds a multicast lock only while it
+browses mDNS. Nothing to set up.
+
+**Sending, automatic: "Send my copies by themselves".** An accessibility service that the
+user turns on once, from a screen in the app that says what it is for and opens the right
+page of Settings:
+
+1. The service watches for a copy: a click on a "Copy" action (the platform's and the
+   common apps' labels, in every language the system has), and from Android 13 the
+   system's clipboard overlay that appears after each copy.
+2. It then shows a 1-pixel accessibility overlay window that takes the focus for a moment,
+   reads the clipboard, sends the text to the group and goes away. The service reads no
+   screen content beyond what tells it that a copy happened, and the app says so.
+3. Android 12 and later show "clipboardbridge pasted from your clipboard" each time; that
+   is the system's notice and cannot be turned off.
+
+On Android 13 and later, an APK installed from a browser or file manager cannot turn on an
+accessibility service until "Allow restricted settings" is chosen in the app's App info
+(⋮ menu). The setup screen shows that step with a button to App info; an install from
+F-Droid or Google Play skips it. Google Play allows the service only with its accessibility
+declaration; the GitHub and F-Droid builds have it from the start.
+
+**Sending with one tap, without the service** (and always as well):
+
+- the **Quick Settings tile** "Send clipboard";
+- the **"Send" button** in the service's notification;
+- **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**;
+- **double-tap the back**: on a Pixel, Settings → System → Gestures → Quick Tap → Open app →
+  "cbb send" (a second launcher entry that sends and closes); on Samsung, Good Lock's
+  RegiStar → Back-Tap action → Open app → "cbb send";
+- **opening the app**, by the Home button's rule.
+
+Each of these opens a transparent activity for a moment: it has the focus, reads the
+clipboard, sends, says what it did in one line (a toast) and closes.
+
+**To check on a device before building on it:** that the accessibility overlay gets the
+focus the clipboard needs on Android 10 to 17, on a Pixel and a Samsung; which copy events
+each OEM's apps give; that the restricted-settings path is as described on Android 15 to 17.
+If the overlay does not get the focus, the service starts the transparent activity instead.
+
 ## Languages
 
 - Every user-facing string comes from the platform's catalog from the first screen on: a
@@ -90,6 +138,8 @@ the group", not a status code), never a dialog that must be dismissed.
   background with the same accents, for bright rooms). "System" follows the system's light
   or dark mode with the Terminal and Light themes.
 - A theme is a set of tokens, so adding one later is data, not code.
+- On Android 12 and later a fifth choice, **Wallpaper** (Material You), takes the colours
+  from the wallpaper through dynamic colour; the other themes stay as they are.
 - Contrast meets WCAG AA for text in every theme.
 
 ## Layout of the repository
@@ -118,7 +168,9 @@ the group", not a status code), never a dialog that must be dismissed.
   group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
-- `apps/design/` — tokens and the icon; `go run ./tools/tokens` turns `tokens.json` into
+- `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
+  drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
+  for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into
   `apps/ios/ClipboardBridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
   WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
