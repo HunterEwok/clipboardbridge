@@ -119,11 +119,13 @@ type dialer struct {
 	addrs  []string // where discovery last saw the member, best first
 }
 
-// found handles the members that discovery found: a Mac dials every Linux
-// and lite member; a Linux member dials the Linux members whose device ID
-// is greater than its own, so two members make one connection between
-// them, and leaves the lite members (TXT r=lite) to dial it. A member's
-// dialer takes its new addresses or port on its next round.
+// found handles the members that discovery found. A Mac dials every Linux
+// and lite member, since its firewall may keep them from reaching it, and
+// the Macs (TXT r=mac) whose device ID is greater than its own; a Linux
+// member dials the Linux members whose device ID is greater than its own,
+// and leaves the Macs and the lite members (TXT r=lite) to dial it. So two
+// members make one connection between them. A member's dialer takes its
+// new addresses or port on its next round.
 func (s *Service) found(peers []mdns.Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,14 +136,19 @@ func (s *Service) found(peers []mdns.Peer) {
 	want := map[group.DeviceID][]string{}
 	for _, p := range peers {
 		id, err := group.ParseDeviceID(p.ID)
-		if err != nil || id == s.id.ID || (s.cfg.Role == node.Linux && id < s.id.ID) {
+		if err != nil || id == s.id.ID {
 			continue
 		}
 		if g, _ := p.TXTValue("g"); g != tag {
 			continue // another group, or an old CA
 		}
-		if r, _ := p.TXTValue("r"); s.cfg.Role == node.Linux && strings.EqualFold(r, "lite") {
+		r, _ := p.TXTValue("r")
+		mac, lite := strings.EqualFold(r, "mac"), strings.EqualFold(r, "lite")
+		switch {
+		case s.cfg.Role == node.Linux && (mac || lite):
 			continue // it dials the Linux members
+		case (s.cfg.Role == node.Linux || mac) && !lite && id < s.id.ID:
+			continue // of two Linux members, or two Macs, the lower ID dials
 		}
 		want[id] = addresses(p)
 	}
