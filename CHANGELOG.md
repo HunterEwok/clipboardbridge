@@ -52,8 +52,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - A joiner can say it is a lite member (`"role":"lite"` in its pairing Info): Go members
   send it no CA keys and list it with role `lite`.
 - The Android app is started in `apps/android`: a Gradle build with the protocol core in
-  Kotlin (`kit`, no Android dependencies; CPace over X25519 so far, tested with the vectors
-  of RFC 7748 and the CPace draft) and a Compose app, built and tested in CI.
+  Kotlin (`kit`, no Android dependencies) and a Compose app, built and tested in CI. The kit
+  has CPace over X25519 (tested with the vectors of RFC 7748 and the CPace draft), the group's
+  certificates, the member and pairing messages, the join QR code and the signed records; it
+  reads the Go and Swift vectors in `testdata/interop`, and Go checks the records it signs.
+  It also has the sync engine, the member node, pairing in both directions and the phone's
+  group (making admins, renewals, removal, the takeover); Go checks its renewals, admin CAs
+  and `root` records. An Android phone joins with `os` `android` and an admin phone admits it
+  as a phone, and both kits record a lite member (`"role":"lite"` in its Info) with role `lite`.
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).
