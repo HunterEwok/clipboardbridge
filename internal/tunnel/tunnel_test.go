@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -277,6 +278,35 @@ func TestRemovedClientIsDropped(t *testing.T) {
 	}
 }
 
+// TestStayingClientKeepsItsSession checks that a client the hub keeps
+// when its peers change keeps its session: the hub still knows where it
+// is, so it can send to it at once.
+func TestStayingClientKeepsItsSession(t *testing.T) {
+	a, b := newDevice(t), newDevice(t)
+	h := startHub(t, a.peer())
+	c := startClient(t, h, a)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := roundTrip(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetPeers([]Peer{a.peer(), b.peer()}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := h.Hub.dev.IpcGet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rest, _ := strings.Cut(cfg, "public_key="+a.priv.Public().hex()+"\n")
+	rest, _, _ = strings.Cut(rest, "public_key=")
+	if !strings.Contains(rest, "endpoint=") || strings.Contains(rest, "last_handshake_time_sec=0\n") {
+		t.Errorf("the staying client lost its session:\n%s", rest)
+	}
+	if !strings.Contains(cfg, "public_key="+b.priv.Public().hex()+"\n") {
+		t.Error("the new client is missing")
+	}
+}
+
 func TestSetEndpoint(t *testing.T) {
 	a := newDevice(t)
 	h := startHub(t, a.peer())
@@ -354,5 +384,39 @@ func TestPublicKey(t *testing.T) {
 	pub := priv.Public()
 	if got, want := pub.hex(), "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"; got != want {
 		t.Fatalf("public key %s, want %s", got, want)
+	}
+}
+
+// TestGuest checks that a guest reaches the hub from its own address,
+// outside the members' prefix, and cannot take a member's address.
+func TestGuest(t *testing.T) {
+	g := newDevice(t)
+	g.addr = GuestAddr(g.priv.Public())
+	if !IsGuest(g.addr) || prefix.Contains(g.addr) {
+		t.Fatalf("guest address %v", g.addr)
+	}
+	if m := newDevice(t); IsGuest(m.addr) {
+		t.Fatalf("member address %v is a guest's", m.addr)
+	}
+	h := startHub(t, g.peer())
+	c := startClient(t, h, g)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	got, err := roundTrip(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, g.addr.String()+" ") {
+		t.Errorf("the hub saw %q, want it from %v", got, g.addr)
+	}
+
+	// With the guest's key, a member's address gets nowhere.
+	member := newDevice(t)
+	tnet := rawClient(t, h, g, member.addr)
+	rctx, rcancel := context.WithTimeout(context.Background(), refuseWait)
+	defer rcancel()
+	if conn, err := tnet.DialContextTCPAddrPort(rctx, netip.AddrPortFrom(h.dev.addr, Port)); err == nil {
+		conn.Close()
+		t.Error("a guest reached the hub from a member's address")
 	}
 }

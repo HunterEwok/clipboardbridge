@@ -784,7 +784,8 @@ A connection carries one request: the service reads the first message and dispat
 | `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail}` (section 11) |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
-| `join` | `{code, address?}` or `{code, listen, expires}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. Hanging up cancels |
+| `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
+| `invite` | `{expires?}`: seconds, 3600 if absent, at most 86 400 | Only on the group's hub, when it can admit devices. First `{invite, expires}`: the invitation's text. Then, for each device that used it and proved it knows the secret, `{joining: {id, name, os, fingerprint}}`, which the client answers with `{"op": "answer", consent}` (`true` admits it); last `{name, done}` or an error. Hanging up cancels the invitation |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
@@ -1058,8 +1059,9 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 - When records revoke a device (section 10, rule 4, on the chain it presented), the hub
   forgets its key at once.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met
-  the hub as a member, with the key that member sent, and joining from the internet is not
-  possible. No signed record binds the key: the member certificate already does.
+  the hub as a member, with the key that member sent. A device that is not yet a member
+  reaches the hub from the internet only with a remote invitation's guest key (section 12).
+  No signed record binds the key: the member certificate already does.
 - A member that moves to another group turns sync away from home off: it deletes
   `tunnel.json` (whose `group` names the old group), and the user turns it on again.
 
@@ -1078,4 +1080,65 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
   the offer's endpoints in turn, with the dialers' backoff (1 s, doubling to 30 s).
 - It fails closed: when the hub or the link cannot start, or the hub does not answer, the
   member syncs at home only, and `status` says why (`error`, with `detail` for debugging).
+
+## 12. Remote invitations
+
+A device that shares no network with the group joins through the hub's tunnel with a remote
+invitation ([design.md](design.md), "Joining from another network"). Implemented in Go
+(`internal/invite`, `internal/service/invite.go`, `cbb invite`, `cbb join -invite`) for
+computers; the phones neither make nor use invitations yet.
+
+### The invitation
+
+Made on the hub, by the control operation `invite` (`cbb invite`). Its text is
+`clipboardbridge://invite#` followed by base64url without padding of this JSON (byte strings
+in it as in the rest of this document):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `v` | number | 1 |
+| `g` | string | the group's tag |
+| `h` | string | the hub's device ID |
+| `hk` | bytes | the hub's WireGuard public key, 32 bytes |
+| `ep` | array of strings | the hub's addresses away from home, `ip:port`, 1 to 8 |
+| `k` | bytes | the guest's one-time WireGuard private key, 32 bytes |
+| `psk` | bytes | the guest's preshared key, 32 bytes |
+| `s` | bytes | the pairing secret, 16 random bytes (128 bits) |
+| `exp` | number | when it expires, Unix seconds |
+
+It travels as a file of one line (`.cbbinvite`, mode 0600, which `cbb invite` deletes when
+the invitation ends and `cbb join -invite` deletes once it joined) or, later, a QR code; it
+is never typed. It is a secret until it is used. It serves one device once, for 1 hour
+unless the admin asks for up to 24 hours, and closes after three failed attempts or when
+the admin cancels it.
+
+### The guest tunnel
+
+- The hub adds the guest key as a WireGuard peer, with the preshared key, whose only
+  allowed address is the guest address: fd00:cbc::/32 followed by the first 96 bits of
+  SHA-256 of the guest's public key. That prefix is apart from the members' (section 11),
+  so a guest address never names a member. Peers that stay when the hub's peers change
+  keep their sessions.
+- Inside the tunnel, a connection from a guest address to TCP 8764 gets the pairing
+  (ALPN `clipboardbridge-pair/1`, section 6) of that invitation's window and nothing else,
+  except, once the window admitted a device, member TLS from that device alone, for its
+  first hello (below). Any other connection is closed.
+- The hub drops the guest peer when the invitation ends without a device, and 2 minutes
+  after it admitted one.
+
+### Joining
+
+1. The new device starts a tunnel client with the guest key, its guest address and the
+   hub's key, tries the hub's endpoints in turn (20 s each), and dials the hub's tunnel
+   address, TCP 8764.
+2. It pairs as in section 6 with the secret as the password. The window takes no other
+   password, gives no CA keys, and before it makes the certificate asks the hub's admin to
+   confirm the device, with its name, system, device ID and key fingerprint; the device
+   shows the same fingerprint. The admin has 5 minutes; a no sends `declined`.
+3. Once it has its certificate, the device turns sync away from home on (the user
+   consented before the join) and makes a member connection to the hub through the guest
+   tunnel. Its hello carries its own tunnel key, which the hub admits (section 11) and
+   answers with its offer.
+4. With the offer, the device closes the guest tunnel and from then on reaches the hub
+   through the tunnel with its own key, as any member.
 

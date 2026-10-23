@@ -36,6 +36,8 @@ const (
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
+	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
+	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
 	OpCopied    = "copied"     // watcher → service: the clipboard changed
 	OpClipboard = "clipboard"  // watcher → service: what the clipboard holds, without a change
@@ -72,7 +74,9 @@ type Header struct {
 	Name        string   `json:"name,omitempty"`        // a device name
 	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port        int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
-	Consent     bool     `json:"consent,omitempty"`     // away on: the user agreed to what the warning says
+	Consent     bool     `json:"consent,omitempty"`     // away on, join with an invitation: the user agreed to what the warning says; answer: yes
+	Invite      string   `json:"invite,omitempty"`      // the text of a remote invitation: made by invite, used by join
+	Joining     *Joining `json:"joining,omitempty"`     // invite: a device to confirm, before it is admitted
 	Status      *Status  `json:"status,omitempty"`
 	Devices     []Device `json:"devices,omitempty"`
 }
@@ -99,6 +103,15 @@ type Away struct {
 	KeysInFile bool     `json:"keys_in_file,omitempty"`
 	Error      string   `json:"error,omitempty"`  // what went wrong last, for the user
 	Detail     string   `json:"detail,omitempty"` // the underlying error, for debugging
+}
+
+// Joining is a device that used a remote invitation, for the admin to
+// confirm with an answer.
+type Joining struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	OS          string `json:"os"`
+	Fingerprint string `json:"fingerprint"` // of its key, as cbb join shows it on the device
 }
 
 // Device is a member as status shows it, or a device of the group as

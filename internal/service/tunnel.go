@@ -217,7 +217,7 @@ func (s *Service) runTunnelLocked() {
 		if port == 0 {
 			port = tunnel.Port
 		}
-		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: st.Peers(), Logf: s.logf, Verbose: tunnelVerbose()})
+		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: s.hubPeerListLocked(), Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			s.tunFailedLocked(fmt.Sprintf("the hub could not listen on UDP port %d", port), err)
@@ -295,10 +295,11 @@ func (s *Service) tunFailedLocked(msg string, err error) {
 	}
 }
 
-// hubPeersLocked gives the running hub the clients the state admits now.
+// hubPeersLocked gives the running hub the clients the state admits now,
+// and the guests of open invitations.
 func (s *Service) hubPeersLocked() {
 	if r := s.tunRun; r != nil && r.hub != nil {
-		if err := r.hub.SetPeers(s.tunnel.Peers()); err != nil {
+		if err := r.hub.SetPeers(s.hubPeerListLocked()); err != nil {
 			s.tunFailedLocked("the hub could not take its clients", err)
 		}
 	}
@@ -325,6 +326,11 @@ func (s *Service) acceptTunnel(ctx context.Context, ln net.Listener) {
 }
 
 func (s *Service) serveTunnelMember(ctx context.Context, raw net.Conn, release func()) {
+	from, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
+	if tunnel.IsGuest(from.Addr()) {
+		s.serveGuest(ctx, raw, from.Addr(), release)
+		return
+	}
 	s.mu.Lock()
 	nd := s.nd
 	s.mu.Unlock()
@@ -343,7 +349,6 @@ func (s *Service) serveTunnelMember(ctx context.Context, raw net.Conn, release f
 		return
 	}
 	id, err := group.PeerID(tc.ConnectionState())
-	from, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
 	if want, aerr := tunnel.Addr(string(id)); err != nil || aerr != nil || from.Addr() != want {
 		s.logf("cbb: a member connection through the tunnel from %v is not from the device of that key; closed", from.Addr())
 		raw.Close()

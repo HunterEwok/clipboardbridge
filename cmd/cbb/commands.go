@@ -227,12 +227,20 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	typed := fs.Bool("code", false, "type the code that cbb pair shows on a Linux member")
+	invitation := fs.String("invite", "", "join with the invitation file that cbb invite made on the group's hub")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	rest := fs.Args()
+	if *invitation != "" {
+		if *typed || len(rest) != 0 {
+			fmt.Fprintln(stderr, "usage: cbb join -invite file")
+			return 2
+		}
+		return cmdJoinInvite(*invitation, stdin, stdout, stderr)
+	}
 	if len(rest) > 1 || len(rest) == 1 && (!*typed || !strings.Contains(rest[0], ":")) {
-		fmt.Fprintln(stderr, "usage: cbb join            (scan the QR code with the phone)\n       cbb join -code [address:port]\nThe code is asked for, or read from standard input.")
+		fmt.Fprintln(stderr, "usage: cbb join            (scan the QR code with the phone)\n       cbb join -code [address:port]\n       cbb join -invite file\nThe code is asked for, or read from standard input.")
 		return 2
 	}
 	h := control.Header{Op: control.OpJoin}
