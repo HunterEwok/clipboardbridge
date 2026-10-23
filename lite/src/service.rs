@@ -208,7 +208,7 @@ fn kind_of(s: &str) -> Result<Kind> {
 fn via_of(s: &str) -> Result<Via> {
     match s {
         "" | "copy" => Ok(Via::Copy),
-        "iphone" => Ok(Via::Phone),
+        "phone" | "iphone" => Ok(Via::Phone),
         "universal-clipboard" => Ok(Via::Universal),
         _ => Err(Error::msg(format!("unknown via {s:?}"))),
     }
@@ -224,7 +224,7 @@ fn kind_name(k: Kind) -> &'static str {
 fn via_name(v: Via) -> &'static str {
     match v {
         Via::Copy => "copy",
-        Via::Phone => "iphone",
+        Via::Phone => "phone",
         Via::Universal => "universal-clipboard",
     }
 }

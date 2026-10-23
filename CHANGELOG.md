@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- An event sent from a phone has `via` `phone` (the app, iPhone or Android, or the iPhone
+  shortcut), where it had `iphone`; members still take `iphone`. The control socket takes
+  and reports `phone` too. Names that belong to the shortcut, for an iPhone without the
+  app, keep the word: the iPhone CA, the `iphone` token role, `to_iphone` and `from_iphone`.
+
 - **clipbridge is now clipboardbridge, and its command is `cbb`.** Everything is renamed: the
   repository, the binary (`/usr/local/bin/cbb`), the service (`clipboardbridge.service`, on
   macOS `io.github.hunterewok.clipboardbridge`), the user and group, the directories, the
