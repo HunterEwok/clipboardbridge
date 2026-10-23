@@ -1,11 +1,11 @@
 # clipboardbridge
 
-One clipboard for your Apple devices and every Linux and Windows computer on your home network. Its
-command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
+One clipboard for your Apple devices, Android phones and every Linux and Windows computer on
+your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
 > **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
-> shortcut work; Windows is new and not yet tested on a real PC; the phone apps and sync
-> away from home are planned. The design is
+> shortcut work; Windows is new and not yet tested on a real PC; the iPhone and Android apps
+> are built and tested in CI but not yet on a real phone; sync away from home is planned. The design is
 > in [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
 
 ## Install
