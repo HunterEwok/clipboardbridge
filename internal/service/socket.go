@@ -83,6 +83,8 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		s.pairPhone(ctx, c, r)
 	case control.OpJoin:
 		s.join(ctx, c, r, m)
+	case control.OpInvite:
+		s.invite(ctx, c, r, m)
 	case control.OpWatch:
 		s.watch(ctx, c, r, m)
 	case control.OpDevices:
@@ -406,13 +408,17 @@ const joinTimeout = 2 * time.Minute
 // join joins a group with a code. With Listen it waits for a member to dial
 // this device, at the addresses and with the certificate it answers with
 // first, for the QR code; otherwise it dials the address the user gave, or
-// the one Linux member that announces an open pairing window. A client that
+// the one Linux member that announces an open pairing window; with an
+// invitation, it joins through the hub's tunnel (invite.go). A client that
 // hangs up cancels the join.
 func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *control.Message) {
-	code, err := pair.NormalizeCode(m.Code)
-	if err != nil {
-		fail(c, err)
-		return
+	var code string
+	var err error
+	if m.Invite == "" {
+		if code, err = pair.NormalizeCode(m.Code); err != nil {
+			fail(c, err)
+			return
+		}
 	}
 	s.mu.Lock()
 	inGroup, busy := s.id != nil, s.joining || s.opening
@@ -441,7 +447,9 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 	}
 	defer end()
 	wait := joinTimeout + s.cfg.browseFor
-	if m.Listen {
+	if m.Invite != "" {
+		wait = joinTimeout + confirmWait
+	} else if m.Listen {
 		wait = pair.Lifetime
 		if m.Expires > 0 {
 			wait = min(time.Duration(m.Expires)*time.Second, wait)
@@ -466,13 +474,20 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		return
 	}
 	var id *group.Identity
-	if m.Listen {
+	var after func(bool)
+	switch {
+	case m.Invite != "":
+		id, after, err = s.joinInvite(ctx, c, j, m)
+	case m.Listen:
 		id, err = s.listenForMember(ctx, c, j, code)
-	} else {
+	default:
 		id, err = s.dialMember(ctx, j, code, m.Address)
 	}
 	if err == nil {
 		err = s.startGroup(id)
+		if after != nil {
+			after(err == nil)
+		}
 	}
 	end()
 	if err != nil {

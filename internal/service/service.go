@@ -140,14 +140,15 @@ type Service struct {
 	recMu   sync.Mutex     // guards records; taken after mu, never before
 	records *group.Records // the group's device records; nil while in no group
 
-	tunMu      sync.Mutex      // guards tunnel and the rest of the tun fields; taken after mu, before recMu
-	tunnel     *tunnel.State   // the tunnel keys (tunnel.go); nil while sync away from home is off
-	tunCtx     context.Context // the group's context, for the tunnel; nil while in no group
-	tunSelf    string          // this device's ID, for its tunnel address
-	tunRun     *tunRun         // the hub or the link to it, while it runs
-	tunThrough bool            // connected to the hub through the tunnel now
-	tunErr     string          // what went wrong last, for status; "" if nothing
-	tunDetail  string          // the underlying error
+	tunMu      sync.Mutex            // guards tunnel and the rest of the tun fields; taken after mu, before recMu
+	tunnel     *tunnel.State         // the tunnel keys (tunnel.go); nil while sync away from home is off
+	tunCtx     context.Context       // the group's context, for the tunnel; nil while in no group
+	tunSelf    string                // this device's ID, for its tunnel address
+	tunRun     *tunRun               // the hub or the link to it, while it runs
+	tunThrough bool                  // connected to the hub through the tunnel now
+	tunErr     string                // what went wrong last, for status; "" if nothing
+	tunDetail  string                // the underlying error
+	guests     map[netip.Addr]*guest // on the hub: the guest tunnels of open remote invitations (invite.go)
 
 	groupCtx    context.Context
 	groupCancel context.CancelFunc

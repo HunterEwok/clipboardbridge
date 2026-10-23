@@ -83,7 +83,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The first part of remote invitations: a pairing window can take an invitation's 128-bit
   secret in place of the six-digit code, live up to a day, and ask its admin to confirm the
   device (name, system, key fingerprint) before it admits it; an invited device never gets
-  the CA keys. `cbb invite` and the guest tunnel follow.
+  the CA keys.
+
+- Remote invitations for computers: `cbb invite` on the group's hub writes an invitation
+  file (`.cbbinvite`, valid for an hour, at most a day, for one device) and asks you to
+  confirm the device that uses it; `cbb join -invite FILE` joins from any network through a
+  one-time guest key that reaches only the hub's pairing, then syncs through the hub with
+  its own tunnel key. The hub's peers now change without resetting the sessions of the
+  clients that stay.
 
 - Homebrew, on macOS and Linux (x86-64, ARM64):
   `brew install hunterewok/tap/clipboardbridge`. The formula installs the
