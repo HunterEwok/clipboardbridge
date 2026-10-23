@@ -196,7 +196,8 @@ any member may be switched off at any time.
 
 - A clipboard change on a member becomes an **event**: a random ID, the origin device, a
   hybrid timestamp, the age, the text, its kind (normal or secret) and how it arrived (a copy
-  on the member, the iPhone button, or Universal Clipboard relayed by a Mac, which carries
+  on the member, sent from a phone (the app or the iPhone shortcut's button), or Universal
+  Clipboard relayed by a Mac, which carries
   copies from an iPhone, an iPad or another Mac).
 - Members forward every event the first time they see it to all members they are connected
   to, drop events they have seen, and exchange their current event whenever a connection
@@ -219,7 +220,7 @@ any member may be switched off at any time.
 - **Automatic reports and deliberate actions.** A clipboard watcher (a desktop connector or
   the Mac's pasteboard agent) reports changes; a report of the text the clipboard already
   held, for example offered again by a clipboard manager, makes no event. Deliberate actions
-  (the iPhone button, `cbb copy`, tmux, "send even if secret" on a Mac) always make an
+  (sending from a phone, `cbb copy`, tmux, "send even if secret" on a Mac) always make an
   event, and the text also goes to the member's own clipboard.
 - Events are ordered by a hybrid logical clock, then by event ID. No timestamp is ever
   refused: members would disagree about where to draw the line, and the group could split. A
@@ -272,7 +273,9 @@ any member may be switched off at any time.
 
 ## The iPhone button
 
-One shortcut, published as an iCloud link with an import question for the token. It reads
+The button is for an iPhone without the app; a phone with the app, iPhone or Android, is a
+member and sends from the app instead (see "Target architecture with the phone apps" below). One
+shortcut, published as an iCloud link with an import question for the token. It reads
 the iPhone clipboard and sends `POST https://clipboardbridge.local:8764/sync` with the JSON body
 `{"v": 1, "text": "…"}` (optionally `"secret": true`, which makes a secret event) and the
 header `Authorization: Bearer <token>`. The member that holds the name decides the direction:
@@ -355,8 +358,8 @@ and lifetimes. The installer enables what the device needs.
 - Only the regular clipboard is watched; mouse selections are not sent to the group. A
   received text goes into both the clipboard and the primary selection, so Ctrl+V works in
   applications, and Shift+Insert and the middle mouse button work in terminals.
-- **Auto-paste** (optional): after the connector writes an event made by the iPhone button
-  (via `iphone`), it presses Shift+Insert through a virtual keyboard (uinput). Never for
+- **Auto-paste** (optional): after the connector writes an event sent from a phone (via
+  `phone`), it presses Shift+Insert through a virtual keyboard (uinput). Never for
   Universal Clipboard items or other events, and not on the lock screen.
 
 ### 3. Console helper
@@ -498,14 +501,15 @@ The order may change.
    architecture with the phone apps" below).
 10. Console helper and auto-paste.
 11. A lite member in Rust for weak devices (routers, small boards): a member without CA
-    keys that only dials, like a Mac, joins by QR code through the phone and syncs; it
-    never admits devices, holds `clipboardbridge.local` or serves the iPhone, and needs one full
-    member on. Only once the Go version is complete and its architecture settled, so it is
+    keys that joins by QR code through the phone and syncs; it never admits devices, holds
+    `clipboardbridge.local` or serves the iPhone shortcut. It dials the Linux members and
+    listens for phones and Macs, so a phone and a lite member sync with no computer on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members. Started for Linux in `lite/` (`cbb-lite`, tested on a
-    Raspberry Pi); the ESP32 comes next, so the protocol core there stays free of the
-    operating system where it can.
+    Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the
+    Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
+    crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
+    place of ring), which CI builds for RISC-V; TLS and the networking on the chip follow.
 12. Sync away from home; see "Sync away from home (planned)" below.
 
 ### Future research (not planned)

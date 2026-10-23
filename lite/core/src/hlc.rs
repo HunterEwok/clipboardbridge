@@ -4,8 +4,12 @@
 //! The hybrid logical clock (docs/protocol.md, section 5), as Go's package
 //! hlc implements it.
 
-use std::fmt;
-use std::sync::Mutex;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use core::fmt;
+
+use crate::sync::Mutex;
 
 /// The largest wall time a timestamp may carry: the last millisecond of the
 /// year 9999.
@@ -54,7 +58,7 @@ impl fmt::Display for Timestamp {
 }
 
 impl serde::Serialize for Timestamp {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> core::result::Result<S::Ok, S::Error> {
         s.collect_str(self)
     }
 }
@@ -93,7 +97,7 @@ impl Clock {
     /// A timestamp for a local event, greater than every one returned or
     /// observed before, until MAX_WALL.
     pub fn now(&self) -> Timestamp {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock();
         let pt = (self.now)().min(MAX_WALL);
         if pt > st.last.wall {
             st.last = Timestamp { wall: pt, logical: 0 };
@@ -109,7 +113,7 @@ impl Clock {
         if !remote.valid() {
             return;
         }
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock();
         let pt = (self.now)().min(MAX_WALL);
         let wall = st.last.wall.max(remote.wall).max(pt);
         if wall == st.last.wall && wall == remote.wall {
@@ -127,7 +131,7 @@ impl Clock {
     }
 
     fn keep_mark(&self, st: &mut State) {
-        let mut save = self.save.lock().unwrap();
+        let mut save = self.save.lock();
         let Some(save) = save.as_mut() else { return };
         if st.last < st.mark {
             return;

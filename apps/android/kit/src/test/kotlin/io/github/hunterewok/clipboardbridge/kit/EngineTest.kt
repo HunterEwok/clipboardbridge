@@ -47,7 +47,7 @@ class EngineTest {
         assertEquals(SyncEngine.Result(old, false), e.received(old))
         assertEquals("first", e.usable?.first)
         // A local event is later than everything seen.
-        val mine = e.local("from the phone", Member.Kind.TEXT, Member.Via.IPHONE)
+        val mine = e.local("from the phone", Member.Kind.TEXT, Member.Via.PHONE)
         assertTrue(mine.isLater(a))
         assertEquals("from the phone", e.usable?.first)
         // An invalid event changes nothing.

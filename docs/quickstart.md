@@ -46,6 +46,10 @@ mDNS, so it needs no setting. The iPhone shortcut works only with 8764.
 
 ## 2. Make the group and pair the iPhone
 
+This step pairs the iPhone shortcut, for an iPhone without the app. With the clipboardbridge
+app (iPhone or Android), the phone makes the group itself instead: see the app's
+"Connect a new device".
+
 On that machine:
 
 ```sh

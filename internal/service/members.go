@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -119,9 +120,10 @@ type dialer struct {
 }
 
 // found handles the members that discovery found: a Mac dials every Linux
-// member; a Linux member dials those whose device ID is greater than its
-// own, so two members make one connection between them. A member's dialer
-// takes its new addresses or port on its next round.
+// and lite member; a Linux member dials the Linux members whose device ID
+// is greater than its own, so two members make one connection between
+// them, and leaves the lite members (TXT r=lite) to dial it. A member's
+// dialer takes its new addresses or port on its next round.
 func (s *Service) found(peers []mdns.Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -137,6 +139,9 @@ func (s *Service) found(peers []mdns.Peer) {
 		}
 		if g, _ := p.TXTValue("g"); g != tag {
 			continue // another group, or an old CA
+		}
+		if r, _ := p.TXTValue("r"); s.cfg.Role == node.Linux && strings.EqualFold(r, "lite") {
+			continue // it dials the Linux members
 		}
 		want[id] = addresses(p)
 	}

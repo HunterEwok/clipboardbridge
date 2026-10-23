@@ -5,16 +5,27 @@ Pi, a router, a small board. It speaks the member protocol of
 [docs/protocol.md](../docs/protocol.md), but unlike `cbb` it
 
 - never holds CA keys, so it never admits devices;
-- only dials the full members (found by mDNS, or named with `-peer`), like a Mac;
-- never holds `clipboardbridge.local` or serves the iPhone shortcut;
+- dials the computers (found by mDNS, or named with `-peer`), and publishes itself in mDNS
+  and listens on the member port, TCP 8764, so that phones, Macs and other lite members
+  dial it: a phone syncs with it directly, with no computer on;
+- never holds `clipboardbridge.local` or serves the shortcut, the Apple Shortcuts action an
+  iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);
 - has no desktop clipboard of its own: other programs use `copy`, `paste` and `watch`.
 
-It needs at least one full member (`cbb` on a computer) to be on. Full members list it
-with role `lite`.
+Full members list it with role `lite`. A device on another network than the phone (another
+subnet, where mDNS does not reach) syncs through the internet, over a VPN between the
+devices; see "Sync away from home" in [docs/design.md](../docs/design.md). Until then, name
+a computer there with `-peer`.
 
-The protocol core (`certs`, `records`, `clip`, `hlc`, `wire`, `pair` and CPace in
-`src/third_party/cpace`) keeps away from the operating system where it can, for a later
-port to the ESP32.
+The protocol core is its own crate, [`core`](core) (`cbb_core`): certificates, records,
+the hybrid clock, the sync engine, the frames and the joiner's side of the pairing, with
+CPace in `core/src/third_party/cpace`. It does no I/O and needs no operating system
+(no_std with alloc; RustCrypto for P-256, SHA-2 and HMAC), so a lite member on the ESP32
+can use it as it is. On a microcontroller the firmware supplies the randomness, as
+getrandom's custom backend (`__getrandom_v03_custom`), and the core's locks are spin
+locks; with the `std` feature, as `cbb-lite` uses it, they are the standard library's.
+`cbb-lite` itself (`src`) adds the state files, TLS with rustls, mDNS, the control socket
+and the service.
 
 ## Build
 
@@ -23,7 +34,15 @@ With Rust 1.85 or later:
 ```sh
 cd lite
 cargo build --release          # target/release/cbb-lite
-cargo test                     # unit tests and the vectors in ../testdata/interop
+cargo test --workspace         # unit tests and the vectors in ../testdata/interop
+```
+
+The core alone for a RISC-V microcontroller such as the ESP32-C6
+(`rustup target add riscv32imac-unknown-none-elf`; `.cargo/config.toml` sets getrandom's
+backend):
+
+```sh
+cargo build -p clipboardbridge-core --release --target riscv32imac-unknown-none-elf
 ```
 
 For a Raspberry Pi (64-bit Raspberry Pi OS or Debian) from an x86 Linux machine:
@@ -59,6 +78,7 @@ cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite go test ./internal/service -
 sudo install -m 0755 cbb-lite /usr/local/bin/
 sudo install -m 0644 packaging/cbb-lite.sysusers /usr/lib/sysusers.d/cbb-lite.conf
 sudo systemd-sysusers
+sudo install -d -o cbb-lite -g cbb-lite -m 0700 /var/lib/cbb-lite
 sudo install -m 0644 packaging/cbb-lite.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cbb-lite
@@ -71,10 +91,10 @@ can read its keys:
 sudo -u cbb-lite cbb-lite join -name pi
 ```
 
-It shows a QR code: in the clipboardbridge app tap "Connect a new device" (or run the
-shortcut "clipboardbridge: add a computer") and scan it. The phone reaches the device on
-TCP port 8764 (`-port` to change it); open that port from the home network if a firewall
-drops it. In a group without a phone, run `cbb pair` on a Linux member and
+It shows a QR code: in the clipboardbridge app (iPhone or Android) tap "Connect a new device"
+(or, on an iPhone with the shortcut, run "clipboardbridge: add a computer") and scan it. The phone reaches the device on
+TCP port 8764 (`-port` to change it), while it joins and afterwards to sync; open that port
+from the home network if a firewall drops it. In a group without a phone, run `cbb pair` on a Linux member and
 `sudo -u cbb-lite cbb-lite join -code <that member>:8764` here, then type the code.
 
 Add yourself to the `cbb-lite` group to use the control socket without `sudo`:
@@ -89,7 +109,8 @@ cbb-lite watch                      # one line per text the group sends here
 ```
 
 Without mDNS on the network, name the full members: edit the unit's `ExecStart` to
-`/usr/local/bin/cbb-lite run -peer 192.168.0.10:8764 -peer ...`.
+`/usr/local/bin/cbb-lite run -peer 192.168.0.10:8764 -peer ...`. `run -port` moves the
+member port, `-no-listen` turns it off (the device then only dials the computers).
 
 ## Errors
 

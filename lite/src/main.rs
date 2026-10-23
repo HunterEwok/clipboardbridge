@@ -6,25 +6,17 @@
 //! dials the Linux members, as a Mac does, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
-mod certs;
-mod clip;
 mod control;
 mod discovery;
 mod error;
 mod files;
-mod hlc;
 mod identity;
 mod node;
 mod pair;
 mod records;
 mod service;
-mod third_party {
-    pub mod cpace;
-}
 mod tls;
 mod uptime;
-#[cfg(test)]
-mod vectors;
 mod wire;
 
 use std::io::{Read, Write};
@@ -33,7 +25,9 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use cbb_core::{certs, clip, hlc};
 use error::{Context, Error, Result};
+use identity::Stored as _;
 
 const USAGE: &str = "Usage: cbb-lite [-state dir] [-socket path] [-debug] <command> [arguments]
 
@@ -43,8 +37,10 @@ Commands:
                        (-addr: where the phone reaches this device, when the
                        code would name the wrong addresses).
   join -code host:port Join with the code from cbb pair on a Linux member.
-  run [-name name] [-peer host:port]... [-no-mdns]
-                       Run the service (started by systemd or procd).
+  run [-name name] [-port port] [-peer host:port]... [-no-mdns] [-no-listen]
+                       Run the service (started by systemd or procd): it
+                       dials the computers, and phones, Macs and other lite
+                       members dial it on the member port (8764, CBB_PORT).
   copy [-secret]       Send standard input to the group.
   paste                Print this member's clipboard text.
   status               Show the group and the connected members.
@@ -65,6 +61,7 @@ struct Global {
 }
 
 fn main() {
+    error::from_env();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut g = Global {
         state: std::env::var_os("CBB_STATE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/var/lib/cbb-lite")),
@@ -148,9 +145,14 @@ fn join_host_port(host: &str, port: u16) -> String {
     if host.contains(':') && !host.starts_with('[') { format!("[{host}]:{port}") } else { format!("{host}:{port}") }
 }
 
+/// The member port: 8764, or CBB_PORT.
+fn member_port() -> u16 {
+    std::env::var("CBB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8764)
+}
+
 fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
     let mut name = host_name();
-    let mut port: u16 = std::env::var("CBB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8764);
+    let mut port = member_port();
     let mut addrs = Vec::new();
     let mut code_addr = None;
     let mut i = 0;
@@ -171,7 +173,11 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
             g.state.join(identity::FILE_NAME).display()
         )));
     }
-    std::fs::create_dir_all(&g.state).context(format!("cannot create {}", g.state.display()))?;
+    std::fs::create_dir_all(&g.state).context(format!(
+        "cannot create {0}; make it for the service's user first: \
+         sudo install -d -o cbb-lite -g cbb-lite -m 0700 {0}",
+        g.state.display()
+    ))?;
     let joiner = pair::Joiner::new(&name)?;
     let state = g.state.clone();
     let save = move |id: &identity::Identity| id.save(&state);
@@ -184,7 +190,7 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
             let code = pair::normalize_code(line.trim())?;
             let sock = TcpStream::connect_timeout(&resolve(&a)?, Duration::from_secs(10))
                 .context(format!("cannot connect to {a}"))?;
-            joiner.join(sock, &code, &save)?
+            pair::join(&joiner, sock, &code, &save)?
         }
         None => {
             let ln = TcpListener::bind(("::", port))
@@ -246,6 +252,7 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
         name: host_name(),
         peers: Vec::new(),
         mdns: true,
+        port: Some(member_port()),
     };
     let mut i = 0;
     while i < args.len() {
@@ -253,8 +260,14 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
         match flag(&args[i]) {
             Some("name") => cfg.name = next()?,
             Some("peer") => cfg.peers.push(resolve(&next()?)?),
+            Some("port") => cfg.port = Some(next()?.parse().context("the port is a number")?),
             Some("no-mdns") => {
                 cfg.mdns = false;
+                i += 1;
+                continue;
+            }
+            Some("no-listen") => {
+                cfg.port = None;
                 i += 1;
                 continue;
             }

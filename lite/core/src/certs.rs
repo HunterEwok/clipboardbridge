@@ -8,12 +8,21 @@
 //! module parses certificates and checks them; a lite member never issues
 //! one, except the self-signed certificate it pairs with (pair.rs).
 
-use std::fmt;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt;
 
 use base64::Engine as _;
-use ring::digest;
-use ring::signature::{self, UnparsedPublicKey};
-use x509_parser::prelude::*;
+use der::asn1::ObjectIdentifier;
+use der::{Decode, Encode, Tagged};
+use p256::ecdsa::signature::{Signer, Verifier};
+use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
+use sha2::{Digest, Sha256};
+use x509_cert::certificate::{CertificateInner, Raw};
+use x509_cert::ext::pkix::name::GeneralName;
+use x509_cert::ext::pkix::{BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectAltName};
 
 use crate::error::{Error, Result};
 
@@ -61,7 +70,7 @@ pub fn random_id() -> String {
 
 pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
-    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut b).expect("the system has no randomness");
+    getrandom::fill(&mut b).expect("the system has no randomness");
     b
 }
 
@@ -70,7 +79,7 @@ pub fn hex(b: &[u8]) -> String {
 }
 
 pub fn sha256(b: &[u8]) -> [u8; 32] {
-    digest::digest(&digest::SHA256, b).as_ref().try_into().unwrap()
+    Sha256::digest(b).into()
 }
 
 /// The hash that names a key in records: SHA-256 over its
@@ -89,9 +98,13 @@ pub fn tag(group_ca: &Cert) -> String {
     hex(&sha256(&group_ca.der)[..8])
 }
 
-const OID_P256: &str = "1.2.840.10045.3.1.7";
-const OID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
-const OID_ECDSA_SHA256: &str = "1.2.840.10045.4.3.2";
+const OID_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+const OID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+const OID_ECDSA_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+const OID_SERVER_AUTH: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.5.5.7.3.1");
+const OID_CLIENT_AUTH: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.5.5.7.3.2");
+const OID_ANY_EKU: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.37.0");
+const OID_COMMON_NAME: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.4.3");
 
 /// A parsed certificate: its DER and what the checks need from it.
 #[derive(Clone)]
@@ -131,54 +144,51 @@ impl PartialEq for Cert {
 impl Cert {
     /// Parses a DER certificate.
     pub fn parse(der: &[u8]) -> Result<Cert> {
-        let (rest, c) = X509Certificate::from_der(der).map_err(|e| Error::msg(format!("not a certificate: {e}")))?;
-        if !rest.is_empty() {
-            return Err(Error::msg("not a certificate: trailing data"));
-        }
-        let tbs = &c.tbs_certificate;
-        let ext_err = |e: X509Error| Error::msg(format!("a certificate's extensions: {e}"));
-        let bc = c.basic_constraints().map_err(ext_err)?;
-        let ku = c.key_usage().map_err(ext_err)?;
-        let eku = c.extended_key_usage().map_err(ext_err)?;
-        let san = c.subject_alternative_name().map_err(ext_err)?;
-        let spki = tbs.subject_pki.clone();
-        let p256 = spki.algorithm.algorithm.to_id_string() == OID_EC_PUBLIC_KEY
-            && spki
-                .algorithm
-                .parameters
-                .as_ref()
-                .and_then(|p| p.as_oid().ok())
-                .is_some_and(|o| o.to_id_string() == OID_P256);
+        let c = CertificateInner::<Raw>::from_der(der).map_err(|e| Error::msg(format!("not a certificate: {e}")))?;
+        let tbs = c.tbs_certificate();
+        let ext_err = |e: der::Error| Error::msg(format!("a certificate's extensions: {e}"));
+        let bc = tbs.get_extension::<BasicConstraints>().map_err(ext_err)?.map(|(_, v)| v);
+        let ku = tbs.get_extension::<KeyUsage>().map_err(ext_err)?.map(|(_, v)| v);
+        let eku = tbs.get_extension::<ExtendedKeyUsage>().map_err(ext_err)?.map(|(_, v)| v);
+        let san = tbs.get_extension::<SubjectAltName>().map_err(ext_err)?.map(|(_, v)| v);
+        let has_eku =
+            |oid: ObjectIdentifier| eku.as_ref().is_some_and(|e| e.0.iter().any(|o| *o == oid || *o == OID_ANY_EKU));
+        let spki = tbs.subject_public_key_info();
+        let p256 = spki.algorithm.oid == OID_EC_PUBLIC_KEY
+            && spki.algorithm.parameters.as_ref().and_then(|p| p.decode_as::<ObjectIdentifier>().ok())
+                == Some(OID_P256);
+        let enc = |e: der::Error| Error::msg(format!("not a certificate: {e}"));
+        let unix = |t: &x509_cert::time::Time| t.to_unix_duration().as_secs() as i64;
+        let common_name =
+            tbs.subject().iter().filter(|a| a.oid == OID_COMMON_NAME).last().and_then(|a| directory_string(&a.value));
         Ok(Cert {
             der: der.to_vec(),
-            common_name: tbs.subject().iter_common_name().last().and_then(|a| a.as_str().ok()).map(str::to_string),
+            common_name,
             dns_names: san
                 .map(|s| {
-                    s.value
-                        .general_names
-                        .iter()
+                    s.0.iter()
                         .filter_map(|n| match n {
-                            GeneralName::DNSName(d) => Some(d.to_string()),
+                            GeneralName::DnsName(d) => Some(d.to_string()),
                             _ => None,
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
-            not_before: tbs.validity.not_before.timestamp(),
-            not_after: tbs.validity.not_after.timestamp(),
-            is_ca: bc.as_ref().is_some_and(|b| b.value.ca),
-            path_len: bc.as_ref().and_then(|b| b.value.path_len_constraint),
-            cert_sign: ku.as_ref().is_some_and(|k| k.value.key_cert_sign()),
-            server_auth: eku.as_ref().is_some_and(|e| e.value.server_auth || e.value.any),
-            client_auth: eku.as_ref().is_some_and(|e| e.value.client_auth || e.value.any),
-            spki: spki.raw.to_vec(),
+            not_before: unix(&tbs.validity().not_before),
+            not_after: unix(&tbs.validity().not_after),
+            is_ca: bc.as_ref().is_some_and(|b| b.ca),
+            path_len: bc.as_ref().and_then(|b| b.path_len_constraint).map(u32::from),
+            cert_sign: ku.as_ref().is_some_and(|k| k.key_cert_sign()),
+            server_auth: has_eku(OID_SERVER_AUTH),
+            client_auth: has_eku(OID_CLIENT_AUTH),
+            spki: spki.to_der().map_err(enc)?,
             p256,
-            point: spki.subject_public_key.data.to_vec(),
-            tbs: tbs.as_ref().to_vec(),
-            ecdsa_sha256: c.signature_algorithm.algorithm.to_id_string() == OID_ECDSA_SHA256,
-            sig: c.signature_value.data.to_vec(),
-            issuer_name: tbs.issuer.as_raw().to_vec(),
-            subject_name: tbs.subject.as_raw().to_vec(),
+            point: spki.subject_public_key.raw_bytes().to_vec(),
+            tbs: first_element(der).ok_or_else(|| Error::msg("not a certificate: no TBSCertificate"))?.to_vec(),
+            ecdsa_sha256: c.signature_algorithm().oid == OID_ECDSA_SHA256,
+            sig: c.signature().raw_bytes().to_vec(),
+            issuer_name: tbs.issuer().to_der().map_err(enc)?,
+            subject_name: tbs.subject().to_der().map_err(enc)?,
         })
     }
 
@@ -195,7 +205,13 @@ impl Cert {
     /// Reports whether data carries a valid signature by this
     /// certificate's key (ECDSA P-256 with SHA-256, DER).
     pub fn verifies(&self, data: &[u8], sig: &[u8]) -> bool {
-        self.p256 && UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1, &self.point).verify(data, sig).is_ok()
+        if !self.p256 {
+            return false;
+        }
+        let (Ok(key), Ok(sig)) = (VerifyingKey::from_sec1_bytes(&self.point), Signature::from_der(sig)) else {
+            return false;
+        };
+        key.verify(data, &sig).is_ok()
     }
 
     /// Reports whether parent signed this certificate.
@@ -206,6 +222,114 @@ impl Cert {
     fn valid_at(&self, t: i64) -> bool {
         self.not_before <= t && t <= self.not_after
     }
+}
+
+/// The text of a directory string (UTF8String, PrintableString or
+/// IA5String), as a CN carries it.
+fn directory_string(v: &der::Any) -> Option<String> {
+    match v.tag() {
+        der::Tag::Utf8String | der::Tag::PrintableString | der::Tag::Ia5String => {
+            core::str::from_utf8(v.value()).ok().map(str::to_string)
+        }
+        _ => None,
+    }
+}
+
+/// The first element of the DER SEQUENCE in der, with its tag and length:
+/// the signed part of a certificate, exactly as it came.
+fn first_element(der: &[u8]) -> Option<&[u8]> {
+    let (_, outer) = tlv(der)?;
+    let (len, _) = tlv(outer)?;
+    outer.get(..len)
+}
+
+/// Reads the tag and length at the start of b, and returns the length of
+/// the whole element and its contents.
+fn tlv(b: &[u8]) -> Option<(usize, &[u8])> {
+    let first = *b.get(1)?;
+    let (hdr, len) = if first < 0x80 {
+        (2, first as usize)
+    } else {
+        let n = (first & 0x7f) as usize;
+        if n == 0 || n > 4 {
+            return None;
+        }
+        let mut len = 0usize;
+        for &c in b.get(2..2 + n)? {
+            len = len << 8 | c as usize;
+        }
+        (2 + n, len)
+    };
+    let total = hdr.checked_add(len)?;
+    Some((total, b.get(hdr..total)?))
+}
+
+/// Makes the self-signed certificate a joining device presents in pairing,
+/// as Go's joiner makes it: the device ID as its CN, a P-256 key, valid
+/// from 1970 to 9999, key usage digital signature, and empty basic
+/// constraints. Nobody trusts it; the QR code's fingerprint names it, and
+/// the pairing exchange binds it.
+pub fn self_signed(id: &DeviceId, key: &SigningKey) -> Result<Vec<u8>> {
+    let point = VerifyingKey::from(key).to_sec1_point(false);
+    let alg = seq(&[&oid(&OID_ECDSA_SHA256)]);
+    let name = seq(&[&set(&[&seq(&[&oid(&OID_COMMON_NAME), &tagged(0x0c, id.as_str().as_bytes())])])]);
+    let spki = seq(&[&seq(&[&oid(&OID_EC_PUBLIC_KEY), &oid(&OID_P256)]), &bit_string(point.as_bytes())]);
+    let mut serial = random_bytes::<16>();
+    serial[0] = (serial[0] & 0x7f) | 0x01; // positive, and 16 bytes long
+    let key_usage = seq(&[
+        &oid(&ObjectIdentifier::new_unwrap("2.5.29.15")),
+        &[0x01, 0x01, 0xff],
+        &tagged(0x04, &bit_string_bits(0x80, 7)),
+    ]);
+    let basic = seq(&[&oid(&ObjectIdentifier::new_unwrap("2.5.29.19")), &[0x01, 0x01, 0xff], &tagged(0x04, &seq(&[]))]);
+    let tbs = seq(&[
+        &tagged(0xa0, &tagged(0x02, &[2])), // v3
+        &tagged(0x02, &serial),
+        &alg,
+        &name,
+        &seq(&[&tagged(0x17, b"700101000000Z"), &tagged(0x18, b"99991231235959Z")]),
+        &name,
+        &spki,
+        &tagged(0xa3, &seq(&[&key_usage, &basic])),
+    ]);
+    let sig: Signature = key.sign(&tbs);
+    Ok(seq(&[&tbs, &alg, &bit_string(sig.to_der().as_bytes())]))
+}
+
+/// A DER element with the given tag.
+fn tagged(tag: u8, content: &[u8]) -> Vec<u8> {
+    let mut out = vec![tag];
+    let n = content.len();
+    if n < 0x80 {
+        out.push(n as u8);
+    } else {
+        let len = (n as u32).to_be_bytes();
+        let skip = len.iter().take_while(|b| **b == 0).count();
+        out.push(0x80 | (4 - skip) as u8);
+        out.extend_from_slice(&len[skip..]);
+    }
+    out.extend_from_slice(content);
+    out
+}
+
+fn seq(parts: &[&[u8]]) -> Vec<u8> {
+    tagged(0x30, &parts.concat())
+}
+
+fn set(parts: &[&[u8]]) -> Vec<u8> {
+    tagged(0x31, &parts.concat())
+}
+
+fn oid(o: &ObjectIdentifier) -> Vec<u8> {
+    tagged(0x06, o.as_bytes())
+}
+
+fn bit_string(b: &[u8]) -> Vec<u8> {
+    tagged(0x03, &[&[0u8][..], b].concat())
+}
+
+fn bit_string_bits(bits: u8, unused: u8) -> Vec<u8> {
+    tagged(0x03, &[unused, bits])
 }
 
 /// Checks a group CA or root certificate: self-signed, a P-256 key, and a
@@ -261,18 +385,31 @@ pub fn device_of(c: &Cert) -> Result<DeviceId> {
     Ok(id)
 }
 
+/// The side of a member connection that a peer's certificate must be good
+/// for: the member this one dialed is the server, one that dialed it the
+/// client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Usage {
+    Server,
+    Client,
+}
+
 /// Verifies a peer's member certificate chain (leaf first, then the admin
 /// CA that issued it, if one did) to one of the trusted roots at time t,
-/// Unix seconds, for server use, and returns the device it names. The time is max(now, the
-/// current root's NotBefore), as Go's verifyTime: a device whose clock is
-/// behind still accepts certificates, an expired one is rejected.
-pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64) -> Result<DeviceId> {
+/// Unix seconds, for the use the peer's side needs, and returns the device
+/// it names. The time is max(now, the current root's NotBefore), as Go's
+/// verifyTime: a device whose clock is behind still accepts certificates,
+/// an expired one is rejected.
+pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64, usage: Usage) -> Result<DeviceId> {
     let leaf = chain.first().ok_or_else(|| Error::msg("the peer sent no certificate"))?;
     if leaf.is_ca {
         return Err(Error::msg("the peer's certificate is a CA"));
     }
-    // A lite member only dials, so its peers are servers.
-    if !leaf.server_auth || !leaf.valid_at(t) {
+    let usable = match usage {
+        Usage::Server => leaf.server_auth,
+        Usage::Client => leaf.client_auth,
+    };
+    if !usable || !leaf.valid_at(t) {
         return Err(Error::msg("the peer's certificate is expired or not for this use"));
     }
     let from = |child: &Cert, parent: &Cert| child.issuer_name == parent.subject_name && child.signed_by(parent);
@@ -296,6 +433,8 @@ pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64) -> Result<DeviceI
 /// Serde helpers for byte strings as standard base64, Go's encoding of
 /// []byte in JSON.
 pub mod b64 {
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD;
     use serde::{Deserialize, Deserializer, Serializer};

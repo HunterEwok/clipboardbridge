@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- An event sent from a phone has `via` `phone` (the app, iPhone or Android, or the iPhone
+  shortcut), where it had `iphone`; members still take `iphone`. The control socket takes
+  and reports `phone` too. Names that belong to the shortcut, for an iPhone without the
+  app, keep the word: the iPhone CA, the `iphone` token role, `to_iphone` and `from_iphone`.
+
 - **clipbridge is now clipboardbridge, and its command is `cbb`.** Everything is renamed: the
   repository, the binary (`/usr/local/bin/cbb`), the service (`clipboardbridge.service`, on
   macOS `io.github.hunterewok.clipboardbridge`), the user and group, the directories, the
@@ -56,10 +61,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `LocalAppData\clipboardbridge\agent.log`.
 - **The lite member, `cbb-lite`, in Rust** (`lite/`): a small member for weak Linux devices
   (a Raspberry Pi, a router) that joins a phone group by QR code (or a computer group with
-  the code from `cbb pair`), never holds CA keys, only dials the full members and syncs
-  with them; `copy`, `paste`, `status`, `devices` and `watch` work as in `cbb`. Its errors
+  the code from `cbb pair`) and never holds CA keys. It dials the computers, and publishes
+  itself in mDNS (TXT `r=lite`) and listens on the member port, so that a phone syncs with it
+  directly, with no computer on; Linux members leave it to dial them. `copy`, `paste`,
+  `status`, `devices` and `watch` work as in `cbb`. Its errors
   show their details with `-debug` or `CBB_DEBUG=1`, and in a debug build. CI builds it for 64-bit
-  Raspberry Pis and, statically, for the ARMv6 Pi Zero W.
+  Raspberry Pis and, statically, for the ARMv6 Pi Zero W. Its protocol core, `lite/core`,
+  needs no operating system (no_std, RustCrypto), for a lite member on the ESP32 later.
 - A joiner can say it is a lite member (`"role":"lite"` in its pairing Info): Go members
   send it no CA keys and list it with role `lite`.
 - The Android app is started in `apps/android`: a Gradle build with the protocol core in
