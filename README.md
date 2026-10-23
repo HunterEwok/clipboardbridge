@@ -94,7 +94,7 @@ On Linux it works with and without a desktop:
 | Android app | built, CI; APK in every release | not yet |
 | Lite member `cbb-lite` on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
 | Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
-| Sync away from home between computers (`cbb away`) | built | not yet |
+| Sync away from home between computers (`cbb away`, `cbb invite`) | built | not yet |
 | Sync away from home for the phones and the lite member | planned | |
 | Console paste on a key press | planned | |
 | Homebrew | set up; the tap gets its first formula with the next release | not yet |

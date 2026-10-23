@@ -20,6 +20,8 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb pair -phone` | Creates the group if needed and pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on a Linux machine: only Linux members serve the shortcut. |
 | `cbb join` | Joins a group by QR code: shows a QR code for the phone app, or for the shortcut "clipboardbridge: add a computer", and waits. |
 | `cbb join -code [ADDRESS]` | Joins with the code from `cbb pair`. Without an address it finds the member on the home network; with one (`host:port`) it dials it, for example through an SSH tunnel or your own VPN (see the [quick start](quickstart.md)). |
+| `cbb join -invite FILE` | Joins from afar with an invitation file from `cbb invite`, through the hub's guest tunnel. Both sides show the new device's key fingerprint; the hub admits it once its admin types `yes`. |
+| `cbb invite [-for DURATION] [-o FILE]` | Runs on the group's hub, with sync away from home on: writes an invitation for a device away from home (default `clipboardbridge.cbbinvite`, valid for 1h, at most 24h) and waits to confirm it. The file is a secret until it is used; copy it through a channel you trust. |
 | `cbb away` | Shows sync away from home on this device: on or off, the hub, the tunnel, and what went wrong. |
 | `cbb away on` | Turns sync away from home on here, after a warning about where the keys are kept. |
 | `cbb away off` | Turns it off and forgets the tunnel keys. |
