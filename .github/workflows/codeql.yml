@@ -3,11 +3,12 @@
 #
 # GitHub's default setup cannot build the Android app: it tries Java/Kotlin without a build,
 # which finds nothing in a Kotlin project and fails. Here Kotlin is built with Gradle, and the
-# other languages run as the default setup ran them. The default setup must stay off (Settings
-# → Advanced Security → CodeQL analysis), or GitHub rejects these results.
+# other languages run as the default setup ran them. Swift has its own workflow,
+# codeql-swift.yml, since its analysis takes about 45 minutes. The default setup must stay off
+# (Settings → Advanced Security → CodeQL analysis), or GitHub rejects these results.
 #
-# Not required by the ruleset of main (only ci's "ci-ok" is), so a slow Swift analysis never
-# holds a merge. Alerts show under Security → Code scanning.
+# Not required by the ruleset of main (only ci's "ci-ok" is). Alerts show under Security →
+# Code scanning.
 name: codeql
 
 on:
@@ -46,9 +47,6 @@ jobs:
           - language: rust
             build-mode: none
             runner: ubuntu-latest
-          - language: swift
-            build-mode: autobuild
-            runner: macos-latest
           - language: java-kotlin
             build-mode: manual
             runner: ubuntu-latest
