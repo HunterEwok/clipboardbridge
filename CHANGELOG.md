@@ -49,7 +49,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ### Added
 
 - Homebrew, on macOS and Linux (x86-64, ARM64):
-  `brew install hunterewok/clipboardbridge/clipboardbridge`. The formula installs the
+  `brew install hunterewok/tap/clipboardbridge`. The formula installs the
   release archive as it is, so it needs no Apple signing, and the release workflow updates
   the tap after each release (`packaging/homebrew/formula.sh`, docs/maintaining.md). On a
   Mac, `install.sh --in-place` runs the service and the agent from Homebrew's binary, so a

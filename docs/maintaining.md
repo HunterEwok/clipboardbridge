@@ -130,9 +130,9 @@ Rules for workflows:
 ## Homebrew
 
 The tap is the repository
-[HunterEwok/homebrew-clipboardbridge](https://github.com/HunterEwok/homebrew-clipboardbridge),
-which holds one file, `Formula/clipboardbridge.rb`; users install with
-`brew install hunterewok/clipboardbridge/clipboardbridge`. After each release (not a
+[HunterEwok/homebrew-tap](https://github.com/HunterEwok/homebrew-tap),
+the one tap for all of the owner's formulae; clipboardbridge's is `Formula/clipboardbridge.rb`, and users install with
+`brew install hunterewok/tap/clipboardbridge`. After each release (not a
 pre-release) the `homebrew` job of `.github/workflows/release.yml` writes the formula with
 `packaging/homebrew/formula.sh` from the release's `SHA256SUMS` and pushes it to the tap's
 `main`. The formula installs the release archives as they are, so it needs no Apple signing,
@@ -140,7 +140,7 @@ and CI's `homebrew` job installs one with it on macOS on every pull request.
 
 Setting it up, once:
 
-- [ ] Create the public repository `HunterEwok/homebrew-clipboardbridge`, empty (no README,
+- [ ] Create the public repository `HunterEwok/homebrew-tap`, empty (no README,
   license or `.gitignore`).
 - [ ] Make a key for it, on any computer:
   `ssh-keygen -t ed25519 -N '' -C homebrew-tap -f homebrew-tap`.

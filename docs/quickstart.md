@@ -87,7 +87,7 @@ Install on each computer first.
   `brew upgrade`:
 
   ```sh
-  brew install hunterewok/clipboardbridge/clipboardbridge
+  brew install hunterewok/tap/clipboardbridge
   sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
   ```
 

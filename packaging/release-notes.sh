@@ -63,7 +63,7 @@ tar -xzf clipboardbridge-darwin-arm64.tar.gz
 sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
 \`\`\`
 
-Or with Homebrew, on macOS or Linux (x86-64, ARM64): \`brew install hunterewok/clipboardbridge/clipboardbridge\`,
+Or with Homebrew, on macOS or Linux (x86-64, ARM64): \`brew install hunterewok/tap/clipboardbridge\`,
 then the command it prints to start the service.
 
 **Android** 10 or later: open \`clipboardbridge-$version.apk\` on the phone and allow the

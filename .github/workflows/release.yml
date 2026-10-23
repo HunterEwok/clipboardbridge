@@ -196,7 +196,7 @@ jobs:
           curl -fsS https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' >"$RUNNER_TEMP/known_hosts"
           export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
           tap="$RUNNER_TEMP/tap"
-          git clone --depth 1 git@github.com:HunterEwok/homebrew-clipboardbridge.git "$tap"
+          git clone --depth 1 git@github.com:HunterEwok/homebrew-tap.git "$tap"
           mkdir -p "$tap/Formula"
           cp "$RUNNER_TEMP/clipboardbridge.rb" "$tap/Formula/clipboardbridge.rb"
           cd "$tap"

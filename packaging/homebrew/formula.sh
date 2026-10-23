@@ -13,7 +13,7 @@
 # release's SHA256SUMS. BASE_URL, the releases' download directory by
 # default, lets CI install archives from a local directory.
 #
-# The release workflow pushes it to the tap HunterEwok/homebrew-clipboardbridge
+# The release workflow pushes it to the tap HunterEwok/homebrew-tap
 # (docs/maintaining.md, "Homebrew").
 set -eu
 
