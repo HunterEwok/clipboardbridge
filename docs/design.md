@@ -552,8 +552,33 @@ Away from home, and between subnets that mDNS does not reach (for example a Pi o
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
 group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
-each other) and the exchange of its keys among Go members; nothing carries traffic through
-it yet.
+each other) and the exchange of its keys among Go members where it was turned on (no
+command turns it on yet); nothing carries traffic through it yet.
+
+### Turning it on, step by step
+
+Every widening of what the group exposes is the user's own choice, made in turn:
+
+1. **The home network only**, the default. A new group, and every device that joins it,
+   syncs at home and has no tunnel key; nothing listens or connects beyond the home network.
+2. **Sync away from home**, turned on by the user: on the hub, which the user chooses (`cbb`
+   on that computer, or the root phone asking it), and then on each device that should sync
+   away from home (`cbb` on a computer, a switch in the app). Only then does the device make
+   its tunnel key and offer it to the hub. The screen that turns it on says what changes: the
+   hub's port is reachable from the internet, only through WireGuard with the group's keys.
+3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
+   "Device keys in hardware") can turn sync away from home on only after a second, separate
+   consent. It explains that whoever copies the files (root on that device, its disk or
+   memory card, an unencrypted backup) can act as the device from anywhere until it is
+   removed, and gives the measures: encrypt the disk (LUKS, BitLocker, FileVault), keep the
+   state directory out of unencrypted backups, keep the device's keys renewed more often
+   (the default for such devices is shorter), and remove the device at once when it is lost
+   or its root may be taken. `cbb status` and the devices list show such a device with a
+   mark, and the hub can be set to refuse them.
+4. **Remote invitations**, possible only once sync away from home is on at the hub.
+
+Each step can be turned off again, which forgets its keys. The documentation and the apps
+explain each step where it is turned on, in the same words.
 
 ### Rules
 
@@ -675,8 +700,8 @@ WireGuard packets between a group's clients and that group's hub.
 
 ### Keys and pairing
 
-- Each device creates its own WireGuard key pair; the private key never leaves it and never
-  appears in a QR code.
+- Each device creates its own WireGuard key pair when sync away from home is turned on
+  there, not before; the private key never leaves it and never appears in a QR code.
 - A device gets the hub's public key and addresses, the forwarder's address and port, and
   its preshared key inside the member TLS, at home, when it joins or later on request; its
   public key reaches the hub the same way, in its hello. The hub admits a key only from a
@@ -835,8 +860,9 @@ only adds to it.
 1. WireGuard in `cbb` (done) and the key exchange (done).
 2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
    at home.
-3. The service: hub mode, dialing through the tunnel, failing closed, `cbb status`, and the
-   member dial after a join by address.
+3. The service: turning sync away from home on and off (the hub, each device, the consent
+   for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`,
+   and the member dial after a join by address.
 4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation).
 5. The forwarder.
 6. The blind relay, self-hosted only.
@@ -864,7 +890,9 @@ The plan:
   (by the TPM when there is one, else by the machine's own key readable only by root), on
   an Intel Mac in the system keychain. This protects a copy of the file alone, such as a
   backup or a memory card read elsewhere, not a device whose root is taken; it is said
-  plainly rather than hidden.
+  plainly rather than hidden. At home that is how every computer works today; for sync
+  away from home such a device needs the user's separate consent (see "Turning it on, step
+  by step").
 - `cbb status` and the devices list show where each device keeps its key (hardware or a
   file), so the user sees which devices are weaker.
 - **Regular renewal**: the member key and the WireGuard key are replaced on a schedule
@@ -1062,3 +1090,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |
 | D-43 | A device away from the group joins by SSH, by the user's own VPN, or by a remote invitation: a QR code or a file, never typed, with a one-time guest WireGuard key that reaches only the pairing and a 128-bit secret, and admitted only after the admin confirms the device. The six-digit code never faces the open internet. |
 | D-44 | Computers keep their keys in the TPM or the Secure Enclave where they have one, and otherwise in a file sealed as far as the system allows, shown as such in `cbb status`; keys are renewed on a schedule. |
+| D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |

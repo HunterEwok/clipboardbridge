@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -20,11 +22,17 @@ import (
 // preshared key and its addresses, and the member keeps that offer. Since
 // it happens only inside member TLS, a device gets into the tunnel only
 // after it met the hub as a member, and only with the key that member sent.
+// None of it happens on a device where the user has not turned sync away
+// from home on.
 
-// loadTunnel reads the tunnel state for the group of id, with a new key if
-// there is none. Without it the member offers no tunnel key and keeps no
-// offer: it syncs at home only.
+// loadTunnel reads the tunnel state for the group of id. Sync away from
+// home is off until the user turns it on, which writes the state file; until
+// then, or when the state cannot be read, the member offers no tunnel key and
+// keeps no offer: it syncs at home only.
 func (s *Service) loadTunnel(id *group.Identity) *tunnel.State {
+	if _, err := os.Stat(filepath.Join(s.cfg.StateDir, tunnel.StateFile)); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	st, err := tunnel.LoadState(s.cfg.StateDir)
 	if err == nil && st.ForGroup(group.Tag(id.GroupCA.Cert)) {
 		err = st.Save(s.cfg.StateDir)

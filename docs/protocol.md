@@ -1005,10 +1005,13 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 `internal/service/tunnel.go`); the tunnel itself is not used yet, and the phones and the
 lite member do not take part yet.
 
-- Each device makes its own Curve25519 key pair and keeps the private key. Go keeps it in
-  `tunnel.json` next to the identity (mode 0600), with the rest of this section's state.
-- Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member whose
-  tunnel state cannot be read sends none, and syncs at home only.
+- Sync away from home is off by default; nothing in this section happens on a device until
+  the user turns it on there. Go turns it on by writing `tunnel.json` next to the identity
+  (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
+  rest of this section's state.
+- Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member where sync
+  away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
+  only.
 - The group's hub is one member, chosen on that member (`is_hub` in its `tunnel.json`). When
   a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
   with the certificate chain the peer presented in this connection's TLS handshake, and

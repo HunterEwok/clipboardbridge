@@ -4,6 +4,9 @@
 package service
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -20,6 +23,19 @@ func tunnelState(t *testing.T, s *testService) *tunnel.State {
 	return st
 }
 
+// turnTunnelOn writes a tunnel state, as cbb will when the user turns sync
+// away from home on.
+func turnTunnelOn(t *testing.T, s *testService) {
+	t.Helper()
+	st, err := tunnel.NewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(s.dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestTunnelKeys checks that the hub admits the tunnel key of each member
 // it meets, that each member keeps the hub's offer with the same preshared
 // key, and that the hub drops a member the group removes.
@@ -28,6 +44,9 @@ func TestTunnelKeys(t *testing.T) {
 	pi := startService(t, &h, "pi")
 	deck := startService(t, &h, "deck")
 	mac := startRole(t, &h, "mac", node.Mac)
+	for _, s := range []*testService{pi, deck, mac} {
+		turnTunnelOn(t, s)
+	}
 	pairWith(t, pi, deck)
 	pairWith(t, pi, mac)
 
@@ -88,4 +107,31 @@ func TestTunnelKeys(t *testing.T) {
 		}
 		return true
 	})
+}
+
+// TestTunnelOffByDefault checks that a member where sync away from home is
+// off offers no key and makes no tunnel state, even when the group has a
+// hub.
+func TestTunnelOffByDefault(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	turnTunnelOn(t, pi)
+	pairWith(t, pi, deck)
+
+	pi.stop()
+	st := tunnelState(t, pi)
+	st.IsHub = true
+	if err := st.Save(pi.dir); err != nil {
+		t.Fatal(err)
+	}
+	pi = restartService(t, &h, pi)
+	waitFor(t, "the hub meets the deck", func() bool { return len(pi.status(t).Peers) > 0 })
+
+	if n := len(tunnelState(t, pi).Members); n != 0 {
+		t.Errorf("the hub keeps %d members, want none", n)
+	}
+	if _, err := os.Stat(filepath.Join(deck.dir, tunnel.StateFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the deck made a tunnel state: %v", err)
+	}
 }
