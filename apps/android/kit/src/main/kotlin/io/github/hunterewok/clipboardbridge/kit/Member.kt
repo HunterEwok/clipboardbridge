@@ -49,10 +49,14 @@ object Member {
 
     /** How a text reached the member that made the event. */
     enum class Via(val wire: String) {
-        COPY("copy"), IPHONE("iphone"), UNIVERSAL_CLIPBOARD("universal-clipboard");
+        COPY("copy"),
+        /** Sent from a phone: the app, or the iPhone shortcut. */
+        PHONE("phone"),
+        UNIVERSAL_CLIPBOARD("universal-clipboard");
 
         companion object {
-            fun of(s: String): Via? = entries.firstOrNull { it.wire == s }
+            /** Also takes "iphone", the name before phones other than the iPhone. */
+            fun of(s: String): Via? = if (s == "iphone") PHONE else entries.firstOrNull { it.wire == s }
         }
     }
 

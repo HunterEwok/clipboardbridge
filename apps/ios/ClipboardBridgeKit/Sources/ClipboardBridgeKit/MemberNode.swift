@@ -103,7 +103,7 @@ public actor MemberNode {
 
     /// Sends a text this phone copied to every connected member.
     @discardableResult
-    public func send(text: String, kind: Member.Kind, via: Member.Via = .iphone) -> Member.Event {
+    public func send(text: String, kind: Member.Kind, via: Member.Via = .phone) -> Member.Event {
         let e = engine.local(text: text, kind: kind, via: via)
         for c in conns.values { c.enqueue(.event(e)) }
         return e

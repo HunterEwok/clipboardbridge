@@ -70,7 +70,7 @@ final class MemberTests: XCTestCase {
         XCTAssertEqual(h.current?.ageMS, 1500)
         guard case let .hello(_, markHello) = decoded[1] else { return XCTFail() }
         XCTAssertEqual(markHello.current?.isMark, true)
-        XCTAssertEqual(markHello.current?.via, .iphone)
+        XCTAssertEqual(markHello.current?.via, .phone)
         guard case let .event(univ?) = decoded[5] else { return XCTFail() }
         XCTAssertEqual(univ.via, .universalClipboard)
         XCTAssertEqual(decoded[6], .ping)
@@ -178,7 +178,7 @@ final class MemberTests: XCTestCase {
         // A local event is later than everything seen.
         let mine = e.local(text: "from the phone", kind: .text)
         XCTAssertTrue(mine.isLater(than: a))
-        XCTAssertEqual(mine.via, .iphone)
+        XCTAssertEqual(mine.via, .phone)
         XCTAssertEqual(e.usable?.text, "from the phone")
         // An invalid event changes nothing.
         XCTAssertEqual(e.received(event("short", 9999)), .init(forward: nil, changed: false))
@@ -229,9 +229,9 @@ final class MemberTests: XCTestCase {
         // The frames Go decodes in TestSwiftMemberFrames.
         // Fixed values, so the file changes only with the encoding.
         let origin = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let ev = Member.Event(id: "0123456789abcdef0123456789abcdef", origin: origin, via: .iphone,
+        let ev = Member.Event(id: "0123456789abcdef0123456789abcdef", origin: origin, via: .phone,
                               time: .init(wall: 1_761_024_000_000, logical: 0), ageMS: 12, kind: .text, text: "from Swift / <ok>")
-        let secret = Member.Event(id: "fedcba9876543210fedcba9876543210", origin: origin, via: .iphone,
+        let secret = Member.Event(id: "fedcba9876543210fedcba9876543210", origin: origin, via: .phone,
                                   time: .init(wall: 1_761_024_000_000, logical: 1), ageMS: 0, kind: .secret, text: "hunter2")
         let hello = Member.Hello(wallMS: 1_761_024_000_500, current: secret.mark, name: "iPhone")
         let frames = try [
