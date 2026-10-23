@@ -361,6 +361,15 @@ jobs:
           cache: false
       - name: Go reads what the Kotlin kit signed
         run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
+      - name: Go pairs and syncs with the Kotlin kit over TLS
+        # The Kotlin twin of clipboardbridge-interop plays the phone; Conscrypt
+        # gives it TLS 1.3 on Linux as on Android.
+        run: |
+          (cd apps/android && ./gradlew --no-daemon -p kit interopScript)
+          tool="$PWD/apps/android/kit/build/interop/clipboardbridge-interop"
+          CBB_SWIFT_INTEROP="$tool" go test ./internal/pair -run 'TestSwiftMemberAdmitsGoJoiner$' -v
+          CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
       - name: build the app and run its unit tests
         working-directory: apps/android
         # The runner image has the Android SDK; Gradle fetches a missing platform.
