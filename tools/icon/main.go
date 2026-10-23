@@ -25,7 +25,7 @@ import (
 
 const (
 	size    = 1024
-	height  = 0.86 // of the icon, for the clipboard
+	height  = 0.97 // of the icon, for the clipboard
 	appIcon = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
 )
 
