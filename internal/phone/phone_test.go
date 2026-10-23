@@ -282,10 +282,10 @@ func TestJoinQR(t *testing.T) {
 		t.Errorf("JoinQR = %q", got)
 	}
 	for in, want := range map[string]JoinCode{
-		JoinQR(full):                                                                 full,
-		" clipboardbridge://join?code=135790\n":                                      {Code: "135790"},
-		"CLIPBOARDBRIDGE://JOIN?code=111111":                                         {Code: "111111"},
-		"clipboardbridge://join?code=222222&addr=10.0.0.2&x=1":                       {Code: "222222"}, // no port
+		JoinQR(full):                                           full,
+		" clipboardbridge://join?code=135790\n":                {Code: "135790"},
+		"CLIPBOARDBRIDGE://JOIN?code=111111":                   {Code: "111111"},
+		"clipboardbridge://join?code=222222&addr=10.0.0.2&x=1": {Code: "222222"}, // no port
 		"clipboardbridge://join?code=3&addr=a:1&addr=b:1&addr=c:1&addr=d:1&addr=e:1": {Code: "3", Addrs: []string{"a:1", "b:1", "c:1", "d:1"}},
 	} {
 		if jc, ok := ParseJoinQR(in); !ok || !reflect.DeepEqual(jc, want) {
