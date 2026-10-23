@@ -4,6 +4,14 @@
 
     <!-- The fingerprint or face before the group's keys sign. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- The computers on the home network: mDNS and the member connections. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- The QR code of a computer that joins. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:allowBackup="false"
