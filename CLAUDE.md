@@ -1,7 +1,7 @@
 # clipboardbridge: notes for Claude Code
 
-clipboardbridge syncs the clipboard between Linux computers, Macs and an iPhone on the home
-network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers; the iPhone
+clipboardbridge syncs the clipboard between Linux computers, Windows PCs, Macs and an iPhone on
+the home network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers; the iPhone
 app (`apps/ios`) is in development, and in its groups the phone is the root of trust.
 Read [README.md](README.md), [docs/design.md](docs/design.md),
 [docs/protocol.md](docs/protocol.md) (the wire format, kept in step with the code) and
@@ -80,6 +80,10 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   member TLS, signed device and revocation records.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
+- Windows: `cmd/cbb/platform_windows.go` (the Windows service, logs),
+  `internal/service/control_windows.go` (the socket's access list),
+  `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `packaging/windows`
+  (`install.ps1`, `uninstall.ps1`, `get.ps1`); CI's `windows installer` job runs them.
 - `apps/ios/ClipboardBridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
@@ -103,8 +107,11 @@ the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go'
 
 Next steps, roughly in order:
 
-1. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
+1. TestFlight (needs the Apple account), Android, Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member (see docs/design.md, "Future research").
+
+Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
+tested on a real PC.
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
