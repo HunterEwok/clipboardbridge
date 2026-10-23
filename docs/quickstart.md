@@ -118,7 +118,19 @@ it. The computer joins within seconds.
 Without the iPhone: run `cbb pair` on a Linux machine of the group, then
 `cbb join -code` on the new computer and type the code it showed.
 
-A computer that is not on the home network joins the same way through a path you control:
+A computer that is not on the home network joins with an invitation, once sync away from
+home is on and a hub is set up (see "Sync away from home" below). On the hub:
+
+```sh
+cbb invite            # writes clipboardbridge.cbbinvite, valid for an hour (-for 24h at most)
+```
+
+Copy the file to the new computer through a channel you trust (it is a secret until it is
+used), and run `cbb join -invite clipboardbridge.cbbinvite` there. Both show the new
+computer's key fingerprint; on the hub, type `yes` only if they match. The new computer
+then syncs through the hub wherever it is.
+
+Or through a path you control:
 
 - **SSH** to a Linux machine of the group: on the new computer run
   `ssh -N -L 18764:localhost:8764 user@that-machine`, then `cbb pair` there (in another SSH

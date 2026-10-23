@@ -237,31 +237,60 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 // device at the address the user gave for the join, such as an SSH forward
 // or a VPN address, which discovery cannot find. Then that member syncs
 // with it at once, and when it is the group's hub it learns this device's
-// tunnel key as soon as sync away from home is turned on here. It dials
-// only while discovery does not see the member and no other connection to
-// it is up, and stops for good once this device knows the group's hub, or
-// when the service stops.
+// tunnel key as soon as sync away from home is turned on here.
 func (s *Service) dialJoined(id group.DeviceID, addr string) {
+	s.keepUntilHub(id, "at "+addr+", where it joined", func(ctx context.Context, nd *node.Node) error {
+		return nd.Dial(ctx, id, addr)
+	}, nil)
+}
+
+// keepUntilHub keeps a member connection up to the member id with dial
+// while discovery does not see that member and no other connection to it
+// is up. It stops for good once this device knows the group's hub, or when
+// the service stops, and then calls done, if set.
+func (s *Service) keepUntilHub(id group.DeviceID, where string, dial func(context.Context, *node.Node) error, done func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.groupCtx == nil || s.stopping {
+		if done != nil {
+			done()
+		}
 		return
 	}
 	ctx := s.groupCtx
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.keepJoined(ctx, id, addr)
+		if done != nil {
+			defer done()
+		}
+		s.keepUntil(ctx, id, where, dial)
 	}()
 }
 
-func (s *Service) keepJoined(ctx context.Context, id group.DeviceID, addr string) {
+func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string, dial func(context.Context, *node.Node) error) {
+	knowsHub := func() bool {
+		s.tunMu.Lock()
+		defer s.tunMu.Unlock()
+		return s.tunnel != nil && s.tunnel.ToHub != nil
+	}
+	// The connection ends too once the hub's offer came, so the tunnel
+	// takes over.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		for !knowsHub() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+		cancel()
+	}()
 	backoff := minBackoff
 	for ctx.Err() == nil {
-		s.tunMu.Lock()
-		hub := s.tunnel != nil && s.tunnel.ToHub != nil
-		s.tunMu.Unlock()
-		if hub {
+		if knowsHub() {
 			return // the tunnel reaches the hub from here on
 		}
 		s.mu.Lock()
@@ -273,14 +302,14 @@ func (s *Service) keepJoined(ctx context.Context, id group.DeviceID, addr string
 		wait := awayCheck
 		if !near && !slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id }) {
 			start := uptime.Now()
-			err := nd.Dial(ctx, id, addr)
+			err := dial(ctx, nd)
 			if ctx.Err() != nil {
 				return
 			}
 			if uptime.Now()-start > maxBackoff {
 				backoff = minBackoff
 			}
-			s.logf("cbb: connection to %s at %s, where it joined: %v", id, addr, err)
+			s.logf("cbb: connection to %s %s: %v", id, where, err)
 			wait = backoff
 			backoff = min(2*backoff, maxBackoff)
 		}

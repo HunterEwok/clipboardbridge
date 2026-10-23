@@ -25,12 +25,14 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
@@ -51,6 +53,11 @@ const Keepalive = 25
 // prefix holds the tunnel addresses: a unique-local /32 that never leaves
 // the process, since the tunnel's network stack is private to it.
 var prefix = netip.MustParsePrefix("fd00:cbb::/32")
+
+// guestPrefix holds the addresses of guests: the one-time keys of remote
+// invitations, which reach only the pairing on the hub. It is apart from the
+// members' prefix, so a guest address never names a member.
+var guestPrefix = netip.MustParsePrefix("fd00:cbc::/32")
 
 // Key is a WireGuard key: a Curve25519 private or public key, or a preshared
 // key.
@@ -100,6 +107,21 @@ func Addr(deviceID string) (netip.Addr, error) {
 	return netip.AddrFrom16(a), nil
 }
 
+// GuestAddr returns the tunnel address of the guest with the public key
+// pub: the guest prefix followed by the first 96 bits of SHA-256(pub).
+func GuestAddr(pub Key) netip.Addr {
+	sum := sha256.Sum256(pub[:])
+	a := guestPrefix.Addr().As16()
+	copy(a[4:], sum[:12])
+	return netip.AddrFrom16(a)
+}
+
+// IsGuest reports whether a is a guest's tunnel address.
+func IsGuest(a netip.Addr) bool { return guestPrefix.Contains(a) }
+
+// inTunnel reports whether a is a member's or a guest's tunnel address.
+func inTunnel(a netip.Addr) bool { return prefix.Contains(a) || guestPrefix.Contains(a) }
+
 // Peer is a client as the hub knows it.
 type Peer struct {
 	PublicKey    Key
@@ -123,6 +145,9 @@ type Hub struct {
 	listener net.Listener
 	addr     netip.Addr
 	port     int
+
+	mu    sync.Mutex
+	peers map[Key]Peer // the peers the device has now
 }
 
 // StartHub brings a hub up. Its Listener accepts the member protocol's
@@ -154,7 +179,10 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 		}
 	}
 	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "hub", cfg.Verbose))
-	h := &Hub{dev: dev, addr: cfg.Addr, port: port}
+	h := &Hub{dev: dev, addr: cfg.Addr, port: port, peers: map[Key]Peer{}}
+	for _, p := range cfg.Peers {
+		h.peers[p.PublicKey] = p
+	}
 	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", cfg.PrivateKey.hex(), port)
 	if err := dev.IpcSet(ipc + peersConfig(cfg.Peers)); err != nil {
 		dev.Close()
@@ -181,14 +209,40 @@ func (h *Hub) Listener() net.Listener { return h.listener }
 func (h *Hub) UDPPort() int { return h.port }
 
 // SetPeers replaces the hub's clients. A client left out is forgotten at
-// once: its packets are dropped from then on.
+// once: its packets are dropped from then on. A client that stays keeps its
+// session, so its connections through the tunnel go on.
 func (h *Hub) SetPeers(peers []Peer) error {
 	if err := checkPeers(peers, h.addr); err != nil {
 		return err
 	}
-	if err := h.dev.IpcSet("replace_peers=true\n" + peersConfig(peers)); err != nil {
-		return fmt.Errorf("tunnel: setting the hub's peers: %w", err)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	want := make(map[Key]Peer, len(peers))
+	var b strings.Builder
+	for _, p := range peers {
+		want[p.PublicKey] = p
 	}
+	for k := range h.peers {
+		if _, ok := want[k]; !ok {
+			fmt.Fprintf(&b, "public_key=%s\nremove=true\n", k.hex())
+		}
+	}
+	for _, p := range peers {
+		if old, ok := h.peers[p.PublicKey]; !ok || old != p {
+			fmt.Fprintf(&b, "public_key=%s\npreshared_key=%s\nreplace_allowed_ips=true\nallowed_ip=%s\n",
+				p.PublicKey.hex(), p.PresharedKey.hex(), netip.PrefixFrom(p.Addr, 128))
+		}
+	}
+	if b.Len() == 0 {
+		return nil
+	}
+	if err := h.dev.IpcSet(b.String()); err != nil {
+		// The device may hold part of it; set them all from scratch.
+		if err := h.dev.IpcSet("replace_peers=true\n" + peersConfig(peers)); err != nil {
+			return fmt.Errorf("tunnel: setting the hub's peers: %w", err)
+		}
+	}
+	h.peers = want
 	return nil
 }
 
@@ -229,7 +283,7 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 		return nil, errors.New("tunnel: the hub's public key is missing")
 	case cfg.PresharedKey.IsZero():
 		return nil, errors.New("tunnel: the preshared key is missing")
-	case !prefix.Contains(cfg.Addr) || !prefix.Contains(cfg.HubAddr):
+	case !inTunnel(cfg.Addr) || !prefix.Contains(cfg.HubAddr):
 		return nil, errors.New("tunnel: the client's or the hub's address is not a tunnel address")
 	case !cfg.Endpoint.IsValid():
 		return nil, errors.New("tunnel: the hub's endpoint is missing")
@@ -302,7 +356,7 @@ func checkPeers(peers []Peer, hub netip.Addr) error {
 			return errors.New("tunnel: a peer has no public key")
 		case p.PresharedKey.IsZero():
 			return errors.New("tunnel: a peer has no preshared key")
-		case !prefix.Contains(p.Addr):
+		case !inTunnel(p.Addr):
 			return fmt.Errorf("tunnel: %v is not a tunnel address", p.Addr)
 		case p.Addr == hub:
 			return errors.New("tunnel: a peer has the hub's address")
