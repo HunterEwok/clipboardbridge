@@ -1,21 +1,21 @@
-# CI: checks, tests and cross builds for every pull request and for main.
+# CI: checks, tests and cross builds for every pull request.
 #
 # The ruleset of main requires only the job "ci-ok", which passes when every other job passed,
 # so jobs can be added or renamed without touching the ruleset.
+# It does not run again on main: the ruleset merges only by squashing a pull request that is
+# up to date with main, so main always holds the tree its pull request's run tested.
 # Actions are pinned to commit SHAs; Dependabot updates them.
 name: ci
 
 on:
   pull_request:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -84,15 +84,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # go vet runs once per operating system: the code differs by system, not by
+        # architecture, and the check job vets Linux.
         include:
           - { goos: linux, goarch: amd64, runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "7", runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "6", runner: ubuntu-latest, cgo: "0" } # Raspberry Pi Zero W
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
-          - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1" }
+          - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1", vet: true }
           - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: "1" }
-          - { goos: windows, goarch: amd64, runner: ubuntu-latest, cgo: "0" }
+          - { goos: windows, goarch: amd64, runner: ubuntu-latest, cgo: "0", vet: true }
           - { goos: windows, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
@@ -110,6 +112,7 @@ jobs:
           go-version-file: go.mod
           cache: false # nothing to download; leaves the shared cache key to the check job
       - name: go vet
+        if: matrix.vet
         run: go vet ./...
       - name: go build
         run: |

@@ -47,7 +47,7 @@ jobs:
             build-mode: none
             runner: ubuntu-latest
           - language: swift
-            build-mode: autobuild
+            build-mode: manual
             runner: macos-latest
           - language: java-kotlin
             build-mode: manual
@@ -67,6 +67,17 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
       - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         if: matrix.build-mode == 'autobuild'
+      - name: build the phone kit and the iPhone app
+        if: matrix.language == 'swift'
+        # Autobuild found only the kit's package, since the app's Xcode project is generated,
+        # and spent minutes looking before it built. Unsigned, for the simulator.
+        run: |
+          set -o pipefail
+          swift build --package-path apps/ios/ClipboardBridgeKit
+          brew install xcodegen
+          (cd apps/ios && xcodegen generate)
+          xcodebuild build -project apps/ios/ClipboardBridge.xcodeproj -scheme ClipboardBridge \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO | tail -n 50
       - name: build the Android app and the kit
         if: matrix.language == 'java-kotlin'
         working-directory: apps/android
