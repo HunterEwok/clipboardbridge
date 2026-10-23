@@ -525,33 +525,55 @@ The order may change.
 12. Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home (planned)" below.
 13. Computer keys in hardware; see "Device keys in hardware (planned)" below.
+14. The ZX Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
+    Raspberry Pi Zero on its accelerator header, wired to the FPGA's second UART, with
+    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. `cbb-lite` runs on
+    this Pi as an ordinary lite member, installed on the NextPi card itself (its user
+    partition and a start script), so NextPi's own tools keep working. It speaks the
+    member protocol with TLS 1.3 like any other member and reaches the network in one of
+    two ways, both built: the Pi's own Wi-Fi on a Zero W, which NextPi turns off and we
+    turn back on; or, on a Zero without a radio, the Next's built-in ESP8266, which then
+    only carries the Pi's TLS bytes: the Z80 copies them between the Pi's UART and the
+    ESP's, and the ESP never sees anything but ciphertext. A dot command on the Next,
+    `.cbb`, talks to `cbb-lite` over the internal UART the way NextPi's own tools do
+    (`.pisend`): it copies a text to the group, pastes the latest one, and joins with the
+    code shown by the admin, since the Next has no camera. The UART is a trace on the
+    Next's board and never leaves the case, so it carries the texts in the clear. The Pi
+    converts between UTF-8 and the Spectrum character set: printable ASCII first, with
+    every other character shown as `?`; Cyrillic follows later as an encoding of its own.
+    No other device takes part: a Next without a Pi is future research (below), not a
+    reason to lean on a computer in the group.
+15. Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
+    `lite/core` as the other ESP32 boards, with the member protocol and TLS 1.3 on the
+    board itself. It ships as a ready firmware built from our Rust code, flashed over USB
+    with one command; a library for writing one's own Arduino sketches on top of it may
+    follow. Over its USB port it can act as a keyboard and type the group's latest text
+    into any computer without clipboardbridge (Latin characters only: a USB keyboard
+    cannot type most other scripts), and it can show texts on a display and send one with
+    a button.
 
 ### Future research (not planned)
 
 Questions to study before anything is planned for them.
 
-- **Very small and retro computers through a gateway**, for example the ZX Spectrum Next
-  (Z80 at 28 MHz, Wi-Fi through an ESP8266 driven by AT commands, programs in C with z88dk).
-  TLS 1.3 with P-256 is out of reach there, so a Linux member acts as a gateway with a
-  simpler protocol: pairing with the six-digit code derives a key shared by the gateway and
-  the device, and every text travels encrypted and authenticated with ChaCha20-Poly1305
-  over plain TCP. The gateway turns those messages into ordinary events. The same protocol
-  would serve any device too weak for the member protocol. To study: the cost of the
-  key derivation and the cipher on a Z80, the AT command TCP mode of the ESP8266, and how
-  the gateway names such devices in the devices list.
-- **A plain tier below the gateway protocol**, for devices that cannot even run
-  ChaCha20-Poly1305: texts in the clear over the home network, which is better than typing
-  them by hand. Only by an explicit choice on the gateway, per device, after a warning that
-  says plainly that anyone on the network can read and change what that device sends and
-  receives and that the user takes this risk. Such a device carries a warning mark in the
-  devices list, never receives secrets (items a password manager marked), and can be
-  limited to receiving only, or to sending only. A middle step to study: a key from the
-  pairing code used only to authenticate (a MAC, cheap even on a Z80), so that nobody else
-  can inject texts, while they still travel unencrypted.
-- **Arduino and other microcontrollers** with the same gateway protocol: AVR boards with a
-  Wi-Fi or Ethernet module, for example to show or type the clipboard. Boards built on the
-  ESP32 may manage TLS 1.3 with P-256 themselves and could become lite members instead; to
-  be measured.
+- **A ZX Spectrum Next without a Pi**, on its own hardware only: no other device in the
+  network may do its part. Three paths, in the order to try them:
+  (1) the Z80N is the member itself and the built-in ESP8266, with its stock AT firmware,
+  only carries the TCP bytes, so the ESP never sees anything but ciphertext; TLS 1.3, the
+  P-256 signatures and X25519 in Z80N assembly would take minutes per connection (one
+  X25519 is estimated at 5-20 s), then the connection stays open and texts move at
+  several KB/s; (2) our own firmware for the ESP-01, which then is the member and the
+  Z80 only shows the text, with about 80 KB of RAM for TLS 1.3 and at the cost of the AT
+  programs that need the stock firmware; (3) an ESP32 module in place of the ESP-01 in
+  its socket, running `lite/core`, if such a module exists for that socket. To measure:
+  the cost of P-256 on the Z80N and the RAM a TLS 1.3 member needs on the ESP8266.
+- **No gateway and no plain tier.** A device too weak for the member protocol does not
+  lean on another member over the network to do its part, neither through a gateway with
+  a simpler encrypted protocol nor in the clear. Such a device joins through hardware of
+  its own (the Next's Pi, an ESP32 on the board) or not at all. Arduino boards whose
+  Wi-Fi chip runs its own TLS (Uno R4 WiFi, Nano 33 IoT, MKR WiFi 1010) cannot be lite
+  members, because that TLS gives no access to the exporter the member protocol needs,
+  so they are not supported; boards without a network are not either.
 
 ## Sync away from home (planned)
 
@@ -1115,3 +1137,5 @@ These need experiments on real devices; CI cannot answer them.
 | D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
 | D-46 | Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
+| D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
+| D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
