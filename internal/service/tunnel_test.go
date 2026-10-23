@@ -144,6 +144,7 @@ func TestTunnelOffByDefault(t *testing.T) {
 // checks that the deck, once on another network, syncs with it through the
 // tunnel, and that turning it off forgets the keys.
 func TestAwayFromHome(t *testing.T) {
+	t.Setenv("CBB_DEBUG", "1") // WireGuard's messages in the log, if it fails
 	var h hub
 	pi := startService(t, &h, "pi")
 	deck := startService(t, &h, "deck")

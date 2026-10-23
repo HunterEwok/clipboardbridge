@@ -217,7 +217,7 @@ func (s *Service) runTunnelLocked() {
 		if port == 0 {
 			port = tunnel.Port
 		}
-		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: st.Peers(), Logf: s.logf})
+		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: st.Peers(), Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			s.tunFailedLocked(fmt.Sprintf("the hub could not listen on UDP port %d", port), err)
@@ -244,7 +244,7 @@ func (s *Service) runTunnelLocked() {
 			return
 		}
 		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: st.Key, PresharedKey: link.PresharedKey, Addr: self,
-			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Logf: s.logf})
+			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			s.tunFailedLocked("the tunnel to the hub could not start", err)
@@ -413,6 +413,11 @@ func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.Hu
 		backoff = min(2*backoff, maxBackoff)
 	}
 }
+
+// tunnelVerbose tells whether the service logs WireGuard's own messages too:
+// only with CBB_DEBUG=1 in its environment, since they come every few
+// seconds while a tunnel is up.
+func tunnelVerbose() bool { return os.Getenv("CBB_DEBUG") == "1" }
 
 // keysInFile tells whether this device keeps its keys in files, not in
 // hardware; every computer does until the keys move to a TPM or a Secure

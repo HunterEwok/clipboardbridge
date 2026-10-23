@@ -15,3 +15,5 @@ func syncDir(dir string) error {
 	defer d.Close()
 	return d.Sync()
 }
+
+func rename(from, to string) error { return os.Rename(from, to) }

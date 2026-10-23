@@ -153,6 +153,8 @@ cbb away                                     # what it does now, and what went w
 ```
 
 The router must forward UDP port 8764 to the hub, and the hub's firewall must allow it.
+When it does not connect, `cbb away` says why; with `CBB_DEBUG=1` in the service's
+environment, its log also has WireGuard's own messages, such as each handshake.
 The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted;
 nobody else's server is involved. `cbb away off` turns it off again and forgets its keys.
 The phones cannot sync away from home yet.
