@@ -561,7 +561,8 @@ group's own WireGuard tunnel in a star around one member, the hub. Built so far:
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
 each other), the exchange of its keys among Go members, and `cbb away`, which turns it on
 with the consent below and makes a computer the hub; Go members sync through it when the
-hub is not on their network. The phones, the forwarder and the rest of the order of work
+hub is not on their network; a computer with a remote invitation joins from afar (`cbb
+invite` on the hub). The phones, the forwarder and the rest of the order of work
 below are not built yet.
 
 ### Turning it on, step by step
@@ -755,9 +756,12 @@ the pairing itself; the third is planned.
   through the hub hands it its tunnel key as soon as sync away from home is on there, and
   syncs away from home from then on. It stops once it holds the hub's offer; the address is
   not kept across a restart of the service.
-- **Remote invitation (planned)**, for a device that shares no network and no SSH with the
+- **Remote invitation**, for a device that shares no network and no SSH with the
   group. An admin makes it: the root or an admin phone, a Linux member that admits devices
-  or an admin computer (`cbb invite`). It is never typed: it comes only as a QR code or as
+  or an admin computer (`cbb invite`). Built so far for computers, made on the hub itself
+  when the hub can admit devices: `cbb invite` there, `cbb join -invite FILE` on the new
+  computer (docs/protocol.md, section 12). Handing an invitation made on another admin to
+  the hub, and the phones' part, are still planned. It is never typed: it comes only as a QR code or as
   a file to open (`.cbbinvite`), and holds the group's tag, the hub's WireGuard public key
   and addresses (and the forwarder's), a one-time WireGuard key pair with its preshared key
   for a guest tunnel, a 128-bit one-time secret and the time it expires. It serves one
@@ -874,7 +878,9 @@ only adds to it.
 3. The service: turning sync away from home on and off (the hub, each device, the consent
    for keys in a file), hub mode, dialing through the tunnel, failing closed, `cbb status`
    and the member dial after a join by address (done).
-4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation).
+4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation):
+   done for computers, made on the hub; handing them over from another admin to the hub
+   follows.
 5. The forwarder.
 6. The blind relay, self-hosted only.
 7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,

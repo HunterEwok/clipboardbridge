@@ -27,6 +27,8 @@ Commands:
   pair -phone             Pair an iPhone or iPad with the shortcut.
   join                    Join a group: show a QR code for the phone to scan.
   join -code [address]    Join with the code from cbb pair on a Linux member.
+  join -invite file       Join from afar with an invitation from cbb invite.
+  invite [-for 1h]        Invite a device from afar: run on the group's hub.
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link the Mac's or Windows clipboard to the service (started at sign-in).
   desktop                 Link a Linux desktop's clipboard to the service (started with the session).
@@ -72,6 +74,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPair(rest, stdout, stderr)
 	case "join":
 		return cmdJoin(rest, stdin, stdout, stderr)
+	case "invite":
+		return cmdInvite(rest, stdin, stdout, stderr)
 	case "service":
 		return cmdService(rest, stderr)
 	case "agent":

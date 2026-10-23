@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package service
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/invite"
+)
+
+// inviteHub makes the pi a group's hub on the loopback address, on
+// another network than the other test services, and opens an invitation
+// there.
+func inviteHub(t *testing.T, h *hub, pi *testService) (inv *control.Client, text string) {
+	t.Helper()
+	c, _ := openWindow(t, pi) // creates the group
+	c.Close()
+	if _, err := pi.do(t, control.Header{Op: control.OpInvite}, ""); err == nil || !strings.Contains(err.Error(), "hub") {
+		t.Errorf("an invitation from a member that is not the hub: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	port := freeUDP(t)
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	h.hide(pi.status(t).Device)
+	inv = pi.dial(t)
+	t.Cleanup(func() { inv.Close() })
+	inv.SetDeadline(time.Now().Add(60 * time.Second))
+	m, err := inv.Do(&control.Message{Header: control.Header{Op: control.OpInvite, Expires: 600}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Expires != 600 {
+		t.Errorf("the invitation is valid for %d s, want 600", m.Expires)
+	}
+	return inv, m.Invite
+}
+
+// TestInvite checks a remote invitation from end to end: a device on
+// another network joins through the hub's guest tunnel once the admin
+// confirms the device it shows, then reaches the hub through the tunnel
+// with its own key and syncs.
+func TestInvite(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	inv, text := inviteHub(t, &h, pi)
+	in, err := invite.Parse(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Hub != pi.status(t).Device || len(in.Secret) != 16 {
+		t.Errorf("the invitation %+v", in)
+	}
+
+	if _, err := deck.do(t, control.Header{Op: control.OpJoin, Invite: text}, ""); err == nil || !strings.Contains(err.Error(), "consent") {
+		t.Errorf("a join with an invitation without consent: %v", err)
+	}
+	j := deck.dial(t)
+	defer j.Close()
+	j.SetDeadline(time.Now().Add(60 * time.Second))
+	m, err := j.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Invite: text, Consent: true}})
+	if err != nil || m.Fingerprint == "" {
+		t.Fatalf("join: %+v, %v", m, err)
+	}
+	ask, err := inv.Receive()
+	if err != nil || ask.Joining == nil {
+		t.Fatalf("the hub asked %+v, %v", ask, err)
+	}
+	if ask.Joining.Name != "deck" || ask.Joining.Fingerprint != m.Fingerprint {
+		t.Errorf("the hub asks about %+v, the deck shows %s", ask.Joining, m.Fingerprint)
+	}
+	if err := inv.Send(&control.Message{Header: control.Header{Op: control.OpAnswer, Consent: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := inv.Receive(); err != nil || !m.Done || m.Name != "deck" {
+		t.Fatalf("the invitation ended with %+v, %v", m, err)
+	}
+	if m, err := j.Receive(); err != nil || !m.Done {
+		t.Fatalf("the join ended with %+v, %v", m, err)
+	}
+
+	piID := pi.status(t).Device
+	waitUpTo(t, 30*time.Second, "the deck reaches the hub through its own tunnel", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.HubDevice == piID && st.Away.Through && len(st.Peers) == 1
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "from afar"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "from afar" })
+	if st := deck.status(t); st.Group != pi.status(t).Group {
+		t.Errorf("the deck is in group %q", st.Group)
+	}
+
+	// The invitation is used up.
+	other := startService(t, &h, "other")
+	o := other.dial(t)
+	defer o.Close()
+	if _, err := o.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Invite: text, Consent: true}}); err != nil {
+		t.Fatal(err) // the fingerprint, before it tries
+	}
+	if _, err := o.Receive(); err == nil {
+		t.Error("a used invitation let another device join")
+	}
+	if st := other.status(t); st.Group != "" {
+		t.Errorf("another device joined with a used invitation: %+v", st)
+	}
+}
+
+// TestInviteDeclined checks that a device the admin does not confirm
+// stays out, and that the invitation then still serves the right one.
+func TestInviteDeclined(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	stranger := startService(t, &h, "stranger")
+	inv, text := inviteHub(t, &h, pi)
+
+	j := stranger.dial(t)
+	defer j.Close()
+	j.SetDeadline(time.Now().Add(60 * time.Second))
+	if _, err := j.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Invite: text, Consent: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if ask, err := inv.Receive(); err != nil || ask.Joining == nil {
+		t.Fatalf("the hub asked %+v, %v", ask, err)
+	}
+	if err := inv.Send(&control.Message{Header: control.Header{Op: control.OpAnswer}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Receive(); err == nil || !strings.Contains(err.Error(), "did not confirm") {
+		t.Errorf("the declined join ended with %v", err)
+	}
+	if st := stranger.status(t); st.Group != "" {
+		t.Errorf("a declined device is in group %q", st.Group)
+	}
+}
