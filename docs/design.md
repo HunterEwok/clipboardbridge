@@ -465,6 +465,7 @@ and lifetimes. The installer enables what the device needs.
 | A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
 | A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipboardbridge` group; single-line injection by default with control characters removed |
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home (planned) only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
+| Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal (see "Device keys in hardware") |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
@@ -516,6 +517,7 @@ The order may change.
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
 12. Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home (planned)" below.
+13. Computer keys in hardware; see "Device keys in hardware (planned)" below.
 
 ### Future research (not planned)
 
@@ -681,16 +683,69 @@ WireGuard packets between a group's clients and that group's hub.
   member connection, for the device ID and certificate chain of that connection, so the
   member certificate binds the key and no extra signed record is needed (one would ask the
   root phone for Face ID for every device and add nothing the certificate does not prove).
-  Joining a group from the internet is not possible. The wire format is in
-  [protocol.md](protocol.md), section 11.
+  The wire format is in [protocol.md](protocol.md), section 11.
 - Removing a device (the revocation records) makes the hub drop its key at once. A new
   preshared key can be issued through the tunnel at any time.
-- Joining a group happens only on the home network, never over the internet: pairing
-  rests on a short code, which only someone already on the user's network can try, while
-  over the internet anyone could; and before it joins, a device has neither a certificate
-  nor a tunnel. The order is: the device joins at home, meets the hub at home and hands it
+- A device joins with the six-digit code only where no stranger can try it: on the home
+  network, or through a path the user already controls (see "Joining from another
+  network"). The code is short, so the open internet never reaches that pairing: there
+  anyone could try it, and before it joins a device has neither a certificate nor a
+  tunnel. The usual order is: the device joins at home, meets the hub at home and hands it
   its key, and from then on syncs from anywhere. Keys and preshared keys can be renewed
   later through the tunnel, since the member TLS runs inside it.
+
+### Joining from another network
+
+Three ways admit a device that is not on the home network. The first two work today for
+the pairing itself; the third is planned.
+
+- **Through SSH.** When the new computer can log in to a Linux member that admits devices,
+  it forwards a local port to the member port, `ssh -N -L 18764:localhost:8764 user@member`;
+  the user runs `cbb pair` on the member (in another SSH session) and
+  `cbb join -code 127.0.0.1:18764` on the new computer. The member sees a connection from
+  itself (loopback), which it accepts, and the usual pairing (CPace with the code inside
+  TLS) runs inside SSH. A remote desktop (RDP, VNC) gives a screen, not a network path; it
+  still needs the SSH forward or a VPN.
+- **Through a VPN of the user's own** that gives both devices private addresses (RFC 1918
+  IPv4 or IPv6 unique-local), such as a WireGuard the user runs: the member port accepts
+  private addresses, so `cbb join -code <member's VPN address>:8764` works. Addresses
+  outside those ranges, such as the 100.64.0.0/10 of carrier-grade NAT that some overlay
+  VPNs use, are refused like any address of the internet. On Linux the installer's
+  firewall rules allow the private networks the machine had when it ran, so after setting
+  up the VPN the installer is run again. Only a VPN the user runs fits the rules above: the
+  member port is then open to every peer of that VPN.
+- In both ways the device joins, but members find each other by mDNS, which crosses
+  neither SSH nor a VPN, so it would meet the hub only at home. The service step (see
+  "Order of work") adds the missing piece: after a join by address the new member dials
+  that address once more as a member, so a device that joined through the hub hands it its
+  tunnel key at once and syncs away from home from then on.
+- **Remote invitation (planned)**, for a device that shares no network and no SSH with the
+  group. An admin makes it: the root or an admin phone, a Linux member that admits devices
+  or an admin computer (`cbb invite`). It is never typed: it comes only as a QR code or as
+  a file to open (`.cbbinvite`), and holds the group's tag, the hub's WireGuard public key
+  and addresses (and the forwarder's), a one-time WireGuard key pair with its preshared key
+  for a guest tunnel, a 128-bit one-time secret and the time it expires. It serves one
+  device once, for at most a day (an hour by default), and the admin can cancel it.
+  - The admin hands the invitation to the hub inside member TLS before it is used. The hub
+    adds the guest key as a peer that reaches only the pairing service inside the tunnel,
+    never the members' sync, and drops it after one use, at expiry, or after three failed
+    attempts. A packet without that key gets no answer, as for any unknown WireGuard key.
+  - The new device opens the guest tunnel and pairs with the hub with CPace on the secret,
+    the same exchange as at home. The hub then shows the admin who made the invitation the
+    device's name, system and key fingerprint; nothing is admitted until the admin
+    confirms (Face ID on a phone, a question in the terminal for `cbb invite`), and the
+    admin signs its certificate as for any other device. In a phone group whose hub holds
+    no CA keys the request goes to the admin phone through the hub, inside member TLS, at
+    home or through the phone's own tunnel.
+  - With its certificate the device offers its own tunnel key in its first hello through
+    the guest tunnel; the hub admits it, drops the guest peer, and the device reconnects
+    with its own key as an ordinary client.
+  - Why it is safe over the internet: without the guest key nobody reaches the hub at all;
+    the 128-bit secret makes guessing hopeless and CPace allows no offline attack; the
+    guest reaches nothing but the pairing; and the admin's confirmation names the device,
+    so an invitation stolen and used first is seen and refused. The invitation is a secret
+    until it is used, so the user passes it only through a channel they trust; the app says
+    so when it shows it.
 
 ### Groups that sync at home only
 
@@ -780,12 +835,42 @@ only adds to it.
 1. WireGuard in `cbb` (done) and the key exchange (done).
 2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
    at home.
-3. The service: hub mode, dialing through the tunnel, failing closed, `cbb status`.
-4. The forwarder.
-5. The blind relay, self-hosted only.
-6. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub.
-7. Blocked networks: AmneziaWG, then VLESS with REALITY.
-8. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
+3. The service: hub mode, dialing through the tunnel, failing closed, `cbb status`, and the
+   member dial after a join by address.
+4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation).
+5. The forwarder.
+6. The blind relay, self-hosted only.
+7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,
+   making and opening remote invitations.
+8. Blocked networks: AmneziaWG, then VLESS with REALITY.
+9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
+
+## Device keys in hardware (planned)
+
+On the phones the member key and the root and admin keys live in the Secure Enclave or the
+Android Keystore and cannot be exported. On computers the member key, the WireGuard key
+and the CA keys sit in files readable only by the service, so whoever gets root on a
+computer, or a copy of its disk, can copy them and act as that device until it is removed.
+The plan:
+
+- **Hardware where there is some.** Linux and Windows keep the member key (P-256) and the
+  admin key in the TPM 2.0 (Linux through the kernel's TPM device, Windows through the
+  Platform Crypto Provider), and a Mac in the Secure Enclave (Apple silicon or the T2
+  chip), so the keys are used there and never leave it. WireGuard's X25519 is not offered
+  by these chips; that key is kept sealed by the TPM or the Secure Enclave and opened only
+  in the service's memory.
+- **Without hardware** (many Raspberry Pis and older PCs, Intel Macs without the T2): the
+  key stays in a file readable only by the service, on Linux sealed with `systemd-creds`
+  (by the TPM when there is one, else by the machine's own key readable only by root), on
+  an Intel Mac in the system keychain. This protects a copy of the file alone, such as a
+  backup or a memory card read elsewhere, not a device whose root is taken; it is said
+  plainly rather than hidden.
+- `cbb status` and the devices list show where each device keeps its key (hardware or a
+  file), so the user sees which devices are weaker.
+- **Regular renewal**: the member key and the WireGuard key are replaced on a schedule
+  (the certificate renewal and a new tunnel key through the tunnel), so a copied key stops
+  working even when nobody noticed the theft.
+- Removing a device stays the main answer to a stolen key in every case.
 
 ## Target architecture with the phone apps
 
@@ -975,3 +1060,5 @@ These need experiments on real devices; CI cannot answer them.
 | D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
 | D-41 | Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
 | D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |
+| D-43 | A device away from the group joins by SSH, by the user's own VPN, or by a remote invitation: a QR code or a file, never typed, with a one-time guest WireGuard key that reaches only the pairing and a 128-bit secret, and admitted only after the admin confirms the device. The six-digit code never faces the open internet. |
+| D-44 | Computers keep their keys in the TPM or the Secure Enclave where they have one, and otherwise in a file sealed as far as the system allows, shown as such in `cbb status`; keys are renewed on a schedule. |
