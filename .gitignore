@@ -29,3 +29,9 @@ go.work.sum
 /apps/ios/*.xcodeproj/
 /apps/ios/ClipboardBridge/Info.plist
 /interop-out/
+
+# The Android app's build output
+/apps/android/**/build/
+/apps/android/**/.gradle/
+/apps/android/**/.kotlin/
+/apps/android/local.properties

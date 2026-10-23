@@ -343,10 +343,26 @@ jobs:
           xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$udid" \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the protocol core's tests
+        working-directory: apps/android
+        run: ./gradlew --no-daemon -p kit test
+      - name: build the app and run its unit tests
+        working-directory: apps/android
+        # The runner image has the Android SDK; Gradle fetches a missing platform.
+        run: ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, kit, app]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, kit, app, android]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

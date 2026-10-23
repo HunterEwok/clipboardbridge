@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<resources>
+    <string name="app_name" translatable="false">clipboardbridge</string>
+    <string name="start_title">Your clipboard, on every device at home</string>
+</resources>

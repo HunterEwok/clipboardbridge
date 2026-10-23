@@ -43,6 +43,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Android app is started in `apps/android`: a Gradle build with the protocol core in
+  Kotlin (`kit`, no Android dependencies; CPace over X25519 so far, tested with the vectors
+  of RFC 7748 and the CPace draft) and a Compose app, built and tested in CI.
+
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).
 - The phone app's "Sync clipboard" action, in Shortcuts and Spotlight without setting
