@@ -385,18 +385,31 @@ pub fn device_of(c: &Cert) -> Result<DeviceId> {
     Ok(id)
 }
 
+/// The side of a member connection that a peer's certificate must be good
+/// for: the member this one dialed is the server, one that dialed it the
+/// client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Usage {
+    Server,
+    Client,
+}
+
 /// Verifies a peer's member certificate chain (leaf first, then the admin
 /// CA that issued it, if one did) to one of the trusted roots at time t,
-/// Unix seconds, for server use, and returns the device it names. The time is max(now, the
-/// current root's NotBefore), as Go's verifyTime: a device whose clock is
-/// behind still accepts certificates, an expired one is rejected.
-pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64) -> Result<DeviceId> {
+/// Unix seconds, for the use the peer's side needs, and returns the device
+/// it names. The time is max(now, the current root's NotBefore), as Go's
+/// verifyTime: a device whose clock is behind still accepts certificates,
+/// an expired one is rejected.
+pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64, usage: Usage) -> Result<DeviceId> {
     let leaf = chain.first().ok_or_else(|| Error::msg("the peer sent no certificate"))?;
     if leaf.is_ca {
         return Err(Error::msg("the peer's certificate is a CA"));
     }
-    // A lite member only dials, so its peers are servers.
-    if !leaf.server_auth || !leaf.valid_at(t) {
+    let usable = match usage {
+        Usage::Server => leaf.server_auth,
+        Usage::Client => leaf.client_auth,
+    };
+    if !usable || !leaf.valid_at(t) {
         return Err(Error::msg("the peer's certificate is expired or not for this use"));
     }
     let from = |child: &Cert, parent: &Cert| child.issuer_name == parent.subject_name && child.signed_by(parent);
