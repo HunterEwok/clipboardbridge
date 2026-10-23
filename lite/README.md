@@ -79,7 +79,7 @@ rustup target add arm-unknown-linux-musleabihf
 cargo build --release --target arm-unknown-linux-musleabihf
 ```
 
-CI builds both on every push: the `cbb-lite-linux-arm64` and `cbb-lite-linux-armv6`
+CI builds both for every pull request: the `cbb-lite-linux-arm64` and `cbb-lite-linux-armv6`
 artifacts of the `lite member (Rust)` job.
 
 The e2e test runs the lite member among Go members: it joins through the phone's QR code,
