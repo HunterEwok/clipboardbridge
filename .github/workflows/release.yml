@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Builds a release from a version tag: an archive per platform, SHA256SUMS,
-# the Linux and Windows installers and a build provenance attestation for each file.
+# Builds a release from a version tag: an archive per platform, the Android
+# app's APK, SHA256SUMS, the Linux and Windows installers and a build
+# provenance attestation for each file.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  # Run from a branch, it builds everything, the signed APK included, and
+  # publishes nothing: a check that the release key in the secrets works.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -71,8 +75,54 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  android:
+    name: build (android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build the signed APK
+        working-directory: apps/android
+        # The release key lives in the repository's secrets (docs/apps.md, "Releasing the
+        # Android app"); without it the release has no APK rather than an unsigned one.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CBB_ANDROID_KEYSTORE_BASE64 }}
+          CBB_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.CBB_ANDROID_KEYSTORE_PASSWORD }}
+          CBB_ANDROID_KEY_ALIAS: ${{ secrets.CBB_ANDROID_KEY_ALIAS }}
+          CBB_ANDROID_KEY_PASSWORD: ${{ secrets.CBB_ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::no Android release key in the secrets; the release has no APK"
+            exit 0
+          fi
+          export CBB_ANDROID_KEYSTORE="$RUNNER_TEMP/release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d >"$CBB_ANDROID_KEYSTORE"
+          version=${GITHUB_REF_NAME#v}
+          if [ "$GITHUB_REF_TYPE" != tag ]; then version=0.0.0-dev; fi
+          core=${version%%-*}
+          major=${core%%.*}
+          rest=${core#*.}
+          minor=${rest%%.*}
+          patch=${rest#*.}
+          ./gradlew --no-daemon :app:assembleRelease -PversionName="$version" \
+            -PversionCode=$((major * 10000 + minor * 100 + patch > 0 ? major * 10000 + minor * 100 + patch : 1))
+          rm -f "$CBB_ANDROID_KEYSTORE"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/dist/clipboardbridge-$version.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android
+          path: ${{ runner.temp }}/dist/
+          if-no-files-found: ignore
+          retention-days: 1
+
   release:
-    needs: build
+    if: github.ref_type == 'tag'
+    needs: [build, android]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -91,7 +141,9 @@ jobs:
         run: |
           cp packaging/linux/get.sh packaging/windows/get.ps1 dist/
           cd dist
-          sha256sum -- *.tar.gz *.zip get.sh get.ps1 >SHA256SUMS
+          set -- *.tar.gz *.zip get.sh get.ps1
+          for f in *.apk; do [ -e "$f" ] && set -- "$@" "$f"; done
+          sha256sum -- "$@" >SHA256SUMS
           cat SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

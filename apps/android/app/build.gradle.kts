@@ -15,13 +15,29 @@ android {
         applicationId = "io.github.hunterewok.clipboardbridge"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.3.0-dev"
+        // The release workflow passes the tag's version: -PversionName=1.2.3 -PversionCode=10203.
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = findProperty("versionName") as String? ?: "0.3.0-dev"
+    }
+
+    // The release key, when the release workflow has it (CBB_ANDROID_KEYSTORE is the
+    // keystore file); without it the release APK is unsigned.
+    val keystore = System.getenv("CBB_ANDROID_KEYSTORE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("CBB_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CBB_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("CBB_ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

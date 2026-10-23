@@ -492,7 +492,7 @@ jobs:
       - name: build the app and run its unit tests
         working-directory: apps/android
         # The runner image has the Android SDK; Gradle fetches a missing platform.
-        run: ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug
 
   lite:
     name: lite member (Rust)
