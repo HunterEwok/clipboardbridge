@@ -54,6 +54,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   system's message; `-Details` or `CBB_ERROR_DETAILS=1` adds the full error. The service
   logs to `ProgramData\clipboardbridge\logs`, the agent to
   `LocalAppData\clipboardbridge\agent.log`.
+- **The lite member, `cbb-lite`, in Rust** (`lite/`): a small member for weak Linux devices
+  (a Raspberry Pi, a router) that joins a phone group by QR code (or a computer group with
+  the code from `cbb pair`), never holds CA keys, only dials the full members and syncs
+  with them; `copy`, `paste`, `status`, `devices` and `watch` work as in `cbb`. Its errors
+  show their details with `-debug` or `CBB_DEBUG=1`, and in a debug build. CI builds it for 64-bit
+  Raspberry Pis and, statically, for the ARMv6 Pi Zero W.
+- A joiner can say it is a lite member (`"role":"lite"` in its pairing Info): Go members
+  send it no CA keys and list it with role `lite`.
 - The Android app is started in `apps/android`: a Gradle build with the protocol core in
   Kotlin (`kit`, no Android dependencies) and a Compose app, built and tested in CI. The kit
   has CPace over X25519 (tested with the vectors of RFC 7748 and the CPace draft), the group's
@@ -65,6 +73,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
   as a phone, and both kits record a lite member (`"role":"lite"` in its Info) with role `lite`.
   TLS 1.3 comes from Conscrypt (bundled in the app), with ALPN and the exporter: in CI, Go
   pairs with the Kotlin kit over plain TCP and over TLS, and syncs with it as a member.
+  The app keeps its keys in the Android Keystore (StrongBox where the phone has it): the
+  member key signs TLS in the background, and the root and admin keys sign only for five
+  minutes after the fingerprint, the face or the screen lock.
+  It finds the computers with NsdManager and keeps a connection to each (the kit's
+  `MemberDialer`), and reads QR codes with CameraX and ZXing, without Google Play services.
+  Its screens follow the iPhone app's: Start with the one-time "This phone is ready" note,
+  joining another phone's group by showing a QR code, Home with the Send-or-fetch button and
+  the computers' live dots, Devices (remove, make a computer an admin, take the group over
+  from a lost root phone), Add a device (the camera or pasted text) and Settings; the four
+  themes of `apps/design/tokens.json` (`tools/tokens` now writes Kotlin too) and Material
+  You, in English and Russian. The app asks for the local network permission Android 17
+  needs.
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).

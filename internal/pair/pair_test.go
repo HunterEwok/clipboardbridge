@@ -173,6 +173,28 @@ func TestPairMac(t *testing.T) {
 	}
 }
 
+// A lite member is a Linux device that never gets the CA keys, even from an
+// admin of a group a computer created.
+func TestPairLite(t *testing.T) {
+	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	j.Info.Role = RoleLite
+	out := f.attempt(t, j, f.code, nil)
+	if out.joinErr != nil || out.serveErr != nil {
+		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
+	}
+	if id := out.id; id.Admin() || id.PhoneCA != nil || id.GroupCA.Key != nil {
+		t.Error("a lite member got CA keys")
+	}
+	res, err := f.window.Result()
+	if err != nil || res.Info.Role != RoleLite {
+		t.Errorf("Result = %+v, %v", res, err)
+	}
+	if err := (Info{Name: "x", OS: "linux", Role: "router"}).check(); err == nil {
+		t.Error("an unknown role passed the check")
+	}
+}
+
 func TestPairLinux(t *testing.T) {
 	f := newFixture(t)
 	j := newJoiner(t, "linux")
