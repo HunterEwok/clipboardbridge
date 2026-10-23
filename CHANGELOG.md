@@ -68,6 +68,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb-lite next paste|copy|join` for the ZX Spectrum Next: on the Next's own Raspberry Pi,
+  `cbb-lite` answers the Next's `.cbb` dot command over the internal UART in frames its
+  Z80 reads (CR lines, the Spectrum character set, length and CRC-32, a QR code as hex
+  rows for the phone to scan); see lite/README.md.
 - Sync away from home for computers, off by default. `cbb away on` turns it on after a
   warning that the device keeps its keys in files; `cbb away hub address:port` makes an
   always-on computer the group's hub, which takes the others through the group's own

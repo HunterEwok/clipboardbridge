@@ -11,6 +11,7 @@ mod discovery;
 mod error;
 mod files;
 mod identity;
+mod next;
 mod node;
 mod pair;
 mod records;
@@ -47,6 +48,8 @@ Commands:
   devices              List the devices of the group.
   watch [-0]           Print every text the group sends here, one per line
                        (with -0, each followed by a zero byte).
+  next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
+                       in frames its Z80 reads (lite/README.md).
   version              Print the version.
   help                 Print this help.
 
@@ -86,7 +89,8 @@ fn main() {
         Some(cmd) => {
             let rest = &args[1..];
             let res = match cmd {
-                "join" => cmd_join(&g, rest),
+                "join" => join(&g, rest, false),
+                "next" => std::process::exit(next::run(&g, rest)),
                 "run" => cmd_run(&g, rest),
                 "copy" => cmd_copy(&g, rest),
                 "paste" => cmd_simple(&g, "paste", rest),
@@ -150,7 +154,9 @@ fn member_port() -> u16 {
     std::env::var("CBB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8764)
 }
 
-fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
+/// Joins a group. For the Next (for_next), the QR code and the outcome come
+/// in its frames, and so do the log lines, as `CBB#` lines it skips.
+fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
     let mut name = host_name();
     let mut port = member_port();
     let mut addrs = Vec::new();
@@ -162,7 +168,7 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
             Some("name") => name = next()?,
             Some("port") => port = next()?.parse().context("the port is a number")?,
             Some("addr") => addrs.push(next()?),
-            Some("code") => code_addr = Some(next()?),
+            Some("code") if !for_next => code_addr = Some(next()?),
             _ => return Err(Error::msg(format!("unknown argument {:?}; see cbb-lite help", args[i]))),
         }
         i += 2;
@@ -203,6 +209,12 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
                 addrs.into_iter().map(|a| if resolve(&a).is_ok() { a } else { join_host_port(&a, bound) }).collect();
             let code = pair::new_code();
             let shown = |text: &str| {
+                if for_next {
+                    let mut out = std::io::stdout();
+                    out.write_all(&next::qr_frame(text)).ok();
+                    out.flush().ok();
+                    return;
+                }
                 println!("In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut");
                 println!("\"clipboardbridge: add a computer\") and scan this:\n");
                 print!("{}", qr(text));
@@ -211,11 +223,22 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
                 println!("Without a phone: run cbb pair on a Linux member and cbb-lite join -code <its address> here.");
                 std::io::stdout().flush().ok();
             };
-            let log = |s: &str| eprintln!("{s}");
+            let log = |s: &str| {
+                if for_next {
+                    print!("CBB# {}\r", next::to_spectrum(s).escape_ascii());
+                    std::io::stdout().flush().ok();
+                } else {
+                    eprintln!("{s}");
+                }
+            };
             pair::listen(&joiner, ln, (!addrs.is_empty()).then_some(addrs), &code, pair::LIFETIME, &shown, &save, &log)?
         }
     };
-    println!("Joined the group {} as {}.", id.tag(), id.id);
+    if for_next {
+        print!("CBB# joined the group {} as {}\r", id.tag(), id.id);
+    } else {
+        println!("Joined the group {} as {}.", id.tag(), id.id);
+    }
     Ok(())
 }
 
