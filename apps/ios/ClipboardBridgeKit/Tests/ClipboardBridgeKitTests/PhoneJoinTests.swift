@@ -138,7 +138,7 @@ final class PhoneJoinTests: XCTestCase {
         let r2 = await pair(root, signer: rootKey, l2, info: .init(name: "Admin", os: "ios", adminKey: adminKey.publicKeyDER))
         let admin = PhoneGroup.joined(try r2.joiner.get())
         let l3 = try Listener()
-        let r3 = await pair(admin, signer: adminKey, l3, info: .init(name: "Fourth", os: "ios", adminKey: SoftwareSigner().publicKeyDER))
+        let r3 = await pair(admin, signer: adminKey, l3, info: .init(name: "Fourth", os: "android", adminKey: SoftwareSigner().publicKeyDER))
         XCTAssertNil(try r3.joiner.get().welcome.adminCA)
     }
 
@@ -181,6 +181,9 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertFalse(Pairing.Info(name: "pi", os: "linux", adminKey: key).isValid, "only a phone sends an admin key")
         XCTAssertFalse(Pairing.Info(name: "iPhone", os: "ios", adminKey: Data([1, 2, 3])).isValid)
         XCTAssertFalse(Pairing.Info(name: "pc", os: "windows").isValid)
+        XCTAssertTrue(Pairing.Info(name: "Pixel", os: "android", adminKey: key).isValid, "an Android phone joins as a phone")
+        XCTAssertTrue(Pairing.Info(name: "router", os: "linux", role: Pairing.Info.lite).isValid, "a lite member")
+        XCTAssertFalse(Pairing.Info(name: "router", os: "linux", role: "full").isValid)
         // A computer's Info is encoded as before, without the admin key.
         let json = String(decoding: try JSONEncoder().encode(Pairing.Info(name: "pi", os: "linux")), as: UTF8.self)
         XCTAssertFalse(json.contains("admin_key"))

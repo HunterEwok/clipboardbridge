@@ -63,22 +63,36 @@ public enum Pairing {
     /// The joiner's CPace associated data.
     public struct Info: Codable, Equatable {
         public var name: String
-        public var os: String // "linux", "darwin", or "ios" for a phone with the app
+        public var os: String // "linux", "darwin", or "ios" or "android" for a phone with the app
         /// A phone's admin key, a SubjectPublicKeyInfo, for the admin CA the
-        /// root may issue it; only with os "ios".
+        /// root may issue it; only from a phone.
         public var adminKey: Data?
+        /// `Info.lite` for a lite member, which only dials and never holds
+        /// CA keys; nil for a full device.
+        public var role: String?
 
-        enum CodingKeys: String, CodingKey { case name, os, adminKey = "admin_key" }
+        /// The role of a lite member.
+        public static let lite = "lite"
 
-        public init(name: String, os: String, adminKey: Data? = nil) { (self.name, self.os, self.adminKey) = (name, os, adminKey) }
+        enum CodingKeys: String, CodingKey { case name, os, adminKey = "admin_key", role }
+
+        public init(name: String, os: String, adminKey: Data? = nil, role: String? = nil) {
+            (self.name, self.os, self.adminKey, self.role) = (name, os, adminKey, role)
+        }
+
+        /// Whether it comes from a phone with the app, an iPhone or an
+        /// Android phone, which joins as a phone and may become an admin.
+        public var isPhone: Bool { os == "ios" || os == "android" }
 
         /// Checks it as the member does: a known OS, a printable name of 1
-        /// to 64 bytes, and an admin key only from a phone, a P-256 one.
+        /// to 64 bytes, a known role, and an admin key only from a phone, a
+        /// P-256 one.
         public var isValid: Bool {
-            guard ["linux", "darwin", "ios"].contains(os), !name.isEmpty, name.utf8.count <= 64,
-                  !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return false }
+            guard ["linux", "darwin", "ios", "android"].contains(os), !name.isEmpty, name.utf8.count <= 64,
+                  !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
+                  role == nil || role == Self.lite else { return false }
             guard let adminKey else { return true }
-            return os == "ios" && (try? P256.Signing.PublicKey(derRepresentation: adminKey)) != nil
+            return isPhone && (try? P256.Signing.PublicKey(derRepresentation: adminKey)) != nil
         }
     }
 
