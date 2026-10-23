@@ -1,10 +1,11 @@
 # clipboardbridge
 
-One clipboard for your Apple devices and every Linux machine on your home network. Its
+One clipboard for your Apple devices and every Linux and Windows computer on your home network. Its
 command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
 > **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
-> shortcut work; the phone apps, Windows and sync away from home are planned. The design is
+> shortcut work; Windows is new and not yet tested on a real PC; the phone apps and sync
+> away from home are planned. The design is
 > in [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
 
 ## Install
@@ -34,6 +35,19 @@ tar -xzf clipboardbridge-darwin-arm64.tar.gz
 sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
 ```
 
+On Windows 10 (1809 or later) or 11, x86-64 or ARM64, in a PowerShell opened with "Run as
+administrator":
+
+```powershell
+irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+```
+
+It checks the download against `SHA256SUMS`, installs the service and the clipboard agent,
+adds you to the `clipboardbridge` group and allows TCP 8764 and mDNS from the local network
+in Windows Firewall. `$env:CBB_PORT = "9000"` before it picks another port,
+`$env:CBB_FIREWALL = "no"` leaves the firewall alone. Settings, Apps, clipboardbridge,
+Uninstall removes it again, with the rules it added.
+
 Then pair with the iPhone on a Linux machine with `cbb pair -phone`, and add each
 further computer with `cbb join` and the shortcut "clipboardbridge: add a computer"; see
 the [quick start](docs/quickstart.md). `cbb devices` lists the group, and
@@ -48,6 +62,7 @@ Copy on one device and paste on another, with the normal copy and paste of each 
 | Mac → Linux     | Copy on the Mac, paste on Linux. Automatic.                                 |
 | Linux → Mac     | Copy on Linux, paste on the Mac. Automatic.                                 |
 | Linux → Linux   | Copy on one machine, paste on any other. Automatic.                         |
+| Windows ↔ others | Copy on Windows, paste on Linux or the Mac, and back. Automatic.           |
 | iPhone → Linux  | Copy on the iPhone, press the Action button or double-tap the back, paste on Linux. |
 | Linux → iPhone  | Copy on Linux, press the same button, paste on the iPhone.                  |
 
@@ -69,7 +84,7 @@ On Linux it works with and without a desktop:
   accounts, no telemetry.
 - **Encrypted and paired.** All traffic uses TLS. A device joins your group once, with a
   six-digit code, and talks only to the devices of the group.
-- **No central server.** Every Linux machine and Mac is an equal member; any of them can be
+- **No central server.** Every Linux machine, Windows PC and Mac is an equal member; any of them can be
   switched off.
 - **Small.** One file per platform, no dependencies; runs on a Raspberry Pi Zero W.
 - **Passwords stay put.** Items that password managers mark as secret are not synced
@@ -81,6 +96,7 @@ On Linux it works with and without a desktop:
 |--------------------------------------------------------------------------|-------------------------------------------------|
 | Linux: Ubuntu, Raspberry Pi OS and other distributions; x86-64, ARM64, ARMv7, ARMv6 (Raspberry Pi Zero W) | service, desktop connector, console helper |
 | macOS                                                                    | background agent                                |
+| Windows 10 (1809 or later) and 11; x86-64, ARM64                         | service, clipboard agent                        |
 | iOS and iPadOS                                                           | a shortcut in the Shortcuts app                 |
 
 ## License

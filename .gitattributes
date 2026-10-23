@@ -1,0 +1,4 @@
+# Tests compare these files byte for byte, also in a Windows checkout,
+# where Git would otherwise turn their line ends into CR LF.
+testdata/** -text
+internal/phone/shortcut/** -text

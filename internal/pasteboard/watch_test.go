@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//go:build darwin && cgo
+//go:build (darwin && cgo) || windows
 
 package pasteboard
 

@@ -11,33 +11,13 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"net"
-	"os"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 )
 
-// socketPair returns the two ends of a connected Unix socket. Unlike
-// net.Pipe it buffers, as TCP does, so a side that sends an alert does not
-// wait for the other to read it; unlike TCP it needs no port.
-func socketPair(t *testing.T) (net.Conn, net.Conn) {
-	t.Helper()
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn := func(fd int) net.Conn {
-		f := os.NewFile(uintptr(fd), "socketpair")
-		defer f.Close()
-		c, err := net.FileConn(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return c
-	}
-	return conn(fds[0]), conn(fds[1])
-}
+func socketPair(t *testing.T) (net.Conn, net.Conn) { return testnet.SocketPair(t) }
 
 // handshake runs a TLS handshake over a local connection and returns what
 // each side saw and the errors of the client and the server.

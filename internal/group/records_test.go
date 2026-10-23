@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -308,7 +309,7 @@ func TestRecordsSaveLoad(t *testing.T) {
 	if err := s.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(filepath.Join(dir, RecordsFileName)); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(filepath.Join(dir, RecordsFileName)); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("records file: %v, %v", fi, err)
 	}
 	back, err := LoadRecords(dir, admin.GroupCA.Cert)

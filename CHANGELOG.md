@@ -43,6 +43,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- **Windows 10 (1809 or later) and 11, x86-64 and ARM64.** The service runs as a Windows
+  service under its own virtual account and listens like a Linux member; the agent
+  (`cbbw.exe agent`, started with every sign-in) links the clipboard, skips and writes the
+  marks that password managers and the clipboard history use, and turns CR LF into LF.
+  `get.ps1` installs a release (`irm .../get.ps1 | iex` as administrator), `install.ps1`
+  takes `-Port N` and `-NoFirewall` and allows TCP 8764 and mDNS from the local network in
+  Windows Firewall, and Settings, Apps, Uninstall (`uninstall.ps1`, `-Purge` for the keys)
+  removes it with exactly those rules. The installers name the step that failed and the
+  system's message; `-Details` or `CBB_ERROR_DETAILS=1` adds the full error. The service
+  logs to `ProgramData\clipboardbridge\logs`, the agent to
+  `LocalAppData\clipboardbridge\agent.log`.
 - **The lite member, `cbb-lite`, in Rust** (`lite/`): a small member for weak Linux devices
   (a Raspberry Pi, a router) that joins a phone group by QR code (or a computer group with
   the code from `cbb pair`), never holds CA keys, only dials the full members and syncs

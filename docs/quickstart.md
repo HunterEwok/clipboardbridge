@@ -79,6 +79,19 @@ Install on each computer first.
   sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
   ```
 
+- **Windows** 10 (1809 or later) or 11, in a PowerShell opened with "Run as
+  administrator":
+
+  ```powershell
+  irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+  ```
+
+  It adds the user signed in at the screen to the `clipboardbridge` group and starts the
+  clipboard agent for them; `cbb` works in a new terminal. Another port:
+  `$env:CBB_PORT = "9000"` before it. Without the one-line installer: unpack
+  `clipboardbridge-windows-amd64.zip` (or `-arm64`) and run
+  `powershell -ExecutionPolicy Bypass -File clipboardbridge\packaging\windows\install.ps1`.
+
 Then, on the new computer:
 
 ```sh
@@ -123,6 +136,16 @@ It stops the service and removes the program and its settings. It also removes t
 rules the installer added, and only those. The device's keys stay in `/var/lib/clipboardbridge`,
 so a reinstall comes back into the group. Add `--purge` to delete them too; then remove the
 device from the group on another one (`cbb revoke NAME`, or Devices in the app).
+
+On Windows: Settings, Apps, clipboardbridge, Uninstall; or, as administrator,
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1"
+```
+
+It removes the service, the agent, the program and the firewall rules the installer added.
+The keys stay in `ProgramData\clipboardbridge`; `-Purge` deletes them and the
+`clipboardbridge` group.
 
 ## Later: the phone at the centre (planned)
 
