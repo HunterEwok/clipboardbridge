@@ -7,7 +7,7 @@ Status: agreed design; the code follows it stage by stage. Decisions are listed 
 ## Goals
 
 - One clipboard for the user's Apple devices and any number of Linux machines on one home
-  network.
+  network, and away from home through the group's own encrypted tunnel (planned).
 - Copy and paste with the normal means of each system, and at most one press on the iPhone.
 - Linux with and without a desktop, from a Raspberry Pi Zero W to a workstation, without
   depending on a particular distribution or desktop.
@@ -15,7 +15,8 @@ Status: agreed design; the code follows it stage by stage. Decisions are listed 
 
 ## Non-goals
 
-- Sync over the internet. All devices are on one local network.
+- Sync through anyone else's servers or services. Away from home, devices reach the group
+  only through its own tunnel (see "Sync away from home").
 - Working around iOS. iOS lets an app read the clipboard only after a user action.
 - Sync between Apple devices. Universal Clipboard already does it.
 - Clipboard history.
@@ -463,7 +464,8 @@ and lifetimes. The installer enables what the device needs.
 | A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipboardbridge.local` and names below it, and excludes IP addresses and other name forms. The Mac never changes its system trust |
 | A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
 | A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipboardbridge` group; single-line injection by default with control characters removed |
-| Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd |
+| Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home (planned) only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
+| Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -510,7 +512,8 @@ The order may change.
     Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
     crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
     place of ring), which CI builds for RISC-V; TLS and the networking on the chip follow.
-12. Sync away from home; see "Sync away from home (planned)" below.
+12. Sync away from home and between subnets, through the group's own WireGuard tunnel in a
+    star around a hub; see "Sync away from home (planned)" below.
 
 ### Future research (not planned)
 
@@ -541,50 +544,197 @@ Questions to study before anything is planned for them.
 
 ## Sync away from home (planned)
 
-The group's certificates stay the only identity of devices, and every text stays end to end
-encrypted between the members; nothing below may change that.
+Away from home, and between subnets that mDNS does not reach (for example a Pi on
+192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
+group's own WireGuard tunnel in a star around one member, the hub. Nothing here is built yet.
 
-1. **By address.** Members configured by address, for example the home Linux member's address
-   in a WireGuard or Tailscale/Headscale network, where mDNS does not reach, and a guide for
-   such a VPN. No server of ours; data goes straight between the user's devices.
-2. **A relay, self-hosted or offered as a free service.** `clipboardbridge relay` is one small
-   program that the user runs (on the home Linux member with a forwarded port, or a small
-   server), or that an operator runs for anyone, free of charge. A member keeps one outgoing
-   connection to it and asks to be joined to another member of its group by device ID; the
-   relay then splices the two byte streams. The member protocol runs inside, unchanged: the
-   members' own mutual TLS 1.3 with their member certificates, so the relay sees only
-   ciphertext and needs no keys. It learns device IDs, group tags, addresses and traffic
-   timing, never a text.
-3. **No accounts.** A member presents its member certificate with the group CA certificate
-   to the relay; the relay checks the signature and knows the group by its tag, the hash of
-   the CA certificate. A group needs no registration, and the relay stores nothing on disk:
-   its state is the open connections. Abuse is bounded by limits, not by identities: devices
-   per group (16), connections per address, the size of a frame (as in the member protocol)
-   and bytes per group per minute, and idle connections closed. A private relay can instead
-   admit only the group tags in its configuration. Admitting devices stays with the group's
-   own CA (the phone, in the target architecture); the relay can add nobody.
-4. **Waking a closed iPhone app** needs Apple push notifications, which only a server with
-   the developer account's key can send. The relay can send a silent push carrying nothing
-   but "connect" to a phone it holds a push token for; it comes last, if at all.
-5. **Messages for members that are off** (the relay keeping the latest event for a phone that
-   comes back) need encryption to each member's key, since the relay must not read them; to
-   be designed when needed. Without it, a returning member gets the current text from the
-   first member it meets, as at home.
+### Rules
 
-Cost estimates for the relay (Go, a goroutine and two buffers per spliced connection):
+These take precedence over convenience:
 
-- On the devices: one more TLS connection and its pings, a few hundred KiB of memory, no
-  measurable CPU; each text takes the round trip to the relay (tens of milliseconds) instead
-  of the home network's.
-- On the relay: roughly 50 to 100 KiB of memory per connected device, so 10 000 devices in
-  about 0.5 to 1 GiB; almost no CPU, since it only copies ciphertext (its own TLS handshake
-  per connection aside); traffic is the texts themselves plus pings, which a relay link
-  should send less often than the 5 s of the home network, to spare phone batteries and the
-  relay. A small virtual server serves thousands of users.
+1. The safety of clipboard data outside the home network comes first. A feature that cannot
+   keep the data fully protected is not built.
+2. No third-party services: no Tailscale or other overlay network, no hosted relay, no cloud,
+   no push service. WireGuard of our own, inside our own programs.
+3. A star. Over the internet a client talks only to the hub, never to another client, and the
+   hub decides what reaches whom.
+4. On the internet, data exists only inside the tunnel, with the member protocol's mutual TLS
+   inside it: nobody but the group's devices reads the contents, the inner headers or the
+   inner addresses.
+5. The tunnel serves clipboardbridge only and cannot be used as a general VPN.
+6. Where WireGuard is blocked, the user can switch on VLESS.
+7. Groups are fully isolated from each other on the project's forwarder and cannot affect
+   each other, even from one network.
 
-So the architecture needs no change now: members already run the member protocol over any
-connection (`node.Serve` takes a connected TLS session), and only the dialing and the relay
-are new.
+What no design hides, and the documentation says so: the network between a client and the
+hub (or the forwarder) sees that encrypted packets go to that address, when, and roughly how
+many. VLESS with REALITY makes them look like an ordinary HTTPS connection to a well-known
+site. Where a network admits only listed addresses (allow-lists), no protocol helps.
+
+### The hub
+
+- One member of the group, normally the always-on Linux member at home, is the hub. Any Go
+  member can be one; phones and lite members are clients.
+- The hub runs WireGuard in user space inside `cbb` (wireguard-go with its in-process network
+  stack, gVisor netstack), as do the Go clients. The operating system sees only encrypted UDP
+  on one port: there is no `wg0` interface, no route, no IP forwarding and no firewall rule
+  to get wrong.
+- Behind the tunnel the hub's stack has one open port, the member protocol's. There is no
+  internet, no home network and no other client behind it, so the tunnel cannot carry
+  anything else.
+- Each client has exactly one tunnel address, a unique-local IPv6 address derived from its
+  device ID, and the hub drops packets from any other source address (WireGuard's cryptokey
+  routing). A client's tunnel admits only the hub's address. Nothing forwards packets between
+  peers; the hub passes clipboard events at the member protocol level, as every member
+  already forwards events to its peers.
+- Inside the tunnel the member protocol runs unchanged, with mutual TLS 1.3 and the group's
+  certificates: a valid WireGuard key alone gets no further than the TLS handshake.
+- Each client has its own WireGuard preshared key, random and handed over at home, so that
+  traffic recorded today stays protected against a future quantum computer (WireGuard alone
+  is not post-quantum secure).
+- Fail closed: away from home a member talks to the group only through the tunnel. If the
+  tunnel cannot be built, nothing is sent, and the app or `cbb status` says why, with the
+  real cause in debug builds.
+
+### Reaching the hub
+
+- A client tries the hub's addresses in order: its public IPv6 address directly, then a
+  public IPv4 address (a forwarded port), then the project's forwarder. A client needs only
+  outgoing connections and opens nothing.
+- The hub needs one inbound UDP port for direct access. The hub checks from outside, through
+  the forwarder, whether it is reachable; if not, the app asks the user to add a firewall
+  rule on the router (with a short guide) or, with the user's consent, opens it through the
+  router's PCP or UPnP.
+- A client's own address changes need nothing: WireGuard follows a client to its new address
+  with its next authenticated packet. When the hub's address changes (a new IPv6 prefix), the
+  hub tells its connected clients through the tunnel and updates its registration on the
+  forwarder; a client that was offline comes in through the forwarder, learns the new
+  address inside the tunnel and moves to the direct path. No DNS name is needed.
+- Pings over the tunnel are less frequent than the home network's 5 s (WireGuard's
+  persistent keepalive of 25 s keeps NAT mappings open), to spare phone batteries; the exact
+  interval is to be measured.
+
+### The forwarder
+
+For homes behind carrier-grade NAT, and for clients without IPv6, the project runs a
+forwarder on its own server for all users. It holds no keys and only passes encrypted
+WireGuard packets between a group's clients and that group's hub.
+
+- **One port for all groups, routed by `mac1`.** Every WireGuard handshake initiation
+  carries `mac1`, a MAC keyed with the responder's public key. The forwarder knows each hub's
+  public key from its registration, so it finds the group by checking `mac1` against the
+  registered keys; it still holds no key that decrypts anything. Nothing is added to the
+  packets, and `mac1` looks random to anyone who does not know the hub's public key, so the
+  network cannot tell groups apart. Data packets then carry the receiver index the hub chose
+  in the handshake, which the forwarder maps to the group together with the client's address.
+  The check costs one BLAKE2s per registered group per handshake (a client's handshake comes
+  every two minutes while it is active), tens of milliseconds for 100 000 groups; beyond that,
+  groups are spread over several servers. Whether AmneziaWG keeps `mac1` usable for this is to
+  be checked; in VLESS mode the group is known from its VLESS user ID inside REALITY's TLS.
+- **Fallback: an endpoint per group.** If `mac1` routing does not hold up, each group gets its
+  own address on the server's IPv6 /64, or its own port on IPv4 (about 60 000 per address).
+  A visible group tag in the packets was rejected: it would link a group's devices.
+- Clients behind one shared address are told apart by address and port, as the hub's own
+  WireGuard does. A packet is passed only to its own group's hub; there is no shared path
+  between groups.
+- **Registration.** The hub keeps one connection out to the forwarder and registers its
+  WireGuard public key by proving its membership (its member key with the chain to the group
+  CA); nobody else can take its place. The forwarder knows a group only by its tag, the hash of the CA
+  certificate, and stores nothing on disk: its state is the open connections.
+- **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
+  memory. A group that reaches a limit is slowed down alone.
+- **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
+  the network and can at most stop forwarding.
+- It learns the group tag, the addresses of the hub and its clients, and the timing and
+  sizes of packets; logs keep no addresses beyond what abuse handling needs, and only for
+  days.
+- The forwarder is `cbb` in a mode that holds no keys. A hub never runs on a rented server:
+  that would put the decrypted clipboard on someone else's hardware.
+
+### Keys and pairing
+
+- Each device creates its own WireGuard key pair; the private key never leaves it and never
+  appears in a QR code.
+- A device gets the hub's public key and addresses, the forwarder's address and port, and
+  its preshared key inside the member TLS, at home, when it joins or later on request; its
+  public key reaches the hub the same way. The phone, as the root, signs a record that binds
+  the device's WireGuard key to its device ID, and the hub admits only keys in such records.
+  Joining a group from the internet is not possible.
+- Removing a device (the revocation records) makes the hub drop its key at once. A new
+  preshared key can be issued through the tunnel at any time.
+
+### Blocked networks
+
+1. **AmneziaWG**, a fork of wireguard-go that randomises message headers, adds junk and
+   imitation packets before the handshake and pads messages. Same keys and code; the user
+   switches it on per group.
+2. **WireGuard inside VLESS with REALITY**, between a client and the forwarder, with
+   Xray-core (MPL-2.0) in `cbb` and libXray (MIT) in the apps; VLESS carries the UDP packets
+   itself. The forwarder then has one path for everything, the hub does not change, and
+   traffic is always inside our own tunnel. VLESS adds no security of its own and the design
+   does not rely on it: the boundary stays the member TLS, then WireGuard.
+
+sing-box is not used (GPL).
+
+### Members
+
+| Member                         | Tunnel                                                                                        | Role                     |
+|--------------------------------|-----------------------------------------------------------------------------------------------|--------------------------|
+| Go service (Linux, macOS, Windows) | wireguard-go with netstack in `cbb`; AmneziaWG and Xray-core as Go modules               | hub, forwarder or client |
+| iPhone app                     | in the app process, no Network Extension, one Go framework for WireGuard and Xray             | client, while the app is open |
+| Android app                    | in the app process, in the foreground service the app already has; no `VpnService`            | client                   |
+| `cbb-lite` on Linux            | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
+| `cbb-lite` on the ESP32        | none: the home network only, until a mature WireGuard exists for it                           | home only                |
+
+- On phones the tunnel is ordinary UDP traffic of the app. It does not take the phone's
+  single VPN slot, the user's own VPN keeps working, and the app is not a VPN app (Apple's
+  guideline 5.4 and Google Play's VpnService rules concern apps that create a device VPN).
+- The Swift kit (Network.framework) and the Kotlin kit (Conscrypt) keep their TLS code: the
+  app opens a port on the loopback address that leads into the tunnel, and the kit dials it.
+  Another app that connects to that port reaches only the hub's member TLS.
+- No push notifications: they go through Apple's and Google's servers. A phone gets the
+  current text when the app opens, as at home.
+
+### Traffic analysis
+
+Frames over the tunnel are padded to a few fixed sizes, so that the length of a text does not
+show; the wire format goes into `docs/protocol.md` with the code.
+
+### Direct links between clients (later)
+
+Through the forwarder the star is mandatory. Two clients of one group that can reach each
+other directly, for example both with IPv6, may later get a direct link: a WireGuard tunnel
+with keys from the group's records and member TLS inside, as with the hub, so it is as safe.
+It needs each client to accept connections from the internet (phones on mobile networks
+mostly cannot) and the hub to hand out the addresses, so it comes after the star works and
+only adds to it.
+
+### Rejected
+
+- Overlay networks (Tailscale, Headscale, ZeroTier): third-party services.
+- A public relay that routes by the TLS server name: the name shows on the network, and it is
+  a server between the user's devices.
+- Hole punching: needs a coordinating server and fails on part of the networks.
+- A system WireGuard on phones (the WireGuard app, or a Network Extension): takes the VPN
+  slot, the app cannot tell whether it is up, and on iOS needs an organisation developer
+  account.
+- Push notifications and events stored for members that are off: someone else's server.
+
+### Cost
+
+- With a public address at home: nothing; the hub is a member the user already has.
+- The forwarder: a small virtual server serves thousands of groups, since clipboard texts are
+  small; traffic is the texts and the keepalives.
+- On the devices: one UDP socket and an in-process network stack, a few megabytes of memory.
+
+### Order of work
+
+1. The hub and the Go client: WireGuard in `cbb`, the key records and pairing, tests with
+   several clients that prove they cannot reach each other.
+2. The forwarder.
+3. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub.
+4. Blocked networks: AmneziaWG, then VLESS with REALITY.
+5. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Target architecture with the phone apps
 
@@ -736,7 +886,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-2  | Language: Go, for reliable ARMv6 builds, TLS and networking in the standard library, and development speed. |
 | D-3  | A group of equal members instead of a central server; any member may be off.              |
 | D-4  | Encryption with the project's own TLS and pairing instead of an overlay VPN, which on iOS would conflict with other VPN apps. |
-| D-5  | All devices are on one home network; no relay.                                             |
+| D-5  | At home, members find each other on one network; away from home they reach the hub through the group's own tunnel (D-38). |
 | D-6  | Mac and Linux sync automatically; the iPhone uses one button that picks the direction.     |
 | D-7  | Console without a desktop: tmux for copy and paste, a root helper for console paste outside tmux. |
 | D-8  | The repository is in English only, apart from the apps' translations (String Catalogs, Android `values-<language>`). |
@@ -769,3 +919,8 @@ These need experiments on real devices; CI cannot answer them.
 | D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |
 | D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
 | D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |
+| D-38 | Away from home: a star of WireGuard tunnels to a hub, a member at home, with WireGuard in user space inside `cbb` and the apps and the member TLS inside; no third-party services; a feature that cannot keep the data fully protected is not built. |
+| D-39 | Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart), with limits per group. |
+| D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
+| D-41 | Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
+| D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |

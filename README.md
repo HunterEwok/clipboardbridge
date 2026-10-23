@@ -5,7 +5,7 @@ your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
 > **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
 > shortcut work; Windows is new and not yet tested on a real PC; the iPhone and Android apps
-> are built and tested in CI but not yet on a real phone; sync away from home is planned. The design is
+> are built and tested in CI but not yet on a real phone; sync away from home is designed, not built. The design is
 > in [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
 
 ## Install
