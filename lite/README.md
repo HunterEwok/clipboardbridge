@@ -6,7 +6,8 @@ Pi, a router, a small board. It speaks the member protocol of
 
 - never holds CA keys, so it never admits devices;
 - only dials the full members (found by mDNS, or named with `-peer`), like a Mac;
-- never holds `clipboardbridge.local` or serves the iPhone shortcut;
+- never holds `clipboardbridge.local` or serves the shortcut, the Apple Shortcuts action an
+  iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);
 - has no desktop clipboard of its own: other programs use `copy`, `paste` and `watch`.
 
 It needs at least one full member (`cbb` on a computer) to be on. Full members list it
@@ -85,8 +86,8 @@ can read its keys:
 sudo -u cbb-lite cbb-lite join -name pi
 ```
 
-It shows a QR code: in the clipboardbridge app tap "Connect a new device" (or run the
-shortcut "clipboardbridge: add a computer") and scan it. The phone reaches the device on
+It shows a QR code: in the clipboardbridge app (iPhone or Android) tap "Connect a new device"
+(or, on an iPhone with the shortcut, run "clipboardbridge: add a computer") and scan it. The phone reaches the device on
 TCP port 8764 (`-port` to change it); open that port from the home network if a firewall
 drops it. In a group without a phone, run `cbb pair` on a Linux member and
 `sudo -u cbb-lite cbb-lite join -code <that member>:8764` here, then type the code.
