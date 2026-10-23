@@ -69,6 +69,9 @@ then the command it prints to start the service.
 **Android** 10 or later: open \`clipboardbridge-$version.apk\` on the phone and allow the
 install. The app makes its own group and adds the computers by their \`cbb join\` QR code.
 
+**Lite member** for small Linux devices (a router, a Raspberry Pi Zero): unpack
+\`cbb-lite-linux-<arch>.tar.gz\` and follow \`cbb-lite/README.md\`, section "Install".
+
 Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb pair -phone\`
 on a Linux machine for the iPhone, and \`cbb join\` on each further computer.
 
@@ -93,12 +96,20 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`clipboardbridge-linux-armv6.tar.gz\` | Linux, ARMv6 (Raspberry Pi Zero W, 1) |
 | \`clipboardbridge-darwin-arm64.tar.gz\` | macOS, Apple silicon |
 | \`clipboardbridge-darwin-amd64.tar.gz\` | macOS, Intel |
+| \`clipboardbridge-windows-amd64.zip\` | Windows 10 (1809 or later) and 11, x86-64 |
+| \`clipboardbridge-windows-arm64.zip\` | Windows 10 (1809 or later) and 11, ARM64 |
+| \`cbb-lite-linux-amd64.tar.gz\` | the lite member for small Linux devices, x86-64, static |
+| \`cbb-lite-linux-arm64.tar.gz\` | the lite member, ARM64, static |
+| \`cbb-lite-linux-armv6.tar.gz\` | the lite member, ARMv6 and ARMv7 (Raspberry Pi Zero, 1, 2), static |
 | \`clipboardbridge-$version.apk\` | Android 10 and later, signed with the project's release key |
 | \`get.sh\` | the Linux installer |
+| \`get.ps1\` | the Windows installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
 Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, and \`packaging/\` with the
-installer for its system.
+installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program, \`LICENSE\`,
+\`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\` with the
+install steps, and \`packaging/\` with the systemd unit.
 
 ## Source and license
 

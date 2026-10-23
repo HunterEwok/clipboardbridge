@@ -1,10 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# The Raspberry Pi Zero and Pi 1 (ARMv6, 32-bit): a static musl binary, all
-# Rust, linked with Rust's own lld, so no cross toolchain is needed.
+# Static musl binaries, all Rust, linked with Rust's own lld, so no cross
+# toolchain is needed: the Raspberry Pi Zero and Pi 1 (ARMv6, 32-bit), and the
+# release's ARM64 and x86-64 builds.
 # cargo build --release --target arm-unknown-linux-musleabihf
 [target.arm-unknown-linux-musleabihf]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld"]
+
+[target.x86_64-unknown-linux-musl]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld"]
 

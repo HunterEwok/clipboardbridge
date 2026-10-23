@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -612,6 +612,8 @@ jobs:
         run: cargo build --locked --release --target aarch64-unknown-linux-gnu
       - name: cargo build for the Raspberry Pi Zero (ARMv6, static; see lite/.cargo/config.toml)
         run: cargo build --locked --release --target arm-unknown-linux-musleabihf
+      - name: the crates' licenses, as the release archives carry them
+        run: sh packaging/notices.sh arm-unknown-linux-musleabihf | grep -q '^rustls '
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod

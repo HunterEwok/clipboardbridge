@@ -68,6 +68,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Releases carry the lite member: `cbb-lite-linux-amd64.tar.gz`, `-arm64` and `-armv6`,
+  static builds, each with the systemd unit and the licenses of the crates it is built from
+  (`THIRD_PARTY_NOTICES`).
+
 - Sync away from home for computers, off by default. `cbb away on` turns it on after a
   warning that the device keeps its keys in files; `cbb away hub address:port` makes an
   always-on computer the group's hub, which takes the others through the group's own
