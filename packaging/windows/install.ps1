@@ -151,9 +151,16 @@ if (-not $service) {
 	New-Service -Name $name -BinaryPathName $binPath -DisplayName 'clipboardbridge' -StartupType Automatic `
 		-Description 'Shares the clipboard with the other devices at home.' | Out-Null
 }
+# The path through CIM, as Windows PowerShell 5.1 drops the quotes inside
+# an argument that it passes to sc.exe.
+$change = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'" |
+	Invoke-CimMethod -MethodName Change -Arguments @{ PathName = $binPath }
+if ($change.ReturnValue -ne 0) {
+	throw "setting the service's path failed with $($change.ReturnValue)"
+}
 # A virtual account: an account of the service's own, with no password and
 # no rights beyond what is granted to it here.
-exe sc.exe @('config', $name, 'binPath=', $binPath, 'start=', 'auto', 'obj=', "NT SERVICE\$name") | Out-Null
+exe sc.exe @('config', $name, 'start=', 'auto', 'obj=', "NT SERVICE\$name") | Out-Null
 exe sc.exe @('sidtype', $name, 'unrestricted') | Out-Null
 exe sc.exe @('privs', $name, 'SeChangeNotifyPrivilege') | Out-Null
 exe sc.exe @('failure', $name, 'reset=', '86400', 'actions=', 'restart/5000/restart/5000/restart/60000') | Out-Null
