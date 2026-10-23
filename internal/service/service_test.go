@@ -895,9 +895,7 @@ func TestControlSocketMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != 0o660 {
-		t.Errorf("socket mode %v", fi.Mode())
-	}
+	checkSocketAccess(t, path, fi)
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("left behind: %v", entries)
 	}
@@ -1047,11 +1045,10 @@ func TestIPhone(t *testing.T) {
 	}
 }
 
-func TestPhoneAddsAComputer(t *testing.T) {
-	// The phone is the main device: it pairs with the first computer, which
-	// creates the group, and adds the next computer by scanning its code.
-	var h hub
-	pi := startService(t, &h, "pi")
+// shortcutPhone pairs the iPhone shortcut with pi, which creates the group,
+// and returns how the shortcut admits a device by its QR code.
+func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string) map[string]any, token string) {
+	t.Helper()
 	c := pi.dial(t)
 	defer c.Close()
 	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
@@ -1090,6 +1087,28 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	if _, err := c.Receive(); err != nil {
 		t.Fatal(err)
 	}
+	admit = func(token, code string) map[string]any {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/admit", strings.NewReader(`{"v":1,"code":"`+code+`"}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := iphone.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var rep map[string]any
+		json.NewDecoder(resp.Body).Decode(&rep)
+		return rep
+	}
+	return admit, paired.Token
+}
+
+func TestPhoneAddsAComputer(t *testing.T) {
+	// The phone is the main device: it pairs with the first computer, which
+	// creates the group, and adds the next computer by scanning its code.
+	var h hub
+	pi := startService(t, &h, "pi")
+	admit, token := shortcutPhone(t, pi)
 
 	// A new computer runs cbb join: it listens, shows its QR code
 	// and waits.
@@ -1106,26 +1125,13 @@ func TestPhoneAddsAComputer(t *testing.T) {
 		_, err := lc.Receive()
 		joined <- err
 	}()
-	admit := func(token, code string) map[string]any {
-		t.Helper()
-		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/admit", strings.NewReader(`{"v":1,"code":"`+code+`"}`))
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := iphone.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		var rep map[string]any
-		json.NewDecoder(resp.Body).Decode(&rep)
-		return rep
-	}
 	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", qr); rep["direction"] != "unpaired" {
 		t.Errorf("a forged token: %v", rep)
 	}
-	if rep := admit(paired.Token, "clipboardbridge://join?code=246802"); rep["direction"] != "error" {
+	if rep := admit(token, "clipboardbridge://join?code=246802"); rep["direction"] != "error" {
 		t.Errorf("a QR code without an address: %v", rep)
 	}
-	if rep := admit(paired.Token, qr); rep["direction"] != "none" {
+	if rep := admit(token, qr); rep["direction"] != "none" {
 		t.Fatalf("admit: %v", rep)
 	}
 	select {
@@ -1142,7 +1148,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	waitFor(t, "the laptop connected", func() bool { return len(laptop.status(t).Peers) == 1 })
 	// The window closed: a second admit with the same code opens a new one,
 	// which nobody uses; a code that is not six digits is refused.
-	if rep := admit(paired.Token, "clipboardbridge://join?code=12345"); rep["direction"] != "error" {
+	if rep := admit(token, "clipboardbridge://join?code=12345"); rep["direction"] != "error" {
 		t.Errorf("five digits: %v", rep)
 	}
 }

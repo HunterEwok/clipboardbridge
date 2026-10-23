@@ -28,9 +28,10 @@ Status: agreed design; the code follows it stage by stage. Decisions are listed 
 | Linux with a desktop    | service + desktop connector       | automatic, through the desktop clipboard                       |
 | Linux without a desktop | service (+ console helper)        | its own clipboard: tmux, `cbb copy`/`paste`, console paste |
 | Mac                     | service + pasteboard agent        | automatic                                                      |
+| Windows                 | service + clipboard agent         | automatic                                                      |
 | iPhone, iPad            | a shortcut                        | one press (Action button or Back Tap)                          |
 
-Linux machines and Macs are equal **members** of a **group**. There is no central server, and
+Linux machines, Windows PCs and Macs are equal **members** of a **group**. There is no central server, and
 any member may be switched off at any time.
 
 ## Identifiers and ports
@@ -391,10 +392,46 @@ and lifetimes. The installer enables what the device needs.
 - Installing needs administrator rights once. Later: a menu bar item with pause, status and
   devices.
 
+## Windows
+
+- **Service**: the same service as on Linux, as a Windows service (`cbb.exe service`) under
+  the virtual account `NT SERVICE\clipboardbridge`, with only `SeChangeNotifyPrivilege`, and
+  restarted by the service manager when it fails. It listens like a Linux member and speaks
+  with the `linux` role, since roles describe what a member does on the network. Its data is
+  in `ProgramData\clipboardbridge` (`state`, `logs`, `run`), owned by administrators with an
+  access list for the system, administrators and the service only; the port is `CBB_PORT` in
+  the service's environment.
+- **Control socket**: an AF_UNIX socket, `ProgramData\clipboardbridge\run\control.sock`.
+  Windows lets a client connect only with write access to the socket file, which inherits the
+  protected access list the service gives `run` before it listens: the system,
+  administrators, the service, the local `clipboardbridge` group, and each member of the group
+  by its own SID as the service finds them at start, so a user just added connects without
+  signing in again.
+- **Clipboard agent**: `cbbw.exe agent`, the same program linked without a console window,
+  started at every sign-in from the `Run` key of the machine, once per session (a named
+  mutex). It polls the clipboard sequence number every 0.5 seconds, like the Mac, and opens
+  the clipboard only after a change, from one thread with a message-only window. It reads
+  `CF_UNICODETEXT`; text ends at the first NUL, and CR LF becomes LF (and back when it
+  writes).
+- **Secrets**: an item with `ExcludeClipboardContentFromMonitorProcessing` or
+  `Clipboard Viewer Ignore`, or with `CanIncludeInClipboardHistory` set to 0, is a secret.
+  Received secrets are written with all of these and `CanUploadToCloudClipboard` set to 0, so
+  the clipboard history, the cloud clipboard and other monitors skip them.
+- **mDNS**: the service shares UDP 5353 with the DNS Client service through `SO_REUSEADDR`.
+  Windows gives no packet information through `golang.org/x/net`, so a packet's interface is
+  the one whose network holds its source address, or the zone of a link-local source, and a
+  multicast goes out on the interface set on the socket.
+- **Installer**: `install.ps1` (or `get.ps1`, which checks a release against
+  `SHA256SUMS`) needs an administrator once. It allows TCP 8764 and UDP 5353 for `cbb.exe`
+  from the local subnet in Windows Firewall, in rules of the group `clipboardbridge` that
+  it and `uninstall.ps1` remove, and registers the uninstaller in Settings, Apps.
+- Logs: `ProgramData\clipboardbridge\logs\service.log` and
+  `LocalAppData\clipboardbridge\agent.log`, each moved to `.1` at 1 MiB.
+
 ## Passwords
 
-- Automatic sync skips items marked as secret: the macOS types above, and on Linux the
-  presence of the `x-kde-passwordManagerHint` type, whatever its value.
+- Automatic sync skips items marked as secret: the macOS and Windows formats above, and on
+  Linux the presence of the `x-kde-passwordManagerHint` type, whatever its value.
 - Received secrets are written with the same marks clipboardbridge reads: the
   `x-kde-passwordManagerHint` type on Linux and the macOS types above, so clipboard managers
   skip them.
@@ -428,11 +465,13 @@ and lifetimes. The installer enables what the device needs.
 
 ## Build
 
-- Go, with `CGO_ENABLED=0` everywhere except for the Mac's pasteboard agent, which uses cgo
+- Go, with `CGO_ENABLED=0` everywhere except for the Mac's pasteboard agent (the Windows
+  clipboard needs no cgo), which uses cgo
   with a small Objective-C file. From then on CI builds the macOS targets on macOS runners
   with cgo.
-- Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`
-  and `darwin/amd64`.
+- Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`,
+  `darwin/amd64`, `windows/amd64` and `windows/arm64` (`cbb.exe`, and `cbbw.exe` linked with
+  `-H windowsgui` for the agent).
 - The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. clipboardbridge
   does not depend on distribution specifics. The systemd units use directives from systemd
   248 and later and are checked with `systemd-analyze verify`.
@@ -464,7 +503,9 @@ The order may change.
     member on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members.
+    Rust member among Go members. Started for Linux in `lite/` (`cbb-lite`, tested on a
+    Raspberry Pi); the ESP32 comes next, so the protocol core there stays free of the
+    operating system where it can.
 12. Sync away from home; see "Sync away from home (planned)" below.
 
 ### Future research (not planned)
@@ -723,3 +764,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-34 | The devices list and revocations are signed records in a set that only grows and spreads through the member protocol; what it says depends on the set alone, so the group converges. Two admins that revoke each other both lose admin rights. |
 | D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |
 | D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
+| D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |

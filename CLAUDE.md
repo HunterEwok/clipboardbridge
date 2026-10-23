@@ -1,7 +1,7 @@
 # clipboardbridge: notes for Claude Code
 
-clipboardbridge syncs the clipboard between Linux computers, Macs and an iPhone on the home
-network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers; the iPhone
+clipboardbridge syncs the clipboard between Linux computers, Windows PCs, Macs and an iPhone on
+the home network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers; the iPhone
 app (`apps/ios`) is in development, and in its groups the phone is the root of trust.
 Read [README.md](README.md), [docs/design.md](docs/design.md),
 [docs/protocol.md](docs/protocol.md) (the wire format, kept in step with the code) and
@@ -44,6 +44,14 @@ go run ./tools/repocheck
 go run ./tools/tokens -check   # apps/design/tokens.json -> Swift, WCAG contrast
 go run ./tools/icon -check     # the app icon
 go test -race ./...
+```
+
+The lite member (Rust, the `lite` job in CI):
+
+```sh
+cd lite && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
+  go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
 ```
 
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
@@ -93,10 +101,17 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   member TLS, signed device and revocation records.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
+- Windows: `cmd/cbb/platform_windows.go` (the Windows service, logs),
+  `internal/service/control_windows.go` (the socket's access list),
+  `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `packaging/windows`
+  (`install.ps1`, `uninstall.ps1`, `get.ps1`); CI's `windows installer` job runs them.
 - `apps/ios/ClipboardBridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
+- `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, only dials, joins by the
+  phone's QR code; the protocol core (`certs`, `records`, `clip`, `hlc`, `wire`, `pair`,
+  CPace under `src/third_party`) keeps away from the OS for a later ESP32 port.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
@@ -114,12 +129,16 @@ an admin phone removes a lost root phone by taking the group over with `root` re
 (`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`);
 a computer of a phone group can be an admin: the root phone's "Make it an admin" certifies
 the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go's
-`Identity.AdminKey`/`AdminCA`).
+`Identity.AdminKey`/`AdminCA`); the lite member for Linux (`lite/`, `cbb-lite`), with
+the interop vectors and an e2e test among Go members, not yet run on a real Pi.
 
 Next steps, roughly in order:
 
-1. TestFlight (needs the Apple account), Android, Windows, Homebrew, a signed macOS `.pkg`,
-   sync away from home, the lite member (see docs/design.md, "Future research").
+1. TestFlight (needs the Apple account), Android, Homebrew, a signed macOS `.pkg`,
+   sync away from home, the lite member on the ESP32 (see docs/design.md, "Future research").
+
+Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
+tested on a real PC.
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening

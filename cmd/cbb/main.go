@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 // Command clipboardbridge shares one clipboard between Apple devices and the Linux
-// machines of a home network. The design is in docs/design.md.
+// and Windows computers of a home network. The design is in docs/design.md.
 package main
 
 import (
@@ -25,8 +25,8 @@ Commands:
   pair -phone             Pair an iPhone or iPad with the shortcut.
   join                    Join a group: show a QR code for the phone to scan.
   join -code [address]    Join with the code from cbb pair on a Linux member.
-  service                 Run the service (started by systemd or launchd).
-  agent                   Link the Mac's pasteboard to the service (started by launchd).
+  service                 Run the service (started by systemd, launchd or Windows).
+  agent                   Link the Mac's or Windows clipboard to the service (started at sign-in).
   desktop                 Link a Linux desktop's clipboard to the service (started with the session).
   version                 Print the version and the platform.
   help                    Print this help.

@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+[package]
+name = "clipboardbridge-lite"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+description = "The lite member of clipboardbridge, for small Linux devices"
+publish = false
+
+[[bin]]
+name = "cbb-lite"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+if-addrs = "0.15.0"
+libc = "0.2.191"
+mdns-sd = "0.21.6"
+qrcode = { version = "0.14.1", default-features = false }
+rcgen = { version = "0.14", default-features = false, features = ["ring"] }
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+x509-parser = "0.18"
+
+[profile.release]
+# Small devices: a small binary matters more than the last bit of speed.
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

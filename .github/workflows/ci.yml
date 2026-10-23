@@ -62,9 +62,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    env:
+      # The runner's Windows session has a clipboard that the tests may overwrite.
+      CBB_TEST_CLIPBOARD: ${{ matrix.os == 'windows-latest' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,6 +92,8 @@ jobs:
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
           - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1" }
           - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: "1" }
+          - { goos: windows, goarch: amd64, runner: ubuntu-latest, cgo: "0" }
+          - { goos: windows, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
@@ -107,13 +112,38 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go build
-        run: go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+        run: |
+          if [ "$GOOS" = windows ]; then
+            # cbbw.exe is the same program without a console window, for the agent.
+            go build -trimpath -o "$RUNNER_TEMP/cbb.exe" ./cmd/cbb
+            go build -trimpath -ldflags=-H=windowsgui -o "$RUNNER_TEMP/cbbw.exe" ./cmd/cbb
+          else
+            go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          fi
       - name: the release archive
         run: |
           name=$GOARCH
           if [ -n "$GOARM" ]; then name=armv$GOARM; fi
-          sh packaging/archive.sh "$RUNNER_TEMP/cbb" "$GOOS" "$name" "$RUNNER_TEMP/dist"
-          tar -tzf "$RUNNER_TEMP/dist/clipboardbridge-$GOOS-$name.tar.gz" | grep -qx "clipboardbridge/cbb"
+          if [ "$GOOS" = windows ]; then
+            sh packaging/archive.sh "$RUNNER_TEMP/cbb.exe" "$GOOS" "$name" "$RUNNER_TEMP/dist"
+            unzip -Z1 "$RUNNER_TEMP/dist/clipboardbridge-$GOOS-$name.zip" >"$RUNNER_TEMP/list"
+            for f in cbb.exe cbbw.exe packaging/windows/install.ps1 packaging/windows/uninstall.ps1; do
+              grep -qx "clipboardbridge/$f" "$RUNNER_TEMP/list"
+            done
+            file "$RUNNER_TEMP/cbb.exe" | grep -q '(console)'
+            file "$RUNNER_TEMP/cbbw.exe" | grep -q '(GUI)'
+          else
+            sh packaging/archive.sh "$RUNNER_TEMP/cbb" "$GOOS" "$name" "$RUNNER_TEMP/dist"
+            tar -tzf "$RUNNER_TEMP/dist/clipboardbridge-$GOOS-$name.tar.gz" | grep -qx "clipboardbridge/cbb"
+          fi
+      - name: keep the Windows archive for the installer test
+        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clipboardbridge-windows-amd64.zip
+          path: ${{ runner.temp }}/dist/clipboardbridge-windows-amd64.zip
+          if-no-files-found: error
+          retention-days: 1
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
         # Without cgo the agent would start and fail; this build must link AppKit.
@@ -258,6 +288,95 @@ jobs:
             exit 1
           fi
 
+  windows:
+    name: windows installer
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: clipboardbridge-windows-amd64.zip
+          path: ${{ runner.temp }}/release
+      - name: PSScriptAnalyzer
+        run: |
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+          # Write-Host is what an installer talks with.
+          $found = Invoke-ScriptAnalyzer -Path packaging/windows -Recurse -ExcludeRule PSAvoidUsingWriteHost
+          $found | Format-Table -AutoSize -Wrap
+          if ($found) { exit 1 }
+      - name: get.ps1 installs a release archive and refuses a changed one
+        env:
+          CBB_RELEASE_DIR: ${{ runner.temp }}/release
+          CBB_ERROR_DETAILS: "1"
+        run: |
+          $rel = $env:CBB_RELEASE_DIR
+          $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
+          "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
+          Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression
+          if ((Get-Service clipboardbridge).Status -ne 'Running') { throw 'the service does not run' }
+          $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
+          $status = & $cbb status | Out-String
+          if ($status -notmatch 'Not in a group') { throw "cbb status: $status" }
+          $before = (Get-Item $cbb).LastWriteTimeUtc
+          Add-Content $zip 'tampered'
+          Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression
+          if ((Get-Item $cbb).LastWriteTimeUtc -ne $before) { throw 'get.ps1 installed an archive that does not match SHA256SUMS' }
+      - name: install.ps1 keeps a port and the firewall rules follow it, and uninstall.ps1 removes it all
+        env:
+          CBB_ERROR_DETAILS: "1"
+        run: |
+          Expand-Archive "$env:RUNNER_TEMP\release\clipboardbridge-windows-amd64.zip" "$env:RUNNER_TEMP\unpacked"
+          $install = "$env:RUNNER_TEMP\unpacked\clipboardbridge\packaging\windows\install.ps1"
+          function ports { @(Get-NetFirewallRule -Group clipboardbridge -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
+          function check($want) {
+            $got = (ports) -join ', '
+            if ($got -ne $want) { throw "firewall rules: $got, want $want" }
+          }
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 9000
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check 'TCP 9000, UDP 5353'
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check 'TCP 9000, UDP 5353'
+          $svcEnv = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge).Environment
+          if ($svcEnv -ne 'CBB_PORT=9000') { throw "the service environment: $svcEnv" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 8764 -NoFirewall
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check ''
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check 'TCP 8764, UDP 5353'
+          # Only the service, the system and administrators reach the keys.
+          $acl = (Get-Acl "$env:ProgramData\clipboardbridge\state").Access | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique
+          $want = @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'NT SERVICE\clipboardbridge')
+          if (Compare-Object $acl $want) { throw "the state folder's access list: $($acl -join ', ')" }
+          & "$env:ProgramFiles\clipboardbridge\cbb.exe" status
+          if ($LASTEXITCODE -ne 0) { throw 'cbb status failed after the reinstalls' }
+          Get-Content "$env:ProgramData\clipboardbridge\logs\service.log"
+
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" -Purge
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (Get-Service clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left the service' }
+          if (ports) { throw 'uninstall.ps1 left firewall rules' }
+          foreach ($p in @("$env:ProgramFiles\clipboardbridge", "$env:ProgramData\clipboardbridge",
+              'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\clipboardbridge')) {
+            if (Test-Path $p) { throw "uninstall.ps1 left $p" }
+          }
+          if (Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run -Name clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left the sign-in entry' }
+          if ([Environment]::GetEnvironmentVariable('Path', 'Machine') -match 'clipboardbridge') { throw 'uninstall.ps1 left the PATH entry' }
+          net.exe localgroup clipboardbridge 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'uninstall.ps1 -Purge left the group' }
+          $global:LASTEXITCODE = 0
+
   kit:
     name: phone kit (${{ matrix.os }})
     strategy:
@@ -375,10 +494,59 @@ jobs:
         # The runner image has the Android SDK; Gradle fetches a missing platform.
         run: ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 
+  lite:
+    name: lite member (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: lite
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the Rust toolchain, and a cross compiler for the Raspberry Pi
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target aarch64-unknown-linux-gnu,arm-unknown-linux-musleabihf
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang llvm
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: cargo test (the interop vectors in testdata/interop too)
+        run: cargo test --locked
+      - name: cargo build
+        run: cargo build --locked --release
+      - name: cargo build for the Raspberry Pi
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked --release --target aarch64-unknown-linux-gnu
+      - name: cargo build for the Raspberry Pi Zero (ARMv6, static; see lite/.cargo/config.toml)
+        run: cargo build --locked --release --target arm-unknown-linux-musleabihf
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the lite member joins by the phone and syncs with Go members
+        working-directory: .
+        run: CBB_LITE="$PWD/lite/target/release/cbb-lite" go test -race ./internal/service -run TestLiteMember -v
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cbb-lite-linux-arm64
+          path: lite/target/aarch64-unknown-linux-gnu/release/cbb-lite
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cbb-lite-linux-armv6
+          path: lite/target/arm-unknown-linux-musleabihf/release/cbb-lite
+          retention-days: 14
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, kit, app, android]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, windows, kit, app, android, lite]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

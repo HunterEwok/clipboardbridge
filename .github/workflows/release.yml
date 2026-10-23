@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Builds a release from a version tag: an archive per platform, SHA256SUMS,
-# the Linux installer and a build provenance attestation for each file.
+# the Linux and Windows installers and a build provenance attestation for each file.
 name: release
 
 on:
@@ -21,13 +21,15 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { goos: linux, goarch: amd64, name: amd64, runner: ubuntu-latest, cgo: "0" }
-          - { goos: linux, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0" }
-          - { goos: linux, goarch: arm, goarm: "7", name: armv7, runner: ubuntu-latest, cgo: "0" }
-          - { goos: linux, goarch: arm, goarm: "6", name: armv6, runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: amd64, name: amd64, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: linux, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: linux, goarch: arm, goarm: "7", name: armv7, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: linux, goarch: arm, goarm: "6", name: armv6, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
-          - { goos: darwin, goarch: arm64, name: arm64, runner: macos-latest, cgo: "1" }
-          - { goos: darwin, goarch: amd64, name: amd64, runner: macos-latest, cgo: "1" }
+          - { goos: darwin, goarch: arm64, name: arm64, runner: macos-latest, cgo: "1", ext: tar.gz }
+          - { goos: darwin, goarch: amd64, name: amd64, runner: macos-latest, cgo: "1", ext: tar.gz }
+          - { goos: windows, goarch: amd64, name: amd64, runner: ubuntu-latest, cgo: "0", ext: zip }
+          - { goos: windows, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0", ext: zip }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     env:
@@ -35,7 +37,7 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
-      ARCHIVE: clipboardbridge-${{ matrix.goos }}-${{ matrix.name }}.tar.gz
+      ARCHIVE: clipboardbridge-${{ matrix.goos }}-${{ matrix.name }}.${{ matrix.ext }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,14 +48,22 @@ jobs:
           cache: false # a release builds from scratch
       - name: build
         run: |
-          go build -trimpath \
-            -ldflags "-s -w -X github.com/HunterEwok/clipboardbridge/internal/version.Version=$GITHUB_REF_NAME" \
-            -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          ldflags="-s -w -X github.com/HunterEwok/clipboardbridge/internal/version.Version=$GITHUB_REF_NAME"
+          if [ "$GOOS" = windows ]; then
+            # cbbw.exe is the same program without a console window, for the agent.
+            go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/cbb.exe" ./cmd/cbb
+            go build -trimpath -ldflags "$ldflags -H=windowsgui" -o "$RUNNER_TEMP/cbbw.exe" ./cmd/cbb
+          else
+            go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          fi
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
         run: otool -L "$RUNNER_TEMP/cbb" | grep -q AppKit.framework
       - name: archive
-        run: sh packaging/archive.sh "$RUNNER_TEMP/cbb" "$GOOS" "${{ matrix.name }}" "$RUNNER_TEMP/dist"
+        run: |
+          bin=$RUNNER_TEMP/cbb
+          if [ "$GOOS" = windows ]; then bin=$bin.exe; fi
+          sh packaging/archive.sh "$bin" "$GOOS" "${{ matrix.name }}" "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.ARCHIVE }}
@@ -79,9 +89,9 @@ jobs:
           merge-multiple: true
       - name: checksums
         run: |
-          cp packaging/linux/get.sh dist/
+          cp packaging/linux/get.sh packaging/windows/get.ps1 dist/
           cd dist
-          sha256sum -- *.tar.gz get.sh >SHA256SUMS
+          sha256sum -- *.tar.gz *.zip get.sh get.ps1 >SHA256SUMS
           cat SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

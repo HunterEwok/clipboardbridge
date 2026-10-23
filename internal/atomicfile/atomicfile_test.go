@@ -70,6 +70,10 @@ func TestWriteReplacesTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		// Windows renames over a file only while nobody has it open.
+		old.Close()
+	}
 	if err := Write(path, []byte("new"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +83,9 @@ func TestWriteReplacesTheFile(t *testing.T) {
 	}
 	if os.SameFile(before, after) {
 		t.Error("Write rewrote the file in place")
+	}
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if got, err := io.ReadAll(old); err != nil || string(got) != "old content" {
 		t.Errorf("the old file now reads %q, %v", got, err)
