@@ -513,8 +513,9 @@ itself (`internal/tunnel`: the hub and the Go client, with tests that clients ca
 each other), the exchange of its keys among Go members, and `cbb away`, which turns it on
 with the consent below and makes a computer the hub; Go members sync through it when the
 hub is not on their network; a computer with a remote invitation joins from afar (`cbb
-invite` on the hub). The phones, the forwarder and the rest of the order of work
-below are not built yet.
+invite` on the hub); a hub that clients cannot reach directly registers with a forwarder
+(`cbb forward`, routing by `mac1`). The phones and the rest of the order of work below are
+not built yet.
 
 ### Turning it on, step by step
 
@@ -626,7 +627,11 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 
 For homes behind carrier-grade NAT, and for clients without IPv6, the project runs a
 forwarder on its own server for all users. It holds no keys and only passes encrypted
-WireGuard packets between a group's clients and that group's hub.
+WireGuard packets between a group's clients and that group's hub. The forwarder is built
+(`cbb forward`, `cbb away hub -forwarder`; the wire format is in
+[protocol.md](protocol.md), section 13), with routing by `mac1`; the computed port below is
+not. The project's own forwarder does not run yet: it needs a server, and until then a
+user can run `cbb forward` on a server of their own.
 
 - **One port for all groups, routed by `mac1`.** Every WireGuard handshake initiation
   carries `mac1`, a MAC keyed with the responder's public key. The forwarder knows each hub's
@@ -854,7 +859,8 @@ only adds to it.
 4. Remote invitations in `cbb` (`cbb invite`, the guest tunnel, the admin's confirmation):
    done for computers, made on the hub; handing them over from another admin to the hub
    follows.
-5. The forwarder.
+5. The forwarder: `cbb forward` and the hub's registration, routing by `mac1` (done); the
+   computed port as a fallback if AmneziaWG needs it; the project's own server.
 6. The blind relay, self-hosted only.
 7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,
    making and opening remote invitations.

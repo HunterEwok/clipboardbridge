@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -108,7 +109,7 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 	}
 	hub := st.Key.Public()
 	o := &node.TunnelOffer{HubKey: hub[:], PSK: m.PresharedKey[:]}
-	for _, ep := range st.Endpoints {
+	for _, ep := range st.HubEndpoints() {
 		o.Endpoints = append(o.Endpoints, ep.String())
 	}
 	return o
@@ -225,6 +226,7 @@ func (s *Service) runTunnelLocked() {
 		}
 		s.tunRun = &tunRun{cancel: cancel, hub: h}
 		s.tunFailedLocked("", nil)
+		s.registerForwarderLocked(ctx, h, st)
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -269,7 +271,7 @@ func (s *Service) stopTunnelLocked() {
 	if r == nil {
 		return
 	}
-	s.tunRun, s.tunThrough = nil, false
+	s.tunRun, s.tunThrough, s.tunFwd = nil, false, nil
 	r.cancel()
 	if r.hub != nil {
 		r.hub.Close()
@@ -495,6 +497,19 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if m.Port < 0 || m.Port > 65535 {
 			return false, nil, fmt.Errorf("a bad port %d", m.Port)
 		}
+		var fw *tunnel.ForwarderLink
+		if m.Forwarder != "" {
+			ep, err := netip.ParseAddrPort(m.Forwarder)
+			if err != nil || ep.Port() == 0 {
+				return false, nil, fmt.Errorf("%q is not the forwarder's address with a port, such as 203.0.113.9:8764", m.Forwarder)
+			}
+			if err := forward.CheckPin(m.ForwarderKey); err != nil {
+				return false, nil, err
+			}
+			fw = &tunnel.ForwarderLink{Endpoint: netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()), Pin: m.ForwarderKey}
+		} else if m.ForwarderKey != "" {
+			return false, nil, errors.New("a forwarder's key without its address")
+		}
 		var eps []netip.AddrPort
 		for _, a := range m.Addrs {
 			ep, err := netip.ParseAddrPort(a)
@@ -503,11 +518,14 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			}
 			eps = append(eps, netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()))
 		}
-		if len(eps) > 8 {
-			return false, nil, errors.New("at most 8 addresses")
+		if len(eps) > 7 || (fw == nil && len(eps) > 8) {
+			return false, nil, errors.New("at most 8 addresses, the forwarder's included")
+		}
+		if len(eps) == 0 && fw == nil {
+			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
 		}
 		old := *st
-		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort = true, nil, eps, m.Port
+		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort, st.Forwarder = true, nil, eps, m.Port, fw
 		if err := st.Save(s.cfg.StateDir); err != nil {
 			*st = old
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
@@ -530,6 +548,13 @@ func (s *Service) awayStatus() *control.Away {
 		return nil
 	}
 	a := &control.Away{Hub: st.IsHub, KeysInFile: st.KeysInFile, Error: s.tunErr, Detail: s.tunDetail}
+	if st.IsHub && st.Forwarder != nil {
+		a.Forwarder = &control.Forwarder{Endpoint: st.Forwarder.Endpoint.String(), Error: "the hub is not running"}
+		if f := s.tunFwd; f != nil {
+			c := *f
+			a.Forwarder = &c
+		}
+	}
 	switch {
 	case st.IsHub:
 		a.Port, a.Clients = st.ListenPort, len(st.Members)

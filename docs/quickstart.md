@@ -171,9 +171,28 @@ cbb away                                     # what it does now, and what went w
 The router must forward UDP port 8764 to the hub, and the hub's firewall must allow it.
 When it does not connect, `cbb away` says why; with `CBB_DEBUG=1` in the service's
 environment, its log also has WireGuard's own messages, such as each handshake.
-The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted;
-nobody else's server is involved. `cbb away off` turns it off again and forgets its keys.
-The phones cannot sync away from home yet.
+
+When the hub cannot be reached from the internet, for example behind carrier-grade NAT, it
+can register with a forwarder: `cbb forward` on a server with a public address, which holds
+no keys and passes only the tunnel's encrypted packets. On that server, as a systemd service
+or in a terminal:
+
+```sh
+cbb forward                                  # prints its key, sha256:...; UDP and TCP port 8764 must be open
+```
+
+And on the hub, with or without addresses of its own:
+
+```sh
+cbb away hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+```
+
+The computers then try the hub's own addresses first and the forwarder last. The project's
+own forwarder is not running yet.
+
+The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted; a
+forwarder sees only encrypted packets. `cbb away off` turns it off again and forgets its
+keys. The phones cannot sync away from home yet.
 
 ## 6. Look after the group
 

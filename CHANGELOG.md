@@ -68,6 +68,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A forwarder for hubs that the computers cannot reach directly, for example behind
+  carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
+  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
+  member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
+  only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
+  groups apart, limits each group, and writes nothing about the groups, not even to its
+  log. `cbb away` on the hub shows the registration.
+
 - Releases carry the lite member: `cbb-lite-linux-amd64.tar.gz`, `-arm64` and `-armv6`,
   static builds, each with the systemd unit and the licenses of the crates it is built from
   (`THIRD_PARTY_NOTICES`).
