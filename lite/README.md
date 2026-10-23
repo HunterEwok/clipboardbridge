@@ -24,8 +24,17 @@ CPace in `core/src/third_party/cpace`. It does no I/O and needs no operating sys
 can use it as it is. On a microcontroller the firmware supplies the randomness, as
 getrandom's custom backend (`__getrandom_v03_custom`), and the core's locks are spin
 locks; with the `std` feature, as `cbb-lite` uses it, they are the standard library's.
-`cbb-lite` itself (`src`) adds the state files, TLS with rustls, mDNS, the control socket
-and the service.
+
+With the `tls` feature the core has the TLS of members and pairing too (`core/src/tls`):
+rustls through its unbuffered API, which needs no standard library, with a crypto
+provider of RustCrypto code (TLS 1.3 only, ChaCha20-Poly1305 or AES-128-GCM, X25519,
+ECDSA P-256), the certificate checks, a `Session` that does no I/O (the caller moves the
+bytes) and the pairing's TLS exporter, which rustls offers only with std: the core takes
+the exporter secret from the connection's key log and derives the exporter itself
+(RFC 8446, section 7.5). `cbb-lite` runs on exactly this code, so the e2e test below
+checks the TLS a microcontroller would use against Go members.
+`cbb-lite` itself (`src`) adds the state files, the sockets, mDNS, the control socket and
+the service.
 
 ## Build
 
@@ -37,12 +46,20 @@ cargo build --release          # target/release/cbb-lite
 cargo test --workspace         # unit tests and the vectors in ../testdata/interop
 ```
 
-The core alone for a RISC-V microcontroller such as the ESP32-C6
+The core alone, with its TLS, for a RISC-V microcontroller such as the ESP32-C6
 (`rustup target add riscv32imac-unknown-none-elf`; `.cargo/config.toml` sets getrandom's
 backend):
 
 ```sh
-cargo build -p clipboardbridge-core --release --target riscv32imac-unknown-none-elf
+cargo build -p clipboardbridge-core --features tls --release --target riscv32imac-unknown-none-elf
+```
+
+For the ESP32-S3 (Xtensa) with Espressif's Rust toolchain (`espup install`, or the
+`esp32` job in `.github/workflows/ci.yml`, which fetches the same toolchain directly):
+
+```sh
+cargo +esp build -Zbuild-std=core,alloc -p clipboardbridge-core --features tls --release \
+  --target xtensa-esp32s3-none-elf
 ```
 
 For a Raspberry Pi (64-bit Raspberry Pi OS or Debian) from an x86 Linux machine:
@@ -55,7 +72,7 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
 ```
 
 For a Raspberry Pi Zero, Zero W or Pi 1 (ARMv6, 32-bit Raspberry Pi OS): a static binary,
-with clang and llvm-ar (`apt install clang llvm`) and no cross toolchain (`.cargo/config.toml` holds the settings):
+all Rust, with no cross toolchain (`.cargo/config.toml` holds the settings):
 
 ```sh
 rustup target add arm-unknown-linux-musleabihf

@@ -588,20 +588,16 @@ jobs:
           persist-credentials: false
       - name: the Rust toolchain, and a cross compiler for the Raspberry Pi
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target aarch64-unknown-linux-gnu,arm-unknown-linux-musleabihf,riscv32imac-unknown-none-elf
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target aarch64-unknown-linux-gnu,arm-unknown-linux-musleabihf
           rustup default stable
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang llvm
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (the interop vectors in testdata/interop too)
         run: cargo test --locked --workspace
-      - name: the protocol core without an operating system (no_std, RISC-V like the ESP32-C6)
-        run: |
-          cargo clippy --locked -p clipboardbridge-core --target riscv32imac-unknown-none-elf -- -D warnings
-          cargo build --locked -p clipboardbridge-core --release --target riscv32imac-unknown-none-elf
       - name: cargo build
         run: cargo build --locked --release
       - name: cargo build for the Raspberry Pi
@@ -628,10 +624,52 @@ jobs:
           path: lite/target/arm-unknown-linux-musleabihf/release/cbb-lite
           retention-days: 14
 
+  esp32:
+    name: lite core on the ESP32
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: lite
+    env:
+      # The Rust toolchain for Xtensa (the ESP32-S3) from esp-rs/rust-build,
+      # what espup installs, fetched directly and checked against these hashes.
+      ESP_RUST: 1.99.0.0
+      ESP_RUST_SHA256: b11376cf28b43ad31bd264de6987f6f50b8008824dcb12e6a7212331da5a8ed7
+      ESP_RUST_SRC_SHA256: 31cee3ac662c026437c895846cb093b5d8438c13aa6c5f8d561e22bf7f8be543
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the Rust toolchain for RISC-V
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy --target riscv32imac-unknown-none-elf
+          rustup default stable
+      - name: the core with TLS without an operating system, RISC-V (the ESP32-C6)
+        run: |
+          cargo clippy --locked -p clipboardbridge-core --features tls --target riscv32imac-unknown-none-elf -- -D warnings
+          cargo build --locked -p clipboardbridge-core --release --target riscv32imac-unknown-none-elf
+          cargo build --locked -p clipboardbridge-core --features tls --release --target riscv32imac-unknown-none-elf
+      - name: the Rust toolchain for Xtensa
+        working-directory: ${{ runner.temp }}
+        run: |
+          base="https://github.com/esp-rs/rust-build/releases/download/v$ESP_RUST"
+          curl -fsSL --retry 3 -o rust.tar.xz "$base/rust-$ESP_RUST-x86_64-unknown-linux-gnu.tar.xz"
+          curl -fsSL --retry 3 -o rust-src.tar.xz "$base/rust-src-$ESP_RUST.tar.xz"
+          echo "$ESP_RUST_SHA256  rust.tar.xz" | sha256sum -c -
+          echo "$ESP_RUST_SRC_SHA256  rust-src.tar.xz" | sha256sum -c -
+          tar xf rust.tar.xz
+          tar xf rust-src.tar.xz
+          ./rust-nightly-x86_64-unknown-linux-gnu/install.sh --destdir="$RUNNER_TEMP/esp" --prefix= --without=rust-docs-json-preview,rust-docs --disable-ldconfig
+          ./rust-src-nightly/install.sh --destdir="$RUNNER_TEMP/esp" --prefix= --disable-ldconfig
+          rustup toolchain link esp "$RUNNER_TEMP/esp"
+      - name: the core with TLS without an operating system, Xtensa (the ESP32-S3)
+        run: cargo +esp build --locked -Zbuild-std=core,alloc -p clipboardbridge-core --features tls --release --target xtensa-esp32s3-none-elf
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, android, lite]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, android, lite, esp32]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

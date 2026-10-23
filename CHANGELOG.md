@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The lite member's TLS is in its protocol core and needs no operating system, the first
+  step to a lite member on the ESP32: rustls without the standard library, with a small
+  crypto provider of RustCrypto code (TLS 1.3, ChaCha20-Poly1305 or AES-128-GCM, X25519,
+  ECDSA P-256) in place of ring, a TLS session that does no I/O, and the pairing's TLS
+  exporter derived from the connection's key log. `cbb-lite` on Linux uses it, so it no
+  longer builds C code, and CI builds the core for the ESP32-C6 and the ESP32-S3.
+
 - An event sent from a phone has `via` `phone` (the app, iPhone or Android, or the iPhone
   shortcut), where it had `iphone`; members still take `iphone`. The control socket takes
   and reports `phone` too. Names that belong to the shortcut, for an iPhone without the

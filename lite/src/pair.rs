@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 pub use cbb_core::pair::*;
 
-use crate::error::{Context, Error, Result};
+use crate::error::{Context, Error, Result, Wrap};
 use crate::identity::Identity;
 use crate::tls;
 use crate::wire;
@@ -25,50 +25,44 @@ pub const LIFETIME: Duration = Duration::from_secs(5 * 60);
 /// which showed its QR code. The member confirms first, so a device that
 /// does not know the code learns nothing.
 pub fn accept(j: &Joiner, sock: TcpStream, code: &str, save: &dyn Fn(&Identity) -> Result<()>) -> Result<Identity> {
-    let cfg = tls::pair_server(&j.cert, &j.key)?;
-    let conn = rustls::ServerConnection::new(Arc::new(cfg)).context("cannot set up TLS")?;
-    run(j, rustls::StreamOwned::new(conn, sock), code, true, save)
+    let (cfg, exporter) = tls::pair_server(&j.cert, &j.key, &tls::clock())?;
+    let session = tls::Session::server(Arc::new(cfg))?;
+    run(j, tls::Stream::new(session, sock), &exporter, code, true, save)
 }
 
 /// Runs the joining side over a connection to a member's open pairing
 /// window, with the code the user typed.
 pub fn join(j: &Joiner, sock: TcpStream, code: &str, save: &dyn Fn(&Identity) -> Result<()>) -> Result<Identity> {
-    let cfg = tls::pair_client(&j.cert, &j.key)?;
-    let conn = rustls::ClientConnection::new(Arc::new(cfg), tls::server_name(None)).context("cannot set up TLS")?;
-    run(j, rustls::StreamOwned::new(conn, sock), code, false, save)
+    let (cfg, exporter) = tls::pair_client(&j.cert, &j.key, &tls::clock())?;
+    let session = tls::Session::client(Arc::new(cfg), tls::server_name(None))?;
+    run(j, tls::Stream::new(session, sock), &exporter, code, false, save)
 }
 
-fn run<C, D>(
+fn run(
     j: &Joiner,
-    mut tc: rustls::StreamOwned<C, TcpStream>,
+    mut tc: tls::Stream,
+    exporter: &tls::Exporter,
     code: &str,
     member_first: bool,
     save: &dyn Fn(&Identity) -> Result<()>,
-) -> Result<Identity>
-where
-    C: std::ops::DerefMut<Target = rustls::ConnectionCommon<D>> + std::ops::Deref<Target = rustls::ConnectionCommon<D>>,
-    D: rustls::SideData,
-{
+) -> Result<Identity> {
     normalize_code(code)?;
     tc.sock.set_read_timeout(Some(ATTEMPT_TIMEOUT)).context("the connection broke")?;
     tc.sock.set_write_timeout(Some(ATTEMPT_TIMEOUT)).context("the connection broke")?;
-    while tc.conn.is_handshaking() {
-        tc.conn.complete_io(&mut tc.sock).context("the TLS handshake failed")?;
-    }
-    if tc.conn.alpn_protocol() != Some(tls::PAIR_PROTOCOL) {
+    tls::handshake(&mut tc.session, &tc.sock, "the TLS handshake failed")?;
+    if tc.session.alpn_protocol() != Some(tls::PAIR_PROTOCOL) {
         return Err(Error::msg("the device does not offer pairing"));
     }
     let member_der = tc
-        .conn
+        .session
         .peer_certificates()
         .and_then(|c| c.first())
         .map(|c| c.to_vec())
         .ok_or_else(|| Error::msg("the device does not offer pairing"))?;
     let mut sid = [0u8; 32];
-    tc.conn.export_keying_material(&mut sid, EXPORTER_LABEL, None).context("cannot bind the pairing to TLS")?;
+    exporter.export(EXPORTER_LABEL, &[], &mut sid).wrap("cannot bind the pairing to TLS")?;
     let id = exchange(j, &mut tc, code, &member_der, &sid, member_first, save)?;
-    tc.conn.send_close_notify();
-    let _ = tc.flush();
+    tc.close();
     Ok(id)
 }
 
@@ -208,7 +202,7 @@ mod tests {
         assert!(c.p256);
         assert!(c.signed_by(&c));
         assert_eq!(j.fingerprint().len(), 43);
-        // rustls and ring take the key and the certificate.
-        tls::pair_server(&j.cert, &j.key).unwrap();
+        // rustls and the core's provider take the key and the certificate.
+        tls::pair_server(&j.cert, &j.key, &tls::clock()).unwrap();
     }
 }

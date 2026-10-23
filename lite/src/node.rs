@@ -13,7 +13,7 @@
 //! it.
 
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,7 +82,7 @@ enum Out {
 struct Conn {
     id: DeviceId,
     sock: TcpStream,
-    tls: Mutex<rustls::Connection>,
+    tls: Mutex<tls::Session>,
     tx: SyncSender<Out>,
     peer: Mutex<Option<(String, String)>>, // role and name, from the hello
     chain: Vec<Cert>,
@@ -224,10 +224,9 @@ impl Node {
         sock.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
         sock.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
         let ident = self.identity();
-        let cfg = tls::member_client(&ident, peer.clone(), self.records.clone())?;
-        let conn = rustls::ClientConnection::new(Arc::new(cfg), tls::server_name(peer.as_ref()))
-            .context("cannot set up TLS")?;
-        let (conn, id, chain) = self.handshake(&sock, conn.into(), addr, Usage::Server)?;
+        let cfg = tls::member_client(&ident, peer.clone(), tls::refused(&self.records), &tls::clock())?;
+        let conn = tls::Session::client(Arc::new(cfg), tls::server_name(peer.as_ref()))?;
+        let (conn, id, chain) = self.handshake(&sock, conn, addr, Usage::Server)?;
         if self.connected(&id) {
             let _ = sock.shutdown(Shutdown::Both);
             return Ok(());
@@ -246,9 +245,9 @@ impl Node {
         let _ = sock.set_nodelay(true);
         sock.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
         sock.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
-        let cfg = tls::member_server(&self.identity(), self.records.clone())?;
-        let conn = rustls::ServerConnection::new(Arc::new(cfg)).context("cannot set up TLS")?;
-        let res = self.handshake(&sock, conn.into(), addr, Usage::Client);
+        let cfg = tls::member_server(&self.identity(), tls::refused(&self.records), &tls::clock())?;
+        let conn = tls::Session::server(Arc::new(cfg))?;
+        let res = self.handshake(&sock, conn, addr, Usage::Client);
         handshaken();
         let (conn, id, chain) = res?;
         self.run(sock, conn, id, chain, addr)
@@ -259,34 +258,30 @@ impl Node {
     fn handshake(
         &self,
         sock: &TcpStream,
-        mut conn: rustls::Connection,
+        mut conn: tls::Session,
         addr: SocketAddr,
         usage: Usage,
-    ) -> Result<(rustls::Connection, DeviceId, Vec<Cert>)> {
-        let mut s = sock;
-        while conn.is_handshaking() {
-            conn.complete_io(&mut s).context(format!("the TLS handshake with {addr} failed"))?;
-        }
+    ) -> Result<(tls::Session, DeviceId, Vec<Cert>)> {
+        tls::handshake(&mut conn, sock, &format!("the TLS handshake with {addr} failed"))?;
         if conn.alpn_protocol() != Some(tls::MEMBER_PROTOCOL)
-            || conn.protocol_version() != Some(rustls::ProtocolVersion::TLSv1_3)
+            || conn.protocol_version() != Some(tls::rustls::ProtocolVersion::TLSv1_3)
         {
             return Err(Error::msg(format!("{addr} does not speak the member protocol")));
         }
         let presented = conn.peer_certificates().unwrap_or_default().to_vec();
         let ident = self.identity();
-        let (id, chain) =
-            tls::check_member(&presented, &ident.trusted(), ident.root().not_before, &self.records, usage)?;
+        let (id, chain) = tls::check_member(
+            &presented,
+            &ident.trusted(),
+            ident.root().not_before,
+            &tls::refused(&self.records),
+            usage,
+            uptime::wall_ms() / 1000,
+        )?;
         Ok((conn, id, chain))
     }
 
-    fn run(
-        &self,
-        sock: TcpStream,
-        conn: rustls::Connection,
-        id: DeviceId,
-        chain: Vec<Cert>,
-        addr: SocketAddr,
-    ) -> Result<()> {
+    fn run(&self, sock: TcpStream, conn: tls::Session, id: DeviceId, chain: Vec<Cert>, addr: SocketAddr) -> Result<()> {
         sock.set_read_timeout(Some(TIMEOUT)).context("the connection broke")?;
         let (tx, rx) = mpsc::sync_channel(QUEUE_LEN);
         let c = Arc::new(Conn {
@@ -338,7 +333,7 @@ impl Node {
     }
 
     fn reader(&self, c: &Arc<Conn>) -> Result<()> {
-        let mut r = TlsReader { c, pending: Vec::new(), pos: 0 };
+        let mut r = TlsReader { c, buf: Vec::new() };
         let mut first = true;
         loop {
             let m: Message = match wire::read_json(&mut r, wire::MAX_FRAME) {
@@ -475,16 +470,8 @@ impl Conn {
     /// Writes one frame through TLS.
     fn send(&self, frame: &[u8]) -> io::Result<()> {
         let mut tls = self.tls.lock().unwrap();
-        let mut rest = frame;
-        let mut s = &self.sock;
-        while !rest.is_empty() {
-            let n = tls.writer().write(rest)?;
-            rest = &rest[n..];
-            while tls.wants_write() {
-                tls.write_tls(&mut s)?;
-            }
-        }
-        Ok(())
+        tls.write(frame).map_err(|e| io::Error::other(e.for_log()))?;
+        tls::flush(&mut tls, &self.sock)
     }
 }
 
@@ -492,42 +479,29 @@ impl Conn {
 /// TLS lock.
 struct TlsReader<'a> {
     c: &'a Conn,
-    pending: Vec<u8>,
-    pos: usize,
+    buf: Vec<u8>,
 }
 
 impl Read for TlsReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         loop {
             {
-                let mut tls = self.c.tls.lock().unwrap();
-                match tls.reader().read(buf) {
-                    Ok(n) => return Ok(n),
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                    Err(e) => return Err(e),
-                }
-                if self.pos < self.pending.len() {
-                    let mut rest = &self.pending[self.pos..];
-                    let n = tls.read_tls(&mut rest)?;
-                    self.pos += n;
-                    let state = tls.process_new_packets();
-                    let mut s = &self.c.sock;
-                    while tls.wants_write() {
-                        tls.write_tls(&mut s)?;
-                    }
-                    if let Err(e) = state {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, e));
-                    }
-                    continue;
+                let tls = &mut *self.c.tls.lock().unwrap();
+                let n = tls.read(out);
+                if n > 0 || out.is_empty() || tls.peer_closed() {
+                    return Ok(n);
                 }
             }
-            self.pending.resize(16 << 10, 0);
-            self.pos = 0;
-            let n = (&self.c.sock).read(&mut self.pending)?;
-            self.pending.truncate(n);
+            self.buf.resize(16 << 10, 0);
+            let n = (&self.c.sock).read(&mut self.buf)?;
             if n == 0 {
                 return Ok(0);
             }
+            let mut tls = self.c.tls.lock().unwrap();
+            let fed = tls.feed(&self.buf[..n]);
+            // Replies rustls queued (a key update, an alert) go out first.
+            tls::flush(&mut tls, &self.c.sock)?;
+            fed.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.for_log()))?;
         }
     }
 }
