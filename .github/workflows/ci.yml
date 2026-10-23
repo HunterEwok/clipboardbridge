@@ -353,7 +353,14 @@ jobs:
           persist-credentials: false
       - name: the protocol core's tests
         working-directory: apps/android
-        run: ./gradlew --no-daemon -p kit test
+        # The kit writes what it signs for the Go tests, as the Swift kit does.
+        run: CBB_INTEROP_OUT="$GITHUB_WORKSPACE/interop-out" ./gradlew --no-daemon -p kit test
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Go reads what the Kotlin kit signed
+        run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords$' -v
       - name: build the app and run its unit tests
         working-directory: apps/android
         # The runner image has the Android SDK; Gradle fetches a missing platform.
