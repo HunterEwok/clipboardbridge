@@ -133,15 +133,22 @@ an admin phone removes a lost root phone by taking the group over with `root` re
 a computer of a phone group can be an admin: the root phone's "Make it an admin" certifies
 the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go's
 `Identity.AdminKey`/`AdminCA`); the lite member for Linux (`lite/`, `cbb-lite`), with
-the interop vectors and an e2e test among Go members, not yet run on a real Pi.
+the interop vectors and an e2e test among Go members, not yet run on a real Pi; the
+Android app (`apps/android`) does what the iPhone app does, receives copies by itself in a
+foreground service and sends them with the accessibility service or one tap, and each
+release carries its signed APK (docs/apps.md).
 
 Next steps, roughly in order:
 
-1. TestFlight (needs the Apple account), Android, Homebrew, a signed macOS `.pkg`,
+1. TestFlight (needs the Apple account), Homebrew, a signed macOS `.pkg`,
    sync away from home, the lite member on the ESP32 (see docs/design.md, "Future research").
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
 tested on a real PC.
+
+Not yet run on a real Android phone or emulator: the Keystore keys and BiometricPrompt,
+`ACCESS_LOCAL_NETWORK` on Android 17, the accessibility overlay getting the focus, the copy
+events of each maker's apps, the foreground service across reboots and battery savers.
 
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
