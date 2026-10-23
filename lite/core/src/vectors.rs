@@ -19,7 +19,7 @@ use crate::records::{Record, Records};
 use crate::wire::{self, Message};
 
 fn vectors(name: &str) -> Value {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../testdata/interop").join(name);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(name);
     serde_json::from_slice(&std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))).unwrap()
 }
 
@@ -105,7 +105,7 @@ fn member_certs() {
 fn pairing() {
     let v = vectors("pairing.json");
     let (member, joiner) = (bytes(&v["member_cert"]), bytes(&v["joiner_cert"]));
-    assert_eq!(certs::hex(&crate::pair::channel_id_for_tests(&member, &joiner)), v["channel_id"].as_str().unwrap());
+    assert_eq!(certs::hex(&crate::pair::channel_id(&member, &joiner)), v["channel_id"].as_str().unwrap());
     assert_eq!(certs::qr_fingerprint(&joiner), v["fingerprint"].as_str().unwrap());
     let frames = v["frames"].as_array().unwrap();
     // The joiner's first frame, as a lite member writes it, differs only in

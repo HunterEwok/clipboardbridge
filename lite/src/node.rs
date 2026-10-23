@@ -24,6 +24,8 @@ use crate::certs::{Cert, DeviceId};
 use crate::clip::{Engine, Event, Hello, Kind, Outcome, Via};
 use crate::error::{Context, Error, Result};
 use crate::identity::Identity;
+use crate::identity::Stored as _;
+use crate::records::Stored as _;
 use crate::records::{Record, Records};
 use crate::tls;
 use crate::uptime;

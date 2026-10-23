@@ -12,9 +12,15 @@ Pi, a router, a small board. It speaks the member protocol of
 It needs at least one full member (`cbb` on a computer) to be on. Full members list it
 with role `lite`.
 
-The protocol core (`certs`, `records`, `clip`, `hlc`, `wire`, `pair` and CPace in
-`src/third_party/cpace`) keeps away from the operating system where it can, for a later
-port to the ESP32.
+The protocol core is its own crate, [`core`](core) (`cbb_core`): certificates, records,
+the hybrid clock, the sync engine, the frames and the joiner's side of the pairing, with
+CPace in `core/src/third_party/cpace`. It does no I/O and needs no operating system
+(no_std with alloc; RustCrypto for P-256, SHA-2 and HMAC), so a lite member on the ESP32
+can use it as it is. On a microcontroller the firmware supplies the randomness, as
+getrandom's custom backend (`__getrandom_v03_custom`), and the core's locks are spin
+locks; with the `std` feature, as `cbb-lite` uses it, they are the standard library's.
+`cbb-lite` itself (`src`) adds the state files, TLS with rustls, mDNS, the control socket
+and the service.
 
 ## Build
 
@@ -23,7 +29,15 @@ With Rust 1.85 or later:
 ```sh
 cd lite
 cargo build --release          # target/release/cbb-lite
-cargo test                     # unit tests and the vectors in ../testdata/interop
+cargo test --workspace         # unit tests and the vectors in ../testdata/interop
+```
+
+The core alone for a RISC-V microcontroller such as the ESP32-C6
+(`rustup target add riscv32imac-unknown-none-elf`; `.cargo/config.toml` sets getrandom's
+backend):
+
+```sh
+cargo build -p clipboardbridge-core --release --target riscv32imac-unknown-none-elf
 ```
 
 For a Raspberry Pi (64-bit Raspberry Pi OS or Debian) from an x86 Linux machine:

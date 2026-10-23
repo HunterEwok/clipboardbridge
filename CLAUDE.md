@@ -49,7 +49,8 @@ go test -race ./...
 The lite member (Rust, the `lite` job in CI):
 
 ```sh
-cd lite && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS
 cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
   go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
 ```
@@ -106,8 +107,10 @@ To run it on a phone, open the project in Xcode, pick your team under Signing, a
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
   in Go tests.
 - `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, only dials, joins by the
-  phone's QR code; the protocol core (`certs`, `records`, `clip`, `hlc`, `wire`, `pair`,
-  CPace under `src/third_party`) keeps away from the OS for a later ESP32 port.
+  phone's QR code. Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
+  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, CPace under `src/third_party`, the
+  interop vectors): no_std with alloc, RustCrypto, no I/O, for the ESP32; `lite/src` adds
+  the files, TLS (rustls), mDNS and the control socket.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
