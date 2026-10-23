@@ -133,6 +133,14 @@ On Linux it works with and without a desktop:
 
 The order of what comes next is the [roadmap](docs/design.md#roadmap).
 
+## Documentation
+
+The [documentation index](docs/README.md) lists every document and who it is for: the
+[quick start](docs/quickstart.md), the [phone apps](docs/apps-guide.md), the
+[commands](docs/cli.md), [troubleshooting](docs/troubleshooting.md), the
+[lite member](lite/README.md), and for developers the [design](docs/design.md) and the
+[protocol](docs/protocol.md).
+
 ## License
 
 clipboardbridge is free software, licensed under the
