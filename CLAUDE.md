@@ -143,12 +143,14 @@ the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go'
 the interop vectors and an e2e test among Go members, not yet run on a real Pi; the
 Android app (`apps/android`) does what the iPhone app does, receives copies by itself in a
 foreground service and sends them with the accessibility service or one tap, and each
-release carries its signed APK (docs/apps.md).
+release carries its signed APK (docs/apps.md); Homebrew (`hunterewok/tap`); sync away
+from home between computers, through a hub's WireGuard tunnel (`cbb away`).
 
 Next steps, roughly in order:
 
-1. TestFlight (needs the Apple account), Homebrew, a signed macOS `.pkg`,
-   sync away from home, the lite member on the ESP32 (see docs/design.md, "Future research").
+1. TestFlight (needs the Apple account), a signed macOS `.pkg`, sync away from home for
+   the phones and the lite member (it works between computers: `cbb away`, docs/protocol.md
+   section 11), the lite member on the ESP32 (see docs/design.md, "Roadmap").
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
 tested on a real PC.

@@ -172,7 +172,7 @@ files as the run's artifacts, and publishes nothing.
   `apps/ios/ClipboardBridgeKit`, the Swift package with the protocol core (CPace, the pairing
   frames, the join QR code, the member protocol and the phone's sync engine). It has no UI
   and runs on Linux too; its tests check it against the vectors that the Go tests write to
-  `testdata/interop/` (`go test ./internal/pair ./internal/phone ./internal/node -update`
+  `testdata/interop/` (`go test ./internal/group ./internal/pair ./internal/phone ./internal/node -update`
   regenerates them), and CI runs it against the Go code: pairing over plain TCP on Linux,
   pairing and a member connection over real TLS on macOS.
 - The app finds the Linux members by browsing `_clipboardbridge._tcp` (ClipboardBridgeKit's
@@ -193,7 +193,7 @@ files as the run's artifacts, and publishes nothing.
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
   drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
   for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into
-  `apps/ios/ClipboardBridge/Theme/Tokens.swift` (Kotlin later) and fails when a theme misses the
-  WCAG AA contrast, and CI checks that the generated file is up to date; `apps/l10n/` — the shared glossary of terms, so
+  `apps/ios/ClipboardBridge/Theme/Tokens.swift` and the Android app's `Tokens.kt` and fails when a theme misses the
+  WCAG AA contrast, and CI checks that the generated files are up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
 - The protocol both apps speak is [protocol.md](protocol.md).

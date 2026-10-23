@@ -5,8 +5,9 @@ your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
 
 > **Status: early development.** Linux (with and without a desktop), macOS and the iPhone
 > shortcut work; Windows is new and not yet tested on a real PC; the iPhone and Android apps
-> are built and tested in CI but not yet on a real phone; sync away from home is designed, not built. The design is
-> in [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
+> and the lite member are built and tested in CI but not yet on a real device; sync away
+> from home works for computers, not yet for the phones. The design is in
+> [docs/design.md](docs/design.md), the protocol in [docs/protocol.md](docs/protocol.md).
 
 ## Install
 
@@ -64,7 +65,7 @@ further computer with `cbb join` and the shortcut "clipboardbridge: add a comput
 the [quick start](docs/quickstart.md). `cbb devices` lists the group, and
 `cbb revoke` removes a lost device.
 
-## What it will do
+## What it does
 
 Copy on one device and paste on another, with the normal copy and paste of each system:
 
@@ -76,6 +77,8 @@ Copy on one device and paste on another, with the normal copy and paste of each 
 | Windows ↔ others | Copy on Windows, paste on Linux or the Mac, and back. Automatic.           |
 | iPhone → Linux  | Copy on the iPhone, press the Action button or double-tap the back, paste on Linux. |
 | Linux → iPhone  | Copy on Linux, press the same button, paste on the iPhone.                  |
+| Others → Android | Copy on a computer, paste on the phone. Automatic.                         |
+| Android → others | Copy on the phone; sent by itself with the accessibility service, or with one tap. |
 
 Apple devices on one Apple Account already share a clipboard through Universal Clipboard;
 clipboardbridge connects them to Linux. The iPhone needs one press because iOS does not let apps
@@ -85,14 +88,15 @@ On Linux it works with and without a desktop:
 
 - **With a desktop** (any X11 desktop, GNOME, KDE, sway, labwc and others): the normal
   clipboard, Ctrl+V, and Shift+Insert in terminals.
-- **Without a desktop** (text console): copy and paste inside tmux, `cbb copy` and
-  `cbb paste` on the command line, and an optional console paste on a key press that
-  works even at the login prompt.
+- **Without a desktop** (text console): copy and paste inside tmux, and `cbb copy` and
+  `cbb paste` on the command line. A console paste on a key press, which would work even at
+  the login prompt, is planned.
 
 ## Principles
 
-- **Local network only.** Devices find each other on the home network. No cloud, no
-  accounts, no telemetry.
+- **Your network only.** Devices find each other on the home network; away from home they
+  reach it only through the group's own WireGuard tunnel to a computer at home, never
+  through anyone else's server. No cloud, no accounts, no telemetry.
 - **Encrypted and paired.** All traffic uses TLS. A device joins your group once, with a
   six-digit code, and talks only to the devices of the group.
 - **No central server.** Every Linux machine, Windows PC and Mac is an equal member; any of them can be
@@ -101,14 +105,16 @@ On Linux it works with and without a desktop:
 - **Passwords stay put.** Items that password managers mark as secret are not synced
   automatically.
 
-## Platforms (planned)
+## Platforms
 
 | Platform                                                                 | Component                                       |
 |--------------------------------------------------------------------------|-------------------------------------------------|
 | Linux: Ubuntu, Raspberry Pi OS and other distributions; x86-64, ARM64, ARMv7, ARMv6 (Raspberry Pi Zero W) | service, desktop connector, console helper |
 | macOS                                                                    | background agent                                |
 | Windows 10 (1809 or later) and 11; x86-64, ARM64                         | service, clipboard agent                        |
-| iOS and iPadOS                                                           | a shortcut in the Shortcuts app                 |
+| iOS and iPadOS                                                           | the app, or a shortcut in the Shortcuts app     |
+| Android                                                                  | the app (an APK in every release)               |
+| Small Linux devices (routers, boards)                                    | the lite member, `cbb-lite` ([lite/README.md](lite/README.md)) |
 
 ## License
 
