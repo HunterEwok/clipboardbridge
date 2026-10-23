@@ -1,0 +1,310 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package io.github.hunterewok.clipboardbridge.kit
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * The member protocol of docs/protocol.md, sections 4 and 5, as the Go side
+ * speaks it (internal/node, internal/clip, internal/hlc): frames of a
+ * 4-byte big-endian length and a JSON message, a hello first, then events,
+ * pings, records and goodbyes.
+ */
+object Member {
+    /** The ALPN protocol of member connections. */
+    const val ALPN = "clipboardbridge/1"
+
+    /** Frames larger than this close the connection. */
+    const val MAX_FRAME = 7 shl 20
+
+    /** A side that wrote nothing for this long, in milliseconds, sends a ping. */
+    const val PING_EVERY_MS = 5_000L
+
+    /** A connection silent for this long, in milliseconds, is dead. */
+    const val TIMEOUT_MS = 15_000L
+
+    /** Texts are at most this many bytes of UTF-8. */
+    const val MAX_TEXT = 1 shl 20
+
+    /** What kind of member is at the other end. */
+    enum class Role(val wire: String) {
+        LINUX("linux"), MAC("mac"), PHONE("phone"), LITE("lite");
+
+        companion object {
+            fun of(s: String): Role? = entries.firstOrNull { it.wire == s }
+        }
+    }
+
+    /** The kind of a text: a secret is kept only briefly (section 5). */
+    enum class Kind(val wire: String) {
+        TEXT("text"), SECRET("secret");
+
+        companion object {
+            fun of(s: String): Kind? = entries.firstOrNull { it.wire == s }
+        }
+    }
+
+    /** How a text reached the member that made the event. */
+    enum class Via(val wire: String) {
+        COPY("copy"), IPHONE("iphone"), UNIVERSAL_CLIPBOARD("universal-clipboard");
+
+        companion object {
+            fun of(s: String): Via? = entries.firstOrNull { it.wire == s }
+        }
+    }
+
+    /**
+     * A hybrid logical clock timestamp: milliseconds since the Unix epoch
+     * and a counter, written as "<wall>.<logical>".
+     */
+    data class Timestamp(val wall: Long, val logical: Long) : Comparable<Timestamp> {
+        override fun compareTo(other: Timestamp): Int =
+            if (wall != other.wall) wall.compareTo(other.wall) else logical.compareTo(other.logical)
+
+        override fun toString(): String = "$wall.$logical"
+
+        val isZero: Boolean get() = wall == 0L && logical == 0L
+
+        companion object {
+            /** The last millisecond of 9999. */
+            const val MAX_WALL = 253_402_300_799_999L
+            private const val MAX_LOGICAL = 0xffff_ffffL
+            val ZERO = Timestamp(0, 0)
+
+            /**
+             * Parses the text form: two decimal numbers and a dot, no sign or
+             * spaces, the wall time at most MAX_WALL.
+             */
+            fun parse(text: String): Timestamp? {
+                val parts = text.split(".")
+                if (parts.size != 2 || parts.any { p -> p.isEmpty() || !p.all { it in '0'..'9' } }) return null
+                val w = parts[0].toBigInteger()
+                val l = parts[1].toBigInteger()
+                if (w > MAX_WALL.toBigInteger() || l > MAX_LOGICAL.toBigInteger()) return null
+                return Timestamp(w.toLong(), l.toLong())
+            }
+        }
+    }
+
+    /** One copy, as it travels between members. */
+    data class Event(
+        val id: String,
+        val origin: String,
+        val via: Via = Via.COPY,
+        val time: Timestamp,
+        /** Milliseconds since the copy, as of the moment the frame is written. */
+        val ageMS: Long = 0,
+        val kind: Kind,
+        /** The text; "" only in the mark of a secret. */
+        val text: String,
+    ) {
+        /** Whether it is the mark of a secret: the event without its text. */
+        val isMark: Boolean get() = kind == Kind.SECRET && text.isEmpty()
+
+        /** The mark of this event: a secret without its text, as a hello carries it. */
+        val mark: Event get() = if (kind == Kind.SECRET) copy(text = "") else this
+
+        /** Checks an event received from another member, as Go's Event.Validate does. */
+        val isValid: Boolean
+            get() {
+                if (!GroupCertificates.isDeviceID(id) || !GroupCertificates.isDeviceID(origin) ||
+                    time.isZero || time.wall > Timestamp.MAX_WALL || ageMS < 0
+                ) {
+                    return false
+                }
+                return isMark || (text.isNotEmpty() && text.toByteArray().size <= MAX_TEXT)
+            }
+
+        /** Whether it sorts after f: by time, then by ID, so every member orders any two events the same way. */
+        fun isLater(than: Event): Boolean = if (time != than.time) time > than.time else id > than.id
+
+        fun toJson(): JsonObject = Wire.obj(
+            "id" to Wire.str(id),
+            "origin" to Wire.str(origin),
+            "via" to Wire.str(via.wire.takeIf { via != Via.COPY }), // absent means copy
+            "time" to Wire.str(time.toString()),
+            "age_ms" to Wire.num(ageMS),
+            "kind" to Wire.str(kind.wire),
+            "text" to Wire.str(text),
+        )
+
+        companion object {
+            /** The event in o, or null when it does not decode. */
+            fun fromJson(o: JsonObject): Event? =
+                try {
+                    Event(
+                        id = o.optString("id") ?: return null,
+                        origin = o.optString("origin") ?: return null,
+                        via = o.optString("via")?.let { Via.of(it) ?: return null } ?: Via.COPY,
+                        time = Timestamp.parse(o.optString("time") ?: return null) ?: return null,
+                        ageMS = o.optLong("age_ms") ?: 0,
+                        kind = Kind.of(o.optString("kind") ?: return null) ?: return null,
+                        text = o.optString("text") ?: "",
+                    )
+                } catch (e: WireTypeException) {
+                    null
+                }
+
+            fun fromJson(e: JsonElement?): Event? = (e as? JsonObject)?.let { fromJson(it) }
+        }
+    }
+
+    /** The first message of each side. */
+    data class Hello(
+        /** The sender's wall clock, milliseconds since the Unix epoch; for skew reports only. */
+        val wallMS: Long,
+        /** The sender's current event; a secret only as its mark. null when there is none, or when it did not decode. */
+        val current: Event? = null,
+        /** The digest of the sender's records (section 10). */
+        val records: String? = null,
+        /** The sender's device name. */
+        val name: String? = null,
+        /**
+         * From a computer that is no admin yet: the SubjectPublicKeyInfo of
+         * its admin key, for the root to certify (section 10, "A computer as admin").
+         */
+        val adminKey: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
+                name == other.name && adminKey.contentEqualsOrNull(other.adminKey)
+
+        override fun hashCode(): Int = wallMS.hashCode()
+    }
+
+    /** A signed record of the group (section 10), carried as it came. */
+    class Record(val body: ByteArray, val sig: ByteArray, val chain: List<ByteArray>? = null) {
+        override fun equals(other: Any?): Boolean =
+            other is Record && body.contentEquals(other.body) && sig.contentEquals(other.sig) &&
+                (chain?.map { it.toList() }) == (other.chain?.map { it.toList() })
+
+        override fun hashCode(): Int = body.contentHashCode()
+
+        fun toJson(): JsonObject = Wire.obj("body" to Wire.bytes(body), "sig" to Wire.bytes(sig), "chain" to Wire.list(chain))
+
+        companion object {
+            fun fromJson(o: JsonObject): Record =
+                Record(o.optBytes("body") ?: ByteArray(0), o.optBytes("sig") ?: ByteArray(0), o.optBytesList("chain"))
+        }
+    }
+
+    /** One message of the protocol. */
+    sealed class Message {
+        data class Hello(val role: Role, val hello: Member.Hello) : Message()
+
+        /** An event; null when it did not decode, for example from a newer version, which is dropped without ending the connection. */
+        data class Event(val event: Member.Event?) : Message()
+
+        object Ping : Message()
+
+        object Bye : Message()
+
+        /** A renewed member certificate for the receiver, DER, and the admin CA that issued it when an admin did. */
+        class Cert(val cert: ByteArray, val issuer: ByteArray? = null) : Message() {
+            override fun equals(other: Any?): Boolean =
+                other is Cert && cert.contentEquals(other.cert) && issuer.contentEqualsOrNull(other.issuer)
+
+            override fun hashCode(): Int = cert.contentHashCode()
+        }
+
+        data class Records(val records: List<Record>) : Message()
+
+        /** From the root: the receiver's admin CA, DER, for the admin key its hello offered. */
+        class Admin(val adminCA: ByteArray) : Message() {
+            override fun equals(other: Any?): Boolean = other is Admin && adminCA.contentEquals(other.adminCA)
+
+            override fun hashCode(): Int = adminCA.contentHashCode()
+        }
+
+        /** A type from a newer version, ignored. */
+        data class Unknown(val type: String) : Message()
+    }
+
+    class WireException(message: String) : Exception(message)
+
+    /** The JSON of a message. */
+    fun toJson(m: Message): JsonObject = when (m) {
+        is Message.Hello -> Wire.obj(
+            "t" to Wire.str("hello"),
+            "role" to Wire.str(m.role.wire),
+            "hello" to Wire.obj(
+                "wall_ms" to Wire.num(m.hello.wallMS),
+                "current" to m.hello.current?.toJson(),
+                "records" to Wire.str(m.hello.records),
+                "name" to Wire.str(m.hello.name),
+                "admin_key" to Wire.bytes(m.hello.adminKey),
+            ),
+        )
+        is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
+        Message.Ping -> Wire.obj("t" to Wire.str("ping"))
+        Message.Bye -> Wire.obj("t" to Wire.str("bye"))
+        is Message.Cert -> Wire.obj("t" to Wire.str("cert"), "cert" to Wire.bytes(m.cert), "issuer" to Wire.bytes(m.issuer))
+        is Message.Records -> Wire.obj("t" to Wire.str("records"), "records" to JsonArray(m.records.map { it.toJson() }))
+        is Message.Admin -> Wire.obj("t" to Wire.str("admin"), "admin_ca" to Wire.bytes(m.adminCA))
+        is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
+    }
+
+    /** Encodes a message as a frame: the length, then the JSON. */
+    fun encode(m: Message): ByteArray {
+        val body = Wire.encode(toJson(m))
+        if (body.size > MAX_FRAME) throw WireException("frame too large")
+        return frame(body)
+    }
+
+    internal fun frame(body: ByteArray): ByteArray {
+        val n = body.size
+        return byteArrayOf((n ushr 24).toByte(), (n ushr 16).toByte(), (n ushr 8).toByte(), n.toByte()) + body
+    }
+
+    /** The length a frame header announces, or an error when too large. */
+    fun length(header: ByteArray, max: Int = MAX_FRAME): Int {
+        if (header.size != 4) throw WireException("short frame header")
+        val n = header.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
+        if (n > max) throw WireException("frame too large")
+        return n.toInt()
+    }
+
+    /**
+     * Decodes the body of a frame. A hello whose role is unknown or whose
+     * hello object does not decode is an error; an event that does not
+     * decode is an Event(null).
+     */
+    fun decode(body: ByteArray): Message {
+        val o = Wire.parse(body) ?: throw WireException("not a message")
+        try {
+            return when (val t = o.optString("t") ?: throw WireException("not a message")) {
+                "hello" -> {
+                    val role = o.optString("role")?.let { Role.of(it) } ?: throw WireException("bad hello: unknown role")
+                    val h = o.optObject("hello") ?: throw WireException("bad hello: no hello object")
+                    Message.Hello(
+                        role,
+                        Hello(
+                            wallMS = h.optLong("wall_ms") ?: 0,
+                            current = Event.fromJson(h.opt("current")),
+                            records = h.optString("records"),
+                            name = h.optString("name"),
+                            adminKey = h.optBytes("admin_key"),
+                        ),
+                    )
+                }
+                "event" -> Message.Event(Event.fromJson(o.opt("event")))
+                "ping" -> Message.Ping
+                "bye" -> Message.Bye
+                "cert" -> Message.Cert(o.optBytes("cert") ?: ByteArray(0), o.optBytes("issuer"))
+                "records" -> Message.Records(
+                    o.optArray("records")?.map { Record.fromJson(it as? JsonObject ?: throw WireTypeException("records")) } ?: emptyList(),
+                )
+                "admin" -> Message.Admin(o.optBytes("admin_ca") ?: ByteArray(0))
+                else -> Message.Unknown(t)
+            }
+        } catch (e: WireTypeException) {
+            throw WireException("not a message: ${e.message}")
+        }
+    }
+}
+
+internal fun ByteArray?.contentEqualsOrNull(other: ByteArray?): Boolean =
+    if (this == null) other == null else other != null && contentEquals(other)

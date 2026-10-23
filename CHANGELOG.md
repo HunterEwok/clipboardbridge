@@ -44,8 +44,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ### Added
 
 - The Android app is started in `apps/android`: a Gradle build with the protocol core in
-  Kotlin (`kit`, no Android dependencies; CPace over X25519 so far, tested with the vectors
-  of RFC 7748 and the CPace draft) and a Compose app, built and tested in CI.
+  Kotlin (`kit`, no Android dependencies) and a Compose app, built and tested in CI. The kit
+  has CPace over X25519 (tested with the vectors of RFC 7748 and the CPace draft), the group's
+  certificates, the member and pairing messages, the join QR code and the signed records; it
+  reads the Go and Swift vectors in `testdata/interop`, and Go checks the records it signs.
 
 - A new app icon, a clipboard with a key: light, and dark in the system's dark mode
   (iOS 18 and later).

@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package io.github.hunterewok.clipboardbridge.kit
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/** Checks the member protocol against the vectors that the Go tests write (go test ./internal/node -update). */
+class MemberTest {
+    private val v = Interop.read("member.json").jsonObject
+
+    @Test
+    fun goFrames() {
+        val decoded = v.getValue("frames").jsonArray.map { goFrame ->
+            val m = Member.decode(Wire.encode(goFrame))
+            // Encoding it again gives the same JSON object as Go's.
+            val encoded = Member.encode(m)
+            assertEquals(encoded.size - 4, Member.length(encoded.copyOf(4)))
+            assertEquals<Any?>(goFrame, Wire.parse(encoded.copyOfRange(4, encoded.size)))
+            m
+        }
+        val hello = assertIs<Member.Message.Hello>(decoded[0])
+        assertEquals(Member.Role.LINUX, hello.role)
+        assertEquals("pi", hello.hello.name)
+        assertEquals("q83vEjRWeJA=", hello.hello.records)
+        assertEquals("hello <world> & \"you\" / ✓", hello.hello.current?.text)
+        assertEquals(Member.Timestamp(1_761_024_000_000, 3), hello.hello.current?.time)
+        assertEquals(1500L, hello.hello.current?.ageMS)
+        val mark = assertIs<Member.Message.Hello>(decoded[1]).hello.current!!
+        assertTrue(mark.isMark)
+        assertEquals(Member.Via.IPHONE, mark.via)
+        assertEquals(Member.Via.UNIVERSAL_CLIPBOARD, assertIs<Member.Message.Event>(decoded[5]).event?.via)
+        assertEquals(Member.Message.Ping, decoded[6])
+        assertEquals(Member.Message.Bye, decoded[7])
+        assertEquals(Member.Message.Cert("member certificate DER".toByteArray()), decoded[8])
+        val rs = assertIs<Member.Message.Records>(decoded[9]).records
+        assertEquals(2, rs.size)
+        assertContentEquals("admin CA".toByteArray(), rs[1].chain!!.single())
+    }
+
+    @Test
+    fun timestamps() {
+        for (t in v.getValue("timestamps").jsonArray) {
+            val o = t.jsonObject
+            assertEquals(o.getValue("ok").jsonPrimitive.boolean, Member.Timestamp.parse(o.str("text")) != null, "\"${o.str("text")}\"")
+        }
+        assertTrue(Member.Timestamp(1, 9) < Member.Timestamp(2, 0))
+        assertEquals("17.4", Member.Timestamp.parse("17.4").toString())
+    }
+
+    @Test
+    fun events() {
+        for (e in v.getValue("events").jsonArray) {
+            val o = e.jsonObject
+            val ev = Member.Event.fromJson(o.getValue("json"))
+            assertEquals(o.getValue("valid").jsonPrimitive.boolean, ev?.isValid ?: false, o.getValue("json").toString())
+        }
+        for (e in v.getValue("order").jsonArray) {
+            val o = e.jsonObject
+            val a = Member.Event.fromJson(o.getValue("a"))!!
+            val b = Member.Event.fromJson(o.getValue("b"))!!
+            assertEquals(o.getValue("later").jsonPrimitive.boolean, a.isLater(b))
+        }
+    }
+
+    @Test
+    fun badMessages() {
+        assertFailsWith<Member.WireException> { Member.decode("{".toByteArray()) }
+        assertFailsWith<Member.WireException> { Member.decode("""{"t":"hello","role":"toaster","hello":{}}""".toByteArray()) }
+        assertFailsWith<Member.WireException> { Member.decode("""{"t":"hello","role":"mac"}""".toByteArray()) }
+        // An event from a newer version is dropped, not an error.
+        assertEquals(Member.Message.Event(null), Member.decode("""{"t":"event","event":{"kind":"image"}}""".toByteArray()))
+        assertEquals(Member.Message.Unknown("gift"), Member.decode("""{"t":"gift"}""".toByteArray()))
+        // A hello whose current event does not decode has none.
+        val h = assertIs<Member.Message.Hello>(
+            Member.decode("""{"t":"hello","role":"mac","hello":{"wall_ms":1,"current":{"kind":"image"}}}""".toByteArray()),
+        )
+        assertNull(h.hello.current)
+        assertFailsWith<Member.WireException> { Member.length(byteArrayOf(0x00, 0x70, 0x00, 0x01)) }
+    }
+
+    private fun JsonObject.str(key: String) = getValue(key).jsonPrimitive.content
+}
