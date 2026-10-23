@@ -100,7 +100,7 @@ On Linux it works with and without a desktop:
 | Homebrew | set up; the tap gets its first formula with the next release | not yet |
 | Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |
 
-The order of what comes next is the [roadmap](docs/design.md#roadmap).
+The order of what comes next is the [roadmap](docs/roadmap.md).
 
 ## Documentation
 

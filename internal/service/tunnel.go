@@ -421,7 +421,7 @@ func tunnelVerbose() bool { return os.Getenv("CBB_DEBUG") == "1" }
 
 // keysInFile tells whether this device keeps its keys in files, not in
 // hardware; every computer does until the keys move to a TPM or a Secure
-// Enclave (docs/design.md, "Device keys in hardware").
+// Enclave (docs/roadmap.md, "Device keys in hardware").
 const keysInFile = true
 
 // away turns sync away from home on or off on this device, or makes it the

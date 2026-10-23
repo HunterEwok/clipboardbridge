@@ -91,7 +91,7 @@ Next steps, roughly in order:
 
 1. TestFlight (needs the Apple account), a signed macOS `.pkg`, sync away from home for
    the phones and the lite member (it works between computers: `cbb away`, docs/protocol.md
-   section 11), the lite member on the ESP32 (see docs/design.md, "Roadmap").
+   section 11), the lite member on the ESP32 (see docs/roadmap.md).
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
 tested on a real PC.

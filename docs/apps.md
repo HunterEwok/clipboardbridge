@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # Phone apps
 
-The iPhone and Android apps make the phone the root of the group (see "Target architecture
-with the phone apps" in [design.md](design.md)). This document fixes what they do and how
+The iPhone and Android apps make the phone the root of the group (see "The phone apps"
+in [design.md](design.md)). This document fixes what they do and how
 they look, so both apps are built to the same plan.
 
 ## Principles

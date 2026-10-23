@@ -10,6 +10,7 @@
 | [Troubleshooting](troubleshooting.md) | users | logs, firewall, pairing, other networks |
 | [Lite member](../lite/README.md) | users, developers | `cbb-lite` for small Linux devices: build, install, use |
 | [Design](design.md) | developers | how it works and why, the security model, the decision log |
+| [Roadmap](roadmap.md) | developers | what comes next, the agreed plans not built yet, research |
 | [Protocol](protocol.md) | developers | the wire format, for anyone writing another implementation |
 | [App specification](apps.md) | developers | what the apps do and how they look |
 | [Contributing](../CONTRIBUTING.md) | developers | conventions, building and testing every part |
