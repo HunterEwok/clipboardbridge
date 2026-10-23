@@ -38,7 +38,10 @@ they look, so both apps are built to the same plan.
 2. **Home**: the one big button (send what this phone holds or fetch the computer's recent
    copy, by the same rule as the shortcut), the result in one line, and the connected
    computers as a compact list with a live dot each; tapping the list opens Devices. A "+"
-   adds a device (camera).
+   adds a device (camera). The same button is the app's "Sync clipboard" action, which
+   Shortcuts and Spotlight offer as soon as the app is installed (App Intents with an
+   App Shortcut): Back Tap or the Action button runs it without opening the app; it waits
+   a few seconds for a computer to connect and says what it did in one line.
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
    QR code ("I already use clipbridge on another phone" on its Start screen) and this phone

@@ -491,6 +491,16 @@
         }
       }
     },
+    "Sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправляет скопированное на этом телефоне на ваши компьютеры или получает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
     "Sent to the computers.": {
       "localizations": {
         "ru": {
@@ -527,6 +537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Исходный код и лицензия (AGPL-3.0)"
+          }
+        }
+      }
+    },
+    "Sync clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизировать буфер обмена"
           }
         }
       }

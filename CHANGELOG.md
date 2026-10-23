@@ -35,6 +35,9 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 ### Added
 
+- The phone app's "Sync clipboard" action, in Shortcuts and Spotlight without setting
+  anything up: Back Tap or the Action button sends or fetches by the Home button's rule
+  without opening the app, and says what it did.
 - `install.sh --port N` (and `get.sh --port N`) moves the member port from 8764; it is kept
   in `/etc/clipbridge/clipbridge.env` as `CLIPBRIDGE_PORT` for later updates, and the
   installer says to allow it in other firewalls. The phone app needs no setting.

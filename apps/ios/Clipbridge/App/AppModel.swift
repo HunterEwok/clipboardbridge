@@ -39,6 +39,10 @@ protocol GroupController: AnyObject {
 /// What the app shows and does; the views only read it and call it.
 @MainActor
 final class AppModel: ObservableObject {
+    /// The one model of the running app, which the Shortcuts action uses
+    /// too.
+    static let shared = AppModel(group: LiveGroup())
+
     enum Phase: Equatable { case start, joining, home }
 
     /// A device of the group: a computer, or this phone.
@@ -185,6 +189,20 @@ final class AppModel: ObservableObject {
             message = Self.describe(error)
         }
         computers = group.computers
+    }
+
+    /// The sync the Shortcuts action runs, with the app perhaps just
+    /// started for it: the Home button's, after waiting up to wait for a
+    /// computer to connect. Returns what it says.
+    func syncFromShortcut(wait: Duration = .seconds(5)) async -> String {
+        let deadline = ContinuousClock.now + wait
+        while group.hasGroup, ContinuousClock.now < deadline {
+            await refresh()
+            if computers.contains(where: \.online) { break }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        await sync()
+        return message ?? ""
     }
 
     /// Updates which computers are online.

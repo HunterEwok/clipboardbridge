@@ -42,6 +42,23 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(isHandshake(LiveGroup.telling(TLSTransport.Failure.timedOut, handshake)), "an address that answered says more")
     }
 
+    func testSyncFromShortcut() async {
+        let g = FakeGroup()
+        g.hasGroup = true
+        g.computers = [.init(id: "a", name: "pi", online: true)]
+        let m = AppModel(group: g, defaults: freshDefaults())
+        let said = await m.syncFromShortcut(wait: .seconds(1))
+        XCTAssertEqual(said, String(localized: "Sent to the computers.", bundle: .app))
+    }
+
+    func testSyncFromShortcutWithoutAGroupDoesNotWait() async {
+        let m = AppModel(group: PendingGroup(), defaults: freshDefaults())
+        let started = ContinuousClock.now
+        let said = await m.syncFromShortcut(wait: .seconds(5))
+        XCTAssertFalse(said.isEmpty)
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+    }
+
     func testIPv4AddressesFirst() {
         XCTAssertEqual(LiveGroup.ordered(["[fd00::5]:8767", "192.168.1.20:8767", "[fe80::1]:8767", "10.0.0.2:8767"]),
                        ["192.168.1.20:8767", "10.0.0.2:8767", "[fd00::5]:8767", "[fe80::1]:8767"])
