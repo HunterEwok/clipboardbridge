@@ -525,13 +525,37 @@ The order may change.
 12. Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home (planned)" below.
 13. Computer keys in hardware; see "Device keys in hardware (planned)" below.
+14. The ZX Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
+    Raspberry Pi Zero on its accelerator header, wired to the FPGA's second UART, with
+    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. `cbb-lite` runs on
+    this Pi as an ordinary lite member: it reaches the network through the Pi's own Wi-Fi,
+    which NextPi turns off and we turn back on, or a USB Wi-Fi adapter on the Pi's
+    micro-USB port if the Pi is a Zero without a radio, and speaks the member protocol
+    with TLS 1.3 like any other member. A dot command on the Next, `.cbb`, talks to it
+    over the internal UART the way NextPi's own tools do (`.pisend`): it copies a text to
+    the group, pastes the latest one, and joins with the code shown by the admin, since
+    the Next has no camera. The UART is a trace on the Next's board and never leaves the
+    case, so it carries the texts in the clear; the Pi converts between UTF-8 and the
+    Spectrum character set. No other device takes part: a Next without a Pi is future
+    research (below), not a reason to lean on a computer in the group.
 
 ### Future research (not planned)
 
 Questions to study before anything is planned for them.
 
-- **Very small and retro computers through a gateway**, for example the ZX Spectrum Next
-  (Z80 at 28 MHz, Wi-Fi through an ESP8266 driven by AT commands, programs in C with z88dk).
+- **A ZX Spectrum Next without a Pi**, on its own hardware only: no other device in the
+  network may do its part. Three paths, in the order to try them:
+  (1) the Z80N is the member itself and the built-in ESP8266, with its stock AT firmware,
+  only carries the TCP bytes, so the ESP never sees anything but ciphertext; TLS 1.3, the
+  P-256 signatures and X25519 in Z80N assembly would take minutes per connection (one
+  X25519 is estimated at 5-20 s), then the connection stays open and texts move at
+  several KB/s; (2) our own firmware for the ESP-01, which then is the member and the
+  Z80 only shows the text, with about 80 KB of RAM for TLS 1.3 and at the cost of the AT
+  programs that need the stock firmware; (3) an ESP32 module in place of the ESP-01 in
+  its socket, running `lite/core`, if such a module exists for that socket. To measure:
+  the cost of P-256 on the Z80N and the RAM a TLS 1.3 member needs on the ESP8266.
+- **Very small and retro computers through a gateway**, for example a Z80 machine with
+  Wi-Fi through an ESP8266 driven by AT commands (programs in C with z88dk).
   TLS 1.3 with P-256 is out of reach there, so a Linux member acts as a gateway with a
   simpler protocol: pairing with the six-digit code derives a key shared by the gateway and
   the device, and every text travels encrypted and authenticated with ChaCha20-Poly1305
@@ -1115,3 +1139,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
 | D-46 | Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
+| D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
