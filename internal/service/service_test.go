@@ -1253,6 +1253,7 @@ func TestDevicesAndRevoke(t *testing.T) {
 	for _, s := range []*testService{pi, deck, mac} {
 		waitFor(t, s.name+" lists every device", func() bool { return listed(s.devices(t)) == "deck mac pi" })
 	}
+	waitFor(t, "the Mac connects to both", func() bool { return len(mac.status(t).Peers) == 2 })
 	for _, d := range mac.devices(t) {
 		if want := d.Role == "linux"; d.Admin != want || !d.Online {
 			t.Errorf("on the Mac: %+v", d)

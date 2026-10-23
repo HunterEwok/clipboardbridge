@@ -22,8 +22,9 @@ Read [README.md](README.md), [docs/design.md](docs/design.md),
 - Release tags are pushed by the owner from their Mac (`git tag vX.Y.Z && git push origin
   vX.Y.Z`); the release workflow builds and publishes. Move CHANGELOG's *Unreleased* to the
   version in a PR first.
-- Apple signing must never block development: CI builds the app with
-  `CODE_SIGNING_ALLOWED=NO`. TestFlight waits for the owner's Apple developer account.
+- Apple signing must never block development: CI signs the app ad hoc
+  (`CODE_SIGN_IDENTITY=-`, no team), which needs no account and gives the simulator a
+  keychain. TestFlight waits for the owner's Apple developer account.
 - Commit messages: imperative summary, blank line, details; no model names. The owner's
   personal notes and testing guides stay out of the repository.
 - Follow [CONTRIBUTING.md](CONTRIBUTING.md): license headers, CHANGELOG under *Unreleased*,
@@ -68,7 +69,7 @@ The app (macOS with Xcode):
 brew install xcodegen
 cd apps/ios && xcodegen generate   # Clipbridge.xcodeproj and Info.plist are not committed
 xcodebuild test -project Clipbridge.xcodeproj -scheme Clipbridge \
-  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO  # any installed iPhone simulator
+  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=  # any installed iPhone simulator
 ```
 
 To run it on a phone, open the project in Xcode, pick your team under Signing, and run.

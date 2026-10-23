@@ -329,7 +329,7 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate
-      - name: build and test on the simulator, without signing
+      - name: build and test on the simulator, signed ad hoc
         working-directory: apps/ios
         run: |
           set -o pipefail
@@ -338,8 +338,10 @@ jobs:
           import json, sys
           devices = json.load(sys.stdin)["devices"]
           print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")))')
+          # Ad hoc signing needs no Apple account, and without a signature the
+          # simulator gives the app no keychain (-34018), which its TLS tests use.
           xcodebuild test -project Clipbridge.xcodeproj -scheme Clipbridge -destination "id=$udid" \
-            CODE_SIGNING_ALLOWED=NO | tail -n 200
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
   ci-ok:
     name: ci-ok
