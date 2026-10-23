@@ -82,6 +82,6 @@ struct ComputerList: View {
         }
         .padding(Tokens.spacingMedium)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.surface, in: RoundedRectangle(cornerRadius: Tokens.radiusCard, style: .continuous))
+        .glassCard()
     }
 }

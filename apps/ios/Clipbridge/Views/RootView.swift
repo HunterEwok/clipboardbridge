@@ -2,10 +2,11 @@
 
 import SwiftUI
 
-/// Picks the screen and applies the theme.
+/// Picks the screen and applies the theme and the language.
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("theme") private var theme = ThemeChoice.system
+    @AppStorage(LanguageChoice.key) private var language = LanguageChoice.system
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -19,6 +20,7 @@ struct RootView: View {
             }
         }
         .environment(\.palette, palette)
+        .environment(\.locale, language.locale ?? .autoupdatingCurrent)
         .tint(palette.accent)
         .foregroundStyle(palette.text)
         .preferredColorScheme(theme == .system ? nil : (palette.dark ? .dark : .light))

@@ -17,24 +17,35 @@ they look, so both apps are built to the same plan.
 - **Modern and a little hacker-like.** A dark, deep background with a slow, subtle animated
   grid or noise; a monospaced face for codes, device IDs and fingerprints; one bright accent
   colour (default: terminal green) for the main action and live states; rounded, generous
-  buttons; short, plain words. Motion is sparing and honours Reduce Motion.
+  buttons on Liquid Glass (from iOS 26; a material before), cards and fields on glass too;
+  short, plain words. Motion is sparing and honours Reduce Motion.
 - **Native underneath.** SwiftUI on iOS and Jetpack Compose on Android, the platform's own
   controls, Dynamic Type and font scaling, VoiceOver and TalkBack labels, haptics on success
   and failure.
 
 ## Screens
 
-1. **Start** (no group yet): one sentence and one button, "Scan a computer". The computer
-   shows its QR code with `clipbridge join` (or `clipbridge pair -phone` in the mode
-   without the app). The camera opens at once; after the scan the app creates the group
-   key in the Secure Enclave or StrongBox, admits the computer and goes to Home.
+1. **Start** (no group yet): one sentence, the big button "Connect a new device" with a hint
+   below it (on a computer, run `clipbridge join` and scan the code it shows; `clipbridge
+   pair -phone` in the mode without the app), and a second button, "I already use
+   clipbridge on another phone", which joins that phone's group. The camera opens at once;
+   after the scan the app creates the group key in the Secure Enclave or StrongBox, admits
+   the device and goes to Home. At the first launch the app makes this phone's own key and
+   says so once, in a card: "This phone is ready", what the key is for in plain words, and
+   that the next step is to connect a device. A gear opens Settings (theme and language)
+   before there is a group; when the system's language has no translation, a language menu
+   sits next to it, with English chosen.
 2. **Home**: the one big button (send what this phone holds or fetch the computer's recent
    copy, by the same rule as the shortcut), the result in one line, and the connected
    computers as a compact list with a live dot each; tapping the list opens Devices. A "+"
-   adds a device (camera).
+   adds a device (camera). The same button is the app's "Sync clipboard" action, which
+   Shortcuts and Spotlight offer as soon as the app is installed (App Intents with an
+   App Shortcut): Back Tap or the Action button runs it without opening the app; it waits
+   a few seconds for a computer to connect and says what it did in one line.
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
-   QR code on its Start screen ("Join a group") and this phone scans it.
+   QR code ("I already use clipbridge on another phone" on its Start screen) and this phone
+   scans it.
 4. **Devices**: the whole group, one row per device: its name, an icon for the role (Linux,
    Mac, phone, lite, iPhone shortcut), an "admin" mark, a live dot when it is online and
    "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
@@ -67,7 +78,8 @@ the group", not a status code), never a dialog that must be dismissed.
   dates use the platform's formatters.
 - The layout survives longer translations and right-to-left scripts (no fixed widths for
   text; leading and trailing, not left and right).
-- The language follows the system, with an override in Settings.
+- The language follows the system, with an in-app choice (System, English, Russian) in
+  Settings, and on the Start screen when the system's language has no translation.
 
 ## Themes
 
@@ -96,7 +108,8 @@ the group", not a status code), never a dialog that must be dismissed.
   (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
   `_clipbridge._tcp` under `NSBonjourServices` and explains the use in
   `NSLocalNetworkUsageDescription`.
-- A phone joins another phone's group from its Start screen ("Join another phone's group"):
+- A phone joins another phone's group from its Start screen ("I already use clipbridge on
+  another phone"):
   it makes its admin key, listens with `TLSListener` on a port the system picks, and shows
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
   it in "Add a device". The root phone makes every phone it admits an admin; an admin that

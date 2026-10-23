@@ -23,11 +23,24 @@ final class LiveGroup: GroupController {
     /// How long the join QR code is good for, and how many wrong codes it
     /// takes, as for clipbridge join (docs/protocol.md, section 6).
     static let joinWindow: TimeInterval = 300
+    /// How long admitting a device may take once its connection is up:
+    /// a computer that stops answering mid-pairing fails then.
+    static let pairingDeadline: Duration = .seconds(30)
     static let joinAttempts = 3
     /// How long one Face ID check covers the root key's signatures for the
     /// actions that follow it.
     static let authorizedFor: TimeInterval = 300
     static let memberLabel = "io.github.hunterewok.clipbridge.member"
+    /// Whether the root and admin keys live in the Secure Enclave behind
+    /// Face ID. The simulator reports a Secure Enclave but cannot make a key
+    /// that needs user presence, so there they are keychain keys.
+    nonisolated static var secureEnclave: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return SecureEnclave.isAvailable
+        #endif
+    }
     /// How recent a computer's copy must be for the button to fetch it
     /// first, as for the shortcut (internal/phone/sync.go).
     static let recentCopyMS: Int64 = 45_000
@@ -63,7 +76,7 @@ final class LiveGroup: GroupController {
     /// asks for Face ID, and then connects again with it.
     private func renewOwnCertificate() async {
         guard var g = state, GroupCertificates.isDue(g.memberCert, groupCA: g.adminCA ?? g.currentRoot, now: Date()),
-              let ca = try? await caSigner(reason: String(localized: "Renew this phone's certificate")),
+              let ca = try? await caSigner(reason: String(localized: "Renew this phone's certificate", bundle: .app)),
               (try? g.renewOwnCertificate(caSigner: ca, now: Date())) == true else { return }
         try? g.save(to: file)
         state = g
@@ -119,7 +132,7 @@ final class LiveGroup: GroupController {
 
     /// The signer of the key under label, after Face ID as caSigner asks.
     private func signer(label: String, reason: String) async throws -> SecKeySigner {
-        guard SecureEnclave.isAvailable else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
+        guard Self.secureEnclave else { return try SecKeySigner(key(label: label, secureEnclave: false)) }
         let context: LAContext
         if let a = authorized, Date().timeIntervalSince(a.at) < Self.authorizedFor {
             context = a.context
@@ -134,6 +147,10 @@ final class LiveGroup: GroupController {
         }
         guard let k = try KeychainIdentity.loadKey(label: label, context: context) else { throw KeychainIdentity.Failure.noIdentity }
         return try SecKeySigner(k)
+    }
+
+    func prepare() throws {
+        _ = try memberSigner()
     }
 
     private func memberSigner() throws -> SecKeySigner {
@@ -156,22 +173,34 @@ final class LiveGroup: GroupController {
     // MARK: Admitting
 
     func admit(_ code: JoinCode) async throws {
-        let ca = try await caSigner(reason: String(localized: "Add a computer to your group"))
+        let ca = try await caSigner(reason: String(localized: "Add a computer to your group", bundle: .app))
         let member = try memberSigner()
         var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
-        var lastError: Error = Failure.unreachable
-        for addr in code.addrs {
+        var failure: Error?
+        for addr in Self.ordered(code.addrs) {
+            try Task.checkCancellation()
             guard let (host, port) = Self.split(addr) else { continue }
             let tls = TLSTransport(host: host, port: port, alpn: Pairing.alpn, identity: id, chain: Self.chain(g)) { leaf in
                 Pairing.fingerprint(cert: leaf) == code.fingerprint
             }
+            // Closing the connection ends a pairing that takes too long or
+            // that the user cancelled: the pending read fails.
+            let deadline = Task {
+                try await Task.sleep(for: Self.pairingDeadline)
+                tls.close()
+            }
+            defer { deadline.cancel() }
             do {
-                try await tls.start()
-                defer { tls.close() }
-                guard let leaf = tls.peerCertificate,
-                      let sid = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { throw Failure.unreachable }
-                let admitted = try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca, now: Date())
+                let admitted = try await withTaskCancellationHandler {
+                    try await tls.start()
+                    defer { tls.close() }
+                    guard let leaf = tls.peerCertificate,
+                          let sid = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { throw Failure.unreachable }
+                    return try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca, now: Date())
+                } onCancel: {
+                    tls.close()
+                }
                 try g.save(to: file)
                 state = g
                 try startSync()
@@ -183,10 +212,31 @@ final class LiveGroup: GroupController {
                 throw e // the computer answered: a wrong code is not worth another address
             } catch {
                 tls.close()
-                lastError = error
+                if Task.isCancelled { throw CancellationError() }
+                failure = Self.telling(failure, error)
             }
         }
-        throw lastError
+        throw failure ?? Failure.unreachable
+    }
+
+    /// Of two failures on different addresses, the one that says more: an
+    /// address that answered, as with a failed handshake, over one that
+    /// did not.
+    nonisolated static func telling(_ earlier: Error?, _ later: Error) -> Error {
+        guard let earlier else { return later }
+        if case TLSTransport.Failure.timedOut = earlier, !isTimeout(later) { return later }
+        return earlier
+    }
+
+    nonisolated private static func isTimeout(_ e: Error) -> Bool {
+        if case TLSTransport.Failure.timedOut = e { return true }
+        return false
+    }
+
+    /// The addresses to try, IPv4 first: a home network reaches those most
+    /// surely, and each that fails costs its timeout.
+    nonisolated static func ordered(_ addrs: [String]) -> [String] {
+        addrs.filter { !$0.hasPrefix("[") } + addrs.filter { $0.hasPrefix("[") }
     }
 
     /// host and port of "host:port" or "[IPv6]:port".
@@ -209,7 +259,7 @@ final class LiveGroup: GroupController {
         let member = try memberSigner()
         // The admin key, in the Secure Enclave behind Face ID like the root
         // key; reading its public key asks for nothing.
-        let se = SecureEnclave.isAvailable
+        let se = Self.secureEnclave
         let admin = try SecKeySigner(KeychainIdentity.loadKey(label: Self.adminLabel)
             ?? KeychainIdentity.makeKey(label: Self.adminLabel, secureEnclave: se, userPresence: se))
         let device = SyncEngine.newID()
@@ -273,7 +323,7 @@ final class LiveGroup: GroupController {
             try await takeOver(from: id)
             return
         }
-        let ca = try await caSigner(reason: String(localized: "Remove a device from your group"))
+        let ca = try await caSigner(reason: String(localized: "Remove a device from your group", bundle: .app))
         guard var g = state else { return }
         let r = try g.revoke(device: id, caSigner: ca, now: Date())
         try g.save(to: file)
@@ -289,7 +339,7 @@ final class LiveGroup: GroupController {
     /// new record.
     func makeAdmin(_ id: String) async throws {
         guard state?.isRoot == true, let key = offers[id] else { throw Failure.notAdmin }
-        let root = try await caSigner(reason: String(localized: "Make a computer an admin"))
+        let root = try await caSigner(reason: String(localized: "Make a computer an admin", bundle: .app))
         guard var g = state else { return }
         let (ca, r) = try g.makeAdmin(device: id, adminKey: key, rootSigner: root, now: Date())
         try g.save(to: file)
@@ -304,11 +354,11 @@ final class LiveGroup: GroupController {
     /// ID, and takes the group over (docs/protocol.md, section 10, "Handing
     /// the group over"). From then on it signs with that key.
     private func takeOver(from id: String) async throws {
-        let reason = String(localized: "Take the group over from the lost phone")
+        let reason = String(localized: "Take the group over from the lost phone", bundle: .app)
         let admin = try await signer(label: Self.adminLabel, reason: reason)
         // A root key left from a group this phone made before goes.
         KeychainIdentity.removeKey(label: Self.caLabel)
-        let se = SecureEnclave.isAvailable
+        let se = Self.secureEnclave
         _ = try KeychainIdentity.makeKey(label: Self.caLabel, secureEnclave: se, userPresence: se)
         let root = try await signer(label: Self.caLabel, reason: reason)
         guard var g = state else { return }
@@ -360,7 +410,7 @@ final class LiveGroup: GroupController {
         box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
         // An admin phone renews the computers' certificates when they
         // connect and are due (docs/protocol.md, section 2).
-        let renewer = Renewer(group: g, secureEnclave: SecureEnclave.isAvailable)
+        let renewer = Renewer(group: g, secureEnclave: Self.secureEnclave)
         renewer.context = authorized?.context
         // The root sends a computer it made an admin its admin CA again
         // when the computer still offers the key.

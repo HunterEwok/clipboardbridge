@@ -230,7 +230,7 @@
 					<string>WFDictionaryFieldValue</string>
 				</dict>
 				<key>WFURL</key>
-				<string>https://clipbridge.local:8765/admit</string>
+				<string>https://clipbridge.local:8764/admit</string>
 			</dict>
 		</dict>
 		<dict>

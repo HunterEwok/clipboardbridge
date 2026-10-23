@@ -18,11 +18,59 @@ final class AppModelTests: XCTestCase {
         }
     }
 
+    /// The text clipbridge join prints under its QR code, as Go's
+    /// phone.JoinQR writes it (percent-encoded, an IPv6 address too), reads
+    /// as pasted from a terminal, spaces and newline included.
+    func testReadGoJoinText() {
+        let text = "clipbridge://join?code=246802&addr=192.168.1.20%3A8767&addr=%5Bfd00%3A%3A5%5D%3A8767&fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+        for pasted in [text, " " + text + "\n"] {
+            guard case let .joinCode(jc) = AppModel.read(scanned: pasted) else { return XCTFail(pasted) }
+            XCTAssertEqual(jc.code, "246802")
+            XCTAssertEqual(jc.addrs, ["192.168.1.20:8767", "[fd00::5]:8767"])
+            XCTAssertEqual(jc.fingerprint, "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA")
+        }
+    }
+
+    func testTheMoreTellingFailure() {
+        let handshake = TLSTransport.Failure.notReady("handshake failed")
+        func isHandshake(_ e: Error) -> Bool {
+            if case TLSTransport.Failure.notReady("handshake failed") = e { return true }
+            return false
+        }
+        XCTAssertTrue(isHandshake(LiveGroup.telling(nil, handshake)))
+        XCTAssertTrue(isHandshake(LiveGroup.telling(handshake, TLSTransport.Failure.timedOut)), "a later timeout hides nothing")
+        XCTAssertTrue(isHandshake(LiveGroup.telling(TLSTransport.Failure.timedOut, handshake)), "an address that answered says more")
+    }
+
+    func testSyncFromShortcut() async {
+        let g = FakeGroup()
+        g.hasGroup = true
+        g.computers = [.init(id: "a", name: "pi", online: true)]
+        let m = AppModel(group: g, defaults: freshDefaults())
+        let said = await m.syncFromShortcut(wait: .seconds(1))
+        XCTAssertEqual(said, String(localized: "Sent to the computers.", bundle: .app))
+    }
+
+    func testSyncFromShortcutWithoutAGroupDoesNotWait() async {
+        let m = AppModel(group: PendingGroup(), defaults: freshDefaults())
+        let started = ContinuousClock.now
+        let said = await m.syncFromShortcut(wait: .seconds(5))
+        XCTAssertFalse(said.isEmpty)
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+    }
+
+    func testIPv4AddressesFirst() {
+        XCTAssertEqual(LiveGroup.ordered(["[fd00::5]:8767", "192.168.1.20:8767", "[fe80::1]:8767", "10.0.0.2:8767"]),
+                       ["192.168.1.20:8767", "10.0.0.2:8767", "[fd00::5]:8767", "[fe80::1]:8767"])
+    }
+
     /// A group that admits and syncs as told.
     @MainActor
     final class FakeGroup: GroupController {
         var hasGroup = false
         var isAdmin = true
+        var prepared = 0
+        func prepare() throws { prepared += 1 }
         var joinCode = JoinCode(code: "135790", addrs: ["192.168.1.30:50000"], fingerprint: "fp")
         var shown: [JoinCode] = []
         func join(show: @escaping @MainActor (JoinCode) -> Void) async throws {
@@ -127,8 +175,10 @@ final class AppModelTests: XCTestCase {
     }
 
     func testDescribe() {
-        XCTAssertNotEqual(AppModel.describe(PairingMember.Failure.refused(.wrongCode)), AppModel.describe(PairingMember.Failure.refused(.busy)))
-        XCTAssertEqual(AppModel.describe(LiveGroup.Failure.unreachable), AppModel.describe(TLSTransport.Failure.closed))
+        XCTAssertNotEqual(AppModel.describe(PairingMember.Failure.refused(.wrongCode), details: false),
+                          AppModel.describe(PairingMember.Failure.refused(.busy), details: false))
+        XCTAssertEqual(AppModel.describe(LiveGroup.Failure.unreachable, details: false), AppModel.describe(TLSTransport.Failure.closed, details: false))
+        XCTAssertTrue(AppModel.describe(TLSTransport.Failure.closed, details: true).contains("closed"))
     }
 
     func testThemes() {
@@ -136,5 +186,68 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(ThemeChoice.system.palette(for: .light), Tokens.light)
         XCTAssertEqual(ThemeChoice.amber.palette(for: .light), Tokens.amber)
         XCTAssertEqual(Set(ThemeChoice.allCases.map { $0.palette(for: .dark).dark }), [true, false])
+    }
+
+    /// A fresh defaults domain per test, removed after it.
+    private func freshDefaults() -> UserDefaults {
+        let name = "clipbridge-tests-\(UUID().uuidString)"
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        return UserDefaults(suiteName: name)!
+    }
+
+    func testWelcomeOnce() {
+        let defaults = freshDefaults()
+        let g = FakeGroup()
+        let m = AppModel(group: g, defaults: defaults)
+        m.prepare()
+        XCTAssertTrue(m.welcome)
+        XCTAssertEqual(g.prepared, 1)
+        m.dismissWelcome()
+        XCTAssertFalse(m.welcome)
+        let again = AppModel(group: g, defaults: defaults)
+        again.prepare()
+        XCTAssertFalse(again.welcome, "the note shows only at the first launch")
+        XCTAssertEqual(g.prepared, 1)
+    }
+
+    func testNoWelcomeWithAGroup() {
+        let g = FakeGroup()
+        g.hasGroup = true
+        let m = AppModel(group: g, defaults: freshDefaults())
+        m.prepare()
+        XCTAssertFalse(m.welcome)
+        XCTAssertEqual(g.prepared, 0)
+    }
+
+    func testJoiningEndsTheWelcome() {
+        let defaults = freshDefaults()
+        let m = AppModel(group: FakeGroup(), defaults: defaults)
+        m.prepare()
+        m.startJoining()
+        XCTAssertFalse(m.welcome)
+        XCTAssertTrue(defaults.bool(forKey: AppModel.welcomedKey))
+    }
+
+    func testLanguageOfferedOnStart() {
+        let ours = ["Base", "en", "ru"]
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["en-GB", "de"], localizations: ours))
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: ["ru-RU"], localizations: ours))
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["de-DE", "en"], localizations: ours),
+                      "German is not translated, so the app shows English and offers the choice")
+        XCTAssertTrue(LanguageChoice.offeredOnStart(preferred: ["pt_BR"], localizations: ours))
+        XCTAssertFalse(LanguageChoice.offeredOnStart(preferred: [], localizations: ours))
+    }
+
+    func testLanguageChoice() {
+        let defaults = freshDefaults()
+        XCTAssertEqual(LanguageChoice.current(defaults), .system)
+        defaults.set("ru", forKey: LanguageChoice.key)
+        XCTAssertEqual(LanguageChoice.current(defaults), .ru)
+        defaults.set("xx", forKey: LanguageChoice.key)
+        XCTAssertEqual(LanguageChoice.current(defaults), .system)
+        XCTAssertNil(LanguageChoice.system.locale)
+        XCTAssertEqual(LanguageChoice.ru.locale?.identifier, "ru")
+        XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.ru.bundle), "\u{0422}\u{0435}\u{043C}\u{0430}")
+        XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.en.bundle), "Theme")
     }
 }

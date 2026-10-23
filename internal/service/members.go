@@ -25,10 +25,12 @@ const (
 	maxBackoff       = 30 * time.Second
 )
 
-// serveMember runs one connection to the member port. The ALPN protocol
-// that the client offers picks pairing or the member protocol. release gives
-// up the connection's handshake slot: after the handshake for a member, after
-// the attempt for pairing.
+// serveMember runs one connection to the member port (see demux.go): plain
+// HTTP goes to the profile while an iPhone pairing window is open; over TLS
+// the ALPN protocol that the client offers picks pairing, the member
+// protocol, or, for any other, the shortcut's HTTPS. release gives up the
+// connection's handshake slot: after the handshake for a member or the
+// shortcut, after the attempt for pairing.
 func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func()) {
 	released := false
 	defer func() {
@@ -36,24 +38,49 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 			release()
 		}
 	}()
+	raw.SetReadDeadline(time.Now().Add(handshakeTimeout))
+	raw, first, err := peek(raw)
+	raw.SetReadDeadline(time.Time{})
+	if err != nil {
+		raw.Close()
+		return
+	}
+	if first != recordHandshake {
+		s.mu.Lock()
+		profile := s.profileConns
+		s.mu.Unlock()
+		if profile == nil {
+			raw.Close()
+			return
+		}
+		release()
+		released = true
+		profile.pass(raw) // the server's own timeouts bound it from here
+		return
+	}
 	cfg := &tls.Config{GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if slices.Contains(hello.SupportedProtos, pair.Protocol) {
+		switch {
+		case slices.Contains(hello.SupportedProtos, pair.Protocol):
 			// Also without a window, so the joiner hears that it is closed.
 			return pair.ServerTLS(s.id), nil
+		case !slices.Contains(hello.SupportedProtos, group.MemberProtocol) && s.phoneTLS != nil:
+			return s.phoneTLS, nil
 		}
 		return s.nd.ServerTLS(), nil
 	}}
 	tc := tls.Server(raw, cfg)
 	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-	err := tc.HandshakeContext(hctx)
+	err = tc.HandshakeContext(hctx)
 	cancel()
 	if err != nil {
 		tc.Close()
 		return
 	}
-	if tc.ConnectionState().NegotiatedProtocol == pair.Protocol {
+	switch tc.ConnectionState().NegotiatedProtocol {
+	case group.MemberProtocol:
+	case pair.Protocol:
 		s.mu.Lock()
 		w := s.window
 		s.mu.Unlock()
@@ -64,6 +91,18 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 		if err := w.Serve(ctx, tc); err != nil {
 			s.logf("clipbridge: pairing attempt from %s: %v", raw.RemoteAddr(), err)
 		}
+		return
+	default:
+		s.mu.Lock()
+		phone := s.phoneConns
+		s.mu.Unlock()
+		if phone == nil {
+			tc.Close()
+			return
+		}
+		release()
+		released = true
+		phone.pass(tc)
 		return
 	}
 	release()

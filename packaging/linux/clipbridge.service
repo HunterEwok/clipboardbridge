@@ -9,6 +9,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# install.sh --port N writes CLIPBRIDGE_PORT here.
+EnvironmentFile=-/etc/clipbridge/clipbridge.env
 ExecStart=/usr/local/bin/clipbridge service
 User=clipbridge
 Group=clipbridge

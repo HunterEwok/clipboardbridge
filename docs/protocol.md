@@ -24,9 +24,7 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Member host name | `cb-<device ID>.local` (mDNS host name and the only DNS name in the member certificate) | `DeviceID.HostName` |
 | Service instance | `<device ID>._clipbridge._tcp.local` | `internal/mdns/zone.go` |
 | Shared iPhone name | `clipbridge.local` | `group.PhoneName` |
-| Member port | TCP 8764 when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only | `internal/service/service.go` |
-| iPhone port | TCP 8765, HTTPS, all addresses. Linux members only | `internal/service/iphone.go` |
-| Profile port | TCP 8766, plain HTTP, only while an iPhone pairing window is open | `internal/service/iphone.go` |
+| Member port | TCP 8764, or `CLIPBRIDGE_PORT` (the Linux installer's `--port`), when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only. clipbridge's only port: it also serves pairing, the iPhone endpoints and the profile (section 7), and a listening join waits there | `internal/service/service.go`, `internal/service/demux.go` |
 | mDNS | UDP 5353, groups 224.0.0.251 and ff02::fb | `internal/mdns/mdns.go` |
 | Member ALPN | `clipbridge/1` | `group.MemberProtocol` |
 | Pairing ALPN | `clipbridge-pair/1` | `pair.Protocol` |
@@ -34,9 +32,9 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Join QR text | `clipbridge://join?code=` followed by the six-digit code; unknown query fields are ignored | `phone.JoinQR`, `phone.ParseJoinQR` |
 
 Device IDs, event IDs and group tags compare as byte strings. Accepting peers: the member
-port and the iPhone port accept TCP connections only from addresses that mDNS would publish
-(private IPv4, unique-local IPv6, link-local IPv6) or loopback; others are closed (member
-port) or get HTTP 403 (iPhone port). At most 32 connections to the member port may be in
+port accepts TCP connections only from addresses that mDNS would publish (private IPv4,
+unique-local IPv6, link-local IPv6) or loopback; others are closed (the iPhone endpoints
+also answer HTTP 403 to them). At most 32 connections to the member port may be in
 their TLS handshake or in a pairing attempt at once; more are closed at accept.
 
 ## 2. Certificates
@@ -211,8 +209,12 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 - Both sides check the peer as in section 2, and that the negotiated version is TLS 1.3 and
   the ALPN protocol is `clipbridge/1`. A connection to one's own device ID is closed.
 - The handshake must finish within 10 s.
-- The member port serves both ALPN protocols: a ClientHello that offers `clipbridge-pair/1`
-  gets the pairing configuration (section 6), whether or not a window is open.
+- The member port tells its connections apart by their first bytes. One that does not start
+  with a TLS handshake record (0x16) is plain HTTP for the profile (section 7) while an
+  iPhone pairing window is open, and is closed otherwise. Over TLS, a ClientHello that
+  offers `clipbridge-pair/1` gets the pairing configuration (section 6), whether or not a
+  window is open; one that offers `clipbridge/1` the member configuration; any other, on a
+  member that serves the iPhone, the iPhone endpoints' (section 7, ALPN `http/1.1`).
 
 ### Framing
 
@@ -514,7 +516,8 @@ plus the browse time.
 `clipbridge join` without `-code` turns the direction round, so that the device that scans
 the QR code dials the computer, and nothing is announced:
 
-- The joiner listens on TCP 8767 when free, otherwise on a port the OS chooses (all
+- The joiner listens on its member port, which nothing holds while it is in no group, when
+  free, otherwise on a port the OS chooses (all
   addresses; only home network addresses may connect, as on the member port) for up to
   5 minutes, and shows the QR code
   `clipbridge://join?code=<code>&addr=<host:port>&fp=<fingerprint>` (section 7): its
@@ -552,7 +555,10 @@ the QR code dials the computer, and nothing is announced:
 
 Source: `internal/phone`, `internal/service/iphone.go`.
 
-### iPhone port 8765
+### iPhone endpoints on the member port
+
+The shortcuts name `https://clipbridge.local:8764`, so they work only with the default
+member port; up to 0.2.0 these endpoints had their own port, 8765.
 
 HTTPS, TLS 1.3 only, no client certificate; the server presents the `clipbridge.local`
 certificate followed by the iPhone CA certificate. Server timeouts: 10 s for the request
@@ -649,9 +655,10 @@ the shape of a `/sync` reply, always HTTP 200, and comes as soon as the dialing 
 `none`, `unpaired` for a missing or unknown token, `error` otherwise (wrong method, bad body
 or version, not a join QR code, no `addr` or `fp`, a window already open).
 
-### Profile port 8766
+### Profile on the member port
 
-Plain HTTP, open only while an iPhone pairing window is open, same address restriction:
+Plain HTTP on the member port (up to 0.2.0 its own port, 8766), only while an iPhone
+pairing window is open, same address restriction:
 
 | Path | Content |
 |------|---------|
@@ -721,7 +728,7 @@ A connection carries one request: the service reads the first message and dispat
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
 | `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], version}` |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
-| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the profile port), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipbridge.local`. Hanging up closes the window |
+| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}` or `{code, listen, expires}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. Hanging up cancels |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 

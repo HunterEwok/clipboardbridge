@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 struct ClipbridgeApp: App {
-    @StateObject private var model = AppModel(group: LiveGroup())
+    @StateObject private var model = AppModel.shared
 
     var body: some Scene {
         WindowGroup {

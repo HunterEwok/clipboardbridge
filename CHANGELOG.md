@@ -10,9 +10,44 @@ All notable changes to clipbridge are documented in this file. The format follow
 
 - Members accept a group CA with path length 1, the root that the phone app creates for its
   group, so that it can certify admin phones later (docs/protocol.md, sections 9 and 10).
+- The phone app logs every error it shows, and a debug build (or the `ShowErrorDetails`
+  default) puts the error itself under the message, to find out what failed.
+- In the iOS simulator the app keeps its root and admin keys in the keychain, since the
+  simulator cannot make a Secure Enclave key that needs Face ID.
+- `clipbridge join` names the app's "Connect a new device" and prints the QR code's text
+  as well, to paste into the app on a phone without a camera.
+- The Linux installer opens clipbridge's ports from the home network on every run, not only
+  from `get.sh`, so an update fixes a firewall turned on after the first install: in ufw as
+  before, and now in firewalld too (a `clipbridge` service and rules for the home network);
+  under a bare nftables or iptables setup that drops input it prints the commands.
+  `CLIPBRIDGE_FIREWALL=no` leaves the firewall alone. `clipbridge join` names the firewall
+  when the phone cannot connect.
+- clipbridge needs one TCP port, 8764: a listening `clipbridge join` waits on it (the
+  computer is in no group yet), and the iPhone shortcut's HTTPS and the profile moved there
+  from 8765 and 8766; the member port tells the connections apart by their first bytes.
+  Installed shortcuts stop working: run `clipbridge pair -phone` and add the new one from
+  its page.
+- The Linux installer keeps track of the firewall rules it adds and removes them before
+  adding new ones, so a changed port leaves nothing open; it never touches other rules.
+- The phone app's Start screen says what to do in plain words: "Connect a new device" (a
+  computer or another phone) and "I already use clipbridge on another phone". Its buttons
+  and cards use Liquid Glass from iOS 26, with materials before.
 
 ### Added
 
+- The phone app's "Sync clipboard" action, in Shortcuts and Spotlight without setting
+  anything up: Back Tap or the Action button sends or fetches by the Home button's rule
+  without opening the app, and says what it did.
+- `install.sh --port N` (and `get.sh --port N`) moves the member port from 8764; it is kept
+  in `/etc/clipbridge/clipbridge.env` as `CLIPBRIDGE_PORT` for later updates, and the
+  installer says to allow it in other firewalls. The phone app needs no setting.
+- `uninstall.sh`, installed to `/usr/local/share/clipbridge`, removes clipbridge and the
+  firewall rules its installer added; `--purge` also deletes the device's keys.
+- The phone app's language can be chosen in the app (System, English, Russian), in Settings
+  and, when the system's language has no translation, on the Start screen; Settings, with
+  the theme, opens from the Start screen too.
+- At the first launch the phone app makes its own key and says once that the phone is
+  ready and that the next step is to connect a device.
 - Groundwork for a second admin phone: members accept a member certificate issued by an
   admin CA under the phone's root, keep that CA with their identity, send it in member
   handshakes and take it from a pairing Welcome; the phone app makes admin CAs, verifies
@@ -47,6 +82,18 @@ All notable changes to clipbridge are documented in this file. The format follow
 - The phone app makes a computer an admin: on the root phone, "Make it an admin" on a
   computer's row in Devices asks for Face ID, sends the computer its admin CA and lists it
   as an admin; a computer that missed it gets it when it connects again.
+
+### Fixed
+
+- Adding a device in the phone app no longer hangs when the computer does not answer: a
+  connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,
+  IPv4 addresses come first, leaving the sheet cancels it, and the message names the
+  computer's firewall as a likely cause.
+- The phone app could not sign its TLS handshake with its own key (PRIVATE_KEY_OPERATION_FAILED):
+  the keychain kept the key's public half under the same label, and the identity paired
+  the certificate with it. Only the private key is stored now, and stale public keys are
+  removed. When every address of a device fails, the app reports the most telling failure,
+  such as a failed handshake, rather than the last timeout.
 
 ## [0.2.0] - 2026-10-21
 

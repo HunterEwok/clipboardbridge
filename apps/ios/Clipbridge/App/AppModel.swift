@@ -2,7 +2,10 @@
 
 import ClipbridgeKit
 import Foundation
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "io.github.hunterewok.clipbridge", category: "app")
 
 /// The group as the app sees it: whether there is one, its computers,
 /// admitting a device and joining another phone's group. LiveGroup is the
@@ -15,6 +18,9 @@ protocol GroupController: AnyObject {
     var computers: [AppModel.Computer] { get }
     /// Every device of the group, this phone included.
     var devices: [AppModel.Computer] { get }
+    /// Makes this phone's own key, which proves it to the other devices,
+    /// unless it has one.
+    func prepare() throws
     /// Removes a device from the group.
     func remove(_ id: String) async throws
     /// Makes a computer an admin; only the root phone does.
@@ -33,6 +39,10 @@ protocol GroupController: AnyObject {
 /// What the app shows and does; the views only read it and call it.
 @MainActor
 final class AppModel: ObservableObject {
+    /// The one model of the running app, which the Shortcuts action uses
+    /// too.
+    static let shared = AppModel(group: LiveGroup())
+
     enum Phase: Equatable { case start, joining, home }
 
     /// A device of the group: a computer, or this phone.
@@ -67,14 +77,19 @@ final class AppModel: ObservableObject {
     /// The QR code this phone shows while it waits to join a group.
     @Published private(set) var joinCode: JoinCode?
     @Published private(set) var isAdmin = true
+    /// The one-time note on the Start screen that this phone is ready.
+    @Published private(set) var welcome = false
 
     let group: GroupController
+    private let defaults: UserDefaults
+    static let welcomedKey = "welcomed"
 
     /// nil means PendingGroup, made here because a default argument is
     /// evaluated outside the main actor.
-    init(group: GroupController? = nil) {
+    init(group: GroupController? = nil, defaults: UserDefaults = .standard) {
         let group = group ?? PendingGroup()
         self.group = group
+        self.defaults = defaults
         phase = group.hasGroup ? .home : .start
         computers = group.computers
         devices = group.devices
@@ -91,7 +106,7 @@ final class AppModel: ObservableObject {
     /// Admits a scanned computer; on success the app goes Home.
     func scanned(_ text: String) async -> Bool {
         guard case let .joinCode(jc) = Self.read(scanned: text) else {
-            message = String(localized: "Not a clipbridge QR code.")
+            message = String(localized: "Not a clipbridge QR code.", bundle: .app)
             return false
         }
         busy = true
@@ -103,14 +118,35 @@ final class AppModel: ObservableObject {
             phase = .home
             message = nil
             return true
+        } catch is CancellationError {
+            return false
         } catch {
             message = Self.describe(error)
             return false
         }
     }
 
+    /// At the first launch: makes this phone's own key and says so once,
+    /// with what to do next.
+    func prepare() {
+        guard phase == .start, !defaults.bool(forKey: Self.welcomedKey) else { return }
+        do {
+            try group.prepare()
+            welcome = true
+        } catch {
+            message = Self.describe(error)
+        }
+    }
+
+    /// Hides the note for good.
+    func dismissWelcome() {
+        welcome = false
+        defaults.set(true, forKey: Self.welcomedKey)
+    }
+
     /// Opens the screen that joins another phone's group.
     func startJoining() {
+        dismissWelcome()
         message = nil
         phase = .joining
     }
@@ -145,14 +181,28 @@ final class AppModel: ObservableObject {
         defer { busy = false }
         do {
             switch try await group.sync() {
-            case .sent: message = String(localized: "Sent to the computers.")
-            case .fetched: message = String(localized: "Fetched from the computers.")
-            case .nothingNew: message = String(localized: "Nothing new to send or fetch.")
+            case .sent: message = String(localized: "Sent to the computers.", bundle: .app)
+            case .fetched: message = String(localized: "Fetched from the computers.", bundle: .app)
+            case .nothingNew: message = String(localized: "Nothing new to send or fetch.", bundle: .app)
             }
         } catch {
             message = Self.describe(error)
         }
         computers = group.computers
+    }
+
+    /// The sync the Shortcuts action runs, with the app perhaps just
+    /// started for it: the Home button's, after waiting up to wait for a
+    /// computer to connect. Returns what it says.
+    func syncFromShortcut(wait: Duration = .seconds(5)) async -> String {
+        let deadline = ContinuousClock.now + wait
+        while group.hasGroup, ContinuousClock.now < deadline {
+            await refresh()
+            if computers.contains(where: \.online) { break }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        await sync()
+        return message ?? ""
     }
 
     /// Updates which computers are online.
@@ -166,7 +216,7 @@ final class AppModel: ObservableObject {
     func remove(_ id: String) async {
         do {
             try await group.remove(id)
-            message = String(localized: "Removed. The other devices refuse it from now on.")
+            message = String(localized: "Removed. The other devices refuse it from now on.", bundle: .app)
         } catch {
             message = Self.describe(error)
         }
@@ -179,45 +229,66 @@ final class AppModel: ObservableObject {
     func makeAdmin(_ id: String) async {
         do {
             try await group.makeAdmin(id)
-            message = String(localized: "It is an admin now: it adds and removes devices with clipbridge pair and clipbridge revoke.")
+            message = String(localized: "It is an admin now: it adds and removes devices with clipbridge pair and clipbridge revoke.", bundle: .app)
         } catch {
             message = Self.describe(error)
         }
         devices = group.devices
     }
 
-    static func describe(_ error: Error) -> String {
+    /// Whether a message names the error underneath, to find out what
+    /// failed: on in debug builds, off in release ones, and either way the
+    /// ShowErrorDetails default when it is set (in Xcode, the launch
+    /// argument -ShowErrorDetails YES or NO).
+    nonisolated static var showsErrorDetails: Bool {
+        if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The message for an error, with the error itself below it when
+    /// details is set. The error is logged either way.
+    static func describe(_ error: Error, details: Bool = showsErrorDetails) -> String {
+        let text = summary(error), detail = String(reflecting: error)
+        log.error("\(text, privacy: .public) \(detail, privacy: .public)")
+        return details ? text + "\n\n" + detail : text
+    }
+
+    private static func summary(_ error: Error) -> String {
         if let f = error as? PendingGroup.Failure {
-            return f == .notReady ? String(localized: "Adding a computer is not ready yet.") : String(localized: "No computers connected.")
+            return f == .notReady ? String(localized: "Adding a computer is not ready yet.", bundle: .app) : String(localized: "No computers connected.", bundle: .app)
         }
         if let f = error as? PairingMember.Failure {
             if case .refused(.wrongCode) = f {
-                return String(localized: "The code did not match. Run clipbridge join on the computer again and scan the new code.")
+                return String(localized: "The code did not match. Run clipbridge join on the computer again and scan the new code.", bundle: .app)
             }
-            return String(localized: "The computer refused. Run clipbridge join on it again.")
+            return String(localized: "The computer refused. Run clipbridge join on it again.", bundle: .app)
         }
         if let f = error as? LiveGroup.Failure, f == .notConfirmed {
-            return String(localized: "The computer joined but did not confirm it. Check clipbridge status on it.")
+            return String(localized: "The computer joined but did not confirm it. Check clipbridge status on it.", bundle: .app)
         }
         if let f = error as? LiveGroup.Failure {
             switch f {
-            case .noNetwork: return String(localized: "Connect this phone to your home Wi-Fi, then try again.")
-            case .timedOut: return String(localized: "No phone scanned the code in five minutes. Try again.")
-            case .tooManyWrongCodes: return String(localized: "Too many wrong codes. Try again with a new code.")
-            case .notAdmin: return String(localized: "Only an admin phone can do this.")
+            case .noNetwork: return String(localized: "Connect this phone to your home Wi-Fi, then try again.", bundle: .app)
+            case .timedOut: return String(localized: "No phone scanned the code in five minutes. Try again.", bundle: .app)
+            case .tooManyWrongCodes: return String(localized: "Too many wrong codes. Try again with a new code.", bundle: .app)
+            case .notAdmin: return String(localized: "Only an admin phone can do this.", bundle: .app)
             default: break
             }
         }
         if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
-            return String(localized: "The phone that made the group cannot be removed yet.")
+            return String(localized: "The phone that made the group cannot be removed yet.", bundle: .app)
         }
         if error is PairingJoiner.Failure {
-            return String(localized: "The other phone's group could not be joined. Try again.")
+            return String(localized: "The other phone's group could not be joined. Try again.", bundle: .app)
         }
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
-            return String(localized: "Could not reach the computer. Is it on the same network as this phone?")
+            return String(localized: "Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipbridge in?", bundle: .app)
         }
-        return String(localized: "Something went wrong. Try again.")
+        return String(localized: "Something went wrong. Try again.", bundle: .app)
     }
 }
 
@@ -229,6 +300,7 @@ final class PendingGroup: GroupController {
     var isAdmin: Bool { true }
     var computers: [AppModel.Computer] { [] }
     var devices: [AppModel.Computer] { [] }
+    func prepare() throws {}
     func remove(_ id: String) async throws {}
     func makeAdmin(_ id: String) async throws {}
     func admit(_ code: JoinCode) async throws { throw Failure.notReady }

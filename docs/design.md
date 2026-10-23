@@ -37,14 +37,19 @@ any member may be switched off at any time.
 
 - **Device ID**: 128 random bits as 32 lowercase hex characters. It fits in a DNS label and
   compares the same way everywhere.
-- **Member port**: Linux members listen for mutual TLS on a port chosen at start and
-  advertised in the mDNS SRV record. That listener never serves the iPhone. Macs only dial
-  out.
-- **iPhone port 8765**: HTTPS for the shortcut (`/sync`) and the pairing page (`/pair`),
-  with no client certificate. Only Linux members open it.
-- **Profile port 8766**: plain HTTP that serves only the iPhone CA's configuration profile,
-  and only while a phone pairing window is open. The profile is public, and the user checks
-  its fingerprint before trusting it.
+- **Member port**: clipbridge's one port, TCP 8764 unless the installer was given another,
+  advertised in the mDNS SRV record. Linux members listen there for mutual TLS; Macs only
+  dial out. The first bytes of a connection pick what it gets (docs/protocol.md, section 3):
+  - members and the phone app, with the member ALPN protocol and mutual TLS;
+  - pairing, with its own ALPN protocol;
+  - the shortcut's HTTPS (`/sync`, `/admit` and the pairing page `/pair`), with no client
+    certificate, for any other ALPN protocol;
+  - plain HTTP that serves only the iPhone CA's configuration profile, and only while a
+    phone pairing window is open. The profile is public, and the user checks its
+    fingerprint before trusting it.
+
+  A computer that joins by QR code listens there too, since it is in no group yet. One port
+  is one rule in a firewall, and changing it is one setting.
 
 ## Group and pairing
 
@@ -107,16 +112,16 @@ any member may be switched off at any time.
   count the time the machine sleeps.
 - **Joining an iPhone or iPad**: `clipbridge pair -phone` asks the Linux member that holds
   `clipbridge.local` to open a phone pairing window, with the same limits as for a computer,
-  and prints a QR code of the profile port's page, the first 64 bits of the iPhone CA's
+  and prints a QR code of the profile page, the first 64 bits of the iPhone CA's
   fingerprint and a six-digit code. The user only scans, compares and types digits. No
   secret travels before the iPhone trusts the CA:
-  1. The camera opens the page on the profile port (plain HTTP, so no certificate warning is
-     ever accepted for port 8765), which walks through the steps; the user installs the
+  1. The camera opens the profile page (plain HTTP, so no certificate warning is
+     ever accepted for HTTPS), which walks through the steps; the user installs the
      configuration profile with the iPhone CA.
   2. The user compares the fingerprint's first 64 bits under the profile's details with the
      printed ones, and only then turns on full trust.
   3. The user adds the shortcut from the same page and runs it. On its first run it asks for
-     the code and posts it to `https://clipbridge.local:8765/pair`, which only works once the
+     the code and posts it to `https://clipbridge.local:8764/pair`, which only works once the
      CA is trusted; the token comes back on that connection, and the shortcut keeps it in
      iCloud Drive (Shortcuts/clipbridge/token.txt). Told later that its token is unknown, it
      deletes it, so the next run pairs again. The same page also takes the code in Safari
@@ -267,7 +272,7 @@ any member may be switched off at any time.
 ## The iPhone button
 
 One shortcut, published as an iCloud link with an import question for the token. It reads
-the iPhone clipboard and sends `POST https://clipbridge.local:8765/sync` with the JSON body
+the iPhone clipboard and sends `POST https://clipbridge.local:8764/sync` with the JSON body
 `{"v": 1, "text": "…"}` (optionally `"secret": true`, which makes a secret event) and the
 header `Authorization: Bearer <token>`. The member that holds the name decides the direction:
 
@@ -692,7 +697,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-8  | The repository is in English only, apart from the apps' translations (String Catalogs, Android `values-<language>`). |
 | D-9  | Pairing a computer: code entry with CPace inside TLS 1.3 instead of comparing digits, which a man in the middle can grind. |
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
-| D-11 | Members talk on their own advertised port; port 8765 serves only the iPhone.               |
+| D-11 | One advertised port serves members, pairing and the iPhone, told apart by the first bytes. |
 | D-12 | Own mDNS responder on Linux: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
 | D-13 | Only Linux members hold `clipbridge.local`; Macs only dial out.                            |
 | D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |

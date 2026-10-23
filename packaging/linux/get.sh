@@ -7,28 +7,39 @@
 #   curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
 #
 # Options go after "sh -s --": --console also starts tmux after a login on
-# the text console; --no-firewall leaves ufw alone. CLIPBRIDGE_VERSION=v1.2.3
+# the text console; --port N moves the member port from 8764 to N;
+# --no-firewall leaves the firewall alone. CLIPBRIDGE_VERSION=v1.2.3
 # picks a release instead of the latest; CLIPBRIDGE_RELEASE_DIR, for tests,
 # takes the files from a directory instead of downloading them.
 #
 # It downloads the archive for this machine's architecture and SHA256SUMS
 # from the release, checks the archive against it, runs install.sh from the
-# archive, and, when ufw is active, allows clipbridge's ports from the home
+# archive, which, when ufw or firewalld is active, allows clipbridge's ports from the home
 # network only.
 set -eu
 
 repo=https://github.com/HunterEwok/clipbridge
 console=
+port=
 firewall=yes
-for arg in "$@"; do
-	case $arg in
+while [ $# -gt 0 ]; do
+	case $1 in
 	--console) console=--console ;;
+	--port)
+		[ $# -gt 1 ] || {
+			echo "get.sh: --port needs a port number" >&2
+			exit 2
+		}
+		port="--port $2"
+		shift
+		;;
 	--no-firewall) firewall=no ;;
 	*)
-		echo "get.sh: unknown option $arg (known: --console, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --console, --port N, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
+	shift
 done
 
 fail() {
@@ -77,20 +88,6 @@ got=$(sha256sum "$tmp/$archive" | cut -d' ' -f1)
 [ "$want" = "$got" ] || fail "$archive does not match SHA256SUMS; not installing it"
 tar -xzf "$tmp/$archive" -C "$tmp"
 
-# shellcheck disable=SC2086 # $console is one word or none
-sh "$tmp/clipbridge/packaging/linux/install.sh" $console "$tmp/clipbridge/clipbridge"
+# shellcheck disable=SC2086 # $console and $port are words or none
+CLIPBRIDGE_FIREWALL=$firewall sh "$tmp/clipbridge/packaging/linux/install.sh" $console $port "$tmp/clipbridge/clipbridge"
 
-# ufw drops what it does not allow, and clipbridge needs mDNS and its ports
-# from the other devices at home: allow them from the home network only.
-if [ "$firewall" = yes ] && command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-	nets=$(ip -o -f inet route show scope link 2>/dev/null | awk '
-		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u)
-	for net in $nets fe80::/10 fc00::/7; do
-		ufw allow proto udp from "$net" to any port 5353 comment 'clipbridge mDNS' >/dev/null
-		ufw allow proto tcp from "$net" to any port 8764:8767 comment clipbridge >/dev/null
-	done
-	echo "ufw: allowed mDNS and TCP 8764-8767 from $(echo "$nets" | tr '\n' ' ')and local IPv6."
-elif [ "$firewall" = yes ] && command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-	echo "firewalld is running: allow mDNS and TCP 8764-8767 in the zone of the home network, for example"
-	echo "  sudo firewall-cmd --permanent --zone=home --add-service=mdns --add-port=8764-8767/tcp && sudo firewall-cmd --reload"
-fi

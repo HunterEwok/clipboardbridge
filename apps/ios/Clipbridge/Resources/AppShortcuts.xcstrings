@@ -1,0 +1,26 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "${applicationName} sync": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} синхронизировать"
+          }
+        }
+      }
+    },
+    "Sync clipboard with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизировать буфер обмена с ${applicationName}"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -15,8 +15,33 @@ Any Linux with systemd: a Raspberry Pi, a laptop, a server, a Steam Deck.
 curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh
 ```
 
-The script checks the download, starts the service and opens clipbridge's ports in ufw for
-the home network only. Log out and in again once, so your user may use clipbridge.
+The script checks the download, starts the service and opens clipbridge's one port, TCP
+8764, and mDNS in ufw or firewalld for the home network only; with another firewall it
+prints what to allow. Log out and in again once, so your user may use clipbridge.
+
+### Port and firewall
+
+clipbridge needs one TCP port, 8764, and mDNS (UDP 5353), both from the home network only.
+The installer opens them in ufw or firewalld. If you turn a firewall on later, run the
+installer again (it is also how you update). Each run first removes the rules it added
+before, and never touches anyone else's. By hand with ufw, for example from `192.168.0.0/24`:
+
+```sh
+sudo ufw allow proto tcp from 192.168.0.0/24 to any port 8764 comment clipbridge
+sudo ufw allow proto udp from 192.168.0.0/24 to any port 5353 comment 'clipbridge mDNS'
+```
+
+Another port, because 8764 is taken or you prefer one of your own? You don't have to change
+it. If you do, pass it to the installer:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipbridge/releases/latest/download/get.sh | sudo sh -s -- --port 9000
+```
+
+The installer keeps the port for later updates and opens it instead of 8764, and the old
+rules go. Allow the new port in any other firewall on the way: the installer reminds you.
+`--port 8764` goes back to the default. The phone app learns the port from the QR code and
+mDNS, so it needs no setting. The iPhone shortcut works only with 8764.
 
 ## 2. Make the group and pair the iPhone
 
@@ -84,6 +109,19 @@ clipbridge revoke NAME  # remove a lost Mac or iPhone; run it on a Linux machine
 ```
 
 Something does not work? See "Problems" in the release notes, or open an issue.
+
+## Remove clipbridge
+
+On Linux:
+
+```sh
+sudo sh /usr/local/share/clipbridge/uninstall.sh
+```
+
+It stops the service and removes the program and its settings. It also removes the firewall
+rules the installer added, and only those. The device's keys stay in `/var/lib/clipbridge`,
+so a reinstall comes back into the group. Add `--purge` to delete them too; then remove the
+device from the group on another one (`clipbridge revoke NAME`, or Devices in the app).
 
 ## Later: the phone at the centre (planned)
 

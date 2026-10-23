@@ -9,7 +9,13 @@ import Security
 /// with a listening device, member connections, and a pairing connection
 /// that TLSListener accepted.
 public final class TLSTransport: ClosableTransport, @unchecked Sendable {
-    public enum Failure: Error { case notReady(String), closed, peerRejected }
+    public enum Failure: Error { case notReady(String), closed, peerRejected, timedOut }
+
+    /// How long dialling takes at most before TCP gives up, and the whole
+    /// handshake before start does: a peer that drops the packets, or
+    /// accepts and never answers, fails then instead of hanging.
+    public static let connectTimeout = 5
+    public static let handshakeTimeout: TimeInterval = 10
 
     let connection: NWConnection
     let queue = DispatchQueue(label: "clipbridge.tls")
@@ -35,11 +41,16 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
     public init(endpoint: NWEndpoint, alpn: String, identity: SecIdentity, chain: [Data] = [],
                 verifyChain: @escaping @Sendable ([Data]) -> Bool) {
         let tls = Self.options(alpn: alpn, identity: identity, chain: chain, verifyChain: verifyChain)
-        connection = NWConnection(to: endpoint, using: NWParameters(tls: tls))
+        let tcp = NWProtocolTCP.Options()
+        tcp.connectionTimeout = Self.connectTimeout
+        connection = NWConnection(to: endpoint, using: NWParameters(tls: tls, tcp: tcp))
     }
 
     /// A connection a TLSListener accepted; start runs its handshake.
     init(accepted: NWConnection) { connection = accepted }
+
+    /// A connection with parameters of its own, for tests.
+    init(endpoint: NWEndpoint, parameters: NWParameters) { connection = NWConnection(to: endpoint, using: parameters) }
 
     /// TLS 1.3 options with the ALPN protocol and identity, presenting
     /// chain after the identity's certificate, and verifyChain deciding on
@@ -69,10 +80,25 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
         return tls
     }
 
-    /// Starts the connection and waits for the handshake.
-    public func start() async throws {
+    /// Starts the connection and waits for the handshake, at most timeout
+    /// seconds (Failure.timedOut); cancelling the task cancels it.
+    public func start(timeout: TimeInterval = TLSTransport.handshakeTimeout) async throws {
+        try Task.checkCancellation()
+        let once = Once()
+        try await withTaskCancellationHandler {
+            try await handshake(once: once, timeout: timeout)
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+
+    private func handshake(once: Once, timeout: TimeInterval) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            let once = Once()
+            queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard once.claim() else { return }
+                self?.connection.cancel()
+                c.resume(throwing: Failure.timedOut)
+            }
             connection.stateUpdateHandler = { [weak self] state in
                 switch state {
                 case .ready:
@@ -82,7 +108,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
                 case .failed(let e), .waiting(let e):
                     guard once.claim() else { return }
                     self?.connection.cancel()
-                    c.resume(throwing: Failure.notReady("\(e)"))
+                    c.resume(throwing: Self.failure(e))
                 case .cancelled:
                     guard once.claim() else { return }
                     c.resume(throwing: Failure.closed)
@@ -92,6 +118,13 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
             }
             connection.start(queue: queue)
         }
+    }
+
+    /// timedOut for a peer that did not answer, notReady with the error
+    /// otherwise.
+    static func failure(_ e: NWError) -> Failure {
+        if case .posix(.ETIMEDOUT) = e { return .timedOut }
+        return .notReady("\(e)")
     }
 
     /// Lets the first of several callbacks through.

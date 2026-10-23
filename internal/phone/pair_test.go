@@ -245,7 +245,7 @@ func TestShortcutFile(t *testing.T) {
 		}
 	}
 	add := UnsignedAdmitShortcut()
-	for _, want := range []string{"https://clipbridge.local:8765/admit", "is.workflow.actions.scanbarcode", tokenPath} {
+	for _, want := range []string{"https://clipbridge.local:8764/admit", "is.workflow.actions.scanbarcode", tokenPath} {
 		if !bytes.Contains(add, []byte(want)) {
 			t.Errorf("the add shortcut lacks %q", want)
 		}
@@ -259,7 +259,7 @@ func TestShortcutFile(t *testing.T) {
 			t.Fatalf("not well-formed XML: %v", err)
 		}
 	}
-	for _, want := range []string{"https://clipbridge.local:8765/pair", "https://clipbridge.local:8765/sync", tokenPath, "unpaired", "to_iphone"} {
+	for _, want := range []string{"https://clipbridge.local:8764/pair", "https://clipbridge.local:8764/sync", tokenPath, "unpaired", "to_iphone"} {
 		if !bytes.Contains(got, []byte(want)) {
 			t.Errorf("the shortcut lacks %q", want)
 		}

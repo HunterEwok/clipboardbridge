@@ -5,8 +5,8 @@ import SwiftUI
 /// Theme, language, about. Nothing else.
 struct SettingsView: View {
     @AppStorage("theme") private var theme = ThemeChoice.system
+    @AppStorage(LanguageChoice.key) private var language = LanguageChoice.system
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -20,16 +20,10 @@ struct SettingsView: View {
                 Text("Theme")
             }
             .listRowBackground(palette.surface)
-            Button {
-                // The language follows the system, with the per-app choice
-                // in the system's Settings.
-                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            Picker(selection: $language) {
+                ForEach(LanguageChoice.allCases) { Text(verbatim: $0.title).tag($0) }
             } label: {
-                LabeledContent {
-                    Text("Change in the system settings").foregroundStyle(palette.textDim)
-                } label: {
-                    Text("Language")
-                }
+                Text("Language")
             }
             .listRowBackground(palette.surface)
             Section {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -20,13 +19,6 @@ import (
 	"github.com/HunterEwok/clipbridge/internal/node"
 	"github.com/HunterEwok/clipbridge/internal/pair"
 	"github.com/HunterEwok/clipbridge/internal/phone"
-)
-
-// The iPhone's ports: HTTPS for the shortcut and the pairing page, and
-// plain HTTP for the profile while an iPhone pairing window is open.
-const (
-	PhonePort   = 8765
-	ProfilePort = 8766
 )
 
 // phoneGroup is the member as the iPhone endpoint sees it.
@@ -58,8 +50,9 @@ func homeOnly(h http.Handler) http.Handler {
 	})
 }
 
-// servePhone runs the iPhone port on a Linux member, until ctx is done.
-func (s *Service) servePhone(ctx context.Context) {
+// servePhone serves the shortcut's HTTPS on a Linux member, until ctx is
+// done: the member port at addr passes it the connections (see demux.go).
+func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 	s.mu.Lock()
 	admin := s.id.Phone != nil
 	s.mu.Unlock()
@@ -68,11 +61,12 @@ func (s *Service) servePhone(ctx context.Context) {
 	}
 	// The certificate is looked up for each connection, so a renewed one
 	// is used at once.
-	cfg := &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.id.PhoneCertificate(), nil
-	}}
+	cfg := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"http/1.1"},
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.id.PhoneCertificate(), nil
+		}}
 	mux := http.NewServeMux()
 	mux.Handle("/sync", phone.SyncHandler(phoneGroup{s}))
 	mux.Handle("/admit", phone.AdmitHandler(phoneGroup{s}, s.admit))
@@ -81,19 +75,22 @@ func (s *Service) servePhone(ctx context.Context) {
 		defer s.mu.Unlock()
 		return s.phoneWindow
 	}))
-	srv := &http.Server{Handler: homeOnly(mux), TLSConfig: cfg, ReadHeaderTimeout: 10 * time.Second,
+	srv := &http.Server{Handler: homeOnly(mux), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
-	ln, err := s.cfg.phoneListen()
-	if err != nil {
-		s.logf("clipbridge: the iPhone port: %v", err)
-		return
-	}
+	ln := newConnListener(addr)
+	s.mu.Lock()
+	s.phoneConns, s.phoneTLS = ln, cfg
+	s.mu.Unlock()
 	go func() {
 		<-ctx.Done()
+		s.mu.Lock()
+		s.phoneConns, s.phoneTLS = nil, nil
+		s.mu.Unlock()
 		srv.Close()
 	}()
-	if err := srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		s.logf("clipbridge: the iPhone port: %v", err)
+	// The connections come with their TLS handshake done.
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.logf("clipbridge: the shortcut's HTTPS: %v", err)
 	}
 }
 
@@ -127,7 +124,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 		fail(c, errors.New("an iPhone pairing window is already open"))
 		return
 	}
-	// end closes the window and the profile port; it runs before the last
+	// end closes the window and the profile; it runs before the last
 	// answer, so the client can pair again at once.
 	var w *phone.Window
 	var srv *http.Server
@@ -145,7 +142,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 		}
 		s.mu.Lock()
 		if s.phoneWindow == w {
-			s.phoneWindow = nil
+			s.phoneWindow, s.profileConns = nil, nil
 		}
 		s.phoneOpening = false
 		s.mu.Unlock()
@@ -162,20 +159,20 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 		return
 	}
 	w = opened
-	ln, err := s.cfg.profileListen()
-	if err != nil {
-		abort(fmt.Errorf("the profile port: %w", err))
-		return
-	}
+	// The profile is plain HTTP on the member port, which passes it the
+	// connections that do not start with TLS (see demux.go).
+	s.mu.Lock()
+	port := s.port
+	s.mu.Unlock()
+	ln := newConnListener(&net.TCPAddr{Port: int(port)})
 	srv = &http.Server{Handler: homeOnly(phone.ProfileHandler(id.PhoneCA)), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	go srv.Serve(ln)
 	s.mu.Lock()
-	s.phoneWindow, s.phoneOpening = w, false
+	s.phoneWindow, s.phoneOpening, s.profileConns = w, false, ln
 	s.mu.Unlock()
-	port := ln.Addr().(*net.TCPAddr).Port
 	reply(c, control.Header{Code: code, Expires: int(pair.Lifetime / time.Second), Fingerprint: phone.Fingerprint(id.PhoneCA),
-		Address: localAddress(uint16(port))}, nil)
+		Address: localAddress(port)}, nil)
 	hangup := make(chan struct{})
 	go func() {
 		r.Read() // returns when the client hangs up
