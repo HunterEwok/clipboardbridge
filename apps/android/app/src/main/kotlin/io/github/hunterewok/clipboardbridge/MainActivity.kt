@@ -3,52 +3,42 @@
 
 package io.github.hunterewok.clipboardbridge
 
+import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent { App() }
-    }
+/** The app: one model for every screen, and later for the service and the tile. */
+class ClipboardBridgeApp : Application() {
+    val model: AppModel by lazy { AppModel(this) }
 }
 
-@Composable
-fun App() {
-    val dark = isSystemInDarkTheme()
-    val context = LocalContext.current
-    // The app's own themes come with the screens; until then the
-    // wallpaper's colours where Android has them.
-    val colors = when {
-        android.os.Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> darkColorScheme()
-        else -> lightColorScheme()
+class MainActivity : ComponentActivity() {
+    private val model get() = (application as ClipboardBridgeApp).model
+
+    /** The chosen language, before anything reads a string. */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(Settings.localized(base))
     }
-    MaterialTheme(colorScheme = colors) {
-        Scaffold { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.start_title), style = MaterialTheme.typography.headlineSmall)
-            }
-        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // adb shell am start -n io.github.hunterewok.clipboardbridge/.MainActivity --ez ShowErrorDetails true
+        if (intent.hasExtra(Settings.ERROR_DETAILS)) model.settings.showsErrorDetails = intent.getBooleanExtra(Settings.ERROR_DETAILS, false)
+        enableEdgeToEdge()
+        setContent { Root(model) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The prompt before the group's keys sign needs an activity in front.
+        model.group.activity = this
+    }
+
+    override fun onPause() {
+        if (model.group.activity === this) model.group.activity = null
+        super.onPause()
     }
 }

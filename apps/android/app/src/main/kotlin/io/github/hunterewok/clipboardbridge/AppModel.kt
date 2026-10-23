@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package io.github.hunterewok.clipboardbridge
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.PersistableBundle
+import android.util.Log
+import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.JoinCode
+import io.github.hunterewok.clipboardbridge.kit.Member
+import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
+import io.github.hunterewok.clipboardbridge.kit.PairingMember
+import io.github.hunterewok.clipboardbridge.kit.Pairing
+import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
+import io.github.hunterewok.clipboardbridge.kit.SyncEngine
+import io.github.hunterewok.clipboardbridge.kit.TLSTransport
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * What the app shows and does; the screens only read it and call it. Its
+ * state is Compose state, changed on the main thread.
+ */
+class AppModel(private val app: Context) {
+    enum class Phase { START, JOINING, HOME }
+
+    /** One line about the last action, in plain words, and the error underneath when details are on. */
+    data class Note(@StringRes val text: Int, val detail: String? = null, val error: Boolean = false)
+
+    val settings = Settings(app)
+    val group = LiveGroup(app)
+
+    var phase by mutableStateOf(if (group.hasGroup) Phase.HOME else Phase.START)
+        private set
+    var devices by mutableStateOf(group.devices)
+        private set
+    val computers: List<LiveGroup.Device> get() = devices.filter { !it.isSelf }
+    var message by mutableStateOf<Note?>(null)
+    var busy by mutableStateOf(false)
+        private set
+
+    /** The QR code this phone shows while it waits to join a group. */
+    var joinCode by mutableStateOf<JoinCode?>(null)
+        private set
+    var isAdmin by mutableStateOf(group.isAdmin)
+        private set
+
+    /** The one-time note on the Start screen that this phone is ready. */
+    var welcome by mutableStateOf(false)
+        private set
+
+    var theme by mutableStateOf(settings.theme)
+        private set
+
+    fun choose(theme: ThemeChoice) {
+        settings.theme = theme
+        this.theme = theme
+    }
+
+    /** Admits a scanned or pasted device; on success the app goes Home. */
+    suspend fun scanned(text: String): Boolean {
+        val jc = read(text)
+        if (jc == null) {
+            message = Note(R.string.not_a_code, error = true)
+            return false
+        }
+        busy = true
+        try {
+            group.admit(jc)
+            phase = Phase.HOME
+            message = null
+            return true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            message = describe(e)
+            return false
+        } finally {
+            busy = false
+            update()
+        }
+    }
+
+    /** At the first launch: makes this phone's own key and says so once, with what to do next. */
+    suspend fun prepare() {
+        if (phase != Phase.START || settings.welcomed) return
+        try {
+            withContext(Dispatchers.IO) { group.prepare() }
+            welcome = true
+        } catch (e: Exception) {
+            message = describe(e)
+        }
+    }
+
+    /** Hides the note for good. */
+    fun dismissWelcome() {
+        welcome = false
+        settings.welcomed = true
+    }
+
+    /** Opens the screen that joins another phone's group. */
+    fun startJoining() {
+        dismissWelcome()
+        message = null
+        phase = Phase.JOINING
+    }
+
+    /**
+     * Joins another phone's group: shows this phone's QR code until an
+     * admin phone scans it, then goes Home. The join screen runs it as its
+     * effect, so leaving the screen cancels it and stops listening.
+     */
+    suspend fun join() {
+        try {
+            group.join { code -> joinCode = code }
+            update()
+            phase = Phase.HOME
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            message = describe(e)
+        } finally {
+            joinCode = null
+        }
+    }
+
+    /** Leaves the join screen without joining. */
+    fun cancelJoin() {
+        joinCode = null
+        message = null
+        phase = Phase.START
+    }
+
+    /** The one big button. */
+    suspend fun sync() {
+        busy = true
+        try {
+            val cm = app.getSystemService(ClipboardManager::class.java)
+            val board = runCatching { cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() }.getOrNull()
+            val (result, fetched) = withContext(Dispatchers.IO) { group.sync(board) }
+            fetched?.let { (text, kind) -> write(cm, text, kind) }
+            message = Note(
+                when (result) {
+                    LiveGroup.SyncResult.SENT -> R.string.sent
+                    LiveGroup.SyncResult.FETCHED -> R.string.fetched
+                    LiveGroup.SyncResult.NOTHING_NEW -> R.string.nothing_new
+                },
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            message = describe(e)
+        } finally {
+            busy = false
+            update()
+        }
+    }
+
+    /**
+     * Puts a text into the phone's clipboard; a secret is marked sensitive,
+     * so the system shows no preview of it, and goes after its remaining
+     * minute while it is still there.
+     */
+    private fun write(cm: ClipboardManager, text: String, kind: Member.Kind) {
+        val clip = ClipData.newPlainText("clipboardbridge", text)
+        if (kind == Member.Kind.SECRET) {
+            clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        }
+        cm.setPrimaryClip(clip)
+        if (kind == Member.Kind.SECRET) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                // Only the secret itself goes: the app can read the clipboard
+                // only while it is in front, and another copy stays.
+                val now = runCatching { cm.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+                if (now == text) cm.clearPrimaryClip()
+            }, SyncEngine.SECRET_TTL_MS)
+        }
+    }
+
+    /** Updates the devices and which of them are online. */
+    suspend fun refresh() {
+        update()
+    }
+
+    private suspend fun update() {
+        val (d, admin) = withContext(Dispatchers.IO) { group.devices to group.isAdmin }
+        devices = d
+        isAdmin = admin
+    }
+
+    /** Removes a device from the group. */
+    suspend fun remove(id: String) {
+        message = try {
+            group.remove(id)
+            Note(R.string.removed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /** Makes a computer an admin. */
+    suspend fun makeAdmin(id: String) {
+        message = try {
+            group.makeAdmin(id)
+            Note(R.string.made_admin)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /** The message for an error, with the error itself below it when details are on. The error is logged either way. */
+    fun describe(e: Exception): Note {
+        val text = summary(e)
+        Log.e(TAG, app.getString(text), e)
+        return Note(text, if (settings.showsErrorDetails) e.toString() + (e.cause?.let { "\n" + it } ?: "") else null, error = true)
+    }
+
+    companion object {
+        private const val TAG = "clipboardbridge"
+
+        /** Reads what the camera saw, or what the user pasted: the text of the QR code of cbb join or of another phone. */
+        fun read(text: String): JoinCode? {
+            val jc = JoinCode.parse(text) ?: return null
+            return if (jc.codeIsValid && jc.addrs.isNotEmpty() && jc.fingerprint.isNotEmpty()) jc else null
+        }
+
+        @StringRes
+        fun summary(e: Exception): Int = when (e) {
+            is LiveGroup.Failure -> when (e.kind) {
+                LiveGroup.Failure.Kind.NOT_CONFIRMED -> R.string.error_not_confirmed
+                LiveGroup.Failure.Kind.NO_NETWORK -> R.string.error_no_network
+                LiveGroup.Failure.Kind.TIMED_OUT -> R.string.error_timed_out
+                LiveGroup.Failure.Kind.TOO_MANY_WRONG_CODES -> R.string.error_too_many_codes
+                LiveGroup.Failure.Kind.NOT_ADMIN -> R.string.error_not_admin
+                LiveGroup.Failure.Kind.NO_COMPUTERS -> R.string.no_computers
+                LiveGroup.Failure.Kind.NO_SCREEN, LiveGroup.Failure.Kind.UNREACHABLE -> R.string.error_unreachable
+            }
+            is PairingMember.Failure ->
+                if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
+            is PhoneGroup.Failure -> R.string.error_generic
+            is PairingJoiner.Failure -> R.string.error_join
+            is Keys.NoScreenLock -> R.string.error_no_screen_lock
+            is Authenticator.Cancelled -> R.string.error_not_authenticated
+            is TLSTransport.Failure, is java.io.IOException -> R.string.error_unreachable
+            else -> R.string.error_generic
+        }
+    }
+}
