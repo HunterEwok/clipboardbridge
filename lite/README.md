@@ -35,8 +35,16 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
   cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-CI builds this one on every push; the binary is the `cbb-lite-linux-arm64` artifact of the
-`lite member (Rust)` job.
+For a Raspberry Pi Zero, Zero W or Pi 1 (ARMv6, 32-bit Raspberry Pi OS): a static binary,
+with clang and llvm-ar and no cross toolchain (`.cargo/config.toml` holds the settings):
+
+```sh
+rustup target add arm-unknown-linux-musleabihf
+cargo build --release --target arm-unknown-linux-musleabihf
+```
+
+CI builds both on every push: the `cbb-lite-linux-arm64` and `cbb-lite-linux-armv6`
+artifacts of the `lite member (Rust)` job.
 
 The e2e test runs the lite member among Go members: it joins through the phone's QR code,
 gets no CA keys and syncs both ways.

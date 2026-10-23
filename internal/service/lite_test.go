@@ -131,6 +131,11 @@ func TestLiteMember(t *testing.T) {
 	pa, _ := pi.addrs()
 	la, _ := laptop.addrs()
 	lite := startLite(t, bin, dir, "-no-mdns", "-peer", pa, "-peer", la)
+	// The control socket answers while the service still loads its identity.
+	waitFor(t, "the lite member in the group", func() bool {
+		_, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil
+	})
 	st := lite.status(t)
 	if st.Group != pi.status(t).Group || st.Role != "lite" {
 		t.Fatalf("lite status %+v, want the group %s", st, pi.status(t).Group)

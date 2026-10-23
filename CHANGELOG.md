@@ -47,7 +47,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (a Raspberry Pi, a router) that joins a phone group by QR code (or a computer group with
   the code from `cbb pair`), never holds CA keys, only dials the full members and syncs
   with them; `copy`, `paste`, `status`, `devices` and `watch` work as in `cbb`. Its errors
-  show their details with `-debug` or `CBB_DEBUG=1`, and in a debug build.
+  show their details with `-debug` or `CBB_DEBUG=1`, and in a debug build. CI builds it for 64-bit
+  Raspberry Pis and, statically, for the ARMv6 Pi Zero W.
 - A joiner can say it is a lite member (`"role":"lite"` in its pairing Info): Go members
   send it no CA keys and list it with role `lite`.
 - The Android app is started in `apps/android`: a Gradle build with the protocol core in
