@@ -4,7 +4,9 @@
 // Command icon makes the apps' icons from the drawings in apps/design/icon:
 // each clipboard, light and dark, cut out of its transparent margin and set
 // on a fill of its own colour, so that the system's mask rounds the fill and
-// not the drawing. For the iPhone it writes opaque 1024 by 1024 PNGs, the
+// not the drawing. The clipboard's board sits in the middle, as far from the
+// top edge as from the bottom one; the clip above it reaches into the top
+// margin. For the iPhone it writes opaque 1024 by 1024 PNGs, the
 // light one for the system's light mode and the dark one for dark mode. For
 // Android it writes the foreground of the adaptive icon, the light clipboard
 // on a transparent 432 by 432 canvas inside the launcher's safe zone; the
@@ -34,16 +36,16 @@ var icons = []struct {
 	drawing, out string
 	fill         color.RGBA
 	// size is the image's width and height in pixels; height the
-	// clipboard's height, of the image.
+	// board's height, of the image, without the clip.
 	size   int
 	height float64
 }{
-	{"apps/design/icon/light.png", appIcon + "AppIcon.png", color.RGBA{0xF5, 0xF0, 0xE4, 0xFF}, 1024, 0.97},
+	{"apps/design/icon/light.png", appIcon + "AppIcon.png", color.RGBA{0xF5, 0xF0, 0xE4, 0xFF}, 1024, 0.78},
 	// The terminal theme's background (apps/design/tokens.json).
-	{"apps/design/icon/dark.png", appIcon + "AppIcon-Dark.png", color.RGBA{0x0A, 0x0F, 0x0C, 0xFF}, 1024, 0.97},
+	{"apps/design/icon/dark.png", appIcon + "AppIcon-Dark.png", color.RGBA{0x0A, 0x0F, 0x0C, 0xFF}, 1024, 0.78},
 	// 108 dp with the inner 66 dp always shown, at 4 pixels a dp: a
 	// transparent fill, as the launcher draws the background below.
-	{"apps/design/icon/light.png", androidIcon, color.RGBA{}, 432, 0.58},
+	{"apps/design/icon/light.png", androidIcon, color.RGBA{}, 432, 0.5},
 }
 
 // opaqueBounds is the smallest rectangle holding every pixel of img that is
@@ -59,6 +61,30 @@ func opaqueBounds(img image.Image) image.Rectangle {
 		}
 	}
 	return r
+}
+
+// board is the rows of src that hold the board: those at least half as wide
+// as the widest, which leaves out the narrower clip above it.
+func board(img image.Image, src image.Rectangle) (top, bottom int) {
+	widths := make([]int, src.Dy())
+	widest := 0
+	for y := src.Min.Y; y < src.Max.Y; y++ {
+		left, right := src.Max.X, src.Min.X
+		for x := src.Min.X; x < src.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a != 0 {
+				left, right = min(left, x), max(right, x+1)
+			}
+		}
+		widths[y-src.Min.Y] = max(right-left, 0)
+		widest = max(widest, right-left)
+	}
+	top, bottom = src.Max.Y, src.Min.Y
+	for i, w := range widths {
+		if 2*w >= widest {
+			top, bottom = min(top, src.Min.Y+i), max(bottom, src.Min.Y+i+1)
+		}
+	}
+	return top, bottom
 }
 
 // sample is img's premultiplied colour at (x, y), interpolated between the
@@ -93,10 +119,16 @@ func sample(img image.Image, src image.Rectangle, x, y float64) [4]float64 {
 // keeps the drawing's own transparency.
 func compose(drawing image.Image, fill color.RGBA, size int, height float64) []byte {
 	src := opaqueBounds(drawing)
+	boardTop, boardBottom := board(drawing, src)
 	n := float64(size)
-	scale := n * height / float64(src.Dy())
+	scale := n * height / float64(boardBottom-boardTop)
 	w := float64(src.Dx()) * scale
-	left, top := (n-w)/2, (n-n*height)/2
+	// top is where src's top row lands: the clip's top, above the board's.
+	left := (n - w) / 2
+	top := (n-n*height)/2 - float64(boardTop-src.Min.Y)*scale
+	if top < 0 {
+		panic(fmt.Sprintf("icon: the clip does not fit above a board of height %v", height))
+	}
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
