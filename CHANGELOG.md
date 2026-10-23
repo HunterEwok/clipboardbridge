@@ -56,8 +56,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `LocalAppData\clipboardbridge\agent.log`.
 - **The lite member, `cbb-lite`, in Rust** (`lite/`): a small member for weak Linux devices
   (a Raspberry Pi, a router) that joins a phone group by QR code (or a computer group with
-  the code from `cbb pair`), never holds CA keys, only dials the full members and syncs
-  with them; `copy`, `paste`, `status`, `devices` and `watch` work as in `cbb`. Its errors
+  the code from `cbb pair`) and never holds CA keys. It dials the computers, and publishes
+  itself in mDNS (TXT `r=lite`) and listens on the member port, so that a phone syncs with it
+  directly, with no computer on; Linux members leave it to dial them. `copy`, `paste`,
+  `status`, `devices` and `watch` work as in `cbb`. Its errors
   show their details with `-debug` or `CBB_DEBUG=1`, and in a debug build. CI builds it for 64-bit
   Raspberry Pis and, statically, for the ARMv6 Pi Zero W. Its protocol core, `lite/core`,
   needs no operating system (no_std, RustCrypto), for a lite member on the ESP32 later.

@@ -37,8 +37,10 @@ Commands:
                        (-addr: where the phone reaches this device, when the
                        code would name the wrong addresses).
   join -code host:port Join with the code from cbb pair on a Linux member.
-  run [-name name] [-peer host:port]... [-no-mdns]
-                       Run the service (started by systemd or procd).
+  run [-name name] [-port port] [-peer host:port]... [-no-mdns] [-no-listen]
+                       Run the service (started by systemd or procd): it
+                       dials the computers, and phones, Macs and other lite
+                       members dial it on the member port (8764, CBB_PORT).
   copy [-secret]       Send standard input to the group.
   paste                Print this member's clipboard text.
   status               Show the group and the connected members.
@@ -143,9 +145,14 @@ fn join_host_port(host: &str, port: u16) -> String {
     if host.contains(':') && !host.starts_with('[') { format!("[{host}]:{port}") } else { format!("{host}:{port}") }
 }
 
+/// The member port: 8764, or CBB_PORT.
+fn member_port() -> u16 {
+    std::env::var("CBB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8764)
+}
+
 fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
     let mut name = host_name();
-    let mut port: u16 = std::env::var("CBB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8764);
+    let mut port = member_port();
     let mut addrs = Vec::new();
     let mut code_addr = None;
     let mut i = 0;
@@ -166,7 +173,11 @@ fn cmd_join(g: &Global, args: &[String]) -> Result<()> {
             g.state.join(identity::FILE_NAME).display()
         )));
     }
-    std::fs::create_dir_all(&g.state).context(format!("cannot create {}", g.state.display()))?;
+    std::fs::create_dir_all(&g.state).context(format!(
+        "cannot create {0}; make it for the service's user first: \
+         sudo install -d -o cbb-lite -g cbb-lite -m 0700 {0}",
+        g.state.display()
+    ))?;
     let joiner = pair::Joiner::new(&name)?;
     let state = g.state.clone();
     let save = move |id: &identity::Identity| id.save(&state);
@@ -241,6 +252,7 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
         name: host_name(),
         peers: Vec::new(),
         mdns: true,
+        port: Some(member_port()),
     };
     let mut i = 0;
     while i < args.len() {
@@ -248,8 +260,14 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
         match flag(&args[i]) {
             Some("name") => cfg.name = next()?,
             Some("peer") => cfg.peers.push(resolve(&next()?)?),
+            Some("port") => cfg.port = Some(next()?.parse().context("the port is a number")?),
             Some("no-mdns") => {
                 cfg.mdns = false;
+                i += 1;
+                continue;
+            }
+            Some("no-listen") => {
+                cfg.port = None;
                 i += 1;
                 continue;
             }

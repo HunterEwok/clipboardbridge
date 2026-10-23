@@ -2,11 +2,12 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The member protocol (docs/protocol.md, section 4) on a lite member: it
-//! dials the Linux members, as a Mac does, sends its hello, forwards each
+//! dials the Linux members, and takes the connections of phones, Macs and
+//! lite members with a lower device ID; it sends its hello, forwards each
 //! event the first time the engine sees it to every other connection,
 //! exchanges the group's records and keeps a renewed certificate.
 //!
-//! Each connection has two threads: the one that dialed reads, and a writer
+//! Each connection has two threads: the one that dialed or accepted reads, and a writer
 //! sends what is queued, and a ping after 5 seconds of silence. Both use
 //! the TLS state under a lock; only the reader waits on the socket without
 //! it.
@@ -20,7 +21,7 @@ use std::sync::mpsc::{self, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use crate::certs::{Cert, DeviceId};
+use crate::certs::{Cert, DeviceId, Usage};
 use crate::clip::{Engine, Event, Hello, Kind, Outcome, Via};
 use crate::error::{Context, Error, Result};
 use crate::identity::Identity;
@@ -81,7 +82,7 @@ enum Out {
 struct Conn {
     id: DeviceId,
     sock: TcpStream,
-    tls: Mutex<rustls::ClientConnection>,
+    tls: Mutex<rustls::Connection>,
     tx: SyncSender<Out>,
     peer: Mutex<Option<(String, String)>>, // role and name, from the hello
     chain: Vec<Cert>,
@@ -224,9 +225,45 @@ impl Node {
         sock.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
         let ident = self.identity();
         let cfg = tls::member_client(&ident, peer.clone(), self.records.clone())?;
-        let mut conn = rustls::ClientConnection::new(Arc::new(cfg), tls::server_name(peer.as_ref()))
+        let conn = rustls::ClientConnection::new(Arc::new(cfg), tls::server_name(peer.as_ref()))
             .context("cannot set up TLS")?;
-        let mut s = &sock;
+        let (conn, id, chain) = self.handshake(&sock, conn.into(), addr, Usage::Server)?;
+        if self.connected(&id) {
+            let _ = sock.shutdown(Shutdown::Both);
+            return Ok(());
+        }
+        self.run(sock, conn, id, chain, addr)
+    }
+
+    /// Runs a connection that a member (a phone, a Mac or a lite member)
+    /// opened to this one until it ends. It replaces an older connection
+    /// to the same device. handshaken is called once the handshake is over,
+    /// whether it worked or not.
+    pub fn accept(&self, sock: TcpStream, addr: SocketAddr, handshaken: &mut dyn FnMut()) -> Result<()> {
+        if self.is_closed() {
+            return Err(Error::msg("the service is stopping"));
+        }
+        let _ = sock.set_nodelay(true);
+        sock.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
+        sock.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
+        let cfg = tls::member_server(&self.identity(), self.records.clone())?;
+        let conn = rustls::ServerConnection::new(Arc::new(cfg)).context("cannot set up TLS")?;
+        let res = self.handshake(&sock, conn.into(), addr, Usage::Client);
+        handshaken();
+        let (conn, id, chain) = res?;
+        self.run(sock, conn, id, chain, addr)
+    }
+
+    /// Completes the TLS handshake and checks the peer: usage is the side
+    /// it is on.
+    fn handshake(
+        &self,
+        sock: &TcpStream,
+        mut conn: rustls::Connection,
+        addr: SocketAddr,
+        usage: Usage,
+    ) -> Result<(rustls::Connection, DeviceId, Vec<Cert>)> {
+        let mut s = sock;
         while conn.is_handshaking() {
             conn.complete_io(&mut s).context(format!("the TLS handshake with {addr} failed"))?;
         }
@@ -236,11 +273,20 @@ impl Node {
             return Err(Error::msg(format!("{addr} does not speak the member protocol")));
         }
         let presented = conn.peer_certificates().unwrap_or_default().to_vec();
-        let (id, chain) = tls::check_member(&presented, &ident.trusted(), ident.root().not_before, &self.records)?;
-        if self.connected(&id) {
-            let _ = sock.shutdown(Shutdown::Both);
-            return Ok(());
-        }
+        let ident = self.identity();
+        let (id, chain) =
+            tls::check_member(&presented, &ident.trusted(), ident.root().not_before, &self.records, usage)?;
+        Ok((conn, id, chain))
+    }
+
+    fn run(
+        &self,
+        sock: TcpStream,
+        conn: rustls::Connection,
+        id: DeviceId,
+        chain: Vec<Cert>,
+        addr: SocketAddr,
+    ) -> Result<()> {
         sock.set_read_timeout(Some(TIMEOUT)).context("the connection broke")?;
         let (tx, rx) = mpsc::sync_channel(QUEUE_LEN);
         let c = Arc::new(Conn {

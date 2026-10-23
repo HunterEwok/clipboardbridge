@@ -93,8 +93,9 @@ fn member_certs() {
     for c in v["cases"].as_array().unwrap() {
         let leaf = cert(&c["cert"]);
         let t = (c["now_ms"].as_i64().unwrap() / 1000).max(ca.not_before);
-        let got =
-            certs::verify_member(&[leaf], std::slice::from_ref(&ca), t).map(|d| d.to_string()).unwrap_or_default();
+        let got = certs::verify_member(&[leaf], std::slice::from_ref(&ca), t, certs::Usage::Server)
+            .map(|d| d.to_string())
+            .unwrap_or_default();
         assert_eq!(got, c["device"].as_str().unwrap(), "{}", c["name"]);
     }
 }
@@ -152,12 +153,12 @@ fn swift_admin() {
     let chain = [leaf.clone(), admin.clone()];
     let t = leaf.not_before + 48 * 3600;
     assert_eq!(
-        certs::verify_member(&chain, std::slice::from_ref(&ca), t).unwrap().as_str(),
+        certs::verify_member(&chain, std::slice::from_ref(&ca), t, certs::Usage::Client).unwrap().as_str(),
         v["device"].as_str().unwrap()
     );
     assert!(s.refused(&chain).is_none());
     // Without its admin CA the certificate does not verify.
-    assert!(certs::verify_member(&chain[..1], std::slice::from_ref(&ca), t).is_err());
+    assert!(certs::verify_member(&chain[..1], std::slice::from_ref(&ca), t, certs::Usage::Server).is_err());
     // The identity of the device it names holds together, with the key.
     if let Ok(key) = STANDARD.decode(v["key"].as_str().unwrap()) {
         if crate::identity::public_key(&key).is_ok() {

@@ -5,16 +5,69 @@ package service
 
 import (
 	"bufio"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
+
+// publishLite puts a lite member on the fake network, as cbb-lite
+// publishes itself: TXT r=lite, at 127.0.0.1 and port.
+func publishLite(h *hub, id, tag string, port int) {
+	h.mu.Lock()
+	if h.ghosts == nil {
+		h.ghosts = map[string]mdns.Peer{}
+	}
+	h.ghosts[id] = mdns.Peer{ID: id, Port: uint16(port), TXT: []string{"v=1", "g=" + tag, "r=lite"},
+		Addrs: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
+	h.mu.Unlock()
+	h.update()
+}
+
+// TestLiteDialedByMacsOnly: Linux members leave a lite member they find
+// to dial them, whatever the device IDs; a Mac, like a phone, dials it.
+func TestLiteDialedByMacsOnly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var dialed atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			dialed.Add(1)
+			c.Close()
+		}
+	}()
+	var h hub
+	pi := startService(t, &h, "pi")
+	laptop := startService(t, &h, "laptop")
+	pairWith(t, pi, laptop) // the group exists from here
+	// The greatest device ID: a Linux member would dial a Linux member with it.
+	publishLite(&h, strings.Repeat("f", 32), pi.status(t).Group, ln.Addr().(*net.TCPAddr).Port)
+	time.Sleep(2 * time.Second)
+	if n := dialed.Load(); n != 0 {
+		t.Fatalf("the Linux members dialed the lite member %d times", n)
+	}
+	mac := startRole(t, &h, "mac", node.Mac)
+	pairWith(t, pi, mac)
+	waitFor(t, "the Mac dials the lite member", func() bool { return dialed.Load() > 0 })
+}
 
 // startLite runs cbb-lite (the Rust lite member, lite/) with the state in
 // dir; it is stopped at the end of the test.
@@ -130,7 +183,13 @@ func TestLiteMember(t *testing.T) {
 	// The lite member dials both computers and syncs with them.
 	pa, _ := pi.addrs()
 	la, _ := laptop.addrs()
-	lite := startLite(t, bin, dir, "-no-mdns", "-peer", pa, "-peer", la)
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := free.Addr().(*net.TCPAddr).Port
+	free.Close()
+	lite := startLite(t, bin, dir, "-no-mdns", "-port", strconv.Itoa(port), "-peer", pa, "-peer", la)
 	// The control socket answers while the service still loads its identity.
 	waitFor(t, "the lite member in the group", func() bool {
 		_, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
@@ -163,4 +222,25 @@ func TestLiteMember(t *testing.T) {
 			return false
 		})
 	}
+
+	// A member that only dials, as a phone does (here a Mac), finds the
+	// lite member and connects to it; with the computers off the two still
+	// sync.
+	publishLite(&h, st.Device, st.Group, port)
+	mac := startRole(t, &h, "mac", node.Mac)
+	pairWith(t, pi, mac)
+	waitFor(t, "the Mac connected to all three", func() bool { return len(mac.status(t).Peers) == 3 })
+	pi.stop()
+	laptop.stop()
+	waitFor(t, "the Mac and the lite member alone", func() bool {
+		return len(mac.status(t).Peers) == 1 && len(lite.status(t).Peers) == 1
+	})
+	if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the lite member has the Mac text", func() bool { return lite.paste(t) == "from the Mac" })
+	if _, err := lite.do(t, control.Header{Op: control.OpCopy}, "back from the lite member"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the Mac has the lite text", func() bool { return mac.paste(t) == "back from the lite member" })
 }

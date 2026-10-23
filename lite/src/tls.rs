@@ -17,7 +17,7 @@ use rustls::pki_types::{
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{DigitallySignedStruct, DistinguishedName, SignatureScheme};
 
-use crate::certs::{self, Cert, DeviceId};
+use crate::certs::{self, Cert, DeviceId, Usage};
 use crate::error::{Error, Result};
 use crate::identity::Identity;
 use crate::records::Records;
@@ -66,15 +66,17 @@ struct MemberVerifier {
 }
 
 /// Checks a member chain as Go's checkPeer does, and returns the device.
+/// usage is the side the peer is on: Server for a member this one dialed.
 pub fn check_member(
     chain: &[CertificateDer<'_>],
     trusted: &[Cert],
     root_start: i64,
     records: &Mutex<Records>,
+    usage: Usage,
 ) -> Result<(DeviceId, Vec<Cert>)> {
     let certs = chain.iter().map(|c| Cert::parse(c)).collect::<Result<Vec<_>>>()?;
     let t = now_secs().max(root_start);
-    let dev = certs::verify_member(&certs, trusted, t)?;
+    let dev = certs::verify_member(&certs, trusted, t, usage)?;
     // Only the leaf and its issuer count, as the peer sends them.
     let used: Vec<Cert> = certs.into_iter().take(2).collect();
     if let Some(why) = records.lock().unwrap().refused(&used) {
@@ -94,8 +96,8 @@ impl ServerCertVerifier for MemberVerifier {
     ) -> Result<ServerCertVerified, rustls::Error> {
         let mut chain = vec![end_entity.clone()];
         chain.extend(intermediates.iter().cloned());
-        let (dev, _) =
-            check_member(&chain, &self.trusted, self.root_start, &self.records).map_err(|e| tls_err(e.message()))?;
+        let (dev, _) = check_member(&chain, &self.trusted, self.root_start, &self.records, Usage::Server)
+            .map_err(|e| tls_err(e.message()))?;
         if dev == self.self_id {
             return Err(tls_err("connected to itself"));
         }
@@ -157,6 +159,83 @@ pub fn member_client(
         .map_err(|e| Error::with("cannot use the member certificate", e))?;
     cfg.alpn_protocols = vec![MEMBER_PROTOCOL.to_vec()];
     cfg.resumption = rustls::client::Resumption::disabled();
+    Ok(cfg)
+}
+
+/// Checks a member that dialed this one.
+#[derive(Debug)]
+struct MemberClientVerifier {
+    self_id: DeviceId,
+    trusted: Vec<Cert>,
+    root_start: i64,
+    records: Arc<Mutex<Records>>,
+}
+
+impl ClientCertVerifier for MemberClientVerifier {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        &[]
+    }
+
+    fn verify_client_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        _now: UnixTime,
+    ) -> Result<ClientCertVerified, rustls::Error> {
+        let mut chain = vec![end_entity.clone()];
+        chain.extend(intermediates.iter().cloned());
+        let (dev, _) = check_member(&chain, &self.trusted, self.root_start, &self.records, Usage::Client)
+            .map_err(|e| tls_err(e.message()))?;
+        if dev == self.self_id {
+            return Err(tls_err("connected to itself"));
+        }
+        Ok(ClientCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls12_signature(m, c, d, &provider().signature_verification_algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_sig(m, c, d)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        schemes()
+    }
+}
+
+/// The server configuration for members that dial this one (phones, Macs
+/// and lite members with a lower device ID): TLS 1.3 only, ALPN
+/// clipboardbridge/1, this member's certificate with its issuer, a client
+/// certificate of the group required, no session tickets.
+pub fn member_server(id: &Identity, records: Arc<Mutex<Records>>) -> Result<rustls::ServerConfig> {
+    let verifier = MemberClientVerifier {
+        self_id: id.id.clone(),
+        trusted: id.trusted(),
+        root_start: id.root().not_before,
+        records,
+    };
+    let chain: Vec<CertificateDer<'static>> = id.chain().into_iter().map(CertificateDer::from).collect();
+    let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(id.key.clone()));
+    let mut cfg = rustls::ServerConfig::builder_with_provider(provider())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|e| Error::with("cannot set up TLS", e))?
+        .with_client_cert_verifier(Arc::new(verifier))
+        .with_single_cert(chain, key)
+        .map_err(|e| Error::with("cannot use the member certificate", e))?;
+    cfg.alpn_protocols = vec![MEMBER_PROTOCOL.to_vec()];
+    cfg.send_tls13_tickets = 0;
     Ok(cfg)
 }
 
