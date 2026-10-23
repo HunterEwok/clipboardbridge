@@ -106,8 +106,8 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`get.ps1\` | the Windows installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
-Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, and \`packaging/\` with the
-installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program, \`LICENSE\`,
+Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, \`THIRD_PARTY_NOTICES\` with
+the licenses of the code it is built from, and \`packaging/\` with the installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program, \`LICENSE\`,
 \`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\` with the
 install steps, and \`packaging/\` with the systemd unit.
 

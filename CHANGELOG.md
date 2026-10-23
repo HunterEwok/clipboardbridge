@@ -202,6 +202,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The release archives now carry `THIRD_PARTY_NOTICES`, the licenses of the Go modules,
+  the copied CPace code and Go itself that `cbb` is built from, as their licenses require.
+
 - Adding a device in the phone app no longer hangs when the computer does not answer: a
   connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,
   IPv4 addresses come first, leaving the sheet cancels it, and the message names the

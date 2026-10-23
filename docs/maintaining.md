@@ -130,7 +130,10 @@ Rules for workflows:
   hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
-  binary, `LICENSE` and `packaging/`.
+  binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code
+  and Go itself, written by `packaging/archive.sh`) and `packaging/`. The `cbb-lite-linux-*`
+  archives hold `cbb-lite/` in the same way, with the crates' licenses
+  (`lite/packaging/notices.sh`).
 - The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
   Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist` or
   `clipboardbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:
