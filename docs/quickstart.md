@@ -55,10 +55,12 @@ app (iPhone or Android), the phone makes the group itself instead: see the app's
 On that machine:
 
 ```sh
+cbb new
 cbb pair -phone
 ```
 
-This creates the group and prints a QR code, the start of a fingerprint and a six-digit code.
+`cbb new` creates the group, with this computer as its root. `cbb pair -phone` prints a QR
+code, the start of a fingerprint and a six-digit code.
 
 1. Scan the QR code with the iPhone's camera and follow the page: install the profile.
 2. Check that its fingerprint starts with the printed one (Settings → General → VPN & Device
@@ -69,8 +71,7 @@ This creates the group and prints a QR code, the start of a fingerprint and a si
 4. Put "clipboardbridge" on the Action button or on Back Tap (Settings → Accessibility → Touch →
    Back Tap → Double Tap).
 
-No iPhone? Run `cbb pair` instead; it creates the group and shows a code for the next
-computer.
+No iPhone? Run `cbb new` and then `cbb pair`, which shows a code for the next computer.
 
 ## 3. Add more computers
 
@@ -109,35 +110,44 @@ Install on each computer first.
 Then, on the new computer:
 
 ```sh
-cbb join
+cbb pair
 ```
 
 It shows a QR code. On the iPhone, run the shortcut "clipboardbridge: add a computer" and scan
 it. The computer joins within seconds.
 
-Without the iPhone: run `cbb pair` on a Linux machine of the group, then
-`cbb join -code` on the new computer and type the code it showed.
+Without the iPhone: run `cbb pair` on the computer that created the group too; it shows a
+six-digit code, which you type into the waiting `cbb pair` on the new computer.
+
+The computer that created the group is its root: only it and the admins it makes can add
+and remove devices and serve the iPhone shortcut. To make another computer an admin, so the
+group does not depend on one machine, run on the root:
+
+```sh
+cbb admin NAME        # NAME as cbb status shows it; that computer must be on
+```
 
 A computer that is not on the home network joins with an invitation, once sync away from
-home is on and a hub is set up (see "Sync away from home" below). On the hub:
+home is on and a hub is set up (see "Sync away from home" below). On the hub, which must be
+the root or an admin:
 
 ```sh
 cbb invite            # writes clipboardbridge.cbbinvite, valid for an hour (-for 24h at most)
 ```
 
 Copy the file to the new computer through a channel you trust (it is a secret until it is
-used), and run `cbb join -invite clipboardbridge.cbbinvite` there. Both show the new
+used), and run `cbb pair -invite clipboardbridge.cbbinvite` there. Both show the new
 computer's key fingerprint; on the hub, type `yes` only if they match. The new computer
 then syncs through the hub wherever it is.
 
 Or through a path you control:
 
-- **SSH** to a Linux machine of the group: on the new computer run
+- **SSH** to the root or an admin of the group: on the new computer run
   `ssh -N -L 18764:localhost:8764 user@that-machine`, then `cbb pair` there (in another SSH
-  session) and `cbb join -code 127.0.0.1:18764` here.
+  session) and `cbb pair -code 127.0.0.1:18764` here.
 - **Your own VPN** that gives both machines private addresses (10.x, 172.16–31.x,
-  192.168.x or IPv6 `fd..`): `cbb pair` on the Linux machine, then
-  `cbb join -code <its VPN address>:8764` here. On Linux, run the installer again after
+  192.168.x or IPv6 `fd..`): `cbb pair` on the root or an admin, then
+  `cbb pair -code <its VPN address>:8764` here. On Linux, run the installer again after
   setting up the VPN, so its firewall rules allow the VPN's network.
 
 The pairing code never travels in the clear: the pairing runs inside SSH or your VPN, and
@@ -265,7 +275,7 @@ With the iPhone or Android app, the phone holds the group's key, and the compute
 (the [app guide](apps-guide.md) has more):
 
 1. Install the app and tap "Connect a new device".
-2. On each computer, install clipboardbridge (step 1 or 3) and run `cbb join`; the app
+2. On each computer, install clipboardbridge (step 1 or 3) and run `cbb pair`; the app
    scans its QR code. No profile, no code to type.
 3. A second phone joins from its own Start screen ("I already use clipboardbridge on another
    phone"), and the first one makes it an admin. If one phone is lost, remove it in Devices

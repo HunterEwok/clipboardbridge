@@ -53,7 +53,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 	}
 	tw.Flush()
 	if unlisted {
-		fmt.Fprintln(w, "* not in the devices list yet; a member that holds the group's keys adds it when they meet.")
+		fmt.Fprintln(w, "* not in the devices list yet; the group's root adds it when they meet.")
 	}
 }
 
@@ -93,5 +93,24 @@ func cmdRevoke(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Removed %s from the group. The other members refuse it as soon as they hear of it.\n", m.Name)
+	return 0
+}
+
+// cmdAdmin makes a device an admin of the group, on the group's root.
+func cmdAdmin(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb admin <name or device ID>; cbb status lists them")
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpAdmin, Name: args[0]}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "%s is an admin now: it can admit and remove devices and pair iPhones for the shortcut.\n", m.Name)
 	return 0
 }

@@ -148,7 +148,7 @@ public enum Pairing {
     public enum FrameError: Error { case tooLarge, short }
 }
 
-/// What the QR code of cbb join carries (docs/protocol.md, section 7):
+/// What the QR code of cbb pair carries (docs/protocol.md, section 7):
 /// clipboardbridge://join?code=123456&addr=host:port&fp=...
 public struct JoinCode: Equatable {
     public var code: String
@@ -185,7 +185,7 @@ public struct JoinCode: Equatable {
     /// Whether the code is six digits, as the computer expects.
     public var codeIsValid: Bool { code.count == 6 && code.allSatisfy { $0.isASCII && $0.isNumber } }
 
-    /// The text of the QR code, as cbb join shows it.
+    /// The text of the QR code, as cbb pair shows it.
     public var qrText: String {
         var u = URLComponents()
         (u.scheme, u.host) = ("clipboardbridge", "join")

@@ -50,22 +50,21 @@ func homeOnly(h http.Handler) http.Handler {
 	})
 }
 
-// servePhone serves the shortcut's HTTPS on a Linux member, until ctx is
-// done: the member port at addr passes it the connections (see demux.go).
+// servePhone serves the shortcut's HTTPS until ctx is done: the member
+// port at addr passes it the connections (see demux.go). A member without
+// the iPhone CA takes them too, since it may get it later (cbb admin), and
+// refuses the handshake until then.
 func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
-	s.mu.Lock()
-	admin := s.id.Phone != nil
-	s.mu.Unlock()
-	if !admin {
-		return
-	}
 	// The certificate is looked up for each connection, so a renewed one
 	// is used at once.
 	cfg := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"http/1.1"},
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return s.id.PhoneCertificate(), nil
+			if c := s.id.PhoneCertificate(); c != nil {
+				return c, nil
+			}
+			return nil, errors.New("this member does not serve the shortcut")
 		}}
 	mux := http.NewServeMux()
 	mux.Handle("/sync", phone.SyncHandler(phoneGroup{s}))
@@ -98,24 +97,20 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 // clipboardbridge.local, serves the profile while it is open, and reports the
 // end; a client that hangs up closes the window.
 func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) {
-	// The phone is the group's main device: pairing it with the first
-	// computer creates the group.
-	if s.engine() == nil && !s.mac() {
-		if _, err := s.createGroup(); err != nil {
-			fail(c, err)
-			return
-		}
+	if s.engine() == nil {
+		fail(c, s.errNoGroup())
+		return
 	}
 	s.mu.Lock()
 	id, holder, busy := s.id, s.holder, s.phoneWindow != nil || s.phoneOpening
-	ok := id != nil && id.Admin() && holder && !busy
+	ok := id != nil && id.ServesPhone() && holder && !busy
 	if ok {
 		s.phoneOpening = true
 	}
 	s.mu.Unlock()
 	switch {
-	case id == nil || !id.Admin():
-		fail(c, errors.New("only a Linux member in a group can pair an iPhone; run cbb pair on it first"))
+	case id == nil || !id.ServesPhone():
+		fail(c, errors.New("only the group's root and its admins pair an iPhone for the shortcut; run cbb pair -phone on one of them, or cbb admin on the root to make this one an admin"))
 		return
 	case !holder:
 		fail(c, errors.New("this member does not answer for clipboardbridge.local; run cbb pair -phone on the member that cbb status shows as holding it"))

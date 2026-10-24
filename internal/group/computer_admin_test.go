@@ -119,9 +119,75 @@ func TestComputerAdmin(t *testing.T) {
 		t.Errorf("a record the admin computer signed: %v, %v", ok, err)
 	}
 
-	// A group a computer created has no admin keys.
+	// Neither the root nor a member of a legacy group gets an admin key.
 	if _, err := newGroup(t).WithAdminKey(); err == nil {
-		t.Error("a computer group's member got an admin key")
+		t.Error("the root got an admin key")
+	}
+	if _, err := join(t, newLegacyGroup(t), false, t0).WithAdminKey(); err == nil {
+		t.Error("a legacy group's member got an admin key")
+	}
+}
+
+// TestComputerRoot checks a group a computer created: the root makes a
+// member an admin with IssueAdmin, and the admin takes the iPhone CA and
+// serves the shortcut with it; a member that is no admin never holds it.
+func TestComputerRoot(t *testing.T) {
+	root := newGroup(t)
+	m := join(t, root, false, t0)
+	if !m.NeedsAdminKey() || m.IsAdmin() || m.ServesPhone() || m.IsRoot() {
+		t.Fatal("a new member is not a plain member waiting for an admin key")
+	}
+	pending, err := m.WithAdminKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pending.WithPhoneCA(*root.PhoneCA, t0); err == nil {
+		t.Error("a member that is no admin took the iPhone CA")
+	}
+	key, _ := NewKey()
+	if _, err := (&CA{Cert: root.GroupCA.Cert}).IssueAdmin(pending.ID, &pending.AdminKey.PublicKey, t0); err == nil {
+		t.Error("issued an admin CA without the root key")
+	}
+	if _, err := root.PhoneCA.IssueAdmin(pending.ID, &key.PublicKey, t0); err == nil {
+		t.Error("the iPhone CA issued an admin CA")
+	}
+	adminCA, err := root.GroupCA.IssueAdmin(pending.ID, &pending.AdminKey.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAdminCA(adminCA, root.GroupCA.Cert); err != nil || adminCA.Subject.CommonName != AdminName(pending.ID) {
+		t.Fatalf("the admin CA: %v, %q", err, adminCA.Subject.CommonName)
+	}
+	admin, err := pending.WithAdminCA(adminCA.Raw, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !admin.IsAdmin() || admin.IsRoot() || admin.ServesPhone() {
+		t.Error("the new admin is not an admin without the iPhone CA")
+	}
+	if _, err := admin.WithPhoneCA(CA{Cert: root.PhoneCA.Cert}, t0); err == nil {
+		t.Error("took the iPhone CA without its key")
+	}
+	if _, err := admin.WithPhoneCA(root.GroupCA, t0); err == nil {
+		t.Error("took the root as the iPhone CA")
+	}
+	serving, err := admin.WithPhoneCA(*root.PhoneCA, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !serving.ServesPhone() || serving.Phone.VerifyHostname(PhoneName) != nil || !serving.Key.PublicKey.Equal(serving.Phone.PublicKey) {
+		t.Error("the admin does not serve the shortcut with its own clipboardbridge.local certificate")
+	}
+	dir := t.TempDir()
+	if err := serving.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil || !got.ServesPhone() || !got.PhoneCA.Key.Equal(root.PhoneCA.Key) || got.AdminCA == nil {
+		t.Fatalf("the admin's iPhone CA was not kept: %v", err)
+	}
+	if back := serving.WithoutPhoneCA(); back.ServesPhone() || back.Check() != nil || !back.IsAdmin() {
+		t.Error("an admin without the iPhone CA does not check")
 	}
 }
 

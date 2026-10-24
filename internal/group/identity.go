@@ -22,12 +22,16 @@ import (
 const FileName = "identity.json"
 
 // ErrNoGroup reports that the device is in no group yet.
-var ErrNoGroup = errors.New("group: this device is in no group; run cbb pair or cbb join")
+var ErrNoGroup = errors.New("group: this device is in no group; run cbb new to start one or cbb pair to join one")
 
 // An Identity is this device's place in a group: its device ID, its key,
-// its member certificate and the group CA. A Linux member also holds the
-// keys of both CAs and its own clipboardbridge.local certificate, so it can admit
-// devices and serve the iPhone; a Mac holds neither.
+// its member certificate and the group CA. The computer that created the
+// group holds the root key; it and the admins it made hold the iPhone CA
+// key and their own clipboardbridge.local certificates, so they can serve
+// the shortcut. Every other full member holds an admin key that waits for
+// an admin CA (docs/design.md, "Full members, admins and the operating
+// system"). In a legacy group, made before admin CAs, every Linux and
+// Windows member holds the keys of both CAs, and a Mac neither.
 //
 // An Identity is not changed after it is made; renewing returns a new one.
 type Identity struct {
@@ -44,25 +48,29 @@ type Identity struct {
 	// Roots are the roots that took a phone group over from GroupCA, in
 	// order, as the root records say; the last is the current root. Empty
 	// in a group that was never handed over (docs/protocol.md, section 10).
-	Roots   []*x509.Certificate
-	PhoneCA *CA               // nil on a Mac
-	Phone   *x509.Certificate // the clipboardbridge.local certificate, with Key; nil on a Mac
-	// AdminKey is the key a computer of a phone group signs with once the
-	// root phone makes it an admin: the hello offers it until AdminCA, from
-	// the root, certifies it (docs/protocol.md, section 10). Both are nil
-	// in a group a computer created.
+	Roots []*x509.Certificate
+	// PhoneCA is the iPhone CA with its key, and Phone the
+	// clipboardbridge.local certificate for Key, on a member that serves
+	// the shortcut: the root computer and its admins, or every Linux and
+	// Windows member of a legacy group. Both are nil elsewhere.
+	PhoneCA *CA
+	Phone   *x509.Certificate
+	// AdminKey is the key a full member signs with once the root makes it
+	// an admin: the hello offers it until AdminCA, from the root,
+	// certifies it (docs/protocol.md, section 10). Both are nil on the
+	// root and in a legacy group.
 	AdminKey *ecdsa.PrivateKey
 	AdminCA  *x509.Certificate
 }
 
-// Create creates a new group on this device: a device ID, a key, both CAs
-// and the device's certificates.
+// Create creates a new group on this device, its root: a device ID, a key,
+// the root CA, the iPhone CA and the device's certificates.
 func Create(now time.Time) (*Identity, error) {
 	key, err := NewKey()
 	if err != nil {
 		return nil, err
 	}
-	groupCA, err := NewGroupCA(now)
+	groupCA, err := NewRootCA(now)
 	if err != nil {
 		return nil, err
 	}
@@ -97,20 +105,33 @@ func (id *Identity) Trusted() []*x509.Certificate {
 	return append([]*x509.Certificate{id.GroupCA.Cert}, id.Roots...)
 }
 
-// Admin reports whether this device holds the CA keys and can admit
-// devices, renew certificates and serve the iPhone.
-func (id *Identity) Admin() bool {
-	return id.GroupCA.Key != nil && id.PhoneCA != nil && id.PhoneCA.Key != nil && id.Phone != nil
+// ServesPhone reports whether this device holds the iPhone CA key and its
+// clipboardbridge.local certificate, so it can serve the shortcut.
+func (id *Identity) ServesPhone() bool {
+	return id.PhoneCA != nil && id.PhoneCA.Key != nil && id.Phone != nil
 }
 
-// PhoneGroup reports whether the group's root is a phone: its CA allows
-// admin CAs below it.
-func (id *Identity) PhoneGroup() bool { return id.GroupCA.Cert.MaxPathLen == 1 }
+// IsAdmin reports whether this device admits devices, signs records and
+// renews certificates: it holds the root key, the group CA key of a legacy
+// group, or an admin CA.
+func (id *Identity) IsAdmin() bool {
+	ca, _ := id.Signer()
+	return ca != nil
+}
+
+// IsRoot reports whether this device holds the key of the group's root,
+// as the computer that created a group does; in a legacy group no member
+// is the root.
+func (id *Identity) IsRoot() bool { return id.GroupCA.Key != nil && !id.Legacy() }
+
+// Legacy reports whether the group was made before admin CAs: its group CA
+// has path length 0, and every Linux and Windows member holds its key.
+func (id *Identity) Legacy() bool { return id.GroupCA.Cert.MaxPathLen == 0 }
 
 // Signer returns the CA this device admits devices and signs records with,
-// and the chain its records carry: the group CA on a Linux member that
-// holds the CA keys, the admin CA on a computer that the root phone made an
-// admin. It returns nil when this device is no admin.
+// and the chain its records carry: the group CA on the root computer or a
+// key holder of a legacy group, the admin CA on a member that the root
+// made an admin. It returns nil when this device is no admin.
 func (id *Identity) Signer() (*CA, []*x509.Certificate) {
 	switch {
 	case id.GroupCA.Key != nil:
@@ -121,11 +142,18 @@ func (id *Identity) Signer() (*CA, []*x509.Certificate) {
 	return nil, nil
 }
 
-// WithAdminKey returns the identity with a new admin key, for a computer of
-// a phone group that has none yet.
+// NeedsAdminKey reports whether this device should make an admin key for
+// the root to certify: it is in a group with a root, is not the root, and
+// has none yet.
+func (id *Identity) NeedsAdminKey() bool {
+	return !id.Legacy() && id.GroupCA.Key == nil && id.AdminKey == nil
+}
+
+// WithAdminKey returns the identity with a new admin key, for a full member
+// that has none yet (NeedsAdminKey).
 func (id *Identity) WithAdminKey() (*Identity, error) {
-	if !id.PhoneGroup() || id.AdminKey != nil {
-		return nil, errors.New("group: only a computer of a phone group without one gets an admin key")
+	if !id.NeedsAdminKey() {
+		return nil, errors.New("group: only a member of a group with a root, not the root, and without one gets an admin key")
 	}
 	key, err := NewKey()
 	if err != nil {
@@ -136,8 +164,8 @@ func (id *Identity) WithAdminKey() (*Identity, error) {
 	return &next, nil
 }
 
-// WithAdminCA returns the identity with the admin CA that the root phone
-// issued for its admin key, which makes this computer an admin, and a new
+// WithAdminCA returns the identity with the admin CA that the root issued
+// for its admin key, which makes this member an admin, and a new
 // member certificate from that admin CA: a device it admits then checks
 // both against the one issuer in the Welcome.
 func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
@@ -161,6 +189,36 @@ func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
 	return &next, nil
 }
 
+// WithPhoneCA returns the identity with the iPhone CA ca, its key
+// included, and a new clipboardbridge.local certificate from it: for an
+// admin of a group a computer created, which serves the shortcut with it.
+func (id *Identity) WithPhoneCA(ca CA, now time.Time) (*Identity, error) {
+	if ca.Key == nil {
+		return nil, errors.New("group: the iPhone CA comes without its key")
+	}
+	if err := checkCA(&ca, "iPhone CA", 0); err != nil {
+		return nil, err
+	}
+	phone, err := ca.IssuePhone(&id.Key.PublicKey, now)
+	if err != nil {
+		return nil, err
+	}
+	next := *id
+	next.PhoneCA, next.Phone = &ca, phone
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
+// WithoutPhoneCA returns the identity without the iPhone CA and its
+// clipboardbridge.local certificate, after the records revoked that CA.
+func (id *Identity) WithoutPhoneCA() *Identity {
+	next := *id
+	next.PhoneCA, next.Phone = nil, nil
+	return &next
+}
+
 // AdminName is the subject CN of the admin CA of a device.
 func AdminName(dev DeviceID) string { return "clipboardbridge admin " + string(dev) }
 
@@ -177,8 +235,8 @@ func (id *Identity) Check() error {
 	if err := checkCA(&id.GroupCA, "group CA", maxGroupCAPath); err != nil {
 		return err
 	}
-	if len(id.Roots) > 0 && (id.GroupCA.Key != nil || id.GroupCA.Cert.MaxPathLen != 1) {
-		return errors.New("group: only a group whose root is a phone has later roots")
+	if len(id.Roots) > 0 && (id.GroupCA.Key != nil || id.Legacy()) {
+		return errors.New("group: only a group with a root, on a member that does not hold the first root's key, has later roots")
 	}
 	for _, r := range id.Roots {
 		if err := checkRoot(r); err != nil {
@@ -216,12 +274,22 @@ func (id *Identity) Check() error {
 	if err := id.checkAdmin(); err != nil {
 		return err
 	}
-	// A Linux member holds all of the admin parts, a Mac none of them.
-	admin := id.GroupCA.Key != nil
-	if (id.PhoneCA != nil) != admin || (id.PhoneCA != nil && id.PhoneCA.Key == nil) || (id.Phone != nil) != admin {
-		return errors.New("group: the identity holds only some of the CA keys and the clipboardbridge.local certificate")
+	// The iPhone CA comes with its key and the clipboardbridge.local
+	// certificate. The root holds it, an admin may; in a legacy group a
+	// member holds it with the group CA key, or holds neither.
+	serves := id.PhoneCA != nil
+	if serves != (id.Phone != nil) || serves && id.PhoneCA.Key == nil {
+		return errors.New("group: the identity holds only some of the iPhone CA, its key and the clipboardbridge.local certificate")
 	}
-	if !admin {
+	switch {
+	case id.Legacy() && serves != (id.GroupCA.Key != nil):
+		return errors.New("group: the identity holds only some of the CA keys and the clipboardbridge.local certificate")
+	case id.IsRoot() && !serves:
+		return errors.New("group: the root holds no iPhone CA")
+	case !id.Legacy() && !id.IsRoot() && serves && id.AdminCA == nil:
+		return errors.New("group: only an admin holds the iPhone CA")
+	}
+	if !serves {
 		return nil
 	}
 	if err := checkCA(id.PhoneCA, "iPhone CA", 0); err != nil {
@@ -236,8 +304,9 @@ func (id *Identity) Check() error {
 	return nil
 }
 
-// checkAdmin checks the admin key and the admin CA: only in a phone group,
-// the CA for that key, under one of the group's roots, naming this device.
+// checkAdmin checks the admin key and the admin CA: only in a group with a
+// root and not on the root, the CA for that key, under one of the group's
+// roots, naming this device.
 func (id *Identity) checkAdmin() error {
 	if id.AdminKey == nil {
 		if id.AdminCA != nil {
@@ -245,8 +314,8 @@ func (id *Identity) checkAdmin() error {
 		}
 		return nil
 	}
-	if !id.PhoneGroup() || id.GroupCA.Key != nil {
-		return errors.New("group: only a computer of a phone group has an admin key")
+	if id.Legacy() || id.GroupCA.Key != nil {
+		return errors.New("group: only a member of a group with a root, not the root, has an admin key")
 	}
 	if id.AdminKey.Curve != elliptic.P256() {
 		return errors.New("group: the admin key is not a P-256 key")
@@ -269,9 +338,9 @@ func (id *Identity) checkAdmin() error {
 	return err
 }
 
-// maxGroupCAPath is the longest path a group CA may allow: 0 for a group a
-// computer created, 1 for the root a phone creates, which certifies admin
-// CAs (docs/protocol.md, sections 9 and 10).
+// maxGroupCAPath is the longest path a group CA may allow: 0 in a legacy
+// group, 1 for a root, which certifies admin CAs (docs/protocol.md,
+// sections 9 and 10).
 const maxGroupCAPath = 1
 
 // checkCA checks a CA certificate: self-signed, a P-256 key, and a path
