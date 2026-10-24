@@ -113,8 +113,29 @@ func TestTunnelKeys(t *testing.T) {
 		t.Error("the hub keeps an offer of its own")
 	}
 
-	// Removing the Mac drops it from the hub.
+	// A member that is no admin making itself a hub too gets nowhere: the
+	// Mac keeps the offer of the pi, the group's root.
 	macID := mac.status(t).Device
+	deck.stop()
+	dst := tunnelState(t, deck)
+	dst.IsHub, dst.ToHub = true, nil
+	if err := dst.Save(deck.dir); err != nil {
+		t.Fatal(err)
+	}
+	deck = restartService(t, &h, deck)
+	waitUpTo(t, 30*time.Second, "the deck takes the Mac's key", func() bool {
+		for _, m := range tunnelState(t, deck).Members {
+			if m.Device == macID {
+				return true
+			}
+		}
+		return false
+	})
+	if got := tunnelState(t, mac).ToHub; got == nil || got.Device != piID {
+		t.Errorf("the Mac took the offer of a member that is no admin")
+	}
+
+	// Removing the Mac drops it from the hub.
 	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "mac"}, ""); err != nil {
 		t.Fatal(err)
 	}

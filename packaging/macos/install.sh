@@ -10,10 +10,12 @@
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
 # a LaunchAgent, adds the user who ran sudo to the group, lets the service
 # take connections through the application firewall, and starts or
-# restarts both. With --in-place both run the binary where it is instead of
-# a copy, for Homebrew, whose upgrades replace it there: the formula's
-# caveats pass its opt path, and running this again after an upgrade
-# restarts them on the new one. uninstall.sh removes it all again.
+# restarts both. With --in-place the agent and cbb in PATH run the binary
+# where it is instead of a copy, for Homebrew, whose upgrades replace it
+# there: the formula's caveats pass its opt path, and running this again
+# after an upgrade restarts them on the new one. The service always runs a
+# copy that only root can change, since it holds the group's keys and a
+# Homebrew prefix belongs to the user. uninstall.sh removes it all again.
 set -eu
 
 usage() {
@@ -104,11 +106,19 @@ fi
 install -d -o "$name" -g "$name" -m 0750 "/Library/Application Support/clipboardbridge"
 install -d -o "$name" -g "$name" -m 0700 "/Library/Application Support/clipboardbridge/state"
 install -d -o "$name" -g "$name" -m 0750 /Library/Logs/clipboardbridge
+# The service's own copy: a binary the user or another program can replace
+# would get the service's keys at its next start.
+service="/Library/Application Support/clipboardbridge/bin/cbb"
+install -d -o root -g wheel -m 0755 "/Library/Application Support/clipboardbridge/bin"
+install -o root -g wheel -m 0755 "$run" "$service.new"
+mv -f "$service.new" "$service"
 
 daemon=io.github.hunterewok.clipboardbridge
 agent=io.github.hunterewok.clipboardbridge.agent
 for p in "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist"; do
-	sed "s|<string>/usr/local/bin/cbb</string>|<string>$run</string>|" "$here/$(basename "$p")" >"$p.new"
+	exe=$run
+	[ "$p" = "/Library/LaunchDaemons/$daemon.plist" ] && exe=$service
+	sed "s|<string>/usr/local/bin/cbb</string>|<string>$exe</string>|" "$here/$(basename "$p")" >"$p.new"
 	chmod 0644 "$p.new"
 	mv "$p.new" "$p"
 done
@@ -130,7 +140,7 @@ if [ -x "$fw" ]; then
 		rm -f "$listed"
 	fi
 	if [ "${CBB_FIREWALL:-yes}" != no ]; then
-		real=$(readlink -f "$run" 2>/dev/null || echo "$run")
+		real=$service
 		"$fw" --add "$real" >/dev/null
 		"$fw" --unblockapp "$real" >/dev/null
 		echo "$real" >"$listed"

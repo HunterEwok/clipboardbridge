@@ -19,7 +19,6 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
-	"github.com/HunterEwok/clipboardbridge/internal/phone"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
 )
 
@@ -84,7 +83,7 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 	case control.OpPair:
 		s.pair(ctx, c, r)
 	case control.OpPairPhone:
-		s.pairPhone(ctx, c, r)
+		s.pairPhone(ctx, c, r, m.NewToken)
 	case control.OpJoin:
 		s.join(ctx, c, r, m)
 	case control.OpInvite:
@@ -132,6 +131,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		reply(c, control.Header{Name: name, Done: true}, nil)
 	case control.OpRevoke:
 		name, err := s.revoke(m.Name)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpFreeze, control.OpThaw:
+		name, err := s.freeze(m.Name, m.Op == control.OpFreeze)
 		if err != nil {
 			fail(c, err)
 			return
@@ -226,7 +232,7 @@ func (s *Service) statusWithRemoved() *control.Status {
 // pair opens a pairing window and reports its end; a client that hangs up
 // closes the window.
 func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
-	w, _, end, err := s.openWindow(pair.NewCode(), true)
+	w, _, end, err := s.openWindow(pair.NewCode())
 	if err != nil {
 		fail(c, err)
 		return
@@ -258,14 +264,13 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 }
 
 // openWindow reserves the pairing window and opens it with code, on the
-// group's root or an admin. With announce, the window is published and takes pairing connections on
-// the member port; without, it only serves the member's own dials to a
-// listening joiner. end closes the window and frees it; it may be called
+// group's root or an admin; the window is published and takes pairing
+// connections on the member port. end closes the window and frees it; it may be called
 // more than once, and runs before the last answer to a client, so it can
 // pair again at once.
-func (s *Service) openWindow(code string, announce bool) (*pair.Window, *group.Identity, func(), error) {
+func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func(), error) {
 	s.mu.Lock()
-	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
+	id, busy, joining := s.id, s.window != nil || s.opening, s.joining
 	if !busy && !joining {
 		s.opening = true
 	}
@@ -291,9 +296,6 @@ func (s *Service) openWindow(code string, announce bool) (*pair.Window, *group.I
 			s.window = nil
 			s.responder.SetTXT(s.txtLocked())
 		}
-		if s.dialWindow != nil && s.dialWindow == w {
-			s.dialWindow = nil
-		}
 		s.opening = false
 		s.mu.Unlock()
 	}
@@ -312,12 +314,8 @@ func (s *Service) openWindow(code string, announce bool) (*pair.Window, *group.I
 	}
 	w = opened
 	s.mu.Lock()
-	if announce {
-		s.window = w
-		s.responder.SetTXT(s.txtLocked())
-	} else {
-		s.dialWindow = w
-	}
+	s.window = w
+	s.responder.SetTXT(s.txtLocked())
 	s.opening = false
 	s.mu.Unlock()
 	return w, id, end, nil
@@ -398,62 +396,6 @@ func (s *Service) windowResult(w *pair.Window) (*pair.Result, error) {
 	s.logf("cbb: %s (%s) joined the group", res.Info.Name, res.Device)
 	s.recordAdmitted(res)
 	return res, nil
-}
-
-// admit adds a computer whose QR code a paired phone scanned: it dials the
-// addresses in it and pairs with the computer that has the certificate the
-// QR code names. The phone's token is the authority: the phone is the main
-// device of the group. The window is not announced and takes no pairing
-// connections, so the code is good only against that computer.
-func (s *Service) admit(jc phone.JoinCode) error {
-	if _, err := pair.NormalizeCode(jc.Code); err != nil {
-		return err
-	}
-	if len(jc.Addrs) == 0 || jc.Fingerprint == "" {
-		return errors.New("the QR code is from an older clipboardbridge; update clipboardbridge on the computer")
-	}
-	w, _, end, err := s.openWindow(jc.Code, false)
-	if err != nil {
-		return err
-	}
-	s.logf("cbb: the iPhone asked to add a computer at %s", strings.Join(jc.Addrs, ", "))
-	go func() {
-		defer end()
-		ctx, cancel := context.WithTimeout(context.Background(), joinTimeout)
-		defer cancel()
-		stop := context.AfterFunc(ctx, w.Close)
-		defer stop()
-		var lastErr error
-		for _, addr := range jc.Addrs {
-			d := net.Dialer{Timeout: handshakeTimeout}
-			raw, err := d.DialContext(ctx, "tcp", addr)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			if lastErr = w.Dial(ctx, raw, jc.Fingerprint); closed(w) {
-				break
-			}
-		}
-		if !closed(w) {
-			s.logf("cbb: adding a computer from the iPhone: %v", lastErr)
-			return
-		}
-		if _, err := s.windowResult(w); err != nil {
-			s.logf("cbb: adding a computer from the iPhone: %v", err)
-		}
-	}()
-	return nil
-}
-
-// closed reports whether a window has closed.
-func closed(w *pair.Window) bool {
-	select {
-	case <-w.Done():
-		return true
-	default:
-		return false
-	}
 }
 
 // localAddress returns an address of this member that a joining device can

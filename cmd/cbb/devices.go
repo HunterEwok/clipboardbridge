@@ -39,6 +39,8 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 		switch {
 		case d.Root:
 			admin = "root"
+		case d.Frozen:
+			admin = "frozen"
 		case d.Admin:
 			admin = "admin"
 		case d.OldKeys:
@@ -99,6 +101,34 @@ func cmdRevoke(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Removed %s from the group. The other members refuse it as soon as they hear of it.\n", m.Name)
+	return 0
+}
+
+// cmdFreeze freezes (on true) or unfreezes an admin computer.
+func cmdFreeze(args []string, on bool, stdout, stderr io.Writer) int {
+	op, cmd := control.OpFreeze, "freeze"
+	if !on {
+		op, cmd = control.OpThaw, "unfreeze"
+	}
+	if len(args) != 1 {
+		fmt.Fprintf(stderr, "cbb: usage: cbb %s <name or device ID>; cbb status lists them\n", cmd)
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: op, Name: args[0]}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if on {
+		fmt.Fprintf(stdout, "Froze %s: it is no admin and the members refuse it as soon as they hear of it.\n"+
+			"The group's root or an admin phone unfreezes it (cbb unfreeze) or removes it (cbb revoke).\n", m.Name)
+	} else {
+		fmt.Fprintf(stdout, "Unfroze %s: it is an admin again.\n", m.Name)
+	}
 	return 0
 }
 

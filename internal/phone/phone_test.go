@@ -227,52 +227,6 @@ func TestSyncByHand(t *testing.T) {
 	}
 }
 
-func TestAdmit(t *testing.T) {
-	ca := newCA(t)
-	tok, _, _ := NewToken(ca)
-	otherTok, _, _ := NewToken(newCA(t))
-	revokedTok, revokedID, _ := NewToken(ca)
-	var admitted []JoinCode
-	h := AdmitHandler(&fakeGroup{ca: ca, revoked: revokedID}, func(jc JoinCode) error {
-		admitted = append(admitted, jc)
-		return nil
-	})
-	post := func(token, body string) syncReply {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/admit", strings.NewReader(body))
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		var rep syncReply
-		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &rep) != nil {
-			t.Fatalf("reply %d %s", rec.Code, rec.Body)
-		}
-		return rep
-	}
-	jc := JoinCode{Code: "123456", Addrs: []string{"192.168.1.20:40123"}, Fingerprint: "abc"}
-	qr := `{"v":1,"code":"` + JoinQR(jc) + `"}`
-	if rep := post("", qr); rep.Direction != "unpaired" {
-		t.Errorf("no token: %+v", rep)
-	}
-	if rep := post(otherTok, qr); rep.Direction != "unpaired" {
-		t.Errorf("another group's token: %+v", rep)
-	}
-	if rep := post(revokedTok, qr); rep.Direction != "unpaired" {
-		t.Errorf("a removed phone's token: %+v", rep)
-	}
-	if rep := post(tok, `{"v":1,"code":"https://example.com/"}`); rep.Direction != "error" {
-		t.Errorf("another QR code: %+v", rep)
-	}
-	if len(admitted) != 0 {
-		t.Fatalf("admitted %v without a valid request", admitted)
-	}
-	if rep := post(tok, qr); rep.Direction != "none" || len(admitted) != 1 || !reflect.DeepEqual(admitted[0], jc) {
-		t.Errorf("a valid request: %+v, admitted %v", rep, admitted)
-	}
-}
-
 func TestJoinQR(t *testing.T) {
 	if got := JoinQR(JoinCode{Code: "012345"}); got != "clipboardbridge://join?code=012345" {
 		t.Errorf("JoinQR = %q", got)

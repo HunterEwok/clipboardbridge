@@ -68,7 +68,6 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 		}}
 	mux := http.NewServeMux()
 	mux.Handle("/sync", phone.SyncHandler(phoneGroup{s}))
-	mux.Handle("/admit", phone.AdmitHandler(phoneGroup{s}, s.admit))
 	mux.Handle("/pair", phone.PairHandler(func() *phone.Window {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -95,8 +94,10 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 
 // pairPhone opens an iPhone pairing window on the member that answers for
 // clipboardbridge.local, serves the profile while it is open, and reports the
-// end; a client that hangs up closes the window.
-func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) {
+// end; a client that hangs up closes the window. With newToken it first
+// revokes the token of every shortcut paired so far, so a token that was
+// copied or stolen stops working and the iPhone gets a new one.
+func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader, newToken bool) {
 	if s.engine() == nil {
 		fail(c, s.errNoGroup())
 		return
@@ -118,6 +119,15 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 	case busy:
 		fail(c, errors.New("an iPhone pairing window is already open"))
 		return
+	}
+	if newToken {
+		if err := s.revokeShortcuts(); err != nil {
+			s.mu.Lock()
+			s.phoneOpening = false
+			s.mu.Unlock()
+			fail(c, err)
+			return
+		}
 	}
 	// end closes the window and the profile; it runs before the last
 	// answer, so the client can pair again at once.
@@ -189,4 +199,35 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) 
 	s.recordPhone(phoneID)
 	end()
 	reply(c, control.Header{Name: phoneID, Done: true}, nil)
+}
+
+// revokeShortcuts revokes the token of every shortcut in the group: the
+// iPhones pair again (cbb pair -phone) to get new ones.
+func (s *Service) revokeShortcuts() error {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || !id.IsAdmin() {
+		return errNotAdmin
+	}
+	var keys []group.KeyHash
+	s.recMu.Lock()
+	if s.records != nil {
+		for _, d := range s.records.Devices() {
+			if d.Role == group.RoleShortcut {
+				keys = append(keys, d.Key)
+			}
+		}
+	}
+	s.recMu.Unlock()
+	if len(keys) == 0 {
+		return nil
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordRevoke, Keys: keys})
+	if err != nil {
+		return err
+	}
+	s.publish(nd, r)
+	s.logf("cbb: revoked the tokens of %d shortcut(s); the iPhones pair again for new ones", len(keys))
+	return nil
 }

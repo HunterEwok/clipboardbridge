@@ -5,6 +5,8 @@
 # gomod covers the Go modules. The tools in go.mod (staticcheck, govulncheck, actionlint) are
 # recorded as indirect requirements, which Dependabot skips by default, so they are allowed by
 # name (until https://github.com/dependabot/dependabot-core/issues/12050 is fixed).
+# cargo covers the lite member and its core (not the ESP32 firmware, whose esp-hal is pinned
+# to a git commit on purpose), gradle the Android app and its kit.
 # The cooldown waits a week after a release before proposing it, so a compromised release
 # has time to be noticed and pulled.
 version: 2
@@ -40,4 +42,28 @@ updates:
         dependency-type: "all"
     groups:
       go:
+        patterns: ["*"]
+
+  - package-ecosystem: "cargo"
+    directory: "/lite"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        patterns: ["*"]
+
+  - package-ecosystem: "gradle"
+    directory: "/apps/android"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      gradle:
         patterns: ["*"]

@@ -110,7 +110,7 @@ final class LiveGroup: GroupController {
             .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, os: $0.os,
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
-                  canMakeAdmin: g.isRoot && !$0.admin && $0.role == "full" && offers[$0.id] != nil)
+                  canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen)
         }
     }
 
@@ -339,6 +339,20 @@ final class LiveGroup: GroupController {
         await node?.close(peer: id)
     }
 
+    /// Unfreezes an admin computer that another admin froze
+    /// (docs/protocol.md, section 10, rule 4): a thaw record signed with this
+    /// phone's root or admin key, after Face ID, sent to every connected
+    /// computer.
+    func unfreeze(_ id: String) async throws {
+        let ca = try await caSigner(reason: String(localized: "Unfreeze an admin computer", bundle: .app))
+        guard var g = state else { return }
+        let r = try g.thaw(device: id, caSigner: ca, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+    }
+
     /// Makes a computer an admin (docs/protocol.md, section 10, "A computer
     /// as admin"): the root key, after Face ID, certifies the admin key the
     /// computer offers; the computer gets its admin CA and every member the
@@ -446,6 +460,7 @@ final class LiveGroup: GroupController {
                 return t
             },
             serve: { t, hub in try await node.serve(t, peer: hub) },
+            mayHost: { box.mayHost($0) },
             log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") })
         awayRef.value = away
         Task { await away.start() }
@@ -557,6 +572,9 @@ final class LiveGroup: GroupController {
         }
 
         func replace(_ new: RecordSet) { lock.withLock { set = new } }
+
+        /// Whether device may be the hub for sync away from home.
+        func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
     }
 
     /// Passes what the browser finds to the dialer, only the devices that

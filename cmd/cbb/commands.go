@@ -171,6 +171,7 @@ func cmdPair(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pair", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	phone := fs.Bool("phone", false, "pair an iPhone or iPad with the shortcut")
+	newToken := fs.Bool("new-token", false, "with -phone: revoke the token of every shortcut paired so far, and pair this iPhone with a new one")
 	typed := fs.Bool("code", false, "join with the code that cbb pair shows on the group's root or an admin, read from standard input")
 	invitation := fs.String("invite", "", "join from afar with the invitation file that cbb invite made on the group's hub")
 	if fs.Parse(args) != nil {
@@ -179,12 +180,13 @@ func cmdPair(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	rest := fs.Args()
 	switch {
 	case *phone && (*typed || *invitation != "" || len(rest) != 0),
+		*newToken && !*phone,
 		*invitation != "" && (*typed || len(rest) != 0),
 		len(rest) > 1 || len(rest) == 1 && (!*typed || !strings.Contains(rest[0], ":")):
 		fmt.Fprintln(stderr, pairUsage)
 		return 2
 	case *phone:
-		return cmdPairPhone(stdout, stderr)
+		return cmdPairPhone(*newToken, stdout, stderr)
 	case *invitation != "":
 		return cmdJoinInvite(*invitation, stdin, stdout, stderr)
 	case *typed:
@@ -213,6 +215,7 @@ const pairUsage = `usage: cbb pair                  in a group: show a code for 
                                 in no group: join by the phone's QR code or a typed code
        cbb pair -code [address:port]   join with the code, read from standard input
        cbb pair -phone          pair an iPhone with the shortcut
+       cbb pair -phone -new-token   revoke every shortcut's token, then pair with a new one
        cbb pair -invite file    join from afar with an invitation`
 
 // serviceStatus asks the service for its status.
@@ -257,16 +260,21 @@ func admit(stdout, stderr io.Writer) int {
 }
 
 // cmdPairPhone opens an iPhone pairing window and walks the user through
-// it: the profile first, the fingerprint, and only then the code.
-func cmdPairPhone(stdout, stderr io.Writer) int {
+// it: the profile first, the fingerprint, and only then the code. With
+// newToken the service first revokes the token of every shortcut.
+func cmdPairPhone(newToken bool, stdout, stderr io.Writer) int {
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
 	}
 	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone, NewToken: newToken}})
 	if err != nil {
 		return fail(stderr, err)
+	}
+	if newToken {
+		fmt.Fprintln(stdout, "The tokens of every shortcut paired so far are revoked; pair each iPhone again.")
+		fmt.Fprintln(stdout)
 	}
 	fmt.Fprintln(stdout, "Scan this with the iPhone's camera and follow the page:")
 	fmt.Fprintln(stdout)
