@@ -81,6 +81,20 @@ The order may change.
     port, the tokens, and the rule for who holds `clipboardbridge.local`, which only the
     shortcut uses. The group then has one kind of trust, the member certificates, and no
     key that cannot be revoked by a record.
+18. **Planned for 0.5.** Remote paste: an admin device sends a text to one member and has
+    it pasted or typed where that member's focus is, with nothing pressed on the target;
+    every admin may do it on every member (D-54), the iPhone only sends. See "Remote paste"
+    in [design.md](design.md#remote-paste-planned-for-05). One pull request each:
+    1. the signed `paste` command, its result and its forwarding, in Go and both phone
+       kits with interop vectors; `cbb paste --on DEVICE`;
+    2. Linux targets: X11, Wayland (virtual keyboard, uinput), tmux and the console helper
+       (item 10);
+    3. Windows and macOS targets;
+    4. sending from the iPhone and Android apps, and the Android target;
+    5. the `cbb-lite` target, then the Nano ESP32's keyboard.
+19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
+    switched to shared, receive only or send only by itself or by any admin (D-55). See
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
 20. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
