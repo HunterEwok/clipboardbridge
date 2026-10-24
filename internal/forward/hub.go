@@ -106,11 +106,13 @@ func Register(ctx context.Context, cfg HubConfig) {
 	}
 }
 
-// PinnedTLS builds the TLS of a registration with a server known only by
-// the pin of its key, a forwarder or a relay (what, in the errors): the
+// TLSVerifiedByPin builds the TLS of a registration with a server known only
+// by the pin of its key, a forwarder or a relay (what, in the errors): the
 // server has no name and a self-signed certificate, so crypto/tls cannot
-// check it, and VerifyConnection checks its key against the pin instead.
-func PinnedTLS(cert tls.Certificate, protocol, pin, what string) *tls.Config {
+// check it, and VerifyConnection checks its key against the pin instead. (The
+// name, like the pairing's clientTLSVerifiedByFingerprint, tells CodeQL that
+// InsecureSkipVerify is checked here.)
+func TLSVerifiedByPin(cert tls.Certificate, protocol, pin, what string) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
@@ -140,7 +142,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
 	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, PinnedTLS(cfg.Cert(), Protocol, cfg.Link.Pin, "forwarder"))
+	tc := tls.Client(raw, TLSVerifiedByPin(cfg.Cert(), Protocol, cfg.Link.Pin, "forwarder"))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}

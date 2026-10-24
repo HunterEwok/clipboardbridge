@@ -55,6 +55,16 @@ class AppModel(private val app: Context) {
     var theme by mutableStateOf(settings.theme)
         private set
 
+    /** Sync away from home as Settings shows it: null without a group. */
+    data class Away(val on: Boolean, val status: AwayFromHome.Status, val error: Note? = null)
+
+    var away by mutableStateOf<Away?>(null)
+        private set
+
+    /** What turning it on or off said, when it failed. */
+    var awayNote by mutableStateOf<Note?>(null)
+        private set
+
     fun choose(theme: ThemeChoice) {
         settings.theme = theme
         this.theme = theme
@@ -190,6 +200,25 @@ class AppModel(private val app: Context) {
         val (d, admin) = withContext(Dispatchers.IO) { group.devices to group.isAdmin }
         devices = d
         isAdmin = admin
+        away = group.awayFromHome?.let { a ->
+            // The last failure only while it is still trying; once connected or at home it is old news.
+            val e = (a.lastError as? Exception)?.takeIf { a.status == AwayFromHome.Status.CONNECTING }
+            // AwayFromHome logs each failure itself.
+            Away(a.isOn, a.status, e?.let { describe(it, R.string.away_error, log = false) })
+        }
+    }
+
+    /** Turns sync away from home on or off; the hub's answer comes on the next connection at home. */
+    suspend fun setAway(on: Boolean) {
+        awayNote = try {
+            withContext(Dispatchers.IO) { group.setAwayFromHome(on) }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
     }
 
     /** Removes a device from the group. */
@@ -219,9 +248,8 @@ class AppModel(private val app: Context) {
     }
 
     /** The message for an error, with the error itself below it when details are on. The error is logged either way. */
-    fun describe(e: Exception): Note {
-        val text = summary(e)
-        Log.e(TAG, app.getString(text), e)
+    fun describe(e: Exception, @StringRes text: Int = summary(e), log: Boolean = true): Note {
+        if (log) Log.e(TAG, app.getString(text), e)
         return Note(text, if (settings.showsErrorDetails) e.toString() + (e.cause?.let { "\n" + it } ?: "") else null, error = true)
     }
 

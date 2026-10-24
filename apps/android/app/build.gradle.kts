@@ -51,7 +51,32 @@ android {
     }
 }
 
+// The tunnel for sync away from home: mobile/cbbtun, bound by gomobile into an AAR. It
+// needs Go and the Android NDK: ANDROID_NDK_HOME, else the runner's ANDROID_NDK_LATEST_HOME,
+// else the newest NDK in the SDK's ndk directory.
+val tunnelAar = layout.buildDirectory.file("cbbtun/cbbtun.aar")
+val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orElse(providers.environmentVariable("ANDROID_NDK_LATEST_HOME"))
+val bindTunnel = tasks.register<Exec>("bindTunnel") {
+    val repo = rootDir.resolve("../..")
+    inputs.files(repo.resolve("go.mod"), repo.resolve("go.sum"))
+    inputs.dir(repo.resolve("mobile"))
+    inputs.dir(repo.resolve("internal/tunnel"))
+    outputs.file(tunnelAar)
+    workingDir = repo
+    commandLine("sh", "mobile/cbbtun/bind.sh", "android", tunnelAar.get().asFile.path)
+    val sdk = androidComponents.sdkComponents.sdkDirectory
+    val ndk = ndkHome
+    doFirst {
+        val sdkDir = sdk.get().asFile
+        environment("ANDROID_HOME", sdkDir.path)
+        val home = ndk.orNull ?: sdkDir.resolve("ndk").listFiles()?.filter { it.isDirectory }?.maxByOrNull { it.name }?.path
+            ?: throw GradleException("no Android NDK: install one with the SDK manager or set ANDROID_NDK_HOME")
+        environment("ANDROID_NDK_HOME", home)
+    }
+}
+
 dependencies {
+    implementation(files(tunnelAar).builtBy(bindTunnel))
     implementation("io.github.hunterewok.clipboardbridge:kit:0")
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
