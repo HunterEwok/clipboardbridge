@@ -51,7 +51,7 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Group = "485666d454cba4e8"
+	s.Group = "0a1b2c3d4e5f6a7b"
 	s.IsHub = true
 	s.Endpoints = []netip.AddrPort{netip.MustParseAddrPort("[2001:db8::1]:8764"), netip.MustParseAddrPort("192.0.2.1:8764")}
 	a := newDevice(t)

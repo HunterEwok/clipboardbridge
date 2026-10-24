@@ -24,7 +24,7 @@ func sample(t *testing.T) *Invitation {
 		return k
 	}
 	return &Invitation{
-		Group: "485666d454cba4e8", Hub: "0123456789abcdef0123456789abcdef", HubKey: k().Public(),
+		Group: "0a1b2c3d4e5f6a7b", Hub: "0123456789abcdef0123456789abcdef", HubKey: k().Public(),
 		Endpoints: []netip.AddrPort{netip.MustParseAddrPort("203.0.113.7:8764"), netip.MustParseAddrPort("[2001:db8::7]:8764")},
 		GuestKey:  k(), GuestPSK: k(), Secret: bytes.Repeat([]byte{7}, 16),
 		Expires: time.Unix(1_800_000_000, 0),
