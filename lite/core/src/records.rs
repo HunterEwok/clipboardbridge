@@ -287,7 +287,11 @@ impl Records {
         };
         let mut root = None;
         if body.kind == "root" {
-            if self.roots[&anchor].path_len != Some(1) {
+            // A legacy group CA hands the group to its first root itself,
+            // with its own key (cbb upgrade); a root with path length 1 also
+            // through its admins.
+            let upgrade = anchor == self.ca_key && signer == anchor;
+            if self.roots[&anchor].path_len != Some(1) && !upgrade {
                 return Err(Error::msg("only a group with a root is handed to a new root"));
             }
             let c = Cert::parse(&body.root)?;
@@ -310,7 +314,7 @@ impl Records {
                 let Some(root) = &r.root else { continue };
                 if r.anchor != cur
                     || on.contains(&root.key_hash())
-                    || self.revoked(&r.signer)
+                    || self.revoked(&r.signer) && !self.upgrade_stands(r)
                     || !self.signed_by_root(r)
                 {
                     continue;
@@ -328,6 +332,22 @@ impl Records {
                 }
             }
         }
+    }
+
+    /// Reports whether the root record r, in which a legacy group CA hands
+    /// the group to its first root (cbb upgrade), still counts though the
+    /// group CA's key is revoked: every record that revokes it was signed
+    /// under the root that r names.
+    fn upgrade_stands(&self, r: &Signed) -> bool {
+        let Some(root) = &r.root else { return false };
+        if r.anchor != self.ca_key || r.signer != r.anchor || self.group_ca.path_len != Some(0) {
+            return false;
+        }
+        let root = root.key_hash();
+        self.by_id
+            .values()
+            .filter(|rv| rv.body.kind == "revoke" && rv.body.keys.contains(&r.signer))
+            .all(|rv| rv.anchor == root)
     }
 
     /// The roots that took the group over from the group CA, in order.

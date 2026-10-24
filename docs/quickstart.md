@@ -235,7 +235,15 @@ keys. The phones cannot sync away from home yet.
 
 ```sh
 cbb status     # this device, the group, and every device: its system, role and when it was seen
-cbb revoke NAME  # remove a lost device; on a Linux machine, or Devices in the app
+cbb revoke NAME  # remove a lost device; on the root or an admin, or Devices in the app
+```
+
+A group made before 0.4 has no root: every Linux and Windows member holds its keys, and
+those members cannot be removed. Once every device runs 0.4, give it a root with one
+command on one of them; nobody pairs again, except iPhones that use the shortcut:
+
+```sh
+cbb upgrade
 ```
 
 Something does not work? See [troubleshooting](troubleshooting.md), or open an issue.

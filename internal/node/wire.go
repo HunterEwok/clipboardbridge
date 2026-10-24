@@ -126,6 +126,9 @@ type helloBody struct {
 	// PhoneCA is the SHA-256 of the SubjectPublicKeyInfo of the iPhone CA
 	// whose key the sender holds.
 	PhoneCA []byte `json:"phone_ca,omitempty"`
+	// OldKeys tells that the sender holds the group CA key of a legacy
+	// group, which it deletes once the group is upgraded.
+	OldKeys bool `json:"old_keys,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -143,6 +146,10 @@ type helloOut struct {
 	// whose key this member holds, so another admin knows whether to send
 	// it a newer one.
 	PhoneCA []byte `json:"phone_ca,omitempty"`
+	// OldKeys tells that this member holds the group CA key of a legacy
+	// group: until it says otherwise after cbb upgrade, it may still hold
+	// the old keys.
+	OldKeys bool `json:"old_keys,omitempty"`
 	// TunnelKey is this member's WireGuard public key, for the group's hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 }

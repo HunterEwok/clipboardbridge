@@ -122,8 +122,18 @@ func (s *Service) adoptRootsLocked() error {
 	if err != nil {
 		return err
 	}
+	dropped := s.id.GroupCA.Key != nil && next.GroupCA.Key == nil
+	if dropped {
+		next = s.withAdminKey(next)
+	}
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
+	}
+	if dropped {
+		// The hellos of new connections tell the others that this member
+		// no longer holds the old keys.
+		s.logf("cbb: the group was upgraded; deleted this member's copies of its old CA keys")
+		go s.nd.Reconnect()
 	}
 	s.logf("cbb: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
 	return nil
@@ -342,6 +352,7 @@ func (s *Service) devices() ([]control.Device, error) {
 	entry := func(dev group.DeviceID, name, role, os string, admin, listed bool) {
 		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root}
 		d.Admin = admin || (legacy && keyHolder(role, os))
+		d.OldKeys = !legacy && !d.Self && s.holdsOldKeys(dev, peers)
 		if _, ok := peers[dev]; ok || d.Self {
 			d.Online, d.LastSeenMS = true, now.UnixMilli()
 		} else if t, ok := seen[dev]; ok {
@@ -399,6 +410,8 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	case d.ID == string(root):
 		return "", fmt.Errorf("this computer holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name)
+	case !id.Legacy() && s.holdsOldKeys(group.DeviceID(d.ID), peersOf(nd)):
+		return "", errOldKeys(d.Name)
 	case replace && !id.ServesPhone():
 		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}

@@ -142,9 +142,10 @@ func (id *Identity) IsAdmin() bool {
 // it over; in a legacy group no member is the root.
 func (id *Identity) IsRoot() bool { return id.RootCA() != nil && !id.Legacy() }
 
-// Legacy reports whether the group was made before admin CAs: its group CA
-// has path length 0, and every Linux and Windows member holds its key.
-func (id *Identity) Legacy() bool { return id.GroupCA.Cert.MaxPathLen == 0 }
+// Legacy reports whether the group was made before admin CAs and not yet
+// upgraded: its group CA has path length 0 and no root took it over, and
+// every Linux and Windows member holds its key.
+func (id *Identity) Legacy() bool { return id.GroupCA.Cert.MaxPathLen == 0 && len(id.Roots) == 0 }
 
 // Signer returns the CA this device admits devices and signs records with,
 // and the chain its records carry: the root's CA on the root computer or a
@@ -229,14 +230,36 @@ func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate) (*Identity, e
 	return &next, nil
 }
 
+// Upgraded returns the identity of the key holder of a legacy group that
+// upgrades it (cbb upgrade): roots, as the records lead to them after the
+// root record its group CA key signed, are root alone, whose key this
+// device holds as the group's root from now on; it deletes the old CA
+// keys and serves the shortcut with the new iPhone CA phoneCA.
+func (id *Identity) Upgraded(root *CA, roots []*x509.Certificate, phoneCA CA, now time.Time) (*Identity, error) {
+	switch {
+	case !id.Legacy() || id.GroupCA.Key == nil:
+		return nil, errors.New("group: only a key holder of a legacy group upgrades it")
+	case root.Key == nil || len(roots) != 1 || !roots[0].Equal(root.Cert):
+		return nil, errors.New("group: the records do not lead to the new root; another member may have upgraded the group first")
+	}
+	next := *id
+	next.Roots, next.RootKey = roots, root.Key
+	next.GroupCA.Key, next.PhoneCA, next.Phone = nil, nil, nil
+	return next.WithPhoneCA(phoneCA, now)
+}
+
 // WithRoots returns the identity trusting roots, the roots the records lead
 // to after a root record. A device that held the root it replaces no longer
-// is the root, and gives up the iPhone CA with it.
+// is the root, and gives up the iPhone CA with it. A key holder of a legacy
+// group that another member upgraded deletes its copies of the old CA keys.
 func (id *Identity) WithRoots(roots []*x509.Certificate) (*Identity, error) {
 	next := *id
 	next.Roots = roots
 	if id.RootKey != nil && (len(roots) == 0 || !id.RootKey.PublicKey.Equal(roots[len(roots)-1].PublicKey)) {
 		next.RootKey, next.PhoneCA, next.Phone = nil, nil, nil
+	}
+	if id.Legacy() && len(roots) > 0 {
+		next.GroupCA.Key, next.PhoneCA, next.Phone = nil, nil, nil
 	}
 	if err := next.Check(); err != nil {
 		return nil, err

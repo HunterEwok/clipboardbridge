@@ -40,6 +40,7 @@ const (
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
 	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
 	OpTakeover  = "takeover"   // client → service: on an admin, take the group over from the lost root Name names
+	OpUpgrade   = "upgrade"    // client → service: on a key holder of a legacy group, give the group a root
 	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
 	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
@@ -170,6 +171,7 @@ type Device struct {
 	Online     bool  `json:"online,omitempty"`       // connected to this member now
 	LastSeenMS int64 `json:"last_seen_ms,omitempty"` // when this member last saw it connected, Unix milliseconds; 0 if never
 	Self       bool  `json:"self,omitempty"`         // this device
+	OldKeys    bool  `json:"old_keys,omitempty"`     // it may still hold the old CA keys of an upgraded group
 	Listed     bool  `json:"listed,omitempty"`       // it has a device record; a member that joined before the list existed may have none yet
 }
 

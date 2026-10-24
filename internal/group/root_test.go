@@ -196,11 +196,7 @@ func TestRootTieBreak(t *testing.T) {
 }
 
 func TestRootRecordsRejected(t *testing.T) {
-	// A legacy group is never handed over.
 	admin := newLegacyGroup(t)
-	if _, err := NewRecords(admin.GroupCA.Cert).Add(rootRecord(t, admin.GroupCA.Cert, &admin.GroupCA, nil, newRoot(t).Cert)); err == nil {
-		t.Error("accepted a root record in a legacy group")
-	}
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
 	for name, root := range map[string]*x509.Certificate{
@@ -269,5 +265,77 @@ func TestIdentityWithRoots(t *testing.T) {
 	bad.Roots = []*x509.Certificate{h.pg.a.Cert}
 	if bad.Check() == nil {
 		t.Error("accepted an admin CA as a later root")
+	}
+}
+
+// TestUpgradeRecords checks the root record in which a legacy group CA
+// hands the group to its first root (cbb upgrade): it counts after the new
+// root revokes the old key, the devices that the old key admitted stay, a
+// rival root record from a leftover copy of the old key never counts, and
+// a revocation of the old key under any other root breaks the handover.
+func TestUpgradeRecords(t *testing.T) {
+	legacy := newLegacyGroup(t)
+	g := legacy.GroupCA.Cert
+	m := member(t, &legacy.GroupCA)
+	root := newRoot(t)
+	s := NewRecords(g)
+	mustAdd(t, s, deviceRecord(t, g, &legacy.GroupCA, nil, m, "m", t0.UnixMilli()))
+	mustAdd(t, s, rootRecord(t, g, &legacy.GroupCA, nil, root.Cert))
+	old := KeyHashOf(g)
+	mustAdd(t, s, revokeRecord(t, g, root, nil, []KeyHash{old}, []KeyHash{KeyHashOf(m)}))
+	if roots := s.Roots(); len(roots) != 1 || !roots[0].Equal(root.Cert) {
+		t.Fatal("the upgrade's root record does not count after the old key's revocation")
+	}
+	if devs := s.Devices(); len(devs) != 1 || s.Refused([]*x509.Certificate{m}) != nil {
+		t.Error("the device the old key admitted did not stay")
+	}
+	if s.Refused([]*x509.Certificate{member(t, &legacy.GroupCA)}) == nil {
+		t.Error("a certificate the old key issued after the upgrade counts")
+	}
+	// A rival handover from a leftover copy of the old key.
+	rival := newRoot(t)
+	mustAdd(t, s, rootRecord(t, g, &legacy.GroupCA, nil, rival.Cert))
+	if roots := s.Roots(); len(roots) != 1 || !roots[0].Equal(root.Cert) {
+		t.Error("a rival root record from the old key counts")
+	}
+	// The old key revoking itself breaks the handover, without a new root.
+	mustAdd(t, s, revokeRecord(t, g, &legacy.GroupCA, nil, []KeyHash{old}, nil))
+	if roots := s.Roots(); len(roots) != 0 {
+		t.Error("the handover stands after the old key revoked itself")
+	}
+	// Only the group CA's own key hands a legacy group over.
+	if _, err := NewRecords(g).Add(rootRecord(t, g, root, nil, newRoot(t).Cert)); err == nil {
+		t.Error("a root record that another key signed was taken in a legacy group")
+	}
+}
+
+// TestUpgraded checks the identities around an upgrade: the key holder
+// that upgrades becomes the root with a new iPhone CA and without the old
+// keys, and another key holder deletes them once it follows the new root.
+func TestUpgraded(t *testing.T) {
+	legacy := newLegacyGroup(t)
+	other := join(t, legacy, true, t0)
+	root, phoneCA := newRoot(t), CA{}
+	if ca, err := NewPhoneCA(t0); err != nil {
+		t.Fatal(err)
+	} else {
+		phoneCA = *ca
+	}
+	up, err := legacy.Upgraded(root, []*x509.Certificate{root.Cert}, phoneCA, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Legacy() || !up.IsRoot() || up.GroupCA.Key != nil || !up.ServesPhone() || !up.PhoneCA.Cert.Equal(phoneCA.Cert) {
+		t.Error("the upgrading member is not the root with the new iPhone CA")
+	}
+	if _, err := up.Upgraded(root, []*x509.Certificate{root.Cert}, phoneCA, t0); err == nil {
+		t.Error("upgraded twice")
+	}
+	follows, err := other.WithRoots([]*x509.Certificate{root.Cert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if follows.Legacy() || follows.IsAdmin() || follows.GroupCA.Key != nil || follows.ServesPhone() || !follows.NeedsAdminKey() {
+		t.Error("a key holder kept the old keys after the upgrade")
 	}
 }

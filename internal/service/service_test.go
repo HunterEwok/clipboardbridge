@@ -1531,6 +1531,104 @@ func TestTakeover(t *testing.T) {
 	}
 }
 
+// startLegacy starts Linux members of one legacy group, made before roots
+// and admins: each holds the group CA key and the iPhone CA key.
+func startLegacy(t *testing.T, h *hub, names ...string) []*testService {
+	t.Helper()
+	now := time.Now()
+	ca, err := group.NewGroupCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phoneCA, err := group.NewPhoneCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []*testService
+	for _, name := range names {
+		dir, err := os.MkdirTemp("", "cb")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		key, err := group.NewKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dev := group.NewDeviceID()
+		cert, err := ca.IssueMember(dev, &key.PublicKey, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		phone, err := phoneCA.IssuePhone(&key.PublicKey, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pc := *phoneCA
+		id := &group.Identity{ID: dev, Key: key, Cert: cert, GroupCA: *ca, PhoneCA: &pc, Phone: phone}
+		if err := id.Save(dir); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, startIn(t, h, &testService{name: name, dir: dir, os: group.OSLinux}))
+	}
+	return out
+}
+
+// TestUpgrade checks cbb upgrade: the member that runs it becomes the root
+// of the legacy group with a new iPhone CA, the others delete the old keys
+// when the records reach them, one that was off is marked until it comes
+// back and cannot be removed until then, and the group keeps syncing.
+func TestUpgrade(t *testing.T) {
+	var h hub
+	ss := startLegacy(t, &h, "pi", "a", "b")
+	pi, a, b := ss[0], ss[1], ss[2]
+	for _, s := range ss {
+		waitFor(t, s.name+" meets the others", func() bool { return len(s.status(t).Peers) == 2 })
+	}
+	old, _ := group.Load(pi.dir)
+	waitFor(t, "the devices are listed", func() bool { return len(pi.devices(t)) == 3 })
+	b.stop()
+	if _, err := pi.do(t, control.Header{Op: control.OpUpgrade}, ""); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := group.Load(pi.dir)
+	if !id.IsRoot() || id.Legacy() || id.GroupCA.Key != nil || len(id.Roots) != 1 || !id.ServesPhone() || id.PhoneCA.Cert.Equal(old.PhoneCA.Cert) {
+		t.Fatal("the upgrading member is not the root with a new iPhone CA")
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpUpgrade}, ""); err == nil {
+		t.Error("upgraded twice")
+	}
+	waitFor(t, "a deletes the old keys", func() bool {
+		id, err := group.Load(a.dir)
+		return err == nil && len(id.Roots) == 1 && id.GroupCA.Key == nil && !id.ServesPhone() && id.AdminKey != nil
+	})
+	marks := func() map[string]bool {
+		out := map[string]bool{}
+		for _, d := range pi.devices(t) {
+			out[d.Name] = d.OldKeys
+		}
+		return out
+	}
+	waitFor(t, "only b is marked", func() bool { m := marks(); return !m["a"] && m["b"] && !m["pi"] })
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err == nil || !strings.Contains(err.Error(), "old CA keys") {
+		t.Errorf("revoking b, which may hold the old keys: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "after the upgrade"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a has it", func() bool { return a.paste(t) == "after the upgrade" })
+	makeAdmin(t, pi, a)
+
+	b = restartService(t, &h, b)
+	waitFor(t, "b deletes the old keys", func() bool { return !marks()["b"] })
+	if id, _ := group.Load(b.dir); id.GroupCA.Key != nil || id.ServesPhone() {
+		t.Error("b kept the old keys")
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err != nil {
+		t.Errorf("revoking b after it deleted the old keys: %v", err)
+	}
+}
+
 // TestMacsListen checks that a Mac is a full member like the others: it
 // publishes no role and takes connections, so two Macs keep syncing when
 // no other computer is on. Without the iPhone CA key it publishes no holder
