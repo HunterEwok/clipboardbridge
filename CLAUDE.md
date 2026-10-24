@@ -80,7 +80,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   `qemu` feature: console on UART0, no Wi-Fi, without esp-hal's init and with a fixed
   pseudo-random generator, never for a real chip).
 - `lite/embassy`: the firmware's network code on embassy-net without the chip (`pair.rs`,
-  joining by the phone over TCP), no_std; with the feature `host` the program `cbb-embassy`
+  joining by the phone over TCP), no_std; with the feature `host` the program `esp32-on-linux`
   runs it on Linux over a TAP interface, for `TestEmbassyJoiner` (CI's `lite` job).
 - `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
   parses the frames of `cbb-lite next`, `link.c` drives the UART to the Next's Pi; `make test`

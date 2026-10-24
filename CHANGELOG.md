@@ -39,7 +39,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   of the protocol core on the chip. CI types on the console and runs the self-test in
   Espressif's QEMU. Syncing comes next; not yet run on a real board.
 - The Nano ESP32's network code on Linux: the pairing moved to the crate `lite/embassy`,
-  which the firmware and the program `cbb-embassy` share; `cbb-embassy` runs it on
+  which the firmware and the program `esp32-on-linux` share; `esp32-on-linux` runs it on
   embassy-net over a TAP interface instead of the chip's Wi-Fi, and CI's
   `TestEmbassyJoiner` has a Go member admit it by the phone, as the board joins.
 - A forwarder for hubs that the computers cannot reach directly, for example behind

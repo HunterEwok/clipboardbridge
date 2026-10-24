@@ -121,14 +121,14 @@ func (w testWriter) Write(p []byte) (int, error) {
 }
 
 // TestEmbassyJoiner: the ESP32 firmware's pairing code (lite/embassy),
-// built for Linux as cbb-embassy, joins by the phone over embassy-net on a
-// TAP interface, as the board does over Wi-Fi. CBB_EMBASSY names the
+// built for Linux as esp32-on-linux, joins by the phone over embassy-net on a
+// TAP interface, as the board does over Wi-Fi. CBB_ESP32_ON_LINUX names the
 // binary; the interface tap0 must be up as 192.168.69.1/24, and the device
 // takes 192.168.69.2.
 func TestEmbassyJoiner(t *testing.T) {
-	bin := os.Getenv("CBB_EMBASSY")
+	bin := os.Getenv("CBB_ESP32_ON_LINUX")
 	if bin == "" {
-		t.Skip("CBB_EMBASSY is not set")
+		t.Skip("CBB_ESP32_ON_LINUX is not set")
 	}
 	var h hub
 	pi := startService(t, &h, "pi")
@@ -136,7 +136,7 @@ func TestEmbassyJoiner(t *testing.T) {
 
 	file := filepath.Join(t.TempDir(), "identity.json")
 	join := exec.Command(bin, "-debug", "-tap", "tap0", "-addr", "192.168.69.2/24", "-name", "board", "-identity", file)
-	join.Stderr = testWriter{t, "cbb-embassy: "}
+	join.Stderr = testWriter{t, "esp32-on-linux: "}
 	out, err := join.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestEmbassyJoiner(t *testing.T) {
 		}
 	}
 	if !strings.Contains(qr, "192.168.69.2%3A8764") && !strings.Contains(qr, "192.168.69.2:8764") {
-		t.Fatalf("cbb-embassy showed %q, not a QR code with its address", qr)
+		t.Fatalf("esp32-on-linux showed %q, not a QR code with its address", qr)
 	}
 	if rep := admit(token, qr); rep["direction"] != "none" {
 		t.Fatalf("admit: %v", rep)
@@ -164,7 +164,7 @@ func TestEmbassyJoiner(t *testing.T) {
 		rest.WriteString(sc.Text() + "\n")
 	}
 	if err := join.Wait(); err != nil || !strings.Contains(rest.String(), "Joined the group "+pi.status(t).Group) {
-		t.Fatalf("cbb-embassy: %v; %s", err, rest.String())
+		t.Fatalf("esp32-on-linux: %v; %s", err, rest.String())
 	}
 	raw, err := os.ReadFile(file)
 	if err != nil {

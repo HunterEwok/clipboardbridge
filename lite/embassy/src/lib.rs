@@ -3,7 +3,7 @@
 
 //! The lite member's network code on embassy-net, without the chip: the
 //! firmware of lite/esp32 runs it over the ESP32's Wi-Fi, and the program
-//! `cbb-embassy` (the feature `host`) runs the same code on Linux over a TAP
+//! `esp32-on-linux` (the feature `host`) runs the same code on Linux over a TAP
 //! interface, so the Go tests can pair with it as the phone (no_std with
 //! alloc, as `cbb_core`).
 

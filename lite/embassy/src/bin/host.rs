@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//! cbb-embassy: the ESP32 firmware's network code on Linux, so it can be
+//! esp32-on-linux: the ESP32 firmware's network code on Linux, so it can be
 //! tested without the board. embassy-net runs over a TAP interface with a
 //! fixed address instead of the chip's Wi-Fi and DHCP, and the device joins
 //! a group by the phone as the board's `join` does:
 //!
 //! ```text
-//! cbb-embassy [-debug] [-tap tap0] [-addr 192.168.69.2/24] [-name NAME] -identity FILE
+//! esp32-on-linux [-debug] [-tap tap0] [-addr 192.168.69.2/24] [-name NAME] -identity FILE
 //! ```
 //!
 //! The TAP interface must exist and be up, with an address of the same
@@ -36,7 +36,7 @@ struct Args {
     identity: String,
 }
 
-const USAGE: &str = "usage: cbb-embassy [-debug] [-tap tap0] [-addr 192.168.69.2/24] [-name NAME] -identity FILE";
+const USAGE: &str = "usage: esp32-on-linux [-debug] [-tap tap0] [-addr 192.168.69.2/24] [-name NAME] -identity FILE";
 
 fn args() -> Result<Args> {
     let mut a = Args {
@@ -92,7 +92,7 @@ impl Saver for File {
         match id.to_file().and_then(|b| std::fs::write(&self.0, b).context("cannot write the identity")) {
             Ok(()) => true,
             Err(e) => {
-                eprintln!("cbb-embassy: {}", e.for_user());
+                eprintln!("esp32-on-linux: {}", e.for_user());
                 false
             }
         }
@@ -122,7 +122,7 @@ async fn join(spawner: Spawner, a: Args) -> Result<Identity> {
     let pairing = Pairing::new(stack, &a.name)?;
     println!("Or paste this into the app: {}", pairing.text);
     let clock: Clock = Arc::new(SystemClock);
-    pairing.run(stack, &clock, &mut File(a.identity), |m| eprintln!("cbb-embassy: {m}")).await
+    pairing.run(stack, &clock, &mut File(a.identity), |m| eprintln!("esp32-on-linux: {m}")).await
 }
 
 #[embassy_executor::main]
@@ -137,7 +137,7 @@ async fn main(spawner: Spawner) {
             exit(0)
         }
         Err(e) => {
-            eprintln!("cbb-embassy: {}", e.for_user());
+            eprintln!("esp32-on-linux: {}", e.for_user());
             exit(1)
         }
     }

@@ -120,9 +120,9 @@ not secret, and it says so when it starts. Never flash the `qemu` build to a boa
 ## Test the network code on Linux
 
 The pairing lives in the crate [`lite/embassy`](../embassy), on embassy-net and nothing of
-the chip. Its feature `host` builds `cbb-embassy`, which runs the same code on Linux:
+the chip. Its feature `host` builds `esp32-on-linux`, which runs the same code on Linux:
 embassy-net over a TAP interface with a fixed address takes the place of the Wi-Fi and
-DHCP, and `cbb-embassy` joins a group by the phone as the board's `join` does. The Go test
+DHCP, and `esp32-on-linux` joins a group by the phone as the board's `join` does. The Go test
 `TestEmbassyJoiner` plays the phone and has a Go member admit it (CONTRIBUTING.md, "The
 other parts", has the commands; CI's `lite` job runs it). Only the Wi-Fi driver and the
 flash stay for a real board.

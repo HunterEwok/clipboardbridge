@@ -15,7 +15,7 @@ name = "cbb_embassy"
 
 [[bin]]
 # The same code on Linux, over a TAP interface instead of the chip's Wi-Fi.
-name = "cbb-embassy"
+name = "esp32-on-linux"
 path = "src/bin/host.rs"
 required-features = ["host"]
 test = false
