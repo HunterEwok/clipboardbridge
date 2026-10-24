@@ -446,6 +446,7 @@ final class LiveGroup: GroupController {
                 return t
             },
             serve: { t, hub in try await node.serve(t, peer: hub) },
+            mayHost: { box.mayHost($0) },
             log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") })
         awayRef.value = away
         Task { await away.start() }
@@ -557,6 +558,9 @@ final class LiveGroup: GroupController {
         }
 
         func replace(_ new: RecordSet) { lock.withLock { set = new } }
+
+        /// Whether device may be the hub for sync away from home.
+        func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
     }
 
     /// Passes what the browser finds to the dialer, only the devices that

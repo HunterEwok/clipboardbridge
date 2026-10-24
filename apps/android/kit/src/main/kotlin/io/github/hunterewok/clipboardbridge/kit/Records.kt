@@ -416,6 +416,24 @@ class RecordSet {
             }.maxByOrNull { it.body.timeMS }?.body?.device
         }
 
+    /**
+     * Whether device may be the group's hub for sync away from home: the
+     * root (a device whose own record the current root's key signed, a
+     * phone or a computer, as Go's Records.RootDevice) or a device listed as
+     * an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+     */
+    fun mayHost(device: String): Boolean {
+        if (devices.any { it.id == device && it.admin }) return true
+        val ev = Eval(this)
+        val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return false
+        val own = ev.entries.filter {
+            it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
+                it.body.device != null && it.body.device == it.body.by
+        }.maxByOrNull { it.body.timeMS } ?: return false
+        val key = own.body.key ?: return false
+        return own.body.device == device && Key(key) !in ev.revoked
+    }
+
     /** SHA-256 over the sorted record IDs, base64, as the hello carries it; null for an empty set. */
     val digest: String?
         get() {

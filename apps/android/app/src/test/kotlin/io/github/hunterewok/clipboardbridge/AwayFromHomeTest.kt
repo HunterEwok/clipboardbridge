@@ -120,6 +120,7 @@ class AwayFromHomeTest {
                 served.add(h)
                 release.poll(5, TimeUnit.SECONDS)
             },
+            mayHost = { it == hub },
             firstWaitMS = 10,
             maxWaitMS = 20,
             homeCheckMS = 10,
@@ -138,6 +139,9 @@ class AwayFromHomeTest {
             eventually("waiting for the hub") { a.status == AwayFromHome.Status.WAITING_FOR_HUB }
             assertTrue(tunnels.started.isEmpty())
 
+            // An offer from a device that is neither the root nor an admin is ignored.
+            a.keep("cccccccccccccccccccccccccccccccc", offer)
+            assertNull(saved.get()?.hub)
             // The hub's answer, from a peer the node named: away, the tunnel starts on its first endpoint.
             a.keep(null, offer)
             a.keep(hub, offer)
@@ -190,6 +194,7 @@ class AwayFromHomeTest {
             atHome = { false },
             dial = { _, _ -> NoTransport },
             serve = { _, _ -> release.poll(5, TimeUnit.SECONDS) },
+            mayHost = { true },
             firstWaitMS = 10,
             maxWaitMS = 20,
         )
@@ -197,8 +202,9 @@ class AwayFromHomeTest {
         try {
             val t = tunnels.started.poll(5, TimeUnit.SECONDS)!!
             eventually("connected") { a.status == AwayFromHome.Status.CONNECTED }
-            // The same offer again changes nothing; a new one closes the tunnel and starts with it.
+            // The same offer again changes nothing, nor does another admin's; a new one closes the tunnel and starts with it.
             a.keep(hub, offer)
+            a.keep("dddddddddddddddddddddddddddddddd", Member.TunnelOffer(offer.hubKey, offer.psk, listOf("203.0.113.7:8764")))
             assertFalse(t.closed)
             val moved = Member.TunnelOffer(offer.hubKey, offer.psk, listOf("198.51.100.9:8764"))
             a.keep(hub, moved)

@@ -94,6 +94,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: only the group's root or an admin can be the hub for sync away from home. A
+  member, phone or computer, ignores tunnel offers from any other device, and once it keeps
+  a hub's offer it ignores other hubs until sync away from home is turned off and on again,
+  so a member cannot point the others' tunnels at itself.
+
 - Security: `cbb-lite` makes its control socket in a private directory and narrows it there
   before moving it into place, so nobody can connect in the moment before its mode is set,
   whatever the umask. Dependabot also watches the lite member's crates and the Android

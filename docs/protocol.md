@@ -1134,8 +1134,11 @@ the offer and hand them to the tunnel. The lite member does not take part yet.
   new key. It refuses a key that another device or the hub itself has, and keeps at most
   256 devices. It sends the offer on every connection whose hello carries a key, so a member
   learns new endpoints and a new preshared key the next time it connects.
-- A member keeps the offer of the last hub that sent one, with the hub's device ID; a hub
-  ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
+- A member keeps an offer only from the group's root or an admin (by its records, or an
+  admin CA in its verified chain), with the hub's device ID. Once it keeps one, it ignores
+  offers from any other device until it turns sync away from home off and on again; a new
+  offer from the same hub replaces the old one. `away hub` refuses on a device that is no
+  admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
 - When records revoke a device (section 10, rule 4, on the chain it presented), the hub
   forgets its key at once.

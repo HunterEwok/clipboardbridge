@@ -353,6 +353,22 @@ public struct RecordSet: Codable, Equatable, Sendable {
         }.max { $0.body.time_ms < $1.body.time_ms }?.body.device
     }
 
+    /// Whether device may be the group's hub for sync away from home: the
+    /// root (a device whose own record the current root's key signed, a
+    /// phone or a computer, as Go's Records.RootDevice) or a device listed as
+    /// an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+    public func mayHost(_ device: String) -> Bool {
+        if devices.contains(where: { $0.id == device && $0.admin }) { return true }
+        let ev = Eval(self)
+        guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return false }
+        let own = ev.entries.filter {
+            $0.signer == cur && $0.body.type == "device" && ["phone", "full"].contains(Records.role($0.body.role)) &&
+                $0.body.device != nil && $0.body.device == $0.body.by
+        }.max { $0.body.time_ms < $1.body.time_ms }
+        guard let own, own.body.device == device, let key = own.body.key else { return false }
+        return !ev.revoked.contains(key)
+    }
+
     /// SHA-256 over the sorted record IDs, base64, as the hello carries it;
     /// nil for an empty set.
     public var digest: String? {

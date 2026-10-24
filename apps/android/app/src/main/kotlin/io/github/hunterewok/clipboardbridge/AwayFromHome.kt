@@ -188,6 +188,8 @@ class AwayFromHome(
     private val dial: (port: Int, hub: String) -> FrameTransport,
     /** Runs a connection to the hub until it ends. */
     private val serve: (FrameTransport, String) -> Unit,
+    /** Whether a device may be the hub: the group's root or an admin (Records.mayHost). */
+    private val mayHost: (String) -> Boolean,
     private val log: (String, Throwable?) -> Unit = { _, _ -> },
     private val firstWaitMS: Long = 1_000,
     private val maxWaitMS: Long = 30_000,
@@ -234,11 +236,17 @@ class AwayFromHome(
         }
     }
 
-    /** Keeps the offer a peer, the group's hub, sent for this phone's key. */
+    /**
+     * Keeps the offer a peer, the group's hub, sent for this phone's key.
+     * Only the group's root or an admin may be the hub, and once a hub is
+     * kept, offers from another device are ignored: the hub changes only
+     * when the user turns sync away from home off and on again.
+     */
     fun keep(from: String?, offer: Member.TunnelOffer) {
-        if (from == null || !offer.isValid) return
+        if (from == null || !offer.isValid || !mayHost(from)) return
         val next = synchronized(lock) {
             val s = state ?: return
+            if (s.hub != null && s.hub != from) return
             if (s.hub == from && s.offer == offer) return
             s.withOffer(from, offer).also {
                 state = it
