@@ -69,7 +69,7 @@ accessibility overlay) stays in the README's status table as "not yet" until the
 
 Two group layouts are tested, because both exist for users:
 
-- **A. A computer's group**: `deck` runs `cbb pair` and is the root; the others join by
+- **A. A computer's group**: `deck` runs `cbb new` and is the root; the others join by
   code; `deck` makes `win` an admin (`cbb admin win`).
 - **B. A phone's group** (needs `phone`): the Android app is the root; computers and
   `rpi0w` join by its QR code; `mac` becomes an admin.
@@ -138,6 +138,9 @@ the same text is on every device at the end.
 - Admin: `mac` made an admin in layout B pairs and revokes; in layout A `win`, made an admin
   by `deck`, pairs a device, serves the shortcut while `deck` is off, and when `deck` removes
   it, `deck` replaces the iPhone CA and the shortcut iPhones pair again.
+- Takeover in layout A: with `deck` off, `win` runs `cbb takeover deck`; `win` is the root,
+  every other device stays and syncs, the shortcut iPhones pair again, `win` makes another
+  admin, and `deck` is refused when it comes back.
 - Removing a member that is no admin in layout A (a Linux one, a Windows one, the Mac): the
   group stays, nobody pairs again.
 - The holder of `clipboardbridge.local` goes away; another member takes it over.

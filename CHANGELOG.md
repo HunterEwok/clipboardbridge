@@ -14,6 +14,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   way, inside what looks like HTTPS to the site. The group's WireGuard and member TLS go
   inside it unchanged. Xray-core runs in `cbb` and in the phones' tunnel (`mobile/cbbtun`),
   so both apps take the way over VLESS from the hub's offer too.
+- `cbb takeover NAME` on an admin computer takes the group over from its lost root
+  computer, as an admin phone does in a phone's group: the admin becomes the root, the
+  lost root is removed, every other device stays, and the iPhone CA is replaced, so iPhones
+  that use the shortcut pair again. After admitting a device, `cbb pair` on a root without
+  another admin suggests making one.
 - Obfuscation for networks that block WireGuard: `cbb global hub -obfuscate` makes the group's
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub

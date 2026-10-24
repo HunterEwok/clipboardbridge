@@ -60,8 +60,9 @@ global, are not here. The state directory is /var/lib/clipboardbridge
 
 /// The commands of a full member (cmd/cbb) that the lite member does not
 /// have, so that it says so instead of "unknown command".
-const FULL_ONLY: &[&str] =
-    &["global", "revoke", "admin", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent"];
+const FULL_ONLY: &[&str] = &[
+    "global", "revoke", "admin", "takeover", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent",
+];
 
 struct Global {
     state: PathBuf,

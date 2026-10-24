@@ -125,6 +125,13 @@ group does not depend on one machine, run on the root:
 cbb admin NAME        # NAME as cbb status shows it; that computer must be on
 ```
 
+If the root is lost or broken, an admin takes the group over and removes it; the other
+devices stay in the group:
+
+```sh
+cbb takeover NAME     # on an admin; NAME is the lost root
+```
+
 A computer that is not on the home network joins with an invitation, once sync away from
 home is on and a hub is set up (see "Sync away from home" below). On the hub, which must be
 the root or an admin:
