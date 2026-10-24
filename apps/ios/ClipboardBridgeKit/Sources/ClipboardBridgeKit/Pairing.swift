@@ -63,7 +63,7 @@ public enum Pairing {
     /// The joiner's CPace associated data.
     public struct Info: Codable, Equatable {
         public var name: String
-        public var os: String // "linux", "darwin", or "ios" or "android" for a phone with the app
+        public var os: String // "linux", "windows", "macos", or "ios" or "android" for a phone with the app; "none" for firmware
         /// A phone's admin key, a SubjectPublicKeyInfo, for the admin CA the
         /// root may issue it; only from a phone.
         public var adminKey: Data?
@@ -88,7 +88,7 @@ public enum Pairing {
         /// to 64 bytes, a known role, and an admin key only from a phone, a
         /// P-256 one.
         public var isValid: Bool {
-            guard ["linux", "darwin", "ios", "android"].contains(os), !name.isEmpty, name.utf8.count <= 64,
+            guard ["linux", "windows", "macos", "ios", "android"].contains(os) || (os == "none" && role == Self.lite), !name.isEmpty, name.utf8.count <= 64,
                   !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
                   role == nil || role == Self.lite else { return false }
             guard let adminKey else { return true }

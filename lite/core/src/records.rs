@@ -63,6 +63,8 @@ struct Body {
     name: String,
     #[serde(default)]
     role: String,
+    #[serde(default)]
+    os: String,
     #[serde(with = "b64::opt_hash", default)]
     key: Option<KeyHash>,
     #[serde(with = "b64::opt_hash", default)]
@@ -73,6 +75,30 @@ struct Body {
     keep: Vec<KeyHash>,
     #[serde(with = "b64", default)]
     root: Vec<u8>,
+}
+
+/// Whether `os` names an operating system that device records know.
+pub fn valid_os(os: &str) -> bool {
+    matches!(os, "linux" | "windows" | "macos" | "ios" | "android" | "none")
+}
+
+/// The role a record names, with the roles of earlier records read as
+/// today's.
+fn role(r: &str) -> &str {
+    match r {
+        "linux" | "mac" => "full",
+        "iphone" => "shortcut",
+        r => r,
+    }
+}
+
+/// The system a record names, or the one its earlier role implies.
+fn os_of(b: &Body) -> &str {
+    match (b.os.as_str(), b.role.as_str()) {
+        ("", "mac") => "macos",
+        ("", "iphone" | "shortcut") => "ios",
+        (os, _) => os,
+    }
 }
 
 impl Body {
@@ -86,8 +112,11 @@ impl Body {
                 if !valid_name(&self.name) {
                     return Err(Error::msg("a device record has no valid name"));
                 }
-                if !matches!(self.role.as_str(), "linux" | "mac" | "phone" | "lite" | "iphone") {
+                if !matches!(role(&self.role), "full" | "phone" | "lite" | "shortcut") {
                     return Err(Error::msg(format!("unknown role {:?} in a device record", self.role)));
+                }
+                if !self.os.is_empty() && !valid_os(&self.os) {
+                    return Err(Error::msg(format!("unknown system {:?} in a device record", self.os)));
                 }
                 if self.key.is_none() {
                     return Err(Error::msg("a device record names no key"));
@@ -130,7 +159,10 @@ struct Signed {
 pub struct Device {
     pub id: String,
     pub name: String,
+    /// `full`, `phone`, `lite` or `shortcut`.
     pub role: String,
+    /// Its operating system; empty when its record does not tell.
+    pub os: String,
     pub key: KeyHash,
     pub admin: bool,
 }
@@ -387,7 +419,8 @@ impl Records {
             .map(|(id, r)| Device {
                 id: id.to_string(),
                 name: r.body.name.clone(),
-                role: r.body.role.clone(),
+                role: role(&r.body.role).to_string(),
+                os: os_of(&r.body).to_string(),
                 key: r.body.key.unwrap(),
                 admin: r.body.admin.is_some_and(|a| !self.revoked(&a)),
             })

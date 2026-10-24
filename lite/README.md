@@ -136,8 +136,7 @@ Add yourself to the `cbb-lite` group to use the control socket without `sudo`:
 sudo usermod -aG cbb-lite "$USER"   # then log in again
 echo hello | cbb-lite copy          # -secret for a password: the group keeps it 60 s
 cbb-lite paste
-cbb-lite status
-cbb-lite devices
+cbb-lite status                     # this device, the group and its devices
 cbb-lite watch                      # one line per text the group sends here
 ```
 

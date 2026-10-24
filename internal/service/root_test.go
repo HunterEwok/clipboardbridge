@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
-	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 // testCA makes a CA as a phone does: a root with path length 1 when parent
@@ -103,8 +102,8 @@ func TestRootHandover(t *testing.T) {
 	lost := group.KeyHash{1}
 	recs := group.NewRecords(g)
 	if _, errs := recs.AddAll([]group.Record{
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: holder.ID, Name: "holder", Role: group.RoleLinux, Key: &hk}, old.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: later.ID, Name: "later", Role: group.RoleLinux, Key: &lk}, old.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: holder.ID, Name: "holder", Role: group.RoleFull, Key: &hk}, old.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: later.ID, Name: "later", Role: group.RoleFull, Key: &lk}, old.Key),
 		sign(t, g, group.RecordBody{Type: group.RecordRoot, Root: newRoot.Cert.Raw}, adminB.Key, adminB.Cert),
 		sign(t, g, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{group.KeyHashOf(old.Cert), lost},
 			Keep: []group.KeyHash{hk, lk, bk}}, newRoot.Key),
@@ -116,18 +115,18 @@ func TestRootHandover(t *testing.T) {
 	}
 
 	var h hub
-	a := startIn(t, &h, &testService{name: "holder", dir: holderDir, role: node.Linux})
+	a := startIn(t, &h, &testService{name: "holder", dir: holderDir, os: group.OSLinux})
 	// The control socket answers before the group has started.
 	waitFor(t, "the holder keeps the new root", func() bool {
 		id, err := group.Load(holderDir)
 		return err == nil && len(id.Roots) == 1
 	})
-	b := startIn(t, &h, &testService{name: "later", dir: laterDir, role: node.Linux})
+	b := startIn(t, &h, &testService{name: "later", dir: laterDir, os: group.OSLinux})
 	waitFor(t, "the later one has the new root", func() bool {
 		id, err := group.Load(laterDir)
 		return err == nil && len(id.Roots) == 1 && id.Root().Equal(newRoot.Cert)
 	})
-	c := startIn(t, &h, &testService{name: "new", dir: newDir, role: node.Linux})
+	c := startIn(t, &h, &testService{name: "new", dir: newDir, os: group.OSLinux})
 	for _, s := range []*testService{a, b, c} {
 		waitFor(t, s.name+" connected to both", func() bool { return len(s.status(t).Peers) == 2 })
 	}

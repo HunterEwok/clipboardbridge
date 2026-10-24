@@ -159,7 +159,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
 | P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
-| P13 | `cbb status`, `cbb devices`, `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
+| P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
 | P15 | macOS: the Local Network permission refused and granted, Gatekeeper on the downloaded binary, the application firewall, Universal Clipboard from an iPhone or iPad signed in to the same Apple account | each state is explained by `cbb status`; Universal Clipboard text syncs once, without an echo |
 | P16 | Windows: locked screen, sign-out and sign-in, SmartScreen on the installer, `get.ps1` installing the arm64 build on ARM | the service keeps syncing; the agent comes back after sign-in; the right architecture |

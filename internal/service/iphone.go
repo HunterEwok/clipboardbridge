@@ -100,7 +100,7 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) {
 	// The phone is the group's main device: pairing it with the first
 	// computer creates the group.
-	if s.engine() == nil && s.cfg.Role == node.Linux {
+	if s.engine() == nil && !s.mac() {
 		if _, err := s.createGroup(); err != nil {
 			fail(c, err)
 			return

@@ -105,7 +105,7 @@ object Pairing {
     /** The joiner's CPace associated data. */
     data class Info(
         val name: String,
-        /** "linux", "darwin", "ios" for an iPhone with the app, or "android". */
+        /** "linux", "windows", "macos", "ios" for an iPhone with the app, "android", or "none" for a lite member's firmware. */
         val os: String,
         /** A phone's admin key, a SubjectPublicKeyInfo, for the admin CA the root may issue it; only from a phone. */
         val adminKey: ByteArray? = null,
@@ -119,7 +119,7 @@ object Pairing {
          */
         val isValid: Boolean
             get() {
-                if (os !in OSES || name.isEmpty() || name.toByteArray().size > 64 || hasControl(name)) return false
+                if ((os !in OSES && !(os == "none" && role == LITE)) || name.isEmpty() || name.toByteArray().size > 64 || hasControl(name)) return false
                 if (role != null && role != LITE) return false
                 val k = adminKey ?: return true
                 return isPhone(os) && p256PublicKey(k) != null
@@ -133,7 +133,7 @@ object Pairing {
         override fun hashCode(): Int = name.hashCode()
 
         companion object {
-            val OSES = setOf("linux", "darwin", "ios", "android")
+            val OSES = setOf("linux", "windows", "macos", "ios", "android")
 
             /** The role of a lite member. */
             const val LITE = "lite"

@@ -60,7 +60,10 @@ final class AppModel: ObservableObject {
         let id: String
         var name: String
         var online: Bool
-        var role = "linux"
+        /// "full", "phone", "lite" or "shortcut".
+        var role = "full"
+        /// Its operating system; nil when its record does not tell.
+        var os: String?
         var isSelf = false
         /// An admin phone: it may add and remove devices.
         var admin = false

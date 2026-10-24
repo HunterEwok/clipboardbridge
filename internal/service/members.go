@@ -147,9 +147,9 @@ func (s *Service) found(peers []mdns.Peer) {
 		r, _ := p.TXTValue("r")
 		mac, lite := strings.EqualFold(r, "mac"), strings.EqualFold(r, "lite")
 		switch {
-		case s.cfg.Role == node.Linux && (mac || lite):
+		case !s.mac() && (mac || lite):
 			continue // it dials the Linux members
-		case (s.cfg.Role == node.Linux || mac) && !lite && id < s.id.ID:
+		case (!s.mac() || mac) && !lite && id < s.id.ID:
 			continue // of two Linux members, or two Macs, the lower ID dials
 		}
 		want[id] = addresses(p)
@@ -337,7 +337,7 @@ func (s *Service) peersChanged() {
 }
 
 func (s *Service) electLocked() {
-	if s.id == nil || s.cfg.Role != node.Linux || s.responder == nil || s.stopping {
+	if s.id == nil || s.mac() || s.responder == nil || s.stopping {
 		return // a stopping member keeps what it had until its goodbye
 	}
 	if s.id.Phone == nil {
@@ -345,7 +345,7 @@ func (s *Service) electLocked() {
 	}
 	hold := true
 	for _, p := range s.nd.Peers() {
-		if p.Role == node.Linux && p.ID < s.id.ID {
+		if p.Role == node.Full && p.OS != group.OSMacOS && p.ID < s.id.ID {
 			hold = false
 		}
 	}

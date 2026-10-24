@@ -110,7 +110,7 @@ func TestComputerAdmin(t *testing.T) {
 		t.Fatalf("the admin CA was not kept: %v", err)
 	}
 	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(pg.root.Cert), Device: NewDeviceID(), Name: "deck",
-		Role: RoleLinux, Key: &KeyHash{1}, By: admin.ID}, ca.Key, chain...)
+		Role: RoleFull, Key: &KeyHash{1}, By: admin.ID}, ca.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestRootDeviceAndAdmitted(t *testing.T) {
 	if _, errs := recs.AddAll([]Record{
 		sign(RecordBody{Type: RecordDevice, Device: rootPhone, Name: "root", Role: RolePhone, Key: &k1, By: rootPhone, TimeMS: 1}, pg.root),
 		sign(RecordBody{Type: RecordDevice, Device: aPhone, Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, By: rootPhone, TimeMS: 2}, pg.root),
-		sign(RecordBody{Type: RecordDevice, Device: deck, Name: "deck", Role: RoleLinux, Key: &k3, By: aPhone, TimeMS: 3}, pg.a, pg.a.Cert),
+		sign(RecordBody{Type: RecordDevice, Device: deck, Name: "deck", Role: RoleFull, Key: &k3, By: aPhone, TimeMS: 3}, pg.a, pg.a.Cert),
 		// An admin's own record signed by itself does not make it the root.
 		sign(RecordBody{Type: RecordDevice, Device: aPhone, Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, By: aPhone, TimeMS: 4}, pg.a, pg.a.Cert),
 	}); len(errs) > 0 {

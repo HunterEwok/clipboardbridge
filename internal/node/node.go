@@ -49,6 +49,7 @@ type Config struct {
 	Identity *group.Identity
 	Role     Role
 	Name     string // this device's name, sent in the hello
+	OS       string // this device's operating system (group.OSLinux...), sent in the hello
 	Engine   *clip.Engine
 
 	// OnWrite puts a text into this member's own clipboard. Writes carry
@@ -128,6 +129,7 @@ type Peer struct {
 	ID    group.DeviceID
 	Role  Role
 	Name  string // from its hello; "" when it sent none or an invalid one
+	OS    string // from its hello; "" when it sent none or an unknown one
 	Key   group.KeyHash
 	Since time.Duration // uptime when the connection started
 }
@@ -386,7 +388,7 @@ func (n *Node) Peers() []Peer {
 	out := make([]Peer, 0, len(n.conns))
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), Key: group.KeyHashOf(c.peerCert), Since: c.since})
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), Since: c.since})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -417,7 +419,7 @@ func (n *Node) RenewPeers() {
 // renew their own.
 func (n *Node) renewPeer(c *conn) {
 	id := n.identity()
-	if role := c.role(); id.AdminCA != nil && role != Linux && role != Mac {
+	if role := c.role(); id.AdminCA != nil && role != Full {
 		return
 	}
 	cert, issuer, err := id.RenewMember(c.peerCert, n.cfg.Now())
@@ -549,6 +551,7 @@ type conn struct {
 	mu       sync.Mutex
 	peerRole Role   // set by the peer's hello
 	peerName string // set by the peer's hello
+	peerOS   string // set by the peer's hello
 	certSent bool   // a renewed certificate was queued for the peer
 	sayBye   bool
 	done     chan struct{} // closed to end the connection
@@ -572,6 +575,12 @@ func (c *conn) role() Role {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.peerRole
+}
+
+func (c *conn) os() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.peerOS
 }
 
 func (c *conn) name() string {
@@ -672,7 +681,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 			ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
 			h.Current = &ev
 		}
-		out := helloOut{Hello: h, Name: c.n.cfg.Name}
+		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS}
 		if id := c.n.identity(); id.AdminKey != nil && id.AdminCA == nil {
 			spki, err := x509.MarshalPKIXPublicKey(&id.AdminKey.PublicKey)
 			if err != nil {
@@ -808,6 +817,9 @@ func (c *conn) reader() error {
 			c.peerRole = m.Role
 			if group.ValidName(extra.Name) {
 				c.peerName = extra.Name
+			}
+			if group.ValidOS(extra.OS) {
+				c.peerOS = extra.OS
 			}
 			c.mu.Unlock()
 			c.n.peersChanged()

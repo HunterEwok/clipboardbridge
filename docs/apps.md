@@ -46,11 +46,12 @@ they look, so both apps are built to the same plan.
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
    QR code ("I already use clipboardbridge on another phone" on its Start screen) and this phone
    scans it.
-4. **Devices**: the whole group, one row per device: its name, an icon for the role (Linux,
-   Mac, phone, lite, iPhone shortcut), an "admin" mark, a live dot when it is online and
+4. **Devices**: the whole group, one row per device: its name, an icon and the name of its
+   system (Linux, Windows, macOS, iOS, Android, or "device" for firmware; a lite member and an
+   iPhone with the shortcut are marked so), a "root" or "admin" mark, a live dot when it is online and
    "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
    device records (section 10 of [protocol.md](protocol.md)), so every app and
-   `cbb devices` show the same. On an admin phone, a row opens the device: rename,
+   `cbb status` show the same. On an admin phone, a row opens the device: rename,
    "Make it an admin" (phones only, on the root phone), and "Remove", which asks once, then
    needs Face ID, the fingerprint or the passcode, and is done; removing an admin phone shows
    the devices it had admitted, which stay. On the root phone a computer's row also offers

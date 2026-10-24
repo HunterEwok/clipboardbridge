@@ -19,7 +19,7 @@ final class TunnelTests: XCTestCase {
         let n = try Member.length(header: try await b.read(exactly: 4))
         guard case let .hello(_, h) = try Member.decode(body: try await b.read(exactly: n)) else { return XCTFail("no hello") }
         XCTAssertEqual(h.tunnelKey, key)
-        try await b.write(Member.encode(.hello(.linux, Member.Hello(wallMS: 0))))
+        try await b.write(Member.encode(.hello(.full, Member.Hello(wallMS: 0))))
         // A bad offer is dropped; a good one reaches onTunnel.
         try await b.write(Member.encode(.tunnel(Member.TunnelOffer(hubKey: Data(count: 31), psk: Data(count: 32)))))
         try await b.write(Member.encode(.tunnel(nil)))

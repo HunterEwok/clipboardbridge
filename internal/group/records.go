@@ -43,15 +43,88 @@ const (
 	RecordRoot   = "root"
 )
 
-// Device roles in device records: the member roles, and iphone for a phone
-// that uses the shortcut and its token.
+// Device roles in device records: the member roles, and shortcut for an
+// iPhone without the app that uses the shortcut and its token.
 const (
-	RoleLinux  = "linux"
-	RoleMac    = "mac"
-	RolePhone  = "phone"
-	RoleLite   = "lite"
-	RoleIPhone = "iphone"
+	RoleFull     = "full"
+	RolePhone    = "phone"
+	RoleLite     = "lite"
+	RoleShortcut = "shortcut"
 )
+
+// The roles of records made before a device's system was apart from its
+// role; Role reads them as RoleFull and RoleShortcut.
+const (
+	roleLinux  = "linux"
+	roleMac    = "mac"
+	roleIPhone = "iphone"
+)
+
+// Operating systems in device records, hellos and the pairing Info: what
+// the device runs, shown and never trusted for anything else.
+const (
+	OSLinux   = "linux"
+	OSWindows = "windows"
+	OSMacOS   = "macos"
+	OSiOS     = "ios"
+	OSAndroid = "android"
+	OSNone    = "none" // firmware without an operating system
+)
+
+// ValidOS reports whether os names a known operating system.
+func ValidOS(os string) bool {
+	switch os {
+	case OSLinux, OSWindows, OSMacOS, OSiOS, OSAndroid, OSNone:
+		return true
+	}
+	return false
+}
+
+// OSName names an operating system for the user: "Linux", "Windows",
+// "macOS", "iOS", "Android", "device" for firmware, "?" when unknown.
+func OSName(os string) string {
+	switch os {
+	case OSLinux:
+		return "Linux"
+	case OSWindows:
+		return "Windows"
+	case OSMacOS:
+		return "macOS"
+	case OSiOS:
+		return "iOS"
+	case OSAndroid:
+		return "Android"
+	case OSNone:
+		return "device"
+	}
+	return "?"
+}
+
+// role returns the role a record body names, with the roles of earlier
+// records read as today's.
+func role(r string) string {
+	switch r {
+	case roleLinux, roleMac:
+		return RoleFull
+	case roleIPhone:
+		return RoleShortcut
+	}
+	return r
+}
+
+// osOf returns the system a record body names, or the one its earlier role
+// implies; "" when neither tells.
+func osOf(b RecordBody) string {
+	switch {
+	case b.OS != "":
+		return b.OS
+	case b.Role == roleMac:
+		return OSMacOS
+	case b.Role == roleIPhone || b.Role == RoleShortcut:
+		return OSiOS
+	}
+	return ""
+}
 
 // A KeyHash names a key in records: SHA-256 over a SubjectPublicKeyInfo, or
 // over the 16 bytes of a phone ID for an iPhone's token.
@@ -92,6 +165,7 @@ type RecordBody struct {
 	Device DeviceID `json:"device,omitempty"`
 	Name   string   `json:"name,omitempty"`
 	Role   string   `json:"role,omitempty"`
+	OS     string   `json:"os,omitempty"`
 	Key    *KeyHash `json:"key,omitempty"`
 	Admin  *KeyHash `json:"admin,omitempty"` // the key of the device's admin CA
 
@@ -162,10 +236,13 @@ func (b *RecordBody) check() error {
 		if !ValidName(b.Name) {
 			return errors.New("group: a device record has no valid name")
 		}
-		switch b.Role {
-		case RoleLinux, RoleMac, RolePhone, RoleLite, RoleIPhone:
+		switch role(b.Role) {
+		case RoleFull, RolePhone, RoleLite, RoleShortcut:
 		default:
 			return fmt.Errorf("group: unknown role %q in a device record", b.Role)
+		}
+		if b.OS != "" && !ValidOS(b.OS) {
+			return fmt.Errorf("group: unknown system %q in a device record", b.OS)
 		}
 		if b.Key == nil {
 			return errors.New("group: a device record names no key")
@@ -518,7 +595,8 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 type Device struct {
 	ID    DeviceID
 	Name  string
-	Role  string
+	Role  string // RoleFull, RolePhone, RoleLite or RoleShortcut
+	OS    string // "" when its record does not tell
 	Key   KeyHash
 	Admin bool
 	// AdminKey is the key of its admin CA, as its record names it; nil
@@ -556,7 +634,8 @@ func (s *Records) Devices() []Device {
 		out = append(out, Device{
 			ID:       id,
 			Name:     r.body.Name,
-			Role:     r.body.Role,
+			Role:     role(r.body.Role),
+			OS:       osOf(r.body),
 			Key:      *r.body.Key,
 			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin),
 			AdminKey: r.body.Admin,
@@ -596,7 +675,7 @@ func (s *Records) RootDevice() DeviceID {
 	var best *signedRecord
 	for _, r := range s.byID {
 		b := r.body
-		if b.Type == RecordDevice && r.signer == cur && b.Role == RolePhone && b.Device == b.By && (best == nil || newer(r, best)) {
+		if b.Type == RecordDevice && r.signer == cur && role(b.Role) == RolePhone && b.Device == b.By && (best == nil || newer(r, best)) {
 			best = r
 		}
 	}

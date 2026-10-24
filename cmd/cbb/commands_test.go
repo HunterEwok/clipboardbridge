@@ -118,9 +118,9 @@ func TestStatus(t *testing.T) {
 		st   control.Status
 		want string
 	}{
-		{control.Status{Role: "linux"}, "Run cbb pair here to start one"},
-		{control.Status{Role: "mac"}, "Run cbb pair on a Linux member"},
-		{control.Status{Role: "linux", Device: "d1", Group: "g1", Holder: true, Peers: []control.Device{{ID: "p1", Role: "linux", SkewMS: 9000}}}, "off by 9s"},
+		{control.Status{Role: "full", OS: "linux"}, "Run cbb pair here to start one"},
+		{control.Status{Role: "full", OS: "macos"}, "Run cbb pair on a Linux or Windows member"},
+		{control.Status{Role: "full", OS: "windows", Device: "d1", Group: "g1", Holder: true}, "Device d1 (Windows, full), group g1"},
 	} {
 		st := tt.st
 		fakeService(t, control.Message{Header: control.Header{Status: &st, Done: true}})
@@ -175,12 +175,13 @@ func TestWriteDevices(t *testing.T) {
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	var b bytes.Buffer
 	writeDevices(&b, []control.Device{
-		{ID: "a1", Name: "pi", Role: "linux", Admin: true, Online: true, Self: true, Listed: true},
-		{ID: "b2", Name: "mac", Role: "mac", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true},
-		{ID: "c3", Name: "deck", Role: "linux"},
-	}, now)
+		{ID: "a1", Name: "pi", Role: "full", OS: "linux", Admin: true, Root: true, Online: true, Self: true, Listed: true},
+		{ID: "b2", Name: "mac", Role: "full", OS: "macos", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true},
+		{ID: "c3", Name: "deck", Role: "full", OS: "windows", Admin: true, Online: true},
+	}, []control.Device{{ID: "c3", SkewMS: 9000}}, now)
 	out := b.String()
-	for _, want := range []string{"pi (this device)", "online", "5 min ago", "deck *", "not in the devices list yet"} {
+	for _, want := range []string{"pi (this device)", "online", "5 min ago", "deck *", "not in the devices list yet",
+		"Linux", "macOS", "Windows", "root", "admin", "off by 9s"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

@@ -31,9 +31,9 @@ object Member {
     /** Texts are at most this many bytes of UTF-8. */
     const val MAX_TEXT = 1 shl 20
 
-    /** What kind of member is at the other end. */
+    /** What kind of member is at the other end: FULL is a computer with the service (Linux, Windows or macOS). */
     enum class Role(val wire: String) {
-        LINUX("linux"), MAC("mac"), PHONE("phone"), LITE("lite");
+        FULL("full"), PHONE("phone"), LITE("lite");
 
         companion object {
             fun of(s: String): Role? = entries.firstOrNull { it.wire == s }
@@ -168,6 +168,8 @@ object Member {
         val records: String? = null,
         /** The sender's device name. */
         val name: String? = null,
+        /** The sender's operating system: "linux", "windows", "macos", "ios", "android" or "none"; shown, never trusted. */
+        val os: String? = null,
         /**
          * From a computer that is no admin yet: the SubjectPublicKeyInfo of
          * its admin key, for the root to certify (section 10, "A computer as admin").
@@ -178,7 +180,7 @@ object Member {
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
-                name == other.name && adminKey.contentEqualsOrNull(other.adminKey) &&
+                name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
                 tunnelKey.contentEqualsOrNull(other.tunnelKey)
 
         override fun hashCode(): Int = wallMS.hashCode()
@@ -288,6 +290,7 @@ object Member {
                 "current" to m.hello.current?.toJson(),
                 "records" to Wire.str(m.hello.records),
                 "name" to Wire.str(m.hello.name),
+                "os" to Wire.str(m.hello.os),
                 "admin_key" to Wire.bytes(m.hello.adminKey),
                 "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
             ),
@@ -341,6 +344,7 @@ object Member {
                             current = Event.fromJson(h.opt("current")),
                             records = h.optString("records"),
                             name = h.optString("name"),
+                            os = h.optString("os"),
                             adminKey = h.optBytes("admin_key"),
                             tunnelKey = h.optBytes("tunnel_key"),
                         ),

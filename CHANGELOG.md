@@ -76,6 +76,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A device's system is separate from its role (docs/design.md, D-50): device records and
+  hellos carry `os` (`linux`, `windows`, `macos`, `ios`, `android`, `none`), and the roles
+  are `full`, `phone`, `lite` and `shortcut`. A Windows PC now shows as Windows, not Linux;
+  an admin re-signs the record of a full member whose hello names another system. Records
+  with the old roles `linux` and `mac` read as `full`, `iphone` as `shortcut`. Not
+  compatible with 0.3 members: update every device of a group together.
+- `cbb devices` is folded into `cbb status`, which shows this device's system and role and
+  then the group's devices with their systems, roles and admins; `cbb-lite devices` the same.
+  The apps' Devices screens show each device's system.
 - A computer that joins at an address (`cbb join -code ADDRESS`, as through an SSH
   forward or a VPN of your own) now connects to the member that admitted it at that
   address and syncs at once, and so meets the hub to sync away from home, where before it

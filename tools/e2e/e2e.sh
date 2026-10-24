@@ -76,8 +76,8 @@ pair b c
 wrong=000000
 cb a status | grep -q '^Device .*, group ' || fail "a is in no group"
 
-connected() { # member, count
-	[ "$(cb "$1" status | grep -c ' linux ')" -eq "$2" ]
+connected() { # member, count: the other devices that cbb status lists online
+	[ "$(cb "$1" status | grep -v '(this device)' | grep -c ' online ')" -eq "$2" ]
 }
 for m in $members; do
 	eventually "$m connects to the two others" connected "$m" 2

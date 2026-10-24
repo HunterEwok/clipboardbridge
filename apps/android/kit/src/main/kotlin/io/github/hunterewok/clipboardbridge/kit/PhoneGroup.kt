@@ -59,7 +59,7 @@ class PhoneGroup internal constructor(
     data class Computer(
         val device: String,
         val name: String,
-        /** "linux" or "darwin", as its pairing Info says. */
+        /** "linux", "windows" or "macos", as its pairing Info says. */
         val os: String,
         val cert: ByteArray,
         val admitted: Instant,
@@ -116,9 +116,10 @@ class PhoneGroup internal constructor(
         caSigner: CertificateSigner,
         now: Instant,
         admin: ByteArray? = null,
+        os: String? = null,
     ): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA)
+        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA, os)
         records.add(r, groupCA)
         return r
     }
@@ -150,7 +151,7 @@ class PhoneGroup internal constructor(
         val out = mutableListOf(Records.root(newRoot, tag, device, now, adminSigner, myCA))
         records.add(out[0], groupCA)
         out.add(Records.revoke(listOf(oldRoot, d.key) + listOfNotNull(d.adminKey), tag, device, now, rootSigner, keep))
-        out.add(Records.device(device, me.name, "phone", me.key, tag, device, now, rootSigner, me.adminKey))
+        out.add(Records.device(device, me.name, "phone", me.key, tag, device, now, rootSigner, me.adminKey, os = me.os ?: "android"))
         for (r in out.drop(1)) records.add(r, groupCA)
         adoptRoots()
         if (!currentRoot.contentEquals(newRoot)) throw Failure("the takeover did not make this phone the root")
@@ -220,9 +221,9 @@ class PhoneGroup internal constructor(
     fun makeAdmin(device: String, adminKey: ByteArray, rootSigner: CertificateSigner, now: Instant): Pair<ByteArray, Member.Record> {
         if (!isRoot) throw Failure("only the root makes admins")
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
-        if (d.role != "linux" && d.role != "mac") throw Failure("not a computer")
+        if (d.role != "full") throw Failure("not a computer")
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
-        val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca))
+        val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os)
         computerAdmins[device] = ca
         return ca to r
     }
@@ -277,17 +278,13 @@ class PhoneGroup internal constructor(
         val name = validName(admitted.info.name)
         val key = Records.keyHashOfCert(admitted.cert)
         if (Pairing.Info.isPhone(admitted.info.os)) {
-            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) })
+            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) }, admitted.info.os)
             return admitted
         }
         computers.removeAll { it.device == admitted.device }
         computers.add(Computer(admitted.device, admitted.info.name, admitted.info.os, admitted.cert, now))
-        val role = when {
-            admitted.info.role == Pairing.Info.LITE -> "lite"
-            admitted.info.os == "darwin" -> "mac"
-            else -> "linux"
-        }
-        record(admitted.device, name, role, key, caSigner, now)
+        val role = if (admitted.info.role == Pairing.Info.LITE) "lite" else "full"
+        record(admitted.device, name, role, key, caSigner, now, os = admitted.info.os)
         return admitted
     }
 
@@ -339,7 +336,7 @@ class PhoneGroup internal constructor(
             val device = SyncEngine.newID()
             val cert = GroupCertificates.member(device, memberKey, ca, caSigner, now)
             val g = PhoneGroup(device, ca, cert)
-            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now)
+            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android")
             return g
         }
 

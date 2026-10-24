@@ -44,8 +44,7 @@ Commands:
                        members dial it on the member port (8764, CBB_PORT).
   copy [-secret]       Send standard input to the group.
   paste                Print this member's clipboard text.
-  status               Show the group and the connected members.
-  devices              List the devices of the group.
+  status               Show this device, its group and the group's devices.
   watch [-0]           Print every text the group sends here, one per line
                        (with -0, each followed by a zero byte).
   next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
@@ -95,7 +94,6 @@ fn main() {
                 "copy" => cmd_copy(&g, rest),
                 "paste" => cmd_simple(&g, "paste", rest),
                 "status" => cmd_simple(&g, "status", rest),
-                "devices" => cmd_simple(&g, "devices", rest),
                 "watch" => cmd_watch(&g, rest),
                 "version" | "-version" | "--version" => {
                     println!("cbb-lite {} ({}/{})", service::VERSION, std::env::consts::OS, std::env::consts::ARCH);
@@ -361,6 +359,19 @@ fn cmd_copy(g: &Global, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Names an operating system for the user, as cbb status does.
+fn os_name(os: &str) -> &str {
+    match os {
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        "ios" => "iOS",
+        "android" => "Android",
+        "none" => "device",
+        _ => "?",
+    }
+}
+
 fn cmd_simple(g: &Global, op: &str, args: &[String]) -> Result<()> {
     if !args.is_empty() {
         return Err(Error::msg(format!("{op} takes no arguments")));
@@ -376,21 +387,26 @@ fn cmd_simple(g: &Global, op: &str, args: &[String]) -> Result<()> {
             if s.peers.is_empty() {
                 println!("no members connected");
             }
-            for p in s.peers {
-                println!("peer    {} {} ({}), clock {:+} ms", p.id, p.name, p.role, p.skew_ms);
+            if s.group.is_empty() {
+                return Ok(());
             }
-        }
-        _ => {
-            for d in m.header.devices {
-                let marks = [(d.this, "this device"), (d.online, "online"), (d.admin, "admin")]
+            let devs = request(
+                g,
+                &control::Message::new(control::Header { op: "devices".into(), ..Default::default() }, Vec::new()),
+            )?;
+            for d in devs.header.devices {
+                let mut marks = [(d.this, "this device"), (d.online, "online"), (d.admin, "admin")]
                     .iter()
                     .filter(|(on, _)| *on)
-                    .map(|(_, s)| *s)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                println!("{}  {:<24} {:<6} {}", d.id, d.name, d.role, marks);
+                    .map(|(_, s)| s.to_string())
+                    .collect::<Vec<_>>();
+                if let Some(p) = s.peers.iter().find(|p| p.id == d.id) {
+                    marks.push(format!("clock {:+} ms", p.skew_ms));
+                }
+                println!("{}  {:<24} {:<8} {:<8} {}", d.id, d.name, os_name(&d.os), d.role, marks.join(", "));
             }
         }
+        _ => {}
     }
     Ok(())
 }

@@ -166,7 +166,7 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	return group.SignRecord(body, ca.Key, chain...)
 }
 
-var errNotAdmin = errors.New("only an admin can change the devices list: a Linux member of a group a computer made, an admin phone, or a computer the root phone made an admin")
+var errNotAdmin = errors.New("only an admin can change the devices list: a Linux or Windows member of a group a computer made, an admin phone, or a computer the root phone made an admin")
 
 // publish adds records made on this member and sends them to the peers.
 func (s *Service) publish(nd *node.Node, rs ...group.Record) {
@@ -176,7 +176,7 @@ func (s *Service) publish(nd *node.Node, rs ...group.Record) {
 }
 
 // recordDevice records a device this member admitted, if it is an admin.
-func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.KeyHash) {
+func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key group.KeyHash) {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
@@ -189,7 +189,7 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.
 	if !group.ValidName(name) {
 		name = defaultName(role, dev)
 	}
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key})
 	if err != nil {
 		s.logf("cbb: recording %s in the devices list: %v", dev, err)
 		return
@@ -199,14 +199,11 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role string, key group.
 
 // recordAdmitted records a computer that a pairing window admitted.
 func (s *Service) recordAdmitted(res *pair.Result) {
-	role := group.RoleLinux
-	switch {
-	case res.Info.Role == pair.RoleLite:
+	role := group.RoleFull
+	if res.Info.Role == pair.RoleLite {
 		role = group.RoleLite
-	case res.Info.OS == "darwin":
-		role = group.RoleMac
 	}
-	s.recordDevice(res.Device, res.Info.Name, role, group.KeyHashOf(res.Cert))
+	s.recordDevice(res.Device, res.Info.Name, role, res.Info.OS, group.KeyHashOf(res.Cert))
 }
 
 // recordPhone records an iPhone that paired for the shortcut.
@@ -215,7 +212,7 @@ func (s *Service) recordPhone(phoneID string) {
 	if err != nil {
 		return
 	}
-	s.recordDevice(group.DeviceID(phoneID), "iPhone", group.RoleIPhone, group.PhoneKeyHash(raw))
+	s.recordDevice(group.DeviceID(phoneID), "iPhone", group.RoleShortcut, group.OSiOS, group.PhoneKeyHash(raw))
 }
 
 // defaultName names a device that has no valid name: its role and the start
@@ -227,10 +224,8 @@ func defaultName(role string, dev group.DeviceID) string {
 // roleOf maps a member role to the role in a device record.
 func roleOf(r node.Role) string {
 	switch r {
-	case node.Linux:
-		return group.RoleLinux
-	case node.Mac:
-		return group.RoleMac
+	case node.Full:
+		return group.RoleFull
 	case node.Phone:
 		return group.RolePhone
 	}
@@ -250,29 +245,36 @@ func (s *Service) ensureListed() {
 		return
 	}
 	s.recMu.Lock()
-	listed := map[group.KeyHash]bool{}
+	listed := map[group.KeyHash]group.Device{}
 	for _, d := range s.records.Devices() {
-		listed[d.Key] = true
+		listed[d.Key] = d
 	}
 	s.recMu.Unlock()
 	var rs []group.Record
-	add := func(dev group.DeviceID, name, role string, key group.KeyHash) {
-		if listed[key] {
-			return
+	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash) {
+		body := group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key}
+		if d, ok := listed[key]; ok {
+			// A computer whose record names no system or another one, as a
+			// Windows PC that joined as a Linux member: record what its
+			// hello says, keeping the rest of its record.
+			if d.Role != group.RoleFull || os == "" || d.OS == os {
+				return
+			}
+			body.Name, body.Admin = d.Name, d.AdminKey
 		}
-		if !group.ValidName(name) {
-			name = defaultName(role, dev)
+		if !group.ValidName(body.Name) {
+			body.Name = defaultName(role, dev)
 		}
-		r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, Key: &key})
+		r, err := s.signRecord(id, body)
 		if err != nil {
 			s.logf("cbb: recording %s in the devices list: %v", dev, err)
 			return
 		}
 		rs = append(rs, r)
 	}
-	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), group.KeyHashOf(id.Cert))
+	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert))
 	for _, p := range nd.Peers() {
-		add(p.ID, p.Name, roleOf(p.Role), p.Key)
+		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key)
 	}
 	if len(rs) > 0 {
 		s.publish(nd, rs...)
@@ -297,7 +299,7 @@ func (s *Service) trackSeen(peers []node.Peer) {
 	s.online = online
 }
 
-// devices returns the devices list as cbb devices shows it: the
+// devices returns the devices list as cbb status shows it: the
 // devices in the records, then this device and the connected peers that
 // are not in them yet.
 func (s *Service) devices() ([]control.Device, error) {
@@ -317,16 +319,18 @@ func (s *Service) devices() ([]control.Device, error) {
 	}
 	s.recMu.Lock()
 	list := s.records.Devices()
+	root := s.records.RootDevice()
 	s.recMu.Unlock()
 
-	// In a group a computer created, every Linux member holds the CA keys.
+	// In a group a computer created, every member that admits devices, a
+	// Linux or a Windows one, holds the CA keys.
 	computerGroup := id.GroupCA.Cert.MaxPathLen == 0
 	now := s.cfg.now()
 	var out []control.Device
 	shown := map[group.DeviceID]bool{}
-	entry := func(dev group.DeviceID, name, role string, admin, listed bool) {
-		d := control.Device{ID: string(dev), Name: name, Role: role, Listed: listed, Self: dev == id.ID}
-		d.Admin = admin || (computerGroup && role == group.RoleLinux)
+	entry := func(dev group.DeviceID, name, role, os string, admin, listed bool) {
+		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root}
+		d.Admin = admin || (computerGroup && keyHolder(role, os))
 		if _, ok := peers[dev]; ok || d.Self {
 			d.Online, d.LastSeenMS = true, now.UnixMilli()
 		} else if t, ok := seen[dev]; ok {
@@ -339,14 +343,18 @@ func (s *Service) devices() ([]control.Device, error) {
 		shown[dev] = true
 	}
 	for _, d := range list {
-		entry(d.ID, d.Name, d.Role, d.Admin, true)
+		os := d.OS
+		if p, ok := peers[d.ID]; ok && p.OS != "" {
+			os = p.OS
+		}
+		entry(d.ID, d.Name, d.Role, os, d.Admin, true)
 	}
 	if !shown[id.ID] {
-		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), false, false)
+		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, false, false)
 	}
 	for _, p := range nd.Peers() {
 		if !shown[p.ID] {
-			entry(p.ID, p.Name, roleOf(p.Role), false, false)
+			entry(p.ID, p.Name, roleOf(p.Role), p.OS, false, false)
 		}
 	}
 	return out, nil
@@ -371,7 +379,7 @@ func (s *Service) revoke(target string) (string, error) {
 	}
 	switch {
 	case len(match) == 0:
-		return "", fmt.Errorf("no device %q in the group; cbb devices lists them", target)
+		return "", fmt.Errorf("no device %q in the group; cbb status lists them", target)
 	case len(match) > 1:
 		var ids []string
 		for _, d := range match {
@@ -391,8 +399,8 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", errNotAdmin
 	case d.Self:
 		return "", errors.New("a device cannot remove itself; run cbb revoke on another member")
-	case d.Role == group.RoleLinux && id.GroupCA.Cert.MaxPathLen == 0:
-		return "", errors.New("a Linux member holds the group's keys, so removing it needs a new group; this is not supported yet")
+	case keyHolder(d.Role, d.OS) && id.GroupCA.Cert.MaxPathLen == 0:
+		return "", errors.New("this member holds the group's keys, so removing it needs a new group; this is not supported yet")
 	case d.ID == string(root):
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	}
@@ -463,3 +471,7 @@ func (g phoneGroup) PhoneRevoked(phoneID string) bool {
 	defer g.s.recMu.Unlock()
 	return g.s.records != nil && g.s.records.Revoked(group.PhoneKeyHash(raw))
 }
+
+// keyHolder reports whether a device of a group a computer created holds
+// the CA keys: every computer but a Mac does.
+func keyHolder(role, os string) bool { return role == group.RoleFull && os != group.OSMacOS }
