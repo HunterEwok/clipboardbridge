@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
@@ -425,14 +426,24 @@ func TestAwayThroughRelay(t *testing.T) {
 	})
 }
 
+// freeUDP returns a UDP port that is free on all addresses, as the hub
+// listens. It picks it below the systems' ephemeral ranges (Linux from
+// 32768, macOS and Windows from 49152): a port the kernel handed out and
+// took back could go to a socket of another test package before the hub
+// binds it.
 func freeUDP(t *testing.T) int {
 	t.Helper()
-	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		t.Fatal(err)
+	for range 100 {
+		port := 20000 + rand.IntN(10000)
+		c, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+		if err != nil {
+			continue
+		}
+		c.Close()
+		return port
 	}
-	defer c.Close()
-	return c.LocalAddr().(*net.UDPAddr).Port
+	t.Fatal("no free UDP port")
+	return 0
 }
 
 // TestJoinByAddress checks that a device that joined at an address, as
