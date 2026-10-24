@@ -106,17 +106,11 @@ func Register(ctx context.Context, cfg HubConfig) {
 	}
 }
 
-func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error {
-	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second}
-	raw, err := d.DialContext(ctx, "tcp", cfg.Link.Endpoint.String())
-	if err != nil {
-		return fmt.Errorf("reaching the forwarder: %w", err)
-	}
-	defer raw.Close()
-	stop := context.AfterFunc(ctx, func() { raw.Close() })
-	defer stop()
-	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, &tls.Config{
+// tlsVerifiedByPin builds the registration's TLS: the forwarder has no name
+// and a self-signed certificate, so crypto/tls cannot check it, and
+// VerifyConnection checks its key against the pin instead.
+func tlsVerifiedByPin(cfg HubConfig) *tls.Config {
+	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cfg.Cert()},
 		NextProtos:   []string{Protocol},
@@ -132,7 +126,20 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 			}
 			return nil
 		},
-	})
+	}
+}
+
+func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error {
+	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second}
+	raw, err := d.DialContext(ctx, "tcp", cfg.Link.Endpoint.String())
+	if err != nil {
+		return fmt.Errorf("reaching the forwarder: %w", err)
+	}
+	defer raw.Close()
+	stop := context.AfterFunc(ctx, func() { raw.Close() })
+	defer stop()
+	raw.SetDeadline(time.Now().Add(setupTimeout))
+	tc := tls.Client(raw, tlsVerifiedByPin(cfg))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
