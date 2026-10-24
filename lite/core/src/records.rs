@@ -79,6 +79,10 @@ struct Body {
     keep: Vec<KeyHash>,
     #[serde(with = "b64", default)]
     root: Vec<u8>,
+    /// freeze: the records of the frozen admins that still count; thaw: the
+    /// freeze records it ends. Both are record IDs.
+    #[serde(with = "b64::hashes", default)]
+    records: Vec<KeyHash>,
 }
 
 /// Whether `os` names an operating system that device records know.
@@ -136,6 +140,16 @@ impl Body {
                     return Err(Error::msg("a root record has no certificate"));
                 }
             }
+            "freeze" => {
+                if self.keys.is_empty() {
+                    return Err(Error::msg("a freeze record names no admin"));
+                }
+            }
+            "thaw" => {
+                if self.records.is_empty() {
+                    return Err(Error::msg("a thaw record names no freeze record"));
+                }
+            }
             t => return Err(Error::msg(format!("unknown record type {t:?}"))),
         }
         Ok(())
@@ -152,6 +166,7 @@ pub fn valid_name(s: &str) -> bool {
 #[derive(Clone)]
 struct Signed {
     record: Record,
+    id: [u8; 32],
     body: Body,
     signer: KeyHash,
     anchor: KeyHash,    // the root it was signed under
@@ -169,6 +184,8 @@ pub struct Device {
     pub os: String,
     pub key: KeyHash,
     pub admin: bool,
+    /// An admin computer another admin froze: no admin, and refused.
+    pub frozen: bool,
 }
 
 /// The set of a group's records. It only grows.
@@ -195,6 +212,11 @@ struct Eval {
     /// The known roots: the group CA and the new roots of the root records
     /// that a known root or an admin phone under one signed.
     roots: BTreeSet<KeyHash>,
+    /// The freezes that count, for each frozen admin CA (rule 4), by
+    /// record ID.
+    freezes: BTreeMap<KeyHash, Vec<[u8; 32]>>,
+    /// The device keys of the frozen admins.
+    frozen_keys: BTreeSet<KeyHash>,
 }
 
 impl Eval {
@@ -341,7 +363,7 @@ impl Records {
             certs::check_root(&c)?;
             root = Some(c);
         }
-        Ok(Signed { record: r.clone(), body, signer, anchor, root })
+        Ok(Signed { record: r.clone(), id: r.id(), body, signer, anchor, root })
     }
 
     /// The roots from the group CA to the current root: from each root, the
@@ -408,6 +430,20 @@ impl Records {
 
     /// Whether the signer of a root record may hand the group over: a known
     /// root's own key or an admin phone's admin CA, never a computer's.
+    /// Reports whether a key is frozen (docs/protocol.md, section 10, rule
+    /// 4): a computer's admin CA that a freeze that counts names, or the
+    /// device key of such an admin.
+    pub fn frozen(&self, k: &KeyHash) -> bool {
+        let ev = self.ev();
+        ev.freezes.contains_key(k) || ev.frozen_keys.contains(k)
+    }
+
+    /// Reports whether every freeze of r's signer names r, as for the
+    /// records of an admin that is not frozen.
+    fn kept_by_freezes(&self, ev: &Eval, r: &Signed) -> bool {
+        ev.freezes.get(&r.signer).is_none_or(|ids| ids.iter().all(|id| self.by_id[id].body.records.contains(&r.id)))
+    }
+
     fn may_hand_over(&self, r: &Signed) -> bool {
         let ev = self.ev();
         ev.root_signed(r) || (ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor))
@@ -429,6 +465,8 @@ impl Records {
             revokers: BTreeMap::new(),
             phone_admin: BTreeSet::new(),
             roots: self.known_roots(),
+            freezes: BTreeMap::new(),
+            frozen_keys: BTreeSet::new(),
         };
         let mut by_root: BTreeMap<KeyHash, Vec<&Signed>> = BTreeMap::new();
         let mut privileged: BTreeSet<KeyHash> = self.roots.keys().copied().collect();
@@ -470,8 +508,47 @@ impl Records {
                 }
             }
         }
+        // The device keys of each computer's admin CA, and the freezes that
+        // a root or an admin phone ended.
+        let mut computers: BTreeMap<KeyHash, Vec<KeyHash>> = BTreeMap::new();
+        let mut thawed: BTreeSet<[u8; 32]> = BTreeSet::new();
+        for r in self.by_id.values() {
+            let b = &r.body;
+            if b.kind == "device" && role(&b.role) != "phone" && ev.root_signed(r) {
+                if let (Some(a), Some(k)) = (b.admin, b.key) {
+                    if !ev.phone_admin.contains(&a) {
+                        computers.entry(a).or_default().push(k);
+                    }
+                }
+            } else if b.kind == "thaw"
+                && (ev.root_signed(r)
+                    || (ev.phone_admin.contains(&r.signer)
+                        && ev.roots.contains(&r.anchor)
+                        && !disabled.contains(&r.signer)))
+            {
+                thawed.extend(b.records.iter().copied());
+            }
+        }
+        // A frozen admin's freezes still count, so two admins that freeze
+        // each other both stay frozen until the root or an admin phone
+        // decides.
         for (id, r) in &self.by_id {
-            if r.body.kind != "revoke" {
+            if r.body.kind != "freeze" || thawed.contains(id) || !ev.roots.contains(&r.anchor) {
+                continue;
+            }
+            if r.signer != r.anchor && (disabled.contains(&r.signer) || !stands_for_roots(&r.anchor, &r.signer)) {
+                continue;
+            }
+            if !r.body.keys.iter().all(|k| computers.contains_key(k)) {
+                continue;
+            }
+            for k in &r.body.keys {
+                ev.freezes.entry(*k).or_default().push(*id);
+                ev.frozen_keys.extend(computers[k].iter().copied());
+            }
+        }
+        for (id, r) in &self.by_id {
+            if r.body.kind != "revoke" || !self.kept_by_freezes(&ev, r) {
                 continue;
             }
             let counts = if r.signer == r.anchor {
@@ -520,7 +597,16 @@ impl Records {
     }
 
     fn counts(&self, r: &Signed, on: &[KeyHash]) -> bool {
-        on.contains(&r.anchor) && self.signed_by_root(r) && r.body.key.is_some_and(|k| self.issued(&r.signer, &k))
+        on.contains(&r.anchor)
+            && self.signed_by_root(r)
+            && r.body.key.is_some_and(|k| self.issued(&r.signer, &k))
+            && self.kept_by_freezes(&self.ev(), r)
+    }
+
+    /// Reports whether a device record that counts names the key k.
+    fn listed(&self, k: &KeyHash) -> bool {
+        let on: Vec<KeyHash> = self.path().iter().map(Cert::key_hash).collect();
+        self.by_id.values().any(|r| r.body.kind == "device" && r.body.key == Some(*k) && self.counts(r, &on))
     }
 
     /// Reports why a member certificate chain (leaf first, then its admin
@@ -531,6 +617,9 @@ impl Records {
         let mut leaf = first.key_hash();
         if self.revoked(&leaf) {
             return Some("the device was removed from the group");
+        }
+        if self.frozen(&leaf) {
+            return Some("the device is a frozen admin");
         }
         let mut top = first;
         let path = self.path();
@@ -543,6 +632,11 @@ impl Records {
             let admin = issuer.key_hash();
             if !self.issued(&admin, &leaf) {
                 return Some("the admin that admitted the device was removed");
+            }
+            // A frozen admin's certificates hold only for devices the records
+            // already list.
+            if self.frozen(&admin) && !self.listed(&leaf) {
+                return Some("the admin that certified the device is frozen");
             }
             top = issuer;
             leaf = admin;
@@ -583,7 +677,8 @@ impl Records {
                 role: role(&r.body.role).to_string(),
                 os: os_of(&r.body).to_string(),
                 key: r.body.key.unwrap(),
-                admin: r.body.admin.is_some_and(|a| !self.revoked(&a)),
+                admin: r.body.admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
+                frozen: self.frozen(&r.body.key.unwrap()) || r.body.admin.is_some_and(|a| self.frozen(&a)),
             })
             .collect();
         out.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));

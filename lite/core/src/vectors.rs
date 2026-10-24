@@ -234,3 +234,33 @@ fn go_admins() {
     }
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
 }
+
+/// An admin computer freezing another (docs/protocol.md, section 10, rule
+/// 4), as Go's TestGoFreezeVectors writes it.
+#[test]
+fn go_freeze() {
+    let v = vectors("go-freeze.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut rs = records(&v["records"]);
+    rs.reverse();
+    let (_, errs) = s.add_all(&rs);
+    assert!(errs.is_empty(), "{errs:?}");
+    let names: Vec<String> = s.devices().into_iter().map(|d| d.name).collect();
+    let want: Vec<String> =
+        v["devices"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, want);
+    for d in v["devices"].as_array().unwrap() {
+        let got = s.devices().into_iter().find(|x| x.id == d["id"].as_str().unwrap()).expect("a listed device");
+        assert_eq!(got.admin, d["admin"].as_bool().unwrap(), "{}", got.name);
+    }
+    for k in v["keys"].as_array().unwrap() {
+        let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+        assert_eq!(s.frozen(&key), k["frozen"].as_bool().unwrap(), "{}", k["name"]);
+        assert!(!s.revoked(&key), "{}", k["name"]);
+    }
+    for c in v["chains"].as_array().unwrap() {
+        let chain: Vec<Cert> = c["chain"].as_array().unwrap().iter().map(cert).collect();
+        assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);
+    }
+    assert_eq!(s.digest(), v["digest"].as_str().unwrap());
+}
