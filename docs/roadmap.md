@@ -70,6 +70,43 @@ The order may change.
     into any computer without clipboardbridge (Latin characters only: a USB keyboard
     cannot type most other scripts), and it can show texts on a display and send one with
     a button.
+16. **Planned.** Full members, admins and the device's system: a Windows PC shown as
+    Windows, the Mac a full member, CA keys only on the creator and the admins, and the
+    upgrade of older groups; see "Full members, admins and the operating system" in
+    [design.md](design.md#full-members-admins-and-the-operating-system).
+17. **Planned, after TestFlight.** Removing the iPhone shortcut (the `shortcut` role), a
+    legacy way, once the owner's Apple developer account puts the app on real iPhones
+    through TestFlight: with it go the iPhone CA and its key on the admins, the shortcut
+    endpoints and pages on the member port, the configuration profile and its plain-HTTP
+    port, the tokens, and the rule for who holds `clipboardbridge.local`, which only the
+    shortcut uses. The group then has one kind of trust, the member certificates, and no
+    key that cannot be revoked by a record.
+18. **Planned for 0.5.** Remote paste: an admin device sends a text to one member and has
+    it pasted or typed where that member's focus is, with nothing pressed on the target;
+    every admin may do it on every member (D-54), the iPhone only sends. See "Remote paste"
+    in [design.md](design.md#remote-paste-planned-for-05). One pull request each:
+    1. the signed `paste` command, its result and its forwarding, in Go and both phone
+       kits with interop vectors; `cbb paste --on DEVICE`;
+    2. Linux targets: X11, Wayland (virtual keyboard, uinput), tmux and the console helper
+       (item 10);
+    3. Windows and macOS targets;
+    4. sending from the iPhone and Android apps, and the Android target;
+    5. the `cbb-lite` target, then the Nano ESP32's keyboard.
+19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
+    switched to shared, receive only or send only by itself or by any admin (D-55). See
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
+20. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
+    (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
+    in chunks at lower priority than events, and each device has its own limit (100 MiB at
+    home, 25 MiB away from home, at most 1 GiB). See "Images and files" in
+    [design.md](design.md#images-and-files-planned-for-05). One pull request each:
+    1. the `media` event, the content cache, `get` and `chunk`, the limits, interop vectors;
+       `cbb copy FILE` and `cbb paste -o DIR`;
+    2. images in the desktop connectors (Wayland, X11, Mac, Windows);
+    3. files and folders in the desktop connectors;
+    4. the phone apps: images, then files and the share targets;
+    5. away from home: the away limit and the hub serving its clients, on the bench;
+    6. HTML, optional.
 
 ## Device keys in hardware
 

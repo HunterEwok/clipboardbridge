@@ -159,8 +159,10 @@ the hub. See "Joining from another network" in [design.md](design.md).
 ## 5. Sync away from home (optional)
 
 Off by default: the group syncs on the home network only. To sync when a computer is away,
-one computer that is always on at home becomes the hub, and each computer that should reach
-it from afar turns sync away from home on. Do it while the computers are at home:
+one computer at home becomes the hub, and each computer that should reach it from afar
+turns sync away from home on. The hub need not stay on, but while it is off nothing syncs
+away from home (the devices at home still sync): keep it on, turn it on when you need it,
+or sync at home only. Do it while the computers are at home:
 
 ```sh
 cbb away on                                  # on the hub and on each computer; read what it says
