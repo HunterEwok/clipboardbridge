@@ -21,6 +21,19 @@
 # CBB_FIREWALL=no leaves the firewall alone. uninstall.sh removes it
 # all again.
 set -eu
+
+# A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
+# command as it runs, so that the output shows where and why it failed.
+if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
+	set -x
+fi
+failed() {
+	rc=$1
+	if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ "${CBB_ERROR_DETAILS:-}" != 1 ]; then
+		echo "install.sh: failed (exit status $rc). For every command it ran: CBB_ERROR_DETAILS=1, and run it again." >&2
+	fi
+}
+trap 'failed $?' EXIT
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
 
