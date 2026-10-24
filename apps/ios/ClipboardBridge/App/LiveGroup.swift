@@ -58,6 +58,9 @@ final class LiveGroup: GroupController {
     /// How recent a computer's copy must be for the button to fetch it
     /// first, as for the shortcut (internal/phone/sync.go).
     static let recentCopyMS: Int64 = 45_000
+    /// How long the button waits for a computer to connect before it says
+    /// none is.
+    static let connectWait: Duration = .seconds(5)
 
     let file: URL
     private(set) var state: PhoneGroup?
@@ -637,7 +640,7 @@ final class LiveGroup: GroupController {
             return .fetched
         }
         if let t = board, !t.isEmpty, t != usable?.text {
-            guard !online.isEmpty else { throw PendingGroup.Failure.noComputers }
+            guard await connected(node) else { throw PendingGroup.Failure.noComputers }
             await node.send(text: t, kind: .text)
             return .sent
         }
@@ -645,8 +648,20 @@ final class LiveGroup: GroupController {
             write(u.text, kind: u.kind)
             return .fetched
         }
-        if online.isEmpty { throw PendingGroup.Failure.noComputers }
+        if !(await connected(node)) { throw PendingGroup.Failure.noComputers }
         return .nothingNew
+    }
+
+    /// Whether a computer is connected, waiting up to connectWait for one:
+    /// back from the background, the connections iOS dropped take a moment
+    /// to come back. Keeps online, and so the dots, in step.
+    private func connected(_ node: MemberNode) async -> Bool {
+        let deadline = ContinuousClock.now + Self.connectWait
+        while true {
+            online = await node.connected
+            if !online.isEmpty || ContinuousClock.now >= deadline { return !online.isEmpty }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     /// Puts a text into the phone's clipboard; a secret stays on this phone
