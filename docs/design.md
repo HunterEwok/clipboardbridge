@@ -62,7 +62,7 @@ apps" below).
 ## Group and pairing
 
 - **The phone is the main device.** The usual way to build a group starts from the phone:
-  `cbb pair -phone` on the first Linux machine creates the group and pairs the
+  `cbb new` on the first Linux machine creates the group and `cbb pair -phone` pairs the
   phone; every further computer runs `cbb pair`, which shows a QR code with a fresh
   code, and the phone's second shortcut ("clipboardbridge: add a computer") scans it and posts
   the code to `/admit` on `clipboardbridge.local` with its token. The member there opens a
@@ -336,8 +336,8 @@ and lifetimes. The installer enables what the device needs.
   holds; a write that no connector got, such as the group's text at boot, goes to the next
   one that connects, if it is still the member's own text.
 - Command line: `cbb copy` (standard input to the group), `cbb paste` (the
-  member's own clipboard text to standard output), `cbb pair`, `join`,
-  `revoke`, `status` (which lists the group's devices too). `cbb pair` on a Linux machine in no group creates the group.
+  member's own clipboard text to standard output), `cbb new`, `cbb pair`,
+  `revoke`, `status` (which lists the group's devices too). `cbb new` creates a group; `cbb pair` joins one on a device in no group and admits a device on the root or an admin.
   `cbb pair` finds the member with an open pairing window by its TXT record, or uses
   the address that `pair` prints, for networks where multicast does not pass. It talks to
   one member only, tries that member's addresses (IPv4 first, link-local last) until one
