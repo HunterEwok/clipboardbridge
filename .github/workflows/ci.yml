@@ -697,7 +697,7 @@ jobs:
           curl -fsSL --retry 3 -o espflash.zip "https://github.com/esp-rs/espflash/releases/download/v$ESPFLASH/espflash-x86_64-unknown-linux-gnu.zip"
           echo "$ESPFLASH_SHA256  espflash.zip" | sha256sum -c -
           unzip -q espflash.zip
-      - name: the firmware's self-test in QEMU (keys, certificates, a TLS 1.3 handshake on the chip)
+      - name: the firmware in QEMU (the console, settings kept across restarts, the TLS 1.3 self-test)
         working-directory: lite/esp32
         run: QEMU="$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" ESPFLASH="$RUNNER_TEMP/espflash" ./qemu-test.sh
 
