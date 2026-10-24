@@ -81,6 +81,9 @@ The order may change.
     3. Windows and macOS targets;
     4. sending from the iPhone and Android apps, and the Android target;
     5. the `cbb-lite` target, then the Nano ESP32's keyboard.
+19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
+    switched to shared, receive only or send only by itself or by any admin (D-55). See
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
 
 ## Device keys in hardware
 

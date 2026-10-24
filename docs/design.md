@@ -1018,6 +1018,30 @@ in the member protocol, refusing revoked keys, `cbb devices` and `cbb revoke`
 in groups a computer created, and members that verify certificates through an admin CA. Then
 the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
 
+## Sync modes (planned for 0.5)
+
+Today every copy on any member goes to the clipboard of every other member within a second,
+so a copy on one computer replaces what was just copied on another. Each device gets a
+**sync mode** instead, and a new device starts in its own:
+
+| Mode | Its copies go to the group | The group's copies reach its clipboard |
+|---|---|---|
+| **Own** (the default) | no | no; the group's text is still at hand on request (`cbb paste`, the app's button) |
+| **Shared** | yes | yes (what every member does today) |
+| **Receive only** | no | yes; for a Pi or a kiosk that only shows what comes |
+| **Send only** | yes | no; for a work computer whose clipboard nobody else should change |
+
+- The mode decides only what moves between the clipboard and the group. The member stays
+  connected in every mode, so an admin can change its mode from afar, revocations reach it
+  at once, and remote paste works on it. Sync away from home is turned on apart from the
+  mode (D-45).
+- A device changes its own mode (`cbb mode`, the apps' settings). An admin changes the mode
+  of any member with a `mode` command, signed and checked like a `paste` command (see
+  "Remote paste"); the member keeps the mode across restarts and reports it in its hello,
+  so the devices list shows it.
+- Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
+  in every mode.
+
 ## Remote paste (planned for 0.5)
 
 An admin device sends a text to one chosen member and has it pasted where that member's
@@ -1178,3 +1202,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
 | D-54 | Every admin may paste a text on any member, the target pressing nothing and consenting to nothing, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
+| D-55 | Each device has a sync mode, own (the default), shared, receive only or send only, which decides only what moves between its clipboard and the group; it stays connected in every mode, changes its own mode, and any admin changes the mode of any member with a signed command. |
