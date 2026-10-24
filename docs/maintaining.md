@@ -102,6 +102,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   ARMv6 builds, and the e2e test of `cbb-lite` among Go members;
 - **lite core on the ESP32**: the lite protocol core with its TLS built for the ESP32-C6 (RISC-V) and the
   ESP32-S3 (Xtensa);
+- **ZX Spectrum Next**: the tests of the `.cbb` frame parser on the host, and the dot command
+  built with z88dk (from its release source, checked by hash, cached);
 - **ci-ok**: the summary that the ruleset requires.
 
 Rules for workflows:

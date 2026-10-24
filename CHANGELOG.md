@@ -15,6 +15,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
   groups apart, limits each group, and writes nothing about the groups, not even to its
   log. `cbb away` on the hub shows the registration.
+- `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
+  `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
+  file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
+  run on a real Next.
 
 ## [0.3.0] - 2026-10-24
 

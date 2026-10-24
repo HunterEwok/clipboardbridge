@@ -63,6 +63,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
   C6 (RISC-V) and the S3 (Xtensa); `lite/src` adds the files, the sockets around the
   core's TLS, mDNS and the control socket.
+- `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
+  parses the frames of `cbb-lite next`, `link.c` drives the UART to the Next's Pi; `make test`
+  runs the parser's tests on the host).
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
