@@ -89,7 +89,8 @@ def fail(why):
 
 
 b = Board(1)
-b.type("status", "Wi-Fi network: none set")
+b.type("status", "group: none, type join")
+b.type("join", "the QEMU build has no network to join a group over")
 b.answer("wifi", "Wi-Fi network name: ")
 b.answer("Test Net", "Password (empty for an open network): ")
 b.type("password1", "Saved. Joining Test Net.")
