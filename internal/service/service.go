@@ -150,6 +150,8 @@ type Service struct {
 	tunErr     string                // what went wrong last, for status; "" if nothing
 	tunDetail  string                // the underlying error
 	tunFwd     *control.Forwarder    // on the hub: its registration with its forwarder; nil without one
+	tunRelay   *control.Relay        // on a device with a relay: its link to it; nil without one
+	tunRelayed int                   // member connections through the relay now
 	guests     map[netip.Addr]*guest // on the hub: the guest tunnels of open remote invitations (invite.go)
 
 	groupCtx    context.Context

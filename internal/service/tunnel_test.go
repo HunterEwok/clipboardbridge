@@ -17,6 +17,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -280,6 +281,79 @@ func TestAwayThroughForwarder(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the deck has it", func() bool { return deck.paste(t) == "back home" })
+}
+
+// TestAwayThroughRelay checks a group without a hub: both devices meet at a
+// blind relay, and once one leaves the home network they sync through it.
+func TestAwayThroughRelay(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	keys, err := relay.NewKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := relay.Listen(relay.Config{Listen: "127.0.0.1:0", Keys: keys, Groups: []string{pi.status(t).Group}, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		r.Serve(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-served
+	}()
+
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err == nil {
+		t.Error("a relay before sync away from home is on")
+	}
+	for _, s := range []*testService{pi, deck} {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: "sha256:nope"}, ""); err == nil {
+			t.Error("a relay with a bad key")
+		}
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	piID, deckID := pi.status(t).Device, deck.status(t).Device
+	waitFor(t, "both meet at the relay", func() bool {
+		a, b := pi.status(t).Away, deck.status(t).Away
+		return a != nil && a.Relay != nil && a.Relay.Connected && len(a.Relay.Online) == 1 && a.Relay.Online[0] == deckID &&
+			b != nil && b.Relay != nil && b.Relay.Connected && len(b.Relay.Online) == 1 && b.Relay.Online[0] == piID
+	})
+
+	deck.stop()
+	h.hide(deckID)
+	deck = restartService(t, &h, deck)
+	waitUpTo(t, 30*time.Second, "the deck reaches the pi through the relay", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "via the relay"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "via the relay" })
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "back home"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the deck has it", func() bool { return deck.paste(t) == "back home" })
+
+	// Turning sync away from home off leaves the relay.
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "off"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the relay drops the pi", func() bool {
+		_, n := r.Stats()
+		return n == 1
+	})
 }
 
 func freeUDP(t *testing.T) int {

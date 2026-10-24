@@ -35,7 +35,7 @@ The order may change.
     place of ring), with the member TLS in it (rustls without std and a RustCrypto
     provider; `cbb-lite` uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
-12. **Partly: built between computers (`cbb away`, `cbb invite` for joining from afar, and `cbb forward` for hubs behind carrier-grade NAT); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
+12. **Partly: built between computers (`cbb away`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home).
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
 14. **Started: `cbb-lite next` and the `.cbb` dot command (`apps/zxnext`) are written, not yet

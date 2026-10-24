@@ -29,6 +29,7 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Member ALPN | `clipboardbridge/1` | `group.MemberProtocol` |
 | Pairing ALPN | `clipboardbridge-pair/1` | `pair.Protocol` |
 | Forwarder | UDP and TCP 8764 on the forwarder's own server (`cbb forward -listen`); ALPN `clipboardbridge-forward/1` (section 13) | `internal/forward` |
+| Blind relay | UDP and TCP 8764 on the user's own server (`cbb relay -listen`); ALPN `clipboardbridge-relay/1`; tunnel address `fd00:cbb::1` (section 14) | `internal/relay` |
 | Pairing code | six ASCII digits; users may type spaces and dashes, which are removed | `pair.NormalizeCode` |
 | Join QR text | `clipboardbridge://join?code=` followed by the six-digit code; unknown query fields are ignored | `phone.JoinQR`, `phone.ParseJoinQR` |
 
@@ -782,7 +783,7 @@ A connection carries one request: the service reads the first message and dispat
 |------|---------|---------|
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
-| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13) |
+| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
@@ -1020,7 +1021,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
-| `away` | `{name: "on", consent}`, `{name: "off"}` or `{name: "hub", addrs, port, forwarder, forwarder_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them. Members connect again afterwards, so their hellos carry the change (section 11) |
+| `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
 
 ## 11. Tunnel keys
@@ -1227,3 +1228,87 @@ own packets.
 
 Only its own key file. Groups, addresses and sessions live in memory while the connections
 last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts each minute.
+
+## 14. The blind relay
+
+The meeting point, on a server the user runs, for a group that has no computer to be its
+hub ([design.md](design.md), "Blind relay"). Implemented in Go (`internal/relay`,
+`cbb relay`, and on the devices `internal/service/relay.go`) for computers; the phones do
+not take part yet. It holds none of the group's keys: it ends each device's WireGuard
+tunnel and joins two devices' connections inside the tunnels, and member TLS (section 4)
+runs end to end between the two devices.
+
+- The relay listens on one port number, UDP for WireGuard and TCP for registrations. Its
+  key file holds an ECDSA P-256 key with a self-signed certificate, which devices pin as a
+  forwarder's (section 13), and its WireGuard key.
+- It serves only the groups it is started for (`cbb relay -group`, by tag), and refuses
+  every other.
+- A device keeps `relay: {endpoint, key}` in its `tunnel.json` (section 11), and then is
+  neither a hub nor a hub's client: it ignores a hub's offer.
+
+### Registration
+
+1. The device connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-relay/1` and no
+   server name. It accepts only the pinned key. It presents its member certificate, its
+   admin CA if it has one, and the group's roots (the group CA, then any `root` records'
+   CAs).
+2. The relay checks that the leaf names a device (section 1) and verifies it, for client
+   authentication, to one of the presented self-signed CAs whose tag is among the groups it
+   serves. That tag names the group. A group that took a new root (`root` records, section 10)
+   is served under each of its tags the relay is given.
+3. The key proof is the forwarder's (section 13, step 3) with the label
+   `clipboardbridge relay key`: `{"e": bytes}` from the relay, `{"key": bytes, "proof":
+   bytes}` from the device, with the device's WireGuard key.
+4. The relay answers `{"key": bytes, "psk": bytes, "addr": string}`: its own WireGuard
+   public key, a new preshared key for this registration, and the device's tunnel address,
+   which the relay chooses at random in fd00:cbb::/32 (not from the device ID, so no group
+   can take another's address). Or it answers `{"error": string}` and closes: the proof is
+   wrong, another device registered that WireGuard key, or the group has 64 devices there.
+   A device has one registration: a new one replaces the old, whose connection closes.
+5. The registration lasts while the connection does; neither side sends anything more on
+   it. The relay keeps the device as a WireGuard peer, with its key, the preshared key and
+   the tunnel address as its only allowed address, until the connection closes, and then
+   drops it at once with all its connections. The device registers again whenever the
+   connection breaks, with a backoff of 1 s doubling to 60 s.
+
+### Inside the tunnel
+
+The device runs a WireGuard client with the relay as its only peer, at the relay's
+tunnel address `fd00:cbb::1`, with a keepalive every 25 s. The relay listens only on TCP
+8764 at that address, and knows each connection's device by its tunnel address. Each
+connection starts with one JSON line from the device, a request; the relay answers with
+lines of its own, notes:
+
+| Request | Meaning |
+|---------|---------|
+| `{"watch": true}` | keep this connection for the notes; a new watch replaces the old |
+| `{"dial": "<device ID>"}` | join this connection to that device's |
+| `{"answer": "<ticket>"}` | answer the call with that ticket |
+
+| Note | Meaning |
+|------|---------|
+| `{"online": [...]}` | on the watch: the device IDs of the group's other devices on the relay, sorted, sent at once and whenever they change |
+| `{"call": "<device ID>", "ticket": "<hex>"}` | on the watch: that device dials this one; the ticket is 16 random bytes in hex |
+| `{"ok": true}` | on a dial and on its answer: the two connections are joined; the member protocol follows on both at once |
+| `{"error": string}` | the request failed; the relay closes the connection |
+
+1. Each device keeps one watch. For each device on the relay with a higher device ID than
+   its own (as byte strings), the device dials it whenever it has no member connection
+   to it another way (at home, for example, it has one), with a backoff of 1 s doubling to
+   60 s.
+2. The relay calls the other device only within the dialer's group, and only one that has a
+   watch. It waits 10 s for the answer, then sends both connections `ok` and copies the
+   bytes between them, unchanged, until either closes, and then closes both.
+3. The dialing device runs member TLS as the client for that device ID (section 4); the
+   answering one as the server, and it closes the connection unless the client
+   certificate names the device the call came from. So the relay can join two devices,
+   but cannot pose as either.
+4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections;
+   256 registrations and requests being set up at a time.
+
+### What it keeps
+
+Only its key file. Registrations and connections live in memory while they last; the relay
+logs none of them, and with `CBB_DEBUG=1` it logs counts each minute. It learns which
+devices of a group are on it, which of them connect to each other, when and how much,
+which a hub would not let out; what the devices send each other it cannot read.

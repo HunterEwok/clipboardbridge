@@ -190,6 +190,23 @@ cbb away hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
 The computers then try the hub's own addresses first and the forwarder last. The project's
 own forwarder is not running yet.
 
+No computer that is always on to be the hub? Run a blind relay of your own on a server with a
+public address. It serves only your groups and holds none of their keys, but it sees which
+of your devices talk and when, which a hub would not let out. On the server, with the
+group's tag from `cbb status`:
+
+```sh
+cbb relay -group 0123456789abcdef            # prints its key, sha256:...; UDP and TCP port 8764 must be open
+```
+
+And on each computer, after `cbb away on`, in place of a hub:
+
+```sh
+cbb away relay 198.51.100.9:8764 -key sha256:...
+```
+
+The computers then meet at the relay whenever they are not on one network.
+
 The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted; a
 forwarder sees only encrypted packets. `cbb away off` turns it off again and forgets its
 keys. The phones cannot sync away from home yet.

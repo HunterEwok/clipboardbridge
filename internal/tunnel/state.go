@@ -71,6 +71,12 @@ type State struct {
 	// reach it directly; nil without one.
 	Forwarder *ForwarderLink
 
+	// Relay is where this device meets the others of its group away from
+	// home when the group has no hub: a blind relay the user runs; nil
+	// without one. A device with a relay is neither a hub nor a client of
+	// one.
+	Relay *RelayLink
+
 	// KeysInFile records that the user agreed to sync away from home
 	// although this device keeps its keys in files, not in hardware
 	// (docs/design.md, "Turning it on, step by step").
@@ -80,6 +86,13 @@ type State struct {
 // ForwarderLink is a hub's forwarder: its address, for UDP and TCP, and the
 // pin of its key.
 type ForwarderLink struct {
+	Endpoint netip.AddrPort
+	Pin      string
+}
+
+// RelayLink is a device's blind relay: its address, for UDP and TCP, and
+// the pin of its key.
+type RelayLink struct {
 	Endpoint netip.AddrPort
 	Pin      string
 }
@@ -123,6 +136,7 @@ type stateFile struct {
 	Members    []memberFile     `json:"members,omitempty"`
 	KeysInFile bool             `json:"keys_in_file,omitempty"`
 	Forwarder  *forwarderFile   `json:"forwarder,omitempty"`
+	Relay      *forwarderFile   `json:"relay,omitempty"`
 }
 
 type forwarderFile struct {
@@ -184,6 +198,9 @@ func LoadState(dir string) (*State, error) {
 	if f.Forwarder != nil {
 		s.Forwarder = &ForwarderLink{Endpoint: f.Forwarder.Endpoint, Pin: f.Forwarder.Pin}
 	}
+	if f.Relay != nil {
+		s.Relay = &RelayLink{Endpoint: f.Relay.Endpoint, Pin: f.Relay.Pin}
+	}
 	if err := s.check(); err != nil {
 		return nil, fmt.Errorf("%s: %w", StateFile, err)
 	}
@@ -202,6 +219,9 @@ func (s *State) Save(dir string) error {
 	if fw := s.Forwarder; fw != nil {
 		f.Forwarder = &forwarderFile{Endpoint: fw.Endpoint, Pin: fw.Pin}
 	}
+	if r := s.Relay; r != nil {
+		f.Relay = &forwarderFile{Endpoint: r.Endpoint, Pin: r.Pin}
+	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
@@ -219,6 +239,14 @@ func (s *State) check() error {
 	}
 	if fw := s.Forwarder; fw != nil && (!fw.Endpoint.IsValid() || fw.Endpoint.Port() == 0 || fw.Pin == "") {
 		return errors.New("a bad forwarder")
+	}
+	if r := s.Relay; r != nil {
+		if !r.Endpoint.IsValid() || r.Endpoint.Port() == 0 || r.Pin == "" {
+			return errors.New("a bad relay")
+		}
+		if s.IsHub || s.ToHub != nil {
+			return errors.New("a device with a relay is neither a hub nor a hub's client")
+		}
 	}
 	if s.ListenPort < 0 || s.ListenPort > 65535 {
 		return fmt.Errorf("a bad listen port %d", s.ListenPort)

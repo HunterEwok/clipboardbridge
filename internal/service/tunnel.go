@@ -20,6 +20,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
@@ -125,6 +126,9 @@ func (s *Service) tunnelOffered(from group.DeviceID, o node.TunnelOffer) error {
 	}
 	if st.IsHub {
 		return errors.New("this device is the hub itself; the group has two hubs")
+	}
+	if st.Relay != nil {
+		return errors.New("this device meets the others at its relay, but the group has a hub too")
 	}
 	h := tunnel.HubLink{Device: string(from)}
 	if len(o.HubKey) != len(h.PublicKey) || len(o.PSK) != len(h.PresharedKey) {
@@ -232,6 +236,11 @@ func (s *Service) runTunnelLocked() {
 			defer s.wg.Done()
 			s.acceptTunnel(ctx, h.Listener())
 		}()
+	case st.Relay != nil:
+		run := &tunRun{cancel: cancel}
+		s.tunRun = run
+		s.tunFailedLocked("", nil)
+		s.joinRelayLocked(ctx, run, *st.Relay, st.Key)
 	case st.ToHub != nil:
 		link := *st.ToHub
 		if len(link.Endpoints) == 0 {
@@ -271,7 +280,7 @@ func (s *Service) stopTunnelLocked() {
 	if r == nil {
 		return
 	}
-	s.tunRun, s.tunThrough, s.tunFwd = nil, false, nil
+	s.tunRun, s.tunThrough, s.tunFwd, s.tunRelay, s.tunRelayed = nil, false, nil, nil, 0
 	r.cancel()
 	if r.hub != nil {
 		r.hub.Close()
@@ -525,7 +534,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
 		}
 		old := *st
-		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort, st.Forwarder = true, nil, eps, m.Port, fw
+		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort, st.Forwarder, st.Relay = true, nil, eps, m.Port, fw, nil
 		if err := st.Save(s.cfg.StateDir); err != nil {
 			*st = old
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
@@ -533,6 +542,29 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		s.stopTunnelLocked()
 		s.runTunnelLocked()
 		s.logf("cbb: this device is the group's hub for sync away from home")
+		return true, tunnelKey(st), nil
+	case "relay":
+		st := s.tunnel
+		if st == nil {
+			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb away on")
+		}
+		ep, err := netip.ParseAddrPort(m.Relay)
+		if err != nil || ep.Port() == 0 {
+			return false, nil, fmt.Errorf("%q is not the relay's address with a port, such as 203.0.113.9:8764", m.Relay)
+		}
+		if err := relay.CheckPin(m.RelayKey); err != nil {
+			return false, nil, err
+		}
+		old := *st
+		*st = tunnel.State{Key: st.Key, Group: st.Group, KeysInFile: st.KeysInFile,
+			Relay: &tunnel.RelayLink{Endpoint: netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()), Pin: m.RelayKey}}
+		if err := st.Save(s.cfg.StateDir); err != nil {
+			*st = old
+			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
+		}
+		s.stopTunnelLocked()
+		s.runTunnelLocked()
+		s.logf("cbb: sync away from home goes through the relay at %v", st.Relay.Endpoint)
 		return true, tunnelKey(st), nil
 	}
 	return false, nil, fmt.Errorf("unknown away request %q", m.Name)
@@ -563,6 +595,13 @@ func (s *Service) awayStatus() *control.Away {
 		}
 		for _, ep := range st.Endpoints {
 			a.Endpoints = append(a.Endpoints, ep.String())
+		}
+	case st.Relay != nil:
+		a.Relay, a.Through = &control.Relay{Endpoint: st.Relay.Endpoint.String(), Error: "the link to the relay is not running"}, s.tunRelayed > 0
+		if r := s.tunRelay; r != nil {
+			c := *r
+			c.Online = slices.Clone(r.Online)
+			a.Relay = &c
 		}
 	case st.ToHub != nil:
 		a.HubDevice, a.Through = st.ToHub.Device, s.tunThrough
