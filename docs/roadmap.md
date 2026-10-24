@@ -133,6 +133,10 @@ The order may change.
 26. **Planned for 0.5.** Watches: the Apple Watch, and Wear OS after it, show the group's
     events, turn sync away from home on and off, and act at once on a stolen device with an
     admin key of their own. The root stays on the phone. See "Watches" below.
+27. **Planned for 0.5, after remote paste (item 18).** Quick actions: one button in the apps,
+    on the watch or in `cbb` runs an action on a member, such as reboot or lock the screen,
+    from a few presets and the user's own, always defined on the member itself. See "Quick
+    actions" below.
 
 ## OpenWrt routers
 
@@ -496,12 +500,59 @@ One pull request each, smaller ones together:
 3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
    Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
    that turns sync away from home off on a member.
-4. Emergency actions on the watch.
+4. Emergency actions on the watch, and the quick actions of item 27.
 5. If the owner agrees, prompt iPhone notifications through an encrypted Apple push.
 
 Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
 waking the phone app in the background long enough to send a record, and the delay of
 notifications.
+
+## Quick actions
+
+Planned for 0.5, after remote paste (item 18), whose signed commands and opt-in it reuses.
+
+One button runs an action on a member: in the phone apps, on the watch (item 26), or with
+`cbb run <device> <action>`. Running commands on another machine is the most dangerous thing
+the group could do, so the rule is that **the network never carries a command**: every
+action is defined on the member that runs it, and the button sends only its name.
+
+### Presets and the user's own
+
+- **Presets**: lock the screen, sleep, reboot, shut down, cancel a pending shutdown, restart
+  the service. Each is off until the device's own user turns it on, as with remote paste
+  (D-59).
+- **The user's own**: added on the device itself, with a name and a command line,
+  `cbb action add <name> -- <command>` or in the settings of the Mac and Windows apps. The
+  command takes no arguments from the network, so nothing a sender writes reaches a shell.
+  It runs as the desktop user; an action that needs root, like reboot, gets exactly that
+  right when it is added (a sudoers or polkit rule on Linux, the matching rights on a Mac and
+  on Windows), after a prompt that lists what it grants, as the firewall prompt does.
+- The member lists its actions in its hello, so the apps and the watch show them as buttons.
+  A preset may ask for a second tap (reboot, shut down).
+
+### Checks on the member
+
+The command is signed by the sender's admin key and checked by the member, as a remote paste
+is: the action exists and is on, the signer is an admin that is neither removed nor frozen,
+the signer's kind is allowed for that action (each action lists the kinds that may run it:
+the root, admin phones, watches, admin computers; all admins by default), and the command is
+fresh and not a replay. The member answers with the exit status only; it sends output back
+only for an action whose user allowed that. Any admin turns quick actions off on any member
+with a signed command, and the member logs every action it runs and who asked.
+
+### Where
+
+Linux, Mac and Windows run actions; lite members run the presets reboot and restart the
+service (the ESP32 restarts); the phones send only, since iOS runs nothing for another
+device and Android would need more rights than the app should hold.
+
+### Steps
+
+1. Actions on the computers: the presets, `cbb action`, the rights prompt, the signed
+   command and its checks in Go, with interop vectors for Rust, Swift and Kotlin.
+2. The buttons in the phone apps and `cbb run`.
+3. The presets on the lite member.
+4. The buttons on the watch (item 26, step 4).
 
 ## Device keys in hardware
 
