@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -145,6 +144,7 @@ func (s *Service) afterRevocation() {
 		nd.Recheck()
 	}
 	s.pruneTunnel()
+	s.dropRevokedPhoneCA()
 	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
 		s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
 	}
@@ -174,7 +174,7 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	return group.SignRecord(body, ca.Key, chain...)
 }
 
-var errNotAdmin = errors.New("only an admin can change the devices list: a Linux or Windows member of a group a computer made, an admin phone, or a computer the root phone made an admin")
+var errNotAdmin = errors.New("only an admin can change the devices list: the group's root, an admin it made (cbb admin), or an admin phone")
 
 // publish adds records made on this member and sends them to the peers.
 func (s *Service) publish(nd *node.Node, rs ...group.Record) {
@@ -332,22 +332,21 @@ func (s *Service) devices() ([]control.Device, error) {
 	root := s.records.RootDevice()
 	s.recMu.Unlock()
 
-	// In a group a computer created, every member that admits devices, a
-	// Linux or a Windows one, holds the CA keys.
-	computerGroup := id.GroupCA.Cert.MaxPathLen == 0
+	// In a legacy group every Linux and Windows member holds the CA keys.
+	legacy := id.Legacy()
 	now := s.cfg.now()
 	var out []control.Device
 	shown := map[group.DeviceID]bool{}
 	entry := func(dev group.DeviceID, name, role, os string, admin, listed bool) {
 		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root}
-		d.Admin = admin || (computerGroup && keyHolder(role, os))
+		d.Admin = admin || (legacy && keyHolder(role, os))
 		if _, ok := peers[dev]; ok || d.Self {
 			d.Online, d.LastSeenMS = true, now.UnixMilli()
 		} else if t, ok := seen[dev]; ok {
 			d.LastSeenMS = t.UnixMilli()
 		}
 		if d.Self {
-			d.Admin = id.Admin() || id.AdminCA != nil
+			d.Admin = id.IsAdmin()
 		}
 		out = append(out, d)
 		shown[dev] = true
@@ -373,46 +372,33 @@ func (s *Service) devices() ([]control.Device, error) {
 // revoke removes a device, named by its device ID or its name, from the
 // group: it signs a revocation of its key, which spreads to every member.
 func (s *Service) revoke(target string) (string, error) {
-	devs, err := s.devices()
+	d, err := s.findDevice(target)
 	if err != nil {
 		return "", err
 	}
-	var match []control.Device
-	for _, d := range devs {
-		if d.ID == target {
-			match = []control.Device{d}
-			break
-		}
-		if strings.EqualFold(d.Name, target) {
-			match = append(match, d)
-		}
-	}
-	switch {
-	case len(match) == 0:
-		return "", fmt.Errorf("no device %q in the group; cbb status lists them", target)
-	case len(match) > 1:
-		var ids []string
-		for _, d := range match {
-			ids = append(ids, d.ID)
-		}
-		return "", fmt.Errorf("several devices are named %q; name one by its ID: %s", target, strings.Join(ids, ", "))
-	}
-	d := match[0]
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
 	s.recMu.Lock()
 	root := s.records.RootDevice()
 	s.recMu.Unlock()
+	admin := s.adminKeyOf(group.DeviceID(d.ID))
+	// An admin of a group whose root is a computer held the iPhone CA,
+	// which goes with it.
+	replace := admin != nil && !id.Legacy() && (id.IsRoot() || s.computerRooted())
 	switch {
-	case !id.Admin() && id.AdminCA == nil:
+	case !id.IsAdmin():
 		return "", errNotAdmin
 	case d.Self:
 		return "", errors.New("a device cannot remove itself; run cbb revoke on another member")
-	case keyHolder(d.Role, d.OS) && id.GroupCA.Cert.MaxPathLen == 0:
+	case id.Legacy() && keyHolder(d.Role, d.OS):
 		return "", errors.New("this member holds the group's keys, so removing it needs a new group; this is not supported yet")
-	case d.ID == string(root):
+	case d.ID == string(root) && d.Role == group.RolePhone:
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
+	case d.ID == string(root):
+		return "", errors.New("this computer holds the group's root; it cannot be removed until another admin takes the group over")
+	case replace && !id.ServesPhone():
+		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}
 	key, ok := s.keyOf(group.DeviceID(d.ID), nd)
 	if !ok {
@@ -420,7 +406,7 @@ func (s *Service) revoke(target string) (string, error) {
 	}
 	// An admin goes with its admin key, and the devices it admitted stay.
 	body := group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{key}}
-	if admin := s.adminKeyOf(group.DeviceID(d.ID)); admin != nil {
+	if admin != nil {
 		body.Keys = append(body.Keys, *admin)
 		s.recMu.Lock()
 		for _, k := range s.records.Admitted(*admin) {
@@ -430,11 +416,39 @@ func (s *Service) revoke(target string) (string, error) {
 		}
 		s.recMu.Unlock()
 	}
+	var phoneCA *group.CA
+	if replace {
+		// A new iPhone CA, and the old one and every shortcut's token
+		// revoked: the iPhones pair again with the new profile.
+		if phoneCA, err = group.NewPhoneCA(s.cfg.now()); err != nil {
+			return "", err
+		}
+		body.Keys = append(body.Keys, group.KeyHashOf(id.PhoneCA.Cert))
+		s.recMu.Lock()
+		for _, dev := range s.records.Devices() {
+			if dev.Role == group.RoleShortcut {
+				body.Keys = append(body.Keys, dev.Key)
+			}
+		}
+		s.recMu.Unlock()
+	}
 	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
 	}
+	if phoneCA != nil {
+		s.mu.Lock()
+		err = s.takePhoneCALocked(*phoneCA)
+		s.mu.Unlock()
+		if err != nil {
+			return "", fmt.Errorf("replacing the iPhone CA: %w", err)
+		}
+	}
 	s.publish(nd, r)
+	if phoneCA != nil {
+		nd.SharePhoneCA()
+		s.logf("cbb: replaced the group's iPhone CA; the iPhones that use the shortcut must pair again (cbb pair -phone)")
+	}
 	s.logf("cbb: removed %s (%s) from the group", d.Name, d.ID)
 	return d.Name, nil
 }
@@ -482,6 +496,6 @@ func (g phoneGroup) PhoneRevoked(phoneID string) bool {
 	return g.s.records != nil && g.s.records.Revoked(group.PhoneKeyHash(raw))
 }
 
-// keyHolder reports whether a device of a group a computer created holds
-// the CA keys: every computer but a Mac does.
+// keyHolder reports whether a device of a legacy group holds the CA keys:
+// every computer but a Mac does.
 func keyHolder(role, os string) bool { return role == group.RoleFull && os != group.OSMacOS }

@@ -34,10 +34,10 @@ In scope for 0.4:
 | Area | What is tested |
 |---|---|
 | Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux, `install.sh` and Homebrew on macOS, `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
-| Group and pairing | `cbb pair` / `cbb join -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
+| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
-| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb join -invite`, a device on another network (mobile data), reconnect, roaming |
+| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
 | The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb away hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
 | Failure cases | section 8 |
 | Security | section 9 (top priority for everything off the home network) |
@@ -53,7 +53,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: group CA holder in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
+| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
 | `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |
@@ -69,7 +69,8 @@ accessibility overlay) stays in the README's status table as "not yet" until the
 
 Two group layouts are tested, because both exist for users:
 
-- **A. A computer's group**: `deck` runs `cbb pair`; the others join by code.
+- **A. A computer's group**: `deck` runs `cbb pair` and is the root; the others join by
+  code; `deck` makes `win` an admin (`cbb admin win`).
 - **B. A phone's group** (needs `phone`): the Android app is the root; computers and
   `rpi0w` join by its QR code; `mac` becomes an admin.
 
@@ -134,7 +135,11 @@ the same text is on every device at the end.
   keys, and its certificate is refused by every member including `rpi0w`.
 - Renewal: certificates near expiry are renewed (the bench sets the clock forward on a
   disposable device, or uses a short test lifetime build).
-- Admin: `mac` made an admin in layout B pairs and revokes.
+- Admin: `mac` made an admin in layout B pairs and revokes; in layout A `win`, made an admin
+  by `deck`, pairs a device, serves the shortcut while `deck` is off, and when `deck` removes
+  it, `deck` replaces the iPhone CA and the shortcut iPhones pair again.
+- Removing a member that is no admin in layout A (a Linux one, a Windows one, the Mac): the
+  group stays, nobody pairs again.
 - The holder of `clipboardbridge.local` goes away; another member takes it over.
 - Upgrade: every device on 0.3.x, then updated one by one to the 0.4 candidate; mixed
   versions keep syncing during the upgrade; state and keys survive.
@@ -157,7 +162,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
-| P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |

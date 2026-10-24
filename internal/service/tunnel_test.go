@@ -115,7 +115,7 @@ func TestTunnelKeys(t *testing.T) {
 
 	// Removing the Mac drops it from the hub.
 	macID := mac.status(t).Device
-	if _, err := deck.do(t, control.Header{Op: control.OpRevoke, Name: "mac"}, ""); err != nil {
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "mac"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the hub drops the Mac", func() bool {

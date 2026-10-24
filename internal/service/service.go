@@ -141,14 +141,17 @@ type Service struct {
 	holder        bool
 	holdSetting   string // HolderAuto, HolderFirst, HolderFallback or HolderNever
 	battery       bool   // the machine has a battery, guessed at the start
-	dialers       map[group.DeviceID]*dialer
-	nearby        map[group.DeviceID]bool // the members of the group that discovery finds on this network
-	prio          map[group.DeviceID]int  // their holder priority (TXT h), for those that can hold the name
-	watchers      map[*watcher]bool
-	lastSeq       uint64
-	pending       *node.Write                  // a write that no watcher got, for the next one
-	seen          map[group.DeviceID]time.Time // when each peer was last seen connected
-	online        map[group.DeviceID]bool
+	// pendingPhoneCA is an iPhone CA another admin sent while this one held
+	// another that still stood, kept in case the records revoke that one.
+	pendingPhoneCA *group.CA
+	dialers        map[group.DeviceID]*dialer
+	nearby         map[group.DeviceID]bool // the members of the group that discovery finds on this network
+	prio           map[group.DeviceID]int  // their holder priority (TXT h), for those that can hold the name
+	watchers       map[*watcher]bool
+	lastSeq        uint64
+	pending        *node.Write                  // a write that no watcher got, for the next one
+	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
+	online         map[group.DeviceID]bool
 
 	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
 	recMu   sync.Mutex     // guards records; taken after mu, never before
@@ -307,7 +310,8 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Engine: eng,
-		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, Now: s.cfg.now, Logf: s.logf,
+		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin,
+		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 	})
@@ -411,10 +415,6 @@ func (s *Service) txtLocked() []string { return txt(s.id, s.priorityLocked(s.id)
 func (s *Service) priorityLocked(id *group.Identity) int {
 	return priority(s.holdSetting, id != nil && id.Phone != nil, s.battery)
 }
-
-// mac reports whether this member is a Mac, which does not admit devices
-// yet.
-func (s *Service) mac() bool { return s.cfg.OS == group.OSMacOS }
 
 // txt returns a TXT record: the protocol version, the group tag, the
 // holder priority if the member can hold clipboardbridge.local, and whether

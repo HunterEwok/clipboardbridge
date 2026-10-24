@@ -153,4 +153,4 @@ restart system "$daemon" "/Library/LaunchDaemons/$daemon.plist"
 if [ -n "$user" ] && [ "$user" != root ]; then
 	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi
-echo "clipboardbridge is running. Join the group: cbb join, and scan its QR code with the iPhone shortcut \"clipboardbridge: add a computer\"; or cbb pair on a Linux or Windows member, then cbb join -code here."
+echo "clipboardbridge is running. Join a group: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: cbb new."

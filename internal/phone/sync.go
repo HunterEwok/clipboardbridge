@@ -155,7 +155,7 @@ func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
 		}
 		jc, ok := ParseJoinQR(req.Code)
 		if !ok {
-			reply(syncReply{Direction: "error", Message: "this is not the QR code of cbb join"})
+			reply(syncReply{Direction: "error", Message: "this is not the QR code of cbb pair"})
 			return
 		}
 		if err := admit(jc); err != nil {
@@ -166,7 +166,7 @@ func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
 	})
 }
 
-// A JoinCode is what the QR code of cbb join carries: the code, the
+// A JoinCode is what the QR code of cbb pair carries: the code, the
 // addresses where the joining computer listens, and the fingerprint of its
 // certificate (pair.CertFingerprint).
 type JoinCode struct {
@@ -178,7 +178,7 @@ type JoinCode struct {
 // maxJoinAddrs bounds the addresses a member dials for one QR code.
 const maxJoinAddrs = 4
 
-// JoinQR returns the text of the QR code that cbb join shows: a URL,
+// JoinQR returns the text of the QR code that cbb pair shows: a URL,
 // clipboardbridge://join?code=123456&addr=192.168.1.20:40123&fp=…, which the
 // shortcut and the phone apps read alike; later fields can be added without
 // breaking either.

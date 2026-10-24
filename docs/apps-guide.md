@@ -9,7 +9,7 @@ TestFlight. Phones without the app use the shortcut instead (the [quick start](q
 
 ## Start a group
 
-1. Install clipboardbridge on a computer (quick start, step 1 or 3) and run `cbb join`
+1. Install clipboardbridge on a computer (quick start, step 1 or 3) and run `cbb pair`
    there. It shows a QR code.
 2. Open the app and tap **Connect a new device**. The camera opens; scan the code. The app
    makes the group's key (in the Secure Enclave on an iPhone, the Keystore on Android),

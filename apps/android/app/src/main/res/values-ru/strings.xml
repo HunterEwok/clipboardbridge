@@ -5,7 +5,7 @@
     <string name="welcome_title">Телефон готов</string>
     <string name="welcome_body">Он создал свой секретный ключ: ключ никогда не покидает телефон, и по нему ваши устройства узнают этот телефон. Теперь подключите устройство: нажмите «Подключить новое устройство» и отсканируйте QR-код, который оно покажет.</string>
     <string name="connect_device">Подключить новое устройство</string>
-    <string name="connect_hint">На компьютере запустите cbb join и отсканируйте код, который он покажет.</string>
+    <string name="connect_hint">На компьютере запустите cbb pair и отсканируйте код, который он покажет.</string>
     <string name="join_other">У меня уже есть clipboardbridge на другом телефоне</string>
     <string name="settings">Настройки</string>
     <string name="close">Закрыть</string>
@@ -48,9 +48,9 @@
     <string name="not_admin_note">Добавлять и удалять устройства может только телефон-админ.</string>
     <string name="lost_phone_note">Потеряли телефон? Сделайте второй телефон админом: на нём нажмите «У меня уже есть clipboardbridge на другом телефоне» и отсканируйте его код здесь через +.</string>
     <string name="add_device">Добавить устройство</string>
-    <string name="scan_hint">Наведите камеру на QR-код cbb join или на код, который показывает ваш другой телефон.</string>
-    <string name="paste_hint">Вставьте текст QR-кода cbb join.</string>
-    <string name="camera_denied">Доступ к камере не разрешён. Разрешите его в настройках приложения, чтобы сканировать, или вставьте текст QR-кода cbb join.</string>
+    <string name="scan_hint">Наведите камеру на QR-код cbb pair или на код, который показывает ваш другой телефон.</string>
+    <string name="paste_hint">Вставьте текст QR-кода cbb pair.</string>
+    <string name="camera_denied">Доступ к камере не разрешён. Разрешите его в настройках приложения, чтобы сканировать, или вставьте текст QR-кода cbb pair.</string>
     <string name="qr_text">Текст QR-кода</string>
     <string name="connecting">Подключение к устройству…</string>
     <string name="not_a_code">Это не QR-код clipboardbridge.</string>
@@ -65,8 +65,8 @@
     <string name="error_too_many_codes">Слишком много неверных кодов. Попробуйте снова с новым кодом.</string>
     <string name="error_not_admin">Это может только телефон-админ.</string>
     <string name="error_unreachable">Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол clipboardbridge?</string>
-    <string name="error_wrong_code">Код не совпал. Запустите cbb join на компьютере ещё раз и отсканируйте новый код.</string>
-    <string name="error_refused">Компьютер отказал. Запустите на нём cbb join ещё раз.</string>
+    <string name="error_wrong_code">Код не совпал. Запустите cbb pair на компьютере ещё раз и отсканируйте новый код.</string>
+    <string name="error_refused">Компьютер отказал. Запустите на нём cbb pair ещё раз.</string>
     <string name="error_join">Не удалось войти в группу другого телефона. Попробуйте снова.</string>
     <string name="error_no_screen_lock">Сначала включите блокировку экрана на телефоне: она нужна ключам группы.</string>
     <string name="error_not_authenticated">Отпечаток, лицо или блокировка экрана не подтверждены, поэтому ничего не изменилось.</string>

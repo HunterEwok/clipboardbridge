@@ -25,7 +25,7 @@ final class LiveGroup: GroupController {
     /// The admin key of a phone that joined another phone's group.
     nonisolated static let adminLabel = "io.github.hunterewok.clipboardbridge.admin"
     /// How long the join QR code is good for, and how many wrong codes it
-    /// takes, as for cbb join (docs/protocol.md, section 6).
+    /// takes, as for cbb pair (docs/protocol.md, section 6).
     static let joinWindow: TimeInterval = 300
     /// How long admitting a device may take once its connection is up:
     /// a computer that stops answering mid-pairing fails then.

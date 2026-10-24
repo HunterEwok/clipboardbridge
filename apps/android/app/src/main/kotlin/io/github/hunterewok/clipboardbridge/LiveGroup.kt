@@ -569,7 +569,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         /** How long admitting a device may take once it is dialed: a computer that stops answering mid-pairing fails then. */
         const val PAIRING_DEADLINE_MS = 30_000L
 
-        /** How long the join QR code is good for, and how many wrong codes it takes, as for cbb join (docs/protocol.md, section 6). */
+        /** How long the join QR code is good for, and how many wrong codes it takes, as for cbb pair (docs/protocol.md, section 6). */
         const val JOIN_WINDOW_MS = 300_000L
         const val JOIN_ATTEMPTS = 3
 

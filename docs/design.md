@@ -62,8 +62,8 @@ apps" below).
 ## Group and pairing
 
 - **The phone is the main device.** The usual way to build a group starts from the phone:
-  `cbb pair -phone` on the first Linux machine creates the group and pairs the
-  phone; every further computer runs `cbb join`, which shows a QR code with a fresh
+  `cbb new` on the first Linux machine creates the group and `cbb pair -phone` pairs the
+  phone; every further computer runs `cbb pair`, which shows a QR code with a fresh
   code, and the phone's second shortcut ("clipboardbridge: add a computer") scans it and posts
   the code to `/admit` on `clipboardbridge.local` with its token. The member there opens a
   pairing window with exactly that code, and the computer, which browses for a window for
@@ -71,7 +71,7 @@ apps" below).
   stay on the Linux members, which must be on; the phone's token is the authority to add a
   computer, so a stolen token lets its holder add a computer (and a Linux one gets the CA
   keys). Each admission is logged. Admitting from a Linux member with `cbb pair` and
-  `cbb join -code` stays for groups without a phone.
+  `cbb pair -code` stays for groups without a phone.
 - **Creating the group**: the first `cbb pair` or `cbb pair -phone` on a Linux
   machine that is in no group creates it: the group CA and the iPhone CA. A Mac cannot start
   a group.
@@ -101,7 +101,7 @@ apps" below).
   the command asks a connected Linux member) shows a six-digit code and opens a pairing
   window for five minutes (one attempt at a time, closed after a success or the third failed
   attempt; an attempt that has started may finish after the five minutes). On the new device
-  the user runs `cbb join -code` and types the code (it is read from the terminal or standard input, never
+  the user runs `cbb pair -code` and types the code (it is read from the terminal or standard input, never
   from the command line, where other users of the machine could read it). The new device
   connects to the member's port with
   the ALPN protocol `clipboardbridge-pair/1` and presents a self-signed certificate for the key
@@ -336,9 +336,9 @@ and lifetimes. The installer enables what the device needs.
   holds; a write that no connector got, such as the group's text at boot, goes to the next
   one that connects, if it is still the member's own text.
 - Command line: `cbb copy` (standard input to the group), `cbb paste` (the
-  member's own clipboard text to standard output), `cbb pair`, `join`,
-  `revoke`, `status` (which lists the group's devices too). `cbb pair` on a Linux machine in no group creates the group.
-  `cbb join` finds the member with an open pairing window by its TXT record, or uses
+  member's own clipboard text to standard output), `cbb new`, `cbb pair`,
+  `revoke`, `status` (which lists the group's devices too). `cbb new` creates a group; `cbb pair` joins one on a device in no group and admits a device on the root or an admin.
+  `cbb pair` finds the member with an open pairing window by its TXT record, or uses
   the address that `pair` prints, for networks where multicast does not pass. It talks to
   one member only, tries that member's addresses (IPv4 first, link-local last) until one
   answers, and stops after the first attempt in which the other side could check the code,
@@ -825,13 +825,13 @@ the pairing itself; the third is planned.
 - **Through SSH.** When the new computer can log in to a Linux member that admits devices,
   it forwards a local port to the member port, `ssh -N -L 18764:localhost:8764 user@member`;
   the user runs `cbb pair` on the member (in another SSH session) and
-  `cbb join -code 127.0.0.1:18764` on the new computer. The member sees a connection from
+  `cbb pair -code 127.0.0.1:18764` on the new computer. The member sees a connection from
   itself (loopback), which it accepts, and the usual pairing (CPace with the code inside
   TLS) runs inside SSH. A remote desktop (RDP, VNC) gives a screen, not a network path; it
   still needs the SSH forward or a VPN.
 - **Through a VPN of the user's own** that gives both devices private addresses (RFC 1918
   IPv4 or IPv6 unique-local), such as a WireGuard the user runs: the member port accepts
-  private addresses, so `cbb join -code <member's VPN address>:8764` works. Addresses
+  private addresses, so `cbb pair -code <member's VPN address>:8764` works. Addresses
   outside those ranges, such as the 100.64.0.0/10 of carrier-grade NAT that some overlay
   VPNs use, are refused like any address of the internet. On Linux the installer's
   firewall rules allow the private networks the machine had when it ran, so after setting
@@ -847,7 +847,7 @@ the pairing itself; the third is planned.
 - **Remote invitation**, for a device that shares no network and no SSH with the
   group. An admin makes it: the root or an admin phone, a Linux member that admits devices
   or an admin computer (`cbb invite`). Built so far for computers, made on the hub itself
-  when the hub can admit devices: `cbb invite` there, `cbb join -invite FILE` on the new
+  when the hub can admit devices: `cbb invite` there, `cbb pair -invite FILE` on the new
   computer (docs/protocol.md, section 12). Handing an invitation made on another admin to
   the hub, and the phones' part, are still planned. It is never typed: it comes only as a QR code or as
   a file to open (`.cbbinvite`), and holds the group's tag, the hub's WireGuard public key
@@ -1065,7 +1065,7 @@ creates the phone is the root of the group (D-33 to D-36; the wire side is secti
   (Android): a P-256 key that cannot be exported. Only the admin phones issue member
   certificates; a computer holds CA keys only when the root phone makes it an admin, so a
   stolen computer cannot add devices.
-- The first computer joins the phone, not the other way round: `cbb join` shows a QR code
+- The first computer joins the phone, not the other way round: `cbb pair` shows a QR code
   with its addresses, its certificate fingerprint and a fresh code, and listens; the app
   scans it, dials the computer, checks the fingerprint and runs CPace with that code, with
   the phone in the admitting role, then issues its certificate. No profile for the user to

@@ -160,6 +160,34 @@ type VLESSConfig struct {
 	Key  [32]byte // the REALITY key, X25519
 }
 
+// listenPair opens UDP and TCP on the same port of host. A port of 0 is
+// picked for TCP first, since Windows reserves ranges of TCP ports that it
+// never hands out but that a UDP pick could land in; a pick whose UDP side
+// is taken is given back and another one is tried.
+func listenPair(host string, port int) (*net.UDPConn, net.Listener, error) {
+	tries := 1
+	if port == 0 {
+		tries = 20
+	}
+	var err error
+	for range tries {
+		var tcp net.Listener
+		if tcp, err = net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port))); err != nil {
+			return nil, nil, err
+		}
+		p := tcp.Addr().(*net.TCPAddr).Port
+		var ua *net.UDPAddr
+		var udp *net.UDPConn
+		if ua, err = net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(p))); err == nil {
+			if udp, err = net.ListenUDP("udp", ua); err == nil {
+				return udp, tcp, nil
+			}
+		}
+		tcp.Close()
+	}
+	return nil, nil, err
+}
+
 // Listen opens the forwarder's ports. Serve then runs it.
 func Listen(cfg Config) (*Forwarder, error) {
 	logf := cfg.Logf
@@ -174,20 +202,12 @@ func Listen(cfg Config) (*Forwarder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("forward: %w", err)
 	}
-	udp, err := net.ListenUDP("udp", ua)
-	if err != nil {
-		return nil, fmt.Errorf("forward: %w", err)
-	}
-	// TCP on the same port as UDP, which may have been picked just now.
-	port := udp.LocalAddr().(*net.UDPAddr).Port
 	host, _, err := net.SplitHostPort(cfg.Listen)
 	if err != nil {
-		udp.Close()
 		return nil, fmt.Errorf("forward: %w", err)
 	}
-	tcp, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+	udp, tcp, err := listenPair(host, ua.Port)
 	if err != nil {
-		udp.Close()
 		return nil, fmt.Errorf("forward: %w", err)
 	}
 	f := &Forwarder{

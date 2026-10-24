@@ -19,10 +19,10 @@ struct AddDeviceView: View {
                     QRScanner { text in add(text) }
                     .clipShape(RoundedRectangle(cornerRadius: Tokens.radiusCard, style: .continuous))
                     .frame(maxHeight: 360)
-                    Text("Point the camera at the QR code of cbb join, or at the one your other phone shows.")
+                    Text("Point the camera at the QR code of cbb pair, or at the one your other phone shows.")
                         .multilineTextAlignment(.center)
                 } else {
-                    Text("Paste the text of the QR code of cbb join.")
+                    Text("Paste the text of the QR code of cbb pair.")
                         .multilineTextAlignment(.center)
                     TextField(String(localized: "QR code text", bundle: .app), text: $typed, axis: .vertical)
                         .font(.system(.body, design: .monospaced))

@@ -91,11 +91,11 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 	return nil
 }
 
-// withAdminKey gives a computer of a phone group the admin key that its
-// hello offers, so that the root phone can make it an admin
+// withAdminKey gives a member that is not the group's root the admin key
+// that its hello offers, so that the root can make it an admin
 // (docs/protocol.md, section 10). Without one it carries on as it is.
 func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
-	if !id.PhoneGroup() || id.AdminKey != nil {
+	if !id.NeedsAdminKey() {
 		return id
 	}
 	next, err := id.WithAdminKey()
@@ -109,8 +109,8 @@ func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
 	return next
 }
 
-// becomeAdmin keeps the admin CA that the root phone sent for this
-// computer's admin key: from then on it admits and removes devices and
+// becomeAdmin keeps the admin CA that the group's root sent for this
+// member's admin key: from then on it admits and removes devices and
 // renews certificates with it.
 func (s *Service) becomeAdmin(der []byte) error {
 	s.mu.Lock()
@@ -136,7 +136,7 @@ func (s *Service) becomeAdmin(der []byte) error {
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
-	s.logf("cbb: this computer is now an admin of the group: it can admit and remove devices")
+	s.logf("cbb: this device is now an admin of the group: it can admit and remove devices")
 	return nil
 }
 
@@ -148,5 +148,11 @@ func (s *Service) setIdentityLocked(next *group.Identity) error {
 	}
 	s.id = next
 	s.nd.SetIdentity(next)
+	// Taking or losing the iPhone CA changes whether this member may hold
+	// clipboardbridge.local.
+	if s.responder != nil && !s.stopping {
+		s.responder.SetTXT(s.txtLocked())
+		s.electLocked()
+	}
 	return nil
 }
