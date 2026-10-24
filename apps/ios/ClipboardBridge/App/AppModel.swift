@@ -27,6 +27,8 @@ protocol GroupController: AnyObject {
     func makeAdmin(_ id: String) async throws
     /// Unfreezes an admin computer that another admin froze.
     func unfreeze(_ id: String) async throws
+    /// Gives a device another name; only an admin phone does.
+    func rename(_ id: String, to name: String) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -45,6 +47,7 @@ protocol GroupController: AnyObject {
 
 extension GroupController {
     func unfreeze(_ id: String) async throws {}
+    func rename(_ id: String, to name: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
 }
@@ -280,6 +283,20 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         isAdmin = group.isAdmin
+    }
+
+    /// Gives a device another name.
+    func rename(_ id: String, to name: String) async {
+        do {
+            try await group.rename(id, to: name)
+            message = String(localized: "Renamed. The other devices show the new name as soon as they hear of it.", bundle: .app)
+        } catch PhoneGroup.Failure.invalidName {
+            message = String(localized: "A name has 1 to 64 characters.", bundle: .app)
+        } catch {
+            message = Self.describe(error)
+        }
+        computers = group.computers
+        devices = group.devices
     }
 
     /// Unfreezes an admin computer that another admin froze.

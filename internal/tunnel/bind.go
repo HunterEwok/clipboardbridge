@@ -3,7 +3,14 @@
 
 package tunnel
 
-import "github.com/amnezia-vpn/amneziawg-go/conn"
+import (
+	"fmt"
+	"net/netip"
+
+	"github.com/amnezia-vpn/amneziawg-go/conn"
+
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
+)
 
 // newBind returns the UDP socket for a hub or a client: wireguard-go's
 // default, whose receive skips the errors that only report an ICMP message
@@ -28,4 +35,20 @@ func (b icmpTolerantBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) 
 		}
 	}
 	return fns, actual, err
+}
+
+// clientBind is a client's UDP socket: it sends only where allowed says,
+// its hub or the local end of the way over VLESS. A hub's socket answers
+// its clients wherever they are, since WireGuard answers only peers that
+// proved the group's keys.
+type clientBind struct {
+	conn.Bind
+	allowed func(netip.Addr) bool
+}
+
+func (b clientBind) Send(bufs [][]byte, ep conn.Endpoint) error {
+	if a := ep.DstIP(); !b.allowed(a) {
+		return fmt.Errorf("tunnel: %v: %w", a, netguard.ErrOutside)
+	}
+	return b.Bind.Send(bufs, ep)
 }

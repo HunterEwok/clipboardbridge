@@ -250,10 +250,22 @@ type tunRun struct {
 	vless  *vless.Client // the client's way to the hub's forwarder over VLESS
 }
 
+// guardLocked lets the service reach the group's hub, forwarder and relay
+// on the internet while sync away from home is on, and nothing else beyond
+// the home network (internal/netguard).
+func (s *Service) guardLocked() {
+	var dests []netip.Addr
+	if st := s.tunnel; st != nil {
+		dests = st.Destinations()
+	}
+	netguard.Set(s.tunnel != nil, dests)
+}
+
 // runTunnelLocked starts the tunnel the state asks for: the hub, or the
 // link to the hub once the hub offered it. It fails closed: when the tunnel
 // cannot start, the member syncs at home only and status says why.
 func (s *Service) runTunnelLocked() {
+	s.guardLocked()
 	st, gctx := s.tunnel, s.tunCtx
 	if st == nil || gctx == nil || s.tunRun != nil {
 		return
@@ -315,7 +327,7 @@ func (s *Service) runTunnelLocked() {
 		}
 		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: st.Key, PresharedKey: link.PresharedKey, Addr: self,
 			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Obfuscation: link.Obfuscation,
-			Logf: s.logf, Verbose: tunnelVerbose()})
+			Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			if vc != nil {
@@ -553,7 +565,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
 		}
 		s.tunnel = st
-		netguard.SetOpen(true)
+		s.guardLocked()
 		s.logf("cbb: sync away from home is on")
 		return true, tunnelKey(st), nil
 	case "off":
@@ -565,7 +577,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, err
 		}
 		s.tunnel = nil
-		netguard.SetOpen(false)
+		s.guardLocked()
 		s.tunFailedLocked("", nil)
 		s.logf("cbb: sync away from home is off; its keys are gone")
 		return true, nil, nil
@@ -677,6 +689,9 @@ func (s *Service) awayStatus() *control.Away {
 		return nil
 	}
 	a := &control.Away{Hub: st.IsHub, KeysInFile: st.KeysInFile, Error: s.tunErr, Detail: s.tunDetail}
+	for _, d := range st.Destinations() {
+		a.Allow = append(a.Allow, d.String())
+	}
 	if st.IsHub {
 		a.Obfuscated = st.Obfuscation != nil
 		a.VLESS = st.Forwarder != nil && st.Forwarder.VLESSID != ""

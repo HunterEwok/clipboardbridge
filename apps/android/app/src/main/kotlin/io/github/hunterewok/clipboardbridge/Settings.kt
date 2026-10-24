@@ -76,12 +76,18 @@ class Settings(context: Context) {
     /**
      * Whether a message names the error underneath, to find out what
      * failed: on in debug builds, off in release ones, and either way what
-     * the launch extra ShowErrorDetails set last
+     * the switch in Settings (seven taps on the version show it) or the
+     * launch extra ShowErrorDetails set last
      * (adb shell am start -n io.github.hunterewok.clipboardbridge/.MainActivity --ez ShowErrorDetails true).
      */
     var showsErrorDetails: Boolean
         get() = if (prefs.contains(ERROR_DETAILS)) prefs.getBoolean(ERROR_DETAILS, false) else debuggable
         set(v) = prefs.edit().putBoolean(ERROR_DETAILS, v).apply()
+
+    /** Whether seven taps on the version showed the error details switch in Settings. */
+    var errorDetailsSwitch: Boolean
+        get() = prefs.getBoolean("errorDetailsSwitch", false)
+        set(v) = prefs.edit().putBoolean("errorDetailsSwitch", v).apply()
 
     companion object {
         const val ERROR_DETAILS = "ShowErrorDetails"

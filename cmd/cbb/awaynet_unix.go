@@ -7,9 +7,22 @@ package main
 
 import "os"
 
-const needRootText = "on this computer the service may reach only the home network, and only root can change that: run the command again with sudo"
+const needRootText = "on this computer the system limits what the service may reach, and only root can change that: run the command again with sudo"
 
 func isElevated() bool { return os.Geteuid() == 0 }
 
-// awayOnHint is the command that lifts the limit.
-const awayOnHint = "sudo cbb global on"
+// allowHint is the command that lets the service reach the group's servers.
+const allowHint = "run sudo cbb global allow"
+
+// homeCGNAT reports whether the Windows rule leaves 100.64.0.0/10 to the
+// home network; on Linux the installer's drop-in cgnat.conf does it.
+var homeCGNAT = func() bool { return false }
+
+// adminName is who may change the firewall.
+const adminName = "root (sudo)"
+
+// closeHint closes the hub's port that cbb opened.
+const closeHint = "run sudo sh /usr/local/share/clipboardbridge/firewall.sh hub-close"
+
+// expressHint is how the installer adds the firewall rules without asking.
+const expressHint = "--express"

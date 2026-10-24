@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -101,6 +102,25 @@ func cmdRevoke(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Removed %s from the group. The other members refuse it as soon as they hear of it.\n", m.Name)
+	return 0
+}
+
+// cmdRename gives a device of the group a new name, on an admin.
+func cmdRename(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb rename <name or device ID> <new name>; cbb status lists them")
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpRename, Name: args[0], NewName: args[1]}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "Renamed %s to %s. The other devices show the new name as soon as they hear of it.\n", m.Name, strings.TrimSpace(args[1]))
 	return 0
 }
 

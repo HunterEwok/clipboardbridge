@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "A name has 1 to 64 characters.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В имени от 1 до 64 символов."
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "ru": {
@@ -201,6 +211,26 @@
         }
       }
     },
+    "Error messages show the error underneath them, to find out what failed. Tap the version seven times to see this switch.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Под сообщением об ошибке показывается сама ошибка, чтобы понять, что не так. Этот переключатель появляется после семи нажатий на версию."
+          }
+        }
+      }
+    },
+    "Every device of the group shows the new name.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все устройства группы покажут новое имя."
+          }
+        }
+      }
+    },
     "Fetched from the computers.": {
       "localizations": {
         "ru": {
@@ -361,6 +391,16 @@
         }
       }
     },
+    "Name": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя"
+          }
+        }
+      }
+    },
     "No computers connected.": {
       "localizations": {
         "ru": {
@@ -461,6 +501,16 @@
         }
       }
     },
+    "Opens clipboardbridge and sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает clipboardbridge и отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
     "Paste the text of the QR code of cbb pair.": {
       "localizations": {
         "ru": {
@@ -541,6 +591,46 @@
         }
       }
     },
+    "Rename": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать"
+          }
+        }
+      }
+    },
+    "Rename %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать %@"
+          }
+        }
+      }
+    },
+    "Rename a device": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать устройство"
+          }
+        }
+      }
+    },
+    "Renamed. The other devices show the new name as soon as they hear of it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовано. Остальные устройства покажут новое имя, как только узнают о нём."
+          }
+        }
+      }
+    },
     "Renew this phone's certificate": {
       "localizations": {
         "ru": {
@@ -587,6 +677,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Настройки"
+          }
+        }
+      }
+    },
+    "Show error details": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать подробности ошибок"
           }
         }
       }

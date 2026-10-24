@@ -106,9 +106,9 @@ curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/downloa
 (`cbb-lite-linux-amd64.tar.gz`, `-arm64`, or `-armv6`, which also runs on ARMv7), checks it
 against `SHA256SUMS` and runs its `packaging/linux/install.sh`, the same installer as a full
 member's: the program as `/usr/local/bin/cbb`, the `clipboardbridge` user and group, the
-service `clipboardbridge.service`, the tmux configuration, and, when ufw or firewalld is
-active, mDNS and the member port from the home network. `--port N`, `--console` and
-`--no-firewall` work as for a full member ([docs/cli.md](../docs/cli.md#installers)).
+service `clipboardbridge.service`, the tmux configuration, and, with your consent, mDNS and
+the member port from the home network in the firewall. `--port N`, `--console`, `--express`
+and `--no-firewall` work as for a full member ([docs/cli.md](../docs/cli.md#installers)).
 Running it again updates. It refuses to replace a full member, whose keys the lite member
 cannot use, and moves an install from before the rename (`cbb-lite`, its own user and
 paths) to the new names, keeping the device in its group. Without curl, or for a binary you
@@ -164,7 +164,7 @@ do. These commands answer in frames a Z80 reads without a parser:
 | Command | Answer |
 | --- | --- |
 | `cbb next paste [-max bytes]` | `CBB1 <len> <crc32>`, then len bytes of the latest text (cut to bytes), then CR, then the status line. |
-| `cbb next copy <len> <crc32>` | `CBBGO` once the service answers; the Next then sends exactly len bytes, which the lite member reads with the terminal in raw mode (no echo, no CR to LF; it gives up after 10 s without a byte), checks the CRC-32 and sends to the group; then the status line. |
+| `cbb next copy [-secret] <len> <crc32>` | `CBBGO` once the service answers; the Next then sends exactly len bytes, which the lite member reads with the terminal in raw mode (no echo, no CR to LF; it gives up after 10 s without a byte), checks the CRC-32 and sends to the group, as a secret with `-secret` (as `cbb copy -secret`); then the status line. |
 | `cbb next join [-name name] [-port port] [-addr host[:port]]...` | `CBBQ <size>`, then size rows of the QR code for the phone app, each of (size + 3) / 4 hex digits with the leftmost module in the high bit of the first digit and a set bit dark; the Next draws it, the phone scans it, and after the pairing the status line (up to 5 minutes). A join payload makes a code of about 41 modules, which fits the 192 lines of the screen at 4 pixels per module. |
 
 ## Errors

@@ -38,3 +38,26 @@ func TestPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestHomeCGNAT(t *testing.T) {
+	dir := t.TempDir()
+	old := EnvFile
+	t.Cleanup(func() { EnvFile = old })
+	EnvFile = filepath.Join(dir, "missing.env")
+	if on, err := HomeCGNAT(); err != nil || on {
+		t.Errorf("default: %v %v", on, err)
+	}
+	EnvFile = filepath.Join(dir, "clipboardbridge.env")
+	os.WriteFile(EnvFile, []byte("CBB_PORT=9000\nCBB_HOME_CGNAT=1\n"), 0o644)
+	if on, err := HomeCGNAT(); err != nil || !on {
+		t.Errorf("from the file: %v %v", on, err)
+	}
+	t.Setenv("CBB_HOME_CGNAT", "0")
+	if on, err := HomeCGNAT(); err != nil || on {
+		t.Errorf("from the environment: %v %v", on, err)
+	}
+	t.Setenv("CBB_HOME_CGNAT", "yes")
+	if _, err := HomeCGNAT(); err == nil || !strings.Contains(err.Error(), "CBB_HOME_CGNAT") {
+		t.Errorf("CBB_HOME_CGNAT=yes: %v", err)
+	}
+}

@@ -3,11 +3,38 @@
 
 package main
 
-import "golang.org/x/sys/windows"
+import (
+	"slices"
 
-const needRootText = "on this computer the service may reach only the home network, and only an administrator can change that: run the command again in a terminal opened as administrator"
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
+)
 
-// awayOnHint is the command that lifts the limit.
-const awayOnHint = "cbb global on, in a terminal opened as administrator,"
+const needRootText = "on this computer the system limits what the service may reach, and only an administrator can change that: run the command again in a terminal opened as administrator"
+
+// allowHint is the command that lets the service reach the group's servers.
+const allowHint = "run cbb global allow in a terminal opened as administrator"
 
 func isElevated() bool { return windows.GetCurrentProcessToken().IsElevated() }
+
+// homeCGNAT reports whether the service counts 100.64.0.0/10 as the home
+// network, as install.ps1 -HomeCgnat on keeps in its environment, so that
+// the rule leaves that range to it too.
+var homeCGNAT = func() bool {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\clipboardbridge`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+	env, _, err := k.GetStringsValue("Environment")
+	return err == nil && slices.Contains(env, "CBB_HOME_CGNAT=1")
+}
+
+// adminName is who may change the firewall.
+const adminName = "an administrator"
+
+// closeHint closes the hub's port that cbb opened.
+const closeHint = "run Remove-NetFirewallRule -Name clipboardbridge-hub in a PowerShell opened as administrator"
+
+// expressHint is how the installer adds the firewall rules without asking.
+const expressHint = "-Express"

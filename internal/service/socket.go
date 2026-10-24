@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -141,6 +142,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpRename:
+		name, err := s.rename(m.Name, m.NewName)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: name, Done: true}, nil)
 	case control.OpFreeze, control.OpThaw:
 		name, err := s.freeze(m.Name, m.Op == control.OpFreeze)
 		if err != nil {
@@ -217,6 +225,11 @@ func (s *Service) status() *control.Status {
 	for _, p := range s.nd.Peers() {
 		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), OS: p.OS, SkewMS: skews[string(p.ID)].Milliseconds()})
 	}
+	for id := range s.unreached {
+		st.Unreached = append(st.Unreached, string(id))
+	}
+	slices.Sort(st.Unreached)
+	st.Port, _ = Port()
 	st.Away = s.awayStatus()
 	return st
 }

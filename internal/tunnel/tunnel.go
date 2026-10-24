@@ -289,8 +289,11 @@ type ClientConfig struct {
 	HubAddr      netip.Addr     // the hub's tunnel address
 	Endpoint     netip.AddrPort // where the hub's UDP port is reached
 	Obfuscation  *Obfuscation   // the hub's AmneziaWG settings; nil for plain WireGuard
-	Logf         func(format string, args ...any)
-	Verbose      bool // also log WireGuard's own messages, such as each handshake
+	// Allowed, if set, says where the client's UDP socket may send; the
+	// service passes netguard.Allowed. Without it, only to Endpoint.
+	Allowed func(netip.Addr) bool
+	Logf    func(format string, args ...any)
+	Verbose bool // also log WireGuard's own messages, such as each handshake
 }
 
 // Client is one device's tunnel to the hub.
@@ -328,7 +331,12 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: %w", err)
 	}
-	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "client", cfg.Verbose))
+	allowed := cfg.Allowed
+	if allowed == nil {
+		to := cfg.Endpoint.Addr().Unmap()
+		allowed = func(a netip.Addr) bool { return a.Unmap() == to }
+	}
+	dev := device.NewDevice(tdev, clientBind{newBind(), allowed}, wgLogger(logf, "client", cfg.Verbose))
 	ipc := fmt.Sprintf("private_key=%s\n%spublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=%d\n",
 		cfg.PrivateKey.hex(), cfg.Obfuscation.ipc(), cfg.HubPublicKey.hex(), cfg.PresharedKey.hex(),
 		cfg.Endpoint, netip.PrefixFrom(cfg.HubAddr, 128), Keepalive)

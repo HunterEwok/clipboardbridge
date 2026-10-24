@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- The home-screen widget's colours; values-night has the dark ones. -->
+<resources>
+    <color name="widget_background">#F2F4F1EA</color>
+    <color name="widget_text">#FF1C1B19</color>
+</resources>

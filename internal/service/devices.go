@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -333,6 +334,12 @@ func (s *Service) trackSeen(peers []node.Peer) {
 	for _, p := range peers {
 		online[p.ID] = true
 		s.seen[p.ID] = now
+		// A member with the lower device ID dials this one; when the
+		// connection came up only once this one dialed back, the member
+		// could not reach it, as a firewall here would do.
+		if d := s.dialers[p.ID]; d != nil && d.fallback && !s.online[p.ID] {
+			s.unreached[p.ID] = true
+		}
 	}
 	for id := range s.online {
 		if !online[id] {
@@ -501,6 +508,49 @@ func (s *Service) revoke(target string) (string, error) {
 	}
 	s.logf("cbb: removed %s (%s) from the group", d.Name, d.ID)
 	return d.Name, nil
+}
+
+// rename gives the device that target names a new name: an admin signs a
+// device record like its newest one with that name, and the newest record
+// of a device names it everywhere (docs/protocol.md, section 10). It
+// returns the old name.
+func (s *Service) rename(target, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !group.ValidName(name) {
+		return "", errors.New("a device name has 1 to 64 characters and no control characters")
+	}
+	d, err := s.findDevice(target)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if !id.IsAdmin() {
+		return "", errNotAdmin
+	}
+	s.recMu.Lock()
+	var rec *group.Device
+	for _, dev := range s.records.Devices() {
+		if string(dev.ID) == d.ID {
+			rec = &dev
+		}
+	}
+	s.recMu.Unlock()
+	if rec == nil {
+		return "", fmt.Errorf("%s is not in the devices list yet; rename it once it is", d.Name)
+	}
+	if rec.Name == name {
+		return rec.Name, nil
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: rec.ID, Name: name, Role: rec.Role,
+		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey})
+	if err != nil {
+		return "", err
+	}
+	s.publish(nd, r)
+	s.logf("cbb: renamed %s (%s) to %s", rec.Name, rec.ID, name)
+	return rec.Name, nil
 }
 
 // freeze freezes (on true) or unfreezes the admin computer that target

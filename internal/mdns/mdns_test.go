@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 )
 
 // fakeLink is a network segment: multicast reaches every interface on it,
@@ -946,6 +948,11 @@ func TestPublished(t *testing.T) {
 		if got := Published(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("Published(%s) = %v, want %v", addr, got, want)
 		}
+	}
+	netguard.SetCGNAT(true)
+	defer netguard.SetCGNAT(false)
+	if !Published(netip.MustParseAddr("100.64.0.1")) || Published(netip.MustParseAddr("100.128.0.1")) {
+		t.Error("with CBB_HOME_CGNAT=1, Published takes 100.64.0.0/10 and nothing next to it")
 	}
 }
 

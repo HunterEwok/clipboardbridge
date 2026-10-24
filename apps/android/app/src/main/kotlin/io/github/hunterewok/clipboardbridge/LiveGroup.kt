@@ -344,6 +344,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Gives a device another name (docs/protocol.md, section 10): a device
+     * record like its newest one with that name, signed with this phone's
+     * root or admin key, sent to every connected computer.
+     */
+    suspend fun rename(id: String, name: String) {
+        val ca = caSigner(R.string.reason_rename)
+        val g = copyOfState() ?: return
+        val r = withContext(Dispatchers.IO) { g.rename(id, name, ca, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        currentNode?.sendRecords(listOf(r))
+    }
+
+    /**
      * Unfreezes an admin computer that another admin froze
      * (docs/protocol.md, section 10, rule 4): a thaw record signed with this
      * phone's root or admin key, sent to every connected computer.

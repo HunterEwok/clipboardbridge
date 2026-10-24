@@ -128,7 +128,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return g
     }
 
-    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen }
+    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName }
 
     /// Adds records from other members, then follows the roots they lead
     /// to when they go further than this phone's; returns the new records.
@@ -237,6 +237,20 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         computers.removeAll { $0.device == device }
         computerAdmins[device] = nil
         return r
+    }
+
+    /// Gives a device another name: a device record like its newest one with
+    /// that name, which names it everywhere, since the newest record of a
+    /// device counts (section 10). An admin renames any device, itself and
+    /// the root included. name is trimmed; it must have 1 to 64 bytes and
+    /// no control characters.
+    public mutating func rename(device: String, to name: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
+        return try record(device: device, name: name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
+                          caSigner: caSigner, now: now)
     }
 
     /// Unfreezes an admin computer that another admin froze (section 10,

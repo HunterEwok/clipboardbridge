@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -314,6 +315,27 @@ func TestKeyText(t *testing.T) {
 	for _, bad := range []string{"", "AQEB", "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB", "!!!"} {
 		if err := got.UnmarshalText([]byte(bad)); err == nil {
 			t.Errorf("%q decoded", bad)
+		}
+	}
+}
+
+func TestDestinations(t *testing.T) {
+	ap := netip.MustParseAddrPort
+	a := netip.MustParseAddr
+	fw := &ForwarderLink{Endpoint: ap("198.51.100.9:8764"), VLESS: &VLESS{Endpoint: ap("198.51.100.9:443")}}
+	for name, c := range map[string]struct {
+		st   State
+		want []netip.Addr
+	}{
+		"off":               {State{}, nil},
+		"hub alone":         {State{IsHub: true, Endpoints: []netip.AddrPort{ap("203.0.113.7:8764")}}, nil},
+		"hub, forwarder":    {State{IsHub: true, Forwarder: fw}, []netip.Addr{a("198.51.100.9")}},
+		"relay":             {State{Relay: &RelayLink{Endpoint: ap("[2001:db8::5]:8764")}}, []netip.Addr{a("2001:db8::5")}},
+		"client":            {State{ToHub: &HubLink{Endpoints: []netip.AddrPort{ap("203.0.113.7:8764"), ap("[::ffff:198.51.100.9]:9000")}}}, []netip.Addr{a("203.0.113.7"), a("198.51.100.9")}},
+		"client over VLESS": {State{ToHub: &HubLink{VLESS: &VLESS{Endpoint: ap("198.51.100.10:443")}}}, []netip.Addr{a("198.51.100.10")}},
+	} {
+		if got := c.st.Destinations(); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
 		}
 	}
 }

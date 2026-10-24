@@ -26,22 +26,23 @@ on every platform of the class, on the roadmap).
 | Battery detection | yes | yes | yes | |
 | Installer and uninstaller, `--purge` | yes | yes | yes | |
 | One-line installer with checksum check | yes (`get.sh`) | yes (`get.sh`) | yes (`get.ps1`) | |
-| Package manager | Homebrew | Homebrew | **gap** | Windows: winget (G4) |
+| Package manager | Homebrew | Homebrew | winget (`cbb install` after it) | each release writes the winget manifest; it reaches winget by a pull request to its repository (docs/maintaining.md) |
 | Member port other than 8764 | yes (`--port`) | yes (`--port`) | yes (`-Port`) | |
 | Inbound only from the home network, in the program | yes | yes | yes | the member port drops other addresses |
 | Inbound only from the home network, by the system | yes (ufw, firewalld) | **OS** | yes (Windows Firewall) | the macOS application firewall allows or blocks a program, not an address; a Network Extension of the Mac app (roadmap item 22) |
-| Outbound only to the home network until `cbb global on`, in the program | yes | yes | yes | `internal/netguard` |
-| Outbound only to the home network until `cbb global on`, by the system | yes (systemd unit) | **OS** | yes (firewall rule) | as above, roadmap item 22 |
-| Firewall left alone on request | `--no-firewall`, `CBB_FIREWALL=no` | `CBB_FIREWALL=no` | `-NoFirewall`, `CBB_FIREWALL=no` | `get.sh --no-firewall` works on both |
+| Outbound only to the home network, and with `cbb global on` to the group's servers, in the program | yes | yes | yes | `internal/netguard` |
+| Outbound only to the home network, and with `cbb global on` to the group's servers, by the system | yes (systemd unit; a hub at its own address: **OS**) | **OS** | yes (firewall rule) | systemd cannot allow one port only, so a hub reached at its own address relies on the program; macOS: as above, roadmap item 22 |
+| 100.64.0.0/10 as the home network, on request | yes (`--home-cgnat on`) | yes (`--home-cgnat on`) | yes (`-HomeCgnat on`) | the program, the firewall rules and the outbound limit alike |
+| Firewall left alone on request | `--no-firewall`, `CBB_FIREWALL=no` | `--no-firewall`, `CBB_FIREWALL=no` | `-NoFirewall`, `CBB_FIREWALL=no` | |
 | Error details switch in `cbb` | `CBB_DEBUG=1`, debug builds | same | same | |
 | Error details switch in the installers | yes (`CBB_ERROR_DETAILS=1`) | yes (`CBB_ERROR_DETAILS=1`) | yes (`-Details`, `CBB_ERROR_DETAILS=1`) | |
 | Text-console helper (tmux) | yes (`--console`) | **OS** | **OS** | for a Linux machine without a desktop; a Mac and a Windows PC always have one |
 | Removal from the system's app list | — | **OS** | yes (Settings, Apps) | Linux has no common list; the Mac app (item 22) brings it to macOS |
-| Signed program | — | planned (`.pkg`, Developer ID) | **gap** | Windows Authenticode signing (G5) |
+| Signed program | — | planned (`.pkg`, Developer ID) | ready, needs a certificate | the release signs with Authenticode once the secrets hold a certificate (G5) |
 | Device keys in hardware | planned | planned | planned | roadmap item 13 |
-| Firewall rules only with the user's consent, listed one by one; `--express` without questions | **gap** | **gap** | **gap** | today the installers add the rules without asking (G6) |
-| Opening the hub's UDP port in the firewall | no | no | no | the same everywhere: the user opens it today (G6) |
-| Finding a firewall the installer does not know, by a check from home | **gap** | **gap** | **gap** | G6 |
+| Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
+| Opening the hub's UDP port in the firewall, with consent | yes (ufw, firewalld; commands for nftables, iptables) | **OS** | yes | `cbb global hub` asks, `-firewall yes` without asking; the macOS application firewall already allows a listed program on every port |
+| Finding a firewall the installer does not know, by a check from home | yes | yes | yes | `cbb status` warns when the members at home could not connect and sync only because this computer dials them back |
 | Tested on a real device | yes | yes | not yet | the 0.4 bench |
 
 ## Phones
@@ -56,11 +57,11 @@ on every platform of the class, on the roadmap).
 | Sync away from home | yes, in the background | while the app runs | **OS**: iOS stops a background app's network |
 | Receive copies without a tap | yes (foreground service) | **OS** | iOS lets an app read and write the clipboard only in the foreground |
 | Send without a tap | yes (accessibility service) | **OS** | iOS: Back Tap or the Action button runs the app's shortcut, one gesture |
-| Send from the share sheet and the text selection menu | yes | **gap** | a Share extension (P1) |
-| One-tap control outside the app | Quick Settings tile, notification button | **gap** | a Control Center control, iOS 18 (P2) |
-| Home-screen widget | **gap** | **gap** | in the app specification; neither has it (P3) |
-| Rename a device | **gap** | **gap** | in the app specification; neither has it (P4) |
-| Error details switch without developer tools | **gap** | **gap** | only `adb` or an Xcode launch argument today (P5) |
+| Send from the share sheet and the text selection menu | yes | yes | the iPhone's share extension; its menu's Share |
+| One-tap control outside the app | Quick Settings tile, notification button | Control Center control (iOS 18) | the control opens the app for a moment: **OS**, iOS reads the clipboard only in the foreground |
+| Home-screen widget | yes | yes | "Sync clipboard"; on the iPhone it opens the app for a moment, as the control does |
+| Rename a device | yes | yes | Devices, Rename on an admin phone; `cbb rename` on an admin computer; a signed device record |
+| Error details switch without developer tools | yes | yes | seven taps on the version in Settings show it; `adb` and the Xcode launch argument still work |
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
 | Remote invitations, remote paste, images and files | planned | planned | roadmap items 12, 18, 20 |
 | Tested on a real phone | not yet | not yet | |
@@ -72,7 +73,7 @@ on every platform of the class, on the roadmap).
 | Join by the phone's QR code or a computer's code | yes | yes (pairing; on Linux over TAP in CI) | yes, through the Pi | |
 | Sync the clipboard | yes | not yet | yes, through the Pi | the firmware's sync is the next step of roadmap item 15 |
 | Listen for phones and Macs | yes | not yet | through the Pi | |
-| Secrets (`copy -secret`) | yes | not yet | **gap** | the dot command could mark a copy secret (L1) |
+| Secrets (`copy -secret`) | yes | not yet | yes (`.cbb text -s`, `.cbb copy -s`) | |
 | Sync away from home | planned | planned | planned | |
 | Error details switch | yes (`-debug`, `CBB_DEBUG=1`) | not yet | yes (`.cbb -d`) | |
 
@@ -87,13 +88,13 @@ One pull request each, in this order; anything under 100 lines rides in the open
    `/etc/clipboardbridge/clipboardbridge.env` as on Linux.
 2. **G2**, done: `CBB_ERROR_DETAILS=1` in `install.sh`, `uninstall.sh` and `get.sh` on Linux
    and macOS shows every command as it runs; without it a failure names its exit status.
-3. **P5**: an error details switch in both apps' Settings, hidden behind a few taps on the
+3. **P5**, done: an error details switch in both apps' Settings, hidden behind a few taps on the
    version, besides the developer launch arguments.
-4. **P4**: rename a device in both apps (and `cbb rename` on computers), a signed record.
-5. **P1, P2**: the iPhone's Share extension and Control Center control.
-6. **P3**: a home-screen widget in both apps.
-7. **G4, G5**: a winget manifest and Authenticode signing for Windows (signing needs a
-   certificate; the manifest does not).
+4. **P4**, done: rename a device in both apps (and `cbb rename` on computers), a signed record.
+5. **P1, P2**, done: the iPhone's Share extension and Control Center control.
+6. **P3**, done: a home-screen widget in both apps.
+7. **G4, G5**, done: a winget manifest from every release and `cbb install` after winget;
+   Authenticode signing in the release, waiting for the owner's certificate.
 8. **G6**, decided by the owner: the firewall rules only with consent, the same on every
    computer. The installer finds the firewall itself (ufw, firewalld, nftables, iptables on
    Linux; Windows Firewall; the macOS application firewall), lists each rule it needs
@@ -101,9 +102,10 @@ One pull request each, in this order; anything under 100 lines rides in the open
    manages its rules from then on, the hub's UDP port at `cbb global hub` included (asked
    again, since it faces the internet), and removes them on uninstall. No: it prints the
    exact commands for that firewall and works while the rules are there. `--express` adds
-   them without a question and prints the same list as a report. A member at home dials
+   them without a question and prints the same list as a report. Done: the installers,
+   `cbb global hub` and the check from home. A member at home dials
    the computer back, so `cbb status` says when an unknown firewall or a closed rule keeps
    the others out. Messages are formal English, one fact per line.
-9. **L1**: `.cbb copy -s`, a secret from the Next.
+9. **L1**, done: `.cbb copy -s` and `.cbb text -s`, a secret from the Next (`cbb next copy -secret`).
 10. Roadmap item 22, the Mac app: the system's limits on a Mac (in and out), removal
     from the system, the signed `.pkg`.

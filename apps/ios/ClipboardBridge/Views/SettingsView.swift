@@ -9,6 +9,11 @@ struct SettingsView: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var model: AppModel
     @State private var switching = false
+    /// Taps on the version; seven show the error details switch, as
+    /// Android's build number shows its developer options.
+    @State private var versionTaps = 0
+    @AppStorage("ShowErrorDetails") private var errorDetails = AppModel.showsErrorDetails
+    @AppStorage("ShowErrorDetailsSwitch") private var detailsSwitch = false
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -37,11 +42,27 @@ struct SettingsView: View {
                 } label: {
                     Text("Version")
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    versionTaps += 1
+                    if versionTaps >= 7 { detailsSwitch = true }
+                }
+                if detailsSwitch {
+                    Toggle(isOn: $errorDetails) {
+                        Text("Show error details")
+                    }
+                    // The share extension reads it from the app group.
+                    .onChange(of: errorDetails, initial: true) { _, on in Shared.defaults.set(on, forKey: "ShowErrorDetails") }
+                }
                 Link(destination: URL(string: "https://github.com/HunterEwok/clipboardbridge")!) {
                     Text("Source code and license (AGPL-3.0)")
                 }
             } header: {
                 Text("About")
+            } footer: {
+                if detailsSwitch {
+                    Text("Error messages show the error underneath them, to find out what failed. Tap the version seven times to see this switch.")
+                }
             }
             .listRowBackground(palette.surface)
         }

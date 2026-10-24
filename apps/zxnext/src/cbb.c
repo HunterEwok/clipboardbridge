@@ -36,6 +36,8 @@ static void usage(void)
            "                   text, or save it\n"
            ".cbb copy FILE     send a file\n"
            ".cbb text WORDS    send the words\n"
+           ".cbb copy -s FILE  send a secret,\n"
+           ".cbb text -s WORDS such as a password\n"
            ".cbb join          join the group:\n"
            "                   scan the code with\n"
            "                   the phone app\n"
@@ -150,19 +152,23 @@ static int paste(const char *file)
     return 0;
 }
 
+// Whether copy and text send a secret: the group's devices keep it out of
+// their histories and clear it from their clipboards after a while.
+static uint8_t secret;
+
 static int copy(uint16_t len)
 {
     uint32_t n, crc;
     uint16_t i;
     char crc_hex[9];
     hex8(crc_hex, crc32_update(0, text, len));
-    sprintf(line, "copy %u %s", len, crc_hex);
+    sprintf(line, secret ? "copy -secret %u %s" : "copy %u %s", len, crc_hex);
     if (command(line)) return 1;
     if (expect(LINE_GO, &n, &crc, ANSWER_SECONDS) != LINE_GO) return 1;
     for (i = 0; i < len; i++) link_send(text[i]);
     if (expect(LINE_OK, &n, &crc, ANSWER_SECONDS) != LINE_OK) return 1;
     link_prompt();
-    printf("%u bytes sent to the group\n", len);
+    printf(secret ? "%u bytes sent to the group as a secret\n" : "%u bytes sent to the group\n", len);
     return 0;
 }
 
@@ -250,6 +256,12 @@ static int run(int argc, char **argv)
         return 0;
     }
     link_open();
+    // copy -s and text -s send a secret.
+    if ((strcmp(argv[i], "copy") == 0 || strcmp(argv[i], "text") == 0) && i + 1 < argc && strcmp(argv[i + 1], "-s") == 0) {
+        secret = 1;
+        argv[i + 1] = argv[i];
+        i++;
+    }
     if (strcmp(argv[i], "paste") == 0 && argc - i <= 2) return paste(argc - i == 2 ? argv[i + 1] : 0);
     if (strcmp(argv[i], "copy") == 0 && argc - i == 2) return copy_file(argv[i + 1]);
     if (strcmp(argv[i], "text") == 0 && argc - i >= 2) return copy_words(argc - i - 1, argv + i + 1);

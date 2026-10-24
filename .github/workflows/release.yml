@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Builds a release from a version tag: an archive per platform, the lite
 # member's archives, the Android app's APK, SHA256SUMS, the Linux and Windows installers and a build
-# provenance attestation for each file, and the Homebrew formula for the tap.
+# provenance attestation for each file, the Homebrew formula for the tap and
+# the winget manifest; with a certificate in the secrets, the signed Windows programs.
 # It publishes only after the iPhone app's CodeQL analysis (codeql-swift.yml)
 # passes on the tag, which takes about 45 minutes.
 name: release
@@ -62,6 +63,30 @@ jobs:
           else
             go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/cbb" ./cmd/cbb
           fi
+      - name: sign the Windows programs (Authenticode), with a certificate in the secrets
+        # A code signing certificate as a base64 PKCS#12 file and its password
+        # (docs/maintaining.md, "Signing for Windows"); without them the
+        # programs stay unsigned, as before.
+        if: matrix.goos == 'windows'
+        env:
+          CERT_BASE64: ${{ secrets.CBB_WINDOWS_CERT_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.CBB_WINDOWS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT_BASE64" ]; then
+            echo "::warning::no CBB_WINDOWS_CERT_BASE64 in the secrets; cbb.exe and cbbw.exe are not signed"
+            exit 0
+          fi
+          sudo apt-get install -y -qq osslsigncode >/dev/null
+          cert="$RUNNER_TEMP/cert.pfx" pass="$RUNNER_TEMP/cert.pass"
+          (umask 077 && printf '%s' "$CERT_BASE64" | base64 -d >"$cert" && printf '%s' "$CERT_PASSWORD" >"$pass")
+          trap 'rm -f "$cert" "$pass"' EXIT
+          for f in cbb.exe cbbw.exe; do
+            osslsigncode sign -pkcs12 "$cert" -readpass "$pass" -h sha256 \
+              -n clipboardbridge -i https://github.com/HunterEwok/clipboardbridge \
+              -ts http://timestamp.digicert.com \
+              -in "$RUNNER_TEMP/$f" -out "$RUNNER_TEMP/$f.signed"
+            mv "$RUNNER_TEMP/$f.signed" "$RUNNER_TEMP/$f"
+          done
       - name: the agent has the pasteboard
         if: matrix.goos == 'darwin'
         run: otool -L "$RUNNER_TEMP/cbb" | grep -q AppKit.framework
@@ -274,3 +299,27 @@ jobs:
             commit -q -m "clipboardbridge $GITHUB_REF_NAME"
           # shellcheck disable=SC2086 # $dry is one word or none
           git push $dry origin HEAD:main
+
+  winget:
+    # The manifest for winget's repository, attached to the release; it goes
+    # to microsoft/winget-pkgs by a pull request (docs/maintaining.md, "winget").
+    # A pre-release stays out, as it does from the tap.
+    if: github.ref_type == 'tag' && needs.release.result == 'success' && !contains(github.ref_name, '-')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # attach the manifest to the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the manifest, from the published SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
+          out="$RUNNER_TEMP/winget"
+          sh packaging/winget/manifest.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/SHA256SUMS" "$out"
+          (cd "$out" && zip -qX ../winget-manifest.zip ./*.yaml)
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/winget-manifest.zip" --repo "$GITHUB_REPOSITORY"

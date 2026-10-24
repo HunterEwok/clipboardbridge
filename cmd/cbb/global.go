@@ -42,24 +42,27 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb global                     show sync away from home\n" +
 		"       cbb global on                  turn it on here\n" +
 		"       cbb global off                 turn it off here and forget its keys\n" +
-		"       cbb global hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
+		"       cbb global hub [-port N] [-firewall ask|yes|no] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
 		"                                      -vless for clients that reach the forwarder only over VLESS\n" +
 		"       cbb global relay address:port -key KEY\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
-		"                                      without a hub"
+		"                                      without a hub\n" +
+		"       cbb global allow               let this computer's service reach the group's servers as they\n" +
+		"                                      are now, after the hub's addresses changed"
 	if len(args) == 0 {
 		return cmdGlobalStatus(stdout, stderr)
 	}
 	h := control.Header{Op: control.OpAway, Name: args[0]}
+	firewall := "ask"
 	switch args[0] {
 	case "on":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
-		if err := checkAwayNet(true); err != nil {
+		if err := checkAwayNet(); err != nil {
 			return fail(stderr, err)
 		}
 		fmt.Fprint(stdout, keysWarning)
@@ -78,13 +81,25 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
-		if err := checkAwayNet(false); err != nil {
+		if granted(grant{}).on {
+			if err := checkAwayNet(); err != nil {
+				return fail(stderr, err)
+			}
+		}
+	case "allow":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		return cmdGlobalAllow(stdout, stderr)
+	case "hub":
+		if err := checkAwayNet(); err != nil {
 			return fail(stderr, err)
 		}
-	case "hub":
 		fs := flag.NewFlagSet("global hub", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		port := fs.Int("port", 0, "the UDP port the hub listens on (default 8764)")
+		fs.StringVar(&firewall, "firewall", "ask", "open the hub's UDP port in the firewall: ask, yes (without asking) or no (print the commands)")
 		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
 		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
 		obfuscate := fs.Bool("obfuscate", false, "speak AmneziaWG, which hides that the packets are WireGuard, for networks that block it")
@@ -92,7 +107,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
-		if fs.NArg() == 0 && *fwd == "" {
+		if fs.NArg() == 0 && *fwd == "" || !slices.Contains([]string{"ask", "yes", "no"}, firewall) {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -104,6 +119,9 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate, h.VLESS = *port, fs.Args(), *fwd, *fwdKey, *obfuscate, *vlessOnly
 	case "relay":
+		if err := checkAwayNet(); err != nil {
+			return fail(stderr, err)
+		}
 		fs := flag.NewFlagSet("global relay", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		key := fs.String("key", "", "the relay's key, which cbb relay prints")
@@ -143,27 +161,94 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if args[0] == "on" || args[0] == "off" {
-		changed, restarted, err := setAwayNet(args[0] == "on")
-		if err != nil {
-			return fail(stderr, fmt.Errorf("sync away from home is %s, but the service's network did not change: %w", args[0], err))
+	if m.Status != nil {
+		a := m.Status.Away
+		if args[0] == "on" && confined() {
+			a = waitServers(c, a)
 		}
-		if changed {
-			msg := "The service may again reach only the home network"
-			if args[0] == "on" {
-				msg = "The service may now reach the internet"
-			}
-			if restarted {
-				msg += "; it restarted for that"
-			}
-			fmt.Fprintln(stdout, msg+".")
+		if err := applyGrant(stdout, grantFor(a)); err != nil {
+			return fail(stderr, fmt.Errorf("sync away from home changed, but the service's network did not: %w", err))
 		}
 	}
 	if m.Status != nil {
+		syncHubPort(stdin, stdout, m.Status.Away, firewall)
 		writeAway(stdout, m.Status.Away)
 	}
 	if args[0] == "hub" {
 		fmt.Fprint(stdout, hubNote)
+	}
+	return 0
+}
+
+// waitServers waits a little for a client that has just turned sync away
+// from home on to hear its hub's offer, which names the hub's addresses,
+// so that the system's limit can let them through at once.
+func waitServers(c *control.Client, a *control.Away) *control.Away {
+	for deadline := time.Now().Add(10 * time.Second); a != nil && !a.Hub && a.Relay == nil && len(a.Allow) == 0 && time.Now().Before(deadline); {
+		time.Sleep(500 * time.Millisecond)
+		m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}})
+		if err != nil || m.Status == nil {
+			break
+		}
+		a = m.Status.Away
+	}
+	return a
+}
+
+// applyGrant lets the service reach g and says so. When the service
+// restarted for it, it returns once the service answers again, so that the
+// next cbb command finds it running.
+func applyGrant(stdout io.Writer, g grant) error {
+	changed, restarted, err := setAwayNet(g)
+	if err != nil {
+		return err
+	}
+	if restarted {
+		c, err := waitService()
+		if err != nil {
+			return err
+		}
+		c.Close()
+	}
+	if changed {
+		msg := "This computer's service may now reach " + g.String()
+		if restarted {
+			msg += "; it restarted for that"
+		}
+		fmt.Fprintln(stdout, msg+".")
+	}
+	return nil
+}
+
+// cmdGlobalAllow lets the service reach the group's servers as the service
+// knows them now.
+func cmdGlobalAllow(stdout, stderr io.Writer) int {
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if m.Status == nil || m.Status.Group == "" {
+		return fail(stderr, fmt.Errorf("this device is in no group"))
+	}
+	g := grantFor(m.Status.Away)
+	if !confined() {
+		fmt.Fprintln(stdout, "This computer has no limit outside the program; the service itself reaches only "+g.String()+".")
+		return 0
+	}
+	if granted(g).equal(g) {
+		fmt.Fprintln(stdout, "This computer's service may already reach "+g.String()+".")
+		return 0
+	}
+	if err := checkAwayNet(); err != nil {
+		return fail(stderr, err)
+	}
+	if err := applyGrant(stdout, g); err != nil {
+		return fail(stderr, err)
 	}
 	return 0
 }
@@ -199,8 +284,11 @@ func writeAway(w io.Writer, a *control.Away) {
 		fmt.Fprintln(w, "Sync away from home: off (cbb global on turns it on).")
 		return
 	}
-	if confined() && !awayNetOpen() {
-		fmt.Fprintln(w, "This computer's service may reach only the home network: "+awayOnHint+" lets it reach the internet.")
+	if confined() {
+		if want := grantFor(a); !granted(want).equal(want) {
+			fmt.Fprintf(w, "This computer lets the service reach %s, but the group's servers are now %s: %s.\n",
+				granted(want), want, allowHint)
+		}
 	}
 	switch {
 	case a.Hub:

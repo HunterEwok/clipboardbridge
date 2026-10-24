@@ -3,14 +3,16 @@
 import SwiftUI
 
 /// The whole group: every device with its role, whether it is online, the
-/// admin phones marked; on an admin phone a device can be removed
-/// (docs/apps.md, Devices).
+/// admin phones marked; on an admin phone a device can be renamed and
+/// removed (docs/apps.md, Devices).
 struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
     @State private var removing: AppModel.Computer?
     @State private var promoting: AppModel.Computer?
     @State private var thawing: AppModel.Computer?
+    @State private var renaming: AppModel.Computer?
+    @State private var newName = ""
 
     var body: some View {
         List {
@@ -49,8 +51,14 @@ struct DevicesView: View {
                     if canUnfreeze(d) {
                         Button { thawing = d } label: { Text("Unfreeze") }
                     }
+                    if model.isAdmin {
+                        Button { rename(d) } label: { Text("Rename") }
+                    }
                 }
                 .contextMenu {
+                    if model.isAdmin {
+                        Button { rename(d) } label: { Text("Rename") }
+                    }
                     if canUnfreeze(d) {
                         Button { thawing = d } label: { Text("Unfreeze") }
                     }
@@ -100,6 +108,18 @@ struct DevicesView: View {
         } message: {
             Text("It can then add and remove devices with cbb pair and cbb revoke. Its key is a file on the computer, so do this only for a computer you keep safe.")
         }
+        .alert(Text("Rename \(renaming?.name ?? "")"), isPresented: Binding(
+            get: { renaming != nil }, set: { if !$0 { renaming = nil } }
+        )) {
+            TextField(text: $newName) { Text("Name") }
+            Button {
+                if let d = renaming { Task { await model.rename(d.id, to: newName) } }
+                renaming = nil
+            } label: { Text("Rename") }
+            Button(role: .cancel) { renaming = nil } label: { Text("Cancel") }
+        } message: {
+            Text("Every device of the group shows the new name.")
+        }
         .confirmationDialog(Text("Unfreeze \(thawing?.name ?? "")?"), isPresented: Binding(
             get: { thawing != nil }, set: { if !$0 { thawing = nil } }
         ), titleVisibility: .visible) {
@@ -110,6 +130,12 @@ struct DevicesView: View {
         } message: {
             Text("Another admin froze this computer, as one does with a stolen one: it changes nothing and the others refuse it. Unfreeze it only if it is in safe hands; otherwise remove it.")
         }
+    }
+
+    /// Asks for a device's new name, starting from its name.
+    private func rename(_ d: AppModel.Computer) {
+        newName = d.name
+        renaming = d
     }
 
     /// An admin phone unfreezes an admin computer that another admin froze.

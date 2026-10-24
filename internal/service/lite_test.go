@@ -306,6 +306,17 @@ func TestLiteMember(t *testing.T) {
 		t.Fatalf("cbb next copy: %v; %q", err, out)
 	}
 	waitFor(t, "the laptop has the Next's text", func() bool { return laptop.paste(t) == "ZX £5\nnext" })
+	// .cbb text -s: a secret from the Next arrives as a secret.
+	pw := []byte("hunter2")
+	next = exec.Command(bin, "-socket", lite.socket, "next", "copy", "-secret", strconv.Itoa(len(pw)), fmt.Sprintf("%08x", crc32.ChecksumIEEE(pw)))
+	next.Stdin = bytes.NewReader(pw)
+	if out, err := next.Output(); err != nil || string(out) != "CBBGO\rCBBOK\r" {
+		t.Fatalf("cbb next copy -secret: %v; %q", err, out)
+	}
+	waitFor(t, "the laptop has the Next's secret", func() bool {
+		m, err := laptop.do(t, control.Header{Op: control.OpPaste}, "")
+		return err == nil && string(m.Payload) == "hunter2" && m.Kind == control.KindSecret
+	})
 	if _, err := laptop.do(t, control.Header{Op: control.OpCopy}, "to the `Next` £\nαβγδ"); err != nil {
 		t.Fatal(err)
 	}

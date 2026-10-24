@@ -36,6 +36,7 @@ const (
 	OpJoin      = "join"       // client → service: join a group with a code
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
+	OpRename    = "rename"     // client → service: give the device Name names the name NewName
 	OpFreeze    = "freeze"     // client → service: freeze the admin computer Name names
 	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
@@ -83,6 +84,7 @@ type Header struct {
 	Listen       bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
 	NewToken     bool     `json:"new_token,omitempty"`   // pair-phone: revoke every shortcut's token first
 	Name         string   `json:"name,omitempty"`        // a device name
+	NewName      string   `json:"new_name,omitempty"`    // rename: the device's new name
 	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
 	Forwarder    string   `json:"forwarder,omitempty"`   // away hub: the forwarder's address, with its key in ForwarderKey
@@ -115,8 +117,13 @@ type Status struct {
 	HoldPriority int      `json:"hold_priority,omitempty"`
 	Battery      bool     `json:"battery,omitempty"` // the machine has a battery, as the service guesses
 	Peers        []Device `json:"peers,omitempty"`
-	Away         *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
-	Version      string   `json:"version"`
+	// Unreached lists the members at home that could not connect to this
+	// device's member port and sync with it only because it dials them:
+	// a firewall here likely drops the port.
+	Unreached []string `json:"unreached,omitempty"`
+	Port      int      `json:"port,omitempty"` // the member port
+	Away      *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
+	Version   string   `json:"version"`
 }
 
 // Away describes sync away from home on this device.
@@ -134,6 +141,9 @@ type Away struct {
 	Forwarder  *Forwarder `json:"forwarder,omitempty"`  // on the hub: its forwarder; nil without one
 	Relay      *Relay     `json:"relay,omitempty"`      // on a device that meets the others at a relay; nil without one
 	Detail     string     `json:"detail,omitempty"`     // the underlying error, for debugging
+	// Allow is the group's servers that the service may reach beyond the
+	// home network: its hub, forwarder and relay (internal/netguard).
+	Allow []string `json:"allow,omitempty"`
 }
 
 // Forwarder describes a hub's registration on its forwarder.

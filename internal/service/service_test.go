@@ -1786,6 +1786,18 @@ func TestFallbackDial(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "alpha has it", func() bool { return a.paste(t) == "through the fallback" })
+	// The member with the higher ID says the other could not reach it.
+	hi, lo := a, b
+	if a.status(t).Device < b.status(t).Device {
+		hi, lo = b, a
+	}
+	waitFor(t, "unreached", func() bool {
+		st := hi.status(t)
+		return len(st.Unreached) == 1 && st.Unreached[0] == lo.status(t).Device && st.Port != 0
+	})
+	if u := lo.status(t).Unreached; len(u) != 0 {
+		t.Errorf("the member that dials says it is unreached: %v", u)
+	}
 }
 
 // TestRecordsTheSystem checks that an admin records a computer's system
