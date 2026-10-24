@@ -33,7 +33,7 @@ In scope for 0.4:
 
 | Area | What is tested |
 |---|---|
-| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux, `install.sh` and Homebrew on macOS, `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
+| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
 | Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |

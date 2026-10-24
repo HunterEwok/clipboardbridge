@@ -44,6 +44,10 @@ The maintainer follows these rules; they are written down to keep the history co
   *Unreleased*.
 - **Go code.** `gofmt`, `go vet`, `staticcheck` and `govulncheck` pass, and tests cover the
   change.
+- **Installers.** Every platform has the same three: a one-line `get` that downloads a
+  release and checks it against `SHA256SUMS`, an `install` for an unpacked archive, and an
+  `uninstall` that the install leaves on the machine. `get.sh` serves Linux and macOS,
+  `get.ps1` Windows; CI runs each of them.
 - **No secrets.** No tokens, keys, real addresses or device names in the repository.
   GitHub secret scanning with push protection is enabled.
 
