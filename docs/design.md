@@ -567,8 +567,11 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 
 ### The hub
 
-- One member of the group, a computer of the user's that is at home and usually on, is the
-  hub: a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
+- One member of the group, a computer of the user's at home, is the hub. It need not stay
+  on: while it is off, nothing syncs away from home, and the devices at home still sync
+  among themselves. The user chooses: a computer that is always on, one that is turned on
+  when sync away from home is needed (for example to copy codes from afar for an hour), or
+  no hub and sync at home only. `cbb away hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
   of work. Phones and lite members are clients: a phone is not always on
   and cannot accept connections in the background, and a lite member has no room for it.
@@ -1010,12 +1013,139 @@ why it is a choice, not the default.
 the device records and revocation records exist there too, signed with the group CA key, so
 `cbb devices` shows the group and `cbb revoke` removes a Mac or an iPhone's
 token without replacing anything. Revoking a Linux member there still replaces both CAs, as
-"Devices and revocation" above says, because it holds the CA keys.
+"Devices and revocation" above says, because it holds the CA keys. "Full members, admins and
+the operating system" below changes this: such groups get a root and admins as a phone group
+has, and any device but the root is removed by a record.
 
 **Order of work.** The Go side first, since it needs no phone: the records, their exchange
 in the member protocol, refusing revoked keys, `cbb devices` and `cbb revoke`
 in groups a computer created, and members that verify certificates through an admin CA. Then
 the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
+
+## Full members, admins and the operating system
+
+Decided on 2026-10-24 (D-50 to D-53) and built in the steps at the end of this section. It
+replaces what "Group and pairing", "Discovery and the shared address", "macOS" and
+"Windows" say about Linux members holding the CA keys, the `linux` and `mac` roles and the
+Mac only dialing; those parts describe the code until the steps are done. No device of
+an earlier version needs to keep working with the new one: every device is updated first.
+
+**The operating system is not the role.** Until now the role in hellos and device records
+named a system (`linux`, `mac`), and a Windows PC took part as `linux`, so the group could
+not tell the two apart, and it got the CA keys because the pairing gave them to every
+`linux` joiner. From now on each device states its operating system in `os`, in the pairing
+Info, in its hello and in its device record: `linux`, `windows`, `macos`, `ios`,
+`android`, or `none` for firmware without one (the ESP32); `macos` takes the place of the
+pairing Info's `darwin`. The `os` is shown, never trusted for anything else. The **role** says only what a device does in the group:
+
+| Role     | Devices                                     | What it does                                                    |
+|----------|---------------------------------------------|-----------------------------------------------------------------|
+| `full`   | a computer with the service: Linux, Windows, macOS | listens on the member port, dials the other full members and the lite members, may hold `clipboardbridge.local`, may create a group and be an admin |
+| `lite`   | `cbb-lite`                                  | dials the full members, listens for phones; never holds keys     |
+| `phone`  | a phone with the app                        | dials every member, never listens for members                   |
+| `shortcut` | an iPhone without the app: a shortcut's token, not a member (legacy, below) | uses the endpoints of the member that holds `clipboardbridge.local` |
+
+The `linux` and `mac` roles are gone: everything that set the Mac apart was a choice, not a
+limit of macOS, and the Mac is a full member like the others. The `iphone` role is now
+`shortcut`. Records of an earlier group that say `linux` or `mac` are read as `full`, and
+`iphone` as `shortcut`. A phone with the app, an iPhone or an Android phone, has its own
+key and member certificate and the role `phone`. `cbb devices` and the Devices screens of the
+apps show each device's system (Linux, Windows, macOS, iOS, Android, or "device" for
+firmware) and mark the root and the admins. A device's record takes its `os` from the
+pairing Info; when a device's hello states another `os` than its record, an admin that
+meets it signs a new record, which is how the Windows PCs that joined as `linux` get their
+name back.
+
+**Who dials whom.** Between two full members the one with the lower device ID dials; if it
+has not connected within 30 seconds, the other dials as well, and of two connections
+between the same pair the one the lower ID dialed stays. Full members dial the lite
+members; phones dial everyone. The installers open the member port in the system's
+firewall on all three systems, as they do today.
+
+**Who holds `clipboardbridge.local`.** Only a full member that can serve the shortcut, that
+is one that holds the iPhone CA key (the root and the admins of a group a computer created).
+Among those that are on, a device that does not sleep comes first and a laptop only when no
+other is on; then the lowest device ID, as today. This is a preference, not a requirement:
+no device has to stay on, and whichever of them is on holds the name. The service guesses which it is from
+whether the machine has a battery, and a setting overrides the guess (always first, only as
+a fallback, or never). The TXT record tells the others the member's priority. Whether the
+Mac's own mDNS code can hold the name next to mDNSResponder is an open question until it is
+tried on a Mac.
+
+**Keys: the creator and the admins.** Any full member can create a group, a Mac included.
+Every new group gets a root CA with path length 1, as a group a phone creates has, and the
+creating computer holds its key and is the group's **root**. Every other full member gets
+only its member certificate: no CA key reaches it by joining. Each full member keeps an
+admin key next to its identity and offers it in its hello, as a computer of a phone group
+does today ("A computer as admin" above); the root makes a member an **admin** on request,
+with `cbb admin <name>` on the root computer or "Make it an admin" on a root phone, by
+certifying that key as an admin CA. An admin admits devices, renews certificates, signs
+records and removes devices; only the root makes admins. In a group a computer created an
+admin also receives the iPhone CA key with its admin CA, so the shortcut and the pairing of
+an iPhone without the app work while any admin is on. A group a phone created stays as it
+is: the phone is the root and the group has no iPhone CA. Lite members never hold keys and
+are never admins.
+
+**Removing a device.** Every device except the root is removed with a revocation record, as
+in a phone group, without a new group:
+
+- a member that is no admin: its member key is revoked, and that is all;
+- an admin: its member key and its admin key are revoked, and the devices it admitted are
+  kept. In a group a computer created, it also held the iPhone CA key, so the admin that
+  removes it replaces the iPhone CA as well: a new key, new `clipboardbridge.local`
+  certificates for the admins, and every token revoked; iPhones that use the shortcut
+  delete the old profile and pair again. The group's root stays;
+- the root computer: another admin takes the group over with a `root` record, as an admin
+  phone does when the root phone is lost (`cbb takeover <name>`), and then removes it. This
+  is open to admin computers in a group whose root is a computer; in a phone group they
+  still never take over. A group whose root is gone and has no other admin must be made
+  anew, so `cbb pair` suggests making a second admin.
+
+**Upgrading a group a computer created.** A group made before this change has a group CA
+with path length 0, and every Linux and Windows member holds the keys of both CAs. It is
+upgraded once with `cbb upgrade` on one of them, after every member runs the new version,
+and that member becomes the root:
+
+1. It creates a new root CA with path length 1 and signs, with the old group CA key, a
+   `root` record that names it. The group keeps its tag, so no device pairs again.
+2. Under the new root it revokes the old group CA key and keeps every listed device's key,
+   so nothing the old key signs from then on counts. A `root` record that a group CA with
+   path length 0 signed itself still counts when every record that revokes that key was
+   signed under the root it names: a leftover copy of the old key can then break the group
+   by signing a rival handover, but never take it over.
+3. If the group has shortcut iPhones, it replaces the iPhone CA as above, since every member
+   held its key.
+4. It signs a new device record for every device, with role `full` or `lite` and the `os`
+   its hello states, and renews certificates from the new root as members connect.
+5. Each member that gets the records deletes its copies of the old CA keys and says so in
+   its hello. Until a member has said so, `cbb devices` marks it as still holding the old
+   keys, and removing it needs a new group, as before the upgrade. Members that were off
+   follow when they come back.
+
+**The shortcut is a legacy way.** An iPhone without the app joins through a shortcut and a
+token (section "The iPhone button"), never with a key of its own. It stays for now, since
+the app does not yet run on a real iPhone, but it is not developed further, and every user
+is expected to use the app. Everything it needs comes with it: the iPhone CA, its key on the
+admins, and the rule for who holds `clipboardbridge.local`. It is removed with all of these
+once the app runs on real iPhones through TestFlight (roadmap.md, item 17): the group is
+then simpler, with one kind of trust, and every key in it can be revoked by a record.
+
+**Order of work**, one pull request each:
+
+1. This decision.
+2. The `os` beside the role: `os` in the pairing Info (`windows` allowed), the hello and
+   device records; the roles `full`, `lite`, `phone` and `shortcut` in Go, `cbb-lite` and both
+   phone kits; `cbb devices` and the Devices screens show the system and the root and admin
+   marks; an admin re-signs a record whose `os` is wrong.
+3. The Mac as a full member: the dialing rule above, listening like the others, holding
+   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb away hub`
+   says that nothing syncs away from home while the hub is off.
+4. New groups made by a computer with a root of path length 1: the CA keys on the creator
+   only, the admin key on every full member, `cbb admin`, the iPhone CA key for admins,
+   removing any device but the root by record, and replacing the iPhone CA when an admin
+   goes. A Mac can create a group and be an admin from here on.
+5. Taking over from a lost root computer (`cbb takeover`).
+6. `cbb upgrade` for groups made before.
 
 ## Open questions
 
@@ -1035,6 +1165,8 @@ These need experiments on real devices; CI cannot answer them.
 - Does the macOS application firewall, set to block incoming connections, filter the mDNS
   answers that reach the service's own socket on UDP 5353 (it is not mDNSResponder)? If so,
   the installer must add an exception for the service.
+- Can the Mac's own mDNS code hold `clipboardbridge.local` next to mDNSResponder, and does the
+  shortcut reach a Mac that holds it (D-53)?
 - Images and files after the first version.
 
 ## Decision log
@@ -1053,7 +1185,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
 | D-11 | One advertised port serves members, pairing and the iPhone, told apart by the first bytes. |
 | D-12 | Own mDNS responder on Linux: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
-| D-13 | Only Linux members hold `clipboardbridge.local`; Macs never hold it (since D-46 they listen too). |
+| D-13 | (Replaced by D-53.) Only Linux members hold `clipboardbridge.local`; Macs never hold it (since D-46 they listen too). |
 | D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |
 | D-15 | macOS runs the service as a LaunchDaemon plus a pasteboard LaunchAgent, which avoids the Local Network prompt; installing needs administrator rights. |
 | D-16 | Desktop clipboard in pure Go: Wayland data-control (both protocol variants) and X11 through `jezek/xgb`; no `wl-clipboard`. |
@@ -1063,7 +1195,7 @@ These need experiments on real devices; CI cannot answer them.
 | D-20 | The rejoin window opens only on a local sign that the member itself was away (start, wake), not when it merely lost its peers. A network that drops without a sleep is not noticed yet. |
 | D-21 | Each member keeps its own clipboard text apart from the group state; `cbb paste`, tmux, the console helper and the iPhone button use it. |
 | D-22 | A secret travels in a hello as a mark without its text, so the group converges on secrets too. |
-| D-23 | Revoking a Linux member replaces both CAs, because it holds their keys; members that were off still trust the old CA until they pair again, and iPhones delete the old profile. |
+| D-23 | (Replaced by D-51.) Revoking a Linux member replaces both CAs, because it holds their keys; members that were off still trust the old CA until they pair again, and iPhones delete the old profile. |
 | D-24 | Local durations use a clock that counts sleep and ignores wall-clock steps (package `uptime`). |
 | D-25 | The hybrid clock saves a mark 10 seconds ahead before passing the last one, so it never goes back after a crash. |
 | D-26 | iPhone pairing: the profile over a separate plain-HTTP port and the fingerprint check first, then the code on a page that the trusted CA authenticates. |
@@ -1086,7 +1218,11 @@ These need experiments on real devices; CI cannot answer them.
 | D-43 | A device away from the group joins by SSH, by the user's own VPN, or by a remote invitation: a QR code or a file, never typed, with a one-time guest WireGuard key that reaches only the pairing and a 128-bit secret, and admitted only after the admin confirms the device. The six-digit code never faces the open internet. |
 | D-44 | Computers keep their keys in the TPM or the Secure Enclave where they have one, and otherwise in a file sealed as far as the system allows, shown as such in `cbb status`; keys are renewed on a schedule. |
 | D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
-| D-46 | Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
+| D-46 | (Replaced by D-50.) Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
 | D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
+| D-50 | A device's operating system (`os`) is stated apart from its role, so a Windows PC is shown as Windows; the roles are `full` (every computer with the service, the Mac included), `lite`, `phone` and `iphone`, and the `linux` and `mac` roles are dropped. |
+| D-51 | In a group a computer creates, only the creating computer (the root) and the members it makes admins hold CA keys, through the admin CAs of D-33 under a root with path length 1; any device but the root is removed by a record without a new group, and a lost root is taken over by an admin. |
+| D-52 | Groups made before D-51 are upgraded in place with a `root` record signed by the old group CA key and a revocation of that key; a leftover copy of the old key can break such a group but never take it over. |
+| D-53 | `clipboardbridge.local` is held only by a member with the iPhone CA key, machines that do not sleep first and laptops as a fallback, guessed from a battery and set by a setting. |
