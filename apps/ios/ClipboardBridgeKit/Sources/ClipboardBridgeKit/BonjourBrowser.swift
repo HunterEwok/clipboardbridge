@@ -48,15 +48,30 @@ public final class BonjourBrowser: @unchecked Sendable {
     /// with the member ALPN protocol and this phone's identity, followed by
     /// chain (the admin CA that issued its certificate, if one did),
     /// accepting only that device's certificate from one of roots, the
-    /// group's roots (docs/protocol.md, section 10, "Roots").
-    public func dialer(identity: SecIdentity, chain: [Data] = [], roots: [Data]) -> MemberDialer.Dial {
+    /// group's roots (docs/protocol.md, section 10, "Roots"). A member
+    /// browsing does not find is dialed at the addresses known gives for
+    /// it, one after another.
+    public func dialer(identity: SecIdentity, chain: [Data] = [], roots: [Data],
+                       known: @escaping @Sendable (String) -> [String] = { _ in [] }) -> MemberDialer.Dial {
         { [weak self] m in
-            guard let ep = self?.endpoint(of: m.device) else { throw TLSTransport.Failure.notReady("not found") }
-            let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity, chain: chain) { chain in
-                (try? GroupCertificates.verifyMember(chain: chain, roots: roots, now: Date())) == m.device
+            let eps = self?.endpoint(of: m.device).map { [$0] } ?? JoinCode.ordered(known(m.device)).compactMap { a -> NWEndpoint? in
+                guard let (host, port) = JoinCode.split(a), let p = NWEndpoint.Port(rawValue: port) else { return nil }
+                return .hostPort(host: NWEndpoint.Host(host), port: p)
             }
-            try await t.start()
-            return t
+            var failure: Error = TLSTransport.Failure.notReady("not found")
+            for ep in eps {
+                let t = TLSTransport(endpoint: ep, alpn: Member.alpn, identity: identity, chain: chain) { chain in
+                    (try? GroupCertificates.verifyMember(chain: chain, roots: roots, now: Date())) == m.device
+                }
+                do {
+                    try await t.start()
+                    return t
+                } catch {
+                    t.close()
+                    failure = error
+                }
+            }
+            throw failure
         }
     }
 }

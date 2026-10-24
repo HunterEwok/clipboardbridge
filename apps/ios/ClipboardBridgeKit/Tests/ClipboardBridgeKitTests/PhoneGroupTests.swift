@@ -19,6 +19,11 @@ final class PhoneGroupTests: XCTestCase {
         XCTAssertNil(try PhoneGroup.load(from: url))
         var saved = g
         saved.computers.append(.init(device: SyncEngine.newID(), name: "pi", os: "linux", cert: Data([1]), admitted: now))
+        // A computer in another subnet is dialed at its home network addresses from the QR code.
+        let zero = SyncEngine.newID()
+        saved.computers.append(.init(device: zero, name: "rpi0w", os: "linux", cert: Data([2]), admitted: now,
+                                     addrs: ["192.168.20.5:8764", "203.0.113.7:8764", "[fd00::5]:8764", "[2001:db8::5]:8764"]))
+        XCTAssertEqual(saved.addresses, [zero: ["192.168.20.5:8764", "[fd00::5]:8764"]])
         try saved.save(to: url)
         XCTAssertEqual(try PhoneGroup.load(from: url), saved)
     }

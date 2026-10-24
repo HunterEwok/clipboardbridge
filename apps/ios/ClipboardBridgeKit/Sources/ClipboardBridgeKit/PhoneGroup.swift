@@ -89,7 +89,19 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         public var os: String
         public var cert: Data
         public var admitted: Date
+        /// Its addresses on the home network from the QR code, the one that
+        /// answered first: dialed when mDNS does not find it, as in another
+        /// subnet (docs/protocol.md, section 9). nil in files saved before.
+        public var addrs: [String]?
         public var id: String { device }
+    }
+
+    /// The home network addresses of the computers this phone admitted, by
+    /// device ID, best first.
+    public var addresses: [String: [String]] {
+        var out: [String: [String]] = [:]
+        for c in computers { if let a = c.addrs?.filter(JoinCode.isHome), !a.isEmpty { out[c.device] = a } }
+        return out
     }
 
     /// The group tag the computers publish.
@@ -284,9 +296,12 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// never a key. A phone that sent an admin key becomes an admin when
     /// this phone is the root and makeAdmin is set: it gets an admin CA for
     /// that key. On success a computer is in computers, where one admitted
-    /// again replaces its entry, and every device has its record.
+    /// again replaces its entry, and every device has its record. A
+    /// computer keeps those of addrs that are on a home network, where the
+    /// phone dialed it.
     public mutating func admit(over t: FrameTransport, code: String, joinerCert: Data, sessionID: [UInt8],
-                               caSigner: CertificateSigner, makeAdmin: Bool = true, now: Date) async throws -> PairingMember.Admitted {
+                               caSigner: CertificateSigner, makeAdmin: Bool = true, addrs: [String] = [],
+                               now: Date) async throws -> PairingMember.Admitted {
         guard isAdmin else { throw Failure.notAdmin }
         let (first, later, root, ca, issuer, canMakeAdmins) = (groupCA, roots, currentRoot, signingCA, adminCA, isRoot)
         var adminKey: Data?
@@ -311,7 +326,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
             return admitted
         }
         computers.removeAll { $0.device == admitted.device }
-        computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now))
+        computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now,
+                                  addrs: addrs.filter(JoinCode.isHome)))
         _ = try record(device: admitted.device, name: name, role: admitted.info.role == Pairing.Info.lite ? "lite" : "full",
                        os: admitted.info.os, key: key, caSigner: caSigner, now: now)
         return admitted

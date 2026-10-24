@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Android and iPhone apps keep the home network addresses from the QR code of each
+  computer they add, and dial a computer there while mDNS does not find it, so a member in
+  another subnet (an IoT VLAN, for example) syncs with the phone too.
 - The Mac installer takes `--port N` like the Linux one, kept in
   `/etc/clipboardbridge/clipboardbridge.env`, and `get.sh` passes it on a Mac too.
 - `CBB_ERROR_DETAILS=1` for the Linux and macOS installers, uninstallers and `get.sh`: they

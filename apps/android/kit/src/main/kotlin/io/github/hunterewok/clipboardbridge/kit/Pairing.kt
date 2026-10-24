@@ -267,6 +267,13 @@ data class JoinCode(val code: String, val addrs: List<String>, val fingerprint: 
             return host.isNotEmpty() && ':' !in host
         }
 
+        /** Whether a host:port, or [IPv6]:port, is on a home network: a private IPv4 or unique local IPv6 address. */
+        fun isHome(a: String): Boolean {
+            if (!hasPort(a)) return false
+            val host = a.substring(0, a.lastIndexOf(':'))
+            return if (host.startsWith("[")) LocalAddresses.isHomeIPv6(host.substring(1, host.length - 1)) else LocalAddresses.isHomeIPv4(host)
+        }
+
         private val random = SecureRandom()
 
         /** A new six-digit code. */

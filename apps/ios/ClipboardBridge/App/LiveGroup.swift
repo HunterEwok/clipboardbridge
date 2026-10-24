@@ -203,7 +203,9 @@ final class LiveGroup: GroupController {
                     defer { tls.close() }
                     guard let leaf = tls.peerCertificate,
                           let sid = tls.exportKeyingMaterial(label: Pairing.exporterLabel, length: 32) else { throw Failure.unreachable }
-                    return try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca, now: Date())
+                    // The address that answered goes first, for dialing when mDNS does not find the computer.
+                    return try await g.admit(over: tls, code: code.code, joinerCert: leaf, sessionID: sid, caSigner: ca,
+                                             addrs: [addr] + code.addrs.filter { $0 != addr }, now: Date())
                 } onCancel: {
                     tls.close()
                 }
@@ -241,17 +243,10 @@ final class LiveGroup: GroupController {
 
     /// The addresses to try, IPv4 first: a home network reaches those most
     /// surely, and each that fails costs its timeout.
-    nonisolated static func ordered(_ addrs: [String]) -> [String] {
-        addrs.filter { !$0.hasPrefix("[") } + addrs.filter { $0.hasPrefix("[") }
-    }
+    nonisolated static func ordered(_ addrs: [String]) -> [String] { JoinCode.ordered(addrs) }
 
     /// host and port of "host:port" or "[IPv6]:port".
-    nonisolated static func split(_ addr: String) -> (String, UInt16)? {
-        guard let i = addr.lastIndex(of: ":"), let port = UInt16(addr[addr.index(after: i)...]) else { return nil }
-        var host = String(addr[..<i])
-        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
-        return host.isEmpty ? nil : (host, port)
-    }
+    nonisolated static func split(_ addr: String) -> (String, UInt16)? { JoinCode.split(addr) }
 
     // MARK: Joining
 
@@ -397,6 +392,7 @@ final class LiveGroup: GroupController {
         recordBox?.replace(g.records)
         admins?.group = g
         relay?.allowed = Self.allowed(g)
+        relay?.addresses = g.addresses
     }
 
     /// The devices the phone dials: those in the list. A phone that joined
@@ -443,7 +439,7 @@ final class LiveGroup: GroupController {
                               records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
                               tunnelKey: awayState.flatMap { try? GoTunnels().publicKey($0.key) },
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
-        let relay = Relay()
+        let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
         // Through the tunnel the phone dials the hub's member port with the
         // same TLS as at home, and only while the hub is not found here.
@@ -465,8 +461,11 @@ final class LiveGroup: GroupController {
         awayRef.value = away
         Task { await away.start() }
         let browser = BonjourBrowser { found in relay.update(found) }
-        let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted))
+        let dialer = MemberDialer(node: node, group: g.tag,
+                                  dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted) { relay.addresses[$0] ?? [] })
         relay.dialer = dialer
+        // The computers at known addresses are dialed even while browsing finds nothing.
+        relay.addresses = g.addresses
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins, self.away) =
             (node, browser, dialer, relay, box, renewer, admins, away)
@@ -577,13 +576,20 @@ final class LiveGroup: GroupController {
         func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
     }
 
-    /// Passes what the browser finds to the dialer, only the devices that
-    /// are in the group's list: a removed computer is not dialed.
+    /// Passes what the browser finds to the dialer, with the computers it
+    /// does not find at the addresses they had when admitted, only the
+    /// devices that are in the group's list: a removed computer is not
+    /// dialed.
     final class Relay: @unchecked Sendable {
         private let lock = NSLock()
         private var _dialer: MemberDialer?
         private var _allowed: Set<String>? = []
+        private var _addresses: [String: [String]] = [:]
         private var last: Set<FoundMember> = []
+        /// The group tag of the members at known addresses.
+        let group: String
+
+        init(group: String) { self.group = group }
         var dialer: MemberDialer? {
             get { lock.withLock { _dialer } }
             set { lock.withLock { _dialer = newValue } }
@@ -596,13 +602,22 @@ final class LiveGroup: GroupController {
                 update(lock.withLock { last })
             }
         }
+        /// The known addresses of the computers, by device ID.
+        var addresses: [String: [String]] {
+            get { lock.withLock { _addresses } }
+            set {
+                lock.withLock { _addresses = newValue }
+                update(lock.withLock { last })
+            }
+        }
         /// Whether the browser finds device on the home network now.
         func has(_ device: String) -> Bool { lock.withLock { last.contains { $0.device == device } } }
 
         func update(_ found: Set<FoundMember>) {
             let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {
                 last = found
-                return (_dialer, _allowed.map { a in found.filter { a.contains($0.device) } } ?? found)
+                let all = Discovery.withKnown(found, known: Set(_addresses.keys), group: group)
+                return (_dialer, _allowed.map { a in all.filter { a.contains($0.device) } } ?? all)
             }
             guard let d else { return }
             Task { await d.update(members) }

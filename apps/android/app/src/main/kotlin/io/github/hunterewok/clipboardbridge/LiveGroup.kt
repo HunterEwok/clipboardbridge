@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
+import io.github.hunterewok.clipboardbridge.kit.Discovery
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
 import io.github.hunterewok.clipboardbridge.kit.GroupCertificates
 import io.github.hunterewok.clipboardbridge.kit.HybridClock
@@ -202,7 +203,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                         try {
                             val leaf = t.peerCertificate ?: throw Failure(Failure.Kind.UNREACHABLE)
                             val sid = t.exportKeyingMaterial(Pairing.EXPORTER_LABEL, 32)
-                            g.admit(t, code.code, leaf, sid, ca, Instant.now())
+                            // The address that answered goes first, for dialing when mDNS does not find the computer.
+                            g.admit(t, code.code, leaf, sid, ca, Instant.now(), addrs = listOf(addr) + code.addrs.filter { it != addr })
                         } finally {
                             t.close()
                         }
@@ -400,6 +402,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val b = startBrowsing() ?: return
         b.start()
         awayFromHome?.start()
+        relay()
     }
 
     private fun startBrowsing(): NsdBrowser? = synchronized(lock) {
@@ -443,7 +446,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             synchronized(lock) { found = members }
             relay()
         }
-        dialer = MemberDialer(n, g.tag, dial = b.dialer(member, g.memberChain, g.trusted))
+        val known = { d: String -> synchronized(lock) { state?.addresses?.get(d).orEmpty() } }
+        dialer = MemberDialer(n, g.tag, dial = b.dialer(member, g.memberChain, g.trusted, known))
         node = n
         browser = b
         away = a
@@ -471,17 +475,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
-     * Passes what the browser finds to the dialer, only the devices that
-     * are in the group's list: a removed computer is not dialed. A phone
-     * that joined has no records until a computer sends them, so it dials
-     * every member of the group until then; TLS still checks each against
-     * the group's roots.
+     * Passes what the browser finds to the dialer, with the computers it
+     * does not find at the addresses they had when admitted, only the
+     * devices that are in the group's list: a removed computer is not
+     * dialed. A phone that joined has no records until a computer sends
+     * them, so it dials every member of the group until then; TLS still
+     * checks each against the group's roots.
      */
     private fun relay() {
         val (d, members) = synchronized(lock) {
             val g = state ?: return
+            val all = Discovery.withKnown(found, g.addresses.keys, g.tag)
             val allowed = if (g.records.records.isEmpty()) null else g.devices.map { it.id }.toSet()
-            dialer to (allowed?.let { a -> found.filter { it.device in a }.toSet() } ?: found)
+            dialer to (allowed?.let { a -> all.filter { it.device in a }.toSet() } ?: all)
         }
         d?.update(members)
     }
