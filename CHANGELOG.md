@@ -53,7 +53,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   and when but cannot read the clipboard or pose as a device. It serves only the groups it
   is given and writes nothing about them. `cbb global` shows the link.
 - `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
-  `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
+  the lite member on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
 
