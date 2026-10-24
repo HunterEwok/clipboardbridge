@@ -23,6 +23,18 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertNil(Discovery.member(instance: dev.uppercased(), txt: ["g=77"]))
     }
 
+    func testWithKnown() {
+        let other = "fedcba9876543210fedcba9876543210"
+        let found: Set = [FoundMember(device: dev, group: "g1", pairing: true)]
+        // A member browsing finds stays as found; one it does not find is
+        // added by its known address.
+        XCTAssertEqual(Discovery.withKnown(found, known: [dev, other], group: "g1"), found.union([FoundMember(device: other, group: "g1")]))
+        XCTAssertEqual(Discovery.withKnown(found, known: [], group: "g1"), found)
+        XCTAssertTrue(JoinCode.isHome("10.1.2.3:8764"))
+        XCTAssertFalse(JoinCode.isHome("100.64.0.1:8764"))
+        XCTAssertFalse(JoinCode.isHome("[fd00::5]"))
+    }
+
     /// A Linux member as a MemberNode at the other end of a pipe, which
     /// ends the connection after its hello.
     final class Peers: @unchecked Sendable {

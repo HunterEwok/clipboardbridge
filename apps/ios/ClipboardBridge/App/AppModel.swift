@@ -364,6 +364,9 @@ final class AppModel: ObservableObject {
             default: break
             }
         }
+        if error is LiveGroup.ClipboardUnreadable {
+            return String(localized: "Could not read the clipboard, so it was left as it is. Allow pasting for Clipboard Bridge, or copy the text again.", bundle: .app)
+        }
         if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
             return String(localized: "The phone that made the group cannot be removed yet.", bundle: .app)
         }

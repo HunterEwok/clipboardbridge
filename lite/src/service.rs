@@ -12,6 +12,7 @@ use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use crate::away::Away;
 use crate::clip::{Engine, Kind, Via};
 use crate::control::{self, Device, Header, Message, Status};
 use crate::discovery;
@@ -51,6 +52,7 @@ pub struct Config {
 
 struct Service {
     node: RwLock<Option<Arc<Node>>>,
+    away: RwLock<Option<Arc<Away>>>,
     watchers: Mutex<Vec<SyncSender<WriteReq>>>,
     pending: Mutex<Option<WriteReq>>, // a write decided while no watcher was connected
     log: Arc<dyn Fn(&str) + Send + Sync>,
@@ -79,6 +81,7 @@ pub fn run(cfg: Config) -> Result<()> {
     let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(log_line);
     let svc = Arc::new(Service {
         node: RwLock::new(None),
+        away: RwLock::new(None),
         watchers: Mutex::new(Vec::new()),
         pending: Mutex::new(None),
         log: log.clone(),
@@ -122,6 +125,7 @@ pub fn run(cfg: Config) -> Result<()> {
         Box::new(uptime::now),
     ));
     let tag = ident.tag();
+    let away = Arc::new(Away::new(cfg.state_dir.clone(), tag.clone(), ident.id.clone(), log.clone()));
     let node = {
         let svc = svc.clone();
         Arc::new(Node::new(
@@ -135,12 +139,22 @@ pub fn run(cfg: Config) -> Result<()> {
         ))
     };
     engine.rejoin();
+    node.set_tunnel_key(away.key());
+    {
+        let away = away.clone();
+        node.on_tunnel(Box::new(move |from, v| away.offered(from, v)));
+    }
     *svc.node.write().unwrap() = Some(node.clone());
+    *svc.away.write().unwrap() = Some(away.clone());
     let port = cfg.port.and_then(|p| discovery::listen(node.clone(), p, log.clone()));
     if let Some(p) = port {
         log(&format!("cbb: listening on port {p}"));
     }
     discovery::start(node.clone(), tag, cfg.peers.clone(), cfg.mdns, port, log.clone());
+    {
+        let node = node.clone();
+        std::thread::spawn(move || away.run(node));
+    }
 
     while !STOP.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(200));
@@ -253,6 +267,38 @@ impl Service {
         self.node.read().unwrap().clone().ok_or_else(|| Error::msg("this device is in no group; run cbb join"))
     }
 
+    fn away(&self) -> Result<Arc<Away>> {
+        self.away.read().unwrap().clone().ok_or_else(|| Error::msg("this device is in no group; run cbb join"))
+    }
+
+    /// cbb global: shows sync away from home, or turns it on or off. The
+    /// lite member keeps its keys in files, so turning it on needs the
+    /// user's consent.
+    fn global(&self, h: &Header) -> Result<Message> {
+        let (node, away) = (self.node()?, self.away()?);
+        match h.name.as_str() {
+            "" => {}
+            "on" if !h.consent => {
+                return Err(Error::msg(
+                    "this device keeps its keys in files, so sync away from home needs your consent; run cbb global on and read what it says",
+                ));
+            }
+            "on" => node.set_tunnel_key(Some(away.turn_on()?)),
+            "off" => {
+                away.turn_off()?;
+                node.set_tunnel_key(None);
+            }
+            "hub" | "relay" => {
+                return Err(Error::msg(
+                    "the lite member is a client of the group's hub; make a full member the hub, or meet at a relay, there",
+                ));
+            }
+            n => return Err(Error::msg(format!("unknown cbb global {n:?}"))),
+        }
+        let status = Status { away: away.status(&node), ..Default::default() };
+        Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
+    }
+
     /// Passes a write the engine decided on to every watcher.
     fn deliver(&self, w: WriteReq) {
         let mut ws = self.watchers.lock().unwrap();
@@ -322,6 +368,7 @@ impl Service {
                     os: "linux".into(),
                     peers,
                     version: VERSION.into(),
+                    away: self.away()?.status(&node),
                 };
                 Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
             }
@@ -361,6 +408,7 @@ impl Service {
                 }
                 Ok(control::reply(Header { devices: out, ..Default::default() }, Vec::new()))
             }
+            "away" => self.global(h),
             "pair" | "pair-phone" | "revoke" => {
                 Err(Error::msg("a lite member admits and removes no devices; use the phone app or a Linux member"))
             }
@@ -390,10 +438,10 @@ impl Service {
         }
         // A write decided while no watcher was connected, if the member's
         // own text is still that.
-        if let Some(w) = self.pending.lock().unwrap().take() {
-            if node.engine.local().is_some_and(|(t, _, _)| t == w.text) {
-                let _ = tx.try_send(w);
-            }
+        if let Some(w) = self.pending.lock().unwrap().take()
+            && node.engine.local().is_some_and(|(t, _, _)| t == w.text)
+        {
+            let _ = tx.try_send(w);
         }
         self.watchers.lock().unwrap().push(tx);
         let done = Arc::new(AtomicBool::new(false));

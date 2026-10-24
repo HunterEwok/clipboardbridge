@@ -40,6 +40,14 @@ object Discovery {
     /** The same from a TXT record already split into keys and values, as Android's NsdServiceInfo gives it. */
     fun member(instance: String, txt: Map<String, ByteArray?>): FoundMember? =
         member(instance, txt.map { (k, v) -> "$k=${v?.toString(Charsets.UTF_8) ?: ""}" })
+
+    /**
+     * The members to dial: those browsing found, and the devices of the
+     * group with a known address that it did not find, as a member in
+     * another subnet, which mDNS does not reach (docs/protocol.md, section 9).
+     */
+    fun withKnown(found: Set<FoundMember>, known: Set<String>, group: String): Set<FoundMember> =
+        found + known.filter { d -> found.none { it.device == d } }.map { FoundMember(it, group) }
 }
 
 /**

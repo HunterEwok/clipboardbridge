@@ -71,6 +71,7 @@
     <string name="error_no_network">Connect this phone to your home Wi-Fi, then try again.</string>
     <string name="error_timed_out">No phone scanned the code in five minutes. Try again.</string>
     <string name="error_too_many_codes">Too many wrong codes. Try again with a new code.</string>
+    <string name="error_clipboard_unreadable">Could not read the clipboard, so it was left as it is. Copy the text again, then try again.</string>
     <string name="error_not_admin">Only an admin phone can do this.</string>
     <string name="error_unreachable">Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipboardbridge in?</string>
     <string name="error_wrong_code">The code did not match. Run cbb pair on the computer again and scan the new code.</string>

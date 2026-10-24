@@ -232,8 +232,10 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   no other on.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
-  home"). The phones and the lite member do not use the tunnel yet; a lite member can be
-  given a member's address with `-peer`.
+  home"); so do the phone apps and the lite member on Linux, as clients. A lite member can
+  be given a member's address with `-peer`; it dials no address outside the home network
+  (private IPv4, unique-local and link-local IPv6, loopback), so away from home it reaches
+  the group only through the tunnel.
 - A computer that joined at an address the user gave (`cbb pair -code ADDRESS`, as through
   an SSH forward or a VPN) also dials the member that admitted it at that address, whatever
   the rules above say, while discovery does not find that member and no other connection to
@@ -863,6 +865,10 @@ iPhone CA as well (section 10, "Admins").
   6, "The joiner listens") and sends a Welcome with a member certificate signed by its CA.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it finds members through mDNS browsing as a Mac does.
+  It keeps the home network addresses (private IPv4, unique local IPv6) of the QR code of
+  each computer it admitted, the one that answered first, and dials a computer of the
+  group's list at them while browsing does not find it, as one in another subnet that
+  mDNS does not reach. TLS checks the peer as for a found member.
   The shortcut endpoints of section 7 stay for phones without the app.
 - **Renewal and revocation.** The admin phones renew certificates with `cert` messages, as
   a Linux member does in a group it created (ClipboardBridgeKit's
@@ -1179,13 +1185,20 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 ("Through the tunnel" below). The phone kits speak the hello's `tunnel_key` and the
 `tunnel` message (Swift `MemberNode`, Kotlin `MemberNode`) and bind the tunnel itself from
 Go (`mobile/cbbtun`), and both apps turn it on in their settings; the kits keep the obfuscation settings with
-the offer and hand them to the tunnel. The lite member does not take part yet.
+the offer and hand them to the tunnel. The lite member on Linux takes part as a client, with
+plain WireGuard only: GotaTun's WireGuard and smoltcp's TCP in its process
+(`lite/src/tunnel.rs`, `lite/src/away.rs`); it refuses an offer with `obfuscation` or `vless`
+and then syncs at home only ("Through the tunnel" below).
 
 - Sync away from home is off by default; nothing in this section happens on a device until
   the user turns it on there (`cbb global on`, the control operation `away`). Go turns it on
   by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
-  rest of this section's state.
+  rest of this section's state. The lite member keeps its own `tunnel.json` there: `v` (1),
+  `group` (the group tag), `key` (its private key, base64) and, once the hub offered,
+  `to_hub` (`device`, `key`, `psk`, `endpoints`). Every computer and the lite member keep
+  their keys in files, so `cbb global on` asks for the user's consent there (`consent` in the
+  request).
 - Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member where sync
   away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
   only.
@@ -1284,6 +1297,10 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
   the offer's endpoints in turn, with the dialers' backoff (1 s, doubling to 30 s).
 - It fails closed: when the hub or the link cannot start, or the hub does not answer, the
   member syncs at home only, and `status` says why (`error`, with `detail` for debugging).
+- The lite member starts its end only while it dials the hub through it, so at home it sends
+  nothing to the hub's addresses away from home. It accepts an offer only from a full
+  member, starts the handshake at once, tries the next endpoint after 10 s without an answer,
+  and runs TCP inside the tunnel with an MTU of 1280, so no packet is fragmented on the way.
 
 ## 12. Remote invitations
 

@@ -48,6 +48,8 @@ struct AddDeviceView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
+            // The Home screen's last line is not this sheet's, as on Android.
+            .onAppear { model.message = nil }
             .onDisappear { adding?.cancel() }
         }
     }

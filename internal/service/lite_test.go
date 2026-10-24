@@ -72,7 +72,7 @@ func TestLiteNotDialed(t *testing.T) {
 }
 
 // startLite runs the lite member (Rust, lite/) with the state in
-// dir; it is stopped at the end of the test.
+// dir; it is stopped by stop or at the end of the test.
 func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 	t.Helper()
 	s := &testService{name: "lite", dir: dir, socket: filepath.Join(dir, "c.sock")}
@@ -81,17 +81,13 @@ func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-	t.Cleanup(func() {
+	s.done = make(chan error, 1)
+	go func() { s.done <- cmd.Wait() }()
+	s.cancel = func() {
 		cmd.Process.Signal(os.Interrupt)
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			cmd.Process.Kill()
-			<-exited
-		}
-	})
+		time.AfterFunc(5*time.Second, func() { cmd.Process.Kill() })
+	}
+	t.Cleanup(s.stop)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if c, err := control.Dial(s.socket); err == nil {
@@ -99,7 +95,8 @@ func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 			return s
 		}
 		select {
-		case err := <-exited:
+		case err := <-s.done:
+			s.cancel = nil
 			t.Fatalf("the lite member ended at the start: %v", err)
 		default:
 		}
@@ -225,23 +222,11 @@ func dialJoiner(t *testing.T, dir, qr string) *pair.Result {
 	return res
 }
 
-// TestLiteMember runs the lite member among Go members: it joins with the
-// code of cbb pair, gets no CA keys, is listed as a lite device and syncs
-// both ways. (Joining by the phone's QR code, where the phone dials the
-// lite member, is covered by the phone kits' tests.) CBB_LITE names the
-// lite member's binary (cargo build in lite/).
-func TestLiteMember(t *testing.T) {
-	bin := os.Getenv("CBB_LITE")
-	if bin == "" {
-		t.Skip("CBB_LITE is not set")
-	}
-	var h hub
-	pi := startService(t, &h, "pi")
-	laptop := startService(t, &h, "laptop")
-	pairWith(t, pi, laptop)
-
-	// cbb pair on pi shows a code; cbb join -code on the lite member reads it from
-	// standard input and joins at pi's address.
+// joinLite has the lite member join pi's group: cbb pair on pi shows a
+// code, and cbb join -code on the lite member reads it from standard input
+// and joins at pi's address. It returns the lite member's state directory.
+func joinLite(t *testing.T, bin string, pi *testService) string {
+	t.Helper()
 	c, code := openWindow(t, pi)
 	defer c.Close()
 	pa, _ := pi.addrs()
@@ -263,6 +248,26 @@ func TestLiteMember(t *testing.T) {
 	if strings.Contains(string(raw), "_key") {
 		t.Error("the lite member saved a CA key")
 	}
+	return dir
+}
+
+// TestLiteMember runs the lite member among Go members: it joins with the
+// code of cbb pair, gets no CA keys, is listed as a lite device and syncs
+// both ways. (Joining by the phone's QR code, where the phone dials the
+// lite member, is covered by the phone kits' tests.) CBB_LITE names the
+// lite member's binary (cargo build in lite/).
+func TestLiteMember(t *testing.T) {
+	bin := os.Getenv("CBB_LITE")
+	if bin == "" {
+		t.Skip("CBB_LITE is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	laptop := startService(t, &h, "laptop")
+	pairWith(t, pi, laptop)
+
+	dir := joinLite(t, bin, pi)
+	pa, _ := pi.addrs()
 
 	// The lite member dials the computers, a Mac too, and syncs with them.
 	mac := startRole(t, &h, "mac", group.OSMacOS)
@@ -356,4 +361,76 @@ func TestLiteMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the Mac has the lite text", func() bool { return mac.paste(t) == "back from the lite member" })
+}
+
+// TestLiteMemberAway: once sync away from home is on, the lite member
+// offers its tunnel key to the group's hub at home and keeps the hub's
+// offer; away from home it reaches the hub only through the WireGuard
+// tunnel (GotaTun and smoltcp in the lite member, the Go hub's netstack),
+// and syncs there.
+func TestLiteMemberAway(t *testing.T) {
+	bin := os.Getenv("CBB_LITE")
+	if bin == "" {
+		t.Skip("CBB_LITE is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	dir := joinLite(t, bin, pi)
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	port := freeUDP(t)
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	piID := pi.status(t).Device
+
+	// At home: off until the user agrees, then the hub's offer comes.
+	pa, _ := pi.addrs()
+	home := startLite(t, bin, dir, "-no-mdns", "-no-listen", "-peer", pa)
+	waitFor(t, "the lite member at home", func() bool {
+		st, err := home.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil && len(st.Status.Peers) == 1
+	})
+	if a := home.status(t).Away; a != nil {
+		t.Fatalf("sync away from home is on before it was turned on: %+v", a)
+	}
+	if _, err := home.do(t, control.Header{Op: control.OpAway, Name: "on"}, ""); err == nil || !strings.Contains(err.Error(), "consent") {
+		t.Errorf("turning it on without consent: %v", err)
+	}
+	if _, err := home.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the lite member keeps the hub's offer", func() bool {
+		a := home.status(t).Away
+		return a != nil && a.HubDevice == piID && !a.Through
+	})
+	home.stop()
+
+	// Away: no address of the hub but its tunnel's.
+	away := startLite(t, bin, dir, "-no-mdns", "-no-listen")
+	waitUpTo(t, 30*time.Second, "the lite member reaches the hub through the tunnel", func() bool {
+		m, err := away.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil && m.Status.Away != nil && m.Status.Away.Through && len(m.Status.Peers) == 1
+	})
+	if _, err := away.do(t, control.Header{Op: control.OpCopy}, "from the lite member, away"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the hub has it", func() bool { return pi.paste(t) == "from the lite member, away" })
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "to the lite member, away"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the lite member has it", func() bool { return away.paste(t) == "to the lite member, away" })
+
+	// Off: the key is gone, and so is the connection through the tunnel.
+	if _, err := away.do(t, control.Header{Op: control.OpAway, Name: "off"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tunnel.json")); !os.IsNotExist(err) {
+		t.Errorf("tunnel.json after cbb global off: %v", err)
+	}
+	waitFor(t, "the lite member syncs at home only", func() bool {
+		st := away.status(t)
+		return st.Away == nil && len(st.Peers) == 0
+	})
 }

@@ -36,8 +36,8 @@ The order may change.
     provider; the lite member on Linux uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
 12. **Partly: built between computers (`cbb global`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
-    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb global` is to be renamed `cbb global`, with
-    the same subcommands: it turns on sync over the internet, beyond the home network.
+    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). The lite member on Linux
+    takes part as a client, with plain WireGuard (`cbb global on` there).
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
 14. **Started: `cbb next` on the lite member and the `.cbb` dot command (`apps/zxnext`) are written, not yet
     run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
@@ -111,7 +111,7 @@ The order may change.
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
 21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
-    member and the natural hub, `cbb-lite` for small routers. See "OpenWrt routers" below.
+    member and the natural hub, the lite member for small routers. See "OpenWrt routers" below.
 22. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
     and notarized, that carries the service and a Network Extension (a content filter): the
     system then keeps the service on the home network until sync away from home is on, and
@@ -130,6 +130,13 @@ The order may change.
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
+26. **Planned for 0.5.** Watches: the Apple Watch, and Wear OS after it, show the group's
+    events, turn sync away from home on and off, and act at once on a stolen device with an
+    admin key of their own. The root stays on the phone. See "Watches" below.
+27. **Planned for 0.5, after remote paste (item 18).** Quick actions: one button in the apps,
+    on the watch or in `cbb` runs an action on a member, such as reboot or lock the screen,
+    from a few presets and the user's own, always defined on the member itself. See "Quick
+    actions" below.
 
 ## OpenWrt routers
 
@@ -153,16 +160,16 @@ infrastructure, not a place to copy and paste:
 
 ### Full or lite
 
-| | `cbb` (Go, full member) | `cbb-lite` (Rust) |
+| | `cbb` (Go, full member) | the lite member's `cbb` (Rust) |
 |---|---|---|
 | Size of the binary | about 25 MB stripped (6.4 MB compressed with xz) for arm64; armv7, mips and mipsle the same order | 1.7 MB for arm64 (static musl) |
 | Routers it fits | 128 MB of flash or more, or eMMC (for example the Banana Pi BPI-R4); 256 MB of RAM or more | almost any OpenWrt router, 16 MB of flash and 64 MB of RAM |
 | Hub | yes | no: lite members are clients only |
-| Away from home | yes, as hub or client, with obfuscation and VLESS | not yet (GotaTun, item 12); never AmneziaWG |
+| Away from home | yes, as hub or client, with obfuscation and VLESS | as a client, with plain WireGuard (GotaTun); never AmneziaWG |
 | Builds | Go cross-compiles statically for every OpenWrt CPU: aarch64, armv7, mips and mipsle (softfloat), x86-64; arm64 and armv7 are in every release already | aarch64, armv7, x86-64 with stable Rust; mips and mipsle are Tier 3 in Rust (nightly and `-Zbuild-std`) |
 
 Recommendation: the full service first, aimed at routers with room for it, because the hub
-is what a router adds that nothing else does; `cbb-lite` afterwards for small routers, as
+is what a router adds that nothing else does; the lite member afterwards for small routers, as
 packaging around what exists.
 
 ### What OpenWrt needs that other Linux does not
@@ -210,7 +217,7 @@ One pull request each, smaller ones together:
    closes it; the bench gets the router as a device under test with cases for it in
    [testbench.md](testbench.md).
 4. `.apk` and `.ipk` packages from the OpenWrt SDK in CI, attached to each release.
-5. `cbb-lite` on OpenWrt: its procd script and installer path, builds for armv7 and, with
+5. The lite member on OpenWrt: its procd script and installer path, builds for armv7 and, with
    nightly Rust, mips and mipsle.
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
@@ -416,7 +423,8 @@ separate permission (D-59), never on sync.
   Entware's init scripts.
 - **WSL and Termux** need nothing of their own: the Windows service and the Android app
   cover them.
-- **Not reachable**: Kindle e-readers and smart watches take neither apps nor keyboards.
+- **Not reachable**: Kindle e-readers take neither apps nor keyboards; watches have apps of
+  their own (item 26) but nothing worth typing into.
 
 ### Steps
 
@@ -429,6 +437,122 @@ One pull request each, smaller ones together:
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
    and the serial console.
 5. The iPad build of the iPhone app.
+
+## Watches
+
+Planned for 0.5. Decided on 2026-10-24: a watch is never the group's root, but it carries
+notifications, a switch for sync away from home and the emergency actions, with an admin key
+of its own.
+
+### Why not the root
+
+The Apple Watch has a Secure Enclave and CryptoKit makes P-256 keys in it, so it could hold
+the root key. But watchOS gives an ordinary app no sockets: no TCP or TLS to the members, no
+Bonjour, no listening, only `URLSession` and WatchConnectivity to its paired iPhone (Apple's
+TN3135; low-level networking is for audio streaming apps only). A watch therefore always
+works through its iPhone and cannot be a member. A root key on the watch with the iPhone as
+the carrier would keep the root safe from a compromised phone, but the root signs rarely and
+the iPhone's key already sits in the Secure Enclave behind Face ID, so the group stays as it is.
+
+### What the watch does
+
+1. **Notifications.** The phone app notifies of the group's events, and iOS and Wear OS show
+   them on the watch: a device added or removed, an admin made, frozen or unfrozen, the group
+   taken over, a certificate close to expiry that did not renew, the hub unreachable while
+   away from home, a remote paste received or refused. Each is a setting.
+2. **Sync away from home.** A switch on the watch turns the phone's own away mode on and off,
+   as the app's switch does (`AwayFromHome`, `cbbtun`).
+3. **Emergency actions** with the watch's own admin key: freeze an admin computer, remove an
+   ordinary device, turn remote paste off on a member, turn sync away from home **off** on a
+   member. The watch shows what it signs and asks for a tap; the phone only carries the
+   record into the group.
+
+### The watch's admin key
+
+A key in the watch's Secure Enclave (on Wear OS, the watch's Keystore), which the root
+certifies as an admin CA once, as it does an admin phone. The watch's device record has its
+own role, `watch`. A watch on the wrist stays unlocked without asking for Face ID or a
+fingerprint at each signature, so it signs the emergency actions above and nothing else: it
+freezes admin computers (D-60) and removes ordinary devices, but never removes an admin,
+makes one, admits devices, renews certificates or takes the group over. Any admin can freeze
+a watch like an admin computer; removing one takes the root or an admin phone.
+Every receiver checks these limits, in Go, Rust, Swift and Kotlin, with interop vectors.
+
+Turning sync away from home on stays a decision on each device (D-45); a signed command only
+turns it off, as any admin turns remote paste off (D-59).
+
+### Delivery
+
+On Android the foreground service receives the events by itself, so the watch hears of them
+at once. On the iPhone the app has no background sync and learns of events only when it
+syncs, so a notification may come late. To make it prompt, the hub could wake the phone with
+an Apple push whose content is encrypted to the phone's key and decrypted only on the phone
+(a Notification Service Extension); Apple would see that a push was sent, and when, but
+nothing in it. Whether to use Apple's push service at all is the owner's decision, made
+before step 3; without it, iPhone notifications come with the next sync.
+
+### Steps
+
+One pull request each, smaller ones together:
+
+1. Notifications for the group's events in both phone apps, with a setting each.
+2. The watch apps (watchOS, then Wear OS): the events and the away switch.
+3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
+   Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
+   that turns sync away from home off on a member.
+4. Emergency actions on the watch, and the quick actions of item 27.
+5. If the owner agrees, prompt iPhone notifications through an encrypted Apple push.
+
+Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
+waking the phone app in the background long enough to send a record, and the delay of
+notifications.
+
+## Quick actions
+
+Planned for 0.5, after remote paste (item 18), whose signed commands and opt-in it reuses.
+
+One button runs an action on a member: in the phone apps, on the watch (item 26), or with
+`cbb run <device> <action>`. Running commands on another machine is the most dangerous thing
+the group could do, so the rule is that **the network never carries a command**: every
+action is defined on the member that runs it, and the button sends only its name.
+
+### Presets and the user's own
+
+- **Presets**: lock the screen, sleep, reboot, shut down, cancel a pending shutdown, restart
+  the service. Each is off until the device's own user turns it on, as with remote paste
+  (D-59).
+- **The user's own**: added on the device itself, with a name and a command line,
+  `cbb action add <name> -- <command>` or in the settings of the Mac and Windows apps. The
+  command takes no arguments from the network, so nothing a sender writes reaches a shell.
+  It runs as the desktop user; an action that needs root, like reboot, gets exactly that
+  right when it is added (a sudoers or polkit rule on Linux, the matching rights on a Mac and
+  on Windows), after a prompt that lists what it grants, as the firewall prompt does.
+- The member lists its actions in its hello, so the apps and the watch show them as buttons.
+  A preset may ask for a second tap (reboot, shut down).
+
+### Checks on the member
+
+The command is signed by the sender's admin key and checked by the member, as a remote paste
+is: the action exists and is on, the signer is an admin that is neither removed nor frozen,
+the signer's kind is allowed for that action (each action lists the kinds that may run it:
+the root, admin phones, watches, admin computers; all admins by default), and the command is
+fresh and not a replay. The member answers with the exit status only; it sends output back
+only for an action whose user allowed that. Any admin turns quick actions off on any member
+with a signed command, and the member logs every action it runs and who asked.
+
+### Where
+
+Linux, Mac and Windows run actions; lite members run the presets reboot and restart the
+service (the ESP32 restarts); the phones send only, since iOS runs nothing for another
+device and Android would need more rights than the app should hold.
+
+### Steps
+
+1. Actions on the computers: the presets, `cbb action`, the rights prompt, the signed
+   command and its checks in Go, with interop vectors for Rust, Swift and Kotlin.
+2. The buttons in the phone apps and `cbb run`.
+3. The presets on the lite member.
+4. The buttons on the watch (item 26, step 4).
 
 ## Device keys in hardware
 

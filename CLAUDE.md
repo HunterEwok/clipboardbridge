@@ -71,7 +71,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
   C6 (RISC-V) and the S3 (Xtensa); `lite/src` adds the files, the sockets around the
-  core's TLS, mDNS and the control socket.
+  core's TLS, mDNS, the control socket and the tunnel to the hub (`tunnel.rs`, `away.rs`:
+  GotaTun's WireGuard and smoltcp's TCP behind a loopback port; GotaTun's AEAD comes from
+  `lite/ring-shim`, a stand-in for ring on RustCrypto, patched in by `lite/Cargo.toml`).
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
   until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`
@@ -107,13 +109,14 @@ the interop vectors and an e2e test among Go members, not yet run on a real Pi; 
 Android app (`apps/android`) does what the iPhone app does, receives copies by itself in a
 foreground service and sends them with the accessibility service or one tap, and each
 release carries its signed APK (docs/apps.md); Homebrew (`hunterewok/tap`); sync away
-from home between computers, through a hub's WireGuard tunnel (`cbb global`).
+from home between computers and for the lite member on Linux, through a hub's WireGuard
+tunnel (`cbb global`; `TestLiteMemberAway`).
 
 Next steps, roughly in order:
 
-1. TestFlight (needs the Apple account), a signed macOS `.pkg`, sync away from home for
-   the phones and the lite member (it works between computers: `cbb global`, docs/protocol.md
-   section 11), the lite member on the ESP32 (see docs/roadmap.md).
+1. TestFlight (needs the Apple account), a signed macOS `.pkg`, remote invitations on the
+   phones (sync away from home works between computers, on both phones and on the lite
+   member: docs/protocol.md section 11), the lite member on the ESP32 (see docs/roadmap.md).
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
 tested on a real PC.

@@ -12,7 +12,7 @@
 //! the TLS state under a lock; only the reader waits on the socket without
 //! it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
@@ -26,6 +26,7 @@ use crate::clip::{Engine, Event, Hello, Kind, Outcome, Via};
 use crate::error::{Context, Error, Result};
 use crate::identity::Identity;
 use crate::identity::Stored as _;
+use crate::pair::home_address;
 use crate::records::Stored as _;
 use crate::records::{Record, Records};
 use crate::tls;
@@ -61,6 +62,9 @@ pub struct Peer {
     pub os: String,
 }
 
+/// Called with a tunnel offer and the device that sent it.
+pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value) + Send + Sync>;
+
 /// The lite member's set of connections.
 pub struct Node {
     ident: RwLock<Arc<Identity>>,
@@ -72,6 +76,12 @@ pub struct Node {
     on_write: Box<dyn Fn(WriteReq) + Send + Sync>,
     log: Arc<dyn Fn(&str) + Send + Sync>,
     closed: AtomicBool,
+    /// The tunnel key the hellos offer the group's hub; None while sync away
+    /// from home is off.
+    tunnel_key: Arc<RwLock<Option<Vec<u8>>>>,
+    on_tunnel: RwLock<Option<OnTunnel>>,
+    /// The members discovery finds on the home network now.
+    home: Mutex<HashSet<DeviceId>>,
 }
 
 enum Out {
@@ -112,7 +122,41 @@ impl Node {
             on_write,
             log,
             closed: AtomicBool::new(false),
+            tunnel_key: Arc::new(RwLock::new(None)),
+            on_tunnel: RwLock::new(None),
+            home: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Sets the tunnel key the hellos offer from now on, and connects to
+    /// the full members again, so that the group's hub gets it.
+    pub fn set_tunnel_key(&self, key: Option<Vec<u8>>) {
+        *self.tunnel_key.write().unwrap() = key;
+        for c in self.conns.lock().unwrap().values() {
+            if c.peer.lock().unwrap().as_ref().is_some_and(|(role, _, _)| role == "full") {
+                c.close(true);
+            }
+        }
+    }
+
+    /// Sets what is called with the tunnel offers of full members.
+    pub fn on_tunnel(&self, f: OnTunnel) {
+        *self.on_tunnel.write().unwrap() = Some(f);
+    }
+
+    /// Records whether discovery finds the device on the home network.
+    pub fn found(&self, id: &DeviceId, here: bool) {
+        let mut home = self.home.lock().unwrap();
+        if here {
+            home.insert(id.clone());
+        } else {
+            home.remove(id);
+        }
+    }
+
+    /// Reports whether discovery finds the device on the home network now.
+    pub fn at_home(&self, id: &DeviceId) -> bool {
+        self.home.lock().unwrap().contains(id)
     }
 
     pub fn identity(&self) -> Arc<Identity> {
@@ -223,6 +267,13 @@ impl Node {
         if self.is_closed() {
             return Err(Error::msg("the service is stopping"));
         }
+        // Away from home the member protocol goes only through the group's
+        // tunnel, whose port is on the loopback address.
+        if !home_address(addr.ip()) {
+            return Err(Error::msg(format!(
+                "{addr} is not on the home network; away from home this device reaches the group only through its tunnel (cbb global on)"
+            )));
+        }
         let sock = TcpStream::connect_timeout(&addr, HANDSHAKE_TIMEOUT).context(format!("cannot connect to {addr}"))?;
         let _ = sock.set_nodelay(true);
         sock.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).context("the connection broke")?;
@@ -316,8 +367,9 @@ impl Node {
             let c = c.clone();
             let records = self.records.clone();
             let name = self.name.clone();
+            let key = self.tunnel_key.clone();
             let log = self.log.clone();
-            std::thread::spawn(move || writer(&c, rx, &records, &name, &*log))
+            std::thread::spawn(move || writer(&c, rx, &records, &name, &key, &*log))
         };
         let res = self.reader(&c);
         c.close(false);
@@ -383,13 +435,19 @@ impl Node {
                     }
                 }
                 "cert" => {
-                    if let Some(cert) = m.cert {
-                        if let Err(e) = self.renewed(&cert, m.issuer.as_deref()) {
-                            self.logf(&format!("cbb: a renewed certificate from {}: {}", c.id, e.for_log()));
-                        }
+                    if let Some(cert) = m.cert
+                        && let Err(e) = self.renewed(&cert, m.issuer.as_deref())
+                    {
+                        self.logf(&format!("cbb: a renewed certificate from {}: {}", c.id, e.for_log()));
                     }
                 }
                 "records" if !m.records.is_empty() => self.add_records(&m.records, &c.id),
+                // Only a full member can be the group's hub.
+                "tunnel" if c.peer.lock().unwrap().as_ref().is_some_and(|(role, _, _)| role == "full") => {
+                    if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
+                        f(&c.id, v);
+                    }
+                }
                 "bye" => return Ok(()),
                 _ => {} // a ping, or a message from a newer version
             }
@@ -511,14 +569,21 @@ impl Read for TlsReader<'_> {
     }
 }
 
-fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &str, log: &(dyn Fn(&str) + Send + Sync)) {
+fn writer(
+    c: &Conn,
+    rx: mpsc::Receiver<Out>,
+    records: &Mutex<Records>,
+    name: &str,
+    key: &RwLock<Option<Vec<u8>>>,
+    log: &(dyn Fn(&str) + Send + Sync),
+) {
     let message = |o: Out| -> Option<Message> {
         match o {
             Out::Hello(mut h, queued) => {
                 if let Some(ev) = h.current.as_mut() {
                     ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
                 }
-                Some(wire::hello(&h, records.lock().unwrap().digest(), name, "linux"))
+                Some(wire::hello(&h, records.lock().unwrap().digest(), name, "linux", key.read().unwrap().as_deref()))
             }
             Out::Event(mut ev, queued) => {
                 ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
@@ -553,10 +618,10 @@ fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &st
             if c.bye.load(Ordering::SeqCst) {
                 // Send what is still queued, then the goodbye.
                 while let Ok(o) = rx.try_recv() {
-                    if let Some(m) = message(o) {
-                        if !write(&m) {
-                            return;
-                        }
+                    if let Some(m) = message(o)
+                        && !write(&m)
+                    {
+                        return;
                     }
                 }
                 write(&wire::bare("bye"));
@@ -566,10 +631,10 @@ fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &st
         }
         match rx.recv_timeout(PING_EVERY) {
             Ok(o) => {
-                if let Some(m) = message(o) {
-                    if !write(&m) {
-                        return;
-                    }
+                if let Some(m) = message(o)
+                    && !write(&m)
+                {
+                    return;
                 }
             }
             Err(RecvTimeoutError::Timeout) => {
