@@ -117,7 +117,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader, 
 		fail(c, errors.New("this member does not answer for clipboardbridge.local; run cbb pair -phone on the member that cbb status shows as holding it"))
 		return
 	case busy:
-		fail(c, errors.New("an iPhone pairing window is already open"))
+		fail(c, errors.New("an iPhone pairing window is already open: stop the cbb pair -phone that opened it (Ctrl+C in its terminal), or wait until it closes"))
 		return
 	}
 	if newToken {

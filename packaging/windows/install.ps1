@@ -267,7 +267,8 @@ $step = 'allowing clipboardbridge in Windows Firewall'
 # Every rule carries the group clipboardbridge, so these lines and
 # uninstall.ps1 remove exactly the rules added here. The outbound rules
 # and the hub's port (clipboardbridge-hub) stay as cbb global left them.
-Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' -and $_.Name -ne "$name-hub" } | Remove-NetFirewallRule
+$ours = @(Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' -and $_.Name -ne "$name-hub" })
+$ours | Remove-NetFirewallRule
 $on = @(Get-NetFirewallProfile | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { $_.Name })
 $fwState = if ($on.Count -gt 0) { "on for $($on -join ', ')" } else { 'off' }
 # With -HomeCgnat on, 100.64.0.0/10 is the home network too.
@@ -289,6 +290,13 @@ if ($answer -eq 'ask') {
 	$kept = Get-ItemProperty -Path $serviceKey -Name FirewallAnswer -ErrorAction SilentlyContinue
 	$answer = if ($kept) { $kept.FirewallAnswer } else { '' }
 	$how = ' (as answered before)'
+	# An installation from before the question added its rules without
+	# one: they count as a Yes, kept from now on, so that an update never
+	# removes rules without an answer.
+	if (-not $kept -and $ours.Count -gt 0) {
+		$answer = 'yes'
+		$how = ' (kept from an earlier installation)'
+	}
 }
 if ($answer -notin @('yes', 'no', 'express')) {
 	Write-Host 'With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall.'
@@ -335,7 +343,6 @@ $step = 'keeping the service on the home network'
 # every run writes the home-only rule again for the current setting.
 $granted = Get-ItemProperty -Path $serviceKey -Name AwayAllow -ErrorAction SilentlyContinue
 $rule = Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue
-$regrant = $false
 if (-not $rule -or -not $granted) {
 	$middle = if ($cgnat) { @('11.0.0.0-100.63.255.255', '100.128.0.0-126.255.255.255') } else { @('11.0.0.0-126.255.255.255') }
 	$outside = @('0.0.0.0-9.255.255.255') + $middle + @(
@@ -348,11 +355,10 @@ if (-not $rule -or -not $granted) {
 	New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
 		-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any `
 		-Description 'The clipboardbridge service reaches only the home network and its group''s servers; cbb global changes this rule.' | Out-Null
-} elseif ($cgnat -ne (([string]$granted.AwayAllow -split ' ') -contains 'cgnat')) {
-	# cbb global's rule was written for the other setting: cbb global
-	# allow writes it again once the service answers.
-	$regrant = $true
 }
+# Whatever the rule allowed before (another -HomeCgnat, an earlier version
+# that lifted it for cbb global on), cbb global allow writes it for what the
+# service asks for now, once the service answers.
 
 $step = 'starting the service'
 Start-Service -Name $name
@@ -411,12 +417,10 @@ for ($i = 0; $i -lt 20; $i++) {
 if (-not $ok) {
 	throw "the service does not answer; its log is $(Join-Path $dataDir 'logs\service.log')"
 }
-if ($regrant) {
-	$step = 'writing the outbound rule for -HomeCgnat'
-	& $cbb global allow
-	if ($LASTEXITCODE -ne 0) {
-		throw "cbb global allow exited with $LASTEXITCODE"
-	}
+$step = 'writing the outbound rule for what the service reaches now'
+& $cbb global allow
+if ($LASTEXITCODE -ne 0) {
+	throw "cbb global allow exited with $LASTEXITCODE"
 }
 
 Write-Host "clipboardbridge $v is running on TCP port $Port; $user may use it."

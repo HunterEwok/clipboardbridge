@@ -295,7 +295,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 	s.mu.Unlock()
 	switch {
 	case busy:
-		return nil, nil, nil, errors.New("a pairing window is already open")
+		return nil, nil, nil, errors.New("a pairing window is already open: stop the cbb pair that opened it (Ctrl+C in its terminal), or wait until it closes, 5 minutes after it opened")
 	case joining:
 		return nil, nil, nil, errors.New("this device is joining a group")
 	}

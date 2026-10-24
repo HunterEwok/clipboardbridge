@@ -489,13 +489,22 @@ jobs:
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
           }
-          # Without a console nobody answers, which adds no rules and keeps no answer; the
-          # answer get.ps1's express run kept goes first.
-          Remove-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name FirewallAnswer -ErrorAction SilentlyContinue
+          $svcKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge'
+          # An update without a console over an installation from before the question, which
+          # added its rules and kept no answer: the rules count as a Yes and stay, at the new port.
+          Remove-ItemProperty $svcKey -Name FirewallAnswer -ErrorAction SilentlyContinue
           # cbb install runs the installer beside it, as after winget.
           & "$env:RUNNER_TEMP\unpacked\clipboardbridge\cbb.exe" install -Port 9000
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          check 'TCP 9000, UDP 5353'
+          if ((Get-ItemProperty $svcKey -Name FirewallAnswer).FirewallAnswer -ne 'yes') { throw 'the earlier rules were not kept as a Yes' }
+          # Without a console and without rules nobody answers, which adds none and keeps no answer.
+          Get-NetFirewallRule -Group clipboardbridge -Direction Inbound | Where-Object { $_.Name -ne 'clipboardbridge-hub' } | Remove-NetFirewallRule
+          Remove-ItemProperty $svcKey -Name FirewallAnswer
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
+          if (Get-ItemProperty $svcKey -Name FirewallAnswer -ErrorAction SilentlyContinue) { throw 'an answer was kept without one' }
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Express
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check 'TCP 9000, UDP 5353'

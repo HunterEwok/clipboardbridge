@@ -275,6 +275,19 @@ fi
 systemctl daemon-reload
 systemctl enable clipboardbridge.service
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
+# A limit that cbb global wrote, perhaps by an earlier version (which let
+# the service reach every address), is brought in line with what the
+# service asks for now, once it answers.
+if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away.conf ]; then
+	i=0
+	until /usr/local/bin/cbb status >/dev/null 2>&1 || [ $i -ge 40 ]; do
+		sleep 0.25
+		i=$((i + 1))
+	done
+	if ! /usr/local/bin/cbb global allow; then
+		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
+	fi
+fi
 echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
 if [ "$kind" = lite ]; then
 	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."

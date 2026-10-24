@@ -167,6 +167,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- An update without a terminal over an installation from before the firewall question no
+  longer removes the firewall rules it had added: rules that are there without a kept answer
+  count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing
+  is added or removed. `cbb global` returns only once a service it restarted answers again.
+- An update no longer leaves an earlier version's limit in place: the Linux drop-in that let a
+  member with `cbb global on` reach every address, or a Windows outbound rule written for
+  other servers. The installers run `cbb global allow` once the service answers, and
+  `cbb status` names such a limit instead of "the home network only". `cbb global on` says
+  when the group's servers are not known yet and `sudo cbb global allow` is needed once
+  they are. A second `cbb pair` says how to close the window that is still open.
 - The phones' one button no longer puts the computers' older text over a clipboard it could
   not read (paste not allowed, or not text): it leaves the clipboard as it is and says so,
   with the details in debug builds.
