@@ -8,7 +8,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	mrand "math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
@@ -443,7 +443,7 @@ func TestAwayThroughRelay(t *testing.T) {
 func freeUDP(t *testing.T) int {
 	t.Helper()
 	for range 100 {
-		port := 20000 + rand.IntN(10000)
+		port := 20000 + mrand.IntN(10000)
 		c, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
 		if err != nil {
 			continue

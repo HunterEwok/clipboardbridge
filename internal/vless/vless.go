@@ -43,6 +43,8 @@ import (
 	_ "github.com/xtls/xray-core/app/dispatcher"
 	_ "github.com/xtls/xray-core/app/proxyman/inbound"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
+	_ "github.com/xtls/xray-core/app/router"
+	_ "github.com/xtls/xray-core/proxy/blackhole"
 	_ "github.com/xtls/xray-core/proxy/dokodemo"
 	_ "github.com/xtls/xray-core/proxy/freedom"
 	_ "github.com/xtls/xray-core/proxy/vless/inbound"
@@ -127,10 +129,17 @@ func Listen(cfg ServerConfig) (*Server, error) {
 				},
 			},
 		}},
-		"outbounds": []any{map[string]any{
-			"protocol": "freedom",
-			// Whatever a client asks for, its packets go to the forwarder.
-			"settings": map[string]any{"redirect": cfg.To.String()},
+		"outbounds": []any{
+			map[string]any{
+				"protocol": "freedom",
+				// Whatever a client asks for, its packets go to the forwarder.
+				"settings": map[string]any{"redirect": cfg.To.String()},
+			},
+			map[string]any{"tag": "block", "protocol": "blackhole"},
+		},
+		// Only UDP: a TCP stream would reach the forwarder's registrations.
+		"routing": map[string]any{"rules": []any{
+			map[string]any{"type": "field", "network": "tcp", "outboundTag": "block"},
 		}},
 	})
 	if err != nil {
