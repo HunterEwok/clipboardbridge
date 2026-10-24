@@ -230,10 +230,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipboardbridge-embassy"
+version = "0.1.0"
+dependencies = [
+ "clipboardbridge-core",
+ "embassy-net",
+ "embassy-time",
+ "embedded-io-async 0.7.0",
+]
+
+[[package]]
 name = "clipboardbridge-esp32"
 version = "0.1.0"
 dependencies = [
  "clipboardbridge-core",
+ "clipboardbridge-embassy",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",

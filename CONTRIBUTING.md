@@ -44,6 +44,10 @@ The maintainer follows these rules; they are written down to keep the history co
   *Unreleased*.
 - **Go code.** `gofmt`, `go vet`, `staticcheck` and `govulncheck` pass, and tests cover the
   change.
+- **Installers.** Every platform has the same three: a one-line `get` that downloads a
+  release and checks it against `SHA256SUMS`, an `install` for an unpacked archive, and an
+  `uninstall` that the install leaves on the machine. `get.sh` serves Linux and macOS,
+  `get.ps1` Windows; CI runs each of them.
 - **No secrets.** No tokens, keys, real addresses or device names in the repository.
   GitHub secret scanning with push protection is enabled.
 
@@ -82,6 +86,15 @@ cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- 
 cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS
 cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
   go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
+```
+
+The Nano ESP32's network code on Linux (`lite/embassy`, root for the TAP interface):
+
+```sh
+sudo ip tuntap add name tap0 mode tap user "$USER" && sudo ip addr add 192.168.69.1/24 dev tap0 \
+  && sudo ip link set tap0 up
+cd lite && cargo build --release -p clipboardbridge-embassy --features host && cd .. && \
+  CBB_ESP32_ON_LINUX=$PWD/lite/target/release/esp32-on-linux go test ./internal/service -run TestEmbassyJoiner
 ```
 
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has

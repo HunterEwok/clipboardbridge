@@ -36,7 +36,8 @@ The order may change.
     provider; `cbb-lite` uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
 12. **Partly: built between computers (`cbb away`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
-    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home).
+    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb away` is to be renamed `cbb global`, with
+    the same subcommands: it turns on sync over the internet, beyond the home network.
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
 14. **Started: `cbb-lite next` and the `.cbb` dot command (`apps/zxnext`) are written, not yet
     run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
@@ -62,7 +63,8 @@ The order may change.
 15. **Started: the firmware (`lite/esp32`) builds for the Nano ESP32, keeps its settings in
     flash, joins the Wi-Fi network set on its USB console, joins a group by the phone and
     passes its self-test (keys, certificates, a TLS 1.3 handshake on the chip) in QEMU;
-    sync and the USB keyboard are next.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
+    its network code (`lite/embassy`) also runs on Linux over a TAP interface, where CI
+    has a Go member admit it by the phone; sync and the USB keyboard are next.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
     `lite/core` as the other ESP32 boards, with the member protocol and TLS 1.3 on the
     board itself. It ships as a ready firmware built from our Rust code, flashed over USB
     with one command; a library for writing one's own Arduino sketches on top of it may

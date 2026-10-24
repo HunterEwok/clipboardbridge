@@ -37,7 +37,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   last good copy (`cbb_core::store`); its `selftest` makes keys and
   certificates with the chip's true random number generator and runs a TLS 1.3 handshake
   of the protocol core on the chip. CI types on the console and runs the self-test in
-  Espressif's QEMU. Pairing and syncing come next; not yet run on a real board.
+  Espressif's QEMU. Syncing comes next; not yet run on a real board.
+- The Nano ESP32's network code on Linux: the pairing moved to the crate `lite/embassy`,
+  which the firmware and the program `esp32-on-linux` share; `esp32-on-linux` runs it on
+  embassy-net over a TAP interface instead of the chip's Wi-Fi, and CI's
+  `TestEmbassyJoiner` has a Go member admit it by the phone, as the board joins.
 - A forwarder for hubs that the computers cannot reach directly, for example behind
   carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
   `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
@@ -71,7 +75,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   state: in no group it joins one (it shows a QR code for the phone and also takes a
   typed code, `cbb pair -code` reads one from standard input), in a group it admits a
   device. `cbb join` is gone, and `cbb pair` no longer creates a group by itself.
-
+- One `get.sh` installs on Linux and on a Mac: it picks the archive for the system and the
+  architecture, checks it against `SHA256SUMS` and runs that system's `install.sh`. On a
+  Mac, `install.sh` keeps `uninstall.sh` in `/usr/local/share/clipboardbridge`, as on Linux,
+  so every platform has the same three: get, install and uninstall.
+- `cbb desktop` is gone: `cbb agent` links the clipboard on every desktop, the Mac's, the
+  Windows one and a Linux desktop's (Wayland or X11), and the Linux autostart entry runs it.
 - The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
   wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
   it speaks plain WireGuard, the same on the wire as before.
@@ -80,6 +89,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A data race in the tunnel's WireGuard timers when a peer stops, as when a hub closes: a
+  timer that fired at that moment cleared its state outside its lock. clipboardbridge now
+  builds with a copy of amneziawg-go that clears it under the lock
+  (`internal/third_party/amneziawg-go`).
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.

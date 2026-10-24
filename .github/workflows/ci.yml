@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -278,12 +278,12 @@ jobs:
           rel="$RUNNER_TEMP/release"
           sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
-          sudo CBB_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall
+          sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall
           systemctl is-active clipboardbridge.service
           for _ in $(seq 20); do sudo cbb status && break; sleep 0.5; done
           sudo cbb status | grep -q 'Not in a group'
           echo tampered >>"$rel/clipboardbridge-linux-amd64.tar.gz"
-          if sudo CBB_RELEASE_DIR="$rel" sh packaging/linux/get.sh --no-firewall; then
+          if sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall; then
             echo "get.sh installed an archive that does not match SHA256SUMS" >&2
             exit 1
           fi
@@ -374,6 +374,30 @@ jobs:
             exit 1
           fi
           brew uninstall clipboardbridge
+      - name: get.sh installs a release archive on a Mac and refuses a changed one
+        run: |
+          rel="$RUNNER_TEMP/release"
+          daemon=io.github.hunterewok.clipboardbridge
+          (cd "$rel" && shasum -a 256 -- *.tar.gz >SHA256SUMS)
+          sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall
+          for _ in $(seq 20); do sudo /usr/local/bin/cbb status && break; sleep 0.5; done
+          sudo /usr/local/bin/cbb status | grep -q 'Not in a group'
+          if sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --port 9000; then
+            echo "get.sh took --port on a Mac" >&2
+            exit 1
+          fi
+          echo tampered >>"$rel/clipboardbridge-darwin-arm64.tar.gz"
+          if sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall; then
+            echo "get.sh installed an archive that does not match SHA256SUMS" >&2
+            exit 1
+          fi
+          sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+          for f in /usr/local/bin/cbb /usr/local/share/clipboardbridge "/Library/LaunchDaemons/$daemon.plist"; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
 
   windows:
     name: windows installer
@@ -607,11 +631,15 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: |
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo clippy --locked -p clipboardbridge-embassy --features host --all-targets -- -D warnings
       - name: cargo test (the interop vectors in testdata/interop too)
         run: cargo test --locked --workspace
       - name: cargo build
-        run: cargo build --locked --release
+        run: |
+          cargo build --locked --release
+          cargo build --locked --release -p clipboardbridge-embassy --features host
       - name: cargo build for the Raspberry Pi
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -627,6 +655,13 @@ jobs:
       - name: the lite member joins by the phone and syncs with Go members
         working-directory: .
         run: CBB_LITE="$PWD/lite/target/release/cbb-lite" go test -race ./internal/service -run TestLiteMember -v
+      - name: the ESP32's network code joins by the phone on Linux, over a TAP interface
+        working-directory: .
+        run: |
+          sudo ip tuntap add name tap0 mode tap user "$USER"
+          sudo ip addr add 192.168.69.1/24 dev tap0
+          sudo ip link set tap0 up
+          CBB_ESP32_ON_LINUX="$PWD/lite/target/release/esp32-on-linux" go test -race ./internal/service -run TestEmbassyJoiner -v
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cbb-lite-linux-arm64
