@@ -101,7 +101,9 @@ func deviceRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x50
 
 func revokeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys, keep []KeyHash) Record {
 	t.Helper()
-	r, err := SignRecord(RecordBody{Type: RecordRevoke, Group: Tag(root), TimeMS: t0.UnixMilli(), Keys: keys, Keep: keep}, signer.Key, chain...)
+	// Each its own time: two signers' revocations of the same keys are
+	// still two records.
+	r, err := SignRecord(RecordBody{Type: RecordRevoke, Group: Tag(root), TimeMS: nextTime(), Keys: keys, Keep: keep}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
