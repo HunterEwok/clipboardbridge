@@ -70,6 +70,40 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return fixtureFor(t, admin)
+}
+
+// newLegacyFixture is newFixture in a legacy group, whose Linux and
+// Windows members get the CA keys.
+func newLegacyFixture(t *testing.T) *fixture {
+	t.Helper()
+	return fixtureFor(t, legacyGroup(t))
+}
+
+// legacyGroup is a group as computers made them before admin CAs: a group
+// CA with path length 0, whose key every Linux member holds.
+func legacyGroup(t *testing.T) *group.Identity {
+	t.Helper()
+	admin, err := group.Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := group.NewGroupCA(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin.GroupCA = *ca
+	if admin.Cert, err = ca.IssueMember(admin.ID, &admin.Key.PublicKey, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Check(); err != nil {
+		t.Fatal(err)
+	}
+	return admin
+}
+
+func fixtureFor(t *testing.T, admin *group.Identity) *fixture {
+	t.Helper()
 	clk := &clock{up: time.Hour}
 	code := NewCode()
 	w, err := Open(admin, code, Options{Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
@@ -150,7 +184,7 @@ func TestPairMac(t *testing.T) {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
 	id := out.id
-	if id.ID != j.ID || !id.Key.Equal(j.Key) || id.Admin() || id.PhoneCA != nil || id.GroupCA.Key != nil {
+	if id.ID != j.ID || !id.Key.Equal(j.Key) || id.ServesPhone() || id.PhoneCA != nil || id.GroupCA.Key != nil {
 		t.Error("a Mac got the wrong identity, or CA keys")
 	}
 	if !id.GroupCA.Cert.Equal(f.admin.GroupCA.Cert) {
@@ -183,7 +217,7 @@ func TestPairLite(t *testing.T) {
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
-	if id := out.id; id.Admin() || id.PhoneCA != nil || id.GroupCA.Key != nil {
+	if id := out.id; id.ServesPhone() || id.PhoneCA != nil || id.GroupCA.Key != nil {
 		t.Error("a lite member got CA keys")
 	}
 	res, err := f.window.Result()
@@ -196,20 +230,37 @@ func TestPairLite(t *testing.T) {
 }
 
 func TestPairLinux(t *testing.T) {
-	f := newFixture(t)
+	f := newLegacyFixture(t)
 	j := newJoiner(t, "linux")
 	out := f.attempt(t, j, f.code[:3]+" "+f.code[3:], nil)
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
 	id := out.id
-	if !id.Admin() || !id.GroupCA.Key.Equal(f.admin.GroupCA.Key) || !id.PhoneCA.Key.Equal(f.admin.PhoneCA.Key) {
+	if !id.ServesPhone() || !id.GroupCA.Key.Equal(f.admin.GroupCA.Key) || !id.PhoneCA.Key.Equal(f.admin.PhoneCA.Key) {
 		t.Fatal("a Linux member did not get the CA keys")
 	}
 	if !id.Phone.PublicKey.(*ecdsa.PublicKey).Equal(&j.Key.PublicKey) {
 		t.Error("the clipboardbridge.local certificate is not for the device's key")
 	}
 	assertMembers(t, id, f.admin)
+}
+
+// TestPairInARootGroup checks that in a group with a root a Linux or
+// Windows member gets no CA keys, only its certificate.
+func TestPairInARootGroup(t *testing.T) {
+	for _, os := range []string{"linux", "windows", "macos"} {
+		f := newFixture(t)
+		j := newJoiner(t, os)
+		out := f.attempt(t, j, f.code, nil)
+		if out.joinErr != nil || out.serveErr != nil {
+			t.Fatalf("%s: join: %v; serve: %v", os, out.joinErr, out.serveErr)
+		}
+		if id := out.id; id.ServesPhone() || id.GroupCA.Key != nil || id.PhoneCA != nil || !id.NeedsAdminKey() {
+			t.Errorf("%s: the member holds CA keys or needs no admin key", os)
+		}
+		assertMembers(t, out.id, f.admin)
+	}
 }
 
 // assertMembers checks that a and b complete a member handshake.
@@ -657,16 +708,24 @@ func TestWhatTheMemberSends(t *testing.T) {
 			t.Errorf("last frame %+v", last)
 		}
 	})
-	t.Run("a Mac gets no CA keys", func(t *testing.T) {
+	t.Run("a Linux member gets none in a group with a root", func(t *testing.T) {
 		f := newFixture(t)
+		r, _ := startRaw(t, f, Info{Name: "pi", OS: "linux"}, f.code)
+		w := r.confirm().Welcome
+		if w == nil || w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil {
+			t.Errorf("welcome to a Linux member: %+v", w)
+		}
+	})
+	t.Run("a Mac gets no CA keys", func(t *testing.T) {
+		f := newLegacyFixture(t)
 		r, _ := startRaw(t, f, Info{Name: "mac", OS: "macos"}, f.code)
 		w := r.confirm().Welcome
 		if w == nil || w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil {
 			t.Errorf("welcome to a Mac: %+v", w)
 		}
 	})
-	t.Run("a Linux member gets them", func(t *testing.T) {
-		f := newFixture(t)
+	t.Run("a Linux member gets them in a legacy group", func(t *testing.T) {
+		f := newLegacyFixture(t)
 		r, _ := startRaw(t, f, Info{Name: "pi", OS: "linux"}, f.code)
 		w := r.confirm().Welcome
 		if w == nil || w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {
@@ -760,8 +819,27 @@ func TestServerTLSRejects(t *testing.T) {
 	}
 }
 
-func TestJoinerChecksTheWelcome(t *testing.T) {
+// TestJoinerRefusesKeysFromARoot checks that a joiner refuses CA keys in a
+// group with a root, where no device gets them by joining.
+func TestJoinerRefusesKeysFromARoot(t *testing.T) {
 	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	cert, err := f.admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := f.window.welcome(cert, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := memberAD{Device: f.admin.ID, Group: group.Tag(f.admin.GroupCA.Cert)}
+	if _, err := j.identity(w, f.admin.Cert, member); err == nil {
+		t.Error("took the CA keys from the root")
+	}
+}
+
+func TestJoinerChecksTheWelcome(t *testing.T) {
+	f := newLegacyFixture(t)
 	other, err := group.Create(t0)
 	if err != nil {
 		t.Fatal(err)
@@ -907,7 +985,7 @@ func (f *fixture) dial(t *testing.T, j *Joiner, code, fp string) outcome {
 func TestDialAListeningJoiner(t *testing.T) {
 	for _, os := range []string{"macos", "linux", "windows"} {
 		t.Run(os, func(t *testing.T) {
-			f := newFixture(t)
+			f := newLegacyFixture(t)
 			j := newJoiner(t, os)
 			fp, err := j.Fingerprint()
 			if err != nil {
@@ -917,8 +995,8 @@ func TestDialAListeningJoiner(t *testing.T) {
 			if out.joinErr != nil || out.serveErr != nil || out.savedCalls != 1 {
 				t.Fatalf("join %v, serve %v, saved %d", out.joinErr, out.serveErr, out.savedCalls)
 			}
-			if err := out.id.Check(); err != nil || out.id.Admin() != (os != "macos") {
-				t.Errorf("the new identity: %v, admin %v", err, out.id.Admin())
+			if err := out.id.Check(); err != nil || out.id.ServesPhone() != (os != "macos") {
+				t.Errorf("the new identity: %v, admin %v", err, out.id.ServesPhone())
 			}
 			if res, err := f.window.Result(); err != nil || res.Device != j.ID || !res.Confirmed {
 				t.Errorf("Result = %+v, %v", res, err)
@@ -985,8 +1063,8 @@ func TestWelcomeWithoutCAKeys(t *testing.T) {
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join %v, serve %v", out.joinErr, out.serveErr)
 	}
-	if err := out.id.Check(); err != nil || out.id.Admin() || out.id.GroupCA.Key != nil || out.id.PhoneCA != nil || out.id.Phone != nil {
-		t.Errorf("the Linux device holds CA keys: %v, admin %v", err, out.id.Admin())
+	if err := out.id.Check(); err != nil || out.id.ServesPhone() || out.id.GroupCA.Key != nil || out.id.PhoneCA != nil || out.id.Phone != nil {
+		t.Errorf("the Linux device holds CA keys: %v, admin %v", err, out.id.ServesPhone())
 	}
 }
 
@@ -1190,7 +1268,7 @@ func TestComputerAdminAdmits(t *testing.T) {
 			if id.Issuer == nil || !id.Issuer.Equal(admin.AdminCA) || id.Cert.CheckSignatureFrom(admin.AdminCA) != nil {
 				t.Error("the certificate is not from the admin CA")
 			}
-			if id.Admin() || id.GroupCA.Key != nil || id.PhoneCA != nil || !id.GroupCA.Cert.Equal(root.Cert) {
+			if id.ServesPhone() || id.GroupCA.Key != nil || id.PhoneCA != nil || !id.GroupCA.Cert.Equal(root.Cert) {
 				t.Error("the new device got CA keys or another group")
 			}
 			assertMembers(t, id, admin)

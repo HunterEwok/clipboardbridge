@@ -122,7 +122,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Reads what the camera saw, or what the user typed: the text of the QR
-    /// code of cbb join.
+    /// code of cbb pair.
     nonisolated static func read(scanned text: String) -> ScanResult {
         guard let jc = JoinCode(qr: text), jc.codeIsValid, !jc.addrs.isEmpty, !jc.fingerprint.isEmpty else { return .notClipboardBridge }
         return .joinCode(jc)
@@ -314,9 +314,9 @@ final class AppModel: ObservableObject {
         }
         if let f = error as? PairingMember.Failure {
             if case .refused(.wrongCode) = f {
-                return String(localized: "The code did not match. Run cbb join on the computer again and scan the new code.", bundle: .app)
+                return String(localized: "The code did not match. Run cbb pair on the computer again and scan the new code.", bundle: .app)
             }
-            return String(localized: "The computer refused. Run cbb join on it again.", bundle: .app)
+            return String(localized: "The computer refused. Run cbb pair on it again.", bundle: .app)
         }
         if let f = error as? LiveGroup.Failure, f == .notConfirmed {
             return String(localized: "The computer joined but did not confirm it. Check cbb status on it.", bundle: .app)

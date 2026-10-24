@@ -25,7 +25,7 @@ var (
 	groupRE  = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
 	deviceRE = regexp.MustCompile(`(?i)device\s+([0-9a-f]{8,})`)
 	codeRE   = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
-	addrRE   = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
+	addrRE   = regexp.MustCompile(`cbb pair -code (\S+:\d+)`)
 )
 
 // Check reaches every device: SSH, the clock, the installed version and its
@@ -144,7 +144,7 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 	}
 	if hub == nil || hub.OS != "linux" {
 		r.Do(suite+"/setup", func() error {
-			return errors.New(suite + " needs a Linux device with the role hub in the inventory: it makes the group with cbb pair")
+			return errors.New(suite + " needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
 		})
 		return nil
 	}
@@ -187,6 +187,12 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 		}
 	}
 
+	if r.Do(suite+"/"+hub.Name+"/new", func() error {
+		_, err := Run(ctx, hub, "cbb new", "")
+		return err
+	}) != nil {
+		return nil
+	}
 	for _, d := range devices {
 		if d == hub {
 			continue
@@ -220,16 +226,11 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 
 // end closes the run. The hub revokes the others, so nothing copied on
 // them after the run (the Mac is also someone's own computer) reaches the
-// bench's group. Linux and Windows members of a computer's group hold its
-// CA keys and cannot be revoked without a new group (docs/design.md): they
-// are test devices, reset before the next run.
+// bench's group. Only the hub, the group's root, holds its CA keys, so
+// every other member can be removed.
 func (g *benchGroup) end(ctx context.Context, r *Report) {
 	ctx = context.WithoutCancel(ctx)
 	for _, d := range g.members[1:] {
-		if d.OS == "linux" || d.OS == "windows" {
-			r.Skip(g.suite+"/"+d.Name+"/revoke", "it holds the group's CA keys; reset it before the next run")
-			continue
-		}
 		r.Do(g.suite+"/"+d.Name+"/revoke", func() error {
 			id, err := deviceOf(ctx, d)
 			if err != nil {
@@ -329,7 +330,7 @@ func deviceOf(ctx context.Context, d *Device) (string, error) {
 }
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and
-// cbb join -code (cbb-lite join -code) with its code on the device.
+// cbb pair -code (cbb-lite join -code) with its code on the device.
 func pairOne(ctx context.Context, hub, d *Device) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -365,7 +366,10 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 		return fmt.Errorf("cbb pair on %s showed no code", hub.Name)
 	}
 	addr := d.addrFor(hub, w.addr)
-	join := cbbCmd(d) + " join -code"
+	join := cbbCmd(d) + " pair -code"
+	if d.OS == "linux-lite" {
+		join = cbbCmd(d) + " join -code"
+	}
 	if d.OS == "linux-lite" {
 		// The lite member joins as its service's user, which alone may
 		// write its keys (lite/README.md); the bench user has sudo.

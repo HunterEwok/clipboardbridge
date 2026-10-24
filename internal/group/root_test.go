@@ -196,17 +196,17 @@ func TestRootTieBreak(t *testing.T) {
 }
 
 func TestRootRecordsRejected(t *testing.T) {
-	// A computer's group is never handed over.
-	admin := newGroup(t)
+	// A legacy group is never handed over.
+	admin := newLegacyGroup(t)
 	if _, err := NewRecords(admin.GroupCA.Cert).Add(rootRecord(t, admin.GroupCA.Cert, &admin.GroupCA, nil, newRoot(t).Cert)); err == nil {
-		t.Error("accepted a root record in a computer's group")
+		t.Error("accepted a root record in a legacy group")
 	}
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
 	for name, root := range map[string]*x509.Certificate{
-		"an admin CA":         pg.a.Cert,
-		"a member":            member(t, pg.root),
-		"a computer group CA": admin.GroupCA.Cert,
+		"an admin CA":       pg.a.Cert,
+		"a member":          member(t, pg.root),
+		"a legacy group CA": admin.GroupCA.Cert,
 	} {
 		if _, err := NewRecords(g).Add(rootRecord(t, g, pg.root, nil, root)); err == nil {
 			t.Errorf("accepted %s as the new root", name)

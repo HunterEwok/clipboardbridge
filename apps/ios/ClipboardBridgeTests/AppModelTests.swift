@@ -18,7 +18,7 @@ final class AppModelTests: XCTestCase {
         }
     }
 
-    /// The text cbb join prints under its QR code, as Go's
+    /// The text cbb pair prints under its QR code, as Go's
     /// phone.JoinQR writes it (percent-encoded, an IPv6 address too), reads
     /// as pasted from a terminal, spaces and newline included.
     func testReadGoJoinText() {

@@ -113,7 +113,7 @@ func UnsignedShortcut() []byte {
 }
 
 // UnsignedAdmitShortcut returns the shortcut that adds a computer: it scans
-// the QR code that cbb join shows and posts it to /admit with the
+// the QR code that cbb pair shows and posts it to /admit with the
 // token, so the member that holds clipboardbridge.local opens a window for it.
 func UnsignedAdmitShortcut() []byte {
 	var acts []any

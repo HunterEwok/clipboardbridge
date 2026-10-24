@@ -159,4 +159,4 @@ systemctl daemon-reload
 systemctl enable clipboardbridge.service
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
 echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
-echo "Next: see docs/quickstart.md; in short, cbb pair -phone on the first Linux machine, cbb join on the others."
+echo "Next: see docs/quickstart.md; in short, cbb new and cbb pair -phone on the first computer, cbb pair on the others."

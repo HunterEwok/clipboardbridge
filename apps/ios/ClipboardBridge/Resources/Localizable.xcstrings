@@ -391,12 +391,12 @@
         }
       }
     },
-    "On a computer, run cbb join and scan the code it shows.": {
+    "On a computer, run cbb pair and scan the code it shows.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "На компьютере запустите cbb join и отсканируйте код, который он покажет."
+            "value": "На компьютере запустите cbb pair и отсканируйте код, который он покажет."
           }
         }
       }
@@ -441,22 +441,22 @@
         }
       }
     },
-    "Paste the text of the QR code of cbb join.": {
+    "Paste the text of the QR code of cbb pair.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вставьте текст QR-кода cbb join."
+            "value": "Вставьте текст QR-кода cbb pair."
           }
         }
       }
     },
-    "Point the camera at the QR code of cbb join, or at the one your other phone shows.": {
+    "Point the camera at the QR code of cbb pair, or at the one your other phone shows.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наведите камеру на QR-код cbb join или на код, который показывает ваш другой телефон."
+            "value": "Наведите камеру на QR-код cbb pair или на код, который показывает ваш другой телефон."
           }
         }
       }
@@ -641,12 +641,12 @@
         }
       }
     },
-    "The code did not match. Run cbb join on the computer again and scan the new code.": {
+    "The code did not match. Run cbb pair on the computer again and scan the new code.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Код не совпал. Запустите cbb join на компьютере ещё раз и отсканируйте новый код."
+            "value": "Код не совпал. Запустите cbb pair на компьютере ещё раз и отсканируйте новый код."
           }
         }
       }
@@ -661,12 +661,12 @@
         }
       }
     },
-    "The computer refused. Run cbb join on it again.": {
+    "The computer refused. Run cbb pair on it again.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Компьютер отказал. Запустите на нём cbb join ещё раз."
+            "value": "Компьютер отказал. Запустите на нём cbb pair ещё раз."
           }
         }
       }

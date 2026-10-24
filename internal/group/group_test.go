@@ -38,11 +38,33 @@ func newGroup(t *testing.T) *Identity {
 	return id
 }
 
-// join admits a new device to admin's group, as pairing does: a Linux
-// member gets the CA keys and its own clipboardbridge.local certificate, a Mac
-// neither.
+// newLegacyGroup is a group as computers made them before admin CAs: a
+// group CA with path length 0, whose key every Linux member holds.
+func newLegacyGroup(t *testing.T) *Identity {
+	t.Helper()
+	id := newGroup(t)
+	ca, err := NewGroupCA(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id.GroupCA = *ca
+	if id.Cert, err = ca.IssueMember(id.ID, &id.Key.PublicKey, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := id.Check(); err != nil {
+		t.Fatalf("a legacy identity does not check: %v", err)
+	}
+	return id
+}
+
+// join admits a new device to admin's group, as pairing does: in a legacy
+// group a Linux member gets the CA keys and its own clipboardbridge.local
+// certificate, a Mac neither; in a group with a root no member gets them.
 func join(t *testing.T, admin *Identity, linux bool, now time.Time) *Identity {
 	t.Helper()
+	if linux && !admin.Legacy() {
+		t.Fatal("join: only a legacy group gives a member the CA keys")
+	}
 	key, err := NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -88,9 +110,18 @@ func TestDeviceID(t *testing.T) {
 
 func TestCAs(t *testing.T) {
 	id := newGroup(t)
+	if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || ca.MaxPathLenZero || !strings.HasPrefix(ca.Subject.CommonName, "clipboardbridge group root ") {
+		t.Errorf("%s: not a root with path length 1", ca.Subject.CommonName)
+	}
+	if ca := id.PhoneCA.Cert; ca.MaxPathLen != 0 || !ca.MaxPathLenZero {
+		t.Errorf("%s: not a CA with path length 0", ca.Subject.CommonName)
+	}
+	if !id.IsRoot() || id.Legacy() || !id.IsAdmin() || !id.ServesPhone() || id.NeedsAdminKey() {
+		t.Error("the creator of a group is not its root")
+	}
 	for _, ca := range []*x509.Certificate{id.GroupCA.Cert, id.PhoneCA.Cert} {
-		if !ca.IsCA || !ca.BasicConstraintsValid || ca.MaxPathLen != 0 || !ca.MaxPathLenZero {
-			t.Errorf("%s: not a CA with path length 0", ca.Subject.CommonName)
+		if !ca.IsCA || !ca.BasicConstraintsValid {
+			t.Errorf("%s: not a CA", ca.Subject.CommonName)
 		}
 		if ca.KeyUsage&x509.KeyUsageCertSign == 0 {
 			t.Errorf("%s: cannot sign certificates", ca.Subject.CommonName)
@@ -293,7 +324,7 @@ func TestIssueErrors(t *testing.T) {
 }
 
 func TestSaveLoad(t *testing.T) {
-	admin := newGroup(t)
+	admin := newLegacyGroup(t)
 	mac := join(t, admin, false, t0)
 	linux := join(t, admin, true, t0)
 	for _, tt := range []struct {
@@ -323,8 +354,8 @@ func TestSaveLoad(t *testing.T) {
 				!got.GroupCA.Cert.Equal(tt.id.GroupCA.Cert) {
 				t.Error("the loaded identity differs")
 			}
-			if got.Admin() != tt.admin {
-				t.Errorf("Admin() = %v, want %v", got.Admin(), tt.admin)
+			if got.ServesPhone() != tt.admin {
+				t.Errorf("ServesPhone() = %v, want %v", got.ServesPhone(), tt.admin)
 			}
 			if tt.admin && (!got.GroupCA.Key.Equal(tt.id.GroupCA.Key) || !got.PhoneCA.Key.Equal(tt.id.PhoneCA.Key) ||
 				!got.Phone.Equal(tt.id.Phone)) {

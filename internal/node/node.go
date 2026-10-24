@@ -69,10 +69,22 @@ type Config struct {
 	// SetIdentity. An error is logged.
 	OnCert func(der, issuer []byte) error
 
-	// OnAdmin, if set, is called with the admin CA that a peer, the root
-	// phone, sent for this member's admin key; it checks it, keeps it and
-	// passes the new identity to SetIdentity. An error is logged.
+	// OnAdmin, if set, is called with the admin CA that a peer, the
+	// group's root, sent for this member's admin key; it checks it, keeps
+	// it and passes the new identity to SetIdentity. An error is logged.
 	OnAdmin func(der []byte) error
+
+	// PhoneCAFor, if set, returns the iPhone CA, with its key, to send a
+	// peer whose hello said it holds the iPhone CA with the key hash
+	// theirs (nil for none), or nil to send nothing: an admin of a group a
+	// computer created shares it with the other admins (docs/protocol.md,
+	// section 10).
+	PhoneCAFor func(peer group.DeviceID, chain []*x509.Certificate, theirs []byte) *group.CA
+
+	// OnPhoneCA, if set, is called with an iPhone CA and its key that a
+	// peer sent; it checks them, keeps them and passes the new identity to
+	// SetIdentity. An error is logged.
+	OnPhoneCA func(from group.DeviceID, chain []*x509.Certificate, cert, key []byte) error
 
 	// Allow, if set, rejects peers, for example revoked devices. Recheck
 	// asks it again for the running connections.
@@ -130,12 +142,15 @@ type Write struct {
 
 // Peer is a connected member.
 type Peer struct {
-	ID    group.DeviceID
-	Role  Role
-	Name  string // from its hello; "" when it sent none or an invalid one
-	OS    string // from its hello; "" when it sent none or an unknown one
-	Key   group.KeyHash
-	Since time.Duration // uptime when the connection started
+	ID   group.DeviceID
+	Role Role
+	Name string // from its hello; "" when it sent none or an invalid one
+	OS   string // from its hello; "" when it sent none or an unknown one
+	Key  group.KeyHash
+	// AdminKey is the admin key its hello offers, a SubjectPublicKeyInfo
+	// in DER; nil when it offers none.
+	AdminKey []byte
+	Since    time.Duration // uptime when the connection started
 }
 
 // A Node is a member's set of connections.
@@ -406,7 +421,10 @@ func (n *Node) Peers() []Peer {
 	out := make([]Peer, 0, len(n.conns))
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), Since: c.since})
+			c.mu.Lock()
+			adminKey := c.peerAdminKey
+			c.mu.Unlock()
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey, Since: c.since})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -482,6 +500,55 @@ func (n *Node) offerTunnel(c *conn, key []byte) {
 	if o := n.cfg.OnTunnelKey(c.id, c.peerChain, key); o != nil {
 		c.enqueue(outgoing{tunnel: o})
 	}
+}
+
+// sharePhoneCA sends the peer of c the iPhone CA that PhoneCAFor returns
+// for it, if any.
+func (n *Node) sharePhoneCA(c *conn) {
+	if n.cfg.PhoneCAFor == nil {
+		return
+	}
+	c.mu.Lock()
+	theirs := c.peerPhoneCA
+	c.mu.Unlock()
+	if ca := n.cfg.PhoneCAFor(c.id, c.peerChain, theirs); ca != nil {
+		c.enqueue(outgoing{phoneCA: ca})
+	}
+}
+
+// SharePhoneCA sends the iPhone CA to every connected member that
+// PhoneCAFor names, as after this member replaced it.
+func (n *Node) SharePhoneCA() {
+	for _, c := range n.helloed() {
+		n.sharePhoneCA(c)
+	}
+}
+
+// SendAdmin sends the connected member dev its admin CA, which makes it an
+// admin, and then the iPhone CA that PhoneCAFor returns for it. It reports
+// whether dev is connected.
+func (n *Node) SendAdmin(dev group.DeviceID, adminCA *x509.Certificate) bool {
+	for _, c := range n.helloed() {
+		if c.id == dev {
+			c.enqueue(outgoing{admin: adminCA})
+			n.sharePhoneCA(c)
+			return true
+		}
+	}
+	return false
+}
+
+// helloed returns the connections whose peer sent its hello.
+func (n *Node) helloed() []*conn {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := make([]*conn, 0, len(n.conns))
+	for _, c := range n.conns {
+		if c.role() != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // SendRecords sends records to every connected member, for example a
@@ -573,15 +640,19 @@ type conn struct {
 	peerRole Role   // set by the peer's hello
 	peerName string // set by the peer's hello
 	peerOS   string // set by the peer's hello
-	certSent bool   // a renewed certificate was queued for the peer
-	sayBye   bool
-	done     chan struct{} // closed to end the connection
-	closed   bool
-	finished chan struct{} // closed when Serve has cleaned up
+	// peerAdminKey and peerPhoneCA are the admin key and the key hash of
+	// the iPhone CA that the peer's hello names.
+	peerAdminKey []byte
+	peerPhoneCA  []byte
+	certSent     bool // a renewed certificate was queued for the peer
+	sayBye       bool
+	done         chan struct{} // closed to end the connection
+	closed       bool
+	finished     chan struct{} // closed when Serve has cleaned up
 }
 
 // outgoing is a queued message: a hello, an event, a renewed certificate,
-// records or a tunnel offer.
+// records, a tunnel offer, an admin CA or the iPhone CA.
 type outgoing struct {
 	hello   *clip.Hello
 	event   *clip.Event
@@ -589,6 +660,8 @@ type outgoing struct {
 	issuer  *x509.Certificate // the admin CA that issued cert; nil for the group CA
 	records []group.Record
 	tunnel  *TunnelOffer
+	admin   *x509.Certificate // an admin CA for the peer
+	phoneCA *group.CA         // the iPhone CA with its key
 	queued  time.Duration
 }
 
@@ -713,12 +786,17 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h.Current = &ev
 		}
 		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS}
-		if id := c.n.identity(); id.AdminKey != nil && id.AdminCA == nil {
+		id := c.n.identity()
+		if id.AdminKey != nil && id.AdminCA == nil {
 			spki, err := x509.MarshalPKIXPublicKey(&id.AdminKey.PublicKey)
 			if err != nil {
 				return nil, err
 			}
 			out.AdminKey = spki
+		}
+		if id.ServesPhone() {
+			h := group.KeyHashOf(id.PhoneCA.Cert)
+			out.PhoneCA = h[:]
 		}
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
@@ -741,6 +819,14 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeRecs, Records: o.records}, nil
 	case o.tunnel != nil:
 		return &message{Type: typeTun, Tunnel: o.tunnel}, nil
+	case o.admin != nil:
+		return &message{Type: typeAdmin, AdminCA: o.admin.Raw}, nil
+	case o.phoneCA != nil:
+		key, err := x509.MarshalPKCS8PrivateKey(o.phoneCA.Key)
+		if err != nil {
+			return nil, err
+		}
+		return &message{Type: typePhoneCA, PhoneCA: o.phoneCA.Cert.Raw, PhoneCAKey: key}, nil
 	default:
 		ev := *o.event
 		ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
@@ -852,6 +938,7 @@ func (c *conn) reader() error {
 			if group.ValidOS(extra.OS) {
 				c.peerOS = extra.OS
 			}
+			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
 			c.mu.Unlock()
 			c.n.peersChanged()
 			res, err := e.Reconcile(string(c.id), h)
@@ -862,6 +949,7 @@ func (c *conn) reader() error {
 			c.n.renewPeer(c)
 			c.n.offerRecords(c, extra.Records)
 			c.n.offerTunnel(c, extra.TunnelKey)
+			c.n.sharePhoneCA(c)
 			continue
 		}
 		switch m.Type {
@@ -890,6 +978,13 @@ func (c *conn) reader() error {
 			}
 			if err := c.n.cfg.OnAdmin(m.AdminCA); err != nil {
 				c.n.cfg.Logf("node: an admin CA from %s: %v", c.id, err)
+			}
+		case typePhoneCA:
+			if c.n.cfg.OnPhoneCA == nil {
+				continue
+			}
+			if err := c.n.cfg.OnPhoneCA(c.id, c.peerChain, m.PhoneCA, m.PhoneCAKey); err != nil {
+				c.n.cfg.Logf("node: an iPhone CA from %s: %v", c.id, err)
 			}
 		case typeTun:
 			if c.n.cfg.OnTunnel == nil || m.Tunnel == nil {

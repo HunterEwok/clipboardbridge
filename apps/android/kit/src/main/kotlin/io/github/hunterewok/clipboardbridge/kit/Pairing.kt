@@ -214,14 +214,14 @@ object Pairing {
 }
 
 /**
- * What the QR code of cbb join carries (docs/protocol.md, section 7):
+ * What the QR code of cbb pair carries (docs/protocol.md, section 7):
  * clipboardbridge://join?code=123456&addr=host:port&fp=...
  */
 data class JoinCode(val code: String, val addrs: List<String>, val fingerprint: String) {
     /** Whether the code is six digits, as the computer expects. */
     val codeIsValid: Boolean get() = code.length == 6 && code.all { it in '0'..'9' }
 
-    /** The text of the QR code, as cbb join shows it. */
+    /** The text of the QR code, as cbb pair shows it. */
     val qrText: String
         get() {
             val items = listOf("code" to code) + addrs.take(MAX_ADDRS).map { "addr" to it } + listOf("fp" to fingerprint)
