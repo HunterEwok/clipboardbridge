@@ -121,6 +121,15 @@ The order may change.
     has as well; macOS has no per-program limit without such an app (the application firewall
     allows or blocks a program, and pf is shared by the whole system), so this is the one
     difference between the computers, and it goes away with the app.
+23. **Planned.** Docker: an image with the full service for a NAS or a home server, as an
+    always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
+    `cbb relay` on a VPS. See "Docker" below.
+24. **Planned.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
+    pfSense gateways as the hub). See "FreeBSD" below.
+25. **Planned, after remote paste (item 18).** Devices that are hard to type into: TVs,
+    set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
+    that a text copied on any device of the group lands in a field there without typing it
+    with a remote. See "Devices that are hard to type into" below.
 
 ## OpenWrt routers
 
@@ -205,6 +214,221 @@ One pull request each, smaller ones together:
    nightly Rust, mips and mipsle.
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
+
+## Docker
+
+Planned.
+
+An image with the full service, for the machines that are always on but have no desktop: a
+NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
+infrastructure, not a place to copy and paste:
+
+- **An always-on member and the hub.** At home it keeps the group's events while no
+  computer is on and holds `clipboardbridge.local`; with `cbb global hub` it is the hub for
+  sync away from home.
+- **A forwarder or a relay on a VPS.** `cbb forward` and `cbb relay` hold no group keys, so
+  a container on a rented server is the natural way to run them.
+- **Never the creator or an admin.** It joins as an ordinary full member; CA keys stay on
+  the devices the user holds.
+
+What the image needs:
+
+- **One small image for every CPU.** `cbb` is static, so the image is the binary, the CA
+  certificates and nothing else, for linux/amd64, linux/arm64 and linux/arm/v7, published
+  to the GitHub Container Registry with each release and carrying the same build
+  attestations as the release archives. The documentation pins it by digest.
+- **No privileges.** The tunnel runs in the process (WireGuard on gVisor netstack), so the
+  container needs no `NET_ADMIN`, no `/dev/net/tun` and no `--privileged`. It runs as its
+  own user with a read-only root file system; the state is one volume
+  (`/var/lib/clipboardbridge`).
+- **Host networking at home.** mDNS and the member port must be on the home network, so a
+  member at home runs with `network_mode: host`; behind Docker's bridge the other devices
+  would not find it. A forwarder or a relay on a VPS publishes its ports instead (UDP 8764,
+  TCP 443 for VLESS).
+- **The host's firewall stays the host's.** The container cannot change it, so `cbb` answers
+  the firewall question with No (see the firewall consent in [design.md](design.md)): it
+  prints the exact rules for the host and says in `cbb status` whether a home member could
+  reach it. Its own limit (`internal/netguard`) works inside the container as everywhere.
+- **Joining without a screen.** `docker exec -it clipboardbridge cbb join` shows the QR code
+  in the terminal, as on any server.
+
+Steps, one pull request each, smaller ones together:
+
+1. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
+   forwarder or relay, and a CI job that builds the image and has two containers join a
+   group and sync.
+2. The release workflow publishes the multi-arch image with its attestations; README and
+   the installer pages say how to run it on the common NAS systems.
+3. The bench gets a container as the hub, with cases for it in [testbench.md](testbench.md).
+
+## FreeBSD
+
+Planned.
+
+FreeBSD runs servers, some desktops, and the gateways OPNsense and pfSense. Go builds `cbb`
+for it already (`GOOS=freebsd`, amd64 and arm64, no cgo); what is missing is what the
+service needs from the system:
+
+- **The service.** An rc.d script that runs `cbb` as its own user through daemon(8), with
+  the state in `/var/db/clipboardbridge`; `get.sh` recognises FreeBSD and installs it, and
+  a port and `pkg` package follow.
+- **The control socket.** Its check of the connecting user takes the peer's credentials
+  with `getpeereid`/`LOCAL_PEERCRED` on FreeBSD, where Linux uses `SO_PEERCRED`.
+- **The firewall.** FreeBSD has pf and ipfw; `cbb` detects which one is active and asks as on
+  the other systems (the same consent prompt, the same rules: the member port and mDNS from
+  the home subnets only, the hub's UDP port while it is the hub). On OPNsense and pfSense
+  the rules belong in the gateway's own configuration, which rewrites pf, so there `cbb`
+  prints them for the web interface; a plugin may follow.
+- **The desktop.** FreeBSD desktops run X11 and Wayland, so the Linux desktop connector
+  (`internal/desktop`) is built for FreeBSD too and tested there.
+- **A gateway as the hub.** OPNsense and pfSense are what OpenWrt is on other routers: always
+  on, with the public address. They reuse the OpenWrt work: mDNS and the member port only on
+  the inside interfaces, the hub's port on the WAN only while it is the hub, no CA keys.
+
+The protection is the same as on Linux: the service's own limit to the home network until
+sync away from home is on, member TLS, and the tunnel away from home.
+
+Steps:
+
+1. Release builds for freebsd-amd64 and freebsd-arm64, the control socket's check, and a CI
+   job that runs the Go tests in a FreeBSD virtual machine.
+2. The rc.d script, `get.sh`, the pf and ipfw rules with the consent prompt.
+3. The desktop connector on FreeBSD.
+4. OPNsense and pfSense as the hub, after the OpenWrt steps; the port in the ports tree.
+
+## Devices that are hard to type into
+
+Planned, after remote paste (item 18).
+
+The aim: a text copied on any device of the group lands in a field of a device where typing
+it is slow or impossible with what is in the user's hands, usually a TV remote or a gamepad.
+Logins, Wi-Fi passwords, links, search queries and codes are the common cases. There are
+four ways, from the one that needs least to the one that reaches most.
+
+### 1. Our app on the device
+
+Many such devices run Android, so the Android app reaches them with little more than a
+layout for a remote:
+
+- **Android TV, Google TV, Fire TV** and the Android set-top boxes and projectors: a TV
+  variant of the Android app, with a launcher banner, a screen driven by the D-pad and no
+  need for a touch screen. The TV shows the QR code and the phone scans it, so joining
+  types nothing on the TV. Fire TV takes the signed APK of each release or the Amazon
+  Appstore.
+- **Android car head units, Android e-readers (Onyx Boox), Chromebooks** take the Android
+  app as it is.
+- **Meta Quest** (Horizon OS is Android) takes the APK; whether its accessibility service
+  may put text into other apps is to be checked on a headset.
+
+The app receives as it does on a phone, in its foreground service; a TV is receive only by
+default (sync modes, item 19). The text goes into the field that has the focus through the
+accessibility service (`ACTION_SET_TEXT`, or `ACTION_PASTE` after setting the clipboard),
+on remote paste from any admin, so nothing is pressed on the TV. This is the Android target
+of item 18, step 4.
+
+### 2. The device's own remote, from a member
+
+Most TVs can be driven over the home network by the maker's remote app on a phone, and those
+apps can type into the field on screen. A member does the same: it pairs once with the TV as
+its remote and, on remote paste, sends the text into the field. Nothing is installed on the
+TV.
+
+| Device | Protocol | Pairing | On the network |
+|---|---|---|---|
+| Android TV, Google TV | Android TV Remote v2, as in the Google TV app | a code shown on the TV | TLS |
+| Apple TV | the Companion protocol of the Apple TV Remote, with its keyboard | a PIN shown on the TV | encrypted |
+| Samsung (Tizen) | the TV's remote WebSocket API, port 8002 | allowed once on the TV | TLS |
+| LG (webOS) | SSAP over WebSocket, port 3001 | allowed once on the TV | TLS |
+| Roku | External Control Protocol, a key press per character | none | plain HTTP |
+
+Apple TV is the main reason for this way: an iPhone already types on it with its own
+keyboard, but Android, Linux and Windows have no way to, and a tvOS app cannot type into
+other apps.
+
+The rules:
+
+- **The TV is a target, not a member.** It holds no key, gets no events and never joins the
+  group; it belongs to the member that pairs with it, is shown under that member in the
+  device list, and is addressed by remote paste (`cbb paste --on living-room-tv`) like the
+  member's own screen. The member keeps the TV's pairing keys in its state.
+- **Only on the home network.** The last hop leaves the group's encryption and is protected
+  by the TV's own protocol, so a member reaches a TV only on its home network (the address
+  checked as `internal/netguard` does) and never through the tunnel. Away from home, the
+  text reaches the member through the tunnel and member TLS as always; only the member's
+  last step to the TV is local.
+- **Roku is off until the user turns it on** for that Roku, after being told that the text
+  then crosses the home network in the clear.
+- **The protocols are not all documented** (only Roku's is, and Samsung's in part), so
+  firmware updates may change them; each one is ours in Go, with no third-party service
+  and no maker's cloud, and a failure says which TV and protocol failed (the debug details
+  as everywhere).
+- **Who can be the remote.** Every computer, the routers and the Docker image (they are
+  always on), and the Android app; the iPhone app too, where iOS lets it use the local
+  network. The same remotes on Linux, Mac and Windows, and on both phones.
+
+### 3. A phone or a computer as a Bluetooth keyboard
+
+A device of the group that has Bluetooth can pair with the TV, console or tablet as a
+Bluetooth keyboard and type what remote paste sends it, so no extra hardware is needed. The
+paired device is a target of that member, as a TV is in way 2.
+
+| Member | Bluetooth keyboard | Why |
+|---|---|---|
+| Android | yes, Android 9 and later | the HID Device profile (`BluetoothHidDevice`); a few makers leave it out, which the app detects and says |
+| Linux | yes | BlueZ registers a keyboard profile; the service needs the Bluetooth adapter's permission, asked for at install |
+| iPhone, iPad | no | iOS does not let an app act as a keyboard: the HID service is the system's own |
+| Mac, Windows | no | neither has a public interface for the keyboard side of Bluetooth HID |
+
+So in a group with an Android phone or a Linux computer near the TV, the iPhone sends the
+text and that device types it. Bluetooth keyboards on Android and Linux are the one
+difference within the phones and within the computers, and it is the operating system's:
+iOS, macOS and Windows allow it to no app. Groups without such a device use the Nano ESP32
+(way 4). The text crosses the air as a Bluetooth keyboard's does, with the link's own
+encryption after pairing, a short hop next to the device; Enter and secrets follow the
+same rule as the Nano ESP32 below.
+
+### 4. The Nano ESP32 as a keyboard
+
+For devices with no app and no protocol, and for groups with no Android phone or Linux
+computer near them, the Nano ESP32 (item 15) plugs in or pairs as a keyboard and types what
+remote paste sends it:
+
+- **USB keyboard** (item 15): PlayStation 5, Xbox, Nintendo Switch in the fields that take a
+  keyboard, TVs and set-top boxes with a USB port, KVM switches, BIOS and UEFI setup, boot
+  loaders, servers without a network.
+- **Bluetooth LE keyboard** (the ESP32-S3 has Bluetooth LE): Apple TV, Samsung and LG TVs,
+  iPads, consoles that take a Bluetooth keyboard. The board keeps its pairings in flash.
+- **Serial console:** its UART on the console header of a router, a switch or a server, or a
+  USB serial adapter, typed as a terminal.
+
+A keyboard sends key codes and the device's layout decides the characters, so the board
+types Latin with a US layout first; other layouts are a setting per target, and Cyrillic
+works where the target has a Russian layout to switch to. Login, disk encryption (LUKS,
+BitLocker) and password screens are typed only on an explicit remote paste, with Enter a
+separate permission (D-59), never on sync.
+
+### Other devices
+
+- **SteamOS in Game Mode** has no clipboard the desktop connector can use; remote paste
+  types there through uinput (item 18, step 2).
+- **iPad**: the iPhone app on iPad, built as a universal app.
+- **Keenetic and other routers with Entware**: after OpenWrt, the same service with
+  Entware's init scripts.
+- **WSL and Termux** need nothing of their own: the Windows service and the Android app
+  cover them.
+- **Not reachable**: Kindle e-readers and smart watches take neither apps nor keyboards.
+
+### Steps
+
+One pull request each, smaller ones together:
+
+1. The TV variant of the Android app, with the accessibility target of item 18, step 4.
+2. Remotes in Go: Android TV Remote v2 and the Apple TV Companion protocol first, then
+   Samsung and LG, Roku last; `cbb remote add` pairs a TV, and the apps add theirs.
+3. The Bluetooth keyboard on Android and Linux.
+4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
+   and the serial console.
+5. The iPad build of the iPhone app.
 
 ## Device keys in hardware
 
