@@ -1126,8 +1126,9 @@ and that member becomes the root:
 token (section "The iPhone button"), never with a key of its own. It stays for now, since
 the app does not yet run on a real iPhone, but it is not developed further, and every user
 is expected to use the app. Everything it needs comes with it: the iPhone CA, its key on the
-admins, and the rule for who holds `clipboardbridge.local`. Once the app is on the phones,
-the shortcut can be removed with all of these.
+admins, and the rule for who holds `clipboardbridge.local`. It is removed with all of these
+once the app runs on real iPhones through TestFlight (roadmap.md, item 17): the group is
+then simpler, with one kind of trust, and every key in it can be revoked by a record.
 
 **Order of work**, one pull request each:
 
