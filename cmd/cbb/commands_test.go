@@ -315,3 +315,14 @@ func TestWriteAway(t *testing.T) {
 		t.Errorf("off: %q", b.String())
 	}
 }
+
+func TestTakeover(t *testing.T) {
+	fakeService(t, control.Message{Header: control.Header{Name: "pi", Done: true}})
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"takeover", "pi"}, strings.NewReader(""), &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "root now, and pi is removed") {
+		t.Errorf("takeover: %d, %q, %q", code, stdout.String(), stderr.String())
+	}
+	if code := run([]string{"takeover"}, strings.NewReader(""), &stdout, &stderr); code != 2 {
+		t.Errorf("takeover without a device: %d", code)
+	}
+}

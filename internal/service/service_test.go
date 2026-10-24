@@ -1461,6 +1461,76 @@ func TestAdminsShareTheIPhoneCA(t *testing.T) {
 	}
 }
 
+// TestTakeover checks that an admin takes a group over from its lost root
+// computer: it becomes the root, the devices that the root and the admin
+// admitted stay and keep syncing, the iPhone CA is replaced, the new root
+// makes admins, and the old root is refused when it comes back.
+func TestTakeover(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	c := startService(t, &h, "c")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	pairWith(t, a, c)
+	old, _ := group.Load(pi.dir)
+	if _, err := b.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err == nil {
+		t.Error("a member that is no admin took the group over")
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "b"}, ""); err == nil {
+		t.Error("an admin took the group over from a device that is not its root")
+	}
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpRevoke, Name: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "cbb takeover") {
+		t.Errorf("revoking the root: %v", err)
+	}
+	if m, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil || m.Name != "pi" {
+		t.Fatalf("takeover: %+v, %v", m, err)
+	}
+	id, _ := group.Load(a.dir)
+	if !id.IsRoot() || len(id.Roots) != 1 || id.AdminCA != nil || !id.ServesPhone() || id.PhoneCA.Cert.Equal(old.PhoneCA.Cert) {
+		t.Fatalf("after the takeover a is root %v, with %d roots, an admin CA %v, a new iPhone CA %v", id.IsRoot(), len(id.Roots), id.AdminCA != nil,
+			id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert))
+	}
+	for _, s := range []*testService{b, c} {
+		waitFor(t, s.name+" follows the new root", func() bool {
+			id, err := group.Load(s.dir)
+			return err == nil && len(id.Roots) == 1
+		})
+	}
+	waitFor(t, "a lists itself as the root and the pi no more", func() bool {
+		root := false
+		for _, d := range a.devices(t) {
+			if d.Name == "pi" {
+				return false
+			}
+			root = root || d.Self && d.Root
+		}
+		return root
+	})
+	if _, err := b.do(t, control.Header{Op: control.OpCopy}, "after the takeover"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "c has it", func() bool { return c.paste(t) == "after the takeover" })
+	makeAdmin(t, a, b)
+	waitFor(t, "b takes the new iPhone CA", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert)
+	})
+
+	restartService(t, &h, pi)
+	time.Sleep(500 * time.Millisecond)
+	for _, s := range []*testService{a, b, c} {
+		for _, p := range s.status(t).Peers {
+			if p.ID == string(old.ID) {
+				t.Errorf("%s is connected to the old root", s.name)
+			}
+		}
+	}
+}
+
 // TestMacsListen checks that a Mac is a full member like the others: it
 // publishes no role and takes connections, so two Macs keep syncing when
 // no other computer is on. Without the iPhone CA key it publishes no holder

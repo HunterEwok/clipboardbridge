@@ -943,8 +943,8 @@ computer can act as an admin until another admin removes it.
   carries `issuer` and `roots` and no CA keys; it signs the `device` record of each device it
   admits and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
   keep the devices it admitted; it renews its own certificate and those of the computers it
-  is connected to. It never removes the root, makes no admins and does not take the group
-  over.
+  is connected to. It never removes the root and makes no admins; when the root computer is
+  lost, it takes the group over (below, "Handing the group over").
 - **The iPhone CA.** In a group a computer created, the root holds the iPhone CA, and so does
   every admin, so the shortcut works while any of them is on. A member that holds its key
   says so in its hello (`phone_ca`). When a member that holds a key that is not revoked meets
@@ -1028,20 +1028,29 @@ Validity and evaluation, which depend only on the set of records, never on their
    valid until they expire or rule 4 refuses them), takes renewals from any of them, and
    keeps the path next to its identity. A new member gets the path in the Welcome's `roots`.
 
-**Handing the group over.** When the root phone is lost, an admin phone takes over:
+**Handing the group over.** When the root is lost, an admin takes over: in a phone's group
+an admin phone, never a computer; in a group a computer created an admin computer, with
+`cbb takeover NAME` (NAME the lost root):
 
 1. It creates a new root (as in section 9) and signs a `root` record naming it, with its
    admin CA under the current root.
 2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
-   lost phone's member and admin keys, and whose `keep` names every other key the old root
+   lost root's member and admin keys, and whose `keep` names every other key the old root
    certified: the member keys of the listed devices it admitted and the admin CA keys of the
-   other admin phones. By rule 4 nothing the old root's key signs from then on counts:
-   neither new certificates nor new admin CAs, `device` records nor `root` records.
+   other admins, its own included. By rule 4 nothing the old root's key signs from then on
+   counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
+   In a group a computer created the lost root held the iPhone CA, so the record also names
+   the iPhone CA's key and the key of every `shortcut` device, and the new root makes a new
+   iPhone CA and passes it to the admins, as when an admin is removed ("Admins").
 3. It signs a `device` record for itself under the new root (by = itself), which marks it
-   as the root in the list, and from then on renews certificates from the new root.
+   as the root in the list, and from then on renews certificates from the new root. A
+   computer that takes over keeps the new root's key in the identity file (`root_key`,
+   PKCS #8) and drops its admin key and admin CA; it keeps the member certificate it has,
+   which the old root or its own admin CA issued and the `keep` above still covers.
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
-identity.
+identity; a computer that held the root it replaces is no longer the root, and gives up its
+iPhone CA.
 
 The devices list is, for each device, the `device` record that counts with the largest
 `time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
@@ -1082,8 +1091,9 @@ identity (mode 0600) and the path in the identity file's `roots`.
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, os, admin, root, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
-| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root phone is removed only from another admin phone, which takes the group over, and the root computer not yet; removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
+| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
+| `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: takes the group over from the root that name names and removes it ("Handing the group over") |
 
 ## 11. Tunnel keys
 

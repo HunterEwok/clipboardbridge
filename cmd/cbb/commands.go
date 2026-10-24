@@ -252,6 +252,7 @@ func admit(stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "%s joined the group.\n", m.Name)
+	adminHint(stdout)
 	return 0
 }
 
@@ -483,4 +484,32 @@ func hostOS() string {
 		return group.OSWindows
 	}
 	return group.OSLinux
+}
+
+// adminHint suggests a second admin on a root computer that has none: a
+// group whose root is lost is taken over by an admin (cbb takeover), or
+// made anew.
+func adminHint(w io.Writer) {
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpDevices}})
+	if err != nil {
+		return
+	}
+	root := false
+	for _, d := range m.Devices {
+		switch {
+		case d.Self && d.Root:
+			root = true
+		case d.Admin && !d.Root:
+			return
+		}
+	}
+	if root {
+		fmt.Fprintln(w, "This computer is the group's only admin. Make another computer one with cbb admin NAME,")
+		fmt.Fprintln(w, "so that it can take the group over if this one is lost (cbb takeover).")
+	}
 }
