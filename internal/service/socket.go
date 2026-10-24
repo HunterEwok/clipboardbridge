@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -76,7 +77,7 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		}
 		reply(c, control.Header{Kind: kindName(kind), Done: true}, []byte(text))
 	case control.OpStatus:
-		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+		reply(c, control.Header{Status: s.statusWithRemoved(), Done: true}, nil)
 	case control.OpPair:
 		s.pair(ctx, c, r)
 	case control.OpPairPhone:
@@ -183,6 +184,19 @@ func (s *Service) status() *control.Status {
 		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), OS: p.OS, SkewMS: skews[string(p.ID)].Milliseconds()})
 	}
 	st.Away = s.awayStatus()
+	return st
+}
+
+// statusWithRemoved is status, with Removed set when the records revoke
+// this device. The records' lock is not taken under s.mu.
+func (s *Service) statusWithRemoved() *control.Status {
+	st := s.status()
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
+		st.Removed = true
+	}
 	return st
 }
 
