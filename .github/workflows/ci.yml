@@ -515,6 +515,21 @@ jobs:
           awayAllow 'on 198.51.100.9'
           $b = blocked clipboardbridge-home-only
           if ($b.Count -ne 10 -or $b -notcontains '172.32.0.0-192.167.255.255' -or $b -notcontains '198.51.100.10-223.255.255.255') { throw "with the forwarder: $($b -join ', ')" }
+          # -HomeCgnat on makes 100.64.0.0/10 home: in the service's environment, the inbound
+          # rules and the outbound rule, which the installer has cbb global allow write again.
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -HomeCgnat on
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $svcEnv = @((Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge).Environment)
+          if ($svcEnv -notcontains 'CBB_HOME_CGNAT=1' -or $svcEnv -notcontains 'CBB_PORT=9000') { throw "the service environment: $svcEnv" }
+          awayAllow 'on 198.51.100.9 cgnat'
+          $b = blocked clipboardbridge-home-only
+          if ($b.Count -ne 11 -or $b -notcontains '11.0.0.0-100.63.255.255' -or $b -notcontains '100.128.0.0-126.255.255.255') { throw "with -HomeCgnat on: $($b -join ', ')" }
+          $in = @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound | Get-NetFirewallAddressFilter | ForEach-Object { $_.RemoteAddress })
+          if (-not ($in -match '^100\.64\.0\.0')) { throw "the inbound rules' addresses: $($in -join ', ')" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -HomeCgnat off
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          awayAllow 'on 198.51.100.9'
+          if ((blocked clipboardbridge-home-only).Count -ne 10) { throw "after -HomeCgnat off: $(blocked clipboardbridge-home-only)" }
           # A hub at its own address answers its clients anywhere on its UDP port only.
           & $cbb global hub 203.0.113.7:8764
           if ($LASTEXITCODE -ne 0) { throw 'cbb global hub failed' }

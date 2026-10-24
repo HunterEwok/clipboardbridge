@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 )
 
 // Names and lifetimes of the records, after RFC 6762 and RFC 6763.
@@ -46,12 +48,14 @@ func newZone(id string, port uint16, txt []string) *zone {
 }
 
 // Published reports whether an address may be published: private IPv4,
-// unique-local IPv6 and link-local IPv6. Other addresses would be reachable
-// from outside the home network or are not meant for it.
+// unique-local IPv6 and link-local IPv6, and 100.64.0.0/10 when the
+// setting CBB_HOME_CGNAT counts it as home (netguard.SetCGNAT). Other
+// addresses would be reachable from outside the home network or are not
+// meant for it.
 func Published(a netip.Addr) bool {
 	a = a.Unmap()
 	if a.Is4() {
-		return a.IsPrivate()
+		return a.IsPrivate() || netguard.InCGNAT(a)
 	}
 	return a.IsPrivate() || a.IsLinkLocalUnicast()
 }

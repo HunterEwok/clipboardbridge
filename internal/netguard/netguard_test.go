@@ -60,3 +60,17 @@ func TestDialer(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 }
+
+func TestCGNAT(t *testing.T) {
+	t.Cleanup(func() { SetCGNAT(false); Set(false, nil) })
+	Set(false, nil)
+	if Control("tcp", "100.64.0.1:8764", nil) == nil {
+		t.Fatal("100.64.0.1 is home by default")
+	}
+	SetCGNAT(true)
+	for addr, home := range map[string]bool{"100.64.0.1:8764": true, "100.127.255.254:8764": true, "100.128.0.1:8764": false, "[::ffff:100.100.1.1]:1": true} {
+		if (Control("tcp", addr, nil) == nil) != home {
+			t.Errorf("with CGNAT: %s home %v", addr, !home)
+		}
+	}
+}

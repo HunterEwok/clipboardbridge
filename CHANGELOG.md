@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `--home-cgnat on` for the installers (`-HomeCgnat on` on Windows, `CBB_HOME_CGNAT=1`)
+  counts 100.64.0.0/10 as the home network for a home network on the carrier-grade NAT
+  range: in the service, the firewall rules, the systemd unit's address limit and the
+  Windows outbound rule. By default that range stays outside the home network.
+
 - The Mac installer takes `--port N` like the Linux one, kept in
   `/etc/clipboardbridge/clipboardbridge.env`, and `get.sh` passes it on a Mac too.
 - `CBB_ERROR_DETAILS=1` for the Linux and macOS installers, uninstallers and `get.sh`: they

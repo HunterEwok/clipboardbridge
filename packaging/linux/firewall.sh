@@ -52,10 +52,14 @@ kind() {
 }
 
 # nets prints the home networks: the private IPv4 networks this machine is
-# on, then link-local and unique-local IPv6.
+# on, 100.64.0.0/10 when install.sh --home-cgnat on counts it as home, then
+# link-local and unique-local IPv6.
 nets() {
 	ip -o -f inet route show scope link 2>/dev/null | awk '
 		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u
+	if [ "$(sed -n 's/^CBB_HOME_CGNAT=//p' /etc/clipboardbridge/clipboardbridge.env 2>/dev/null | tail -n 1)" = 1 ]; then
+		echo 100.64.0.0/10
+	fi
 	echo fe80::/10
 	echo fc00::/7
 }

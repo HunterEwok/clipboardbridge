@@ -32,6 +32,7 @@ on every platform of the class, on the roadmap).
 | Inbound only from the home network, by the system | yes (ufw, firewalld) | **OS** | yes (Windows Firewall) | the macOS application firewall allows or blocks a program, not an address; a Network Extension of the Mac app (roadmap item 22) |
 | Outbound only to the home network, and with `cbb global on` to the group's servers, in the program | yes | yes | yes | `internal/netguard` |
 | Outbound only to the home network, and with `cbb global on` to the group's servers, by the system | yes (systemd unit; a hub at its own address: **OS**) | **OS** | yes (firewall rule) | systemd cannot allow one port only, so a hub reached at its own address relies on the program; macOS: as above, roadmap item 22 |
+| 100.64.0.0/10 as the home network, on request | yes (`--home-cgnat on`) | yes (`--home-cgnat on`) | yes (`-HomeCgnat on`) | the program, the firewall rules and the outbound limit alike |
 | Firewall left alone on request | `--no-firewall`, `CBB_FIREWALL=no` | `--no-firewall`, `CBB_FIREWALL=no` | `-NoFirewall`, `CBB_FIREWALL=no` | |
 | Error details switch in `cbb` | `CBB_DEBUG=1`, debug builds | same | same | |
 | Error details switch in the installers | yes (`CBB_ERROR_DETAILS=1`) | yes (`CBB_ERROR_DETAILS=1`) | yes (`-Details`, `CBB_ERROR_DETAILS=1`) | |

@@ -25,7 +25,22 @@ type limit struct {
 	dests []netip.Addr // the group's servers, while it is on
 }
 
-var current atomic.Pointer[limit]
+var (
+	current atomic.Pointer[limit]
+	cgnat   atomic.Bool
+)
+
+// cgnatPrefix is the shared address space of carrier-grade NAT, which
+// Tailscale and similar networks use too.
+var cgnatPrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+// SetCGNAT counts 100.64.0.0/10 as the home network too (on), as the
+// setting CBB_HOME_CGNAT=1 asks; it is outside by default.
+func SetCGNAT(on bool) { cgnat.Store(on) }
+
+// InCGNAT reports whether a is in 100.64.0.0/10 and the setting counts it
+// as the home network.
+func InCGNAT(a netip.Addr) bool { return cgnat.Load() && cgnatPrefix.Contains(a.Unmap()) }
 
 // Set gives the addresses beyond the home network that the service may
 // reach: none while sync away from home is off (away false), the group's
@@ -62,11 +77,12 @@ func Destinations() []netip.Addr {
 var ErrOutside = errors.New("the address is outside the home network and is none of the group's hub, forwarder and relay")
 
 // Home reports whether a belongs to the home network: loopback, private
-// IPv4, link-local, multicast and broadcast, unique-local IPv6.
+// IPv4, link-local, multicast and broadcast, unique-local IPv6, and with
+// SetCGNAT 100.64.0.0/10.
 func Home(a netip.Addr) bool {
 	a = a.Unmap()
 	return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
-		a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255})
+		a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) || InCGNAT(a)
 }
 
 // Allowed reports whether the service may reach a: the home network, or

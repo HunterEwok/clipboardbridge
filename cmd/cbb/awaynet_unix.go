@@ -13,3 +13,7 @@ func isElevated() bool { return os.Geteuid() == 0 }
 
 // allowHint is the command that lets the service reach the group's servers.
 const allowHint = "run sudo cbb global allow"
+
+// homeCGNAT reports whether the Windows rule leaves 100.64.0.0/10 to the
+// home network; on Linux the installer's drop-in cgnat.conf does it.
+var homeCGNAT = func() bool { return false }

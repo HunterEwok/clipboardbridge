@@ -27,6 +27,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
@@ -194,6 +195,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.browseFor == 0 {
 		cfg.browseFor = 10 * time.Second
 	}
+	cgnat, err := HomeCGNAT()
+	if err != nil {
+		return err
+	}
+	netguard.SetCGNAT(cgnat)
+	if cgnat {
+		cfg.Logf("cbb: 100.64.0.0/10 counts as the home network (CBB_HOME_CGNAT=1)")
+	}
 	if cfg.listen == nil || cfg.joinListen == nil {
 		port, err := Port()
 		if err != nil {
@@ -217,7 +226,6 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
 		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, battery: cfg.battery()}
-	var err error
 	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the holder setting: %v; using auto", err)
 	}

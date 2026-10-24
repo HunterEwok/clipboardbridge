@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Mac:
 #
-#   sudo sh install.sh [--in-place] [--port N] [--express | --no-firewall] path/to/cbb
+#   sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
@@ -19,7 +19,10 @@
 # copy that only root can change, since it holds the group's keys and a
 # Homebrew prefix belongs to the user. --port moves the member port from 8764
 # to N, kept in /etc/clipboardbridge/clipboardbridge.env as on Linux until the
-# next --port; --port 8764 goes back. uninstall.sh removes it all again.
+# next --port; --port 8764 goes back. --home-cgnat on (or CBB_HOME_CGNAT=1)
+# counts 100.64.0.0/10, the carrier-grade NAT range, as the home network
+# too, kept in the same file; --home-cgnat off goes back. uninstall.sh
+# removes it all again.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -36,11 +39,12 @@ failed() {
 trap 'failed $?' EXIT
 
 usage() {
-	echo "usage: sudo sh install.sh [--in-place] [--port N] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 inplace=no
 port=
+cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
 while [ $# -gt 1 ]; do
 	case $1 in
@@ -51,11 +55,26 @@ while [ $# -gt 1 ]; do
 		port=$2
 		shift
 		;;
+	--home-cgnat)
+		case $2 in
+		on) cgnat=1 ;;
+		off) cgnat=0 ;;
+		*) usage ;;
+		esac
+		shift
+		;;
 	*) usage ;;
 	esac
 	shift
 done
 [ $# -eq 1 ] || usage
+case $cgnat in
+'' | 0 | 1) ;;
+*)
+	echo "install.sh: CBB_HOME_CGNAT is 1 or 0, not $cgnat" >&2
+	exit 2
+	;;
+esac
 case $firewall in
 ask | express | no) ;;
 yes) firewall=ask ;; # what get.sh passed before --express
@@ -174,23 +193,36 @@ if [ -n "$user" ] && [ "$user" != root ]; then
 	dseditgroup -o edit -a "$user" -t user "$name"
 fi
 
-# The port, from the file the service and cbb read as on Linux: the one
-# given, else the one kept from before, else 8764.
+# The settings, in the file the service and cbb read as on Linux: the ones
+# given, else the ones kept from before, else the defaults (port 8764,
+# 100.64.0.0/10 outside the home network).
 env=/etc/clipboardbridge/clipboardbridge.env
 install -d -m 0755 /etc/clipboardbridge
-if [ -n "$port" ]; then
-	if [ "$port" -eq 8764 ]; then
-		rm -f "$env"
-	else
-		{
-			echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N."
-			echo "CBB_PORT=$port"
-		} >"$env"
-		chmod 0644 "$env"
-	fi
+if [ -z "$port" ]; then
+	port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
 fi
-port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
 port=${port:-8764}
+if [ -z "$cgnat" ]; then
+	cgnat=$(sed -n 's/^CBB_HOME_CGNAT=//p' "$env" 2>/dev/null | tail -n 1)
+fi
+[ "$cgnat" = 1 ] || cgnat=0
+if [ "$port" = 8764 ] && [ "$cgnat" = 0 ]; then
+	rm -f "$env"
+else
+	{
+		echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N and --home-cgnat on|off."
+		if [ "$port" != 8764 ]; then
+			echo "CBB_PORT=$port"
+		fi
+		if [ "$cgnat" = 1 ]; then
+			echo "CBB_HOME_CGNAT=1"
+		fi
+	} >"$env"
+	chmod 0644 "$env"
+fi
+if [ "$cgnat" = 1 ]; then
+	echo "100.64.0.0/10 counts as the home network on this Mac (--home-cgnat on)."
+fi
 
 # The service takes connections from phones, other Macs and lite members at
 # home. With the application firewall on, an unsigned program gets none until

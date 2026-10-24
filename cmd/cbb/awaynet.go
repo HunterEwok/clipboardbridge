@@ -39,10 +39,18 @@ type grant struct {
 	on      bool         // sync away from home is on
 	addrs   []netip.Addr // the group's hub, forwarder and relay
 	hubPort int          // a hub reached at its own address: its UDP port; 0 otherwise
+	// cgnat leaves 100.64.0.0/10 to the home network (CBB_HOME_CGNAT=1) in
+	// the Windows rule; on Linux the installer's own drop-in does it.
+	cgnat bool
 }
 
+// equal reports whether two grants allow the same; without sync away from
+// home the installer's rule is all there is, so off equals off.
 func (g grant) equal(o grant) bool {
-	return g.on == o.on && g.hubPort == o.hubPort && slices.Equal(g.addrs, o.addrs)
+	if !g.on || !o.on {
+		return g.on == o.on
+	}
+	return g.hubPort == o.hubPort && g.cgnat == o.cgnat && slices.Equal(g.addrs, o.addrs)
 }
 
 // String lists what the grant allows, for the user.
@@ -68,7 +76,7 @@ func grantFor(a *control.Away) grant {
 	if a == nil {
 		return grant{}
 	}
-	g := grant{on: true}
+	g := grant{on: true, cgnat: homeCGNAT()}
 	for _, s := range a.Allow {
 		if ad, err := netip.ParseAddr(s); err == nil && !slices.Contains(g.addrs, ad.Unmap()) {
 			g.addrs = append(g.addrs, ad.Unmap())
@@ -252,25 +260,32 @@ var outside = [][2]string{
 	{"fec0::", "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"},
 }
 
-// blocked returns the ranges of outside without the addresses allowed.
-func blocked(allowed []netip.Addr) []string {
+// blocked returns the ranges of outside without the addresses allowed, and
+// with cgnat without 100.64.0.0/10.
+func blocked(allowed []netip.Addr, cgnat bool) []string {
 	type span struct{ lo, hi netip.Addr }
 	var spans []span
 	for _, r := range outside {
 		spans = append(spans, span{netip.MustParseAddr(r[0]), netip.MustParseAddr(r[1])})
 	}
+	var holes []span
 	for _, a := range allowed {
-		a = a.Unmap()
+		holes = append(holes, span{a.Unmap(), a.Unmap()})
+	}
+	if cgnat {
+		holes = append(holes, span{netip.MustParseAddr("100.64.0.0"), netip.MustParseAddr("100.127.255.255")})
+	}
+	for _, h := range holes {
 		for i, s := range spans {
-			if a.Less(s.lo) || s.hi.Less(a) {
+			if h.hi.Less(s.lo) || s.hi.Less(h.lo) {
 				continue
 			}
 			var parts []span
-			if s.lo.Less(a) {
-				parts = append(parts, span{s.lo, a.Prev()})
+			if s.lo.Less(h.lo) {
+				parts = append(parts, span{s.lo, h.lo.Prev()})
 			}
-			if a.Less(s.hi) {
-				parts = append(parts, span{a.Next(), s.hi})
+			if h.hi.Less(s.hi) {
+				parts = append(parts, span{h.hi.Next(), s.hi})
 			}
 			spans = slices.Replace(spans, i, i+1, parts...)
 			break
@@ -300,13 +315,14 @@ func windowsScript(g grant) string {
 	for _, a := range g.addrs {
 		allowed = append(allowed, a.String())
 	}
-	block := quote(blocked(g.addrs))
+	block := quote(blocked(g.addrs, g.cgnat))
 	var b strings.Builder
 	b.WriteString("$ErrorActionPreference = 'Stop'\n")
 	fmt.Fprintf(&b, "$prog = (Get-NetFirewallRule -Name '%s' | Get-NetFirewallApplicationFilter).Program\n", firewallRule)
 	b.WriteString("Get-NetFirewallRule -Group 'clipboardbridge' | Where-Object { [string]$_.Direction -eq 'Outbound' } | Remove-NetFirewallRule\n")
 	common := "-Group 'clipboardbridge' -Direction Outbound -Action Block -Program $prog -Service 'clipboardbridge' -Profile Any"
-	desc := "The clipboardbridge service reaches only the home network and its group's servers; cbb global changes this rule."
+	// PowerShell doubles a quote inside single quotes.
+	desc := "The clipboardbridge service reaches only the home network and its group''s servers; cbb global changes this rule."
 	if g.hubPort == 0 {
 		fmt.Fprintf(&b, "New-NetFirewallRule -Name '%s' -DisplayName 'clipboardbridge: only the home network' %s -RemoteAddress %s -Description '%s' | Out-Null\n",
 			firewallRule, common, block, desc)
@@ -328,6 +344,9 @@ func windowsScript(g grant) string {
 		if g.hubPort != 0 {
 			v += fmt.Sprintf(" hub-port:%d", g.hubPort)
 		}
+		if g.cgnat {
+			v += " cgnat"
+		}
 		fmt.Fprintf(&b, "New-ItemProperty -Path '%s' -Name AwayAllow -PropertyType String -Value '%s' -Force | Out-Null\n", serviceKey, v)
 	} else {
 		fmt.Fprintf(&b, "Remove-ItemProperty -Path '%s' -Name AwayAllow -ErrorAction SilentlyContinue\n", serviceKey)
@@ -345,6 +364,8 @@ func parseAwayAllow(v string) grant {
 	for _, s := range f[1:] {
 		if p, ok := strings.CutPrefix(s, "hub-port:"); ok {
 			g.hubPort, _ = strconv.Atoi(p)
+		} else if s == "cgnat" {
+			g.cgnat = true
 		} else if a, err := netip.ParseAddr(s); err == nil {
 			g.addrs = append(g.addrs, a)
 		}
@@ -367,6 +388,9 @@ var windowsLimit = netLimit{
 		return parseAwayAllow(out)
 	},
 	set: func(g grant) error {
+		// Off too, the rule leaves 100.64.0.0/10 to the home network
+		// when the service counts it as home.
+		g.cgnat = homeCGNAT()
 		_, err := powershell(windowsScript(g))
 		return err
 	},

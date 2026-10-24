@@ -3,7 +3,12 @@
 
 package main
 
-import "golang.org/x/sys/windows"
+import (
+	"slices"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
+)
 
 const needRootText = "on this computer the system limits what the service may reach, and only an administrator can change that: run the command again in a terminal opened as administrator"
 
@@ -11,3 +16,16 @@ const needRootText = "on this computer the system limits what the service may re
 const allowHint = "run cbb global allow in a terminal opened as administrator"
 
 func isElevated() bool { return windows.GetCurrentProcessToken().IsElevated() }
+
+// homeCGNAT reports whether the service counts 100.64.0.0/10 as the home
+// network, as install.ps1 -HomeCgnat on keeps in its environment, so that
+// the rule leaves that range to it too.
+var homeCGNAT = func() bool {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\clipboardbridge`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+	env, _, err := k.GetStringsValue("Environment")
+	return err == nil && slices.Contains(env, "CBB_HOME_CGNAT=1")
+}

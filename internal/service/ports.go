@@ -41,6 +41,28 @@ func Port() (int, error) {
 	return n, nil
 }
 
+// HomeCGNAT reports whether CBB_HOME_CGNAT, from the environment or else
+// from EnvFile, counts the carrier-grade NAT range 100.64.0.0/10 as the
+// home network: "1" does, "" or "0" does not. A home network on that range
+// is rare, and the same range carries networks that are not home, so it
+// is outside unless the installer was told otherwise (--home-cgnat on).
+func HomeCGNAT() (bool, error) {
+	v, ok := os.LookupEnv("CBB_HOME_CGNAT")
+	if !ok {
+		var err error
+		if v, err = envFileValue(EnvFile, "CBB_HOME_CGNAT"); err != nil {
+			return false, err
+		}
+	}
+	switch strings.TrimSpace(v) {
+	case "", "0":
+		return false, nil
+	case "1":
+		return true, nil
+	}
+	return false, fmt.Errorf("CBB_HOME_CGNAT=%q: want 1 or 0", v)
+}
+
 // envFileValue returns key's value in a file of KEY=value lines, the
 // format of systemd's EnvironmentFile, or "" if the file or the key is
 // missing.

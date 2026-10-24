@@ -10,7 +10,8 @@
 # Options go after "sh -s --": --express adds the firewall rules
 # clipboardbridge needs without asking and says what it added, --no-firewall
 # adds none and prints the commands that would, --port N moves the member
-# port from 8764 to N; on Linux, --lite installs the lite member for small devices instead of the full
+# port from 8764 to N, --home-cgnat on counts 100.64.0.0/10 as the home
+# network too (a home network on the carrier-grade NAT range); on Linux, --lite installs the lite member for small devices instead of the full
 # member, and --console also starts tmux after a login on the text console.
 # CBB_VERSION=v1.2.3 picks a
 # release instead of the latest; CBB_RELEASE_DIR, for tests, takes the files
@@ -38,6 +39,7 @@ failed() {
 repo=https://github.com/HunterEwok/clipboardbridge
 console=
 port=
+cgnat=
 firewall=${CBB_FIREWALL:-ask}
 lite=no
 while [ $# -gt 0 ]; do
@@ -51,11 +53,19 @@ while [ $# -gt 0 ]; do
 		port="--port $2"
 		shift
 		;;
+	--home-cgnat)
+		[ $# -gt 1 ] || {
+			echo "get.sh: --home-cgnat needs on or off" >&2
+			exit 2
+		}
+		cgnat="--home-cgnat $2"
+		shift
+		;;
 	--express) firewall=express ;;
 	--no-firewall) firewall=no ;;
 	--lite) lite=yes ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --express, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --home-cgnat on|off, --express, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -137,10 +147,10 @@ got=$(sha256 "$tmp/$archive")
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then
-	# shellcheck disable=SC2086 # $port is words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat "$tmp/$dir/cbb"
 else
-	# shellcheck disable=SC2086 # $console and $port are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $console, $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port $cgnat "$tmp/$dir/cbb"
 fi
 

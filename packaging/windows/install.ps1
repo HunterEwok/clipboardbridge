@@ -4,7 +4,7 @@
 # Installs or updates clipboardbridge on Windows 10 (1809 or later) or 11, in
 # an administrator PowerShell, from the unpacked release archive:
 #
-#   powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1 [-Port N] [-Express | -NoFirewall]
+#   powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1 [-Port N] [-HomeCgnat on|off] [-Express | -NoFirewall]
 #
 # It installs cbb.exe and the windowless cbbw.exe to Program Files and adds
 # them to PATH, makes the clipboardbridge local group and adds the signed-in
@@ -13,7 +13,11 @@
 # keeps its data in ProgramData\clipboardbridge where only the service and
 # administrators may reach it, starts the agent with every sign-in and now,
 # and registers the uninstaller under Settings, Apps. -Port moves the member
-# port from 8764 to N, kept until the next -Port; -Port 8764 goes back. It
+# port from 8764 to N, kept until the next -Port; -Port 8764 goes back.
+# -HomeCgnat on (or CBB_HOME_CGNAT=1) counts 100.64.0.0/10, the carrier-grade
+# NAT range, as the home network too, for a home network that uses it: the
+# service, its firewall rules and its outbound limit; -HomeCgnat off goes
+# back, and either is kept until the next one. It
 # lists the rules of Windows Firewall that clipboardbridge needs (mDNS and
 # the member port from the local network) and asks whether to add them; the
 # answer is kept for later runs. -Express (CBB_FIREWALL=express) adds them
@@ -31,6 +35,8 @@
 [CmdletBinding()]
 param(
 	[int]$Port = 0,
+	[ValidateSet('', 'on', 'off')]
+	[string]$HomeCgnat = '',
 	[switch]$Express,
 	[switch]$NoFirewall,
 	[switch]$Details,
@@ -207,24 +213,43 @@ exe sc.exe @('privs', $name, 'SeChangeNotifyPrivilege') | Out-Null
 exe sc.exe @('failure', $name, 'reset=', '86400', 'actions=', 'restart/5000/restart/5000/restart/60000') | Out-Null
 exe sc.exe @('failureflag', $name, '1') | Out-Null
 
-# The port: the one given, else the one kept from before, else 8764. The
-# service reads CBB_PORT from its environment, kept in its registry key.
+# The settings: the ones given, else the ones kept from before, else the
+# defaults (port 8764, 100.64.0.0/10 outside the home network). The service
+# reads CBB_PORT and CBB_HOME_CGNAT from its environment, kept in its
+# registry key.
 $step = 'setting the port'
 $kept = (Get-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue)
-if ($Port -eq 0) {
-	$Port = 8764
-	if ($kept) {
-		foreach ($line in $kept.Environment) {
-			if ($line -match '^CBB_PORT=(\d+)$') {
-				$Port = [int]$Matches[1]
-			}
+$keptCgnat = $false
+$keptPort = 8764
+if ($kept) {
+	foreach ($line in $kept.Environment) {
+		if ($line -match '^CBB_PORT=(\d+)$') {
+			$keptPort = [int]$Matches[1]
+		}
+		if ($line -eq 'CBB_HOME_CGNAT=1') {
+			$keptCgnat = $true
 		}
 	}
 }
-if ($Port -eq 8764) {
+if ($Port -eq 0) {
+	$Port = $keptPort
+}
+if ($HomeCgnat -eq '' -and $env:CBB_HOME_CGNAT -in @('1', '0')) {
+	$HomeCgnat = if ($env:CBB_HOME_CGNAT -eq '1') { 'on' } else { 'off' }
+}
+$cgnat = if ($HomeCgnat -eq '') { $keptCgnat } else { $HomeCgnat -eq 'on' }
+$environment = @()
+if ($Port -ne 8764) {
+	$environment += "CBB_PORT=$Port"
+}
+if ($cgnat) {
+	$environment += 'CBB_HOME_CGNAT=1'
+	Write-Host '100.64.0.0/10 counts as the home network on this PC (-HomeCgnat on).'
+}
+if ($environment.Count -eq 0) {
 	Remove-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue
 } else {
-	New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value @("CBB_PORT=$Port") -Force | Out-Null
+	New-ItemProperty -Path $serviceKey -Name Environment -PropertyType MultiString -Value $environment -Force | Out-Null
 }
 
 # ProgramData lets every user create folders, so a folder that was there
@@ -245,9 +270,18 @@ $step = 'allowing clipboardbridge in Windows Firewall'
 Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' } | Remove-NetFirewallRule
 $on = @(Get-NetFirewallProfile | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { $_.Name })
 $fwState = if ($on.Count -gt 0) { "on for $($on -join ', ')" } else { 'off' }
+# With -HomeCgnat on, 100.64.0.0/10 is the home network too.
+$from = @('LocalSubnet')
+$fromText = 'the local subnet'
+$fromArg = 'LocalSubnet'
+if ($cgnat) {
+	$from += '100.64.0.0/10'
+	$fromText = 'the local subnet and 100.64.0.0/10'
+	$fromArg = 'LocalSubnet, 100.64.0.0/10'
+}
 Write-Host "Firewall: Windows Firewall ($fwState). clipboardbridge requires these rules:"
-Write-Host "  1. Allow incoming TCP $Port from the local subnet to $cbb. Purpose: connections from the group's devices."
-Write-Host "  2. Allow incoming UDP 5353 from the local subnet to $cbb. Purpose: finding the group's devices (mDNS)."
+Write-Host "  1. Allow incoming TCP $Port from $fromText to $cbb. Purpose: connections from the group's devices."
+Write-Host "  2. Allow incoming UDP 5353 from $fromText to $cbb. Purpose: finding the group's devices (mDNS)."
 # The answer is kept in the service's key, which uninstall.ps1 removes.
 $answer = $firewall
 $how = if ($answer -eq 'express') { ' (express installation)' } else { '' }
@@ -273,17 +307,17 @@ if ($answer -in @('yes', 'no', 'express')) {
 $managed = $answer -in @('yes', 'express')
 if ($managed) {
 	New-NetFirewallRule -Group $name -DisplayName "clipboardbridge (TCP $Port)" -Direction Inbound -Action Allow `
-		-Protocol TCP -LocalPort $Port -Program $cbb -RemoteAddress LocalSubnet -Profile Any `
+		-Protocol TCP -LocalPort $Port -Program $cbb -RemoteAddress $from -Profile Any `
 		-Description 'clipboardbridge members and phones at home connect here.' | Out-Null
 	New-NetFirewallRule -Group $name -DisplayName 'clipboardbridge mDNS (UDP 5353)' -Direction Inbound -Action Allow `
-		-Protocol UDP -LocalPort 5353 -Program $cbb -RemoteAddress LocalSubnet -Profile Any `
+		-Protocol UDP -LocalPort 5353 -Program $cbb -RemoteAddress $from -Profile Any `
 		-Description 'clipboardbridge finds the other devices at home with mDNS.' | Out-Null
 	Write-Host "Added the rules above$how. clipboardbridge manages them from now on."
 } else {
 	Write-Host 'No firewall rules were added. clipboardbridge works only while the firewall allows the rules above.'
 	Write-Host 'To add them by hand, run in an administrator PowerShell:'
-	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge (TCP $Port)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program '$cbb' -RemoteAddress LocalSubnet"
-	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge mDNS (UDP 5353)' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -Program '$cbb' -RemoteAddress LocalSubnet"
+	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge (TCP $Port)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program '$cbb' -RemoteAddress $fromArg"
+	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge mDNS (UDP 5353)' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -Program '$cbb' -RemoteAddress $fromArg"
 	Write-Host 'To let clipboardbridge add and manage them, run the installer again with -Express ($env:CBB_FIREWALL = "express" for get.ps1).'
 }
 Write-Host 'clipboardbridge also adds an outbound rule that keeps its service on the home network and, with cbb global on, its group''s servers.'
@@ -294,12 +328,18 @@ $step = 'keeping the service on the home network'
 # the firewall allows. It is a limit, not an opening, so it is there
 # whatever the answer above. Allowed are loopback, private IPv4,
 # link-local, multicast and broadcast, and unique-local, link-local and
-# multicast IPv6; the rule lists the rest. cbb global lets the service reach
-# its group's hub, forwarder and relay too (cmd/cbb/awaynet.go, which keeps
-# the same list), and a reinstall keeps what it allowed.
-if (-not (Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue)) {
-	$outside = @(
-		'0.0.0.0-9.255.255.255', '11.0.0.0-126.255.255.255', '128.0.0.0-169.253.255.255',
+# multicast IPv6, and with -HomeCgnat on 100.64.0.0/10; the rule lists the
+# rest. cbb global lets the service reach its group's hub, forwarder and
+# relay too (cmd/cbb/awaynet.go, which keeps the same list), and a
+# reinstall keeps what it allowed; while it allows nothing (no AwayAllow),
+# every run writes the home-only rule again for the current setting.
+$granted = Get-ItemProperty -Path $serviceKey -Name AwayAllow -ErrorAction SilentlyContinue
+$rule = Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue
+$regrant = $false
+if (-not $rule -or -not $granted) {
+	$middle = if ($cgnat) { @('11.0.0.0-100.63.255.255', '100.128.0.0-126.255.255.255') } else { @('11.0.0.0-126.255.255.255') }
+	$outside = @('0.0.0.0-9.255.255.255') + $middle + @(
+		'128.0.0.0-169.253.255.255',
 		'169.255.0.0-172.15.255.255', '172.32.0.0-192.167.255.255', '192.169.0.0-223.255.255.255',
 		'::2-fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'fe00::-fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
 		'fec0::-feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')
@@ -308,6 +348,10 @@ if (-not (Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyConti
 	New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
 		-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any `
 		-Description 'The clipboardbridge service reaches only the home network and its group''s servers; cbb global changes this rule.' | Out-Null
+} elseif ($cgnat -ne (([string]$granted.AwayAllow -split ' ') -contains 'cgnat')) {
+	# cbb global's rule was written for the other setting: cbb global
+	# allow writes it again once the service answers.
+	$regrant = $true
 }
 
 $step = 'starting the service'
@@ -366,6 +410,13 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 if (-not $ok) {
 	throw "the service does not answer; its log is $(Join-Path $dataDir 'logs\service.log')"
+}
+if ($regrant) {
+	$step = 'writing the outbound rule for -HomeCgnat'
+	& $cbb global allow
+	if ($LASTEXITCODE -ne 0) {
+		throw "cbb global allow exited with $LASTEXITCODE"
+	}
 }
 
 Write-Host "clipboardbridge $v is running on TCP port $Port; $user may use it."

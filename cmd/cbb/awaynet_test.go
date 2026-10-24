@@ -154,10 +154,10 @@ func TestAwayNetNotConfined(t *testing.T) {
 }
 
 func TestBlocked(t *testing.T) {
-	if got := blocked(nil); len(got) != len(outside) || got[0] != "0.0.0.0-9.255.255.255" {
+	if got := blocked(nil, false); len(got) != len(outside) || got[0] != "0.0.0.0-9.255.255.255" {
 		t.Fatalf("home only: %q", got)
 	}
-	got := blocked([]netip.Addr{hubAddr, netip.MustParseAddr("2001:db8::1"), netip.MustParseAddr("11.0.0.0")})
+	got := blocked([]netip.Addr{hubAddr, netip.MustParseAddr("2001:db8::1"), netip.MustParseAddr("11.0.0.0")}, false)
 	for _, want := range []string{"192.169.0.0-203.0.113.6", "203.0.113.8-223.255.255.255", "::2-2001:db8::", "2001:db8::2-fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "11.0.0.1-126.255.255.255"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("blocked lacks %s: %q", want, got)
@@ -170,6 +170,16 @@ func TestBlocked(t *testing.T) {
 		if strings.Contains(r, "203.0.113.7") && !strings.Contains(r, "-") {
 			t.Errorf("the hub is still blocked: %q", got)
 		}
+	}
+	// CBB_HOME_CGNAT=1: 100.64.0.0/10 is home, its neighbours are not.
+	got = blocked([]netip.Addr{hubAddr}, true)
+	for _, want := range []string{"11.0.0.0-100.63.255.255", "100.128.0.0-126.255.255.255"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("with cgnat, blocked lacks %s: %q", want, got)
+		}
+	}
+	if len(got) != len(outside)+2 {
+		t.Errorf("with cgnat: %q", got)
 	}
 }
 
@@ -216,6 +226,11 @@ func TestAwayNetWindows(t *testing.T) {
 	if err != nil || !changed || restarted || !windowsLimit.granted().equal(client) {
 		t.Fatalf("on: changed %v, restarted %v, granted %+v, %v", changed, restarted, windowsLimit.granted(), err)
 	}
+	for _, line := range strings.Split(scripts[0], "\n") {
+		if strings.Count(line, "'")%2 != 0 {
+			t.Fatalf("an unmatched quote in PowerShell: %s", line)
+		}
+	}
 	if s := scripts[0]; !strings.Contains(s, "'203.0.113.8-223.255.255.255'") || strings.Contains(s, "-Protocol") || strings.Contains(s, firewallRule+"-udp") {
 		t.Fatalf("client script %s", s)
 	}
@@ -231,6 +246,25 @@ func TestAwayNetWindows(t *testing.T) {
 	}
 	if s := scripts[2]; !strings.Contains(s, "Remove-ItemProperty") || !strings.Contains(s, "'0.0.0.0-9.255.255.255'") {
 		t.Fatalf("off script %s", s)
+	}
+	// CBB_HOME_CGNAT=1 in the service's environment: the rule leaves
+	// 100.64.0.0/10 to it, AwayAllow says so, and a grant without it
+	// differs, so cbb global allow writes the rule again.
+	oldCGNAT := homeCGNAT
+	t.Cleanup(func() { homeCGNAT = oldCGNAT })
+	homeCGNAT = func() bool { return true }
+	cg := grant{on: true, addrs: []netip.Addr{fwdAddr, hubAddr}, cgnat: true}
+	if cg.equal(client) {
+		t.Fatal("a grant with cgnat equals one without")
+	}
+	if _, _, err := setAwayNet(cg); err != nil || !windowsLimit.granted().equal(cg) || !strings.HasSuffix(kept, " cgnat") {
+		t.Fatalf("cgnat: %+v %q, %v", windowsLimit.granted(), kept, err)
+	}
+	if s := scripts[3]; !strings.Contains(s, "'100.128.0.0-126.255.255.255'") || strings.Contains(s, "'11.0.0.0-126.255.255.255'") {
+		t.Fatalf("cgnat script %s", s)
+	}
+	if _, _, err := setAwayNet(grant{}); err != nil || !strings.Contains(scripts[4], "'11.0.0.0-100.63.255.255'") {
+		t.Fatalf("off with cgnat: %v %s", err, scripts[4])
 	}
 }
 

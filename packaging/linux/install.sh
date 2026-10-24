@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Linux machine with systemd:
 #
-#   sudo sh install.sh [--console] [--port N] [--express | --no-firewall] path/to/cbb
+#   sudo sh install.sh [--console] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
 #
 # The full member's archive and the lite member's (cbb-lite-linux-*) both
 # carry this script, each with its own systemd unit beside it; cbb version
@@ -20,7 +20,11 @@
 # runs. --express (CBB_FIREWALL=express) adds them without asking and says
 # what it added, --no-firewall (CBB_FIREWALL=no) adds none and prints the
 # commands that would. While it manages them, every run keeps them current,
-# so an old port stays closed. uninstall.sh removes it all again.
+# so an old port stays closed. --home-cgnat on (or CBB_HOME_CGNAT=1) counts
+# 100.64.0.0/10, the carrier-grade NAT range, as the home network too, for a
+# home network that uses it: the service (CBB_HOME_CGNAT=1 in the same file), the systemd
+# unit's address limit and the firewall rules; --home-cgnat off goes back.
+# The full member only. uninstall.sh removes it all again.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -39,11 +43,12 @@ trap 'failed $?' EXIT
 export LC_ALL=C
 
 usage() {
-	echo "usage: sudo sh install.sh [--console] [--port N] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--console] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 console=no
 port=
+cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
 while [ $# -gt 1 ]; do
 	case $1 in
@@ -54,11 +59,26 @@ while [ $# -gt 1 ]; do
 		port=$2
 		shift
 		;;
+	--home-cgnat)
+		case $2 in
+		on) cgnat=1 ;;
+		off) cgnat=0 ;;
+		*) usage ;;
+		esac
+		shift
+		;;
 	*) usage ;;
 	esac
 	shift
 done
 [ $# -eq 1 ] || usage
+case $cgnat in
+'' | 0 | 1) ;;
+*)
+	echo "install.sh: CBB_HOME_CGNAT is 1 or 0, not $cgnat" >&2
+	exit 2
+	;;
+esac
 case $port in
 '') ;;
 *[!0-9]*) usage ;;
@@ -100,6 +120,10 @@ if [ -x /usr/local/bin/cbb ] && [ "$(kind_of /usr/local/bin/cbb)" != "$kind" ]; 
 	echo "install.sh: the $(kind_of /usr/local/bin/cbb) member is installed here, and the $kind member cannot use its keys;" >&2
 	echo "remove it first: sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge" >&2
 	exit 1
+fi
+if [ "$kind" = lite ] && [ "$cgnat" = 1 ]; then
+	echo "install.sh: --home-cgnat is for the full member" >&2
+	exit 2
 fi
 
 # Up to 0.2.0 clipboardbridge was called clipbridge, and its protocol does
@@ -184,22 +208,48 @@ if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	echo "Added $SUDO_USER to the clipboardbridge group; log in again to use cbb copy and paste."
 fi
 
-# The port: the one given, else the one kept from before, else 8764.
+# The settings: the ones given, else the ones kept from before, else the
+# defaults (port 8764, 100.64.0.0/10 outside the home network).
 env=/etc/clipboardbridge/clipboardbridge.env
 install -d -m 0755 /etc/clipboardbridge
-if [ -n "$port" ]; then
-	if [ "$port" -eq 8764 ]; then
-		rm -f "$env"
-	else
-		{
-			echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N."
-			echo "CBB_PORT=$port"
-		} >"$env"
-		chmod 0644 "$env"
-	fi
+if [ -z "$port" ]; then
+	port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
 fi
-port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
 port=${port:-8764}
+if [ -z "$cgnat" ]; then
+	cgnat=$(sed -n 's/^CBB_HOME_CGNAT=//p' "$env" 2>/dev/null | tail -n 1)
+fi
+[ "$cgnat" = 1 ] || cgnat=0
+if [ "$port" = 8764 ] && [ "$cgnat" = 0 ]; then
+	rm -f "$env"
+else
+	{
+		echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N and --home-cgnat on|off."
+		if [ "$port" != 8764 ]; then
+			echo "CBB_PORT=$port"
+		fi
+		if [ "$cgnat" = 1 ]; then
+			echo "CBB_HOME_CGNAT=1"
+		fi
+	} >"$env"
+	chmod 0644 "$env"
+fi
+# The unit allows the home network's addresses only; a home network on
+# 100.64.0.0/10 is added by a drop-in of its own, beside cbb global's.
+cgnatconf=/etc/systemd/system/clipboardbridge.service.d/cgnat.conf
+if [ "$cgnat" = 1 ]; then
+	install -d -m 0755 "${cgnatconf%/*}"
+	{
+		echo "# Written by clipboardbridge's install.sh --home-cgnat on: 100.64.0.0/10 is the home network here."
+		echo "[Service]"
+		echo "IPAddressAllow=100.64.0.0/10"
+	} >"$cgnatconf"
+	chmod 0644 "$cgnatconf"
+	echo "100.64.0.0/10 counts as the home network on this device (--home-cgnat on)."
+else
+	rm -f "$cgnatconf"
+	rmdir "${cgnatconf%/*}" 2>/dev/null || true
+fi
 
 # A firewall drops what it does not allow, and clipboardbridge needs mDNS and its
 # port from the other devices at home: firewall.sh adds them with the user's
