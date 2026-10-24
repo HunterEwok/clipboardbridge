@@ -191,6 +191,67 @@ func TestComputerRoot(t *testing.T) {
 	}
 }
 
+// TestTakenOver checks the identity of an admin computer that takes the
+// group over: it holds the new root's key, is the root and no admin any
+// more, keeps that across a save, and is no root once the group moves on.
+func TestTakenOver(t *testing.T) {
+	root := newGroup(t)
+	m, err := join(t, root, false, t0).WithAdminKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCA, err := root.GroupCA.IssueAdmin(m.ID, &m.AdminKey.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := m.WithAdminCA(adminCA.Raw, t0)
+	if err == nil {
+		admin, err = admin.WithPhoneCA(*root.PhoneCA, t0)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := NewRootCA(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _ := NewRootCA(t0)
+	if _, err := admin.TakenOver(next, []*x509.Certificate{other.Cert}); err == nil {
+		t.Error("took the group over though the records lead to another root")
+	}
+	if _, err := m.TakenOver(next, []*x509.Certificate{next.Cert}); err == nil {
+		t.Error("a member that is no admin took the group over")
+	}
+	took, err := admin.TakenOver(next, []*x509.Certificate{next.Cert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !took.IsRoot() || took.AdminCA != nil || took.AdminKey != nil || took.NeedsAdminKey() {
+		t.Error("the admin that took the group over is not its root")
+	}
+	if ca, chain := took.Signer(); ca == nil || !ca.Cert.Equal(next.Cert) || chain != nil {
+		t.Error("the new root does not sign with its root key")
+	}
+	dir := t.TempDir()
+	if err := took.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(dir); err != nil || !got.IsRoot() || !got.RootKey.Equal(next.Key) {
+		t.Fatalf("the root key was not kept: %v", err)
+	}
+	renewed, changed, err := took.Renew(took.Cert.NotAfter.Add(-memberRenewBefore + time.Hour))
+	if err != nil || !changed || renewed.Cert.CheckSignatureFrom(next.Cert) != nil || renewed.Issuer != nil {
+		t.Errorf("the new root does not renew its own certificate from itself: %v", err)
+	}
+	if _, err := admin.WithRoots([]*x509.Certificate{next.Cert}); err != nil {
+		t.Errorf("an admin does not follow the new root: %v", err)
+	}
+	moved, err := took.WithRoots([]*x509.Certificate{next.Cert, other.Cert})
+	if err != nil || moved.IsRoot() || moved.RootKey != nil {
+		t.Errorf("after another takeover the device is still root: %v", err)
+	}
+}
+
 // TestComputerAdminRenews checks that an admin computer renews its own
 // certificate and those of its peers from its admin CA, which the peers
 // take with the issuer.

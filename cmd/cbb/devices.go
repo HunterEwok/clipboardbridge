@@ -114,3 +114,23 @@ func cmdAdmin(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "%s is an admin now: it can admit and remove devices and pair iPhones for the shortcut.\n", m.Name)
 	return 0
 }
+
+// cmdTakeover takes the group over from its lost root computer, on an
+// admin.
+func cmdTakeover(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb takeover <name or device ID of the lost root>; cbb status shows it")
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpTakeover, Name: args[0]}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "This device is the group's root now, and %s is removed from it. The group has a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.\n", m.Name)
+	return 0
+}

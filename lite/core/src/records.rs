@@ -288,7 +288,7 @@ impl Records {
         let mut root = None;
         if body.kind == "root" {
             if self.roots[&anchor].path_len != Some(1) {
-                return Err(Error::msg("only a group whose root is a phone is handed to a new root"));
+                return Err(Error::msg("only a group with a root is handed to a new root"));
             }
             let c = Cert::parse(&body.root)?;
             certs::check_root(&c)?;
