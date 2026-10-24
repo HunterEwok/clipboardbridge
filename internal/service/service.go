@@ -142,6 +142,8 @@ type Service struct {
 	holder        bool
 	holdSetting   string // HolderAuto, HolderFirst, HolderFallback or HolderNever
 	battery       bool   // the machine has a battery, guessed at the start
+	// oldKeysMu guards oldKeysFile.
+	oldKeysMu sync.Mutex
 	// pendingPhoneCA is an iPhone CA another admin sent while this one held
 	// another that still stood, kept in case the records revoke that one.
 	pendingPhoneCA *group.CA

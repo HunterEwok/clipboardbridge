@@ -1290,14 +1290,14 @@ and that member becomes the root:
    path length 0 signed itself still counts when every record that revokes that key was
    signed under the root it names: a leftover copy of the old key can then break the group
    by signing a rival handover, but never take it over.
-3. If the group has shortcut iPhones, it replaces the iPhone CA as above, since every member
-   held its key.
+3. It replaces the iPhone CA as above, since every member held its key; iPhones that use
+   the shortcut pair again.
 4. It signs a new device record for every device, with role `full` or `lite` and the `os`
    its hello states, and renews certificates from the new root as members connect.
 5. Each member that gets the records deletes its copies of the old CA keys and says so in
    its hello. Until a member has said so, `cbb status` marks it as still holding the old
-   keys, and removing it needs a new group, as before the upgrade. Members that were off
-   follow when they come back.
+   keys, and `cbb revoke` refuses to remove it. Members that were off follow when they
+   come back.
 
 **The shortcut is a legacy way.** An iPhone without the app joins through a shortcut and a
 token (section "The iPhone button"), never with a key of its own. It stays for now, since

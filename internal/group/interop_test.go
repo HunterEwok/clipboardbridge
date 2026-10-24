@@ -343,6 +343,15 @@ func TestGoRootVectors(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if refused := checkRootVectors(t, path); refused != 6 {
+		t.Errorf("%d chains refused, want the lost phone, the two from the old root's key, those two with another CA, and one without its issuer", refused)
+	}
+}
+
+// checkRootVectors checks a file of rootVectors against Records and
+// returns how many chains it refuses.
+func checkRootVectors(t *testing.T, path string) int {
+	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -390,8 +399,64 @@ func TestGoRootVectors(t *testing.T) {
 			refused++
 		}
 	}
-	if refused != 6 {
-		t.Errorf("%d chains refused, want the lost phone, the two from the old root's key, those two with another CA, and one without its issuer", refused)
+	return refused
+}
+
+// TestGoUpgradeVectors writes (with -update) and checks
+// testdata/interop/go-upgrade.json: a legacy group that cbb upgrade gave a
+// root, for the lite member's records to agree with.
+func TestGoUpgradeVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-upgrade.json")
+	if *update {
+		legacy := newLegacyGroup(t)
+		g := legacy.GroupCA.Cert
+		root := newRoot(t)
+		m := member(t, &legacy.GroupCA)
+		old := KeyHashOf(g)
+		all := []Record{
+			deviceRecord(t, g, &legacy.GroupCA, nil, m, "pi", t0.UnixMilli()),
+			rootRecord(t, g, &legacy.GroupCA, nil, root.Cert),
+			revokeRecord(t, g, root, nil, []KeyHash{old}, []KeyHash{KeyHashOf(m)}),
+			deviceRecord(t, g, root, nil, m, "pi", t0.UnixMilli()+1),
+		}
+		s := NewRecords(g)
+		for _, r := range all {
+			mustAdd(t, s, r)
+		}
+		v := rootVectors{GroupCA: g.Raw, Digest: s.Digest()}
+		for i := len(all) - 1; i >= 0; i-- {
+			v.Records = append(v.Records, all[i])
+		}
+		for _, r := range s.Roots() {
+			v.Roots = append(v.Roots, r.Raw)
+		}
+		for _, d := range s.Devices() {
+			v.Devices = append(v.Devices, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+		}
+		for _, c := range []struct {
+			name  string
+			chain []*x509.Certificate
+		}{
+			{"a member the old key admitted", []*x509.Certificate{m}},
+			{"a device from the new root", []*x509.Certificate{member(t, root)}},
+			{"a new certificate from the old key", []*x509.Certificate{member(t, &legacy.GroupCA)}},
+		} {
+			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
+			for _, cert := range c.chain {
+				rc.Chain = append(rc.Chain, cert.Raw)
+			}
+			v.Chains = append(v.Chains, rc)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if refused := checkRootVectors(t, path); refused != 1 {
+		t.Errorf("%d chains refused, want only the new certificate from the old key", refused)
 	}
 }
 

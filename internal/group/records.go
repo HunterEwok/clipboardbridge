@@ -448,7 +448,13 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 		return nil, errors.New("group: a record's chain is too long")
 	}
 	if body.Type == RecordRoot {
-		if s.roots[sr.anchor].MaxPathLen != 1 {
+		// A legacy group CA hands the group to its first root itself, with
+		// its own key (cbb upgrade); a root with path length 1 also through
+		// its admins.
+		switch anchor := s.roots[sr.anchor]; {
+		case anchor.MaxPathLen == 1:
+		case sr.anchor == s.caKey && sr.signer == sr.anchor:
+		default:
 			return nil, errors.New("group: only a group with a root is handed to a new root")
 		}
 		root, err := x509.ParseCertificate(body.Root)
@@ -487,7 +493,7 @@ func (s *Records) path() []*x509.Certificate {
 		var next *signedRecord
 		var best [sha256.Size]byte
 		for _, r := range s.byID {
-			if r.root == nil || r.anchor != cur || on[KeyHashOf(r.root)] || s.Revoked(r.signer) || !s.fromRoot(r) || !s.mayHandOver(r) {
+			if r.root == nil || r.anchor != cur || on[KeyHashOf(r.root)] || s.Revoked(r.signer) && !s.upgradeStands(r) || !s.fromRoot(r) || !s.mayHandOver(r) {
 				continue
 			}
 			if sum := sha256.Sum256(r.root.Raw); next == nil || bytes.Compare(sum[:], best[:]) < 0 {
@@ -500,6 +506,25 @@ func (s *Records) path() []*x509.Certificate {
 		path = append(path, next.root)
 		on[KeyHashOf(next.root)] = true
 	}
+}
+
+// upgradeStands reports whether the root record r, in which a legacy group
+// CA hands the group to its first root (cbb upgrade), still counts though
+// the group CA's key is revoked: every record that revokes it was signed
+// under the root that r names. A leftover copy of the old key can sign a
+// rival root record or a revocation of its own, which breaks the group,
+// but it never takes it over.
+func (s *Records) upgradeStands(r *signedRecord) bool {
+	if r.anchor != s.caKey || r.signer != r.anchor || s.groupCA.MaxPathLen != 0 {
+		return false
+	}
+	root := KeyHashOf(r.root)
+	for _, rv := range s.byID {
+		if rv.body.Type == RecordRevoke && slices.Contains(rv.body.Keys, r.signer) && rv.anchor != root {
+			return false
+		}
+	}
+	return true
 }
 
 // Roots returns the roots that took the group over from the group CA, in
@@ -1060,13 +1085,13 @@ func (s *Records) RevokedBy(admin KeyHash) []KeyHash {
 
 // RootDevice returns the phone or computer that holds the group's current
 // root: the one whose own device record the current root's key signed, the
-// latest of them; "" when there is none, as in a legacy group, whose key
-// every Linux member holds.
+// latest of them; "" when there is none, as in a legacy group not yet
+// upgraded, whose key every Linux member holds.
 func (s *Records) RootDevice() DeviceID {
-	if s.groupCA.MaxPathLen == 0 {
+	path := s.path()
+	if path[len(path)-1].MaxPathLen == 0 {
 		return ""
 	}
-	path := s.path()
 	cur := KeyHashOf(path[len(path)-1])
 	var best *signedRecord
 	for _, r := range s.byID {

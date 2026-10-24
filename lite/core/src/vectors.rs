@@ -179,7 +179,18 @@ fn swift_admin() {
 /// devices list, which chains the records refuse, and the digest.
 #[test]
 fn go_root() {
-    let v = vectors("go-root.json");
+    check_roots("go-root.json");
+}
+
+/// A legacy group that cbb upgrade gave a root (go-upgrade.json), checked
+/// as go-root.json.
+#[test]
+fn go_upgrade() {
+    check_roots("go-upgrade.json");
+}
+
+fn check_roots(file: &str) {
+    let v = vectors(file);
     let mut s = Records::new(&cert(&v["group_ca"]));
     // In reverse order too: the result does not depend on it.
     let mut rs = records(&v["records"]);

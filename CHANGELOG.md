@@ -14,6 +14,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   way, inside what looks like HTTPS to the site. The group's WireGuard and member TLS go
   inside it unchanged. Xray-core runs in `cbb` and in the phones' tunnel (`mobile/cbbtun`),
   so both apps take the way over VLESS from the hub's offer too.
+- `cbb upgrade`, once on a Linux or Windows member of a group made before this version,
+  gives the group a root, that member: the old CA keys are revoked and the other members
+  delete their copies when they hear of it, so every device but the root can then be
+  removed by a record. No device pairs again; the iPhone CA is replaced, so iPhones that
+  use the shortcut pair again. `cbb status` marks the computers that may still hold the old
+  keys until they connect.
 - `cbb takeover NAME` on an admin computer takes the group over from its lost root
   computer, as an admin phone does in a phone's group: the admin becomes the root, the
   lost root is removed, every other device stays, and the iPhone CA is replaced, so iPhones
@@ -87,7 +93,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   shortcut with the group's iPhone CA. Any device but the root is removed with
   `cbb revoke` and the group stays; removing an admin replaces the iPhone CA, so the
   iPhones that use the shortcut pair again. A Mac can create a group and be an admin.
-  Groups made before keep working as they were until `cbb upgrade` comes.
+  Groups made before keep working as they were until `cbb upgrade`.
 - `cbb new` creates a group on a computer, and `cbb pair` does the rest by the device's
   state: in no group it joins one (it shows a QR code for the phone and also takes a
   typed code, `cbb pair -code` reads one from standard input), in a group it admits a

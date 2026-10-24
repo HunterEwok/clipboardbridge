@@ -25,7 +25,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tSEEN\tCLOCK\tID")
-	unlisted := false
+	unlisted, oldKeys := false, false
 	for _, d := range devs {
 		name := d.Name
 		if d.Self {
@@ -43,6 +43,9 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 			admin = "frozen"
 		case d.Admin:
 			admin = "admin"
+		case d.OldKeys:
+			admin = "old keys"
+			oldKeys = true
 		}
 		clock := ""
 		if ms, ok := skew[d.ID]; ok {
@@ -56,6 +59,9 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 	tw.Flush()
 	if unlisted {
 		fmt.Fprintln(w, "* not in the devices list yet; the group's root adds it when they meet.")
+	}
+	if oldKeys {
+		fmt.Fprintln(w, "old keys: it may still hold the group's CA keys from before cbb upgrade; it deletes them when it next connects.")
 	}
 }
 
@@ -162,5 +168,26 @@ func cmdTakeover(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "This device is the group's root now, and %s is removed from it. The group has a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.\n", m.Name)
+	return 0
+}
+
+// cmdUpgrade gives a group made before roots and admins a root: this
+// computer, which holds the group's keys.
+func cmdUpgrade(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb upgrade, on a Linux or Windows member, after every member runs this version")
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpUpgrade}}); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "Upgraded the group: this computer is its root now, and only it and the admins it makes (cbb admin) hold keys.")
+	fmt.Fprintln(stdout, "The other computers delete their copies of the old keys when they hear of it; cbb status marks those that have not yet.")
+	fmt.Fprintln(stdout, "The group has a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.")
 	return 0
 }

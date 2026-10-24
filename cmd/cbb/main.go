@@ -22,6 +22,7 @@ Commands:
   revoke <name or ID>     Remove a device from the group.
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
   takeover <name or ID>   Take the group over from its lost root computer (on an admin).
+  upgrade                 Give a group made before 0.4 a root: this computer (holds its keys).
   freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
   unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
   global [on|off]         Show, or turn on or off, sync over the internet on this device.
@@ -79,6 +80,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdGlobal(rest, stdin, stdout, stderr)
 	case "revoke":
 		return cmdRevoke(rest, stdout, stderr)
+	case "upgrade":
+		return cmdUpgrade(rest, stdout, stderr)
 	case "takeover":
 		return cmdTakeover(rest, stdout, stderr)
 	case "freeze", "unfreeze":
