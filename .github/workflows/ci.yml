@@ -631,11 +631,15 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: |
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo clippy --locked -p clipboardbridge-embassy --features host --all-targets -- -D warnings
       - name: cargo test (the interop vectors in testdata/interop too)
         run: cargo test --locked --workspace
       - name: cargo build
-        run: cargo build --locked --release
+        run: |
+          cargo build --locked --release
+          cargo build --locked --release -p clipboardbridge-embassy --features host
       - name: cargo build for the Raspberry Pi
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -651,6 +655,13 @@ jobs:
       - name: the lite member joins by the phone and syncs with Go members
         working-directory: .
         run: CBB_LITE="$PWD/lite/target/release/cbb-lite" go test -race ./internal/service -run TestLiteMember -v
+      - name: the ESP32's network code joins by the phone on Linux, over a TAP interface
+        working-directory: .
+        run: |
+          sudo ip tuntap add name tap0 mode tap user "$USER"
+          sudo ip addr add 192.168.69.1/24 dev tap0
+          sudo ip link set tap0 up
+          CBB_ESP32_ON_LINUX="$PWD/lite/target/release/esp32-on-linux" go test -race ./internal/service -run TestEmbassyJoiner -v
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cbb-lite-linux-arm64
