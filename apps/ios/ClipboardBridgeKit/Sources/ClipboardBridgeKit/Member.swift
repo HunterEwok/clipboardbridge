@@ -164,9 +164,46 @@ public enum Member {
         /// its admin key, for the root to certify (section 10, "A computer
         /// as admin").
         public var adminKey: Data?
+        /// The sender's WireGuard public key, 32 bytes, for the group's
+        /// hub (section 11).
+        public var tunnelKey: Data?
 
-        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, adminKey: Data? = nil) {
-            (self.wallMS, self.current, self.records, self.name, self.adminKey) = (wallMS, current, records, name, adminKey)
+        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, adminKey: Data? = nil,
+                    tunnelKey: Data? = nil) {
+            (self.wallMS, self.current, self.records, self.name, self.adminKey, self.tunnelKey) =
+                (wallMS, current, records, name, adminKey, tunnelKey)
+        }
+    }
+
+    /// The group's hub's answer to the tunnel key a hello carried (section
+    /// 11): the hub's WireGuard public key, this member's own preshared key
+    /// and the hub's addresses away from home, "ip:port" or "[ipv6]:port".
+    public struct TunnelOffer: Codable, Equatable, Sendable {
+        public var hubKey: Data
+        public var psk: Data
+        public var endpoints: [String]
+
+        public init(hubKey: Data, psk: Data, endpoints: [String] = []) {
+            (self.hubKey, self.psk, self.endpoints) = (hubKey, psk, endpoints)
+        }
+
+        /// Whether both keys are 32 bytes, as a tunnel needs.
+        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
+
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            hubKey = try c.decodeIfPresent(Data.self, forKey: .hub_key) ?? Data()
+            psk = try c.decodeIfPresent(Data.self, forKey: .psk) ?? Data()
+            endpoints = try c.decodeIfPresent([String].self, forKey: .endpoints) ?? []
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(hubKey, forKey: .hub_key)
+            try c.encode(psk, forKey: .psk)
+            if !endpoints.isEmpty { try c.encode(endpoints, forKey: .endpoints) }
         }
     }
 
@@ -194,6 +231,10 @@ public enum Member {
         /// From the root: the receiver's admin CA, DER, for the admin key
         /// its hello offered.
         case admin(Data)
+        /// From the group's hub: its offer for the tunnel key the
+        /// receiver's hello carried; nil when absent or when it did not
+        /// decode.
+        case tunnel(TunnelOffer?)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -230,13 +271,14 @@ public enum Member {
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
-                                      adminKey: h.admin_key))
+                                      adminKey: h.admin_key, tunnelKey: h.tunnel_key))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
         case "cert": return .cert(w.cert ?? Data(), issuer: w.issuer)
         case "records": return .records(w.records ?? [])
         case "admin": return .admin(w.admin_ca ?? Data())
+        case "tunnel": return .tunnel(w.tunnel?.value)
         default: return .unknown(w.t)
         }
     }
@@ -254,6 +296,7 @@ public enum Member {
         var records: String?
         var name: String?
         var admin_key: Data?
+        var tunnel_key: Data?
     }
 
     struct WireIn: Decodable {
@@ -265,14 +308,15 @@ public enum Member {
         var issuer: Data?
         var records: [Record]?
         var admin_ca: Data?
+        var tunnel: Lenient<TunnelOffer>?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, admin_key }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, admin_key, tunnel_key }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -286,6 +330,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.records, forKey: .records)
                 try hc.encodeIfPresent(h.name, forKey: .name)
                 try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
+                try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)
@@ -301,6 +346,9 @@ public enum Member {
             case let .admin(ca):
                 try c.encode("admin", forKey: .t)
                 try c.encode(ca, forKey: .admin_ca)
+            case let .tunnel(o):
+                try c.encode("tunnel", forKey: .t)
+                try c.encodeIfPresent(o, forKey: .tunnel)
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }

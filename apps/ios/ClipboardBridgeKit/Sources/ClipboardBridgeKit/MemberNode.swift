@@ -45,6 +45,10 @@ public actor MemberNode {
     private let records: RecordStore?
     private let renew: (@Sendable ([Data]) -> Renewal?)?
     private let adminCA: (@Sendable (Data) -> Data?)?
+    private let onTunnel: @Sendable (String?, Member.TunnelOffer) -> Void
+    /// The WireGuard public key the hellos offer the group's hub (section
+    /// 11); nil while sync away from home is off.
+    public private(set) var tunnelKey: Data?
 
     /// A renewed member certificate for a peer, DER, and the admin CA that
     /// issued it; nil when a root did.
@@ -62,15 +66,25 @@ public actor MemberNode {
     /// the peer then gets in a cert message (section 2); adminCA, on the
     /// root, gets the admin key a computer's hello offers and returns the
     /// admin CA this phone issued for it, which the computer then gets in
-    /// an admin message, so one that missed it gets it again.
+    /// an admin message, so one that missed it gets it again; tunnelKey is
+    /// the key the hellos offer the hub, and onTunnel gets each valid offer
+    /// a peer sends for it, with the device ID the caller of serve named
+    /// the peer by.
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
                 adminCA: (@Sendable (Data) -> Data?)? = nil,
+                tunnelKey: Data? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
-                onCert: @escaping @Sendable (Data) -> Void = { _ in }) {
+                onCert: @escaping @Sendable (Data) -> Void = { _ in },
+                onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
+        (self.tunnelKey, self.onTunnel) = (tunnelKey, onTunnel)
     }
+
+    /// Replaces the tunnel key that the next connections' hellos offer;
+    /// nil offers none.
+    public func set(tunnelKey: Data?) { self.tunnelKey = tunnelKey }
 
     /// The current event with its age as of now.
     public var current: Member.Event? { engine.currentEvent }
@@ -118,6 +132,7 @@ public actor MemberNode {
         conns[id] = c
         var hello = engine.hello(name: name)
         hello.records = records?.digest
+        hello.tunnelKey = tunnelKey
         c.enqueue(.hello(role, hello))
         let writer = Task { await c.runWriter() }
         let watchdog = Task { await c.runWatchdog() }
@@ -158,6 +173,8 @@ public actor MemberNode {
                 apply(engine.received(e), from: id)
             case let .cert(der, _):
                 onCert(der)
+            case let .tunnel(o?) where o.isValid:
+                onTunnel(c.peer, o)
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
                     let fresh = store.add(rs)

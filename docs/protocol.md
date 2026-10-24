@@ -1029,7 +1029,10 @@ identity (mode 0600) and the path in the identity file's `roots`.
 The keys of the group's WireGuard tunnel for sync away from home ([design.md](design.md),
 "Sync away from home"). Implemented in Go (`internal/tunnel`, `internal/node`,
 `internal/service/tunnel.go`); the tunnel carries the member protocol between Go members
-("Through the tunnel" below); the phones and the lite member do not take part yet.
+("Through the tunnel" below). The phone kits speak the hello's `tunnel_key` and the
+`tunnel` message (Swift `MemberNode`, Kotlin `MemberNode`) and bind the tunnel itself from
+Go (`mobile/cbbtun`), but the apps do not turn it on yet; the lite member does not take part
+yet.
 
 - Sync away from home is off by default; nothing in this section happens on a device until
   the user turns it on there (`cbb away on`, the control operation `away`). Go turns it on

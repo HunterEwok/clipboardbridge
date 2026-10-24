@@ -40,6 +40,10 @@ pub struct Message {
     pub records: Vec<Record>,
     #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
     pub admin_ca: Option<Vec<u8>>,
+    /// In a tunnel message, the group's hub's offer (section 11), kept as
+    /// it came: the lite member does not use the tunnel yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel: Option<Value>,
 }
 
 /// The content of a hello.

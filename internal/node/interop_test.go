@@ -97,6 +97,10 @@ func TestMemberInteropVectors(t *testing.T) {
 			{Body: []byte(`{"v":1,"type":"revoke"}`), Sig: []byte("sig")},
 			{Body: []byte(`{"v":1}`), Sig: []byte("sig2"), Chain: [][]byte{[]byte("admin CA")}},
 		}}),
+		hello(Phone, helloOut{Hello: clip.Hello{Wall: 0}, TunnelKey: vecBytes(1)}),
+		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(2), PSK: vecBytes(3),
+			Endpoints: []string{"203.0.113.7:8764", "[2001:db8::7]:8764"}}}),
+		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(4), PSK: vecBytes(5)}}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",
@@ -143,6 +147,15 @@ func TestMemberInteropVectors(t *testing.T) {
 	}
 
 	checkVectors(t, "member.json", v)
+}
+
+// vecBytes is a 32-byte key of the vectors: b, b+1, ...
+func vecBytes(b byte) []byte {
+	k := make([]byte, 32)
+	for i := range k {
+		k[i] = b + byte(i)
+	}
+	return k
 }
 
 // later is the order of docs/protocol.md, section 5: by time, then by ID.
