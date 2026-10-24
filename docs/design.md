@@ -459,6 +459,10 @@ Not built yet (roadmap item 10); the design:
   paste; the shortcut may mark a text as secret. Secret events are kept only in memory and
   expire 60 seconds after the copy, judged by the event's age. When a secret that a connector
   wrote expires, the connector gives up the clipboard, so the desktop does not keep it.
+- Secrets stay out of swap where the system allows it: on Linux the service's unit sets
+  `MemorySwapMax=0`, and macOS encrypts its swap. Windows does not encrypt its page file by
+  default, so there a secret in the service's memory may reach it (not solved yet). The desktop's
+  own clipboard, which holds a received secret until it expires, is outside the service.
 - Only root and members of the `clipboardbridge` group receive secrets through the control socket.
 
 ## Limits
@@ -633,6 +637,18 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    away from home (`cbb` on a computer, a switch in the app). Only then does the device make
    its tunnel key and offer it to the hub. The screen that turns it on says what changes: the
    hub's port is reachable from the internet, only through WireGuard with the group's keys.
+   Until then the service reaches only the home network (loopback, private IPv4,
+   link-local, multicast, unique-local IPv6), and only the home network reaches its member
+   port. Every computer enforces it in the program: the member port drops other addresses,
+   and the service's own connections are refused outside the home network until sync away
+   from home is on (`internal/netguard`). Linux and Windows add a second line of defence
+   outside the program: on Linux the systemd unit (`IPAddressDeny`/`IPAddressAllow`), on
+   Windows the outbound block rule `clipboardbridge-home-only` of Windows Firewall for the
+   service and inbound rules for the local subnet. Turning sync away from home on (`cbb global
+   on`, or `cbb pair -invite`, with `sudo` or as administrator) lifts that limit, and turning
+   it off puts it back. A Mac has the program's limit only, since macOS limits a single
+   program's network only through a Network Extension of a signed app; the Mac app will add
+   it (item 22 of [roadmap.md](roadmap.md)).
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
    "Device keys in hardware") can turn sync away from home on only after a second, separate
    consent. It explains that whoever copies the files (root on that device, its disk or

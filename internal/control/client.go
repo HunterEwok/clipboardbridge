@@ -54,10 +54,18 @@ func (c *Client) Receive() (*Message, error) {
 		return nil, err
 	}
 	if m.Error != "" {
-		return m, errors.New(m.Error)
+		return m, &RequestError{Msg: m.Error, Detail: m.Detail}
 	}
 	return m, nil
 }
+
+// A RequestError is a request the service refused or could not do: Msg for
+// the user, and Detail, when there is one, for debugging.
+type RequestError struct {
+	Msg, Detail string
+}
+
+func (e *RequestError) Error() string { return e.Msg }
 
 // Do sends a request and returns its single answer.
 func (c *Client) Do(m *Message) (*Message, error) {

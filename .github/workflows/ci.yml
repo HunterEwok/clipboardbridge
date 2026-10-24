@@ -457,7 +457,7 @@ jobs:
         run: |
           Expand-Archive "$env:RUNNER_TEMP\release\clipboardbridge-windows-amd64.zip" "$env:RUNNER_TEMP\unpacked"
           $install = "$env:RUNNER_TEMP\unpacked\clipboardbridge\packaging\windows\install.ps1"
-          function ports { @(Get-NetFirewallRule -Group clipboardbridge -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
+          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
           function check($want) {
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
@@ -470,9 +470,28 @@ jobs:
           check 'TCP 9000, UDP 5353'
           $svcEnv = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge).Environment
           if ($svcEnv -ne 'CBB_PORT=9000') { throw "the service environment: $svcEnv" }
+          function homeOnly($want) {
+            $r = Get-NetFirewallRule -Name clipboardbridge-home-only -ErrorAction SilentlyContinue
+            $got = if ($r) { "$($r.Direction) $($r.Action) $($r.Enabled)" } else { 'none' }
+            if ($got -ne $want) { throw "the outbound rule: $got, want $want" }
+          }
+          homeOnly 'Outbound Block True'
+          $filter = Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallAddressFilter
+          if ($filter.RemoteAddress -contains '192.168.0.0/16' -or $filter.RemoteAddress.Count -ne 9) { throw "the outbound rule's addresses: $($filter.RemoteAddress -join ', ')" }
+          # cbb global on lifts the rule, a reinstall keeps that, and cbb global off puts it back.
+          $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
+          & $cbb new
+          if ($LASTEXITCODE -ne 0) { throw 'cbb new failed' }
+          'yes' | & $cbb global on
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global on failed' }
+          homeOnly 'Outbound Block False'
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 8764 -NoFirewall
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
+          homeOnly 'Outbound Block False'
+          & $cbb global off
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global off failed' }
+          homeOnly 'Outbound Block True'
           powershell -NoProfile -ExecutionPolicy Bypass -File $install
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check 'TCP 8764, UDP 5353'
@@ -487,7 +506,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" -Purge
           if ($LASTEXITCODE -ne 0) { exit 1 }
           if (Get-Service clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left the service' }
-          if (ports) { throw 'uninstall.ps1 left firewall rules' }
+          if (Get-NetFirewallRule -Group clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left firewall rules' }
           foreach ($p in @("$env:ProgramFiles\clipboardbridge", "$env:ProgramData\clipboardbridge",
               'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\clipboardbridge')) {
             if (Test-Path $p) { throw "uninstall.ps1 left $p" }
@@ -820,7 +839,7 @@ jobs:
         run: make test
       - name: z88dk from the cache
         id: z88dk
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/z88dk
           key: z88dk-${{ env.Z88DK }}-zxn-${{ runner.os }}

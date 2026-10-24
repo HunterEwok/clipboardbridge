@@ -71,7 +71,10 @@ type Header struct {
 	TTLMS int64  `json:"ttl_ms,omitempty"` // how long a written secret may stay in the clipboard
 	Len   int    `json:"len,omitempty"`    // the length of the payload
 	Error string `json:"error,omitempty"`  // a failed request
-	Done  bool   `json:"done,omitempty"`   // the last answer to a request
+	// Detail is the underlying error of a failed request, which the
+	// command shows in a debug build or with CBB_DEBUG=1.
+	Detail string `json:"detail,omitempty"`
+	Done   bool   `json:"done,omitempty"` // the last answer to a request
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code

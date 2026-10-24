@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -142,7 +143,7 @@ func TLSVerifiedByPin(cert tls.Certificate, protocol, pin, what string) *tls.Con
 }
 
 func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error {
-	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second}
+	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second, Control: netguard.Control}
 	raw, err := d.DialContext(ctx, "tcp", cfg.Link.Endpoint.String())
 	if err != nil {
 		return fmt.Errorf("reaching the forwarder: %w", err)

@@ -20,6 +20,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -130,6 +131,11 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 		if o.VLESS, err = json.Marshal(fw.VLESS); err != nil {
 			s.logf("cbb: the tunnel's VLESS settings: %v", err)
 			return nil
+		}
+	}
+	for _, g := range s.guests {
+		if g.admitted == peer {
+			g.offered = true
 		}
 	}
 	return o
@@ -478,7 +484,7 @@ func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.Hu
 		}
 		s.tunMu.Lock()
 		if s.tunRun != nil && s.tunRun.client == c {
-			s.tunFailedLocked(fmt.Sprintf("the hub did not answer at %v", ep), err)
+			s.tunFailedLocked(fmt.Sprintf("no answer through the tunnel at %v: the hub is off or cannot be reached, or the forwarder on the way is down", ep), err)
 		}
 		s.tunMu.Unlock()
 		select {
@@ -547,6 +553,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
 		}
 		s.tunnel = st
+		netguard.SetOpen(true)
 		s.logf("cbb: sync away from home is on")
 		return true, tunnelKey(st), nil
 	case "off":
@@ -558,6 +565,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, err
 		}
 		s.tunnel = nil
+		netguard.SetOpen(false)
 		s.tunFailedLocked("", nil)
 		s.logf("cbb: sync away from home is off; its keys are gone")
 		return true, nil, nil

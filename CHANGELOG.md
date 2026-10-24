@@ -74,6 +74,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The lite member and the ESP32 firmware use x25519-dalek 3 (on curve25519-dalek 5) and
+  base64 0.23. Dependabot updates the firmware's lock file in the same pull request as the
+  lite member's, so the firmware's locked build keeps passing.
 - The lite member's command is `cbb`, as on a full member, with the same paths, user and
   service (`/usr/local/bin/cbb`, `/var/lib/clipboardbridge`, `clipboardbridge.service`);
   `cbb version` says which member a device runs, and the commands of a full member answer
@@ -109,6 +112,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A used remote invitation no longer reaches the hub: its guest tunnel goes as soon as the new
+  device's member connection through it ends after the hub answered its tunnel key (at most
+  2 minutes after the admission, as before), and the hub refuses a second pairing through it.
+- On Linux the service's memory, which holds secrets, never goes to swap (`MemorySwapMax=0`).
+- When a device away from home gets no answer through the tunnel, `cbb global` says that the hub
+  or the forwarder on the way may be down, not only the hub.
 - Security: on Android, a text from Share or the selection menu is sent only after the user
   allows it, with "Allow" or "Always allow"; any app can hand over a text, so without a
   question an app could send whatever it liked to the computers. Settings turns the question
@@ -166,6 +175,24 @@ All notable changes to clipboardbridge are documented in this file. The format f
   timer that fired at that moment cleared its state outside its lock. clipboardbridge now
   builds with a copy of amneziawg-go that clears it under the lock
   (`internal/third_party/amneziawg-go`).
+- Sync away from home works on Linux: the service's unit lets it reach only the home network,
+  so a hub could not register with its forwarder and a computer away from home could not reach
+  its hub. `sudo cbb global on` (and `sudo cbb pair -invite`) now add a systemd drop-in that lets
+  the service reach the internet, and `sudo cbb global off` removes it; until then `cbb global`
+  says what is missing.
+- Every computer keeps the service on the home network until sync away from home is on: the
+  service refuses its own connections outside the home network (`internal/netguard`), as the
+  member port already refused connections from there. On Windows the installer adds an
+  outbound block rule of Windows Firewall for the service (`clipboardbridge-home-only`) as
+  well, which `cbb global on` and `cbb pair -invite`, run as administrator, lift, and `cbb global
+  off` puts back, as `sudo` does on Linux. A Mac gets the system's own limit with the Mac
+  app's Network Extension later (docs/roadmap.md).
+- `cbb global hub -forwarder` and `cbb global relay` take a server's name as well as its address.
+- A device whose group file is damaged says so: the service keeps running without its group,
+  `cbb status` and every other command explain what is wrong and how to recover (with the
+  underlying error in a debug build or with `CBB_DEBUG=1`), and nothing writes over the file.
+  Before, the service only restarted every few seconds and `cbb status` said it was not running.
+- The service's log no longer says `<nil>` for a member connection that closed in order.
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.

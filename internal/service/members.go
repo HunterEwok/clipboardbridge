@@ -239,7 +239,7 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 			if uptime.Now()-start > maxBackoff {
 				backoff = minBackoff // the connection worked for a while
 			}
-			s.logf("cbb: connection to %s at %s: %v", id, addr, err)
+			logConn(s.logf, id, "at "+addr, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -348,7 +348,7 @@ func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string
 			if uptime.Now()-start > maxBackoff {
 				backoff = minBackoff
 			}
-			s.logf("cbb: connection to %s %s: %v", id, where, err)
+			logConn(s.logf, id, where, err)
 			wait = backoff
 			backoff = min(2*backoff, maxBackoff)
 		}
@@ -467,4 +467,14 @@ func (s *Service) write(w node.Write) {
 	for wt := range s.watchers {
 		wt.send(w)
 	}
+}
+
+// logConn logs how a connection to a member ended: with its error, or
+// closed in order.
+func logConn(logf func(string, ...any), id group.DeviceID, where string, err error) {
+	if err == nil {
+		logf("cbb: connection to %s %s closed", id, where)
+		return
+	}
+	logf("cbb: connection to %s %s: %v", id, where, err)
 }
