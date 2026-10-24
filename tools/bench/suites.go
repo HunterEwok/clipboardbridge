@@ -107,6 +107,36 @@ func groupOf(ctx context.Context, d *Device) (string, error) {
 // Smoke makes a group of the devices around the hub and sends one text from
 // each device to every other one.
 func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration) {
+	g := formGroup(ctx, r, "smoke", devices)
+	if g == nil {
+		return
+	}
+	defer g.end(ctx, r)
+
+	// One text from each member; every other member must show it.
+	for _, from := range g.members {
+		text := fmt.Sprintf("cbb-bench %s from %s café ✓", g.run, from.Name)
+		if r.Do("smoke/"+from.Name+"/copy", func() error { return Copy(ctx, from, text) }) != nil {
+			continue
+		}
+		spread(ctx, r, "smoke/sync/", g.members, from, text, timeout)
+	}
+}
+
+// benchGroup is a group the bench made for one run.
+type benchGroup struct {
+	suite   string
+	run     string
+	hub     *Device
+	members []*Device // the hub first
+	tag     string
+	undo    []func()
+}
+
+// formGroup makes a group of the devices around the hub: each must start
+// in no group, the bench never touches a group it did not make. It returns
+// nil when the run cannot go on.
+func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) *benchGroup {
 	var hub *Device
 	for _, d := range devices {
 		if d.Has("hub") {
@@ -114,35 +144,33 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 		}
 	}
 	if hub == nil || hub.OS != "linux" {
-		r.Do("smoke/setup", func() error {
-			return errors.New("smoke needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
+		r.Do(suite+"/setup", func() error {
+			return errors.New(suite + " needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
 		})
-		return
+		return nil
 	}
-	run := runID()
-	fmt.Fprintf(r.out, "run %s, hub %s\n", run, hub.Name)
+	g := &benchGroup{suite: suite, run: runID(), hub: hub, members: []*Device{hub}}
+	fmt.Fprintf(r.out, "run %s, hub %s\n", g.run, hub.Name)
 
-	// Every device must start in no group: the bench never touches a
-	// group it did not make.
 	ok := true
 	for _, d := range devices {
-		err := r.Do("smoke/"+d.Name+"/no-group", func() error {
+		err := r.Do(suite+"/"+d.Name+"/no-group", func() error {
 			if err := checkClock(ctx, d); err != nil {
 				return err
 			}
-			g, err := groupOf(ctx, d)
+			tag, err := groupOf(ctx, d)
 			if err != nil {
 				return err
 			}
-			if g != "" {
-				return fmt.Errorf("%s is in group %s; reset it before the run (uninstall with --purge, -Purge on Windows)", d.Name, g)
+			if tag != "" {
+				return fmt.Errorf("%s is in group %s; reset it before the run (uninstall with --purge, -Purge on Windows)", d.Name, tag)
 			}
 			return nil
 		})
 		ok = ok && err == nil
 	}
 	if !ok {
-		return
+		return nil
 	}
 
 	// mDNS does not cross subnets: a lite member is told where the hub is
@@ -152,101 +180,127 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 			if d.OS != "linux-lite" {
 				continue
 			}
-			if r.Do("smoke/"+d.Name+"/peer", func() error { return litePeer(ctx, d, hub.Address) }) == nil {
-				defer r.Do("smoke/"+d.Name+"/unpeer", func() error { return litePeer(context.WithoutCancel(ctx), d, "") })
+			if r.Do(suite+"/"+d.Name+"/peer", func() error { return litePeer(ctx, d, hub.Address) }) == nil {
+				g.undo = append(g.undo, func() {
+					r.Do(suite+"/"+d.Name+"/unpeer", func() error { return litePeer(context.WithoutCancel(ctx), d, "") })
+				})
 			}
 		}
 	}
 
-	var group string
-	if r.Do("smoke/"+hub.Name+"/new", func() error {
+	if r.Do(suite+"/"+hub.Name+"/new", func() error {
 		_, err := Run(ctx, hub, "cbb new", "")
 		return err
 	}) != nil {
-		return
+		return nil
 	}
-	members := []*Device{hub}
 	for _, d := range devices {
 		if d == hub {
 			continue
 		}
-		if r.Do("smoke/"+d.Name+"/join", func() error { return pairOne(ctx, hub, d) }) == nil {
-			members = append(members, d)
+		if r.Do(suite+"/"+d.Name+"/join", func() error { return pairOne(ctx, hub, d) }) == nil {
+			g.members = append(g.members, d)
 		}
 	}
-	r.Do("smoke/group", func() error {
+	r.Do(suite+"/group", func() error {
 		var err error
-		group, err = groupOf(ctx, hub)
-		if err == nil && group == "" {
+		g.tag, err = groupOf(ctx, hub)
+		if err == nil && g.tag == "" {
 			err = fmt.Errorf("%s made no group", hub.Name)
 		}
 		if err != nil {
 			return err
 		}
-		for _, d := range members[1:] {
-			g, err := groupOf(ctx, d)
+		for _, d := range g.members[1:] {
+			tag, err := groupOf(ctx, d)
 			if err != nil {
 				return err
 			}
-			if g != group {
-				return fmt.Errorf("%s is in group %q, not %s", d.Name, g, group)
+			if tag != g.tag {
+				return fmt.Errorf("%s is in group %q, not %s", d.Name, tag, g.tag)
 			}
 		}
 		return nil
 	})
+	return g
+}
 
-	// One text from each member; every other member must show it.
-	for _, from := range members {
-		text := fmt.Sprintf("cbb-bench %s from %s café ✓", run, from.Name)
-		if r.Do("smoke/"+from.Name+"/copy", func() error { return Copy(ctx, from, text) }) != nil {
-			continue
-		}
-		var wg sync.WaitGroup
-		for _, to := range members {
-			if to == from {
-				continue
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				r.Do(fmt.Sprintf("smoke/sync/%s->%s", from.Name, to.Name), func() error {
-					var got string
-					err := eventually(ctx, timeout, func() error {
-						var err error
-						if got, err = Paste(ctx, to); err != nil {
-							return err
-						}
-						if strings.TrimRight(got, "\r\n") != text {
-							return fmt.Errorf("%s did not get the text within %v; it has %q", to.Name, timeout, firstLine(got))
-						}
-						return nil
-					})
-					return err
-				})
-			}()
-		}
-		wg.Wait()
-	}
-
-	// The hub revokes the others, so nothing copied on them after the run
-	// (the Mac is also someone's own computer) reaches the bench's group.
-	// Linux and Windows members of a computer's group hold its CA keys and
-	// cannot be revoked without a new group (docs/design.md): they are test
-	// devices, reset before the next run.
-	for _, d := range members[1:] {
-		if d.OS == "linux" || d.OS == "windows" {
-			r.Skip("smoke/"+d.Name+"/revoke", "it holds the group's CA keys; reset it before the next run")
-			continue
-		}
-		r.Do("smoke/"+d.Name+"/revoke", func() error {
+// end closes the run. The hub revokes the others, so nothing copied on
+// them after the run (the Mac is also someone's own computer) reaches the
+// bench's group. Only the hub, the group's root, holds its CA keys, so
+// every other member can be removed.
+func (g *benchGroup) end(ctx context.Context, r *Report) {
+	ctx = context.WithoutCancel(ctx)
+	for _, d := range g.members[1:] {
+		r.Do(g.suite+"/"+d.Name+"/revoke", func() error {
 			id, err := deviceOf(ctx, d)
 			if err != nil {
 				return err
 			}
-			_, err = Run(ctx, hub, cbbCmd(hub)+" revoke "+id, "")
+			_, err = Run(ctx, g.hub, cbbCmd(g.hub)+" revoke "+id, "")
 			return err
 		})
 	}
+	for i := len(g.undo) - 1; i >= 0; i-- {
+		g.undo[i]()
+	}
+}
+
+// spread checks that text, copied on from, reaches every other member
+// within the timeout, one case per receiver.
+func spread(ctx context.Context, r *Report, prefix string, members []*Device, from *Device, text string, timeout time.Duration) {
+	var wg sync.WaitGroup
+	for _, to := range members {
+		if to == from {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.Do(fmt.Sprintf("%s%s->%s", prefix, from.Name, to.Name), func() error {
+				return arrives(ctx, to, seen(text, from, to), timeout)
+			})
+		}()
+	}
+	wg.Wait()
+}
+
+// arrives waits until the device's clipboard holds text.
+// seen is the text that to's clipboard holds after from copied text. The
+// Windows agent turns CR LF into LF when it reads the clipboard and LF into
+// CR LF when it writes it (docs/design.md, Windows); every other member
+// keeps the bytes as they are.
+func seen(text string, from, to *Device) string {
+	if from.OS == "windows" || to.OS == "windows" {
+		text = strings.ReplaceAll(text, "\r\n", "\n")
+	}
+	if to.OS == "windows" {
+		text = strings.ReplaceAll(text, "\n", "\r\n")
+	}
+	return text
+}
+
+func arrives(ctx context.Context, to *Device, text string, timeout time.Duration) error {
+	text = strings.TrimRight(text, "\r\n")
+	return eventually(ctx, timeout, func() error {
+		got, err := Paste(ctx, to)
+		if err != nil {
+			return err
+		}
+		if strings.TrimRight(got, "\r\n") != text {
+			return fmt.Errorf("%s did not get the text within %v; it has %s", to.Name, timeout, describe(got))
+		}
+		return nil
+	})
+}
+
+// describe shows a clipboard's text in an error: quoted when short, else
+// its size and first line.
+func describe(s string) string {
+	if len(s) <= 80 && !strings.ContainsAny(s, "\r\n") {
+		return strconv.Quote(s)
+	}
+	return fmt.Sprintf("%d bytes starting %q", len(s), firstLine(s))
 }
 
 // liteDropIn is the bench's systemd drop-in for the lite member's service.
