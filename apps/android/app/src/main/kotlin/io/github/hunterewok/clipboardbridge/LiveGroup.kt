@@ -552,20 +552,33 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      */
     fun sync(board: String?): Pair<SyncResult, Pair<String, Member.Kind>?> {
         val (n, device) = synchronized(lock) { (node ?: throw Failure(Failure.Kind.NO_COMPUTERS)) to (state?.device ?: "") }
-        val online = n.connected.isNotEmpty()
         val usable = n.usable
         return when (SyncRule.decide(board, n.current, usable, device)) {
             SyncRule.Action.FETCH -> SyncResult.FETCHED to usable
             SyncRule.Action.SEND -> {
-                if (!online) throw Failure(Failure.Kind.NO_COMPUTERS)
+                if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
                 n.send(board!!, Member.Kind.TEXT)
                 SyncResult.SENT to null
             }
             SyncRule.Action.NOTHING -> {
-                if (!online) throw Failure(Failure.Kind.NO_COMPUTERS)
+                if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
                 SyncResult.NOTHING_NEW to null
             }
         }
+    }
+
+    /**
+     * Whether a computer is connected, waiting up to CONNECT_WAIT_MS for
+     * one: a connection the system dropped takes a moment to come back. On
+     * the caller's IO thread.
+     */
+    private fun connected(n: MemberNode): Boolean {
+        val deadline = System.currentTimeMillis() + CONNECT_WAIT_MS
+        while (n.connected.isEmpty()) {
+            if (System.currentTimeMillis() >= deadline) return false
+            Thread.sleep(250)
+        }
+        return true
     }
 
     /** Whether a computer is connected now. */
@@ -595,6 +608,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         /** How long the join QR code is good for, and how many wrong codes it takes, as for cbb pair (docs/protocol.md, section 6). */
         const val JOIN_WINDOW_MS = 300_000L
         const val JOIN_ATTEMPTS = 3
+
+        /** How long the button waits for a computer to connect before it says none is. */
+        const val CONNECT_WAIT_MS = 5_000L
 
         fun defaultFile(context: Context) = File(context.filesDir, "clipboardbridge/group.json")
 

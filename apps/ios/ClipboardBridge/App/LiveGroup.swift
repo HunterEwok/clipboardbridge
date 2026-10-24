@@ -21,6 +21,16 @@ private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", 
 final class LiveGroup: GroupController {
     enum Failure: Error { case unreachable, notConfirmed, noNetwork, timedOut, tooManyWrongCodes, notAdmin }
 
+    /// The clipboard holds something the app could not read as text: the
+    /// paste was not allowed, or it is not text. The button leaves it as it
+    /// is rather than put an older text over it.
+    struct ClipboardUnreadable: Error {
+        let items: Int
+        let hasStrings: Bool
+        let types: [String]
+        let changeCount: Int
+    }
+
     nonisolated static let caLabel = "io.github.hunterewok.clipboardbridge.group-root"
     /// The admin key of a phone that joined another phone's group.
     nonisolated static let adminLabel = "io.github.hunterewok.clipboardbridge.admin"
@@ -48,6 +58,9 @@ final class LiveGroup: GroupController {
     /// How recent a computer's copy must be for the button to fetch it
     /// first, as for the shortcut (internal/phone/sync.go).
     static let recentCopyMS: Int64 = 45_000
+    /// How long the button waits for a computer to connect before it says
+    /// none is.
+    static let connectWait: Duration = .seconds(5)
 
     let file: URL
     private(set) var state: PhoneGroup?
@@ -630,7 +643,11 @@ final class LiveGroup: GroupController {
     func sync() async throws -> AppModel.SyncResult {
         guard let node, let g = state else { throw PendingGroup.Failure.noComputers }
         online = await node.connected
-        let board = UIPasteboard.general.hasStrings ? UIPasteboard.general.string : nil
+        let pb = UIPasteboard.general
+        let board = pb.hasStrings ? pb.string : nil
+        if board == nil, pb.numberOfItems > 0 {
+            throw ClipboardUnreadable(items: pb.numberOfItems, hasStrings: pb.hasStrings, types: pb.types, changeCount: pb.changeCount)
+        }
         let cur = await node.current
         let usable = await node.usable
         if let cur, let u = usable, cur.origin != g.device, cur.via == .copy, cur.ageMS < Self.recentCopyMS, u.text != board {
@@ -638,7 +655,7 @@ final class LiveGroup: GroupController {
             return .fetched
         }
         if let t = board, !t.isEmpty, t != usable?.text {
-            guard !online.isEmpty else { throw PendingGroup.Failure.noComputers }
+            guard await connected(node) else { throw PendingGroup.Failure.noComputers }
             await node.send(text: t, kind: .text)
             return .sent
         }
@@ -646,8 +663,20 @@ final class LiveGroup: GroupController {
             write(u.text, kind: u.kind)
             return .fetched
         }
-        if online.isEmpty { throw PendingGroup.Failure.noComputers }
+        if !(await connected(node)) { throw PendingGroup.Failure.noComputers }
         return .nothingNew
+    }
+
+    /// Whether a computer is connected, waiting up to connectWait for one:
+    /// back from the background, the connections iOS dropped take a moment
+    /// to come back. Keeps online, and so the dots, in step.
+    private func connected(_ node: MemberNode) async -> Bool {
+        let deadline = ContinuousClock.now + Self.connectWait
+        while true {
+            online = await node.connected
+            if !online.isEmpty || ContinuousClock.now >= deadline { return !online.isEmpty }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     /// Puts a text into the phone's clipboard; a secret stays on this phone
