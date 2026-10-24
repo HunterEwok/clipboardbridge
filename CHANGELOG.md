@@ -85,6 +85,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A data race in the tunnel's WireGuard timers when a peer stops, as when a hub closes: a
+  timer that fired at that moment cleared its state outside its lock. clipboardbridge now
+  builds with a copy of amneziawg-go that clears it under the lock
+  (`internal/third_party/amneziawg-go`).
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.
