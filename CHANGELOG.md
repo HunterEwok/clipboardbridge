@@ -80,6 +80,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- With `cbb global on`, a computer's service no longer reaches the whole internet: only the
+  home network and its group's own hub, forwarder and relay. The program refuses everything
+  else on every system, a client's WireGuard socket sends only to its hub, and on Linux and
+  Windows the systemd drop-in and the outbound Windows Firewall rule list exactly those
+  addresses. `cbb global hub` and `cbb global relay` now run with `sudo` or as administrator
+  on those systems, and the new `cbb global allow` follows the hub's addresses when they
+  change; `cbb global` and `cbb status` say when it is needed. A hub reached at its own
+  address answers its clients anywhere on its UDP port only (on Linux by the program alone).
 - The installers no longer open firewall ports without asking. They find the firewall
   (ufw, firewalld, nftables or iptables on Linux, the macOS application firewall, Windows
   Firewall), list each rule clipboardbridge needs with its protocol, port, source and

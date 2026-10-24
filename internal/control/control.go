@@ -134,6 +134,9 @@ type Away struct {
 	Forwarder  *Forwarder `json:"forwarder,omitempty"`  // on the hub: its forwarder; nil without one
 	Relay      *Relay     `json:"relay,omitempty"`      // on a device that meets the others at a relay; nil without one
 	Detail     string     `json:"detail,omitempty"`     // the underlying error, for debugging
+	// Allow is the group's servers that the service may reach beyond the
+	// home network: its hub, forwarder and relay (internal/netguard).
+	Allow []string `json:"allow,omitempty"`
 }
 
 // Forwarder describes a hub's registration on its forwarder.

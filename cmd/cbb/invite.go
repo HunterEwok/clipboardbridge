@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,7 +110,7 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if time.Now().After(in.Expires) {
 		return fail(stderr, errors.New("the invitation has expired; ask for a new one"))
 	}
-	if err := checkAwayNet(true); err != nil {
+	if err := checkAwayNet(); err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintln(stdout, "A device that joins with an invitation syncs away from home through the")
@@ -124,8 +126,17 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	// The join reaches the hub on the internet, so the service must be
-	// allowed to before it starts; a failed join closes that again.
-	opened, _, err := setAwayNet(true)
+	// allowed to reach its addresses before it starts; a failed join takes
+	// that back again.
+	g := grant{on: true}
+	for _, ep := range in.Endpoints {
+		if a := ep.Addr().Unmap(); !slices.Contains(g.addrs, a) {
+			g.addrs = append(g.addrs, a)
+		}
+	}
+	slices.SortFunc(g.addrs, netip.Addr.Compare)
+	before := granted(g)
+	opened, _, err := setAwayNet(g)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -133,8 +144,8 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if opened {
 		defer func() {
 			if !joined {
-				if _, _, err := setAwayNet(false); err != nil {
-					fmt.Fprintf(stderr, "cbb: the service may still reach the internet: %v\n", err)
+				if _, _, err := setAwayNet(before); err != nil {
+					fmt.Fprintf(stderr, "cbb: the service may still reach the hub's addresses: %v\n", err)
 				}
 			}
 		}()
@@ -157,6 +168,12 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	joined = true
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
+	// The group's servers as the service knows them now that it joined.
+	if st, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}}); err == nil && st.Status != nil {
+		if err := applyGrant(stdout, grantFor(st.Status.Away)); err != nil {
+			fmt.Fprintf(stderr, "cbb: the service's network did not follow the group's servers: %v; %s\n", err, allowHint)
+		}
+	}
 	fmt.Fprintln(stdout, "Joined the group. It syncs through the group's hub wherever this device is;")
 	fmt.Fprintln(stdout, "cbb global shows how. The invitation file is deleted.")
 	return 0

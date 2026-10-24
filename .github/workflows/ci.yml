@@ -492,20 +492,44 @@ jobs:
           homeOnly 'Outbound Block True'
           $filter = Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallAddressFilter
           if ($filter.RemoteAddress -contains '192.168.0.0/16' -or $filter.RemoteAddress.Count -ne 9) { throw "the outbound rule's addresses: $($filter.RemoteAddress -join ', ')" }
-          # cbb global on lifts the rule, a reinstall keeps that, and cbb global off puts it back.
+          # cbb global lets the service reach the group's servers and nothing else beyond the
+          # home network, a reinstall keeps that, and cbb global off takes it back.
+          function blocked($rule) { @((Get-NetFirewallRule -Name $rule | Get-NetFirewallAddressFilter).RemoteAddress) }
+          function awayAllow($want) {
+            $got = [string](Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name AwayAllow -ErrorAction SilentlyContinue).AwayAllow
+            if ($got -ne $want) { throw "AwayAllow: '$got', want '$want'" }
+          }
           $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
           & $cbb new
           if ($LASTEXITCODE -ne 0) { throw 'cbb new failed' }
           'yes' | & $cbb global on
           if ($LASTEXITCODE -ne 0) { throw 'cbb global on failed' }
-          homeOnly 'Outbound Block False'
+          # No hub yet: on, and still nothing beyond the home network.
+          awayAllow 'on'
+          homeOnly 'Outbound Block True'
+          if ((blocked clipboardbridge-home-only).Count -ne 9) { throw "with no servers: $(blocked clipboardbridge-home-only)" }
+          & $cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key "sha256:$('A' * 43)"
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub -forwarder failed' }
+          awayAllow 'on 198.51.100.9'
+          $b = blocked clipboardbridge-home-only
+          if ($b.Count -ne 10 -or $b -notcontains '172.32.0.0-192.167.255.255' -or $b -notcontains '198.51.100.10-223.255.255.255') { throw "with the forwarder: $($b -join ', ')" }
+          # A hub at its own address answers its clients anywhere on its UDP port only.
+          & $cbb global hub 203.0.113.7:8764
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub failed' }
+          awayAllow 'on hub-port:8764'
+          $udp = Get-NetFirewallRule -Name clipboardbridge-home-only-udp | Get-NetFirewallPortFilter
+          if ("$($udp.Protocol) $($udp.LocalPort -join ',')" -ne 'UDP 1-8763,8765-65535') { throw "the UDP rule: $($udp.Protocol) $($udp.LocalPort)" }
+          if ((Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallPortFilter).Protocol -ne 'TCP') { throw 'the hub''s rule does not block TCP' }
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 8764 -NoFirewall
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
-          homeOnly 'Outbound Block False'
+          awayAllow 'on hub-port:8764'
+          if (-not (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'a reinstall dropped the hub''s UDP rule' }
           & $cbb global off
           if ($LASTEXITCODE -ne 0) { throw 'cbb global off failed' }
+          awayAllow ''
           homeOnly 'Outbound Block True'
+          if ((blocked clipboardbridge-home-only).Count -ne 9 -or (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'cbb global off left the servers' }
           # The answer -NoFirewall gave is kept, until -Express.
           powershell -NoProfile -ExecutionPolicy Bypass -File $install
           if ($LASTEXITCODE -ne 0) { exit 1 }

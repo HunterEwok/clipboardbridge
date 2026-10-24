@@ -191,8 +191,10 @@ Off by default: the group syncs on the home network only. To sync when a compute
 one computer at home becomes the hub, and each computer that should reach it from afar turns
 sync away from home on. Do it while the computers are at home. `cbb global on` and
 `cbb pair -invite` run with `sudo` on Linux and in a terminal opened as administrator on
-Windows: until then the service may reach only the home network, and they let it reach the
-internet; `cbb global off`, run the same way, takes that back.
+Windows, and so do `cbb global hub` and `cbb global relay`. The service may reach only the
+home network, and they let it reach the group's own hub, forwarder and relay too, and nothing
+else on the internet; `cbb global off`, run the same way, takes that back. When the hub's
+addresses change, `cbb global` says so on each computer: run `sudo cbb global allow` there.
 
 The hub does not have to stay on. While it is off, nothing syncs away from home, and at home
 the devices sync with each other without it. So choose: a computer that is always on, one you

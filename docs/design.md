@@ -640,15 +640,24 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    Until then the service reaches only the home network (loopback, private IPv4,
    link-local, multicast, unique-local IPv6), and only the home network reaches its member
    port. Every computer enforces it in the program: the member port drops other addresses,
-   and the service's own connections are refused outside the home network until sync away
-   from home is on (`internal/netguard`). Linux and Windows add a second line of defence
-   outside the program: on Linux the systemd unit (`IPAddressDeny`/`IPAddressAllow`), on
-   Windows the outbound block rule `clipboardbridge-home-only` of Windows Firewall for the
-   service and inbound rules for the local subnet. Turning sync away from home on (`cbb global
-   on`, or `cbb pair -invite`, with `sudo` or as administrator) lifts that limit, and turning
-   it off puts it back. A Mac has the program's limit only, since macOS limits a single
-   program's network only through a Network Extension of a signed app; the Mac app will add
-   it (item 22 of [roadmap.md](roadmap.md)).
+   and the service's own connections are refused outside the home network
+   (`internal/netguard`). With sync away from home on, the service may reach beyond the home
+   network only the group's own servers, from the group's settings: its hub, forwarder and
+   relay, self-hosted or not, and nothing else on the internet (D-61). A client's WireGuard
+   socket sends only there too. Linux and Windows add a second line of defence outside the
+   program: on Linux the systemd unit (`IPAddressDeny`/`IPAddressAllow`), on Windows the
+   outbound block rule `clipboardbridge-home-only` of Windows Firewall for the service and
+   inbound rules for the local subnet. `cbb global on`, `hub`, `relay` and `cbb pair
+   -invite`, with `sudo` or as administrator, add exactly the group's servers to that limit
+   (a drop-in with their addresses, or the rule without them), `cbb global off` takes them
+   away, and `cbb global allow` follows the servers when the hub's addresses change, which
+   the client learns without root: `cbb global` and `cbb status` say when the system's limit
+   lags behind. One exception: a hub reached at its own address answers its clients wherever
+   they are, but only those that prove the group's keys. Windows opens only the hub's UDP port
+   for that; systemd cannot allow one port only, so on Linux such a hub's unit allows every
+   address and the program's limit holds alone. A Mac has the program's limit only, since
+   macOS limits a single program's network only through a Network Extension of a signed app;
+   the Mac app will add it (item 22 of [roadmap.md](roadmap.md)).
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
    "Device keys in hardware") can turn sync away from home on only after a second, separate
    consent. It explains that whoever copies the files (root on that device, its disk or
@@ -1606,3 +1615,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
 | D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
 | D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |
+| D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
