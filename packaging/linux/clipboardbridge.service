@@ -52,9 +52,9 @@ SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
 
 # Only the home network: private IPv4, unique-local and link-local IPv6,
-# and the mDNS multicast groups. sudo cbb away on adds the drop-in
+# and the mDNS multicast groups. sudo cbb global on adds the drop-in
 # clipboardbridge.service.d/away.conf, which lets it reach the internet for
-# sync away from home; sudo cbb away off removes it.
+# sync away from home; sudo cbb global off removes it.
 IPAddressDeny=any
 IPAddressAllow=localhost link-local multicast 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
 

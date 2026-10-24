@@ -15,7 +15,7 @@ members = ["core", "embassy"]
 exclude = ["esp32"]
 
 [[bin]]
-name = "cbb-lite"
+name = "cbb"
 path = "src/main.rs"
 
 [dependencies]

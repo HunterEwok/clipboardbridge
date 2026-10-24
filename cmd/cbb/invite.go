@@ -158,6 +158,6 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
 	fmt.Fprintln(stdout, "Joined the group. It syncs through the group's hub wherever this device is;")
-	fmt.Fprintln(stdout, "cbb away shows how. The invitation file is deleted.")
+	fmt.Fprintln(stdout, "cbb global shows how. The invitation file is deleted.")
 	return 0
 }

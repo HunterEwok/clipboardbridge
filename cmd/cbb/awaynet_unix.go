@@ -12,4 +12,4 @@ const needRootText = "on this computer the service may reach only the home netwo
 func isElevated() bool { return os.Geteuid() == 0 }
 
 // awayOnHint is the command that lifts the limit.
-const awayOnHint = "sudo cbb away on"
+const awayOnHint = "sudo cbb global on"

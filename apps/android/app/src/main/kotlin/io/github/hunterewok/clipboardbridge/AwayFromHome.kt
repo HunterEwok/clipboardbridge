@@ -254,7 +254,7 @@ class AwayFromHome(
     fun start() = synchronized(lock) {
         if (thread != null) return
         stopped = false
-        thread = Thread(::run, "cbb away").apply {
+        thread = Thread(::run, "cbb global").apply {
             isDaemon = true
             start()
         }

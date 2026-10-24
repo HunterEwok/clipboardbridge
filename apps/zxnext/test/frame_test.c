@@ -42,7 +42,7 @@ int main(void)
     CHECK(frame_line("CBBERR", &len, &crc) == LINE_ERR);
     CHECK(frame_line("CBBERRX", &len, &crc) == LINE_OTHER);
     CHECK(frame_line("CBB# joined", &len, &crc) == LINE_OTHER);
-    CHECK(frame_line("cbb-lite next paste", &len, &crc) == LINE_OTHER);
+    CHECK(frame_line("cbb next paste", &len, &crc) == LINE_OTHER);
     CHECK(frame_line("SUP>", &len, &crc) == LINE_OTHER);
 
     CHECK(hex_digit('0') == 0 && hex_digit('f') == 15 && hex_digit('F') == 15 && hex_digit('g') == 255);

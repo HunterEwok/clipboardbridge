@@ -175,10 +175,10 @@ the hub. See "Joining from another network" in [design.md](design.md).
 
 Off by default: the group syncs on the home network only. To sync when a computer is away,
 one computer at home becomes the hub, and each computer that should reach it from afar turns
-sync away from home on. Do it while the computers are at home. `cbb away on` and
+sync away from home on. Do it while the computers are at home. `cbb global on` and
 `cbb pair -invite` run with `sudo` on Linux and in a terminal opened as administrator on
 Windows: until then the service may reach only the home network, and they let it reach the
-internet; `cbb away off`, run the same way, takes that back.
+internet; `cbb global off`, run the same way, takes that back.
 
 The hub does not have to stay on. While it is off, nothing syncs away from home, and at home
 the devices sync with each other without it. So choose: a computer that is always on, one you
@@ -186,13 +186,13 @@ turn on when you need it (set the group up beforehand, turn the hub on, copy, tu
 or no hub, and sync only at home. To set it up:
 
 ```sh
-sudo cbb away on                             # on the hub and on each computer; read what it says
-cbb away hub 203.0.113.7:8764                # on the hub: the address the internet reaches it at
-cbb away                                     # what it does now, and what went wrong
+sudo cbb global on                             # on the hub and on each computer; read what it says
+cbb global hub 203.0.113.7:8764                # on the hub: the address the internet reaches it at
+cbb global                                     # what it does now, and what went wrong
 ```
 
 The router must forward UDP port 8764 to the hub, and the hub's firewall must allow it.
-When it does not connect, `cbb away` says why; with `CBB_DEBUG=1` in the service's
+When it does not connect, `cbb global` says why; with `CBB_DEBUG=1` in the service's
 environment, its log also has WireGuard's own messages, such as each handshake.
 
 When the hub cannot be reached from the internet, for example behind carrier-grade NAT, it
@@ -207,7 +207,7 @@ cbb forward                                  # prints its key, sha256:...; UDP a
 And on the hub, with or without addresses of its own:
 
 ```sh
-cbb away hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
 ```
 
 The computers then try the hub's own addresses first and the forwarder last. The project's
@@ -222,16 +222,16 @@ group's tag from `cbb status`:
 cbb relay -group 0123456789abcdef            # prints its key, sha256:...; UDP and TCP port 8764 must be open
 ```
 
-And on each computer, after `cbb away on`, in place of a hub:
+And on each computer, after `cbb global on`, in place of a hub:
 
 ```sh
-cbb away relay 198.51.100.9:8764 -key sha256:...
+cbb global relay 198.51.100.9:8764 -key sha256:...
 ```
 
 The computers then meet at the relay whenever they are not on one network.
 
 The clipboard travels only inside the group's own WireGuard tunnel, end to end encrypted; a
-forwarder sees only encrypted packets. `cbb away off` turns it off again and forgets its
+forwarder sees only encrypted packets. `cbb global off` turns it off again and forgets its
 keys. The phones cannot sync away from home yet.
 
 ## 6. Look after the group

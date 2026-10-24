@@ -87,7 +87,7 @@ var (
 	systemctl   = func(args ...string) error { return runCmd("systemctl", args...) }
 )
 
-const awayDropInText = `# Written by cbb away on or cbb pair -invite; cbb away off removes it.
+const awayDropInText = `# Written by cbb global on or cbb pair -invite; cbb global off removes it.
 # The unit lets the service reach only the home network; sync away from
 # home reaches the group's hub, forwarder or relay on the internet.
 [Service]

@@ -18,7 +18,7 @@
 # Firewall, on every run, after removing the rules it added before, so an
 # old port stays closed; -NoFirewall (or CBB_FIREWALL=no) leaves the
 # firewall alone. An outbound rule keeps the service on the home network
-# until cbb away on lifts it, as the unit does on Linux; -NoFirewall keeps
+# until cbb global on lifts it, as the unit does on Linux; -NoFirewall keeps
 # that rule. uninstall.ps1 removes it all again.
 #
 # A failure prints what failed and the system's message; -Details (or
@@ -229,7 +229,7 @@ exe icacls.exe @($dataDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', 
 $step = 'allowing clipboardbridge in Windows Firewall'
 # Every rule carries the group clipboardbridge, so these lines and
 # uninstall.ps1 remove exactly the rules added here.
-# cbb away on turns the outbound rule off; a reinstall keeps that.
+# cbb global on turns the outbound rule off; a reinstall keeps that.
 $homeOnly = Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue
 $awayOn = $homeOnly -and [string]$homeOnly.Enabled -eq 'False'
 Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -248,8 +248,8 @@ $step = 'keeping the service on the home network'
 # the firewall allows. It is a limit, not an opening, so -NoFirewall keeps
 # it. Allowed are loopback, private IPv4, link-local, multicast and
 # broadcast, and unique-local, link-local and multicast IPv6; the rule
-# lists the rest. cbb away on turns it off for sync away from home, and cbb
-# away off on again.
+# lists the rest. cbb global on turns it off for sync away from home, and cbb
+# global off on again.
 $outside = @(
 	'0.0.0.0-9.255.255.255', '11.0.0.0-126.255.255.255', '128.0.0.0-169.253.255.255',
 	'169.255.0.0-172.15.255.255', '172.32.0.0-192.167.255.255', '192.169.0.0-223.255.255.255',
@@ -258,7 +258,7 @@ $outside = @(
 $enabled = if ($awayOn) { 'False' } else { 'True' }
 New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
 	-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any -Enabled $enabled `
-	-Description 'The clipboardbridge service reaches only the home network until cbb away on turns this rule off.' | Out-Null
+	-Description 'The clipboardbridge service reaches only the home network until cbb global on turns this rule off.' | Out-Null
 
 $step = 'starting the service'
 Start-Service -Name $name
