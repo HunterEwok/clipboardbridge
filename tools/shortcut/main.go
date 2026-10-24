@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-// Command shortcut writes the iPhone shortcuts, unsigned, to
-// internal/phone/shortcut/<name>.plist. Sign each on a Mac into
+// Command shortcut writes the iPhone shortcut, unsigned, to
+// internal/phone/shortcut/<name>.plist. Sign it on a Mac into
 // <name>.shortcut next to it:
 //
 //	go run ./tools/shortcut
-//	for n in clipboardbridge clipboardbridge-add; do
-//		plutil -convert binary1 -o /tmp/$n.shortcut internal/phone/shortcut/$n.plist
-//		shortcuts sign --mode anyone --input /tmp/$n.shortcut --output internal/phone/shortcut/$n.shortcut
-//	done
+//	n=clipboardbridge
+//	plutil -convert binary1 -o /tmp/$n.shortcut internal/phone/shortcut/$n.plist
+//	shortcuts sign --mode anyone --input /tmp/$n.shortcut --output internal/phone/shortcut/$n.shortcut
 //
 // shortcuts sign reads only the binary form.
 package main

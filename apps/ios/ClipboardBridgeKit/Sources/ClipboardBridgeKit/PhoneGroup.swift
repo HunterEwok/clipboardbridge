@@ -128,7 +128,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return g
     }
 
-    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer }
+    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen }
 
     /// Adds records from other members, then follows the roots they lead
     /// to when they go further than this phone's; returns the new records.
@@ -228,12 +228,26 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         var keys = [d.key], keep: [Data]?
         if let admin = d.adminKey {
             keys.append(admin)
-            keep = records.admitted(by: admin).filter { $0 != d.key }
+            // Its own removals stop counting with it, so this record names them again.
+            for k in records.revokedBy(admin) where !keys.contains(k) { keys.append(k) }
+            keep = records.admitted(by: admin).filter { !keys.contains($0) }
         }
         let r = try Records.revoke(keys, keep: keep, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)
         computers.removeAll { $0.device == device }
         computerAdmins[device] = nil
+        return r
+    }
+
+    /// Unfreezes an admin computer that another admin froze (section 10,
+    /// rule 4): a thaw record that ends every freeze of it. The root and the
+    /// admin phones do it; Remove takes the computer out for good instead.
+    public mutating func thaw(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
+        guard d.frozen, let admin = d.adminKey else { throw Failure.notFrozen }
+        let r = try Records.thaw(records.freezes(of: admin), group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+        records.add(r, groupCA: groupCA)
         return r
     }
 
@@ -247,6 +261,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard isRoot else { throw Failure.notRoot }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
         guard d.role == "full" else { throw Failure.notAComputer }
+        guard !d.frozen else { throw Failure.frozen }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
                            caSigner: rootSigner, now: now)

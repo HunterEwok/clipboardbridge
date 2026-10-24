@@ -66,8 +66,8 @@ code, the start of a fingerprint and a six-digit code.
 2. Check that its fingerprint starts with the printed one (Settings → General → VPN & Device
    Management → clipboardbridge → More Details), then turn on full trust for it (Settings →
    General → About → Certificate Trust Settings).
-3. Add the shortcuts from the same page, "clipboardbridge" and "clipboardbridge: add a computer", and
-   run "clipboardbridge" once; it asks for the six-digit code.
+3. Add the shortcut "clipboardbridge" from the same page and run it once; it asks for the
+   six-digit code.
 4. Put "clipboardbridge" on the Action button or on Back Tap (Settings → Accessibility → Touch →
    Back Tap → Double Tap).
 
@@ -111,11 +111,12 @@ Then, on the new computer:
 cbb pair
 ```
 
-It shows a QR code. On the iPhone, run the shortcut "clipboardbridge: add a computer" and scan
-it. The computer joins within seconds.
+It shows a QR code for the phone app; scan it in the app (Add a device) and the computer
+joins within seconds.
 
-Without the iPhone: run `cbb pair` on the computer that created the group too; it shows a
-six-digit code, which you type into the waiting `cbb pair` on the new computer.
+With the shortcut, or without a phone: run `cbb pair` on the computer that created the group
+too; it shows a six-digit code, which you type into the waiting `cbb pair` on the new
+computer.
 
 The computer that created the group is its root: only it and the admins it makes can add
 and remove devices and serve the iPhone shortcut. To make another computer an admin, so the

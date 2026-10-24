@@ -107,6 +107,20 @@ func PeerID(cs tls.ConnectionState) (DeviceID, error) {
 	return DeviceOf(cs.PeerCertificates[0])
 }
 
+// MemberChain returns the peer's certificates that crypto/tls verified to a
+// root of the group, leaf first, without the root: the leaf and, when an
+// admin CA issued it, that admin CA. Certificates the peer presented but
+// the verification did not use are left out, so callers never mistake one
+// of them for the leaf's issuer. It returns nil for a connection that was
+// not verified.
+func MemberChain(cs tls.ConnectionState) []*x509.Certificate {
+	if len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) < 2 {
+		return nil
+	}
+	c := cs.VerifiedChains[0]
+	return c[:len(c)-1]
+}
+
 // checkPeer runs after crypto/tls verified the peer's certificate chain to
 // the group CA: it checks the protocol and the device ID and asks Allow.
 func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID, error) {
@@ -118,7 +132,7 @@ func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID,
 		return "", err
 	}
 	if opt.Allow != nil {
-		if err := opt.Allow(peer, cs.PeerCertificates); err != nil {
+		if err := opt.Allow(peer, MemberChain(cs)); err != nil {
 			return "", err
 		}
 	}

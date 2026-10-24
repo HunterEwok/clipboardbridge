@@ -11,7 +11,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 
-use crate::certs::{self, Cert};
+use crate::certs::{self, Cert, KeyHash};
 use crate::clip::Event;
 use crate::hlc::Timestamp;
 use crate::identity::Identity;
@@ -200,4 +200,93 @@ fn go_root() {
         assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);
     }
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
+}
+
+/// What a computer's admin CA may do in a phone's group (go-admins.json):
+/// it removes a device but neither the admin phone nor the root, nor hands
+/// the group over, and nothing it signs after the admin phone removed it
+/// counts.
+#[test]
+fn go_admins() {
+    let v = vectors("go-admins.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut rs = records(&v["records"]);
+    rs.reverse();
+    let (_, errs) = s.add_all(&rs);
+    assert!(errs.is_empty(), "{errs:?}");
+    assert!(s.roots().is_empty());
+    assert!(v["roots"].as_array().is_none_or(|r| r.is_empty()));
+    let names: Vec<String> = s.devices().into_iter().map(|d| d.name).collect();
+    let want: Vec<String> =
+        v["devices"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, want);
+    for d in v["devices"].as_array().unwrap() {
+        let got = s.devices().into_iter().find(|x| x.id == d["id"].as_str().unwrap()).expect("a listed device");
+        assert_eq!(got.admin, d["admin"].as_bool().unwrap(), "{}", got.name);
+    }
+    for k in v["keys"].as_array().unwrap() {
+        let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+        assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{}", k["name"]);
+    }
+    for c in v["chains"].as_array().unwrap() {
+        let chain: Vec<Cert> = c["chain"].as_array().unwrap().iter().map(cert).collect();
+        assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);
+    }
+    assert_eq!(s.digest(), v["digest"].as_str().unwrap());
+}
+
+/// An admin computer freezing another (docs/protocol.md, section 10, rule
+/// 4), as Go's TestGoFreezeVectors writes it.
+#[test]
+fn go_freeze() {
+    let v = vectors("go-freeze.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut rs = records(&v["records"]);
+    rs.reverse();
+    let (_, errs) = s.add_all(&rs);
+    assert!(errs.is_empty(), "{errs:?}");
+    let names: Vec<String> = s.devices().into_iter().map(|d| d.name).collect();
+    let want: Vec<String> =
+        v["devices"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, want);
+    for d in v["devices"].as_array().unwrap() {
+        let got = s.devices().into_iter().find(|x| x.id == d["id"].as_str().unwrap()).expect("a listed device");
+        assert_eq!(got.admin, d["admin"].as_bool().unwrap(), "{}", got.name);
+    }
+    for k in v["keys"].as_array().unwrap() {
+        let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+        assert_eq!(s.frozen(&key), k["frozen"].as_bool().unwrap(), "{}", k["name"]);
+        assert!(!s.revoked(&key), "{}", k["name"]);
+    }
+    for c in v["chains"].as_array().unwrap() {
+        let chain: Vec<Cert> = c["chain"].as_array().unwrap().iter().map(cert).collect();
+        assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);
+    }
+    assert_eq!(s.digest(), v["digest"].as_str().unwrap());
+}
+
+/// An admin computer taking over a group whose root is a computer
+/// (go-takeover.json): it counts there, but not in a phone's group, not
+/// while another admin computer has frozen it, and not once the old root
+/// removed it.
+#[test]
+fn go_takeover() {
+    let v = vectors("go-takeover.json");
+    let cases = v["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 4);
+    for c in cases {
+        let mut s = Records::new(&cert(&c["group_ca"]));
+        let mut rs = records(&c["records"]);
+        rs.reverse();
+        let (_, errs) = s.add_all(&rs);
+        assert!(errs.is_empty(), "{errs:?}");
+        let roots: Vec<Vec<u8>> = s.roots().into_iter().map(|c| c.der).collect();
+        let want: Vec<Vec<u8>> = c["roots"].as_array().map(|a| a.iter().map(bytes).collect()).unwrap_or_default();
+        assert_eq!(roots, want, "{}", c["name"]);
+        for k in c["keys"].as_array().unwrap() {
+            let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+            assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{}: {}", c["name"], k["name"]);
+        }
+        assert_eq!(s.digest(), c["digest"].as_str().unwrap());
+    }
 }

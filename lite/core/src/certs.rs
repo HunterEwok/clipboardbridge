@@ -219,6 +219,12 @@ impl Cert {
         self.ecdsa_sha256 && parent.verifies(&self.tbs, &self.sig)
     }
 
+    /// Reports whether the CA parent issued this certificate: its name and
+    /// its signature.
+    pub fn issued_by(&self, parent: &Cert) -> bool {
+        parent.is_ca && self.issuer_name == parent.subject_name && self.signed_by(parent)
+    }
+
     fn valid_at(&self, t: i64) -> bool {
         self.not_before <= t && t <= self.not_after
     }

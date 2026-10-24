@@ -120,52 +120,6 @@ func SyncHandler(g Group) http.Handler {
 	})
 }
 
-// admitRequest is what the shortcut that adds a computer sends: the code
-// it read from the computer's QR code.
-type admitRequest struct {
-	V    json.Number `json:"v"`
-	Code string      `json:"code"`
-}
-
-// AdmitHandler serves POST /admit: a paired phone, the group's main
-// device, asks the member to admit a computer with what the computer's QR
-// code carries. t checks the phone's token; admit starts the pairing.
-// Answers come with status 200 and JSON, as for /sync.
-func AdmitHandler(t Tokens, admit func(JoinCode) error) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reply := func(rep syncReply) {
-			rep.V = 1
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "no-store")
-			json.NewEncoder(w).Encode(rep)
-		}
-		if r.Method != http.MethodPost {
-			reply(syncReply{Direction: "error", Message: "the shortcut must POST to /admit"})
-			return
-		}
-		token := bearer(r.Header.Get("Authorization"))
-		if token == "" || checkToken(t, token) != nil {
-			reply(syncReply{Direction: "unpaired", Message: "this iPhone is not paired with the group; run cbb pair -phone"})
-			return
-		}
-		var req admitRequest
-		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.V.String() != "1" {
-			reply(syncReply{Direction: "error", Message: "the shortcut is from another version of clipboardbridge; install it again"})
-			return
-		}
-		jc, ok := ParseJoinQR(req.Code)
-		if !ok {
-			reply(syncReply{Direction: "error", Message: "this is not the QR code of cbb pair"})
-			return
-		}
-		if err := admit(jc); err != nil {
-			reply(syncReply{Direction: "error", Message: "the computer could not be added: " + err.Error()})
-			return
-		}
-		reply(syncReply{Direction: "none", Message: "The computer is joining the group"})
-	})
-}
-
 // A JoinCode is what the QR code of cbb pair carries: the code, the
 // addresses where the joining computer listens, and the fingerprint of its
 // certificate (pair.CertFingerprint).

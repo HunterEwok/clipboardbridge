@@ -234,6 +234,19 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /** Unfreezes an admin computer that another admin froze. */
+    suspend fun unfreeze(id: String) {
+        message = try {
+            group.unfreeze(id)
+            Note(R.string.unfrozen)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
     /** Makes a computer an admin. */
     suspend fun makeAdmin(id: String) {
         message = try {

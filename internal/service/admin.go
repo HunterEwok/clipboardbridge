@@ -82,20 +82,27 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	return d.Name, nil
 }
 
-// adminPeer reports whether the peer dev, which presented chain, is the
+// adminPeer reports whether the peer dev, whose verified chain is chain, is the
 // group's root or one of its admins: its chain carries its own admin CA,
 // or the records list it as the root or as an admin with that key.
 func (s *Service) adminPeer(dev group.DeviceID, chain []*x509.Certificate) bool {
 	if len(chain) == 0 {
 		return false
 	}
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
 	s.recMu.Lock()
 	defer s.recMu.Unlock()
 	if s.records == nil {
 		return false
 	}
 	if len(chain) > 1 && chain[1].IsCA && chain[1].Subject.CommonName == group.AdminName(dev) {
-		return !s.records.Revoked(group.KeyHashOf(chain[1]))
+		// The chain is the verified one (node's peerChain), but the admin
+		// CA is checked here too: it must have issued the leaf and stand
+		// under one of the group's roots, or it proves nothing.
+		return chain[0].CheckSignatureFrom(chain[1]) == nil && underRoot(id, chain[1]) &&
+			!s.records.Revoked(group.KeyHashOf(chain[1])) && !s.records.Frozen(group.KeyHashOf(chain[1]))
 	}
 	if s.records.RootDevice() == dev {
 		return true
@@ -103,6 +110,20 @@ func (s *Service) adminPeer(dev group.DeviceID, chain []*x509.Certificate) bool 
 	key := group.KeyHashOf(chain[0])
 	for _, d := range s.records.Devices() {
 		if d.ID == dev && d.Key == key && d.Admin {
+			return true
+		}
+	}
+	return false
+}
+
+// underRoot reports whether c is an admin CA that one of the roots of the
+// group of id certified.
+func underRoot(id *group.Identity, c *x509.Certificate) bool {
+	if id == nil {
+		return false
+	}
+	for _, root := range id.Trusted() {
+		if group.CheckAdminCA(c, root) == nil {
 			return true
 		}
 	}

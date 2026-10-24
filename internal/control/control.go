@@ -36,6 +36,8 @@ const (
 	OpJoin      = "join"       // client → service: join a group with a code
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
+	OpFreeze    = "freeze"     // client → service: freeze the admin computer Name names
+	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
 	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
@@ -78,6 +80,7 @@ type Header struct {
 	Address      string   `json:"address,omitempty"`     // a member's address for join
 	Addrs        []string `json:"addrs,omitempty"`       // where a listening join waits, for its QR code
 	Listen       bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
+	NewToken     bool     `json:"new_token,omitempty"`   // pair-phone: revoke every shortcut's token first
 	Name         string   `json:"name,omitempty"`        // a device name
 	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
@@ -170,6 +173,7 @@ type Device struct {
 
 	Admin      bool  `json:"admin,omitempty"`        // it can admit and remove devices
 	Root       bool  `json:"root,omitempty"`         // it holds the group's root
+	Frozen     bool  `json:"frozen,omitempty"`       // an admin computer another admin froze: no admin, and refused
 	Online     bool  `json:"online,omitempty"`       // connected to this member now
 	LastSeenMS int64 `json:"last_seen_ms,omitempty"` // when this member last saw it connected, Unix milliseconds; 0 if never
 	Self       bool  `json:"self,omitempty"`         // this device

@@ -90,6 +90,10 @@ class PhoneGroupTest {
         assertEquals(listOf(pc.device), admin.computers.map { it.device })
         root.add(admin.records.records)
         assertTrue(root.devices.any { it.id == pc.device }, "a record signed through the admin CA counts")
+        // The root and the admin may be the hub away from home; a plain member may not.
+        assertTrue(root.records.mayHost(root.device))
+        assertTrue(root.records.mayHost(second.device))
+        assertFalse(root.records.mayHost(pc.device))
 
         // Renewals: an admin renews what it issued, and what the root issued, from its admin CA; the root renews any.
         val byAdmin = assertNotNull(admin.renewal(pcChain, adminKey, later))

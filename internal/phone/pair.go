@@ -182,7 +182,7 @@ func ProfileHandler(ca *group.CA) http.Handler {
 		w.Header().Set("Content-Disposition", `attachment; filename="clipboardbridge.mobileconfig"`)
 		w.Write(Profile(ca))
 	})
-	for _, name := range []string{SyncShortcut, AdmitShortcut} {
+	for _, name := range []string{SyncShortcut} {
 		mux.HandleFunc("GET /"+name+".shortcut", func(w http.ResponseWriter, r *http.Request) {
 			sc := Shortcut(name)
 			if sc == nil {
@@ -198,9 +198,6 @@ func ProfileHandler(ca *group.CA) http.Handler {
 		data := map[string]string{"Fingerprint": Fingerprint(ca), "Short": ShortFingerprint(ca)}
 		if Shortcut(SyncShortcut) != nil {
 			data["Shortcut"] = "yes"
-		}
-		if Shortcut(AdmitShortcut) != nil {
-			data["Admit"] = "yes"
 		}
 		page(w, profilePage, data)
 	})
@@ -325,8 +322,6 @@ var profilePage = template.Must(template.New("profile").Parse(pageHead + `
 {{if .Shortcut}}<li><p><a class="btn" href="/clipboardbridge.shortcut">Add the shortcut</a></p>
 <p>Then run it once: it asks for the six-digit code that the computer shows, and remembers this iPhone.</p></li>
 {{else}}<li><p>Add the clipboardbridge shortcut from the release page, run it once, and type the six-digit code that the computer shows.</p></li>
-{{end}}{{if .Admit}}<li><p><a class="btn" href="/clipboardbridge-add.shortcut">Add the shortcut for new computers</a></p>
-<p>This iPhone is the group's main device: to add a computer, run <b>cbb pair</b> there and scan its QR code with this shortcut.</p></li>
 {{end}}<li><p>Put the shortcut on Back Tap: Settings &rsaquo; Accessibility &rsaquo; Touch &rsaquo; Back Tap &rsaquo; Double Tap &rsaquo; clipboardbridge. On an iPhone with an Action button, use that instead.</p></li>
 </ol>
 </body></html>`))
