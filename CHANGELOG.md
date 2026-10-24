@@ -45,6 +45,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
 
+### Changed
+
+- The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
+  wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
+  it speaks plain WireGuard, the same on the wire as before.
+
 ### Fixed
 
 - The desktop connectors (the Mac's and Windows's agent, `cbb desktop` on Linux) take the

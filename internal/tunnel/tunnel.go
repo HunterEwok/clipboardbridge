@@ -5,7 +5,8 @@
 // WireGuard tunnel in a star around one member, the hub (docs/design.md,
 // "Sync away from home").
 //
-// WireGuard runs in user space inside the process (wireguard-go) with an
+// WireGuard runs in user space inside the process (amneziawg-go, a fork of
+// wireguard-go that is plain WireGuard until obfuscation is set) with an
 // in-process network stack (gVisor's netstack), so the operating system sees
 // only encrypted UDP on one port: there is no network interface, no route and
 // no firewall rule. Behind the hub's tunnel the stack has one listening port,
@@ -34,9 +35,9 @@ import (
 	"strings"
 	"sync"
 
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
+	"github.com/amnezia-vpn/amneziawg-go/conn"
+	"github.com/amnezia-vpn/amneziawg-go/device"
+	"github.com/amnezia-vpn/amneziawg-go/tun/netstack"
 )
 
 // Port is the member protocol's port inside the tunnel, the same as on the

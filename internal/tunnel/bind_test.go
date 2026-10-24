@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"golang.zx2c4.com/wireguard/conn"
+	"github.com/amnezia-vpn/amneziawg-go/conn"
 )
 
 // scriptedBind returns the receive results it is given, in turn.

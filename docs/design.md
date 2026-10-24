@@ -499,7 +499,7 @@ Not built yet (roadmap item 10); the design:
   248 and later and are checked with `systemd-analyze verify`.
 - Third-party code: `golang.org/x/net`, `golang.org/x/sys`, `golang.org/x/crypto` and
   `golang.org/x/time` (BSD-3-Clause), `jezek/xgb` (BSD-3-Clause), `rsc.io/qr`
-  (BSD-3-Clause), `golang.zx2c4.com/wireguard` (MIT) with gVisor's netstack (Apache-2.0)
+  (BSD-3-Clause), `amnezia-vpn/amneziawg-go` (MIT, a fork of wireguard-go) with gVisor's netstack (Apache-2.0)
   and `google/btree` (Apache-2.0) for the tunnel, and the CPace implementation copied from
   `rsc.io/cmd/mote` v0.1.3 (BSD-3-Clause) into `internal/third_party/cpace`. The lite
   member uses RustCrypto and rustls (MIT or Apache-2.0).
@@ -584,7 +584,8 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   meets it at home; a device that stays away meanwhile cannot reach it until it comes home.
   A new address, provider or forwarder is not a change of hub: the hub keeps its key and
   tells its clients the new address.
-- The hub runs WireGuard in user space inside `cbb` (wireguard-go with its in-process network
+- The hub runs WireGuard in user space inside `cbb` (amneziawg-go, a fork of wireguard-go that
+  speaks plain WireGuard until the group switches obfuscation on, with its in-process network
   stack, gVisor netstack), as do the Go clients. The operating system sees only encrypted UDP
   on one port: there is no `wg0` interface, no route, no IP forwarding and no firewall rule
   to get wrong.
@@ -815,7 +816,7 @@ sing-box is not used (GPL).
 
 | Member                         | Tunnel                                                                                        | Role                     |
 |--------------------------------|-----------------------------------------------------------------------------------------------|--------------------------|
-| Go service (Linux, macOS, Windows) | wireguard-go with netstack in `cbb`; AmneziaWG and Xray-core as Go modules               | hub, forwarder, relay or client |
+| Go service (Linux, macOS, Windows) | amneziawg-go with netstack in `cbb`; Xray-core as a Go module                             | hub, forwarder, relay or client |
 | iPhone app                     | in the app process, no Network Extension, one Go framework for WireGuard and Xray             | client, while the app is open |
 | Android app                    | in the app process, in the foreground service the app already has; no `VpnService`            | client                   |
 | `cbb-lite` on Linux            | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
