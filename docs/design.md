@@ -647,7 +647,7 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    on`, or `cbb pair -invite`, with `sudo` or as administrator) lifts that limit, and turning
    it off puts it back. A Mac has the program's limit only, since macOS limits a single
    program's network only through a Network Extension of a signed app; the Mac app will add
-   it (item 21 of [roadmap.md](roadmap.md)).
+   it (item 22 of [roadmap.md](roadmap.md)).
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
    "Device keys in hardware") can turn sync away from home on only after a second, separate
    consent. It explains that whoever copies the files (root on that device, its disk or

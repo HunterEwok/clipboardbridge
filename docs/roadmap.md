@@ -109,7 +109,9 @@ The order may change.
     4. the phone apps: images, then files and the share targets;
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
-21. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
+21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
+    member and the natural hub, `cbb-lite` for small routers. See "OpenWrt routers" below.
+22. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
     and notarized, that carries the service and a Network Extension (a content filter): the
     system then keeps the service on the home network until sync away from home is on, and
     lets only the home network reach its port, as the systemd unit does on Linux and Windows
@@ -118,6 +120,90 @@ The order may change.
     has as well; macOS has no per-program limit without such an app (the application firewall
     allows or blocks a program, and pf is shared by the whole system), so this is the one
     difference between the computers, and it goes away with the app.
+
+## OpenWrt routers
+
+Planned for 0.5.
+
+A router has no desktop and no clipboard of its own, so on a router clipboardbridge is
+infrastructure, not a place to copy and paste:
+
+- **The hub for sync away from home.** The router is always on and is the device with the
+  public address, so it needs no port forwarding: it opens the hub's UDP port on its own
+  WAN. Today the hub is a computer that must stay on.
+- **An always-on member at home.** Phones and lite members sync through it when no
+  computer is on, and it holds `clipboardbridge.local` (it is never on battery).
+- **A member on every subnet.** A router sits on the home network and the IoT subnet at
+  once, so a device on the IoT subnet syncs with the router directly, and the router passes
+  its events on as every member does. No rule from the IoT subnet into the home network is
+  needed, only one that lets the IoT subnet reach the router's member port.
+- **Not a place for remote paste or CA keys.** It has no screen to paste on. It should
+  join as an ordinary full member, never as the creator or an admin: CA keys do not belong
+  on a box that faces the internet.
+
+### Full or lite
+
+| | `cbb` (Go, full member) | `cbb-lite` (Rust) |
+|---|---|---|
+| Size of the binary | about 25 MB stripped (6.4 MB compressed with xz) for arm64; armv7, mips and mipsle the same order | 1.7 MB for arm64 (static musl) |
+| Routers it fits | 128 MB of flash or more, or eMMC (for example the Banana Pi BPI-R4); 256 MB of RAM or more | almost any OpenWrt router, 16 MB of flash and 64 MB of RAM |
+| Hub | yes | no: lite members are clients only |
+| Away from home | yes, as hub or client, with obfuscation and VLESS | not yet (GotaTun, item 12); never AmneziaWG |
+| Builds | Go cross-compiles statically for every OpenWrt CPU: aarch64, armv7, mips and mipsle (softfloat), x86-64; arm64 and armv7 are in every release already | aarch64, armv7, x86-64 with stable Rust; mips and mipsle are Tier 3 in Rust (nightly and `-Zbuild-std`) |
+
+Recommendation: the full service first, aimed at routers with room for it, because the hub
+is what a router adds that nothing else does; `cbb-lite` afterwards for small routers, as
+packaging around what exists.
+
+### What OpenWrt needs that other Linux does not
+
+- **No systemd.** A procd init script (`/etc/init.d/clipboardbridge`) runs the service as
+  its own user with respawn, and a UCI file (`/etc/config/clipboardbridge`) holds the
+  settings: interfaces, port, hub.
+- **`/var` is in RAM.** The state goes to `/etc/clipboardbridge`, which survives reboots,
+  and a file in `/lib/upgrade/keep.d` keeps it across `sysupgrade`. The service writes it
+  rarely (the identity, the records, the clock mark), so the flash does not wear.
+- **The firewall is fw4 (nftables), driven by UCI.** The installer adds named rules
+  (`clipboardbridge ...`): the member port and mDNS from the zones the user names (the
+  `lan` zone already accepts input; an IoT zone usually does not), and the hub's UDP port
+  from `wan` only while the router is the hub. It remembers what it added and removes
+  exactly that, as on other Linux.
+- **mDNS only on the inside.** Today `cbb` announces on every interface. On a router that
+  would send the group's names and device IDs onto the provider's network, so the service
+  gets a list of interfaces for mDNS and the member port, by default the devices of the
+  `lan` zone. Avahi, already installed on many routers, keeps working: `cbb` shares port
+  5353 with it as it does on desktop Linux.
+- **Time.** Many routers have no clock that runs while they are off, and certificates need
+  the right time, so the init script starts the service after NTP has set the clock.
+- **Packages.** OpenWrt 25.12 installs `.apk` packages (apk 3); 24.10 and older use
+  `.ipk` (opkg). The first step installs with a script, as `get.sh` does elsewhere;
+  packages built with the OpenWrt SDK in CI come after.
+- **The router's own WireGuard or AmneziaWG** stays separate: `cbb` runs its tunnel in its
+  own process (amneziawg-go with netstack) on a port of its own and adds no interface or
+  route.
+
+The security rules of sync away from home do not change: the router is the user's own
+device, the tunnel is the group's own WireGuard, member TLS runs inside it, and nothing but
+the hub's UDP port faces the internet.
+
+### Steps
+
+One pull request each, smaller ones together:
+
+1. The service on a router: a list of interfaces for mDNS and the member port, and release
+   builds for mips and mipsle (softfloat).
+2. `packaging/openwrt`: the procd script, the UCI file, install and uninstall through
+   `get.sh` (it recognises OpenWrt by `/etc/openwrt_release`), the fw4 rules, the state in
+   `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in an
+   OpenWrt root file system.
+3. The router as the hub: `cbb away hub` opens its UDP port on `wan` and `cbb away off`
+   closes it; the bench gets the router as a device under test with cases for it in
+   [testbench.md](testbench.md).
+4. `.apk` and `.ipk` packages from the OpenWrt SDK in CI, attached to each release.
+5. `cbb-lite` on OpenWrt: its procd script and installer path, builds for armv7 and, with
+   nightly Rust, mips and mipsle.
+
+Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Device keys in hardware
 
