@@ -70,7 +70,7 @@ class AwayState(val key: ByteArray, val hub: String? = null, val offer: Member.T
             }
         } catch (e: IOException) {
             null
-
+        }
     }
 }
 
