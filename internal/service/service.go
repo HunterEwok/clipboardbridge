@@ -115,9 +115,10 @@ func mdnsDiscovery(c DiscoveryConfig) (Discovery, error) {
 
 // Service is a running clipboardbridge service.
 type Service struct {
-	cfg   Config
-	clock *hlc.Clock
-	logf  func(string, ...any)
+	cfg    Config
+	clock  *hlc.Clock
+	logf   func(string, ...any)
+	broken *control.RequestError // the group's files cannot be read; set once at start
 
 	createMu      sync.Mutex // one group creation at a time
 	mu            sync.Mutex
@@ -238,7 +239,12 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.Logf("cbb: this device is in no group yet")
 		id = nil
 	case err != nil:
-		return err
+		// The service keeps running without its group, so that cbb
+		// says what is wrong, and refuses everything else, so that
+		// nothing writes over the damaged file.
+		s.broken = &control.RequestError{Msg: errBroken, Detail: err.Error()}
+		cfg.Logf("cbb: %s (%v)", errBroken, err)
+		id = nil
 	}
 	s.clock = clock
 
@@ -260,6 +266,10 @@ func Run(ctx context.Context, cfg Config) error {
 	s.stopGroup()
 	return nil
 }
+
+// errBroken is what the user sees when the device's group file cannot be
+// read.
+const errBroken = "this device's group file (identity.json in the service's state directory) is damaged, so the service does not start the group; restore the file from a backup, or remove clipboardbridge with its keys (uninstall --purge, -Purge on Windows), install it again and join"
 
 // engine returns the sync engine, or nil while the device is in no group.
 func (s *Service) engine() *clip.Engine {

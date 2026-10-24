@@ -1658,3 +1658,27 @@ func TestRecordsTheSystem(t *testing.T) {
 		return false
 	})
 }
+
+// A damaged identity file keeps the service running without its group: it
+// says what is wrong and refuses everything, so nothing writes over it.
+func TestBrokenIdentity(t *testing.T) {
+	var h hub
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, group.FileName), []byte(`{"version":1,"devi`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := startIn(t, &h, &testService{name: "a", dir: dir, os: group.OSLinux})
+	for _, op := range []string{control.OpStatus, control.OpNew} {
+		c := s.dial(t)
+		_, err := c.Do(&control.Message{Header: control.Header{Op: op}})
+		c.Close()
+		var re *control.RequestError
+		if !errors.As(err, &re) || re.Msg != errBroken || !strings.Contains(re.Detail, group.FileName) {
+			t.Fatalf("%s: %v (%#v)", op, err, re)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, group.FileName))
+	if err != nil || string(data) != `{"version":1,"devi` {
+		t.Fatalf("the identity file changed: %q, %v", data, err)
+	}
+}

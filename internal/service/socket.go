@@ -50,6 +50,10 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 	if err != nil {
 		return
 	}
+	if s.broken != nil {
+		reply(c, control.Header{Error: s.broken.Msg, Detail: s.broken.Detail, Done: true}, nil)
+		return
+	}
 	switch m.Op {
 	case control.OpCopy:
 		kind, via, err := parseKind(m.Kind, m.Via)

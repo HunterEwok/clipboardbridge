@@ -104,6 +104,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the service reach the internet, and `sudo cbb away off` removes it; until then `cbb away`
   says what is missing.
 - `cbb away hub -forwarder` and `cbb away relay` take a server's name as well as its address.
+- A device whose group file is damaged says so: the service keeps running without its group,
+  `cbb status` and every other command explain what is wrong and how to recover (with the
+  underlying error in a debug build or with `CBB_DEBUG=1`), and nothing writes over the file.
+  Before, the service only restarted every few seconds and `cbb status` said it was not running.
+- The service's log no longer says `<nil>` for a member connection that closed in order.
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.
