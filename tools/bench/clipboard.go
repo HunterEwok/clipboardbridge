@@ -18,6 +18,10 @@ import (
 // deletes it, cbbbench-paste writes the clipboard to out.txt.
 const winBench = `C:\ProgramData\cbbbench`
 
+// x11Env reaches the X display of the signed-in session. On GNOME that is
+// XWayland, whose cookie file mutter names afresh at each login.
+const x11Env = `DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1)} `
+
 // cbbCmd is how the bench calls cbb (or cbb-lite) on a device.
 func cbbCmd(d *Device) string {
 	switch d.OS {
@@ -41,7 +45,7 @@ func Copy(ctx context.Context, d *Device, text string) error {
 		// must not keep the SSH session open.
 		_, err = Run(ctx, d, `XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} wl-copy >/dev/null 2>&1`, text)
 	case "x11":
-		_, err = Run(ctx, d, `DISPLAY=${DISPLAY:-:0} xclip -selection clipboard -i >/dev/null 2>&1`, text)
+		_, err = Run(ctx, d, x11Env+`xclip -selection clipboard -i >/dev/null 2>&1`, text)
 	case "macos":
 		_, err = Run(ctx, d, "LANG=en_US.UTF-8 pbcopy", text)
 	case "windows":
@@ -71,9 +75,11 @@ func Paste(ctx context.Context, d *Device) (string, error) {
 	case "none":
 		return Run(ctx, d, cbbCmd(d)+" paste", "")
 	case "wayland":
-		return Run(ctx, d, `XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} wl-paste -n 2>/dev/null || true`, "")
+		// wl-paste waits for a focused window on a compositor without
+		// data-control (GNOME): give up on it soon, the case retries.
+		return Run(ctx, d, `XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} timeout 5 wl-paste -n 2>/dev/null || true`, "")
 	case "x11":
-		return Run(ctx, d, `DISPLAY=${DISPLAY:-:0} xclip -selection clipboard -o 2>/dev/null || true`, "")
+		return Run(ctx, d, x11Env+`timeout 5 xclip -selection clipboard -o 2>/dev/null || true`, "")
 	case "macos":
 		return Run(ctx, d, "LANG=en_US.UTF-8 pbpaste", "")
 	case "windows":

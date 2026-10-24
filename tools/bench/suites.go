@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,9 +22,10 @@ import (
 const maxSkew = 2 * time.Second
 
 var (
-	groupRE = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
-	codeRE  = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
-	addrRE  = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
+	groupRE  = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
+	deviceRE = regexp.MustCompile(`(?i)device\s+([0-9a-f]{8,})`)
+	codeRE   = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
+	addrRE   = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
 )
 
 // Check reaches every device: SSH, the clock, the installed version and its
@@ -89,7 +91,8 @@ func groupOf(ctx context.Context, d *Device) (string, error) {
 	out, err := Run(ctx, d, cbbCmd(d)+" status", "")
 	if err != nil {
 		var re *RunError
-		if errors.As(err, &re) && strings.Contains(re.Output, "Not in a group") {
+		// cbb says "Not in a group.", cbb-lite "in no group"; both exit 1.
+		if errors.As(err, &re) && (strings.Contains(re.Output, "Not in a group") || strings.Contains(re.Output, "in no group")) {
 			return "", nil
 		}
 		return "", err
@@ -139,6 +142,19 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 	}
 	if !ok {
 		return
+	}
+
+	// mDNS does not cross subnets: a lite member is told where the hub is
+	// for the run, and the service goes back to its own settings after it.
+	if hub.Address != "" {
+		for _, d := range devices {
+			if d.OS != "linux-lite" {
+				continue
+			}
+			if r.Do("smoke/"+d.Name+"/peer", func() error { return litePeer(ctx, d, hub.Address) }) == nil {
+				defer r.Do("smoke/"+d.Name+"/unpeer", func() error { return litePeer(context.WithoutCancel(ctx), d, "") })
+			}
+		}
 	}
 
 	var group string
@@ -204,6 +220,53 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 		}
 		wg.Wait()
 	}
+
+	// The hub revokes the others, so nothing copied on them after the run
+	// (the Mac is also someone's own computer) reaches the bench's group.
+	// Linux and Windows members of a computer's group hold its CA keys and
+	// cannot be revoked without a new group (docs/design.md): they are test
+	// devices, reset before the next run.
+	for _, d := range members[1:] {
+		if d.OS == "linux" || d.OS == "windows" {
+			r.Skip("smoke/"+d.Name+"/revoke", "it holds the group's CA keys; reset it before the next run")
+			continue
+		}
+		r.Do("smoke/"+d.Name+"/revoke", func() error {
+			id, err := deviceOf(ctx, d)
+			if err != nil {
+				return err
+			}
+			_, err = Run(ctx, hub, cbbCmd(hub)+" revoke "+id, "")
+			return err
+		})
+	}
+}
+
+// liteDropIn is the bench's systemd drop-in for the lite member's service.
+const liteDropIn = "/etc/systemd/system/cbb-lite.service.d/cbbbench.conf"
+
+// litePeer restarts the lite member's service with -peer addr, or without
+// the bench's drop-in when addr is "".
+func litePeer(ctx context.Context, d *Device, addr string) error {
+	cmd := "sudo -n rm -f " + liteDropIn + " && sudo -n rmdir --ignore-fail-on-non-empty " + path.Dir(liteDropIn)
+	if addr != "" {
+		conf := "[Service]\nExecStart=\nExecStart=/usr/local/bin/cbb-lite run -peer " + addr + "\n"
+		cmd = "sudo -n mkdir -p " + path.Dir(liteDropIn) + " && printf '" + conf + "' | sudo -n tee " + liteDropIn + " >/dev/null"
+	}
+	_, err := Run(ctx, d, cmd+" && sudo -n systemctl daemon-reload && sudo -n systemctl restart cbb-lite", "")
+	return err
+}
+
+// deviceOf returns the device's ID from its status.
+func deviceOf(ctx context.Context, d *Device) (string, error) {
+	out, err := Run(ctx, d, cbbCmd(d)+" status", "")
+	if err != nil {
+		return "", err
+	}
+	if m := deviceRE.FindStringSubmatch(out); m != nil {
+		return m[1], nil
+	}
+	return "", fmt.Errorf("%s shows no device ID in its status: %q", d.Name, firstLine(out))
 }
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and
@@ -244,6 +307,11 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 	}
 	addr := d.addrFor(hub, w.addr)
 	join := cbbCmd(d) + " join -code"
+	if d.OS == "linux-lite" {
+		// The lite member joins as its service's user, which alone may
+		// write its keys (lite/README.md); the bench user has sudo.
+		join = "sudo -n -u cbb-lite " + join
+	}
 	if d.OS == "linux-lite" || addr != "" {
 		if addr == "" {
 			cancel()

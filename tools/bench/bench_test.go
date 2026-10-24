@@ -19,17 +19,17 @@ controller = "pi4"
 
 [device.deck]
 os = "linux"
-ssh = "ewok@steamdeck.lan"
+ssh = "user@deck.lan"
 clipboard = "wayland"
 roles = ["member", "hub"]
 
 [device.rpi0w]
 os = "linux-lite"
-ssh = "ewok@rpi0w.lan"
+ssh = "user@pi.lan"
 
 [device.win]
 os = "windows"
-ssh = "ewok@win.lan"
+ssh = "user@win.lan"
 clipboard = "windows"
 vm = { host = "mac", vmx = "win.vmx", snapshot = "clean" }
 
@@ -89,7 +89,7 @@ func TestPatterns(t *testing.T) {
 	if m := codeRE.FindStringSubmatch("Pairing code: 123 456"); m == nil || m[1]+m[2] != "123456" {
 		t.Fatalf("code: %v", m)
 	}
-	if m := addrRE.FindStringSubmatch("If it cannot find this one: cbb join -code 192.168.0.167:8764"); m == nil || m[1] != "192.168.0.167:8764" {
+	if m := addrRE.FindStringSubmatch("If it cannot find this one: cbb join -code 192.168.1.10:8764"); m == nil || m[1] != "192.168.1.10:8764" {
 		t.Fatalf("address: %v", m)
 	}
 	for _, s := range []string{
@@ -98,6 +98,21 @@ func TestPatterns(t *testing.T) {
 	} {
 		if m := groupRE.FindStringSubmatch(s); m == nil || m[1] != "485666d454cba4e8" {
 			t.Fatalf("group in %q: %v", s, m)
+		}
+	}
+}
+
+func TestNoLocale(t *testing.T) {
+	got := noLocale([]string{"HOME=/home/u", "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "LC_CTYPE=C", "LANGUAGE=ru", "PATH=/bin"})
+	if strings.Join(got, " ") != "HOME=/home/u PATH=/bin" {
+		t.Errorf("noLocale = %q", got)
+	}
+}
+
+func TestDeviceRE(t *testing.T) {
+	for _, out := range []string{"Device 3f2a9c01d4 (linux), group 485666d454cba4e8\n", "device  3f2a9c01d4\ngroup   485666d454cba4e8\n"} {
+		if m := deviceRE.FindStringSubmatch(out); m == nil || m[1] != "3f2a9c01d4" {
+			t.Errorf("deviceRE on %q = %v", out, m)
 		}
 	}
 }
