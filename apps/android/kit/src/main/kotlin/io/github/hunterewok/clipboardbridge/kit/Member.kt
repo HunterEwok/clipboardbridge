@@ -6,6 +6,7 @@ package io.github.hunterewok.clipboardbridge.kit
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The member protocol of docs/protocol.md, sections 4 and 5, as the Go side
@@ -171,12 +172,46 @@ object Member {
          * its admin key, for the root to certify (section 10, "A computer as admin").
          */
         val adminKey: ByteArray? = null,
+        /** The sender's WireGuard public key, 32 bytes, for the group's hub (section 11). */
+        val tunnelKey: ByteArray? = null,
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
-                name == other.name && adminKey.contentEqualsOrNull(other.adminKey)
+                name == other.name && adminKey.contentEqualsOrNull(other.adminKey) &&
+                tunnelKey.contentEqualsOrNull(other.tunnelKey)
 
         override fun hashCode(): Int = wallMS.hashCode()
+    }
+
+    /**
+     * The group's hub's answer to the tunnel key a hello carried (section
+     * 11): the hub's WireGuard public key, this member's own preshared key
+     * and the hub's addresses away from home, "ip:port" or "[ipv6]:port".
+     */
+    class TunnelOffer(val hubKey: ByteArray, val psk: ByteArray, val endpoints: List<String> = emptyList()) {
+        /** Whether both keys are 32 bytes, as a tunnel needs. */
+        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
+
+        override fun equals(other: Any?): Boolean =
+            other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints
+
+        override fun hashCode(): Int = hubKey.contentHashCode()
+
+        fun toJson(): JsonObject = Wire.obj(
+            "hub_key" to Wire.bytes(hubKey),
+            "psk" to Wire.bytes(psk),
+            "endpoints" to endpoints.takeIf { it.isNotEmpty() }?.let { l -> JsonArray(l.map { Wire.str(it)!! }) },
+        )
+
+        companion object {
+            fun fromJson(o: JsonObject): TunnelOffer = TunnelOffer(
+                o.optBytes("hub_key") ?: ByteArray(0),
+                o.optBytes("psk") ?: ByteArray(0),
+                o.optArray("endpoints")?.map {
+                    (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw WireTypeException("endpoints: not a string")
+                } ?: emptyList(),
+            )
+        }
     }
 
     /** A signed record of the group (section 10), carried as it came. */
@@ -223,6 +258,9 @@ object Member {
             override fun hashCode(): Int = adminCA.contentHashCode()
         }
 
+        /** From the group's hub: its offer for the tunnel key the receiver's hello carried; null when absent. */
+        data class Tunnel(val offer: TunnelOffer?) : Message()
+
         /** A type from a newer version, ignored. */
         data class Unknown(val type: String) : Message()
     }
@@ -240,6 +278,7 @@ object Member {
                 "records" to Wire.str(m.hello.records),
                 "name" to Wire.str(m.hello.name),
                 "admin_key" to Wire.bytes(m.hello.adminKey),
+                "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
             ),
         )
         is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
@@ -248,6 +287,7 @@ object Member {
         is Message.Cert -> Wire.obj("t" to Wire.str("cert"), "cert" to Wire.bytes(m.cert), "issuer" to Wire.bytes(m.issuer))
         is Message.Records -> Wire.obj("t" to Wire.str("records"), "records" to JsonArray(m.records.map { it.toJson() }))
         is Message.Admin -> Wire.obj("t" to Wire.str("admin"), "admin_ca" to Wire.bytes(m.adminCA))
+        is Message.Tunnel -> Wire.obj("t" to Wire.str("tunnel"), "tunnel" to m.offer?.toJson())
         is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
     }
 
@@ -291,6 +331,7 @@ object Member {
                             records = h.optString("records"),
                             name = h.optString("name"),
                             adminKey = h.optBytes("admin_key"),
+                            tunnelKey = h.optBytes("tunnel_key"),
                         ),
                     )
                 }
@@ -302,6 +343,7 @@ object Member {
                     o.optArray("records")?.map { Record.fromJson(it as? JsonObject ?: throw WireTypeException("records")) } ?: emptyList(),
                 )
                 "admin" -> Message.Admin(o.optBytes("admin_ca") ?: ByteArray(0))
+                "tunnel" -> Message.Tunnel(o.optObject("tunnel")?.let { TunnelOffer.fromJson(it) })
                 else -> Message.Unknown(t)
             }
         } catch (e: WireTypeException) {

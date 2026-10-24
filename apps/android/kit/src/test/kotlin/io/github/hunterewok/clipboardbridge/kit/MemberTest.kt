@@ -46,6 +46,14 @@ class MemberTest {
         val rs = assertIs<Member.Message.Records>(decoded[9]).records
         assertEquals(2, rs.size)
         assertContentEquals("admin CA".toByteArray(), rs[1].chain!!.single())
+        val key = ByteArray(32) { (it + 1).toByte() }
+        assertContentEquals(key, assertIs<Member.Message.Hello>(decoded[10]).hello.tunnelKey)
+        val offer = assertIs<Member.Message.Tunnel>(decoded[11]).offer!!
+        assertTrue(offer.isValid)
+        assertContentEquals(ByteArray(32) { (it + 2).toByte() }, offer.hubKey)
+        assertContentEquals(ByteArray(32) { (it + 3).toByte() }, offer.psk)
+        assertEquals(listOf("203.0.113.7:8764", "[2001:db8::7]:8764"), offer.endpoints)
+        assertEquals(emptyList(), assertIs<Member.Message.Tunnel>(decoded[12]).offer!!.endpoints)
     }
 
     @Test
