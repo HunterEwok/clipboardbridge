@@ -14,7 +14,6 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb copy [-secret]` | Sends standard input to the group, and to this device's own clipboard. `-secret` sends it as a secret: kept only in memory and gone 60 seconds after the copy. |
 | `cbb paste` | Prints this device's clipboard text. |
 | `cbb status` | This device, its group, sync away from home, and every device of the group: its system (Linux, Windows, macOS, iOS, Android), its role (`full`, `lite`, `phone`, `shortcut`), whether it is the root or an admin, when it was last seen and whether its clock is off. It also says whether this computer answers for `clipboardbridge.local`. |
-| `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
 | `cbb revoke NAME` | Removes a device, by name or device ID, with a signed record; the group stays. Runs on an admin: the computer that created the group (its root), a computer the root made an admin (`cbb admin`), or a computer the root phone made an admin. Removing an admin of a computer's group also replaces the iPhone CA, so iPhones that use the shortcut pair again. The root itself cannot be removed yet. In a phone's group, remove devices in the app (Devices). |
 | `cbb admin NAME` | On the group's root: makes the computer NAME (a name or a device ID) an admin, which can then admit and remove devices and serve the shortcut. It must be connected. In a phone's group, use "Make it an admin" on the root phone. |
 | `cbb new` | Creates a group with this computer as its root: it holds the group's root key and the iPhone CA, admits devices and makes admins. A computer in a group already keeps it. |
@@ -32,13 +31,15 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb relay -group TAG[,TAG...] [-listen ADDRESS:PORT] [-key FILE] [-show-key]` | Runs a blind relay on a server you run, for your groups that have no computer to be the hub (default port 8764, UDP and TCP). It serves only the groups whose tags `-group` lists (`cbb status` shows a group's tag), holds none of their keys, reads nothing of the clipboard, and writes nothing about them; it sees which devices of a group talk, when and how much. Its keys are made in `-key` on the first run (default `relay.pem` in systemd's state directory, or in the service's state directory), and the key to give `cbb away relay -key` is printed at start, or alone with `-show-key`. |
 | `cbb version` | Prints the version and the platform. |
 
-### Started by the system
+### Rarely needed
 
-The system starts these two; they are run by hand only to look into a problem, such as to
+`holder` only matters when the wrong computer answers to `clipboardbridge.local`. The system
+starts `service` and `agent`; they are run by hand only to look into a problem, such as to
 see the agent's log in a terminal.
 
 | Command | What it does |
 |---|---|
+| `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
 | `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 

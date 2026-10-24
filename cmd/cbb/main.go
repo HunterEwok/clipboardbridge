@@ -24,8 +24,6 @@ Commands:
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
   away relay address:port Meet the group's other devices away from home at a relay.
-  holder [auto|first|fallback|never]
-                          Show or set whether this computer holds clipboardbridge.local.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
   new                     Create a group with this computer as its root.
@@ -38,9 +36,11 @@ Commands:
   version                 Print the version and the platform.
   help                    Print this help.
 
-Started by the system, not by hand:
-  service                 Run the service (systemd, launchd or Windows).
-  agent                   Link this desktop's clipboard to the service (at sign-in).
+Rarely needed:
+  holder [auto|first|fallback|never]
+                          Show or set whether this computer holds clipboardbridge.local.
+  service                 Run the service (started by systemd, launchd or Windows).
+  agent                   Link this desktop's clipboard to the service (started at sign-in).
 
 The design is in docs/design.md.
 `
