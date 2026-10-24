@@ -132,8 +132,13 @@ func Listen(cfg ServerConfig) (*Server, error) {
 		"outbounds": []any{
 			map[string]any{
 				"protocol": "freedom",
-				// Whatever a client asks for, its packets go to the forwarder.
-				"settings": map[string]any{"redirect": cfg.To.String()},
+				// Whatever a client asks for, its packets go to the forwarder,
+				// which Xray lets through only by name since it is a private
+				// address; nothing else.
+				"settings": map[string]any{"redirect": cfg.To.String(), "finalRules": []any{
+					map[string]any{"action": "allow", "network": "udp", "ip": []string{cfg.To.Addr().String()}, "port": int(cfg.To.Port())},
+					map[string]any{"action": "block"},
+				}},
 			},
 			map[string]any{"tag": "block", "protocol": "blackhole"},
 		},
