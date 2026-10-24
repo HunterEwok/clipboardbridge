@@ -130,3 +130,21 @@ func TestTextCases(t *testing.T) {
 		}
 	}
 }
+
+func TestSeen(t *testing.T) {
+	lin, win := &Device{OS: "linux"}, &Device{OS: "windows"}
+	text := "L1\nL2\r\nL3\n"
+	for _, c := range []struct {
+		from, to *Device
+		want     string
+	}{
+		{lin, lin, text},
+		{lin, win, "L1\r\nL2\r\nL3\r\n"},
+		{win, lin, "L1\nL2\nL3\n"},
+		{win, win, "L1\r\nL2\r\nL3\r\n"},
+	} {
+		if got := seen(text, c.from, c.to); got != c.want {
+			t.Errorf("seen(%q, %s, %s) = %q, want %q", text, c.from.OS, c.to.OS, got, c.want)
+		}
+	}
+}

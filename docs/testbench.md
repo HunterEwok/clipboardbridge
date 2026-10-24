@@ -115,7 +115,7 @@ that the protocol allows (20 pairs) runs the content classes:
 |---|---|
 | C1 | short ASCII |
 | C2 | Cyrillic, emoji, combining marks, right-to-left text |
-| C3 | multi-line with CRLF and LF, tabs, trailing spaces (line endings must arrive as sent) |
+| C3 | multi-line with CRLF and LF, tabs, trailing spaces (line endings must arrive as sent; a Windows clipboard holds CR LF and a Windows member sends LF, see design.md, Windows) |
 | C4 | empty text and whitespace only |
 | C5 | the size limit exactly, and one byte over it (must be refused with a clear message) |
 | C6 | `copy -secret`: arrives, is gone 60 s after the copy, never written to disk |

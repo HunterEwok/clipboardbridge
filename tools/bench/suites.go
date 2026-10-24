@@ -256,7 +256,7 @@ func spread(ctx context.Context, r *Report, prefix string, members []*Device, fr
 		go func() {
 			defer wg.Done()
 			r.Do(fmt.Sprintf("%s%s->%s", prefix, from.Name, to.Name), func() error {
-				return arrives(ctx, to, text, timeout)
+				return arrives(ctx, to, seen(text, from, to), timeout)
 			})
 		}()
 	}
@@ -264,7 +264,22 @@ func spread(ctx context.Context, r *Report, prefix string, members []*Device, fr
 }
 
 // arrives waits until the device's clipboard holds text.
+// seen is the text that to's clipboard holds after from copied text. The
+// Windows agent turns CR LF into LF when it reads the clipboard and LF into
+// CR LF when it writes it (docs/design.md, Windows); every other member
+// keeps the bytes as they are.
+func seen(text string, from, to *Device) string {
+	if from.OS == "windows" || to.OS == "windows" {
+		text = strings.ReplaceAll(text, "\r\n", "\n")
+	}
+	if to.OS == "windows" {
+		text = strings.ReplaceAll(text, "\n", "\r\n")
+	}
+	return text
+}
+
 func arrives(ctx context.Context, to *Device, text string, timeout time.Duration) error {
+	text = strings.TrimRight(text, "\r\n")
 	return eventually(ctx, timeout, func() error {
 		got, err := Paste(ctx, to)
 		if err != nil {
