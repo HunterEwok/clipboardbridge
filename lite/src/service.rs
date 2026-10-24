@@ -25,7 +25,12 @@ use crate::records::Records;
 use crate::records::Stored as _;
 use crate::uptime;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The release's version, such as "0.3.0", which the release build passes in
+/// `CBB_VERSION`; other builds say "dev", as the Go service does.
+pub const VERSION: &str = match option_env!("CBB_VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
 const MARK_FILE: &str = "hlc.mark";
 const WATCH_QUEUE: usize = 16;
 
