@@ -44,7 +44,7 @@ final class LiveGroup: GroupController {
     /// How long one Face ID check covers the root key's signatures for the
     /// actions that follow it.
     static let authorizedFor: TimeInterval = 300
-    static let memberLabel = "io.github.hunterewok.clipboardbridge.member"
+    static let memberLabel = Shared.memberLabel
     /// Whether the root and admin keys live in the Secure Enclave behind
     /// Face ID. The simulator reports a Secure Enclave but cannot make a key
     /// that needs user presence, so there they are keychain keys.
@@ -78,10 +78,8 @@ final class LiveGroup: GroupController {
     /// The last authentication context the user passed for the root key.
     private var authorized: (context: LAContext, at: Date)?
 
-    nonisolated static var defaultFile: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("clipboardbridge/group.json")
-    }
+    /// In the app group's container, where the share extension reads it.
+    nonisolated static var defaultFile: URL { Shared.groupFile }
 
     init(file: URL = LiveGroup.defaultFile) {
         self.file = file
@@ -355,6 +353,20 @@ final class LiveGroup: GroupController {
         let ca = try await caSigner(reason: String(localized: "Unfreeze an admin computer", bundle: .app))
         guard var g = state else { return }
         let r = try g.thaw(device: id, caSigner: ca, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+    }
+
+    /// Gives a device another name (docs/protocol.md, section 10): a device
+    /// record like its newest one with that name, signed with this phone's
+    /// root or admin key after Face ID, sent to every connected computer.
+    func rename(_ id: String, to name: String) async throws {
+        guard state?.isAdmin == true else { throw PhoneGroup.Failure.notAdmin }
+        let ca = try await caSigner(reason: String(localized: "Rename a device", bundle: .app))
+        guard var g = state else { return }
+        let r = try g.rename(device: id, to: name, caSigner: ca, now: Date())
         try g.save(to: file)
         state = g
         groupChanged()

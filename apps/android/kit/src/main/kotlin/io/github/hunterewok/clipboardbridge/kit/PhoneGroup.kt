@@ -223,6 +223,21 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * Gives a device another name: a device record like its newest one with
+     * that name, which names it everywhere, since the newest record of a
+     * device counts (section 10). An admin renames any device, itself and
+     * the root included. name is trimmed; it must have 1 to 64 bytes and no
+     * control characters.
+     */
+    fun rename(device: String, name: String, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
+        val n = name.trim()
+        if (n.isEmpty() || validName(n) != n) throw Failure(INVALID_NAME)
+        return record(device, n, d.role, d.key, caSigner, now, d.adminKey, d.os)
+    }
+
+    /**
      * Unfreezes an admin computer that another admin froze (section 10,
      * rule 4): a thaw record that ends every freeze of it. The root and the
      * admin phones do it; Remove takes the computer out for good instead.
@@ -369,6 +384,9 @@ class PhoneGroup internal constructor(
             g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android")
             return g
         }
+
+        /** The message of the Failure for a name that the records do not accept. */
+        const val INVALID_NAME = "a device name has 1 to 64 bytes and no control characters"
 
         /** A name that the records accept: 1 to 64 bytes without control characters, or "Android". */
         fun validName(s: String): String {

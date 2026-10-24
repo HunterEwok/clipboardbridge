@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -267,6 +267,23 @@ jobs:
           sed -i /linux-arm64/d "$sums"
           if sh packaging/homebrew/formula.sh v1.2.3 "$sums" >/dev/null; then
             echo "formula.sh wrote a formula without a checksum" >&2
+            exit 1
+          fi
+      - name: the winget manifest takes its checksums from SHA256SUMS, for both zips
+        run: |
+          sums="$RUNNER_TEMP/SHA256SUMS"
+          for n in amd64 arm64; do
+            printf '%s  clipboardbridge-windows-%s.zip\n' "$(printf %s "$n" | sha256sum | cut -d' ' -f1)" "$n"
+          done >"$sums"
+          out="$RUNNER_TEMP/winget"
+          sh packaging/winget/manifest.sh v1.2.3 "$sums" "$out"
+          for f in "$out"/*.yaml; do ruby -ryaml -e 'YAML.safe_load(File.read(ARGV[0]))' "$f"; done
+          test "$(find "$out" -type f | wc -l)" -eq 3
+          grep -qF "$(printf arm64 | sha256sum | cut -d' ' -f1 | tr a-f A-F)" "$out/HunterEwok.clipboardbridge.installer.yaml"
+          grep -qF 'releases/download/v1.2.3/clipboardbridge-windows-amd64.zip' "$out/HunterEwok.clipboardbridge.installer.yaml"
+          sed -i /arm64/d "$sums"
+          if sh packaging/winget/manifest.sh v1.2.3 "$sums" "$RUNNER_TEMP/winget2"; then
+            echo "manifest.sh wrote a manifest without a checksum" >&2
             exit 1
           fi
       - name: desktop entry
@@ -347,7 +364,9 @@ jobs:
           opt="$(brew --prefix)/opt/clipboardbridge"
           share="$opt/share/clipboardbridge/packaging/macos"
           daemon=io.github.hunterewok.clipboardbridge
-          sudo sh "$share/install.sh" --in-place "$opt/bin/cbb"
+          sudo sh "$share/install.sh" --express --in-place "$opt/bin/cbb" | tee "$RUNNER_TEMP/install.out"
+          grep -q 'express installation' "$RUNNER_TEMP/install.out"
+          grep -qx yes /etc/clipboardbridge/firewall.answer
           # The service, which holds the group's keys, runs a root-owned copy, never the
           # binary Homebrew's user may replace; the agent runs Homebrew's.
           service="/Library/Application Support/clipboardbridge/bin/cbb"
@@ -364,8 +383,10 @@ jobs:
           sudo "$opt/bin/cbb" status | grep -q 'Not in a group'
           fw=/usr/libexec/ApplicationFirewall/socketfilterfw
           sudo "$fw" --listapps | grep -qF "$service"
-          # Again, as after an upgrade: it restarts the service.
-          sudo sh "$share/install.sh" --in-place "$opt/bin/cbb"
+          # Again, as after an upgrade: it restarts the service and keeps the answer.
+          sudo sh "$share/install.sh" --in-place "$opt/bin/cbb" | tee "$RUNNER_TEMP/install.out"
+          grep -q 'as answered before' "$RUNNER_TEMP/install.out"
+          sudo "$fw" --listapps | grep -qF "$service"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
           sudo sh "$share/uninstall.sh" --purge
           for f in "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$daemon.agent.plist" \
@@ -443,6 +464,7 @@ jobs:
         env:
           CBB_RELEASE_DIR: ${{ runner.temp }}/release
           CBB_ERROR_DETAILS: "1"
+          CBB_FIREWALL: express
         run: |
           $rel = $env:CBB_RELEASE_DIR
           $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
@@ -462,12 +484,19 @@ jobs:
         run: |
           Expand-Archive "$env:RUNNER_TEMP\release\clipboardbridge-windows-amd64.zip" "$env:RUNNER_TEMP\unpacked"
           $install = "$env:RUNNER_TEMP\unpacked\clipboardbridge\packaging\windows\install.ps1"
-          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
+          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'clipboardbridge-hub' } | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
           function check($want) {
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
           }
-          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 9000
+          # Without a console nobody answers, which adds no rules and keeps no answer; the
+          # answer get.ps1's express run kept goes first.
+          Remove-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name FirewallAnswer -ErrorAction SilentlyContinue
+          # cbb install runs the installer beside it, as after winget.
+          & "$env:RUNNER_TEMP\unpacked\clipboardbridge\cbb.exe" install -Port 9000
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check ''
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Express
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check 'TCP 9000, UDP 5353'
           powershell -NoProfile -ExecutionPolicy Bypass -File $install
@@ -483,21 +512,72 @@ jobs:
           homeOnly 'Outbound Block True'
           $filter = Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallAddressFilter
           if ($filter.RemoteAddress -contains '192.168.0.0/16' -or $filter.RemoteAddress.Count -ne 9) { throw "the outbound rule's addresses: $($filter.RemoteAddress -join ', ')" }
-          # cbb global on lifts the rule, a reinstall keeps that, and cbb global off puts it back.
+          # cbb global lets the service reach the group's servers and nothing else beyond the
+          # home network, a reinstall keeps that, and cbb global off takes it back.
+          function blocked($rule) { @((Get-NetFirewallRule -Name $rule | Get-NetFirewallAddressFilter).RemoteAddress) }
+          function awayAllow($want) {
+            $got = [string](Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name AwayAllow -ErrorAction SilentlyContinue).AwayAllow
+            if ($got -ne $want) { throw "AwayAllow: '$got', want '$want'" }
+          }
           $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
           & $cbb new
           if ($LASTEXITCODE -ne 0) { throw 'cbb new failed' }
           'yes' | & $cbb global on
           if ($LASTEXITCODE -ne 0) { throw 'cbb global on failed' }
-          homeOnly 'Outbound Block False'
+          # No hub yet: on, and still nothing beyond the home network.
+          awayAllow 'on'
+          homeOnly 'Outbound Block True'
+          if ((blocked clipboardbridge-home-only).Count -ne 9) { throw "with no servers: $(blocked clipboardbridge-home-only)" }
+          & $cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key "sha256:$('A' * 43)"
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub -forwarder failed' }
+          awayAllow 'on 198.51.100.9'
+          $b = blocked clipboardbridge-home-only
+          if ($b.Count -ne 10 -or $b -notcontains '172.32.0.0-192.167.255.255' -or $b -notcontains '198.51.100.10-223.255.255.255') { throw "with the forwarder: $($b -join ', ')" }
+          # -HomeCgnat on makes 100.64.0.0/10 home: in the service's environment, the inbound
+          # rules and the outbound rule, which the installer has cbb global allow write again.
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -HomeCgnat on
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $svcEnv = @((Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge).Environment)
+          if ($svcEnv -notcontains 'CBB_HOME_CGNAT=1' -or $svcEnv -notcontains 'CBB_PORT=9000') { throw "the service environment: $svcEnv" }
+          awayAllow 'on 198.51.100.9 cgnat'
+          $b = blocked clipboardbridge-home-only
+          if ($b.Count -ne 11 -or $b -notcontains '11.0.0.0-100.63.255.255' -or $b -notcontains '100.128.0.0-126.255.255.255') { throw "with -HomeCgnat on: $($b -join ', ')" }
+          $in = @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound | Get-NetFirewallAddressFilter | ForEach-Object { $_.RemoteAddress })
+          if (-not ($in -match '^100\.64\.0\.0')) { throw "the inbound rules' addresses: $($in -join ', ')" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -HomeCgnat off
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          awayAllow 'on 198.51.100.9'
+          if ((blocked clipboardbridge-home-only).Count -ne 10) { throw "after -HomeCgnat off: $(blocked clipboardbridge-home-only)" }
+          # A hub at its own address answers its clients anywhere on its UDP port only.
+          # Without a console nobody answers, and the hub's port stays closed.
+          & $cbb global hub 203.0.113.7:8764
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub failed' }
+          if (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue) { throw 'the hub''s port was opened without an answer' }
+          & $cbb global hub -firewall yes 203.0.113.7:8764
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub -firewall yes failed' }
+          $hp = Get-NetFirewallRule -Name clipboardbridge-hub | Get-NetFirewallPortFilter
+          if ("$($hp.Protocol) $($hp.LocalPort)" -ne 'UDP 8764') { throw "the hub's port rule: $($hp.Protocol) $($hp.LocalPort)" }
+          awayAllow 'on hub-port:8764'
+          $udp = Get-NetFirewallRule -Name clipboardbridge-home-only-udp | Get-NetFirewallPortFilter
+          if ("$($udp.Protocol) $($udp.LocalPort -join ',')" -ne 'UDP 1-8763,8765-65535') { throw "the UDP rule: $($udp.Protocol) $($udp.LocalPort)" }
+          if ((Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallPortFilter).Protocol -ne 'TCP') { throw 'the hub''s rule does not block TCP' }
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 8764 -NoFirewall
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
-          homeOnly 'Outbound Block False'
+          awayAllow 'on hub-port:8764'
+          if (-not (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'a reinstall dropped the hub''s UDP rule' }
+          if (-not (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue)) { throw 'a reinstall dropped the hub''s port' }
           & $cbb global off
           if ($LASTEXITCODE -ne 0) { throw 'cbb global off failed' }
+          awayAllow ''
+          if (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue) { throw 'cbb global off left the hub''s port open' }
           homeOnly 'Outbound Block True'
+          if ((blocked clipboardbridge-home-only).Count -ne 9 -or (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'cbb global off left the servers' }
+          # The answer -NoFirewall gave is kept, until -Express.
           powershell -NoProfile -ExecutionPolicy Bypass -File $install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          check ''
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Express
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check 'TCP 8764, UDP 5353'
           # Only the service, the system and administrators reach the keys.

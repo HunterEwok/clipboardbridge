@@ -155,6 +155,9 @@ type Service struct {
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
 	online         map[group.DeviceID]bool
+	// unreached holds the members at home that could not connect to this
+	// one and synced only because it dialed them back (cbb status).
+	unreached map[group.DeviceID]bool
 
 	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
 	recMu   sync.Mutex     // guards records; taken after mu, never before
@@ -195,6 +198,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.browseFor == 0 {
 		cfg.browseFor = 10 * time.Second
 	}
+	cgnat, err := HomeCGNAT()
+	if err != nil {
+		return err
+	}
+	netguard.SetCGNAT(cgnat)
+	if cgnat {
+		cfg.Logf("cbb: 100.64.0.0/10 counts as the home network (CBB_HOME_CGNAT=1)")
+	}
 	if cfg.listen == nil || cfg.joinListen == nil {
 		port, err := Port()
 		if err != nil {
@@ -217,8 +228,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.fallbackAfter = fallbackDial
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
-		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, battery: cfg.battery()}
-	var err error
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
 	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the holder setting: %v; using auto", err)
 	}
@@ -319,7 +329,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()
 	s.tunnel, s.tunCtx, s.tunSelf = tun, gctx, string(id.ID)
-	netguard.SetOpen(tun != nil)
+	s.guardLocked()
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Engine: eng,

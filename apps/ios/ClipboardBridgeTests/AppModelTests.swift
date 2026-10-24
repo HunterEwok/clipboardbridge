@@ -90,10 +90,25 @@ final class AppModelTests: XCTestCase {
         func refresh() async {}
         var devices: [AppModel.Computer] { computers + [.init(id: "me", name: "iPhone", online: true, role: "phone", isSelf: true)] }
         func remove(_ id: String) async throws { computers.removeAll { $0.id == id } }
+        func rename(_ id: String, to name: String) async throws {
+            guard !name.isEmpty else { throw PhoneGroup.Failure.invalidName }
+            if let i = computers.firstIndex(where: { $0.id == id }) { computers[i].name = name }
+        }
         func makeAdmin(_ id: String) async throws {
             guard let i = computers.firstIndex(where: { $0.id == id && $0.canMakeAdmin }) else { throw PhoneGroup.Failure.notRoot }
             (computers[i].admin, computers[i].canMakeAdmin) = (true, false)
         }
+    }
+
+    func testRename() async {
+        let g = FakeGroup()
+        g.computers = [.init(id: "a", name: "pi", online: true)]
+        let m = AppModel(group: g)
+        await m.rename("a", to: "living room")
+        XCTAssertEqual(m.devices.first { $0.id == "a" }?.name, "living room")
+        XCTAssertNotNil(m.message)
+        await m.rename("a", to: "")
+        XCTAssertEqual(m.devices.first { $0.id == "a" }?.name, "living room")
     }
 
     func testMakeAdmin() async {

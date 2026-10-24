@@ -116,6 +116,38 @@ func (s *State) HubEndpoints() []netip.AddrPort {
 	return eps
 }
 
+// Destinations returns the addresses on the internet that this device's
+// tunnel reaches: a hub's forwarder, a client's hub and the forwarder it
+// reaches over VLESS, or the relay. A hub answers its clients wherever they
+// are, but only those that proved the group's keys.
+func (s *State) Destinations() []netip.Addr {
+	var out []netip.Addr
+	add := func(ep netip.AddrPort) {
+		if a := ep.Addr().Unmap(); a.IsValid() && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	switch {
+	case s.IsHub:
+		if s.Forwarder != nil {
+			add(s.Forwarder.Endpoint)
+			if v := s.Forwarder.VLESS; v != nil {
+				add(v.Endpoint)
+			}
+		}
+	case s.Relay != nil:
+		add(s.Relay.Endpoint)
+	case s.ToHub != nil:
+		for _, ep := range s.ToHub.Endpoints {
+			add(ep)
+		}
+		if v := s.ToHub.VLESS; v != nil {
+			add(v.Endpoint)
+		}
+	}
+	return out
+}
+
 // HubLink is what a client keeps of its hub.
 type HubLink struct {
 	Device       string

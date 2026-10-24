@@ -4,20 +4,25 @@
 
 # Installs clipboardbridge on a Mac:
 #
-#   sudo sh install.sh [--in-place] [--port N] path/to/cbb
+#   sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
-# a LaunchAgent, adds the user who ran sudo to the group, lets the service
-# take connections through the application firewall, and starts or
-# restarts both. With --in-place the agent and cbb in PATH run the binary
+# a LaunchAgent, adds the user who ran sudo to the group, asks whether the
+# application firewall may let the service take connections, and starts or
+# restarts both. --express (CBB_FIREWALL=express) allows it without asking
+# and says so, --no-firewall (CBB_FIREWALL=no) does not and prints the
+# commands that would; the answer is kept for later runs. With --in-place the agent and cbb in PATH run the binary
 # where it is instead of a copy, for Homebrew, whose upgrades replace it
 # there: the formula's caveats pass its opt path, and running this again
 # after an upgrade restarts them on the new one. The service always runs a
 # copy that only root can change, since it holds the group's keys and a
 # Homebrew prefix belongs to the user. --port moves the member port from 8764
 # to N, kept in /etc/clipboardbridge/clipboardbridge.env as on Linux until the
-# next --port; --port 8764 goes back. uninstall.sh removes it all again.
+# next --port; --port 8764 goes back. --home-cgnat on (or CBB_HOME_CGNAT=1)
+# counts 100.64.0.0/10, the carrier-grade NAT range, as the home network
+# too, kept in the same file; --home-cgnat off goes back. uninstall.sh
+# removes it all again.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -34,16 +39,28 @@ failed() {
 trap 'failed $?' EXIT
 
 usage() {
-	echo "usage: sudo sh install.sh [--in-place] [--port N] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 inplace=no
 port=
+cgnat=${CBB_HOME_CGNAT:-}
+firewall=${CBB_FIREWALL:-ask}
 while [ $# -gt 1 ]; do
 	case $1 in
 	--in-place) inplace=yes ;;
+	--express) firewall=express ;;
+	--no-firewall) firewall=no ;;
 	--port)
 		port=$2
+		shift
+		;;
+	--home-cgnat)
+		case $2 in
+		on) cgnat=1 ;;
+		off) cgnat=0 ;;
+		*) usage ;;
+		esac
 		shift
 		;;
 	*) usage ;;
@@ -51,6 +68,21 @@ while [ $# -gt 1 ]; do
 	shift
 done
 [ $# -eq 1 ] || usage
+case $cgnat in
+'' | 0 | 1) ;;
+*)
+	echo "install.sh: CBB_HOME_CGNAT is 1 or 0, not $cgnat" >&2
+	exit 2
+	;;
+esac
+case $firewall in
+ask | express | no) ;;
+yes) firewall=ask ;; # what get.sh passed before --express
+*)
+	echo "install.sh: CBB_FIREWALL is ask, express or no, not $firewall" >&2
+	exit 2
+	;;
+esac
 case $port in
 '') ;;
 *[!0-9]*) usage ;;
@@ -161,22 +193,99 @@ if [ -n "$user" ] && [ "$user" != root ]; then
 	dseditgroup -o edit -a "$user" -t user "$name"
 fi
 
+# The settings, in the file the service and cbb read as on Linux: the ones
+# given, else the ones kept from before, else the defaults (port 8764,
+# 100.64.0.0/10 outside the home network).
+env=/etc/clipboardbridge/clipboardbridge.env
+install -d -m 0755 /etc/clipboardbridge
+if [ -z "$port" ]; then
+	port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
+fi
+port=${port:-8764}
+if [ -z "$cgnat" ]; then
+	cgnat=$(sed -n 's/^CBB_HOME_CGNAT=//p' "$env" 2>/dev/null | tail -n 1)
+fi
+[ "$cgnat" = 1 ] || cgnat=0
+if [ "$port" = 8764 ] && [ "$cgnat" = 0 ]; then
+	rm -f "$env"
+else
+	{
+		echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N and --home-cgnat on|off."
+		if [ "$port" != 8764 ]; then
+			echo "CBB_PORT=$port"
+		fi
+		if [ "$cgnat" = 1 ]; then
+			echo "CBB_HOME_CGNAT=1"
+		fi
+	} >"$env"
+	chmod 0644 "$env"
+fi
+if [ "$cgnat" = 1 ]; then
+	echo "100.64.0.0/10 counts as the home network on this Mac (--home-cgnat on)."
+fi
+
 # The service takes connections from phones, other Macs and lite members at
 # home. With the application firewall on, an unsigned program gets none until
 # it is listed; the firewall knows the program by its real path, not a link.
-# CBB_FIREWALL=no leaves the firewall alone. uninstall.sh takes the entry away.
+# It is listed only with the user's consent, kept in firewall.answer, and
+# uninstall.sh takes the entry away.
 fw=/usr/libexec/ApplicationFirewall/socketfilterfw
 listed="/Library/Application Support/clipboardbridge/firewall"
+answer=/etc/clipboardbridge/firewall.answer
 if [ -x "$fw" ]; then
 	if [ -f "$listed" ]; then
 		"$fw" --remove "$(cat "$listed")" >/dev/null 2>&1 || true
 		rm -f "$listed"
 	fi
-	if [ "${CBB_FIREWALL:-yes}" != no ]; then
-		real=$service
-		"$fw" --add "$real" >/dev/null
-		"$fw" --unblockapp "$real" >/dev/null
-		echo "$real" >"$listed"
+	fwstate=off
+	if "$fw" --getglobalstate 2>/dev/null | grep -q enabled; then
+		fwstate=on
+	fi
+	echo "Firewall: the macOS application firewall ($fwstate). clipboardbridge requires this rule:"
+	echo "  1. Allow incoming connections to $service. Purpose: connections from the group's devices"
+	echo "     on TCP $port and finding them on UDP 5353 (mDNS). The application firewall allows a"
+	echo "     program on every port and from every address; clipboardbridge itself accepts only"
+	echo "     the home network."
+	yes=$firewall
+	how=
+	if [ "$yes" = express ]; then
+		how=" (express installation)"
+	elif [ "$yes" = ask ]; then
+		yes=$(cat "$answer" 2>/dev/null || true)
+		how=" (as answered before)"
+	fi
+	if [ "$yes" != yes ] && [ "$yes" != no ] && [ "$yes" != express ]; then
+		echo "With Yes, clipboardbridge adds this rule, keeps it current on every update and removes it on uninstall."
+		printf 'Add this rule now? [y/N] '
+		yes=
+		how=
+		if (: </dev/tty) 2>/dev/null; then
+			reply=
+			read -r reply </dev/tty || reply=
+			case $reply in
+			y | Y | yes | Yes | YES) yes=yes ;;
+			*) yes=no ;;
+			esac
+		else
+			echo
+			echo "No terminal to answer on; taken as No."
+		fi
+	fi
+	case $yes in
+	no) echo no >"$answer" ;;
+	yes | express) echo yes >"$answer" ;;
+	esac
+	if [ "$yes" = yes ] || [ "$yes" = express ]; then
+		"$fw" --add "$service" >/dev/null
+		"$fw" --unblockapp "$service" >/dev/null
+		echo "$service" >"$listed"
+		echo "Added the rule above$how. clipboardbridge manages it from now on."
+	else
+		echo "No firewall rule was added. clipboardbridge works only while the firewall allows the rule above."
+		echo "To add it by hand, run:"
+		echo "  sudo $fw --add \"$service\""
+		echo "  sudo $fw --unblockapp \"$service\""
+		echo "To let clipboardbridge add and manage it, run the installer again with --express."
 	fi
 fi
 
@@ -184,24 +293,6 @@ fi
 # as on Linux.
 install -d -m 0755 /usr/local/share/clipboardbridge
 install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
-
-# The port: the one given, else the one kept from before, else 8764. The
-# service and cbb read it from the same file as on Linux.
-env=/etc/clipboardbridge/clipboardbridge.env
-install -d -m 0755 /etc/clipboardbridge
-if [ -n "$port" ]; then
-	if [ "$port" -eq 8764 ]; then
-		rm -f "$env"
-	else
-		{
-			echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N."
-			echo "CBB_PORT=$port"
-		} >"$env"
-		chmod 0644 "$env"
-	fi
-fi
-port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
-port=${port:-8764}
 
 # restart DOMAIN LABEL PLIST stops the job if it runs and starts it again.
 # bootout returns before launchd has let the job go, and a bootstrap in that

@@ -7,19 +7,21 @@
 #
 #   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 #
-# Options go after "sh -s --": --no-firewall leaves the firewall alone; on
-# Linux, --lite installs the lite member for small devices instead of the full
-# member, --console also starts tmux after a login on the text console, and
-# --port N moves the member port from 8764 to N. CBB_VERSION=v1.2.3 picks a
+# Options go after "sh -s --": --express adds the firewall rules
+# clipboardbridge needs without asking and says what it added, --no-firewall
+# adds none and prints the commands that would, --port N moves the member
+# port from 8764 to N, --home-cgnat on counts 100.64.0.0/10 as the home
+# network too (a home network on the carrier-grade NAT range); on Linux, --lite installs the lite member for small devices instead of the full
+# member, and --console also starts tmux after a login on the text console.
+# CBB_VERSION=v1.2.3 picks a
 # release instead of the latest; CBB_RELEASE_DIR, for tests, takes the files
 # from a directory instead of downloading them.
 #
 # It downloads the archive for this system and architecture and SHA256SUMS
 # from the release, checks the archive against it, and runs the archive's
-# install.sh for this system: on Linux it allows clipboardbridge's ports
-# from the home network only when ufw or firewalld is active; on a Mac it
-# lists the program in the application firewall. On a Mac, Homebrew is the
-# other way (docs/quickstart.md).
+# install.sh for this system, which finds the firewall, lists the rules
+# clipboardbridge needs and asks whether to add them. On a Mac, Homebrew is
+# the other way (docs/quickstart.md).
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -37,7 +39,8 @@ failed() {
 repo=https://github.com/HunterEwok/clipboardbridge
 console=
 port=
-firewall=yes
+cgnat=
+firewall=${CBB_FIREWALL:-ask}
 lite=no
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -50,10 +53,19 @@ while [ $# -gt 0 ]; do
 		port="--port $2"
 		shift
 		;;
+	--home-cgnat)
+		[ $# -gt 1 ] || {
+			echo "get.sh: --home-cgnat needs on or off" >&2
+			exit 2
+		}
+		cgnat="--home-cgnat $2"
+		shift
+		;;
+	--express) firewall=express ;;
 	--no-firewall) firewall=no ;;
 	--lite) lite=yes ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --home-cgnat on|off, --express, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -135,10 +147,10 @@ got=$(sha256 "$tmp/$archive")
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then
-	# shellcheck disable=SC2086 # $port is words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat "$tmp/$dir/cbb"
 else
-	# shellcheck disable=SC2086 # $console and $port are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $console, $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port $cgnat "$tmp/$dir/cbb"
 fi
 

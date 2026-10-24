@@ -20,6 +20,8 @@ Commands:
   paste                   Print this member's clipboard text.
   status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
+  rename <name or ID> <new name>
+                          Give a device of the group another name (on an admin).
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
   takeover <name or ID>   Take the group over from its lost root computer (on an admin).
   upgrade                 Give a group made before 0.4 a root: this computer (holds its keys).
@@ -44,6 +46,8 @@ Commands:
 Rarely needed:
   holder [auto|first|fallback|never]
                           Show or set whether this computer holds clipboardbridge.local.
+  install [options]       Windows, after winget: install the service from this copy
+                          (the options of install.ps1, such as -Express).
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link this desktop's clipboard to the service (started at sign-in).
 
@@ -80,6 +84,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdGlobal(rest, stdin, stdout, stderr)
 	case "revoke":
 		return cmdRevoke(rest, stdout, stderr)
+	case "rename":
+		return cmdRename(rest, stdout, stderr)
+	case "install":
+		return cmdInstall(rest, stdout, stderr)
 	case "upgrade":
 		return cmdUpgrade(rest, stdout, stderr)
 	case "takeover":

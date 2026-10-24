@@ -18,6 +18,7 @@ tools. Test them on the machine before relying on them.
 .cbb paste notes.txt  save it to a file
 .cbb copy notes.txt   send a file (up to 8 KB)
 .cbb text Hello Next  send the words
+.cbb text -s hunter2  send a secret, such as a password (copy -s FILE too)
 .cbb join             join the group: scan the code on the screen with the phone app
 .cbb -d paste         the same, with the cause under each error (debug mode)
 ```

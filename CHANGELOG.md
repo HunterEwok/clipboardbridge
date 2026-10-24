@@ -11,6 +11,29 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The Android and iPhone apps keep the home network addresses from the QR code of each
   computer they add, and dial a computer there while mDNS does not find it, so a member in
   another subnet (an IoT VLAN, for example) syncs with the phone too.
+- winget: each release writes the manifest of `HunterEwok.clipboardbridge`, and `cbb install`
+  installs the service from the copy that winget unpacked. The release signs the Windows
+  programs with Authenticode when its secrets hold a certificate.
+- ZX Spectrum Next: `.cbb text -s` and `.cbb copy -s` send a secret, through the lite
+  member's `cbb next copy -secret`.
+- iPhone: Share → clipboardbridge sends a text or a link to the computers at once (a share
+  extension), and a Control Center control and a home-screen widget "Sync clipboard".
+  Android: the home-screen widget "Send clipboard".
+- Rename a device: `cbb rename NAME NEW-NAME` on an admin computer, and Rename in the Devices
+  list of an admin phone (both apps). An admin signs a new device record with the name.
+- Both apps: seven taps on the version in Settings show the switch "Show error details",
+  without `adb` or Xcode.
+- `cbb status` warns when members at home could not connect to this computer and sync only
+  because it dials them back: a firewall here drops the member port.
+- `cbb global hub` at the hub's own address lists the firewall rule for its UDP port and asks
+  before it opens it (ufw, firewalld, Windows Firewall; the commands for the others);
+  `-firewall yes` opens it without asking, `-firewall no` prints the commands. The port
+  closes again when the device stops being a hub reached at its own address.
+- `--home-cgnat on` for the installers (`-HomeCgnat on` on Windows, `CBB_HOME_CGNAT=1`)
+  counts 100.64.0.0/10 as the home network for a home network on the carrier-grade NAT
+  range: in the service, the firewall rules, the systemd unit's address limit and the
+  Windows outbound rule. By default that range stays outside the home network.
+
 - The Mac installer takes `--port N` like the Linux one, kept in
   `/etc/clipboardbridge/clipboardbridge.env`, and `get.sh` passes it on a Mac too.
 - `CBB_ERROR_DETAILS=1` for the Linux and macOS installers, uninstallers and `get.sh`: they
@@ -88,6 +111,22 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- With `cbb global on`, a computer's service no longer reaches the whole internet: only the
+  home network and its group's own hub, forwarder and relay. The program refuses everything
+  else on every system, a client's WireGuard socket sends only to its hub, and on Linux and
+  Windows the systemd drop-in and the outbound Windows Firewall rule list exactly those
+  addresses. `cbb global hub` and `cbb global relay` now run with `sudo` or as administrator
+  on those systems, and the new `cbb global allow` follows the hub's addresses when they
+  change; `cbb global` and `cbb status` say when it is needed. A hub reached at its own
+  address answers its clients anywhere on its UDP port only (on Linux by the program alone).
+- The installers no longer open firewall ports without asking. They find the firewall
+  (ufw, firewalld, nftables or iptables on Linux, the macOS application firewall, Windows
+  Firewall), list each rule clipboardbridge needs with its protocol, port, source and
+  purpose, and ask `Add these rules now? [y/N]`. Yes adds them and keeps them current on
+  every update; No, the default and the answer when there is no terminal, adds none and
+  prints the exact commands. The answer is kept for updates. `--express` (`-Express`,
+  `CBB_FIREWALL=express`) adds them without asking and reports what it added;
+  `--no-firewall` now also works on a Mac and prints the commands too.
 - The lite member and the ESP32 firmware use x25519-dalek 3 (on curve25519-dalek 5) and
   base64 0.23. Dependabot updates the firmware's lock file in the same pull request as the
   lite member's, so the firmware's locked build keeps passing.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -139,7 +140,35 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")
 	}
+	writeUnreached(w, st, devs)
 	writeDevices(w, devs, st.Peers, now)
+}
+
+// writeUnreached says when members at home could not connect to this
+// device and sync with it only because it dials them back: a firewall here
+// that the installer does not know, or a rule that is missing, drops the
+// member port. A device that cannot dial out, a phone, would not sync.
+func writeUnreached(w io.Writer, st *control.Status, devs []control.Device) {
+	if len(st.Unreached) == 0 {
+		return
+	}
+	var names []string
+	for _, id := range st.Unreached {
+		name := id
+		for _, d := range devs {
+			if d.ID == id && d.Name != "" {
+				name = d.Name
+			}
+		}
+		names = append(names, name)
+	}
+	port := st.Port
+	if port == 0 {
+		port = 8764
+	}
+	fmt.Fprintf(w, "Warning: %s could not connect to this device; they sync only because this device connects to them.\n", strings.Join(names, ", "))
+	fmt.Fprintf(w, "A firewall here likely drops TCP %d from the home network, and phones cannot reach this device.\n", port)
+	fmt.Fprintln(w, "Allow TCP "+strconv.Itoa(port)+" and UDP 5353 from the home network, or run the installer again with "+expressHint+".")
 }
 
 // cmdNew creates a group with this computer as its root.

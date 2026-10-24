@@ -18,16 +18,28 @@ Any Linux with systemd: a Raspberry Pi, a laptop, a server, a Steam Deck.
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 ```
 
-The script checks the download, starts the service and opens clipboardbridge's one port, TCP
-8764, and mDNS in ufw or firewalld for the home network only; with another firewall it
-prints what to allow. Log out and in again once, so your user may use clipboardbridge.
+The script checks the download and starts the service. It finds the firewall, lists the
+rules clipboardbridge needs and asks before it adds them (see below). Log out and in again
+once, so your user may use clipboardbridge.
 
 ### Port and firewall
 
 clipboardbridge needs one TCP port, 8764, and mDNS (UDP 5353), both from the home network only.
-The installer opens them in ufw or firewalld. If you turn a firewall on later, run the
-installer again (it is also how you update). Each run first removes the rules it added
-before, and never touches anyone else's. By hand with ufw, for example from `192.168.0.0/24`:
+The installer finds the firewall itself (ufw, firewalld, nftables or iptables on Linux, the
+application firewall on a Mac, Windows Firewall), lists each rule with its protocol, port,
+source and purpose, and asks `Add these rules now? [y/N]`:
+
+- **Yes**: it adds them, keeps them current on every update and removes them on uninstall.
+  It never touches anyone else's rules.
+- **No** (the default, also when there is no terminal to answer on): it adds nothing and
+  prints the exact commands that would. clipboardbridge works while the firewall allows them.
+- **`--express`** (`-Express` or `$env:CBB_FIREWALL = "express"` on Windows): it adds them
+  without asking and reports what it added. `--no-firewall` answers No without asking.
+
+The answer is kept for updates; `--express` or `--no-firewall` changes it. nftables and
+iptables get the commands only, since rules added at run time do not survive a restart
+there. If you turn a firewall on later, run the installer again (it is also how you
+update). By hand with ufw, for example from `192.168.0.0/24`:
 
 ```sh
 sudo ufw allow proto tcp from 192.168.0.0/24 to any port 8764 comment clipboardbridge
@@ -41,8 +53,9 @@ it. If you do, pass it to the installer:
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh -s -- --port 9000
 ```
 
-The installer keeps the port for later updates and opens it instead of 8764, and the old
-rules go. Allow the new port in any other firewall on the way: the installer reminds you.
+The installer keeps the port for later updates and, when it manages the rules, opens it
+instead of 8764, and the old rules go. Allow the new port in any other firewall on the way:
+the installer reminds you.
 `--port 8764` goes back to the default. The phone app learns the port from the QR code and
 mDNS, so it needs no setting. The iPhone shortcut works only with 8764.
 
@@ -104,6 +117,9 @@ Install on each computer first.
   `$env:CBB_PORT = "9000"` before it. Without the one-line installer: unpack
   `clipboardbridge-windows-amd64.zip` (or `-arm64`) and run
   `powershell -ExecutionPolicy Bypass -File clipboardbridge\packaging\windows\install.ps1`.
+  With winget, once the package is in its repository: `winget install
+  HunterEwok.clipboardbridge`, then `cbb install` in the administrator terminal (again after
+  each `winget upgrade`).
 
 Then, on the new computer:
 
@@ -178,8 +194,10 @@ Off by default: the group syncs on the home network only. To sync when a compute
 one computer at home becomes the hub, and each computer that should reach it from afar turns
 sync away from home on. Do it while the computers are at home. `cbb global on` and
 `cbb pair -invite` run with `sudo` on Linux and in a terminal opened as administrator on
-Windows: until then the service may reach only the home network, and they let it reach the
-internet; `cbb global off`, run the same way, takes that back.
+Windows, and so do `cbb global hub` and `cbb global relay`. The service may reach only the
+home network, and they let it reach the group's own hub, forwarder and relay too, and nothing
+else on the internet; `cbb global off`, run the same way, takes that back. When the hub's
+addresses change, `cbb global` says so on each computer: run `sudo cbb global allow` there.
 
 The hub does not have to stay on. While it is off, nothing syncs away from home, and at home
 the devices sync with each other without it. So choose: a computer that is always on, one you
