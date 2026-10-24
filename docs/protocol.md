@@ -1071,6 +1071,7 @@ the offer and hand them to the tunnel. The lite member does not take part yet.
 | `psk` | bytes | the member's own WireGuard preshared key, 32 random bytes |
 | `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8; its forwarder's last (section 13) |
 | `obfuscation` | object or absent | the group's AmneziaWG settings ("Obfuscation" below); absent for plain WireGuard |
+| `vless` | object or absent | the way to the hub's forwarder over VLESS ("VLESS" below); with it, the only way to the hub |
 
 - The hub keeps one preshared key per device and makes a new one when the device offers a
   new key. It refuses a key that another device or the hub itself has, and keeps at most
@@ -1107,6 +1108,33 @@ with AmneziaWG's own names; every client sets them on its end before the hub as 
   client gets the new ones the next time it meets the hub at home.
 - An obfuscated hub with a forwarder gives it the settings when it registers (section 13),
   since the forwarder's routing needs WireGuard's own headers.
+
+### VLESS
+
+A hub with a forwarder where the user asked for it (`cbb away hub -forwarder ... -vless`)
+has its clients reach the forwarder only inside VLESS with REALITY, which to the network is
+TLS 1.3 to a well-known site (docs/design.md, "Blocked networks"). The hub makes a VLESS user
+ID for the group once and keeps it (`forwarder.vless_id` in its `tunnel.json`); it learns the
+rest from the forwarder's answer when it registers (section 13) and keeps that too
+(`forwarder.vless`). Its offer then carries:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `endpoint` | string | the forwarder's VLESS address, `ip:port` (TCP): the forwarder's address with the port its answer gave |
+| `public_key` | base64 | the forwarder's REALITY key, X25519, 32 bytes |
+| `short_id` | string | REALITY's short ID, 2 to 16 hex digits |
+| `server_name` | string | the site whose name the TLS handshake carries |
+| `id` | string | the group's VLESS user ID, a random UUID (version 4) |
+
+- Until the hub has the forwarder's answer it sends no offer, so a client never learns a
+  way that bypasses VLESS. When the answer comes, or changes, the members connect again
+  and get the new offer.
+- The client runs VLESS with REALITY (Xray-core: VLESS without encryption inside REALITY,
+  the TLS fingerprint of Chrome) from a local UDP port to that endpoint, and points its
+  WireGuard at the local port instead of the offer's `endpoints`. The forwarder passes every
+  UDP packet that comes over VLESS to its own UDP port, so the packets are forwarded as in
+  section 13; VLESS carries nothing else.
+- A receiver refuses settings that do not have this form and does not start the tunnel.
 
 ### Through the tunnel
 
@@ -1214,15 +1242,21 @@ not built.
    names the group (section 1). It knows no group beforehand: any group may register, but
    only one of its members can.
 3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
-   `{"key": bytes, "proof": bytes, "obfuscation": object}`: its WireGuard public key, and
+   `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string}`: its WireGuard public key, and
    HMAC-SHA256 under X25519(the hub's WireGuard private key, `e`) of 32 bytes exported from
    the TLS session with the label `clipboardbridge forwarder key` and no context. So the hub
    proves it holds the key, on this connection only. An obfuscated hub adds its group's
-   `obfuscation` settings (section 11, "Obfuscation"); a plain hub leaves it out.
+   `obfuscation` settings (section 11, "Obfuscation"); a plain hub leaves it out. A hub
+   whose clients come over VLESS adds the group's VLESS user ID as `vless` (section 11,
+   "VLESS").
 4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
    and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
    and closes: the proof is wrong, the obfuscation settings are outside their bounds,
-   another group registered that key, or the forwarder is full. A group has one registration: a new one replaces the old, whose
+   another group registered that key or that VLESS user ID, the forwarder has no VLESS
+   and the hub asked for it, or the forwarder is full. To a hub that asked for VLESS the
+   answer adds `"vless": {"port": number, "public_key": bytes, "short_id": string,
+   "server_name": string}`, and the forwarder lets that user ID in while the registration
+   lasts. A group has one registration: a new one replaces the old, whose
    connection closes.
 5. The registration lasts while the connection does; the hub sends nothing more on it. The
    forwarder sends `{"seen": "ip:port"}` whenever it learns a new address of the hub's
@@ -1271,6 +1305,23 @@ protection off a copy, and checks that the type field is in the message's range 
   that has a handshake or session with that group. The data of an obfuscated session then
   passes only from the client's address, and goes to the hub whose index it names only if
   the session is that group's.
+
+### VLESS
+
+A forwarder started with a site to borrow (`cbb forward -vless-site www.example.com`) also
+listens on TCP (`-vless-listen`, port 443 by default) for VLESS inside REALITY:
+
+- Its REALITY key is X25519, kept in its key file as a PEM block `CLIPBOARDBRIDGE REALITY
+  KEY` of 32 bytes, made the first time. The short ID is the first 8 bytes of
+  HMAC-SHA256(that key, `clipboardbridge reality short id`), in hex.
+- A connection that is not a client's, by REALITY's check, gets the borrowed site's own
+  TLS and answers, from port 443 of that site.
+- Only the VLESS user IDs of registered hubs that asked for VLESS are let in. A client's
+  UDP packets, whatever address the client names, go to the forwarder's own UDP port from
+  a loopback address and are routed there as any client's; the answers go back the same
+  way. The per-source handshake limit does not apply to them: each comes from a client its
+  group's ID let in, and its group's limits do.
+- The forwarder keeps no log of VLESS either.
 
 ### Limits
 

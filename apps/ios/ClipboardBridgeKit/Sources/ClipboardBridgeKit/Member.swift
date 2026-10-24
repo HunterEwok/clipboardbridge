@@ -182,22 +182,24 @@ public enum Member {
 
     /// The group's hub's answer to the tunnel key a hello carried (section
     /// 11): the hub's WireGuard public key, this member's own preshared key,
-    /// the hub's addresses away from home, "ip:port" or "[ipv6]:port", and
-    /// the group's obfuscation settings; nil for plain WireGuard.
+    /// the hub's addresses away from home, "ip:port" or "[ipv6]:port", the
+    /// group's obfuscation settings, nil for plain WireGuard, and the way to
+    /// the hub's forwarder over VLESS, nil without it.
     public struct TunnelOffer: Codable, Equatable, Sendable {
         public var hubKey: Data
         public var psk: Data
         public var endpoints: [String]
         public var obfuscation: Obfuscation?
+        public var vless: VLESS?
 
-        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil) {
-            (self.hubKey, self.psk, self.endpoints, self.obfuscation) = (hubKey, psk, endpoints, obfuscation)
+        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil) {
+            (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless) = (hubKey, psk, endpoints, obfuscation, vless)
         }
 
         /// Whether both keys are 32 bytes, as a tunnel needs.
         public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
 
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation }
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -205,6 +207,7 @@ public enum Member {
             psk = try c.decodeIfPresent(Data.self, forKey: .psk) ?? Data()
             endpoints = try c.decodeIfPresent([String].self, forKey: .endpoints) ?? []
             obfuscation = try c.decodeIfPresent(Obfuscation.self, forKey: .obfuscation)
+            vless = try c.decodeIfPresent(VLESS.self, forKey: .vless)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -213,6 +216,34 @@ public enum Member {
             try c.encode(psk, forKey: .psk)
             if !endpoints.isEmpty { try c.encode(endpoints, forKey: .endpoints) }
             try c.encodeIfPresent(obfuscation, forKey: .obfuscation)
+            try c.encodeIfPresent(vless, forKey: .vless)
+        }
+    }
+
+    /// The way to the hub's forwarder over VLESS with REALITY (section 11,
+    /// "VLESS"); with it, the only way to the hub. The kit only carries it:
+    /// the tunnel in mobile/cbbtun checks and uses it.
+    public struct VLESS: Codable, Equatable, Sendable {
+        public var endpoint: String
+        public var publicKey: Data
+        public var shortID: String
+        public var serverName: String
+        public var id: String
+
+        public init(endpoint: String, publicKey: Data, shortID: String, serverName: String, id: String) {
+            (self.endpoint, self.publicKey, self.shortID, self.serverName, self.id) = (endpoint, publicKey, shortID, serverName, id)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case endpoint, id
+            case publicKey = "public_key"
+            case shortID = "short_id"
+            case serverName = "server_name"
+        }
+
+        /// The settings as JSON, for mobile/cbbtun.
+        public func jsonText() throws -> String {
+            String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
         }
     }
 

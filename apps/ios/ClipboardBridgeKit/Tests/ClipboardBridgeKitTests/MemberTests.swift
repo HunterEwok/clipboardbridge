@@ -96,6 +96,17 @@ final class MemberTests: XCTestCase {
         XCTAssertEqual(obf.headerProtectionKey, Data(repeating: 8, count: 32))
         let text = try obf.jsonText()
         XCTAssertEqual(try JSONDecoder().decode(Member.Obfuscation.self, from: Data(text.utf8)), obf)
+        // The way to the hub's forwarder over VLESS.
+        guard case let .tunnel(tunneled?) = decoded[14], let vless = tunneled.vless else {
+            return XCTFail("frame 14 is \(decoded[14])")
+        }
+        XCTAssertNil(offer.vless)
+        XCTAssertNil(hidden.vless)
+        XCTAssertEqual(vless, Member.VLESS(endpoint: "203.0.113.9:443", publicKey: Data(repeating: 9, count: 32),
+                                           shortID: "0123456789abcdef", serverName: "www.example.com",
+                                           id: "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"))
+        let vlessText = try vless.jsonText()
+        XCTAssertEqual(try JSONDecoder().decode(Member.VLESS.self, from: Data(vlessText.utf8)), vless)
     }
 
     func testTimestamps() throws {

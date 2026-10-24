@@ -37,9 +37,10 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb away                       show sync away from home\n" +
 		"       cbb away on                    turn it on here\n" +
 		"       cbb away off                   turn it off here and forget its keys\n" +
-		"       cbb away hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
+		"       cbb away hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
-		"                                      or through the forwarder; -obfuscate for networks that block WireGuard\n" +
+		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
+		"                                      -vless for clients that reach the forwarder only over VLESS\n" +
 		"       cbb away relay address:port -key KEY\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
 		"                                      without a hub"
@@ -76,6 +77,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
 		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
 		obfuscate := fs.Bool("obfuscate", false, "speak AmneziaWG, which hides that the packets are WireGuard, for networks that block it")
+		vlessOnly := fs.Bool("vless", false, "the clients reach the forwarder only over VLESS, which looks like HTTPS to a well-known site")
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
@@ -83,7 +85,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
-		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate = *port, fs.Args(), *fwd, *fwdKey, *obfuscate
+		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate, h.VLESS = *port, fs.Args(), *fwd, *fwdKey, *obfuscate, *vlessOnly
 	case "relay":
 		fs := flag.NewFlagSet("away relay", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -166,6 +168,9 @@ func writeAway(w io.Writer, a *control.Away) {
 		if a.Obfuscated {
 			fmt.Fprintln(w, "  Obfuscated: the tunnel speaks AmneziaWG, so it does not look like WireGuard.")
 		}
+		if a.VLESS {
+			fmt.Fprintln(w, "  VLESS: the clients reach the forwarder only over VLESS, which looks like HTTPS to a well-known site.")
+		}
 		switch {
 		case len(a.Endpoints) > 0:
 			fmt.Fprintf(w, "  Reached at %s.\n", strings.Join(a.Endpoints, ", "))
@@ -209,8 +214,13 @@ func writeAway(w io.Writer, a *control.Away) {
 		fmt.Fprintln(w, "Sync away from home: on; waiting to meet the group's hub on the home network.")
 	case a.Through:
 		fmt.Fprintf(w, "Sync away from home: on; connected to the hub %s through the tunnel.\n", a.HubDevice)
+	case a.VLESS:
+		fmt.Fprintf(w, "Sync away from home: on; the hub is %s, reached over VLESS through its forwarder; not connected through the tunnel.\n", a.HubDevice)
 	default:
 		fmt.Fprintf(w, "Sync away from home: on; the hub is %s, at %s; not connected through the tunnel.\n", a.HubDevice, strings.Join(a.Endpoints, ", "))
+	}
+	if a.VLESS && !a.Hub {
+		fmt.Fprintln(w, "  VLESS: the tunnel goes inside VLESS to the hub's forwarder, which looks like HTTPS to a well-known site.")
 	}
 	if a.KeysInFile {
 		fmt.Fprintln(w, "  This device keeps its keys in files, not in a security chip.")

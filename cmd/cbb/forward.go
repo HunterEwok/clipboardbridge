@@ -27,6 +27,8 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 	listen := fs.String("listen", ":8764", "the address to listen on, UDP and TCP")
 	keyFile := fs.String("key", defaultForwarderKey(), "the forwarder's key, made on the first run")
 	showKey := fs.Bool("show-key", false, "print the key for cbb away hub -forwarder-key and stop")
+	vlessSite := fs.String("vless-site", "", "take VLESS with REALITY too, borrowing the TLS of this well-known site, such as www.example.com")
+	vlessListen := fs.String("vless-listen", ":443", "the TCP address to listen on for VLESS")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -44,11 +46,22 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
-	f, err := forward.Listen(forward.Config{Listen: *listen, Cert: cert, Logf: logf})
+	cfg := forward.Config{Listen: *listen, Cert: cert, Logf: logf}
+	if *vlessSite != "" {
+		key, err := forward.LoadRealityKey(*keyFile)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		cfg.VLESS = &forward.VLESSConfig{Listen: *vlessListen, Site: *vlessSite, Key: key}
+	}
+	f, err := forward.Listen(cfg)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	logf("cbb forward: listening on UDP and TCP port %d; its key, for cbb away hub -forwarder-key: %s", f.Addr().Port(), pin)
+	if cfg.VLESS != nil {
+		logf("cbb forward: VLESS on TCP %s, with the TLS of %s; hubs ask for it with cbb away hub -vless", *vlessListen, *vlessSite)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if os.Getenv("CBB_DEBUG") == "1" {

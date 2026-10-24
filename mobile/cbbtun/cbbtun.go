@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
 
 // dialTimeout bounds one connection through the tunnel to the hub.
@@ -55,6 +56,7 @@ func PublicKey(private []byte) ([]byte, error) {
 // Tunnel is a running tunnel to the hub with its loopback port.
 type Tunnel struct {
 	client *tunnel.Client
+	vless  *vless.Client // the way to the hub's forwarder over VLESS, or nil
 	ln     net.Listener
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -67,10 +69,12 @@ type Tunnel struct {
 // Start brings the tunnel up with the hub's offer (docs/protocol.md,
 // section 11): the device's private key, the offer's preshared key and hub
 // key, the device IDs of this device and of the hub, and one of the offer's
-// endpoints ("ip:port" or "[ipv6]:port"), and the offer's obfuscation
-// settings as JSON, or "" for plain WireGuard. Nothing goes to the hub
-// before a connection to Port.
-func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation string) (*Tunnel, error) {
+// endpoints ("ip:port" or "[ipv6]:port"), the offer's obfuscation
+// settings as JSON, or "" for plain WireGuard, and its VLESS settings as
+// JSON, or "" without VLESS. With VLESS the tunnel reaches the hub only
+// over VLESS to its forwarder, and endpoint is not used. Nothing goes to
+// the hub before a connection to Port.
+func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation, vlessSettings string) (*Tunnel, error) {
 	priv, err := key(private, "private key")
 	if err != nil {
 		return nil, err
@@ -91,9 +95,21 @@ func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation strin
 	if err != nil {
 		return nil, err
 	}
-	ep, err := netip.ParseAddrPort(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("cbbtun: %q is not an endpoint: %w", endpoint, err)
+	var link *tunnel.VLESS
+	if vlessSettings != "" {
+		link = new(tunnel.VLESS)
+		if err := json.Unmarshal([]byte(vlessSettings), link); err != nil {
+			return nil, fmt.Errorf("cbbtun: the VLESS settings: %w", err)
+		}
+		if err := link.Check(); err != nil {
+			return nil, fmt.Errorf("cbbtun: the VLESS settings: %w", err)
+		}
+	}
+	var ep netip.AddrPort
+	if link == nil {
+		if ep, err = netip.ParseAddrPort(endpoint); err != nil {
+			return nil, fmt.Errorf("cbbtun: %q is not an endpoint: %w", endpoint, err)
+		}
 	}
 	var obf *tunnel.Obfuscation
 	if obfuscation != "" {
@@ -102,18 +118,27 @@ func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation strin
 			return nil, fmt.Errorf("cbbtun: the obfuscation settings: %w", err)
 		}
 	}
+	var vc *vless.Client
+	if link != nil {
+		if vc, err = vless.Dial(*link); err != nil {
+			return nil, err
+		}
+		ep = vc.Addr()
+	}
 	client, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: priv, PresharedKey: pre, Addr: self,
 		HubPublicKey: hk, HubAddr: hubAddr, Endpoint: ep, Obfuscation: obf})
 	if err != nil {
+		closeVLESS(vc)
 		return nil, err
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		client.Close()
+		closeVLESS(vc)
 		return nil, fmt.Errorf("cbbtun: opening the loopback port: %w", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t := &Tunnel{client: client, ln: ln, ctx: ctx, cancel: cancel, conns: map[net.Conn]struct{}{}}
+	t := &Tunnel{client: client, vless: vc, ln: ln, ctx: ctx, cancel: cancel, conns: map[net.Conn]struct{}{}}
 	t.wg.Add(1)
 	go t.serve()
 	return t, nil
@@ -123,8 +148,12 @@ func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation strin
 func (t *Tunnel) Port() int { return t.ln.Addr().(*net.TCPAddr).Port }
 
 // SetEndpoint points the tunnel at another of the hub's endpoints, for
-// example when the one in use does not answer.
+// example when the one in use does not answer. Over VLESS there is only
+// the one way, and it does nothing.
 func (t *Tunnel) SetEndpoint(endpoint string) error {
+	if t.vless != nil {
+		return nil
+	}
 	ep, err := netip.ParseAddrPort(endpoint)
 	if err != nil {
 		return fmt.Errorf("cbbtun: %q is not an endpoint: %w", endpoint, err)
@@ -143,7 +172,15 @@ func (t *Tunnel) Close() error {
 	}
 	t.mu.Unlock()
 	t.wg.Wait()
-	return t.client.Close()
+	err := t.client.Close()
+	closeVLESS(t.vless)
+	return err
+}
+
+func closeVLESS(c *vless.Client) {
+	if c != nil {
+		c.Close()
+	}
 }
 
 func (t *Tunnel) serve() {

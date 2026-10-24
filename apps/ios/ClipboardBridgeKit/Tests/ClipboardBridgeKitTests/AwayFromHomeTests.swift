@@ -24,6 +24,13 @@ final class AwayFromHomeTests: XCTestCase {
                                                 headerProtectionKey: Data(repeating: 8, count: 32))
         let kept = AwayState(key: key, hub: hub, offer: hidden)
         XCTAssertEqual(AwayState.decode(try kept.encoded()), kept)
+        // So is the way over VLESS.
+        var tunneled = offer
+        tunneled.vless = Member.VLESS(endpoint: "203.0.113.9:443", publicKey: Data(repeating: 9, count: 32),
+                                      shortID: "0123456789abcdef", serverName: "www.example.com",
+                                      id: "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f")
+        let overVLESS = AwayState(key: key, hub: hub, offer: tunneled)
+        XCTAssertEqual(AwayState.decode(try overVLESS.encoded()), overVLESS)
         // A short key, a bad offer and an offer without its hub are not states.
         XCTAssertNil(AwayState.decode(try AwayState(key: Data(count: 31)).encoded()))
         XCTAssertNil(AwayState.decode(try AwayState(key: key, hub: hub,
@@ -36,11 +43,12 @@ final class AwayFromHomeTests: XCTestCase {
         let port: UInt16
         let first: String
         let obfuscation: String
+        let vless: String
         private let lock = NSLock()
         private var _endpoints: [String]
         private var _closed = false
-        init(port: UInt16, endpoint: String, obfuscation: String = "") {
-            (self.port, self.first, self.obfuscation, self._endpoints) = (port, endpoint, obfuscation, [endpoint])
+        init(port: UInt16, endpoint: String, obfuscation: String = "", vless: String = "") {
+            (self.port, self.first, self.obfuscation, self.vless, self._endpoints) = (port, endpoint, obfuscation, vless, [endpoint])
         }
         var endpoints: [String] { lock.withLock { _endpoints } }
         var closed: Bool { lock.withLock { _closed } }
@@ -55,9 +63,9 @@ final class AwayFromHomeTests: XCTestCase {
         func newKey() throws -> Data { Data(repeating: 7, count: 32) }
         func publicKey(_ privateKey: Data) throws -> Data { Data(privateKey.map { $0 &+ 1 }) }
         func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String,
-                   obfuscation: String) throws -> OpenTunnel {
+                   obfuscation: String, vless: String) throws -> OpenTunnel {
             lock.withLock {
-                let t = FakeTunnel(port: UInt16(40_000 + _started.count), endpoint: endpoint, obfuscation: obfuscation)
+                let t = FakeTunnel(port: UInt16(40_000 + _started.count), endpoint: endpoint, obfuscation: obfuscation, vless: vless)
                 _started.append(t)
                 return t
             }
@@ -134,6 +142,7 @@ final class AwayFromHomeTests: XCTestCase {
         let t = tunnels.started[0]
         XCTAssertEqual(t.first, offer.endpoints[0])
         XCTAssertEqual(t.obfuscation, "")
+        XCTAssertEqual(t.vless, "")
         // No answer: the next endpoint, on the same tunnel.
         let second = offer.endpoints[1]
         try await eventually("the next endpoint") { t.endpoints.contains(second) }
