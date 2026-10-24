@@ -23,11 +23,18 @@ import (
 
 func tunnelState(t *testing.T, s *testService) *tunnel.State {
 	t.Helper()
-	st, err := tunnel.LoadState(s.dir)
-	if err != nil {
-		t.Fatal(err)
+	// On Windows a read fails for a moment while the service replaces the
+	// file (a sharing violation), so a failed read is tried again.
+	var err error
+	for range 50 {
+		var st *tunnel.State
+		if st, err = tunnel.LoadState(s.dir); err == nil {
+			return st
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	return st
+	t.Fatal(err)
+	return nil
 }
 
 // turnTunnelOn writes a tunnel state, as cbb will when the user turns sync
