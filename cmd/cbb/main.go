@@ -23,7 +23,9 @@ Commands:
   revoke <name or ID>     Remove a device from the group.
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
+  away relay address:port Meet the group's other devices away from home at a relay.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
+  relay -group TAG        Run a blind relay for groups without a hub.
   pair                    Admit a new computer: show a code for cbb join.
   pair -phone             Pair an iPhone or iPad with the shortcut.
   join                    Join a group: show a QR code for the phone to scan.
@@ -79,6 +81,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdInvite(rest, stdin, stdout, stderr)
 	case "forward":
 		return cmdForward(rest, stdout, stderr)
+	case "relay":
+		return cmdRelay(rest, stdout, stderr)
 	case "service":
 		return cmdService(rest, stderr)
 	case "agent":

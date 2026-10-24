@@ -39,7 +39,10 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"       cbb away off                   turn it off here and forget its keys\n" +
 		"       cbb away hub [-port N] [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
-		"                                      or through the forwarder"
+		"                                      or through the forwarder\n" +
+		"       cbb away relay address:port -key KEY\n" +
+		"                                      meet the group's other devices at a blind relay, for a group\n" +
+		"                                      without a hub"
 	if len(args) == 0 {
 		return cmdAwayStatus(stdout, stderr)
 	}
@@ -80,6 +83,29 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey = *port, fs.Args(), *fwd, *fwdKey
+	case "relay":
+		fs := flag.NewFlagSet("away relay", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		key := fs.String("key", "", "the relay's key, which cbb relay prints")
+		// The address may come before the flag or after it.
+		rest := args[1:]
+		var addr string
+		if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+			addr, rest = rest[0], rest[1:]
+		}
+		if fs.Parse(rest) != nil {
+			return 2
+		}
+		if addr == "" && fs.NArg() == 1 {
+			addr = fs.Arg(0)
+		} else if fs.NArg() != 0 {
+			addr = ""
+		}
+		if addr == "" || *key == "" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		h.Relay, h.RelayKey = addr, *key
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2
@@ -146,6 +172,23 @@ func writeAway(w io.Writer, a *control.Away) {
 				if f.Detail != "" && debugErrors() {
 					fmt.Fprintf(w, "  Detail: %s\n", f.Detail)
 				}
+			}
+		}
+	case a.Relay != nil:
+		r := a.Relay
+		switch {
+		case r.Connected && a.Through:
+			fmt.Fprintf(w, "Sync away from home: on; connected to the relay at %s and through it to other devices.\n", r.Endpoint)
+		case r.Connected && len(r.Online) == 0:
+			fmt.Fprintf(w, "Sync away from home: on; connected to the relay at %s; no other device of the group is there now.\n", r.Endpoint)
+		case r.Connected:
+			fmt.Fprintf(w, "Sync away from home: on; connected to the relay at %s, with %d other devices of the group there.\n", r.Endpoint, len(r.Online))
+		case r.Error == "":
+			fmt.Fprintf(w, "Sync away from home: on; connecting to the relay at %s.\n", r.Endpoint)
+		default:
+			fmt.Fprintf(w, "Sync away from home: on; not connected to the relay at %s: %s.\n", r.Endpoint, r.Error)
+			if r.Detail != "" && debugErrors() {
+				fmt.Fprintf(w, "  Detail: %s\n", r.Detail)
 			}
 		}
 	case a.HubDevice == "":

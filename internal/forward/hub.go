@@ -106,23 +106,24 @@ func Register(ctx context.Context, cfg HubConfig) {
 	}
 }
 
-// tlsVerifiedByPin builds the registration's TLS: the forwarder has no name
-// and a self-signed certificate, so crypto/tls cannot check it, and
-// VerifyConnection checks its key against the pin instead.
-func tlsVerifiedByPin(cfg HubConfig) *tls.Config {
+// PinnedTLS builds the TLS of a registration with a server known only by
+// the pin of its key, a forwarder or a relay (what, in the errors): the
+// server has no name and a self-signed certificate, so crypto/tls cannot
+// check it, and VerifyConnection checks its key against the pin instead.
+func PinnedTLS(cert tls.Certificate, protocol, pin, what string) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{cfg.Cert()},
-		NextProtos:   []string{Protocol},
-		// The forwarder has no name; the pin names it. Without a name the
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{protocol},
+		// The server has no name; the pin names it. Without a name the
 		// hello carries no server name either.
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 || Pin(cs.PeerCertificates[0]) != cfg.Link.Pin {
-				return errors.New("forward: the forwarder's key is not the one given for it")
+			if len(cs.PeerCertificates) == 0 || Pin(cs.PeerCertificates[0]) != pin {
+				return fmt.Errorf("the %s's key is not the one given for it", what)
 			}
-			if cs.NegotiatedProtocol != Protocol {
-				return errors.New("forward: the forwarder does not speak the registration protocol")
+			if cs.NegotiatedProtocol != protocol {
+				return fmt.Errorf("the %s does not speak the registration protocol", what)
 			}
 			return nil
 		},
@@ -139,7 +140,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
 	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, tlsVerifiedByPin(cfg))
+	tc := tls.Client(raw, PinnedTLS(cfg.Cert(), Protocol, cfg.Link.Pin, "forwarder"))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
