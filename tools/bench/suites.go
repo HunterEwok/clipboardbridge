@@ -248,7 +248,7 @@ const liteDropIn = "/etc/systemd/system/cbb-lite.service.d/cbbbench.conf"
 // litePeer restarts the lite member's service with -peer addr, or without
 // the bench's drop-in when addr is "".
 func litePeer(ctx context.Context, d *Device, addr string) error {
-	cmd := "sudo -n rm -f " + liteDropIn
+	cmd := "sudo -n rm -f " + liteDropIn + " && sudo -n rmdir --ignore-fail-on-non-empty " + path.Dir(liteDropIn)
 	if addr != "" {
 		conf := "[Service]\nExecStart=\nExecStart=/usr/local/bin/cbb-lite run -peer " + addr + "\n"
 		cmd = "sudo -n mkdir -p " + path.Dir(liteDropIn) + " && printf '" + conf + "' | sudo -n tee " + liteDropIn + " >/dev/null"
