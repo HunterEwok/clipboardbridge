@@ -94,6 +94,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A used remote invitation no longer reaches the hub: its guest tunnel goes as soon as the new
+  device's member connection through it ends after the hub answered its tunnel key (at most
+  2 minutes after the admission, as before), and the hub refuses a second pairing through it.
+- On Linux the service's memory, which holds secrets, never goes to swap (`MemorySwapMax=0`).
+- When a device away from home gets no answer through the tunnel, `cbb away` says that the hub
+  or the forwarder on the way may be down, not only the hub.
 - A data race in the tunnel's WireGuard timers when a peer stops, as when a hub closes: a
   timer that fired at that moment cleared its state outside its lock. clipboardbridge now
   builds with a copy of amneziawg-go that clears it under the lock
