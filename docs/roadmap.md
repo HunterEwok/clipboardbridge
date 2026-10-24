@@ -107,11 +107,12 @@ The order may change.
     4. the phone apps: images, then files and the share targets;
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
-21. **Proposed, waiting for the owner's go-ahead.** OpenWrt routers: the full service on a
-    router as an always-on member and the natural hub, `cbb-lite` for small routers. See
-    "OpenWrt routers" below.
+21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
+    member and the natural hub, `cbb-lite` for small routers. See "OpenWrt routers" below.
 
 ## OpenWrt routers
+
+Planned for 0.5.
 
 A router has no desktop and no clipboard of its own, so on a router clipboardbridge is
 infrastructure, not a place to copy and paste:
