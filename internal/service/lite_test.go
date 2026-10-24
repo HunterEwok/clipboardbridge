@@ -120,6 +120,69 @@ func (w testWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// TestEmbassyJoiner: the ESP32 firmware's pairing code (lite/embassy),
+// built for Linux as cbb-embassy, joins by the phone over embassy-net on a
+// TAP interface, as the board does over Wi-Fi. CBB_EMBASSY names the
+// binary; the interface tap0 must be up as 192.168.69.1/24, and the device
+// takes 192.168.69.2.
+func TestEmbassyJoiner(t *testing.T) {
+	bin := os.Getenv("CBB_EMBASSY")
+	if bin == "" {
+		t.Skip("CBB_EMBASSY is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	admit, token := shortcutPhone(t, pi)
+
+	file := filepath.Join(t.TempDir(), "identity.json")
+	join := exec.Command(bin, "-debug", "-tap", "tap0", "-addr", "192.168.69.2/24", "-name", "board", "-identity", file)
+	join.Stderr = testWriter{t, "cbb-embassy: "}
+	out, err := join.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := join.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer join.Process.Kill()
+	const prefix = "Or paste this into the app: "
+	var qr string
+	sc := bufio.NewScanner(out)
+	for qr == "" && sc.Scan() {
+		if line, ok := strings.CutPrefix(sc.Text(), prefix); ok {
+			qr = line
+		}
+	}
+	if !strings.Contains(qr, "192.168.69.2%3A8764") && !strings.Contains(qr, "192.168.69.2:8764") {
+		t.Fatalf("cbb-embassy showed %q, not a QR code with its address", qr)
+	}
+	if rep := admit(token, qr); rep["direction"] != "none" {
+		t.Fatalf("admit: %v", rep)
+	}
+	var rest strings.Builder
+	for sc.Scan() {
+		rest.WriteString(sc.Text() + "\n")
+	}
+	if err := join.Wait(); err != nil || !strings.Contains(rest.String(), "Joined the group "+pi.status(t).Group) {
+		t.Fatalf("cbb-embassy: %v; %s", err, rest.String())
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "_key") {
+		t.Error("the board saved a CA key")
+	}
+	waitFor(t, "pi lists the board", func() bool {
+		for _, d := range pi.devices(t) {
+			if d.Name == "board" {
+				return d.Role == group.RoleLite && !d.Admin
+			}
+		}
+		return false
+	})
+}
+
 // TestLiteMember runs the lite member among Go members: it joins through
 // the phone by its QR code, gets no CA keys, is listed as a lite device and
 // syncs both ways. CBB_LITE names the cbb-lite binary (cargo build in lite/).

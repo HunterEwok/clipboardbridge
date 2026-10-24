@@ -84,6 +84,15 @@ cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
   go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
 ```
 
+The Nano ESP32's network code on Linux (`lite/embassy`, root for the TAP interface):
+
+```sh
+sudo ip tuntap add name tap0 mode tap user "$USER" && sudo ip addr add 192.168.69.1/24 dev tap0 \
+  && sudo ip link set tap0 up
+cd lite && cargo build --release -p clipboardbridge-embassy --features host && cd .. && \
+  CBB_EMBASSY=$PWD/lite/target/release/cbb-embassy go test ./internal/service -run TestEmbassyJoiner
+```
+
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
 no Android dependencies and builds anywhere; the app needs the Android SDK with its NDK, Go
 for the tunnel (see below) and Google's Maven repository (CI, or a Mac with Android Studio):

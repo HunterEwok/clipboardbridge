@@ -62,7 +62,8 @@ The order may change.
 15. **Started: the firmware (`lite/esp32`) builds for the Nano ESP32, keeps its settings in
     flash, joins the Wi-Fi network set on its USB console, joins a group by the phone and
     passes its self-test (keys, certificates, a TLS 1.3 handshake on the chip) in QEMU;
-    sync and the USB keyboard are next.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
+    its network code (`lite/embassy`) also runs on Linux over a TAP interface, where CI
+    has a Go member admit it by the phone; sync and the USB keyboard are next.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
     `lite/core` as the other ESP32 boards, with the member protocol and TLS 1.3 on the
     board itself. It ships as a ready firmware built from our Rust code, flashed over USB
     with one command; a library for writing one's own Arduino sketches on top of it may
