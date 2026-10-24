@@ -414,19 +414,24 @@ func readLine(r io.Reader) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-// cmdAgent links the Mac's pasteboard or the Windows clipboard to the
-// service; launchd starts it in the user's session on a Mac, and the sign-in
-// on Windows.
+// cmdAgent links the desktop's clipboard to the service: the Mac's
+// pasteboard, where launchd starts it in the user's session; the Windows
+// clipboard, started at sign-in; a Linux desktop's clipboard, started with
+// the desktop session.
 func cmdAgent(args []string, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "cbb: agent takes no arguments")
 		return 2
 	}
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
-		return fail(stderr, errors.New("the agent is for macOS and Windows; on Linux the desktop connector links the clipboard"))
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if runtime.GOOS == "linux" {
+		logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
+		return runDesktop(ctx, logf, stderr)
+	}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return fail(stderr, fmt.Errorf("the agent has no clipboard to link on %s", runtime.GOOS))
+	}
 	stderr, closeLog, err := agentLog(stderr)
 	if err != nil {
 		return fail(stderr, err)
@@ -444,20 +449,6 @@ func cmdAgent(args []string, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	return 0
-}
-
-// cmdDesktop links a Linux desktop's clipboard to the service; the session
-// starts it. When the display connection drops it opens it again, and it
-// exits when the session is gone.
-func cmdDesktop(args []string, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "cbb: desktop takes no arguments")
-		return 2
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
-	return runDesktop(ctx, logf, stderr)
 }
 
 // cmdService runs the service; systemd and launchd start it.

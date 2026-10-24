@@ -4,7 +4,7 @@
 Type=Application
 Name=clipboardbridge
 Comment=Share this desktop's clipboard with the clipboardbridge group
-Exec=/usr/local/bin/cbb desktop
+Exec=/usr/local/bin/cbb agent
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 X-KDE-autostart-phase=1

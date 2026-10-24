@@ -194,7 +194,7 @@ jobs:
           merge-multiple: true
       - name: checksums
         run: |
-          cp packaging/linux/get.sh packaging/windows/get.ps1 dist/
+          cp packaging/get.sh packaging/windows/get.ps1 dist/
           cd dist
           set -- *.tar.gz *.zip get.sh get.ps1
           for f in *.apk; do [ -e "$f" ] && set -- "$@" "$f"; done

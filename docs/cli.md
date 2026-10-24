@@ -3,7 +3,7 @@
 
 Every command of `cbb` (Linux, macOS, Windows) and `cbb-lite` (the lite member), with their
 flags and environment variables. `cbb help` and `cbb-lite help` print the short form.
-Commands other than `service`, `agent`, `desktop`, `version` and `help` talk to the running
+Commands other than `service`, `agent`, `version` and `help` talk to the running
 service through its control socket, so they need the `clipboardbridge` group (Linux, Windows,
 macOS) or root; `copy`, `paste` and `status` work for members of the group without `sudo`.
 
@@ -14,7 +14,6 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb copy [-secret]` | Sends standard input to the group, and to this device's own clipboard. `-secret` sends it as a secret: kept only in memory and gone 60 seconds after the copy. |
 | `cbb paste` | Prints this device's clipboard text. |
 | `cbb status` | This device, its group, sync away from home, and every device of the group: its system (Linux, Windows, macOS, iOS, Android), its role (`full`, `lite`, `phone`, `shortcut`), whether it is the root or an admin, when it was last seen and whether its clock is off. It also says whether this computer answers for `clipboardbridge.local`. |
-| `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
 | `cbb revoke NAME` | Removes a device, by name or device ID, with a signed record; the group stays. Runs on an admin: the computer that created the group (its root), a computer the root made an admin (`cbb admin`), or a computer the root phone made an admin. Removing an admin of a computer's group also replaces the iPhone CA, so iPhones that use the shortcut pair again. The root itself cannot be removed yet. In a phone's group, remove devices in the app (Devices). |
 | `cbb admin NAME` | On the group's root: makes the computer NAME (a name or a device ID) an admin, which can then admit and remove devices and serve the shortcut. It must be connected. In a phone's group, use "Make it an admin" on the root phone. |
 | `cbb new` | Creates a group with this computer as its root: it holds the group's root key and the iPhone CA, admits devices and makes admins. A computer in a group already keeps it. |
@@ -31,9 +30,18 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb forward [-listen ADDRESS:PORT] [-key FILE] [-show-key] [-vless-site NAME [-vless-listen ADDRESS:PORT]]` | Runs a forwarder on a server with a public address, for hubs that clients cannot reach directly, for example behind carrier-grade NAT (default port 8764, UDP and TCP). It holds no keys of any group and writes nothing about them; its own key is made in `-key` on the first run (default `forwarder.pem` in systemd's state directory, or in the service's state directory) and printed at start, or alone with `-show-key`. With `-vless-site`, it also takes VLESS with REALITY on TCP `-vless-listen` (default `:443`) for the clients of hubs that ask for it, borrowing the TLS of that well-known site (such as `www.example.com`), whose own answers whoever is not a client gets; its REALITY key is kept in the same key file. |
 | `cbb relay -group TAG[,TAG...] [-listen ADDRESS:PORT] [-key FILE] [-show-key]` | Runs a blind relay on a server you run, for your groups that have no computer to be the hub (default port 8764, UDP and TCP). It serves only the groups whose tags `-group` lists (`cbb status` shows a group's tag), holds none of their keys, reads nothing of the clipboard, and writes nothing about them; it sees which devices of a group talk, when and how much. Its keys are made in `-key` on the first run (default `relay.pem` in systemd's state directory, or in the service's state directory), and the key to give `cbb away relay -key` is printed at start, or alone with `-show-key`. |
 | `cbb version` | Prints the version and the platform. |
+
+### Rarely needed
+
+`holder` only matters when the wrong computer answers to `clipboardbridge.local`. The system
+starts `service` and `agent`; they are run by hand only to look into a problem, such as to
+see the agent's log in a terminal.
+
+| Command | What it does |
+|---|---|
+| `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
-| `cbb agent` | Links the Mac's or Windows clipboard to the service; started at sign-in (`cbbw.exe agent` on Windows). |
-| `cbb desktop` | Links a Linux desktop's clipboard to the service; started with the desktop session. |
+| `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 
 ## cbb-lite
 
@@ -57,10 +65,11 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 
 | Installer | Options |
 |---|---|
-| Linux `get.sh` and `install.sh` | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
+| `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--no-firewall` leaves the firewall alone; on Linux also `--port N` and `--console`, as for `install.sh`. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
+| Linux `install.sh` | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. |
 | Linux `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the program, the service and the firewall rules the installer added; `--purge` also deletes the keys in `/var/lib/clipboardbridge`. |
 | macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--in-place` runs the binary where it is (Homebrew) instead of copying it; `CBB_FIREWALL=no` leaves the application firewall alone. |
-| macOS `uninstall.sh` (beside `install.sh`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
+| macOS `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
 | Windows `get.ps1` and `install.ps1` | `$env:CBB_PORT = "9000"` another port, `$env:CBB_FIREWALL = "no"` leaves Windows Firewall alone. |
 | Windows `uninstall.ps1` (`$env:ProgramFiles\clipboardbridge`), or Settings, Apps | removes the service, the agent, the program and the firewall rules; `-Purge` also deletes the keys and the `clipboardbridge` group. |
 
@@ -72,8 +81,8 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 | `CBB_PORT` | the service, `cbb-lite run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
 | `CBB_SOCKET` | `cbb`, `cbb-lite` | Another control socket, for tests or a second instance. |
 | `CBB_STATE` | `cbb-lite` | Another state directory. |
-| `CBB_FIREWALL` | Linux and macOS `install.sh`, Windows `install.ps1`/`get.ps1` | `no` leaves the firewall alone (`--no-firewall` for Linux `get.sh`). |
-| `CBB_VERSION` | Linux `get.sh` | A release such as `v0.2.0` instead of the latest. |
+| `CBB_FIREWALL` | Linux and macOS `install.sh`, Windows `install.ps1`/`get.ps1` | `no` leaves the firewall alone (`--no-firewall` for `get.sh`). |
+| `CBB_VERSION` | `get.sh` | A release such as `v0.2.0` instead of the latest. |
 | `CBB_ERROR_DETAILS` | Windows `install.ps1` | `1` adds the full error record to the installer's messages. |
 
 The test-only variables (`CBB_INTEROP_OUT`, `CBB_LITE`, `CBB_SWIFT_INTEROP`, …) are in
