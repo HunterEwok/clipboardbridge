@@ -1031,8 +1031,8 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 `internal/service/tunnel.go`); the tunnel carries the member protocol between Go members
 ("Through the tunnel" below). The phone kits speak the hello's `tunnel_key` and the
 `tunnel` message (Swift `MemberNode`, Kotlin `MemberNode`) and bind the tunnel itself from
-Go (`mobile/cbbtun`), and both apps turn it on in their settings; the kits do not carry the
-obfuscation settings yet. The lite member does not take part yet.
+Go (`mobile/cbbtun`), and both apps turn it on in their settings; the kits keep the obfuscation settings with
+the offer and hand them to the tunnel. The lite member does not take part yet.
 
 - Sync away from home is off by default; nothing in this section happens on a device until
   the user turns it on there (`cbb away on`, the control operation `away`). Go turns it on

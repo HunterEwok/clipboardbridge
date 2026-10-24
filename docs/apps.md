@@ -71,7 +71,9 @@ they look, so both apps are built to the same plan.
    dials with its own member TLS, checking that the peer is the hub. On the iPhone the key
    and the hub's offer sit in the keychain, readable after the first unlock and on this
    device only; the same tunnel (`Cbbtun.xcframework`) runs while the app does, and the
-   kit's `AwayFromHome` drives it in both the app and its tests.
+   kit's `AwayFromHome` drives it in both the app and its tests. When the group's hub is
+   obfuscated, its offer carries the AmneziaWG settings, which both apps keep with it and
+   give the tunnel; nothing changes on the screen.
 
 The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
 Devices on your other phone and remove it." When the group has a single admin, Devices

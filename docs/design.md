@@ -824,8 +824,9 @@ about who talks to whom.
      protection hides, so an obfuscated hub cannot use a forwarder yet: `cbb away hub`
      refuses the two together. Giving the forwarder the group's settings, which it would
      need to find `mac1`, is the next step.
-   - The phones' kits do not carry the settings yet, and `cbb-lite`'s Rust WireGuard does
-     not speak AmneziaWG, so in an obfuscated group they reach the hub at home only.
+   - The phones keep the settings with the hub's offer and start their tunnel with them
+     (`mobile/cbbtun` takes them as JSON). `cbb-lite`'s Rust WireGuard does not speak
+     AmneziaWG, so in an obfuscated group it reaches the hub at home only.
 2. **WireGuard inside VLESS with REALITY**, between a client and the forwarder, with
    Xray-core (MPL-2.0) in `cbb` and libXray (MIT) in the apps; VLESS carries the UDP packets
    itself. The forwarder then has one path for everything, the hub does not change, and
@@ -910,8 +911,8 @@ only adds to it.
    found at home. The invitations follow.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
    run on amneziawg-go; obfuscation per group between computers (`cbb away hub
-   -obfuscate`), in the hub's offer and in invitations. Next: the settings in both kits,
-   the forwarder for obfuscated hubs, then VLESS.
+   -obfuscate`), in the hub's offer and in invitations, and on both phones. Next: the
+   forwarder for obfuscated hubs, then VLESS.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Device keys in hardware

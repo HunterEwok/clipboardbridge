@@ -12,8 +12,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub
   makes the group's settings and gives them to its clients with its offer at home and in
-  remote invitations. Between computers for now; not yet through a forwarder, on the
-  phones or on the lite member.
+  remote invitations; both phone apps use them too. Not yet through a forwarder or on the
+  lite member.
 - Sync away from home in the iPhone app, as in the Android app: a switch in Settings, the
   key and the hub's offer in the keychain (this device only), and the same in-process
   tunnel while the app runs. Building the app now needs Go for `Cbbtun.xcframework`.
