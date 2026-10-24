@@ -25,6 +25,30 @@ object Clipboard {
     }
 
     /**
+     * The clipboard holds something the app could not read as text: it may
+     * not read it now, or it is not text. The button leaves it as it is
+     * rather than put an older text over it.
+     */
+    class Unreadable(detail: String, cause: Throwable? = null) : Exception(detail, cause)
+
+    /**
+     * The text on the clipboard for the button, or null when it is empty;
+     * throws Unreadable when it holds something else.
+     */
+    fun readForSync(context: Context): String? {
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        val clip = try {
+            cm.primaryClip
+        } catch (e: Exception) {
+            throw Unreadable("the clipboard could not be read", e)
+        } ?: return null
+        if (clip.itemCount == 0) return null
+        clip.getItemAt(0).text?.let { return it.toString() }
+        val d = clip.description
+        throw Unreadable("items=${clip.itemCount} types=${(0 until d.mimeTypeCount).map { d.getMimeType(it) }}")
+    }
+
+    /**
      * Puts a text on the clipboard; a secret is marked sensitive, so the
      * system shows no preview of it, and goes after its remaining minute
      * while it is still there.

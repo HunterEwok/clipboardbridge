@@ -40,6 +40,13 @@ public enum Discovery {
     public static func member(instance: String, txt: [String: String]) -> FoundMember? {
         member(instance: instance, txt: txt.map { "\($0.key)=\($0.value)" })
     }
+
+    /// The members to dial: those browsing found, and the devices of the
+    /// group with a known address that it did not find, as a member in
+    /// another subnet, which mDNS does not reach (docs/protocol.md, section 9).
+    public static func withKnown(_ found: Set<FoundMember>, known: Set<String>, group: String) -> Set<FoundMember> {
+        found.union(known.filter { d in !found.contains { $0.device == d } }.map { FoundMember(device: $0, group: group) })
+    }
 }
 
 /// Keeps one connection to every found member of the phone's group: it

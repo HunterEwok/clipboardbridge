@@ -5,13 +5,13 @@
 name = "clipboardbridge-lite"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 license = "AGPL-3.0-only"
 description = "The lite member of clipboardbridge, for small Linux devices"
 publish = false
 
 [workspace]
-members = ["core", "embassy"]
+members = ["core", "embassy", "ring-shim"]
 exclude = ["esp32"]
 
 [[bin]]
@@ -26,6 +26,16 @@ mdns-sd = "0.21.6"
 qrcode = { version = "0.14.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# WireGuard for sync away from home: GotaTun's noise protocol, sans I/O, with
+# the ring stand-in below; smoltcp is the TCP inside the tunnel.
+gotatun = { version = "0.10.2", default-features = false, features = ["ring"] }
+bytes = "1"
+getrandom = { version = "0.4", features = ["std"] }
+smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+
+# GotaTun's AEAD on RustCrypto instead of ring's C and assembly (ring-shim/src/lib.rs).
+[patch.crates-io]
+ring = { path = "ring-shim" }
 
 [profile.release]
 # Small devices: a small binary matters more than the last bit of speed.

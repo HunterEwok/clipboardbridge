@@ -182,6 +182,27 @@ public struct JoinCode: Equatable {
         return !host.isEmpty && !host.contains(":")
     }
 
+    /// host and port of "host:port" or "[IPv6]:port".
+    public static func split(_ addr: String) -> (String, UInt16)? {
+        guard let i = addr.lastIndex(of: ":"), let port = UInt16(addr[addr.index(after: i)...]) else { return nil }
+        var host = String(addr[..<i])
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        return host.isEmpty ? nil : (host, port)
+    }
+
+    /// The addresses to try, IPv4 first: a home network reaches those most
+    /// surely, and each that fails costs its timeout.
+    public static func ordered(_ addrs: [String]) -> [String] {
+        addrs.filter { !$0.hasPrefix("[") } + addrs.filter { $0.hasPrefix("[") }
+    }
+
+    /// Whether a host:port, or [IPv6]:port, is on a home network: a private
+    /// IPv4 or unique local IPv6 address.
+    public static func isHome(_ a: String) -> Bool {
+        guard hasPort(a), let (host, _) = split(a) else { return false }
+        return a.hasPrefix("[") ? LocalAddresses.isHome(ipv6: host) : LocalAddresses.isHome(ipv4: host)
+    }
+
     /// Whether the code is six digits, as the computer expects.
     public var codeIsValid: Bool { code.count == 6 && code.allSatisfy { $0.isASCII && $0.isNumber } }
 

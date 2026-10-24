@@ -6,17 +6,18 @@ same paths and service (`cbb version` says which one a device runs). It speaks t
 protocol of [docs/protocol.md](../docs/protocol.md), but unlike a full member it
 
 - never holds CA keys, so it never admits devices;
-- dials the computers (found by mDNS, or named with `-peer`), and publishes itself in mDNS
+- dials the computers on the home network (found by mDNS, or named with `-peer`), and
+  publishes itself in mDNS
   and listens on the member port, TCP 8764, so that phones and other lite members
   dial it: a phone syncs with it directly, with no computer on;
 - never holds `clipboardbridge.local` or serves the shortcut, the Apple Shortcuts action an
   iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);
 - has no desktop clipboard of its own: other programs use `copy`, `paste` and `watch`.
 
-Full members list it with role `lite`. Sync away from home, through the group's WireGuard
-tunnel to the hub ("Sync away from home" in [docs/design.md](../docs/design.md)), is not
-built into the lite member yet: for a device on another subnet, where mDNS does not reach, name a
-computer there with `-peer`.
+Full members list it with role `lite`. Away from home, or on another subnet where mDNS does
+not reach, it syncs through the group's WireGuard tunnel to the hub once `cbb global on` is
+run on it ("Sync away from home" below); it dials no address outside the home network
+itself.
 
 The protocol core is its own crate, [`core`](core) (`cbb_core`): certificates, records,
 the hybrid clock, the sync engine, the frames and the joiner's side of the pairing, with
@@ -34,8 +35,11 @@ bytes) and the pairing's TLS exporter, which rustls offers only with std: the co
 the exporter secret from the connection's key log and derives the exporter itself
 (RFC 8446, section 7.5). The lite member runs on exactly this code, so the e2e test below
 checks the TLS a microcontroller would use against Go members.
-The lite member itself (`src`) adds the state files, the sockets, mDNS, the control socket and
-the service.
+The lite member itself (`src`) adds the state files, the sockets, mDNS, the control socket,
+the service and the tunnel to the hub (`src/tunnel.rs`, `src/away.rs`): GotaTun's WireGuard
+from Mullvad and smoltcp's TCP, in one thread, behind a port on the loopback address that the
+member TLS dials. GotaTun gets its ChaCha20-Poly1305 from a stand-in for ring on RustCrypto
+([`ring-shim`](ring-shim), patched in by `Cargo.toml`), so the build stays all Rust.
 
 ## Build
 
@@ -143,6 +147,24 @@ Without mDNS on the network, name the full members in a drop-in
 (`sudo systemctl edit clipboardbridge`): `ExecStart=` and then
 `ExecStart=/usr/local/bin/cbb run -peer 192.168.0.10:8764 -peer ...`. `run -no-listen`
 turns the member port off (the device then only dials the computers).
+
+### Sync away from home
+
+```sh
+cbb global on                  # read the warning, type yes
+cbb global                     # the hub, and whether it is reached through the tunnel
+cbb global off                 # forget the tunnel's keys
+```
+
+Turn it on at home: the device then meets the group's hub (a full member made the hub with
+`cbb global hub` there) and keeps the hub's offer, its keys and addresses. Whenever the hub is
+neither found on the home network nor connected, it dials the hub through the tunnel: plain
+WireGuard to the hub's UDP port, with the member TLS inside, so the clipboard stays encrypted
+end to end. At home it sends nothing to the hub's outside addresses. A hub that hides its
+tunnel (`-obfuscate` or `-vless`, for networks that block WireGuard) is refused, since the lite
+member speaks plain WireGuard only, and the device syncs at home only. The keys are in
+`/var/lib/clipboardbridge/tunnel.json`, a file, so the warning asks you to protect the disk
+or memory card.
 
 ## ZX Spectrum Next
 

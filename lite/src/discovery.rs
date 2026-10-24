@@ -175,6 +175,7 @@ fn browse(
                 if addrs.is_empty() {
                     continue;
                 }
+                node.found(&id, true);
                 match found.get(&id) {
                     Some(cur) => *cur.lock().unwrap() = Some(addrs),
                     None => {
@@ -188,6 +189,7 @@ fn browse(
             }
             mdns_sd::ServiceEvent::ServiceRemoved(_, fullname) => {
                 if let Some(id) = instance_id(&fullname) {
+                    node.found(&id, false);
                     if let Some(cur) = found.remove(&id) {
                         *cur.lock().unwrap() = None;
                     }

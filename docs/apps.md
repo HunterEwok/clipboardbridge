@@ -36,8 +36,10 @@ they look, so both apps are built to the same plan.
    before there is a group; when the system's language has no translation, a language menu
    sits next to it, with English chosen.
 2. **Home**: the one big button (send what this phone holds or fetch the computer's recent
-   copy, by the same rule as the shortcut), the result in one line, and the connected
-   computers as a compact list with a live dot each; tapping the list opens Devices. A "+"
+   copy, by the same rule as the shortcut; when the phone's clipboard holds something the
+   app cannot read as text, it is left as it is and the line says so), the result in one
+   line, and the connected computers as a compact list with a live dot each; tapping the
+   list opens Devices. A "+"
    adds a device (camera). The same button is the app's "Sync clipboard" action, which
    Shortcuts and Spotlight offer as soon as the app is installed (App Intents with an
    App Shortcut): Back Tap or the Action button runs it without opening the app; it waits

@@ -6,6 +6,7 @@
 //! dials the computers, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
+mod away;
 mod control;
 mod discovery;
 mod error;
@@ -17,6 +18,7 @@ mod pair;
 mod records;
 mod service;
 mod tls;
+mod tunnel;
 mod uptime;
 mod wire;
 
@@ -45,6 +47,8 @@ Commands:
   copy [-secret]       Send standard input to the group.
   paste                Print this member's clipboard text.
   status               Show this device, its group and the group's devices.
+  global [on|off]      Show sync away from home, or turn it on or off here:
+                       through the group's own WireGuard tunnel to its hub.
   watch [-0]           Print every text the group sends here, one per line
                        (with -0, each followed by a zero byte).
   next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
@@ -53,16 +57,15 @@ Commands:
   help                 Print this help.
 
 This is the lite member: the commands of a full member, such as pair or
-global, are not here. The state directory is /var/lib/clipboardbridge
+invite, are not here. The state directory is /var/lib/clipboardbridge
 (CBB_STATE), the control socket /run/clipboardbridge/control.sock
 (CBB_SOCKET). -debug, or CBB_DEBUG=1, shows the details of errors.
 ";
 
 /// The commands of a full member (cmd/cbb) that the lite member does not
 /// have, so that it says so instead of "unknown command".
-const FULL_ONLY: &[&str] = &[
-    "global", "revoke", "admin", "takeover", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent",
-];
+const FULL_ONLY: &[&str] =
+    &["revoke", "admin", "takeover", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent"];
 
 struct Global {
     state: PathBuf,
@@ -103,6 +106,7 @@ fn main() {
                 "copy" => cmd_copy(&g, rest),
                 "paste" => cmd_simple(&g, "paste", rest),
                 "status" => cmd_simple(&g, "status", rest),
+                "global" => cmd_global(&g, rest),
                 "watch" => cmd_watch(&g, rest),
                 "version" | "-version" | "--version" => {
                     println!(
@@ -404,6 +408,7 @@ fn cmd_simple(g: &Global, op: &str, args: &[String]) -> Result<()> {
             if s.peers.is_empty() {
                 println!("no members connected");
             }
+            print_away(s.away.as_ref());
             if s.group.is_empty() {
                 return Ok(());
             }
@@ -426,6 +431,75 @@ fn cmd_simple(g: &Global, op: &str, args: &[String]) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// What a user agrees to before the lite member, whose keys sit in files,
+/// syncs away from home (docs/design.md, "Turning it on, step by step").
+const KEYS_WARNING: &str = "Sync away from home lets this device reach the group's hub from the internet,
+through the group's own WireGuard tunnel, with the clipboard encrypted end to end.
+
+This device keeps its keys in files, not in a security chip. Whoever copies those
+files (with root on this device, from its disk or memory card, or from an
+unencrypted backup) can act as this device from anywhere until you remove it from
+the group. To keep that from happening:
+
+  - encrypt the disk or memory card where you can (LUKS);
+  - keep the service's state directory out of unencrypted backups;
+  - remove the device at once (Remove on the phone, or cbb revoke on a full
+    member) when it is lost or someone else may have had root on it.
+
+";
+
+fn cmd_global(g: &Global, args: &[String]) -> Result<()> {
+    let mut h = control::Header { op: "away".into(), ..Default::default() };
+    match args {
+        [] => {}
+        [a] if a == "on" => {
+            print!("{KEYS_WARNING}Type yes to turn sync away from home on: ");
+            std::io::stdout().flush().ok();
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).context("cannot read the answer")?;
+            if !line.trim().eq_ignore_ascii_case("yes") {
+                println!("Nothing changed.");
+                return Err(Error::msg("sync away from home stays as it was"));
+            }
+            h.name = "on".into();
+            h.consent = true;
+        }
+        [a] if a == "off" => h.name = "off".into(),
+        _ => return Err(Error::msg("usage: cbb global [on|off]")),
+    }
+    let m = request(g, &control::Message::new(h, Vec::new()))?;
+    print_away(m.header.status.and_then(|s| s.away).as_ref());
+    Ok(())
+}
+
+/// Prints sync away from home as cbb global on a full member does.
+fn print_away(a: Option<&control::Away>) {
+    let Some(a) = a else {
+        println!("Sync away from home: off (cbb global on turns it on).");
+        return;
+    };
+    match () {
+        _ if a.hub_device.is_empty() && !a.keys_in_file => println!("Sync away from home: off."),
+        _ if a.hub_device.is_empty() => {
+            println!("Sync away from home: on; waiting to meet the group's hub on the home network.")
+        }
+        _ if a.through => {
+            println!("Sync away from home: on; connected to the hub {} through the tunnel.", a.hub_device)
+        }
+        _ => println!(
+            "Sync away from home: on; the hub is {}, at {}; not connected through the tunnel.",
+            a.hub_device,
+            a.endpoints.join(", ")
+        ),
+    }
+    if !a.error.is_empty() {
+        println!("  Last problem: {}.", a.error.trim_end_matches('.'));
+        if !a.detail.is_empty() && error::show_details() {
+            println!("  Detail: {}", a.detail);
+        }
+    }
 }
 
 fn cmd_watch(g: &Global, args: &[String]) -> Result<()> {

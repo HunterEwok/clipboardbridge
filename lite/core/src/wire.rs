@@ -40,8 +40,8 @@ pub struct Message {
     pub records: Vec<Record>,
     #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
     pub admin_ca: Option<Vec<u8>>,
-    /// In a tunnel message, the group's hub's offer (section 11), kept as
-    /// it came: the lite member does not use the tunnel yet.
+    /// In a tunnel message, the group's hub's offer (section 11), decoded
+    /// on its own with [`TunnelOffer`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tunnel: Option<Value>,
 }
@@ -60,6 +60,27 @@ pub struct HelloBody {
     /// The sender's operating system, as device records name it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub os: String,
+    /// The sender's WireGuard public key, for the group's hub (section 11);
+    /// absent while sync away from home is off on it.
+    #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
+    pub tunnel_key: Option<Vec<u8>>,
+}
+
+/// The group's hub's offer for a member's tunnel key (section 11).
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
+pub struct TunnelOffer {
+    #[serde(with = "b64")]
+    pub hub_key: Vec<u8>,
+    #[serde(with = "b64")]
+    pub psk: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<String>,
+    /// AmneziaWG's settings, when the hub's tunnel is obfuscated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obfuscation: Option<Value>,
+    /// The way to the hub's forwarder over VLESS, then the only way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vless: Option<Value>,
 }
 
 /// The roles a peer may claim.
@@ -68,14 +89,16 @@ pub fn known_role(r: &str) -> bool {
 }
 
 /// A hello message from a lite member running on `os` (`"linux"`, or
-/// `"none"` for firmware).
-pub fn hello(h: &Hello, records: String, name: &str, os: &str) -> Message {
+/// `"none"` for firmware), with its tunnel key while sync away from home is
+/// on.
+pub fn hello(h: &Hello, records: String, name: &str, os: &str, tunnel_key: Option<&[u8]>) -> Message {
     let body = HelloBody {
         wall: h.wall,
         current: h.current.as_ref().map(|e| serde_json::to_value(e).unwrap()),
         records,
         name: name.to_string(),
         os: os.to_string(),
+        tunnel_key: tunnel_key.map(<[u8]>::to_vec),
     };
     Message {
         kind: "hello".into(),
