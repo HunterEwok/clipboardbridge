@@ -160,6 +160,21 @@ Every other way clipboardbridge works, so no path ships untested:
 | P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
 | P13 | `cbb status`, `cbb devices`, `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
+| P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
+| P15 | macOS: the Local Network permission refused and granted, Gatekeeper on the downloaded binary, the application firewall, Universal Clipboard from an iPhone or iPad signed in to the same Apple account | each state is explained by `cbb status`; Universal Clipboard text syncs once, without an echo |
+| P16 | Windows: locked screen, sign-out and sign-in, SmartScreen on the installer, `get.ps1` installing the arm64 build on ARM | the service keeps syncing; the agent comes back after sign-in; the right architecture |
+| P17 | Steam Deck: sleep and wake, Game Mode, the lock screen | reconnects within 30 s of wake; Game Mode and the lock screen are recorded as they behave |
+| P18 | mDNS on the router: the avahi reflector on and off between the home network and the IoT subnet | with it off the lite member is reached by address, with it on by mDNS; both work |
+| P19 | IPv6 on the home network: AAAA records, link-local and global addresses, an IPv6-only member | members find and reach each other over IPv6 |
+| P20 | A network that blocks UDP (a hotel or an office) for an away device | as designed for the transports that exist (WireGuard over UDP fails with a clear message; the TCP transport when it exists) |
+| P21 | Invitations: the admin answers `no`; `-for 24h` and one second past it; the hub off when the invitation is used | refused with a clear message each time; nothing is left on the hub |
+| P22 | `cbb away off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
+
+Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
+(`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
+those builds are covered only by CI. It has no real Android phone and no iPhone app
+(section 3).
+
 
 ## 8. Failure cases
 
@@ -321,7 +336,7 @@ One pull request per step, merged in order:
 2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
    report, the `check` and `smoke` suites on N1; the Windows setup script.
 3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
-   P13, section 7): installing and
+   P22, section 7): installing and
    removing with the installers, the snapshot of the Windows VM, the emulator, the
    router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
