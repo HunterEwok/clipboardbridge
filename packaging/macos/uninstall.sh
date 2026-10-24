@@ -9,11 +9,24 @@
 # It stops the service and the pasteboard agent of every user and removes
 # their plists, the service's entry in the application firewall, the binary
 # in /usr/local/bin (but not Homebrew's link there: brew uninstall removes
-# that) and the logs. The device's keys and group, in
+# that), the settings in /etc/clipboardbridge and the logs. The device's keys and group, in
 # /Library/Application Support/clipboardbridge/state, stay for a reinstall
 # unless --purge; the hidden _clipboardbridge user and group stay too, since
 # files may still belong to them.
 set -eu
+
+# A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
+# command as it runs, so that the output shows where and why it failed.
+if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
+	set -x
+fi
+failed() {
+	rc=$1
+	if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ "${CBB_ERROR_DETAILS:-}" != 1 ]; then
+		echo "uninstall.sh: failed (exit status $rc). For every command it ran: CBB_ERROR_DETAILS=1, and run it again." >&2
+	fi
+}
+trap 'failed $?' EXIT
 
 purge=no
 case ${1:-} in
@@ -43,7 +56,7 @@ rm -f "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist
 if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 	rm -f /usr/local/bin/cbb
 fi
-rm -rf /Library/Logs/clipboardbridge /usr/local/share/clipboardbridge
+rm -rf /Library/Logs/clipboardbridge /usr/local/share/clipboardbridge /etc/clipboardbridge
 support="/Library/Application Support/clipboardbridge"
 rm -rf "${support:?}/bin"
 fw=/usr/libexec/ApplicationFirewall/socketfilterfw

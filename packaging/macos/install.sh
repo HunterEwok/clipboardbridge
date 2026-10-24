@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Mac:
 #
-#   sudo sh install.sh [--in-place] path/to/cbb
+#   sudo sh install.sh [--in-place] [--port N] path/to/cbb
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
@@ -15,19 +15,52 @@
 # there: the formula's caveats pass its opt path, and running this again
 # after an upgrade restarts them on the new one. The service always runs a
 # copy that only root can change, since it holds the group's keys and a
-# Homebrew prefix belongs to the user. uninstall.sh removes it all again.
+# Homebrew prefix belongs to the user. --port moves the member port from 8764
+# to N, kept in /etc/clipboardbridge/clipboardbridge.env as on Linux until the
+# next --port; --port 8764 goes back. uninstall.sh removes it all again.
 set -eu
 
+# A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
+# command as it runs, so that the output shows where and why it failed.
+if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
+	set -x
+fi
+failed() {
+	rc=$1
+	if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ "${CBB_ERROR_DETAILS:-}" != 1 ]; then
+		echo "install.sh: failed (exit status $rc). For every command it ran: CBB_ERROR_DETAILS=1, and run it again." >&2
+	fi
+}
+trap 'failed $?' EXIT
+
 usage() {
-	echo "usage: sudo sh install.sh [--in-place] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--in-place] [--port N] path/to/cbb" >&2
 	exit 2
 }
 inplace=no
-if [ "${1:-}" = --in-place ]; then
-	inplace=yes
+port=
+while [ $# -gt 1 ]; do
+	case $1 in
+	--in-place) inplace=yes ;;
+	--port)
+		port=$2
+		shift
+		;;
+	*) usage ;;
+	esac
 	shift
-fi
+done
 [ $# -eq 1 ] || usage
+case $port in
+'') ;;
+*[!0-9]*) usage ;;
+*)
+	if [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+		echo "install.sh: --port takes a port from 1024 to 65535" >&2
+		exit 2
+	fi
+	;;
+esac
 bin=$1
 # A bare file name would be looked up in PATH, not here.
 case $bin in
@@ -152,6 +185,24 @@ fi
 install -d -m 0755 /usr/local/share/clipboardbridge
 install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
 
+# The port: the one given, else the one kept from before, else 8764. The
+# service and cbb read it from the same file as on Linux.
+env=/etc/clipboardbridge/clipboardbridge.env
+install -d -m 0755 /etc/clipboardbridge
+if [ -n "$port" ]; then
+	if [ "$port" -eq 8764 ]; then
+		rm -f "$env"
+	else
+		{
+			echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N."
+			echo "CBB_PORT=$port"
+		} >"$env"
+		chmod 0644 "$env"
+	fi
+fi
+port=$(sed -n 's/^CBB_PORT=//p' "$env" 2>/dev/null | tail -n 1)
+port=${port:-8764}
+
 # restart DOMAIN LABEL PLIST stops the job if it runs and starts it again.
 # bootout returns before launchd has let the job go, and a bootstrap in that
 # moment fails with "5: Input/output error", so wait for it to be gone.
@@ -168,4 +219,9 @@ restart system "$daemon" "/Library/LaunchDaemons/$daemon.plist"
 if [ -n "$user" ] && [ "$user" != root ]; then
 	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi
-echo "clipboardbridge is running. Join a group: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: cbb new."
+if [ "$port" != 8764 ]; then
+	echo "clipboardbridge uses TCP port $port instead of 8764. If a firewall on the network limits"
+	echo "incoming connections, allow TCP $port from the home network. The iPhone shortcut works only"
+	echo "with 8764; the clipboardbridge app takes any port."
+fi
+echo "clipboardbridge is running on TCP port $port. Join a group: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: cbb new."

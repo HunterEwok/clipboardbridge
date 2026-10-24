@@ -74,10 +74,10 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 
 | Installer | Options |
 |---|---|
-| `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--no-firewall` leaves the firewall alone; on Linux also `--port N` and `--console`, as for `install.sh`, and `--lite` for the lite member instead of the full one. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
+| `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--no-firewall` leaves the firewall alone, `--port N` sets another member port, as for `install.sh`; on Linux also `--console` and `--lite` for the lite member instead of the full one. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
 | Linux `install.sh` (the same in the full and the lite member's archive) | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. |
 | Linux `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the program, the service and the firewall rules the installer added; `--purge` also deletes the keys in `/var/lib/clipboardbridge`. |
-| macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--in-place` has the agent and `cbb` in PATH run the binary where it is (Homebrew) instead of copying it, while the service runs a root-owned copy under `/Library/Application Support/clipboardbridge/bin`; `CBB_FIREWALL=no` leaves the application firewall alone. |
+| macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--in-place` has the agent and `cbb` in PATH run the binary where it is (Homebrew) instead of copying it, while the service runs a root-owned copy under `/Library/Application Support/clipboardbridge/bin`; `CBB_FIREWALL=no` leaves the application firewall alone. |
 | macOS `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
 | Windows `get.ps1` and `install.ps1` | `$env:CBB_PORT = "9000"` another port, `$env:CBB_FIREWALL = "no"` leaves Windows Firewall alone. |
 | Windows `uninstall.ps1` (`$env:ProgramFiles\clipboardbridge`), or Settings, Apps | removes the service, the agent, the program and the firewall rules; `-Purge` also deletes the keys and the `clipboardbridge` group. |
@@ -87,12 +87,12 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 | Variable | Used by | Meaning |
 |---|---|---|
 | `CBB_DEBUG` | `cbb` | `1` shows the underlying error under each message; `0` hides it in a development build, which shows it by default. The service's log always has the details. In the service's environment, also WireGuard's own messages for sync away from home. |
-| `CBB_PORT` | the service, the lite member's `cbb run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
+| `CBB_PORT` | the service, the lite member's `cbb run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux and macOS, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
 | `CBB_SOCKET` | `cbb` | Another control socket, for tests or a second instance. |
 | `CBB_STATE` | the lite member | Another state directory. |
 | `CBB_FIREWALL` | Linux and macOS `install.sh`, Windows `install.ps1`/`get.ps1` | `no` leaves the firewall alone (`--no-firewall` for `get.sh`). |
 | `CBB_VERSION` | `get.sh` | A release such as `v0.2.0` instead of the latest. |
-| `CBB_ERROR_DETAILS` | Windows `install.ps1` | `1` adds the full error record to the installer's messages. |
+| `CBB_ERROR_DETAILS` | the installers: Linux and macOS `install.sh`, `uninstall.sh` and `get.sh`, Windows `install.ps1` | `1` shows every command the shell scripts run, so the output shows where and why one failed, and adds the full error record to the Windows installer's messages. Without it a failed shell script names its exit status. |
 
 The test-only variables (`CBB_INTEROP_OUT`, `CBB_LITE`, `CBB_SWIFT_INTEROP`, …) are in
 [CONTRIBUTING.md](../CONTRIBUTING.md).
