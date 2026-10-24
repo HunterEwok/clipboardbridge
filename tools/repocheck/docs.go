@@ -16,7 +16,8 @@ import (
 //   - a relative link in a Markdown file names a file or directory of the
 //     repository, and its #anchor, if any, a heading of that file;
 //   - the project's old name does not come back, outside the changelog;
-//   - every command of cbb and cbb-lite is in docs/cli.md.
+//   - every command of cbb, the full and the lite member, is in docs/cli.md,
+//     the lite member's in its section.
 
 var (
 	mdLink    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
@@ -133,28 +134,35 @@ func slug(heading string) string {
 	return b.String()
 }
 
-// checkCommands reports the commands of cbb and cbb-lite that docs/cli.md
-// does not name.
+// liteSection is the heading of the lite member's commands in docs/cli.md.
+const liteSection = "## The lite member"
+
+// checkCommands reports the commands of cbb that docs/cli.md does not name:
+// the full member's anywhere, the lite member's in its section.
 func checkCommands(files map[string][]byte) []string {
 	ref, ok := files["docs/cli.md"]
 	if !ok {
 		return nil
 	}
 	var problems []string
+	lite := ""
+	if _, after, ok := strings.Cut(string(ref), "\n"+liteSection+"\n"); ok {
+		lite, _, _ = strings.Cut(after, "\n## ")
+	}
 	for _, c := range []struct {
-		source, prog string
-		re           *regexp.Regexp
+		source, doc string
+		re          *regexp.Regexp
 	}{
-		{"cmd/cbb/main.go", "cbb", goCommand},
-		{"lite/src/main.rs", "cbb-lite", rsCommand},
+		{"cmd/cbb/main.go", string(ref), goCommand},
+		{"lite/src/main.rs", lite, rsCommand},
 	} {
 		src, ok := files[c.source]
 		if !ok {
 			continue
 		}
 		for _, m := range c.re.FindAllStringSubmatch(string(src), -1) {
-			if !strings.Contains(string(ref), "`"+c.prog+" "+m[1]) {
-				problems = append(problems, fmt.Sprintf("docs/cli.md:1: the command %s %s (%s) is not described", c.prog, m[1], c.source))
+			if !strings.Contains(c.doc, "`cbb "+m[1]) {
+				problems = append(problems, fmt.Sprintf("docs/cli.md:1: the command cbb %s (%s) is not described", m[1], c.source))
 			}
 		}
 	}

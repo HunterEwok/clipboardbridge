@@ -69,8 +69,13 @@ then the command it prints to start the service.
 **Android** 10 or later: open \`clipboardbridge-$version.apk\` on the phone and allow the
 install. The app makes its own group and adds the computers by their \`cbb pair\` QR code.
 
-**Lite member** for small Linux devices (a router, a Raspberry Pi Zero): unpack
-\`cbb-lite-linux-<arch>.tar.gz\` and follow \`cbb-lite/README.md\`, section "Install".
+**Lite member** for small Linux devices (a router, a Raspberry Pi Zero), with systemd:
+
+\`\`\`sh
+curl -fsSL $repo/releases/download/$tag/get.sh | sudo CBB_VERSION=$tag sh -s -- --lite
+\`\`\`
+
+Its command is \`cbb\` too; \`cbb-lite/README.md\` in its archive has the rest.
 
 Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb new\` and
 \`cbb pair -phone\` on the first computer for the iPhone, and \`cbb pair\` on each further computer.
@@ -102,14 +107,14 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`cbb-lite-linux-arm64.tar.gz\` | the lite member, ARM64, static |
 | \`cbb-lite-linux-armv6.tar.gz\` | the lite member, ARMv6 and ARMv7 (Raspberry Pi Zero, 1, 2), static |
 | \`clipboardbridge-$version.apk\` | Android 10 and later, signed with the project's release key |
-| \`get.sh\` | the Linux installer |
+| \`get.sh\` | the installer for Linux (\`--lite\` for the lite member) and macOS |
 | \`get.ps1\` | the Windows installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
 Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, \`THIRD_PARTY_NOTICES\` with
-the licenses of the code it is built from, and \`packaging/\` with the installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program, \`LICENSE\`,
-\`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\` with the
-install steps, and \`packaging/\` with the systemd unit.
+the licenses of the code it is built from, and \`packaging/\` with the installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program \`cbb\`, \`LICENSE\`,
+\`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\`, and
+\`packaging/\` with the Linux installer and the lite member's systemd unit.
 
 ## Source and license
 

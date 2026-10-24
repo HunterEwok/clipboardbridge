@@ -198,7 +198,7 @@ impl Node {
             return;
         }
         if let Err(TrySendError::Full(_)) = c.tx.try_send(o) {
-            self.logf(&format!("cbb-lite: {} is too slow; closing the connection", c.id));
+            self.logf(&format!("cbb: {} is too slow; closing the connection", c.id));
             c.close(false);
         }
     }
@@ -311,7 +311,7 @@ impl Node {
             let hello = self.engine.connected(id.as_str());
             let _ = c.tx.try_send(Out::Hello(hello, uptime::now()));
         }
-        self.logf(&format!("cbb-lite: connected to {id} at {addr}"));
+        self.logf(&format!("cbb: connected to {id} at {addr}"));
         let writer = {
             let c = c.clone();
             let records = self.records.clone();
@@ -330,8 +330,8 @@ impl Node {
         }
         self.engine.disconnected(id.as_str());
         match &res {
-            Ok(()) => self.logf(&format!("cbb-lite: {id} said goodbye")),
-            Err(e) => self.logf(&format!("cbb-lite: the connection to {id} ended: {}", e.for_log())),
+            Ok(()) => self.logf(&format!("cbb: {id} said goodbye")),
+            Err(e) => self.logf(&format!("cbb: the connection to {id} ended: {}", e.for_log())),
         }
         res
     }
@@ -374,18 +374,18 @@ impl Node {
             match m.kind.as_str() {
                 "event" => {
                     let Some(ev) = m.event.and_then(|v| serde_json::from_value::<Event>(v).ok()) else {
-                        self.logf(&format!("cbb-lite: dropped an event from {} that does not decode", c.id));
+                        self.logf(&format!("cbb: dropped an event from {} that does not decode", c.id));
                         continue;
                     };
                     match self.engine.received(ev) {
                         Ok(out) => self.apply(out, &c.id),
-                        Err(e) => self.logf(&format!("cbb-lite: dropped a bad event from {}: {}", c.id, e.for_log())),
+                        Err(e) => self.logf(&format!("cbb: dropped a bad event from {}: {}", c.id, e.for_log())),
                     }
                 }
                 "cert" => {
                     if let Some(cert) = m.cert {
                         if let Err(e) = self.renewed(&cert, m.issuer.as_deref()) {
-                            self.logf(&format!("cbb-lite: a renewed certificate from {}: {}", c.id, e.for_log()));
+                            self.logf(&format!("cbb: a renewed certificate from {}: {}", c.id, e.for_log()));
                         }
                     }
                 }
@@ -405,7 +405,7 @@ impl Node {
             return Err(Error::msg(why));
         }
         next.save(&self.state_dir)?;
-        self.logf(&format!("cbb-lite: got a renewed certificate, valid until {}", date(next.cert.not_after)));
+        self.logf(&format!("cbb: got a renewed certificate, valid until {}", date(next.cert.not_after)));
         *ident = Arc::new(next);
         Ok(())
     }
@@ -415,13 +415,13 @@ impl Node {
             let mut st = self.records.lock().unwrap();
             let (fresh, errs) = st.add_all(rs);
             for e in errs {
-                self.logf(&format!("cbb-lite: dropped a record from {from}: {}", e.for_log()));
+                self.logf(&format!("cbb: dropped a record from {from}: {}", e.for_log()));
             }
             if fresh.is_empty() {
                 return;
             }
             if let Err(e) = st.save(&self.state_dir) {
-                self.logf(&format!("cbb-lite: {}", e.for_log()));
+                self.logf(&format!("cbb: {}", e.for_log()));
             }
             // A new root that took the group over is trusted from now on.
             let roots = st.roots();
@@ -431,12 +431,12 @@ impl Node {
                 next.roots = roots;
                 match next.save(&self.state_dir) {
                     Ok(()) => *ident = Arc::new(next),
-                    Err(e) => self.logf(&format!("cbb-lite: keeping the group's new root: {}", e.for_log())),
+                    Err(e) => self.logf(&format!("cbb: keeping the group's new root: {}", e.for_log())),
                 }
             }
             let own: Vec<Cert> = std::iter::once(ident.cert.clone()).chain(ident.issuer.clone()).collect();
             if st.refused(&own).is_some() {
-                self.logf("cbb-lite: this device was removed from the group; join it again to sync");
+                self.logf("cbb: this device was removed from the group; join it again to sync");
             }
             fresh
         };
@@ -444,7 +444,7 @@ impl Node {
         let st = self.records.lock().unwrap();
         for c in self.conns.lock().unwrap().values() {
             if let Some(why) = st.refused(&c.chain) {
-                self.logf(&format!("cbb-lite: closing the connection to {}: {why}", c.id));
+                self.logf(&format!("cbb: closing the connection to {}: {why}", c.id));
                 c.close(false);
             } else if &c.id != from && c.peer.lock().unwrap().is_some() {
                 for chunk in chunk_records(fresh.clone()) {
@@ -532,7 +532,7 @@ fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &st
         let f = match wire::frame(m) {
             Ok(f) => f,
             Err(e) => {
-                log(&format!("cbb-lite: to {}: {}", c.id, e.for_log()));
+                log(&format!("cbb: to {}: {}", c.id, e.for_log()));
                 return true; // drop this one message
             }
         };
@@ -541,7 +541,7 @@ fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &st
         }
         if let Err(e) = c.send(&f) {
             if !c.closed.load(Ordering::SeqCst) {
-                log(&format!("cbb-lite: writing to {}: {e}", c.id));
+                log(&format!("cbb: writing to {}: {e}", c.id));
             }
             c.close(false);
             return false;

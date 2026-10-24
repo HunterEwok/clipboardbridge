@@ -6,8 +6,11 @@
 #
 #   sudo sh install.sh [--console] [--port N] path/to/cbb
 #
-# It installs the binary to /usr/local/bin, the service user, the systemd
-# unit, the desktop autostart entry and the tmux configuration, adds the user
+# The full member's archive and the lite member's (cbb-lite-linux-*) both
+# carry this script, each with its own systemd unit beside it; cbb version
+# tells the two apart. It installs the binary to /usr/local/bin, the service
+# user, the systemd unit, for the full member the desktop autostart entry,
+# and the tmux configuration, adds the user
 # who ran sudo to the clipboardbridge group, and starts or restarts the service.
 # --console also starts tmux after a login on the text console. --port moves
 # the member port from 8764 to N, kept in /etc/clipboardbridge/clipboardbridge.env
@@ -70,6 +73,18 @@ if ! "$bin" version >/dev/null 2>&1; then
 	exit 1
 fi
 
+# The full member and the lite member share the command, the paths and the
+# service, but neither can use the other's keys: switching is a new device.
+kind_of() {
+	if "$1" version 2>/dev/null | grep -q 'lite member'; then echo lite; else echo full; fi
+}
+kind=$(kind_of "$bin")
+if [ -x /usr/local/bin/cbb ] && [ "$(kind_of /usr/local/bin/cbb)" != "$kind" ]; then
+	echo "install.sh: the $(kind_of /usr/local/bin/cbb) member is installed here, and the $kind member cannot use its keys;" >&2
+	echo "remove it first: sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge" >&2
+	exit 1
+fi
+
 # Up to 0.2.0 clipboardbridge was called clipbridge, and its protocol does
 # not reach this one: remove it, with its keys, user and firewall rules, so
 # this device pairs again.
@@ -100,13 +115,41 @@ if [ -e /usr/local/bin/clipbridge ] || [ -e /etc/systemd/system/clipbridge.servi
 	echo "Removed clipbridge, as clipboardbridge was called before; pair this device again."
 fi
 
+# The lite member was the command cbb-lite, with its own user and paths. Its
+# keys move to the shared paths for the lite member, which stays in its group.
+moved=no
+if [ -e /usr/local/bin/cbb-lite ] || [ -e /etc/systemd/system/cbb-lite.service ]; then
+	systemctl disable --now cbb-lite.service >/dev/null 2>&1 || true
+	rm -rf /etc/systemd/system/cbb-lite.service /etc/systemd/system/cbb-lite.service.d \
+		/usr/lib/sysusers.d/cbb-lite.conf /usr/local/bin/cbb-lite
+	systemctl daemon-reload || true
+	if [ "$kind" = lite ] && [ -d /var/lib/cbb-lite ] && [ ! -e /var/lib/clipboardbridge ]; then
+		mv /var/lib/cbb-lite /var/lib/clipboardbridge
+		moved=yes
+	fi
+	rm -rf /var/lib/cbb-lite
+	userdel cbb-lite 2>/dev/null || true
+	groupdel cbb-lite 2>/dev/null || true
+	if [ "$moved" = yes ]; then
+		echo "Renamed cbb-lite to cbb; this device stays in its group."
+	else
+		echo "Removed cbb-lite, as the lite member was called before; pair this device again."
+	fi
+fi
+
 install -m 0755 "$bin" /usr/local/bin/cbb
 install -m 0644 "$here/clipboardbridge.sysusers" /usr/lib/sysusers.d/clipboardbridge.conf
 systemd-sysusers /usr/lib/sysusers.d/clipboardbridge.conf
+if [ "$moved" = yes ]; then
+	chown -R clipboardbridge:clipboardbridge /var/lib/clipboardbridge
+fi
 install -m 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.service
-# Desktop sessions start the connector with the session.
-install -d -m 0755 /etc/xdg/autostart
-install -m 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
+# Desktop sessions start the connector with the session; the lite member has
+# none.
+if [ "$kind" = full ]; then
+	install -d -m 0755 /etc/xdg/autostart
+	install -m 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
+fi
 
 # tmux reads /etc/tmux.conf; source the clipboardbridge part from there once.
 install -d -m 0755 /usr/local/share/clipboardbridge
@@ -159,4 +202,8 @@ systemctl daemon-reload
 systemctl enable clipboardbridge.service
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
 echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
-echo "Next: see docs/quickstart.md; in short, cbb new and cbb pair -phone on the first computer, cbb pair on the others."
+if [ "$kind" = lite ]; then
+	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."
+else
+	echo "Next: see docs/quickstart.md; in short, cbb new and cbb pair -phone on the first computer, cbb pair on the others."
+fi

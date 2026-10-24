@@ -83,7 +83,7 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
-// The patterns read what cbb and cbb-lite print; keep them in step with
+// The patterns read what the full and the lite member print; keep them in step with
 // cmd/cbb/commands.go and lite/src/main.rs.
 func TestPatterns(t *testing.T) {
 	if m := codeRE.FindStringSubmatch("Pairing code: 123 456"); m == nil || m[1]+m[2] != "123456" {

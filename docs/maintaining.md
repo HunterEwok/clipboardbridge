@@ -99,7 +99,7 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 - **Android app**: the Kotlin kit's tests and its cross tests with the Go code, and the app
   built, unit-tested and linted;
 - **lite member (Rust)**: `cargo fmt`, `clippy` and the tests of `lite/`, the ARM64 and
-  ARMv6 builds, and the e2e test of `cbb-lite` among Go members;
+  ARMv6 builds, and the e2e test of the lite member among Go members;
 - **lite core on the ESP32**: the lite protocol core with its TLS built for the ESP32-C6 (RISC-V) and the
   ESP32-S3 (Xtensa), and the Nano ESP32 firmware (`lite/esp32`) built, its console and
   flash settings tested and its self-test run in Espressif's QEMU (both downloaded by hash);
@@ -135,8 +135,8 @@ Rules for workflows:
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
   binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code
   and Go itself, written by `packaging/archive.sh`) and `packaging/`. The `cbb-lite-linux-*`
-  archives hold `cbb-lite/` in the same way, with the crates' licenses
-  (`lite/packaging/notices.sh`).
+  archives hold `cbb-lite/` in the same way (`lite/packaging/archive.sh`), with the crates'
+  licenses (`lite/packaging/notices.sh`), the same Linux installer and the lite member's unit.
 - The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
   Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist` or
   `clipboardbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:

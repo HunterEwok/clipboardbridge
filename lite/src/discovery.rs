@@ -70,7 +70,7 @@ pub fn listen(node: Arc<Node>, port: u16, log: Arc<dyn Fn(&str) + Send + Sync>) 
         Ok(ln) => ln,
         Err(e) => {
             log(&format!(
-                "cbb-lite: cannot listen on port {port}: {e}; phones reach this device only through a computer \
+                "cbb: cannot listen on port {port}: {e}; phones reach this device only through a computer \
                  until the port is free (-port to change it)"
             ));
             return None;
@@ -100,7 +100,7 @@ pub fn listen(node: Arc<Node>, port: u16, log: Arc<dyn Fn(&str) + Send + Sync>) 
                 let res = node.accept(sock, addr, &mut release);
                 release();
                 if let Err(e) = res {
-                    log(&format!("cbb-lite: connection from {addr}: {}", e.for_log()));
+                    log(&format!("cbb: connection from {addr}: {}", e.for_log()));
                 }
             });
         }
@@ -128,7 +128,7 @@ pub fn start(
     }
     std::thread::spawn(move || {
         if let Err(e) = browse(node, &tag, port, &*log) {
-            log(&format!("cbb-lite: finding the members failed: {e}; give them with -peer"));
+            log(&format!("cbb: finding the members failed: {e}; give them with -peer"));
         }
     });
 }
@@ -178,7 +178,7 @@ fn browse(
                 match found.get(&id) {
                     Some(cur) => *cur.lock().unwrap() = Some(addrs),
                     None => {
-                        log(&format!("cbb-lite: found {id} at {}", addrs[0]));
+                        log(&format!("cbb: found {id} at {}", addrs[0]));
                         let cur: Addrs = Arc::new(Mutex::new(Some(addrs)));
                         found.insert(id.clone(), cur.clone());
                         let node = node.clone();

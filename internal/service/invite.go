@@ -157,9 +157,9 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 	st, run := s.tunnel, s.tunRun
 	switch {
 	case st == nil || !st.IsHub:
-		err = errors.New("invitations come from the group's hub, and this computer is not the hub; make it the hub with cbb away hub, or invite on the hub")
+		err = errors.New("invitations come from the group's hub, and this computer is not the hub; make it the hub with cbb global hub, or invite on the hub")
 	case len(st.HubEndpoints()) == 0:
-		err = errors.New("the hub has no address away from home yet; run cbb away hub with its addresses or a forwarder there")
+		err = errors.New("the hub has no address away from home yet; run cbb global hub with its addresses or a forwarder there")
 	case run == nil || run.hub == nil:
 		err = fmt.Errorf("the hub's tunnel is not running: %s", s.tunErr)
 	default:
