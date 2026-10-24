@@ -98,6 +98,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   timer that fired at that moment cleared its state outside its lock. clipboardbridge now
   builds with a copy of amneziawg-go that clears it under the lock
   (`internal/third_party/amneziawg-go`).
+- Sync away from home works on Linux: the service's unit lets it reach only the home network,
+  so a hub could not register with its forwarder and a computer away from home could not reach
+  its hub. `sudo cbb away on` (and `sudo cbb pair -invite`) now add a systemd drop-in that lets
+  the service reach the internet, and `sudo cbb away off` removes it; until then `cbb away`
+  says what is missing.
+- `cbb away hub -forwarder` and `cbb away relay` take a server's name as well as its address.
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.

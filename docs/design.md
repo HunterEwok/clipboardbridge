@@ -636,6 +636,10 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    away from home (`cbb` on a computer, a switch in the app). Only then does the device make
    its tunnel key and offer it to the hub. The screen that turns it on says what changes: the
    hub's port is reachable from the internet, only through WireGuard with the group's keys.
+   On Linux the service's systemd unit lets it reach only the home network, so turning it on
+   (`sudo cbb away on`, or `sudo cbb pair -invite`) also adds a drop-in that lets the service
+   reach the internet, and turning it off removes the drop-in: the second line of defence
+   stays in place on every computer that syncs only at home.
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
    "Device keys in hardware") can turn sync away from home on only after a second, separate
    consent. It explains that whoever copies the files (root on that device, its disk or
