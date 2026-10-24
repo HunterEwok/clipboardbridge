@@ -68,3 +68,6 @@ require (
 	layeh.com/gopher-luar v1.0.11 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+// A copy with a fix for a data race in its timers; see its README.md.
+replace github.com/amnezia-vpn/amneziawg-go => ./internal/third_party/amneziawg-go
