@@ -476,7 +476,7 @@ func checkRoot(c *x509.Certificate) error {
 }
 
 // path returns the roots the group went through, from the group CA to the
-// current root (docs/protocol.md, section 10, rule 6): from each root, the
+// current root (docs/protocol.md, section 10, rule 7): from each root, the
 // root record signed under it that counts and whose new root has the
 // smallest SHA-256 leads to the next.
 func (s *Records) path() []*x509.Certificate {

@@ -587,7 +587,7 @@ and cover traffic cannot hide a large transfer.
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
 | Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
-| An admin orders a paste on a member (planned, 0.5)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is removed like any device (see "Remote paste") |
+| An admin orders a paste on a member (planned, 0.5)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -1251,7 +1251,8 @@ in a phone group, without a new group:
 
 - a member that is no admin: its member key is revoked, and that is all;
 - an admin: its member key and its admin key are revoked, and the devices it admitted are
-  kept. In a group a computer created, it also held the iPhone CA key, so the admin that
+  kept. Only the root or an admin phone removes an admin; another admin computer freezes it
+  ("Who may remove an admin" below). In a group a computer created, it also held the iPhone CA key, so the admin that
   removes it replaces the iPhone CA as well: a new key, new `clipboardbridge.local`
   certificates for the admins, and every token revoked; iPhones that use the shortcut
   delete the old profile and pair again. The group's root stays;
@@ -1308,6 +1309,53 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
 5. Taking over from a lost root computer (`cbb takeover`).
 6. `cbb upgrade` for groups made before.
 
+## Who may remove an admin
+
+Decided on 2026-10-24 (D-60). An admin computer keeps its admin key in a file, so it is the
+admin a thief gets most easily: with the laptop, or with a copy of the file. The root and
+the admin phones keep theirs in the Secure Enclave or the Keystore, behind Face ID or the
+fingerprint. So the question is what an admin computer may do to another admin.
+
+**The rule.** The root and the admin phones remove any admin (`cbb revoke` on the root, Remove
+in the apps). An admin computer removes ordinary devices only; it never removes the root or
+another admin, and never hands the group over. Instead, **any admin freezes another admin
+computer** (`cbb freeze <name>`): from then on the frozen admin is no admin, nothing it signs
+counts beyond the records it signed before, its connections are refused, and it cannot
+paste. The root or an admin phone then decides: Unfreeze in the apps (`cbb unfreeze` on a
+root computer) makes it an admin again, Remove takes it out for good. Nobody freezes the
+root or an admin phone. How the records say it is in protocol section 10, rule 4.
+
+**Why freezing, and not one of the two simpler rules.**
+
+- *Only the root and the admin phones act, and admin computers do nothing to admins.* This
+  keeps a thief with an admin computer from touching the root or the other admins, but it
+  leaves the thief an admin until the owner reaches the root or an admin phone: a window in
+  which it admits devices of its own, removes ordinary devices and pastes where remote
+  paste is on. The root is often a computer at home, and many groups have no second admin
+  phone, so that window can be long.
+- *Any admin removes any other admin.* This closes the window from any admin device, but it
+  hands the thief the same power first: a stolen admin computer removes every other admin
+  before the owner notices, the group keeps no admin but the thief and the root, and if the
+  root is a computer the thief may be the last admin standing. A removal cannot be undone,
+  so the group is made anew.
+- *Freezing* takes the good half of each. Any admin, a computer included, stops a stolen admin
+  at once, as the owner asked ("revoke everything of a stolen admin quickly on any admin
+  device"). The worst a thief does with it is freeze honest admin computers, and a freeze is
+  undone with one tap on the root or an admin phone, which loses nothing: what the frozen
+  admin did before stays. The irreversible step, removal, stays with the keys that are
+  hardest to steal.
+
+**What it costs.** A new record type in every implementation (Go, `cbb-lite`, both phone
+kits), and a short time in which a thief can keep honest admin computers frozen until the
+owner reaches the root or an admin phone. Two admins that freeze each other both stay
+frozen: a freeze counts whoever signed it, so the rule does not depend on which freeze came
+first, which no member can tell. A freeze lists the frozen admin's records that stay, so
+records of that admin that reached nobody before the freeze are lost with it; they were
+signed after the theft at the earliest, or can be signed again after an unfreeze.
+
+**Rejected.** A time limit after which a freeze lapses (a thief would wait it out), and votes
+among admins (a home group has one or two admins, so a vote decides nothing).
+
 ## Sync modes (planned for 0.5)
 
 Today every copy on any member goes to the clipboard of every other member within a second,
@@ -1360,12 +1408,12 @@ input, and the sender is told so.
 - **Any admin turns it off on any member** with a signed command, like the sync mode
   (D-55), when an admin device is lost: it takes effect at once, needs no consent, and only
   the device's own user turns it on again.
-- **A stolen admin is cut off quickly.** The root or an admin phone removes it with one
-  action (`cbb revoke`, Devices in the apps), which revokes its member and admin keys
-  together; from then on nothing it signs counts on any member, pastes included. An admin
-  computer cannot remove another admin (protocol section 10), but it can turn remote paste
-  off on every member at once (`cbb paste-receive off --all`) until the root or an admin
-  phone does.
+- **A stolen admin is cut off quickly.** Any other admin, a computer included, freezes it
+  with one action (`cbb freeze`, "Who may remove an admin" above): from then on nothing it
+  signs counts on any member, pastes included. The root or an admin phone then removes it
+  (`cbb revoke`, Devices in the apps), which revokes its member and admin keys together.
+  Any admin can also turn remote paste off on every member at once (`cbb paste-receive off
+  --all`).
 
 ### How the text gets in
 
@@ -1429,8 +1477,8 @@ such as the hub, cannot forge or change it.
 **A stolen admin device.** A phone cannot paste without its owner's face or finger. An
 admin computer keeps its admin key in a file, so a thief with it can paste text on the
 members whose users turned remote paste on, but presses Enter and reaches root consoles
-only where those were turned on too, and only until another admin turns remote paste off
-or the root or an admin phone removes it; removal reaches every member through the
+only where those were turned on too, and only until another admin freezes it or turns
+remote paste off, or the root or an admin phone removes it; removal reaches every member through the
 records, and from then on its commands fail the signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
 narrow this to a thief who also has the computer running.
 
@@ -1532,3 +1580,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-57 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
 | D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
 | D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
+| D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |

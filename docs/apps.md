@@ -48,11 +48,12 @@ they look, so both apps are built to the same plan.
    scans it.
 4. **Devices**: the whole group, one row per device: its name, an icon and the name of its
    system (Linux, Windows, macOS, iOS, Android, or "device" for firmware; a lite member and an
-   iPhone with the shortcut are marked so), a "root" or "admin" mark, a live dot when it is online and
+   iPhone with the shortcut are marked so), a "root", "admin" or "frozen" mark, a live dot when it is online and
    "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
    device records (section 10 of [protocol.md](protocol.md)), so every app and
    `cbb status` show the same. On an admin phone, a row opens the device: rename,
-   "Make it an admin" (phones only, on the root phone), and "Remove", which asks once, then
+   "Make it an admin" (phones only, on the root phone), "Unfreeze" for an admin computer
+   that another admin froze (design.md, "Who may remove an admin"), and "Remove", which asks once, then
    needs Face ID, the fingerprint or the passcode, and is done; removing an admin phone shows
    the devices it had admitted, which stay. On the root phone a computer's row also offers
    "Make it an admin" when the computer offers an admin key (docs/protocol.md, section 10,

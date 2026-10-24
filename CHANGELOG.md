@@ -105,6 +105,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   where only root can change it; the agent and `cbb` in PATH still run Homebrew's. Running
   `install.sh` again after `brew upgrade` refreshes the copy, as before.
 
+- Security: any admin, a computer included, can freeze another admin computer, as one that
+  was stolen: `cbb freeze <name>`. From then on nothing the frozen admin signs counts beyond
+  what it did before, its connections are refused, and it is no admin until the root or an
+  admin phone unfreezes it ("Unfreeze" in Devices, `cbb unfreeze` on a root computer) or
+  removes it. Nobody freezes the root or an admin phone. Every member (Go, the phone apps,
+  the lite member) follows the new `freeze` and `thaw` records; docs/design.md, "Who may
+  remove an admin", says why freezing was chosen.
+
 - Security: an admin computer, whose admin key sits in a file, can remove ordinary devices
   but no longer the root or another admin, and cannot hand a phone's group to a new root;
   only the root and admin phones can. Nothing an admin signs after it was removed counts,
