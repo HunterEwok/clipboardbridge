@@ -59,6 +59,15 @@ class Settings(context: Context) {
         get() = LanguageChoice.of(prefs.getString("language", null))
         set(v) = prefs.edit().putString("language", v.key).apply()
 
+    /**
+     * Whether Share and the selection menu send without asking first: the
+     * user answered "Always allow" once. Android does not tell reliably
+     * which app shared, so it holds for every app; Settings turns it off.
+     */
+    var alwaysAllowShare: Boolean
+        get() = prefs.getBoolean("alwaysAllowShare", false)
+        set(v) = prefs.edit().putBoolean("alwaysAllowShare", v).apply()
+
     /** Whether the note that this phone is ready was closed. */
     var welcomed: Boolean
         get() = prefs.getBoolean("welcomed", false)

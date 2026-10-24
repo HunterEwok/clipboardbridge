@@ -161,7 +161,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P4 | The Mac as a full member: the lite member and the emulator reach the Mac with no other computer on; the Mac and a Linux member connect whichever has the lower device ID, also with the Mac's application firewall on | sync works; one connection between each pair |
 | P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
 | P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
-| P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the service and the agent run from Homebrew's binary; nothing is left |
+| P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the agent runs Homebrew's binary, the service a root-owned copy of it; nothing is left |
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |

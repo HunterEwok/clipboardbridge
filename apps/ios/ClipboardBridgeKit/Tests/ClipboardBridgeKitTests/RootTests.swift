@@ -180,6 +180,94 @@ final class RootTests: XCTestCase {
         for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
     }
 
+    /// Reads testdata/interop/go-admins.json, from Go's TestGoAdminVectors:
+    /// a computer's admin CA removes a device but neither the admin phone
+    /// nor the root, nor hands the group over, and nothing it signs after
+    /// the admin phone removed it counts.
+    func testGoAdminPowers() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Device: Decodable { var id: String, name: String, admin: Bool }
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
+            var group_ca: Data
+            var records: [Member.Record]
+            var devices: [Device]
+            var keys: [Key]
+            var chains: [Chain]
+            var digest: String
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-admins.json")))
+        var set = RecordSet()
+        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count)
+        XCTAssertEqual(set.digest, v.digest)
+        XCTAssertTrue(set.roots.isEmpty, "a computer admin handed the group over")
+        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
+        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
+        for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, k.name) }
+        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
+    }
+
+    /// An admin computer freezing another (go-freeze.json, docs/protocol.md
+    /// section 10, rule 4), as Go's TestGoFreezeVectors writes it.
+    func testGoFreeze() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Device: Decodable { var id: String, name: String, admin: Bool }
+            struct Key: Decodable { var name: String, key: Data, frozen: Bool }
+            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
+            var group_ca: Data
+            var records: [Member.Record]
+            var devices: [Device]
+            var keys: [Key]
+            var chains: [Chain]
+            var digest: String
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-freeze.json")))
+        var set = RecordSet()
+        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count)
+        XCTAssertEqual(set.digest, v.digest)
+        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
+        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
+        for k in v.keys {
+            XCTAssertEqual(set.isFrozen(k.key), k.frozen, k.name)
+            XCTAssertFalse(set.revoked.contains(k.key), k.name)
+        }
+        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
+    }
+
+    /// testdata/interop/go-takeover.json, from Go's TestGoTakeoverVectors:
+    /// an admin computer hands over a group whose root is a computer, but
+    /// not a phone's group, not while another admin computer has frozen it,
+    /// and not once the old root removed it.
+    func testGoTakeover() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            struct Case: Decodable {
+                var name: String
+                var group_ca: Data
+                var records: [Member.Record]
+                var roots: [Data]?
+                var keys: [Key]
+                var digest: String
+            }
+            var cases: [Case]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-takeover.json")))
+        XCTAssertEqual(v.cases.count, 4)
+        for c in v.cases {
+            var set = RecordSet()
+            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count, c.name)
+            XCTAssertEqual(set.digest, c.digest, c.name)
+            XCTAssertEqual(set.roots, c.roots ?? [], c.name)
+            for k in c.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(c.name): \(k.name)") }
+        }
+    }
+
     /// Writes swift-root.json for internal/group's TestSwiftRoot: a takeover
     /// as this kit signs it.
     func testTakeOverForGo() throws {

@@ -104,6 +104,8 @@ func TestRootHandover(t *testing.T) {
 	if _, errs := recs.AddAll([]group.Record{
 		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: holder.ID, Name: "holder", Role: group.RoleFull, Key: &hk}, old.Key),
 		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: later.ID, Name: "later", Role: group.RoleFull, Key: &lk}, old.Key),
+		// The lost root recorded B as an admin phone, which may hand the group over.
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: group.NewDeviceID(), Name: "phone B", Role: group.RolePhone, Key: &group.KeyHash{2}, Admin: &bk}, old.Key),
 		sign(t, g, group.RecordBody{Type: group.RecordRoot, Root: newRoot.Cert.Raw}, adminB.Key, adminB.Cert),
 		sign(t, g, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{group.KeyHashOf(old.Cert), lost},
 			Keep: []group.KeyHash{hk, lk, bk}}, newRoot.Key),

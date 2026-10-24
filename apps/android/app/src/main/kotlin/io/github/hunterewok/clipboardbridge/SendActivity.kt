@@ -4,6 +4,7 @@
 package io.github.hunterewok.clipboardbridge
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -19,6 +20,8 @@ import kotlinx.coroutines.launch
  * Once it has the input focus it reads the clipboard, which only an app
  * with the focus may, sends or fetches by the Home button's rule (or sends
  * the shared or selected text), says what it did in a toast and closes.
+ * Text that another app shares or selects goes only after the user allows
+ * it, once or always: any app can hand this activity a text.
  */
 class SendActivity : Activity() {
     private val scope = MainScope()
@@ -43,6 +46,36 @@ class SendActivity : Activity() {
         started = true
         val model = (application as ClipboardBridgeApp).model
         val text = sharedText(intent)
+        if (text != null && !model.settings.alwaysAllowShare) {
+            ask(text)
+            return
+        }
+        send(text)
+    }
+
+    /** Asks whether to send text that another app handed over. */
+    private fun ask(text: String) {
+        val model = (application as ClipboardBridgeApp).model
+        var answered = false
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(R.string.share_confirm_title)
+            .setMessage(getString(R.string.share_confirm_body, text.length))
+            .setPositiveButton(R.string.share_allow) { _, _ ->
+                answered = true
+                send(text)
+            }
+            .setNeutralButton(R.string.share_always) { _, _ ->
+                answered = true
+                model.settings.alwaysAllowShare = true
+                send(text)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { if (!answered) finish() }
+            .show()
+    }
+
+    private fun send(text: String?) {
+        val model = (application as ClipboardBridgeApp).model
         scope.launch {
             val note = model.syncFromOutside(text)
             Toast.makeText(this@SendActivity, getString(note.text), Toast.LENGTH_SHORT).show()

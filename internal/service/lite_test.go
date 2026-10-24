@@ -6,6 +6,7 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"hash/crc32"
 	"net"
@@ -22,6 +23,8 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/phone"
 )
 
 // publishLite puts a lite member on the fake network, as the real one
@@ -132,7 +135,9 @@ func TestEmbassyJoiner(t *testing.T) {
 	}
 	var h hub
 	pi := startService(t, &h, "pi")
-	admit, token := shortcutPhone(t, pi)
+	if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	file := filepath.Join(t.TempDir(), "identity.json")
 	join := exec.Command(bin, "-debug", "-tap", "tap0", "-addr", "192.168.69.2/24", "-name", "board", "-identity", file)
@@ -156,8 +161,9 @@ func TestEmbassyJoiner(t *testing.T) {
 	if !strings.Contains(qr, "192.168.69.2%3A8764") && !strings.Contains(qr, "192.168.69.2:8764") {
 		t.Fatalf("esp32-on-linux showed %q, not a QR code with its address", qr)
 	}
-	if rep := admit(token, qr); rep["direction"] != "none" {
-		t.Fatalf("admit: %v", rep)
+	res := dialJoiner(t, pi.dir, qr)
+	if res.Info.Name != "board" || res.Info.Role != pair.RoleLite || !res.Confirmed {
+		t.Fatalf("the board joined as %+v", res)
 	}
 	var rest strings.Builder
 	for sc.Scan() {
@@ -173,19 +179,57 @@ func TestEmbassyJoiner(t *testing.T) {
 	if strings.Contains(string(raw), "_key") {
 		t.Error("the board saved a CA key")
 	}
-	waitFor(t, "pi lists the board", func() bool {
-		for _, d := range pi.devices(t) {
-			if d.Name == "board" {
-				return d.Role == group.RoleLite && !d.Admin
-			}
-		}
-		return false
-	})
 }
 
-// TestLiteMember runs the lite member among Go members: it joins through
-// the phone by its QR code, gets no CA keys, is listed as a lite device and
-// syncs both ways. CBB_LITE names the lite member's binary (cargo build in lite/).
+// dialJoiner plays the phone that scanned a listening joiner's QR code: it
+// opens a window with the identity in dir, dials the addresses in the QR
+// code and admits the device with the certificate it names. The service no
+// longer dials for the shortcut, so the test does it as the phone kits do.
+func dialJoiner(t *testing.T, dir, qr string) *pair.Result {
+	t.Helper()
+	jc, ok := phone.ParseJoinQR(qr)
+	if !ok || len(jc.Addrs) == 0 || jc.Fingerprint == "" {
+		t.Fatalf("not a QR code of a listening joiner: %q", qr)
+	}
+	id, err := group.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := pair.Open(id, jc.Code, pair.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), joinTimeout)
+	defer cancel()
+	var lastErr error
+	for _, addr := range jc.Addrs {
+		raw, err := net.DialTimeout("tcp", addr, handshakeTimeout)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if lastErr = w.Dial(ctx, raw, jc.Fingerprint); lastErr == nil {
+			break
+		}
+	}
+	select {
+	case <-w.Done():
+	default:
+		t.Fatalf("dialing the joiner: %v", lastErr)
+	}
+	res, err := w.Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// TestLiteMember runs the lite member among Go members: it joins with the
+// code of cbb pair, gets no CA keys, is listed as a lite device and syncs
+// both ways. (Joining by the phone's QR code, where the phone dials the
+// lite member, is covered by the phone kits' tests.) CBB_LITE names the
+// lite member's binary (cargo build in lite/).
 func TestLiteMember(t *testing.T) {
 	bin := os.Getenv("CBB_LITE")
 	if bin == "" {
@@ -193,46 +237,24 @@ func TestLiteMember(t *testing.T) {
 	}
 	var h hub
 	pi := startService(t, &h, "pi")
-	admit, token := shortcutPhone(t, pi)
 	laptop := startService(t, &h, "laptop")
 	pairWith(t, pi, laptop)
 
-	// cbb join on the lite member listens and shows its QR code; the phone scans it and
-	// asks pi to admit the device.
+	// cbb pair on pi shows a code; cbb join -code on the lite member reads it from
+	// standard input and joins at pi's address.
+	c, code := openWindow(t, pi)
+	defer c.Close()
+	pa, _ := pi.addrs()
 	dir := t.TempDir()
-	join := exec.Command(bin, "-state", dir, "-debug", "join", "-name", "lite", "-port", "0", "-addr", "127.0.0.1")
+	join := exec.Command(bin, "-state", dir, "-debug", "join", "-name", "lite", "-code", pa)
+	join.Stdin = strings.NewReader(code + "\n")
 	join.Stderr = testWriter{t, "lite join: "}
-	out, err := join.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
+	out, err := join.Output()
+	if err != nil || !strings.Contains(string(out), "Joined the group") {
+		t.Fatalf("cbb join: %v; %s", err, out)
 	}
-	if err := join.Start(); err != nil {
-		t.Fatal(err)
-	}
-	const prefix = "Or paste this into the app: "
-	var qr string
-	sc := bufio.NewScanner(out)
-	for qr == "" && sc.Scan() {
-		if line, ok := strings.CutPrefix(sc.Text(), prefix); ok {
-			qr = line
-		}
-	}
-	if qr == "" {
-		join.Process.Kill()
-		join.Wait()
-		t.Fatal("cbb join showed no QR code")
-	}
-	if rep := admit(token, qr); rep["direction"] != "none" {
-		join.Process.Kill()
-		join.Wait()
-		t.Fatalf("admit: %v", rep)
-	}
-	var rest strings.Builder
-	for sc.Scan() {
-		rest.WriteString(sc.Text() + "\n")
-	}
-	if err := join.Wait(); err != nil || !strings.Contains(rest.String(), "Joined the group") {
-		t.Fatalf("cbb join: %v; %s", err, rest.String())
+	if m, err := c.Receive(); err != nil || m.Name != "lite" {
+		t.Fatalf("pair on pi ended with %+v, %v", m, err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "identity.json"))
 	if err != nil {
@@ -245,7 +267,6 @@ func TestLiteMember(t *testing.T) {
 	// The lite member dials the computers, a Mac too, and syncs with them.
 	mac := startRole(t, &h, "mac", group.OSMacOS)
 	pairWith(t, pi, mac)
-	pa, _ := pi.addrs()
 	la, _ := laptop.addrs()
 	ma, _ := mac.addrs()
 	free, err := net.Listen("tcp", "127.0.0.1:0")

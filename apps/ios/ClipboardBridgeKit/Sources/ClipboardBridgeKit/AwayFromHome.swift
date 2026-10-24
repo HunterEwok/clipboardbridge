@@ -63,6 +63,7 @@ public actor AwayFromHome {
     private let atHome: @Sendable (String) async -> Bool
     private let dial: Dial
     private let serve: Serve
+    private let mayHost: @Sendable (String) -> Bool
     private let log: @Sendable (String, Error) -> Void
     private let firstWait: Duration
     private let maxWait: Duration
@@ -80,13 +81,15 @@ public actor AwayFromHome {
     /// turned off. atHome tells whether the hub is found on the home
     /// network, where it is dialed directly; dial reaches the hub's member
     /// TLS through the loopback port, checking that the peer is the hub;
-    /// serve runs a connection until it ends.
+    /// serve runs a connection until it ends; mayHost tells whether a device
+    /// may be the hub: the group's root or an admin (RecordSet.mayHost).
     public init(device: String, tunnels: Tunnels, state: AwayState?, save: @escaping @Sendable (AwayState?) throws -> Void,
                 atHome: @escaping @Sendable (String) async -> Bool, dial: @escaping Dial, serve: @escaping Serve,
+                mayHost: @escaping @Sendable (String) -> Bool,
                 log: @escaping @Sendable (String, Error) -> Void = { _, _ in },
                 firstWait: Duration = .seconds(1), maxWait: Duration = .seconds(30), homeCheck: Duration = .seconds(5)) {
         (self.device, self.tunnels, self.state, self.save) = (device, tunnels, state, save)
-        (self.atHome, self.dial, self.serve, self.log) = (atHome, dial, serve, log)
+        (self.atHome, self.dial, self.serve, self.log, self.mayHost) = (atHome, dial, serve, log, mayHost)
         (self.firstWait, self.maxWait, self.homeCheck) = (firstWait, maxWait, homeCheck)
     }
 
@@ -116,8 +119,12 @@ public actor AwayFromHome {
     }
 
     /// Keeps the offer a peer, the group's hub, sent for this phone's key.
+    /// Only the group's root or an admin may be the hub, and once a hub is
+    /// kept, offers from another device are ignored: the hub changes only
+    /// when the user turns sync away from home off and on again.
     public func keep(from: String?, offer: Member.TunnelOffer) {
-        guard let from, offer.isValid, var s = state, s.hub != from || s.offer != offer else { return }
+        guard let from, offer.isValid, var s = state, s.hub == nil || s.hub == from, s.hub != from || s.offer != offer,
+              mayHost(from) else { return }
         s.hub = from
         s.offer = offer
         state = s

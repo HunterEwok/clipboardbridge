@@ -10,6 +10,7 @@ struct DevicesView: View {
     @Environment(\.palette) private var palette
     @State private var removing: AppModel.Computer?
     @State private var promoting: AppModel.Computer?
+    @State private var thawing: AppModel.Computer?
 
     var body: some View {
         List {
@@ -26,6 +27,8 @@ struct DevicesView: View {
                         }
                         if d.isSelf {
                             (d.admin ? Text("This phone · admin") : Text("This phone")).font(.caption).foregroundStyle(palette.textDim)
+                        } else if d.frozen {
+                            Text("frozen").font(.caption).foregroundStyle(palette.textDim)
                         } else if d.admin {
                             Text("admin").font(.caption).foregroundStyle(palette.textDim)
                         }
@@ -43,8 +46,14 @@ struct DevicesView: View {
                     if d.canMakeAdmin {
                         Button { promoting = d } label: { Text("Make it an admin") }
                     }
+                    if canUnfreeze(d) {
+                        Button { thawing = d } label: { Text("Unfreeze") }
+                    }
                 }
                 .contextMenu {
+                    if canUnfreeze(d) {
+                        Button { thawing = d } label: { Text("Unfreeze") }
+                    }
                     if d.canMakeAdmin {
                         Button { promoting = d } label: { Text("Make it an admin") }
                     }
@@ -91,7 +100,20 @@ struct DevicesView: View {
         } message: {
             Text("It can then add and remove devices with cbb pair and cbb revoke. Its key is a file on the computer, so do this only for a computer you keep safe.")
         }
+        .confirmationDialog(Text("Unfreeze \(thawing?.name ?? "")?"), isPresented: Binding(
+            get: { thawing != nil }, set: { if !$0 { thawing = nil } }
+        ), titleVisibility: .visible) {
+            Button {
+                if let d = thawing { Task { await model.unfreeze(d.id) } }
+                thawing = nil
+            } label: { Text("Unfreeze") }
+        } message: {
+            Text("Another admin froze this computer, as one does with a stolen one: it changes nothing and the others refuse it. Unfreeze it only if it is in safe hands; otherwise remove it.")
+        }
     }
+
+    /// An admin phone unfreezes an admin computer that another admin froze.
+    private func canUnfreeze(_ d: AppModel.Computer) -> Bool { model.isAdmin && d.frozen }
 
     /// An admin phone removes any device but itself; removing the phone
     /// that holds the group's root hands the group to this phone.

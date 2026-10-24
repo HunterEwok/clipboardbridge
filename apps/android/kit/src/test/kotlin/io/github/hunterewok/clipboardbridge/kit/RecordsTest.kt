@@ -88,6 +88,81 @@ class RecordsTest {
     }
 
     /**
+     * testdata/interop/go-admins.json, from Go's TestGoAdminVectors: a
+     * computer's admin CA removes a device but neither the admin phone nor
+     * the root, nor hands the group over, and nothing it signs after the
+     * admin phone removed it counts.
+     */
+    @Test
+    fun goAdminPowers() {
+        val v = Interop.read("go-admins.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+        val set = RecordSet()
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        assertEquals(v.str("digest"), set.digest)
+        assertTrue(set.roots.isEmpty(), "a computer admin handed the group over")
+        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
+        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
+        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
+        for (k in v.getValue("keys").jsonArray) {
+            val o = k.jsonObject
+            assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), o.str("name"))
+        }
+        for (c in v.getValue("chains").jsonArray) {
+            val o = c.jsonObject
+            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
+            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
+        }
+    }
+
+    /** An admin computer freezing another (go-freeze.json, docs/protocol.md section 10, rule 4), as Go's TestGoFreezeVectors writes it. */
+    @Test
+    fun goFreeze() {
+        val v = Interop.read("go-freeze.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+        val set = RecordSet()
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        assertEquals(v.str("digest"), set.digest)
+        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
+        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
+        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
+        for (k in v.getValue("keys").jsonArray) {
+            val o = k.jsonObject
+            assertEquals(o.getValue("frozen").jsonPrimitive.boolean, set.isFrozen(b64(o.str("key"))), o.str("name"))
+            assertTrue(!set.isRevoked(b64(o.str("key"))), o.str("name"))
+        }
+        for (c in v.getValue("chains").jsonArray) {
+            val o = c.jsonObject
+            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
+            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
+        }
+    }
+
+    /**
+     * An admin computer taking over a group whose root is a computer (go-takeover.json, from Go's
+     * TestGoTakeoverVectors): it counts there, but not in a phone's group, not while another admin computer has
+     * frozen it, and not once the old root removed it.
+     */
+    @Test
+    fun goTakeover() {
+        val cases = Interop.read("go-takeover.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+        assertEquals(4, cases.size)
+        for (c in cases) {
+            val name = c.str("name")
+            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+            val set = RecordSet()
+            assertEquals(records.size, set.addAll(records, b64(c.str("group_ca"))).size, name)
+            assertEquals(c.str("digest"), set.digest, name)
+            val roots = (c["roots"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
+            assertEquals(roots, set.roots.map { b64(it) }, name)
+            for (k in c.getValue("keys").jsonArray) {
+                val o = k.jsonObject
+                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
+            }
+        }
+    }
+
+    /**
      * Writes records this kit signed for internal/group's TestSwiftRecords,
      * under the Swift kit's file name, when CBB_INTEROP_OUT names a directory.
      */

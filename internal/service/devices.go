@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -89,7 +90,11 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 func (s *Service) settleRecords(fresh []group.Record) {
 	revoked, rooted := false, false
 	for _, r := range fresh {
-		revoked = revoked || r.Type() == group.RecordRevoke
+		// A freeze refuses devices as a revocation does.
+		switch r.Type() {
+		case group.RecordRevoke, group.RecordFreeze, group.RecordThaw:
+			revoked = true
+		}
 		rooted = rooted || r.Type() == group.RecordRoot
 	}
 	if rooted {
@@ -170,10 +175,26 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	if ca == nil {
 		return group.Record{}, errNotAdmin
 	}
+	if s.frozen(id) {
+		return group.Record{}, errFrozen
+	}
 	body.Group = group.Tag(id.GroupCA.Cert)
 	body.TimeMS = s.cfg.now().UnixMilli()
 	body.By = id.ID
 	return group.SignRecord(body, ca.Key, chain...)
+}
+
+var errFrozen = errors.New("another admin froze this computer's admin key: it changes nothing until the group's root or an admin phone unfreezes it")
+
+// frozen reports whether the records freeze this device's admin CA.
+func (s *Service) frozen(id *group.Identity) bool {
+	ca, chain := id.Signer()
+	if ca == nil || len(chain) == 0 {
+		return false
+	}
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	return s.records != nil && s.records.Frozen(group.KeyHashOf(ca.Cert))
 }
 
 var errNotAdmin = errors.New("only an admin can change the devices list: the group's root, an admin it made (cbb admin), or an admin phone")
@@ -334,13 +355,18 @@ func (s *Service) devices() ([]control.Device, error) {
 	root := s.records.RootDevice()
 	s.recMu.Unlock()
 
+	frozen := map[group.DeviceID]bool{}
+	for _, d := range list {
+		frozen[d.ID] = d.Frozen
+	}
+	selfFrozen := s.frozen(id)
 	// In a legacy group every Linux and Windows member holds the CA keys.
 	legacy := id.Legacy()
 	now := s.cfg.now()
 	var out []control.Device
 	shown := map[group.DeviceID]bool{}
 	entry := func(dev group.DeviceID, name, role, os string, admin, listed bool) {
-		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root}
+		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root, Frozen: frozen[dev]}
 		d.Admin = admin || (legacy && keyHolder(role, os))
 		if _, ok := peers[dev]; ok || d.Self {
 			d.Online, d.LastSeenMS = true, now.UnixMilli()
@@ -348,7 +374,7 @@ func (s *Service) devices() ([]control.Device, error) {
 			d.LastSeenMS = t.UnixMilli()
 		}
 		if d.Self {
-			d.Admin = id.IsAdmin()
+			d.Admin = id.IsAdmin() && !selfFrozen
 		}
 		out = append(out, d)
 		shown[dev] = true
@@ -399,6 +425,8 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	case d.ID == string(root):
 		return "", fmt.Errorf("this computer holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name)
+	case admin != nil && !id.IsRoot():
+		return "", fmt.Errorf("%s is an admin; only the group's root or an admin phone removes an admin, since this computer's admin key sits in a file", d.Name)
 	case replace && !id.ServesPhone():
 		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}
@@ -411,8 +439,15 @@ func (s *Service) revoke(target string) (string, error) {
 	if admin != nil {
 		body.Keys = append(body.Keys, *admin)
 		s.recMu.Lock()
+		// Its own removals stop counting with it, so this record names
+		// them again.
+		for _, k := range s.records.RevokedBy(*admin) {
+			if !slices.Contains(body.Keys, k) {
+				body.Keys = append(body.Keys, k)
+			}
+		}
 		for _, k := range s.records.Admitted(*admin) {
-			if k != key {
+			if k != key && !slices.Contains(body.Keys, k) {
 				body.Keep = append(body.Keep, k)
 			}
 		}
@@ -452,6 +487,66 @@ func (s *Service) revoke(target string) (string, error) {
 		s.logf("cbb: replaced the group's iPhone CA; the iPhones that use the shortcut must pair again (cbb pair -phone)")
 	}
 	s.logf("cbb: removed %s (%s) from the group", d.Name, d.ID)
+	return d.Name, nil
+}
+
+// freeze freezes (on true) or unfreezes the admin computer that target
+// names (docs/design.md, "Who may remove an admin"). Any admin freezes
+// another admin computer: from then on nothing the frozen admin signs
+// counts, beyond the records it signed before, and its connections are
+// refused. Only the root unfreezes it here; the root and the admin phones
+// remove it with cbb revoke or Remove.
+func (s *Service) freeze(target string, on bool) (string, error) {
+	d, err := s.findDevice(target)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	admin := s.adminKeyOf(group.DeviceID(d.ID))
+	s.recMu.Lock()
+	root := s.records.RootDevice()
+	frozen := admin != nil && s.records.Frozen(*admin)
+	s.recMu.Unlock()
+	switch {
+	case !id.IsAdmin():
+		return "", errNotAdmin
+	case d.Self:
+		return "", errors.New("a device cannot freeze or unfreeze itself")
+	case id.Legacy():
+		return "", errors.New("a legacy group has no admins to freeze")
+	case d.ID == string(root):
+		return "", fmt.Errorf("%s holds the group's root, which nobody freezes", d.Name)
+	case admin == nil || d.Role == group.RolePhone:
+		return "", fmt.Errorf("%s is no admin computer; only those are frozen, and an ordinary device is removed with cbb revoke", d.Name)
+	case on && frozen:
+		return "", fmt.Errorf("%s is frozen already", d.Name)
+	case !on && !frozen:
+		return "", fmt.Errorf("%s is not frozen", d.Name)
+	case !on && !id.IsRoot():
+		return "", errors.New("only the group's root or an admin phone unfreezes an admin, since this computer's admin key sits in a file")
+	}
+	body := group.RecordBody{Type: group.RecordFreeze, Keys: []group.KeyHash{*admin}}
+	s.recMu.Lock()
+	if on {
+		// What it signed until now keeps counting, so the devices it
+		// admitted stay; nothing it signs later does.
+		body.Records = s.records.SignedBy(*admin)
+	} else {
+		body.Type, body.Keys, body.Records = group.RecordThaw, nil, s.records.FreezesOf(*admin)
+	}
+	s.recMu.Unlock()
+	r, err := s.signRecord(id, body)
+	if err != nil {
+		return "", err
+	}
+	s.publish(nd, r)
+	if on {
+		s.logf("cbb: froze the admin %s (%s)", d.Name, d.ID)
+	} else {
+		s.logf("cbb: unfroze the admin %s (%s)", d.Name, d.ID)
+	}
 	return d.Name, nil
 }
 

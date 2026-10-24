@@ -244,12 +244,6 @@ func TestShortcutFile(t *testing.T) {
 			t.Errorf("shortcut/%s.plist is stale; run go run ./tools/shortcut", name)
 		}
 	}
-	add := UnsignedAdmitShortcut()
-	for _, want := range []string{"https://clipboardbridge.local:8764/admit", "is.workflow.actions.scanbarcode", tokenPath} {
-		if !bytes.Contains(add, []byte(want)) {
-			t.Errorf("the add shortcut lacks %q", want)
-		}
-	}
 	got := UnsignedShortcut()
 	d := xml.NewDecoder(bytes.NewReader(got))
 	for {

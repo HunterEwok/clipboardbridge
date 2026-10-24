@@ -109,6 +109,59 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - On Linux the service's memory, which holds secrets, never goes to swap (`MemorySwapMax=0`).
 - When a device away from home gets no answer through the tunnel, `cbb global` says that the hub
   or the forwarder on the way may be down, not only the hub.
+- Security: on Android, a text from Share or the selection menu is sent only after the user
+  allows it, with "Allow" or "Always allow"; any app can hand over a text, so without a
+  question an app could send whatever it liked to the computers. Settings turns the question
+  back on.
+
+- Security: on a Mac with Homebrew, the service, which holds the group's keys, no longer runs
+  the binary under Homebrew's prefix, which the user and their programs may replace.
+  `install.sh --in-place` copies it to `/Library/Application Support/clipboardbridge/bin`,
+  where only root can change it; the agent and `cbb` in PATH still run Homebrew's. Running
+  `install.sh` again after `brew upgrade` refreshes the copy, as before.
+
+- Security: any admin, a computer included, can freeze another admin computer, as one that
+  was stolen: `cbb freeze <name>`. From then on nothing the frozen admin signs counts beyond
+  what it did before, its connections are refused, and it is no admin until the root or an
+  admin phone unfreezes it ("Unfreeze" in Devices, `cbb unfreeze` on a root computer) or
+  removes it. Nobody freezes the root or an admin phone. Every member (Go, the phone apps,
+  the lite member) follows the new `freeze` and `thaw` records; docs/design.md, "Who may
+  remove an admin", says why freezing was chosen.
+
+- Security: an admin computer, whose admin key sits in a file, can remove ordinary devices
+  but no longer the root or another admin, and cannot hand a phone's group to a new root;
+  only the root and admin phones can. `cbb takeover` from a lost root computer still works,
+  but counts only while the old root's own records leave that admin standing: a root that
+  is still in use undoes it by removing the admin, and a frozen admin does not take over. Nothing an admin signs after it was removed counts,
+  and each admin signs at most 1024 records. Every member (Go, the phone apps, the lite
+  member) enforces this from the records alone (docs/protocol.md, section 10).
+
+- Security: the iPhone shortcut's token only syncs. `POST /admit` and the shortcut
+  "clipboardbridge: add a computer" are gone, so a copied token can no longer add a computer
+  (which on Linux got the group's keys); computers join through the phone apps or
+  `cbb pair`. `cbb pair -phone -new-token` revokes every shortcut's token and pairs the
+  iPhone with a new one.
+
+- Security: only the group's root or an admin can be the hub for sync away from home. A
+  member, phone or computer, ignores tunnel offers from any other device, and once it keeps
+  a hub's offer it ignores other hubs until sync away from home is turned off and on again,
+  so a member cannot point the others' tunnels at itself.
+
+- Security: the lite member makes its control socket in a private directory and narrows it there
+  before moving it into place, so nobody can connect in the moment before its mode is set,
+  whatever the umask. Dependabot also watches the lite member's crates and the Android
+  app's Gradle dependencies.
+
+- Security: handshakes to unknown groups cost the forwarder at most a fixed number of group
+  checks a second (`Limits.ScanRate`), whatever their source addresses, so a flood of forged
+  handshakes cannot hold up the other groups.
+
+- Security: a member's certificate is checked against the issuer that actually signed it.
+  Before, the revocation check and the admin check looked at the second certificate a peer
+  presented, so extra certificates in a chain could get a removed admin's devices back in
+  and make an ordinary member count as an admin. Fixed in Go, the phone kits and the lite
+  member; the member protocol now passes on only the chain the handshake verified.
+
 - A data race in the tunnel's WireGuard timers when a peer stops, as when a hub closes: a
   timer that fired at that moment cleared its state outside its lock. clipboardbridge now
   builds with a copy of amneziawg-go that clears it under the lock

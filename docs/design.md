@@ -50,7 +50,7 @@ apps" below).
   TLS (Macs since D-46); phones only dial. The first bytes of a connection pick what it gets (docs/protocol.md, section 3):
   - members and the phone app, with the member ALPN protocol and mutual TLS;
   - pairing, with its own ALPN protocol;
-  - the shortcut's HTTPS (`/sync`, `/admit` and the pairing page `/pair`), with no client
+  - the shortcut's HTTPS (`/sync` and the pairing page `/pair`), with no client
     certificate, for any other ALPN protocol;
   - plain HTTP that serves only the iPhone CA's configuration profile, and only while a
     phone pairing window is open. The profile is public, and the user checks its
@@ -61,17 +61,14 @@ apps" below).
 
 ## Group and pairing
 
-- **The phone is the main device.** The usual way to build a group starts from the phone:
-  `cbb new` on the first Linux machine creates the group and `cbb pair -phone` pairs the
-  phone; every further computer runs `cbb pair`, which shows a QR code with a fresh
-  code, and the phone's second shortcut ("clipboardbridge: add a computer") scans it and posts
-  the code to `/admit` on `clipboardbridge.local` with its token. The member there opens a
-  pairing window with exactly that code, and the computer, which browses for a window for
-  up to five minutes, joins through the same CPace exchange as below. The keys of the group
-  stay on the Linux members, which must be on; the phone's token is the authority to add a
-  computer, so a stolen token lets its holder add a computer (and a Linux one gets the CA
-  keys). Each admission is logged. Admitting from a Linux member with `cbb pair` and
-  `cbb pair -code` stays for groups without a phone.
+- **The shortcut only syncs.** With the shortcut (no app), `cbb new` on the first Linux
+  machine creates the group and `cbb pair -phone` pairs the phone; every further computer
+  joins with `cbb pair` on the root or an admin, which shows a six-digit code to type on the
+  new computer. The shortcut's token gives only `/sync`: a copied or stolen token can sync
+  the clipboard until it is revoked, but cannot add a device. `cbb pair -phone -new-token`
+  revokes every shortcut's token and pairs the iPhone again; `cbb revoke` removes one. With
+  the phone app, the phone admits computers by their QR code (section 6 of the protocol,
+  "The joiner listens").
 - **Creating the group**: the first `cbb pair` or `cbb pair -phone` on a Linux
   machine that is in no group creates it: the group CA and the iPhone CA. A Mac cannot start
   a group.
@@ -594,7 +591,7 @@ and cover traffic cannot hide a large transfer.
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
 | Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
-| An admin orders a paste on a member (planned, 0.5)            | only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is removed like any device (see "Remote paste") |
+| An admin orders a paste on a member (planned, 0.5)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -802,8 +799,14 @@ user can run `cbb forward` on a server of their own.
   the network and can at most stop forwarding.
 - It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
   clients, and the timing and sizes of packets: any forwarder has to know which hub a client's
-  packets go to. It does not learn the texts, the devices' names, or which address is which
-  device. It writes nothing to disk, logs included; what it knows lives in memory while the
+  packets go to. From the registration it also learns the hub's member certificate (its
+  device ID, its validity and its admin CA if it has one), the group's root certificates,
+  the group's obfuscation settings and, with VLESS, the group's VLESS user ID; and from the
+  number of clients that send packets, roughly how many devices are away from home. It does
+  not learn the texts, the devices' names, or which client address is which device. This
+  metadata is accepted by design (owner decision, 2026-10-24): it reveals that a group
+  exists and how busy it is, never what it syncs, and hiding it would need certificate-less
+  registration or a chain of relays. It writes nothing to disk, logs included; what it knows lives in memory while the
   connections last. The clients' addresses cannot be hidden from it, since they are where its
   answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
   complexity that the project does not take on.
@@ -1264,7 +1267,8 @@ in a phone group, without a new group:
 
 - a member that is no admin: its member key is revoked, and that is all;
 - an admin: its member key and its admin key are revoked, and the devices it admitted are
-  kept. In a group a computer created, it also held the iPhone CA key, so the admin that
+  kept. Only the root or an admin phone removes an admin; another admin computer freezes it
+  ("Who may remove an admin" below). In a group a computer created, it also held the iPhone CA key, so the admin that
   removes it replaces the iPhone CA as well: a new key, new `clipboardbridge.local`
   certificates for the admins, and every token revoked; iPhones that use the shortcut
   delete the old profile and pair again. The group's root stays;
@@ -1321,6 +1325,62 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
 5. Taking over from a lost root computer (`cbb takeover`).
 6. `cbb upgrade` for groups made before.
 
+## Who may remove an admin
+
+Decided on 2026-10-24 (D-60). An admin computer keeps its admin key in a file, so it is the
+admin a thief gets most easily: with the laptop, or with a copy of the file. The root and
+the admin phones keep theirs in the Secure Enclave or the Keystore, behind Face ID or the
+fingerprint. So the question is what an admin computer may do to another admin.
+
+**The rule.** The root and the admin phones remove any admin (`cbb revoke` on the root, Remove
+in the apps). An admin computer removes ordinary devices only; it never removes the root or
+another admin, and hands the group over only from a lost root computer (below). Instead, **any admin freezes another admin
+computer** (`cbb freeze <name>`): from then on the frozen admin is no admin, nothing it signs
+counts beyond the records it signed before, its connections are refused, and it cannot
+paste. The root or an admin phone then decides: Unfreeze in the apps (`cbb unfreeze` on a
+root computer) makes it an admin again, Remove takes it out for good. Nobody freezes the
+root or an admin phone. How the records say it is in protocol section 10, rule 4.
+
+**Taking over from a lost root computer.** In a group whose root is a computer, the root key
+sits in a file just as an admin computer's key does, so a stolen admin computer is no
+weaker than the root; and if the root is lost and only admin computers are left, the group
+has no other way on. So there, and only there, an admin computer may hand the group over
+(`cbb takeover`), and the records limit it: the takeover counts only while the old root's
+own records leave that admin standing. If the old root is still there, it removes the
+admin and the takeover stops counting, so a thief cannot take a group from a root that is
+still in use. A frozen admin computer does not take over until the old root thaws it. In a phone's group an admin computer never takes over.
+
+**Why freezing, and not one of the two simpler rules.**
+
+- *Only the root and the admin phones act, and admin computers do nothing to admins.* This
+  keeps a thief with an admin computer from touching the root or the other admins, but it
+  leaves the thief an admin until the owner reaches the root or an admin phone: a window in
+  which it admits devices of its own, removes ordinary devices and pastes where remote
+  paste is on. The root is often a computer at home, and many groups have no second admin
+  phone, so that window can be long.
+- *Any admin removes any other admin.* This closes the window from any admin device, but it
+  hands the thief the same power first: a stolen admin computer removes every other admin
+  before the owner notices, the group keeps no admin but the thief and the root, and if the
+  root is a computer the thief may be the last admin standing. A removal cannot be undone,
+  so the group is made anew.
+- *Freezing* takes the good half of each. Any admin, a computer included, stops a stolen admin
+  at once, as the owner asked ("revoke everything of a stolen admin quickly on any admin
+  device"). The worst a thief does with it is freeze honest admin computers, and a freeze is
+  undone with one tap on the root or an admin phone, which loses nothing: what the frozen
+  admin did before stays. The irreversible step, removal, stays with the keys that are
+  hardest to steal.
+
+**What it costs.** A new record type in every implementation (Go, the lite member, both phone
+kits), and a short time in which a thief can keep honest admin computers frozen until the
+owner reaches the root or an admin phone. Two admins that freeze each other both stay
+frozen: a freeze counts whoever signed it, so the rule does not depend on which freeze came
+first, which no member can tell. A freeze lists the frozen admin's records that stay, so
+records of that admin that reached nobody before the freeze are lost with it; they were
+signed after the theft at the earliest, or can be signed again after an unfreeze.
+
+**Rejected.** A time limit after which a freeze lapses (a thief would wait it out), and votes
+among admins (a home group has one or two admins, so a vote decides nothing).
+
 ## Sync modes (planned for 0.5)
 
 Today every copy on any member goes to the clipboard of every other member within a second,
@@ -1357,13 +1417,28 @@ does not, the screen's own session.
 ### Who may paste where
 
 A device in a group trusts its admins: they already admit it, renew its certificate and
-remove it. So **every admin may paste on every member** that can take it, with no consent
-on the target and no setting to turn it on (D-54). The admins are the root and admin
-phones, the admin computers of a phone group, and in a group a computer created the root
-computer and the admins it made. Members that are not admins never send. The only things
-the target's user sets up are the permissions the operating system demands once, at
-install time (below); without them the system refuses the input, and the sender is told
-so.
+remove it. Still, typing into a device is more than syncing a clipboard, so **remote paste
+is off on every device until its own user turns it on there** (`cbb paste-receive on`, a
+switch in the apps; D-59). Once it is on, every admin may paste on it with no further
+consent. The admins are the root and admin phones, the admin computers of a phone group,
+and in a group a computer created the root computer and the admins it made. Members that
+are not admins never send. Besides the switch, the target's user sets up only the
+permissions the operating system demands once (below); without them the system refuses the
+input, and the sender is told so.
+
+- **Enter and root consoles are off by default** even when remote paste is on: the `enter`
+  flag is refused, and so are the Linux text console helper and a tmux session of root,
+  until the device's user turns each on there (`cbb paste-receive on -enter`,
+  `-console`). So a paste can at most put text in front of the user, not run it.
+- **Any admin turns it off on any member** with a signed command, like the sync mode
+  (D-55), when an admin device is lost: it takes effect at once, needs no consent, and only
+  the device's own user turns it on again.
+- **A stolen admin is cut off quickly.** Any other admin, a computer included, freezes it
+  with one action (`cbb freeze`, "Who may remove an admin" above): from then on nothing it
+  signs counts on any member, pastes included. The root or an admin phone then removes it
+  (`cbb revoke`, Devices in the apps), which revokes its member and admin keys together.
+  Any admin can also turn remote paste off on every member at once (`cbb paste-receive off
+  --all`).
 
 ### How the text gets in
 
@@ -1425,10 +1500,11 @@ such as the hub, cannot forge or change it.
 - Away from home only inside the group's tunnel, under the rules of "Sync away from home".
 
 **A stolen admin device.** A phone cannot paste without its owner's face or finger. An
-admin computer keeps its admin key in a file, so a thief with it can type commands into
-every member that takes input, root consoles included, until another admin removes it;
-removal reaches every member through the records, and from then on its commands fail the
-signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
+admin computer keeps its admin key in a file, so a thief with it can paste text on the
+members whose users turned remote paste on, but presses Enter and reaches root consoles
+only where those were turned on too, and only until another admin freezes it or turns
+remote paste off, or the root or an admin phone removes it; removal reaches every member through the
+records, and from then on its commands fail the signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
 narrow this to a thief who also has the computer running.
 
 ## Open questions
@@ -1523,8 +1599,10 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-51 | In a group a computer creates, only the creating computer (the root) and the members it makes admins hold CA keys, through the admin CAs of D-33 under a root with path length 1; any device but the root is removed by a record without a new group, and a lost root is taken over by an admin. |
 | D-52 | Groups made before D-51 are upgraded in place with a `root` record signed by the old group CA key and a revocation of that key; a leftover copy of the old key can break such a group but never take it over. |
 | D-53 | `clipboardbridge.local` is held only by a member with the iPhone CA key, machines that do not sleep first and laptops as a fallback, guessed from a battery and set by a setting. |
-| D-54 | Every admin may paste a text on any member, the target pressing nothing and consenting to nothing, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
+| D-54 | Every admin may paste a text on any member that turned remote paste on (D-59), the target pressing nothing per paste, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
 | D-55 | Each device has a sync mode, own (the default), shared, receive only or send only, which decides only what moves between its clipboard and the group; it stays connected in every mode, changes its own mode, and any admin changes the mode of any member with a signed command. |
 | D-56 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
 | D-57 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
 | D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
+| D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
+| D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |

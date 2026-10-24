@@ -179,6 +179,9 @@ func TestRootTieBreak(t *testing.T) {
 	g := pg.root.Cert
 	x, y := newRoot(t), newRoot(t)
 	s := NewRecords(g)
+	// Only admin phones hand the group over; the root recorded both.
+	mustAdd(t, s, adminRecord(t, g, pg.root, nil, member(t, pg.a), "phone A", KeyHashOf(pg.a.Cert)))
+	mustAdd(t, s, adminRecord(t, g, pg.root, nil, member(t, pg.b), "phone B", KeyHashOf(pg.b.Cert)))
 	mustAdd(t, s, rootRecord(t, g, pg.a, []*x509.Certificate{pg.a.Cert}, x.Cert))
 	mustAdd(t, s, rootRecord(t, g, pg.b, []*x509.Certificate{pg.b.Cert}, y.Cert))
 	want := x.Cert

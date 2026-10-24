@@ -29,8 +29,7 @@ var shortcutFiles embed.FS
 
 // The shortcuts, by the base name of their files.
 const (
-	SyncShortcut  = "clipboardbridge"     // the button: sync, and pair on the first run
-	AdmitShortcut = "clipboardbridge-add" // add a computer by scanning its QR code
+	SyncShortcut = "clipboardbridge" // the button: sync, and pair on the first run
 )
 
 // Shortcut returns a signed shortcut, or nil in a build without it.
@@ -44,7 +43,7 @@ func Shortcut(name string) []byte {
 
 // UnsignedShortcuts returns the shortcuts as XML property lists, by name.
 func UnsignedShortcuts() map[string][]byte {
-	return map[string][]byte{SyncShortcut: UnsignedShortcut(), AdmitShortcut: UnsignedAdmitShortcut()}
+	return map[string][]byte{SyncShortcut: UnsignedShortcut()}
 }
 
 const tokenPath = "clipboardbridge/token.txt"
@@ -109,45 +108,6 @@ func UnsignedShortcut() []byte {
 	add("is.workflow.actions.getvalueforkey", valueFor(syncMsg, "message", synced))
 	add(notify(syncMsg))
 	add(ifEnd("paired"))
-	return workflow(acts)
-}
-
-// UnsignedAdmitShortcut returns the shortcut that adds a computer: it scans
-// the QR code that cbb pair shows and posts it to /admit with the
-// token, so the member that holds clipboardbridge.local opens a window for it.
-func UnsignedAdmitShortcut() []byte {
-	var acts []any
-	add := func(id string, params map[string]any) { acts = append(acts, action(id, params)) }
-
-	file := output("add-file", "File")
-	add("is.workflow.actions.documentpicker.open", map[string]any{
-		"UUID": file.uuid, "WFGetFilePath": tokenPath, "WFFileErrorIfNotFound": false, "WFShowFilePicker": false,
-	})
-	add(ifStart("add-paired", file, 101, "")) // does not have any value
-	add("is.workflow.actions.notification", map[string]any{
-		"UUID": uuid("add-unpaired-note"), "WFNotificationActionTitle": "clipboardbridge",
-		"WFNotificationActionBody": text("Pair this iPhone first: run cbb pair -phone on a computer, then the clipboardbridge shortcut.", nil),
-	})
-	add(ifElse("add-paired"))
-	scanned := output("add-scan", "QR/Barcode")
-	add("is.workflow.actions.scanbarcode", map[string]any{"UUID": scanned.uuid})
-	admitted := output("add-admit", "Contents of URL")
-	add("is.workflow.actions.downloadurl", map[string]any{
-		"UUID": admitted.uuid, "WFURL": "https://clipboardbridge.local:8764/admit", "WFHTTPMethod": "POST",
-		"ShowHeaders": true, "WFHTTPHeaders": fields(textField("Authorization", "Bearer ", file)),
-		"WFHTTPBodyType": "JSON", "WFJSONValues": fields(numberField("v", "1"), textField("code", "", scanned)),
-	})
-	dir := output("add-direction", "Dictionary Value")
-	add("is.workflow.actions.getvalueforkey", valueFor(dir, "direction", admitted))
-	add(ifStart("add-unpaired", dir, 4, "unpaired"))
-	add("is.workflow.actions.file.delete", map[string]any{
-		"UUID": uuid("add-forget"), "WFInput": attachment(file), "WFDeleteFileConfirmDeletion": false,
-	})
-	add(ifEnd("add-unpaired"))
-	msg := output("add-message", "Dictionary Value")
-	add("is.workflow.actions.getvalueforkey", valueFor(msg, "message", admitted))
-	add(notify(msg))
-	add(ifEnd("add-paired"))
 	return workflow(acts)
 }
 

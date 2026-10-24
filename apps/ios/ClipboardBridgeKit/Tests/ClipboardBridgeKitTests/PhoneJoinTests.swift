@@ -85,6 +85,10 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertEqual(admin.computers.map(\.device), [pc.device])
         for rec in admin.records.records { root.records.add(rec, groupCA: root.groupCA) }
         XCTAssertTrue(root.devices.contains { $0.id == pc.device }, "a record signed through the admin CA counts")
+        // The root and the admin may be the hub away from home; a plain member may not.
+        XCTAssertTrue(root.records.mayHost(root.device))
+        XCTAssertTrue(root.records.mayHost(second.device))
+        XCTAssertFalse(root.records.mayHost(pc.device))
 
         // Renewals: an admin renews what it issued, the root renews any.
         let later = t0.addingTimeInterval(500 * 24 * 3600)

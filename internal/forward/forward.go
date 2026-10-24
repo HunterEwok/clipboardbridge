@@ -38,13 +38,18 @@ import (
 // Limits bound what one group, one source and all of them may take, so
 // that no group can slow down another.
 type Limits struct {
-	Groups      int     // registered hubs
-	Clients     int     // client addresses of one group
-	Pending     int     // handshakes of one group waiting for the hub's answer
-	PacketRate  float64 // packets per second of one group, both ways
-	ByteRate    float64 // bytes per second of one group, both ways
-	SourceRate  float64 // handshakes per second from one address
-	Connections int     // registrations being set up at a time
+	Groups     int     // registered hubs
+	Clients    int     // client addresses of one group
+	Pending    int     // handshakes of one group waiting for the hub's answer
+	PacketRate float64 // packets per second of one group, both ways
+	ByteRate   float64 // bytes per second of one group, both ways
+	SourceRate float64 // handshakes per second from one address
+	// ScanRate bounds the groups that handshakes to a new group are
+	// checked against, per second, all sources together: each such
+	// handshake costs one check per group, under the forwarder's lock, and
+	// source addresses can be forged.
+	ScanRate    float64
+	Connections int // registrations being set up at a time
 }
 
 // DefaultLimits are generous for clipboard texts and small enough that a
@@ -56,6 +61,7 @@ var DefaultLimits = Limits{
 	PacketRate:  1000,
 	ByteRate:    2 << 20,
 	SourceRate:  10,
+	ScanRate:    500_000,
 	Connections: 256,
 }
 
@@ -86,6 +92,7 @@ type Forwarder struct {
 	byAddr   map[netip.AddrPort]map[*reg]int // client addresses and the groups they have handshakes and sessions with
 	byInit   map[int][]*reg                  // obfuscated groups by the size of their handshake initiation
 	sources  map[netip.Addr]*bucket
+	scans    *bucket  // ScanRate
 	setting  int      // registrations being set up
 	mask     [32]byte // the key of the hellos' mask, given to every hub
 	vless    *vless.Server
@@ -218,6 +225,11 @@ func Listen(cfg Config) (*Forwarder, error) {
 		sources: map[netip.Addr]*bucket{},
 		done:    make(chan struct{}),
 	}
+	scanRate := limits.ScanRate
+	if scanRate <= 0 {
+		scanRate = DefaultLimits.ScanRate
+	}
+	f.scans = newBucket(scanRate, time.Now())
 	if _, err := rand.Read(f.mask[:]); err != nil {
 		udp.Close()
 		tcp.Close()
@@ -394,7 +406,7 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, m []byte, n int, now time.Time
 func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initiationSize]byte, now time.Time) (netip.AddrPort, bool) {
 	switch messageType(p) {
 	case msgInitiation:
-		if !f.sourceLocked(from, now) {
+		if !f.sourceLocked(from, now) || !f.scans.take(float64(len(f.regs)), now) {
 			return netip.AddrPort{}, false
 		}
 		if r := f.addressedLocked(p); r != nil {
@@ -425,7 +437,7 @@ func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initia
 		}
 	}
 	regs := f.byInit[len(p)]
-	if len(regs) == 0 || !f.sourceLocked(from, now) {
+	if len(regs) == 0 || !f.sourceLocked(from, now) || !f.scans.take(float64(len(regs)), now) {
 		return netip.AddrPort{}, false
 	}
 	for _, r := range regs {
