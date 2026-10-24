@@ -1520,7 +1520,7 @@ func TestTakeover(t *testing.T) {
 		return err == nil && id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert)
 	})
 
-	pi = restartService(t, &h, pi)
+	restartService(t, &h, pi)
 	time.Sleep(500 * time.Millisecond)
 	for _, s := range []*testService{a, b, c} {
 		for _, p := range s.status(t).Peers {
