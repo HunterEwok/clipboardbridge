@@ -13,7 +13,7 @@ tool (
 )
 
 require (
-	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+	github.com/BurntSushi/toml v1.6.0
 	github.com/amnezia-vpn/amneziawg-go v0.2.20-0.20260724121833-457d920a1a7d
 	github.com/jezek/xgb v1.3.1
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
