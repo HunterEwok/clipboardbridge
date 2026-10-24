@@ -118,9 +118,11 @@ func (s *Service) adoptRootsLocked() error {
 	if len(roots) <= len(s.id.Roots) {
 		return nil
 	}
-	next := *s.id
-	next.Roots = roots
-	if err := s.setIdentityLocked(&next); err != nil {
+	next, err := s.id.WithRoots(roots)
+	if err != nil {
+		return err
+	}
+	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
 	s.logf("cbb: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
@@ -244,14 +246,14 @@ func roleOf(r node.Role) string {
 
 // ensureListed records this member, and the connected peers, in the devices
 // list when they are not in it yet, as in a group made before the list
-// existed. Only a member that holds the group CA key does.
+// existed. Only a member that holds the root's key does.
 func (s *Service) ensureListed() {
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
-	if id == nil || nd == nil || id.GroupCA.Key == nil {
+	if id == nil || nd == nil || id.RootCA() == nil {
 		return
 	}
 	s.recMu.Lock()
@@ -396,7 +398,7 @@ func (s *Service) revoke(target string) (string, error) {
 	case d.ID == string(root) && d.Role == group.RolePhone:
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	case d.ID == string(root):
-		return "", errors.New("this computer holds the group's root; it cannot be removed until another admin takes the group over")
+		return "", fmt.Errorf("this computer holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name)
 	case replace && !id.ServesPhone():
 		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}
