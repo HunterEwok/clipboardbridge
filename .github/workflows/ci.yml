@@ -689,7 +689,8 @@ jobs:
       - name: Espressif's QEMU and espflash
         working-directory: ${{ runner.temp }}
         run: |
-          sudo apt-get install -y -q libslirp0
+          sudo apt-get update -q
+          sudo apt-get install -y -q libslirp0 libsdl2-2.0-0 libpixman-1-0
           curl -fsSL --retry 3 -o qemu.tar.xz "https://github.com/espressif/qemu/releases/download/$ESP_QEMU/qemu-xtensa-softmmu-${ESP_QEMU//-/_}-x86_64-linux-gnu.tar.xz"
           echo "$ESP_QEMU_SHA256  qemu.tar.xz" | sha256sum -c -
           tar xf qemu.tar.xz
