@@ -166,8 +166,14 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if args[0] == "on" && confined() {
 			a = waitServers(c, a)
 		}
-		if err := applyGrant(stdout, grantFor(a)); err != nil {
+		g := grantFor(a)
+		if err := applyGrant(stdout, g); err != nil {
 			return fail(stderr, fmt.Errorf("sync away from home changed, but the service's network did not: %w", err))
+		}
+		// The service cannot change the system's limit itself, so a client
+		// that has not heard its hub yet needs another cbb global allow.
+		if confined() && g.on && g.hubPort == 0 && len(g.addrs) == 0 {
+			fmt.Fprintf(stdout, "The group's servers are not known yet, so this computer's service still reaches the home network only. Once cbb status shows the hub, %s.\n", allowHint)
 		}
 	}
 	if m.Status != nil {
@@ -232,9 +238,11 @@ func cmdGlobalAllow(stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if m.Status == nil || m.Status.Group == "" {
-		return fail(stderr, fmt.Errorf("this device is in no group"))
+	if m.Status == nil {
+		return fail(stderr, fmt.Errorf("the service did not say what it reaches"))
 	}
+	// In no group, or with sync away from home off, this takes back what a
+	// limit allowed before; the installers run it after an update for that.
 	g := grantFor(m.Status.Away)
 	if !confined() {
 		fmt.Fprintln(stdout, "This computer has no limit outside the program; the service itself reaches only "+g.String()+".")
@@ -282,6 +290,11 @@ func cmdGlobalStatus(stdout, stderr io.Writer) int {
 func writeAway(w io.Writer, a *control.Away) {
 	if a == nil {
 		fmt.Fprintln(w, "Sync away from home: off (cbb global on turns it on).")
+		if confined() {
+			if have := granted(grant{}); have.on {
+				fmt.Fprintf(w, "This computer still lets the service reach %s: %s.\n", have, allowHint)
+			}
+		}
 		return
 	}
 	if confined() {

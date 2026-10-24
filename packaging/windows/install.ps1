@@ -343,7 +343,6 @@ $step = 'keeping the service on the home network'
 # every run writes the home-only rule again for the current setting.
 $granted = Get-ItemProperty -Path $serviceKey -Name AwayAllow -ErrorAction SilentlyContinue
 $rule = Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue
-$regrant = $false
 if (-not $rule -or -not $granted) {
 	$middle = if ($cgnat) { @('11.0.0.0-100.63.255.255', '100.128.0.0-126.255.255.255') } else { @('11.0.0.0-126.255.255.255') }
 	$outside = @('0.0.0.0-9.255.255.255') + $middle + @(
@@ -356,11 +355,10 @@ if (-not $rule -or -not $granted) {
 	New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
 		-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any `
 		-Description 'The clipboardbridge service reaches only the home network and its group''s servers; cbb global changes this rule.' | Out-Null
-} elseif ($cgnat -ne (([string]$granted.AwayAllow -split ' ') -contains 'cgnat')) {
-	# cbb global's rule was written for the other setting: cbb global
-	# allow writes it again once the service answers.
-	$regrant = $true
 }
+# Whatever the rule allowed before (another -HomeCgnat, an earlier version
+# that lifted it for cbb global on), cbb global allow writes it for what the
+# service asks for now, once the service answers.
 
 $step = 'starting the service'
 Start-Service -Name $name
@@ -419,12 +417,10 @@ for ($i = 0; $i -lt 20; $i++) {
 if (-not $ok) {
 	throw "the service does not answer; its log is $(Join-Path $dataDir 'logs\service.log')"
 }
-if ($regrant) {
-	$step = 'writing the outbound rule for -HomeCgnat'
-	& $cbb global allow
-	if ($LASTEXITCODE -ne 0) {
-		throw "cbb global allow exited with $LASTEXITCODE"
-	}
+$step = 'writing the outbound rule for what the service reaches now'
+& $cbb global allow
+if ($LASTEXITCODE -ne 0) {
+	throw "cbb global allow exited with $LASTEXITCODE"
 }
 
 Write-Host "clipboardbridge $v is running on TCP port $Port; $user may use it."

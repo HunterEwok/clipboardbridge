@@ -117,7 +117,22 @@ func TestAwayNet(t *testing.T) {
 	if _, err := os.Stat(awayDropIn); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the drop-in is still there: %v", err)
 	}
-	if len(*calls) != 8 {
+	// An earlier version's drop-in let the service reach every address:
+	// it is no hub's, so it is told apart, and replaced.
+	if err := os.WriteFile(awayDropIn, []byte("[Service]\nIPAddressAllow=any\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := linuxLimit.granted()
+	if !stale.anywhere || stale.equal(grant{on: true}) || stale.equal(client) || !strings.Contains(stale.String(), "every address") {
+		t.Fatalf("an earlier version's drop-in read back as %+v (%s)", stale, stale)
+	}
+	if changed, _, err := setAwayNet(client); err != nil || !changed || !linuxLimit.granted().equal(client) {
+		t.Fatalf("replacing it: changed %v, %v", changed, err)
+	}
+	if _, _, err := setAwayNet(grant{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 12 {
 		t.Fatalf("systemctl %q", *calls)
 	}
 }
