@@ -2,8 +2,8 @@
 // Copyright (C) 2026 HunterEwok
 
 // .cbb: the clipboardbridge dot command for the ZX Spectrum Next. It talks
-// to cbb-lite on the Next's own Raspberry Pi over the UART between them, by
-// typing `cbb-lite next ...` at NextPi's shell (docs/roadmap.md, item 14;
+// to the lite member on the Next's own Raspberry Pi over the UART between
+// them, by typing `cbb next ...` at NextPi's shell (docs/roadmap.md, item 14;
 // the frames are in lite/README.md, "ZX Spectrum Next").
 
 #include <arch/zxn.h>
@@ -17,11 +17,11 @@
 #include "link.h"
 
 #define VERSION "0.1.0"
-// cbb-lite on the Pi; the NextPi set-up puts it on the shell's PATH.
-#define CBB_LITE "cbb-lite"
+// The lite member on the Pi; the NextPi set-up puts it on the shell's PATH.
+#define CBB_LITE "cbb"
 // The longest text pasted or copied.
 #define MAX_TEXT 8192
-// How long cbb-lite may take to answer, in seconds; join waits for the phone.
+// How long the lite member may take to answer, in seconds; join waits for the phone.
 #define ANSWER_SECONDS 20
 #define JOIN_SECONDS 330
 
@@ -53,13 +53,13 @@ static int fail(const char *msg, const char *detail)
 static int link_fail(uint8_t err)
 {
     if (err == LINK_BREAK) {
-        link_send(3); // Ctrl-C stops cbb-lite on the Pi
+        link_send(3); // Ctrl-C stops the lite member on the Pi
         return fail("stopped", 0);
     }
     return fail("the Pi stopped answering", "timeout");
 }
 
-// Types a command for cbb-lite at NextPi's shell.
+// Types a command for the lite member at NextPi's shell.
 static int command(const char *args)
 {
     if (link_shell()) {
@@ -86,7 +86,7 @@ static uint8_t expect(uint8_t want, uint32_t *len, uint32_t *crc, uint16_t secon
         }
         kind = frame_line(line, len, crc);
         if (kind == LINE_ERR) {
-            fail(line[6] ? line + 7 : "cbb-lite failed", 0);
+            fail(line[6] ? line + 7 : "cbb failed", 0);
             link_prompt();
             return 255;
         }
@@ -94,7 +94,7 @@ static uint8_t expect(uint8_t want, uint32_t *len, uint32_t *crc, uint16_t secon
     }
 }
 
-// Eight lowercase hex digits, as cbb-lite writes a CRC-32.
+// Eight lowercase hex digits, as the lite member writes a CRC-32.
 static void hex8(char *out, uint32_t v)
 {
     int8_t i;

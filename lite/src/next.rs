@@ -2,8 +2,8 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The front end for the ZX Spectrum Next (docs/roadmap.md, item 14).
-//! On the Accelerated Next, cbb-lite runs on the Raspberry Pi wired to the
-//! Next's second UART, and the Next's `.cbb` dot command types `cbb-lite next
+//! On the Accelerated Next, the lite member runs on the Raspberry Pi wired to the
+//! Next's second UART, and the Next's `.cbb` dot command types `cbb next
 //! ...` at NextPi's shell on that UART. These commands answer in frames the
 //! Z80 can read without a parser: lines end in CR, texts are in the Spectrum
 //! character set and come with their length and CRC-32, and every answer
@@ -17,7 +17,8 @@ use cbb_core::clip;
 use crate::error::{Context, Error, Result};
 use crate::{Global, control, request};
 
-const USAGE: &str = "usage: cbb-lite next paste [-max bytes] | copy <len> <crc32> | join [-name name] [-port port] [-addr host[:port]]...";
+const USAGE: &str =
+    "usage: cbb next paste [-max bytes] | copy <len> <crc32> | join [-name name] [-port port] [-addr host[:port]]...";
 
 /// How long copy waits for the next byte from the Next.
 const READ_TIMEOUT_DECISECONDS: u8 = 100;

@@ -234,10 +234,8 @@ func killService(ctx context.Context, r *Report, g *benchGroup, timeout time.Dur
 // bench may not.
 func killCmd(d *Device) string {
 	switch d.OS {
-	case "linux":
+	case "linux", "linux-lite":
 		return "sudo -n systemctl kill -s KILL clipboardbridge"
-	case "linux-lite":
-		return "sudo -n systemctl kill -s KILL cbb-lite"
 	case "windows":
 		return `Get-CimInstance Win32_Service -Filter "Name='clipboardbridge'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
 	}

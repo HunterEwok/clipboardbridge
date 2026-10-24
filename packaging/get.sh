@@ -8,7 +8,8 @@
 #   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 #
 # Options go after "sh -s --": --no-firewall leaves the firewall alone; on
-# Linux, --console also starts tmux after a login on the text console, and
+# Linux, --lite installs the lite member for small devices instead of the full
+# member, --console also starts tmux after a login on the text console, and
 # --port N moves the member port from 8764 to N. CBB_VERSION=v1.2.3 picks a
 # release instead of the latest; CBB_RELEASE_DIR, for tests, takes the files
 # from a directory instead of downloading them.
@@ -25,6 +26,7 @@ repo=https://github.com/HunterEwok/clipboardbridge
 console=
 port=
 firewall=yes
+lite=no
 while [ $# -gt 0 ]; do
 	case $1 in
 	--console) console=--console ;;
@@ -37,8 +39,9 @@ while [ $# -gt 0 ]; do
 		shift
 		;;
 	--no-firewall) firewall=no ;;
+	--lite) lite=yes ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --console, --port N, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -64,6 +67,7 @@ Linux)
 	;;
 Darwin)
 	os=darwin
+	[ "$lite" = no ] || fail "--lite is for Linux; a Mac runs the full member"
 	[ -z "$console" ] || fail "--console is for Linux"
 	[ -z "$port" ] || fail "--port is for Linux; a Mac keeps the member port 8764"
 	# A shell under Rosetta reports x86_64 on an Apple chip.
@@ -100,6 +104,13 @@ v*) base=$repo/releases/download/$version ;;
 *) fail "CBB_VERSION must look like v1.2.3" ;;
 esac
 archive=clipboardbridge-$os-$arch.tar.gz
+dir=clipboardbridge
+if [ "$lite" = yes ]; then
+	# The lite member's ARMv6 build runs on ARMv7 too.
+	[ "$arch" = armv7 ] && arch=armv6
+	archive=cbb-lite-linux-$arch.tar.gz
+	dir=cbb-lite
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -113,9 +124,9 @@ got=$(sha256 "$tmp/$archive")
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then
-	CBB_FIREWALL=$firewall sh "$tmp/clipboardbridge/packaging/macos/install.sh" "$tmp/clipboardbridge/cbb"
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" "$tmp/$dir/cbb"
 else
 	# shellcheck disable=SC2086 # $console and $port are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/clipboardbridge/packaging/linux/install.sh" $console $port "$tmp/clipboardbridge/cbb"
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port "$tmp/$dir/cbb"
 fi
 

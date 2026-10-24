@@ -14,7 +14,7 @@ The same bench then runs before every later release.
 
 CI already covers a lot in containers and on hosted runners (unit tests with `-race`, the
 Docker e2e of three members, Wayland and X11 under headless compositors, the Windows
-installer on windows-latest, the cross tests between Go, Swift and Kotlin, `cbb-lite` among
+installer on windows-latest, the cross tests between Go, Swift and Kotlin, the lite member among
 Go members). The bench covers what CI cannot:
 
 - real hardware and real operating systems: ARMv6 Pi Zero W, Pi 4, Steam Deck, an Apple
@@ -33,12 +33,12 @@ In scope for 0.4:
 
 | Area | What is tested |
 |---|---|
-| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
-| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
+| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `get.sh --lite` for the lite member, which moves an old `cbb-lite` install to `cbb`; update from 0.3.x; firewall rules added and removed; `--purge` |
+| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb join -code` on the lite member, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
-| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
-| The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb away hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
+| Sync away from home | `cbb global hub`, `cbb global on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
+| The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb global hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
 | Failure cases | section 8 |
 | Security | section 9 (top priority for everything off the home network) |
 | Debug/release error details | each tested error shows the user message; with `CBB_DEBUG=1` the underlying error too; the log always has it |
@@ -52,7 +52,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 | Name | Hardware / OS | Network | Role on the bench |
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
-| `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
+| `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | the lite member; cross-subnet case; must never lose Wi-Fi from a test |
 | `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
@@ -84,7 +84,7 @@ Two group layouts are tested, because both exist for users:
 | N4 | Away through the relay | as N3, with the hub reachable only through the forwarder |
 | N5 | Bad network | `tc netem` on the Linux devices: latency, loss, reordering, bandwidth limit; always with an automatic revert timer |
 | N6 | Network gone | firewall rules that drop the member port or the tunnel port for a time, with an automatic revert; no Wi-Fi switching on `rpi0w` |
-| N7 | IPv6 only / IPv4 only for the tunnel | address family chosen per run on the hub's `cbb away hub` addresses |
+| N7 | IPv6 only / IPv4 only for the tunnel | address family chosen per run on the hub's `cbb global hub` addresses |
 
 ## 5. Test design
 
@@ -98,7 +98,7 @@ The observation is always end to end, at the user's clipboard where one exists:
 | Device | Put text in | Read text out |
 |---|---|---|
 | `vps` (headless) | `cbb copy` | `cbb paste` |
-| `rpi0w` | `cbb-lite copy` | `cbb-lite watch -0` |
+| `rpi0w` | `cbb copy` | `cbb watch -0` |
 | `deck` | `xclip` on the GNOME session's XWayland | `xclip -o` on the same display |
 | `mac` | `pbcopy` as the signed-in user | `pbpaste` |
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
@@ -165,7 +165,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
-| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb global on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb global` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
@@ -176,7 +176,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P19 | IPv6 on the home network: AAAA records, link-local and global addresses, an IPv6-only member | members find and reach each other over IPv6 |
 | P20 | A network that blocks UDP (a hotel or an office) for an away device | as designed for the transports that exist (WireGuard over UDP fails with a clear message; the TCP transport when it exists) |
 | P21 | Invitations: the admin answers `no`; `-for 24h` and one second past it; the hub off when the invitation is used | refused with a clear message each time; nothing is left on the hub |
-| P22 | `cbb away off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
+| P22 | `cbb global off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
 | P23 | macOS pasteboard privacy: the alert for pasting from other apps turned on by hand, then on macOS 27.2 with its defaults | the report records whether the agent's reading of the types asks the user; text keeps syncing |
 | P24 | GNOME on the Steam Deck: a copy in a native Wayland app (GNOME Text Editor); a received text pasted into it without clicking any window; the same right after sign-in, before any X11 app has started XWayland | the copy arrives within the usual latency; the paste gives the received text |
 | P25 | The Mac holds `clipboardbridge.local`: the other full members off or set to `cbb holder never` | `cbb status` on the Mac shows it holds the name; `avahi-resolve` on `deck` and `Resolve-DnsName` on `win` resolve it to the Mac |
@@ -197,7 +197,7 @@ those builds are covered only by CI. It has no real Android phone and no iPhone 
 | F3 | Mac sleeps and wakes; the VM pauses and resumes | reconnects within 30 s of wake |
 | F4 | 30% loss, 300 ms latency, reordering (N5) | texts arrive, no duplicates, no crash |
 | F5 | Member port blocked for 5 minutes (N6) | texts copied meanwhile arrive after the block ends (latest wins) |
-| F6 | Hub down while devices are away | away devices report it in `cbb away` and `cbb status`; nothing is sent another way |
+| F6 | Hub down while devices are away | away devices report it in `cbb global` and `cbb status`; nothing is sent another way |
 | F7 | Relay down or unreachable | fallback port tried as designed; then a clear error; never a cleartext path |
 | F8 | Clock skew of hours on one device | certificates still accepted within the protocol's margin; HLC order holds |
 | F9 | Disk full on a Linux member | clear error, no corrupted state after space returns |
@@ -247,8 +247,8 @@ signed in on each device's desktop, so the bench reaches the real clipboard: `wl
 `wl-paste` in the Wayland session, `pbcopy` and `pbpaste` on the Mac. On Windows an SSH
 session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` turns on the
 OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
-text between a file and the clipboard. Headless devices use `cbb copy` and `cbb paste`
-(`cbb-lite` on the lite member). The install and uninstall cases need `sudo` without a
+text between a file and the clipboard. Headless devices, the lite member too, use `cbb copy`
+and `cbb paste`. The install and uninstall cases need `sudo` without a
 password for the installers only, set up by a sudoers file in step 3. The emulator over
 `adb` on the Mac.
 
