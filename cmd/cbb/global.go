@@ -42,7 +42,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb global                     show sync away from home\n" +
 		"       cbb global on                  turn it on here\n" +
 		"       cbb global off                 turn it off here and forget its keys\n" +
-		"       cbb global hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
+		"       cbb global hub [-port N] [-firewall ask|yes|no] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
 		"                                      -vless for clients that reach the forwarder only over VLESS\n" +
@@ -55,6 +55,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdGlobalStatus(stdout, stderr)
 	}
 	h := control.Header{Op: control.OpAway, Name: args[0]}
+	firewall := "ask"
 	switch args[0] {
 	case "on":
 		if len(args) != 1 {
@@ -98,6 +99,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("global hub", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		port := fs.Int("port", 0, "the UDP port the hub listens on (default 8764)")
+		fs.StringVar(&firewall, "firewall", "ask", "open the hub's UDP port in the firewall: ask, yes (without asking) or no (print the commands)")
 		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
 		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
 		obfuscate := fs.Bool("obfuscate", false, "speak AmneziaWG, which hides that the packets are WireGuard, for networks that block it")
@@ -105,7 +107,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
-		if fs.NArg() == 0 && *fwd == "" {
+		if fs.NArg() == 0 && *fwd == "" || !slices.Contains([]string{"ask", "yes", "no"}, firewall) {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -169,6 +171,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if m.Status != nil {
+		syncHubPort(stdin, stdout, m.Status.Away, firewall)
 		writeAway(stdout, m.Status.Away)
 	}
 	if args[0] == "hub" {

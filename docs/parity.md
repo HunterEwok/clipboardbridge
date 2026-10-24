@@ -41,7 +41,7 @@ on every platform of the class, on the roadmap).
 | Signed program | — | planned (`.pkg`, Developer ID) | **gap** | Windows Authenticode signing (G5) |
 | Device keys in hardware | planned | planned | planned | roadmap item 13 |
 | Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
-| Opening the hub's UDP port in the firewall | no | no | no | the same everywhere: the user opens it today (G6) |
+| Opening the hub's UDP port in the firewall, with consent | yes (ufw, firewalld; commands for nftables, iptables) | **OS** | yes | `cbb global hub` asks, `-firewall yes` without asking; the macOS application firewall already allows a listed program on every port |
 | Finding a firewall the installer does not know, by a check from home | **gap** | **gap** | **gap** | G6 |
 | Tested on a real device | yes | yes | not yet | the 0.4 bench |
 

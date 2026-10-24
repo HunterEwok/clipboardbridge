@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb global hub` at the hub's own address lists the firewall rule for its UDP port and asks
+  before it opens it (ufw, firewalld, Windows Firewall; the commands for the others);
+  `-firewall yes` opens it without asking, `-firewall no` prints the commands. The port
+  closes again when the device stops being a hub reached at its own address.
 - `--home-cgnat on` for the installers (`-HomeCgnat on` on Windows, `CBB_HOME_CGNAT=1`)
   counts 100.64.0.0/10 as the home network for a home network on the carrier-grade NAT
   range: in the service, the firewall rules, the systemd unit's address limit and the

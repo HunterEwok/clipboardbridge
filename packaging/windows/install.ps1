@@ -266,8 +266,8 @@ exe icacls.exe @($dataDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', 
 $step = 'allowing clipboardbridge in Windows Firewall'
 # Every rule carries the group clipboardbridge, so these lines and
 # uninstall.ps1 remove exactly the rules added here. The outbound rules
-# stay as cbb global left them.
-Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' } | Remove-NetFirewallRule
+# and the hub's port (clipboardbridge-hub) stay as cbb global left them.
+Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' -and $_.Name -ne "$name-hub" } | Remove-NetFirewallRule
 $on = @(Get-NetFirewallProfile | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { $_.Name })
 $fwState = if ($on.Count -gt 0) { "on for $($on -join ', ')" } else { 'off' }
 # With -HomeCgnat on, 100.64.0.0/10 is the home network too.

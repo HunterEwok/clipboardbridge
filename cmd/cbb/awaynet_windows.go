@@ -29,3 +29,9 @@ var homeCGNAT = func() bool {
 	env, _, err := k.GetStringsValue("Environment")
 	return err == nil && slices.Contains(env, "CBB_HOME_CGNAT=1")
 }
+
+// adminName is who may change the firewall.
+const adminName = "an administrator"
+
+// closeHint closes the hub's port that cbb opened.
+const closeHint = "run Remove-NetFirewallRule -Name clipboardbridge-hub in a PowerShell opened as administrator"

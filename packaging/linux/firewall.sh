@@ -9,6 +9,8 @@
 #   sudo sh firewall.sh close
 #   sh firewall.sh kind                              # the firewall it finds
 #   sh firewall.sh commands PORT...                  # what to run by hand
+#   sudo sh firewall.sh hub-open PORT | hub-close     # cbb global hub runs them
+#   sh firewall.sh hub-port | hub-commands PORT
 #
 # setup finds the firewall, lists each rule clipboardbridge needs and asks
 # whether to add them, unless the answer is given (express: yes, no: no)
@@ -28,10 +30,11 @@ set -eu
 export LC_ALL=C
 
 state=/etc/clipboardbridge/firewall
+hubstate=/etc/clipboardbridge/firewall.hub
 answer=/etc/clipboardbridge/firewall.answer
 
 usage() {
-	echo "usage: sudo sh firewall.sh setup ask|express|no PORT | open PORT... | close | kind | commands PORT..." >&2
+	echo "usage: sudo sh firewall.sh setup ask|express|no PORT | open PORT... | close | kind | commands PORT... | hub-open PORT | hub-close | hub-port | hub-commands PORT" >&2
 	exit 2
 }
 
@@ -225,6 +228,72 @@ open() {
 	esac
 }
 
+# The hub's UDP port, which its clients reach from the internet: cbb global
+# hub opens it with the user's consent and closes it when this device stops
+# being a hub reached at its own address. /etc/clipboardbridge/firewall.hub
+# holds the firewall and the port it opened; ufw's rule carries the comment
+# "clipboardbridge hub", which close leaves alone.
+hub_close() {
+	[ -f "$hubstate" ] || return 0
+	read -r added p <"$hubstate" || true
+	case $added in
+	ufw)
+		ours=$(ufw status numbered 2>/dev/null |
+			sed -n 's/^\[ *\([0-9][0-9]*\)\].*# clipboardbridge hub *$/\1/p' | sort -rn)
+		for n in $ours; do
+			ufw --force delete "$n" >/dev/null
+		done
+		;;
+	firewalld)
+		firewall-cmd --permanent --remove-port="$p/udp" >/dev/null 2>&1 || true
+		firewall-cmd --reload >/dev/null 2>&1 || true
+		;;
+	esac
+	rm -f "$hubstate"
+	echo "Firewall: closed the hub's UDP port $p."
+}
+
+hub_open() {
+	hub_close >/dev/null
+	install -d -m 0755 /etc/clipboardbridge
+	case $(kind) in
+	ufw)
+		ufw allow proto udp to any port "$1" comment 'clipboardbridge hub' >/dev/null
+		echo "ufw $1" >"$hubstate"
+		;;
+	firewalld)
+		# A port that was open before is not ours to close.
+		if ! firewall-cmd --permanent --query-port="$1/udp" >/dev/null 2>&1; then
+			firewall-cmd --permanent --add-port="$1/udp" >/dev/null
+			firewall-cmd --reload >/dev/null
+			echo "firewalld $1" >"$hubstate"
+		fi
+		;;
+	*) return 1 ;;
+	esac
+}
+
+hub_commands() {
+	case $(kind) in
+	ufw) echo "  sudo ufw allow proto udp to any port $1 comment 'clipboardbridge hub'" ;;
+	firewalld)
+		echo "  sudo firewall-cmd --permanent --add-port=$1/udp"
+		echo "  sudo firewall-cmd --reload"
+		;;
+	nftables)
+		where=$(nft list ruleset 2>/dev/null | awk '
+			$1 == "table" { family = $2; table = $3 }
+			$1 == "chain" { chain = $2 }
+			/hook input/ && /policy drop/ { print family, table, chain; exit }')
+		echo "  sudo nft insert rule $where udp dport $1 accept"
+		;;
+	iptables)
+		echo "  sudo iptables -I INPUT -p udp --dport $1 -j ACCEPT"
+		echo "  sudo ip6tables -I INPUT -p udp --dport $1 -j ACCEPT"
+		;;
+	esac
+}
+
 # ask reads yes or no from the terminal, no by default and without one.
 ask() {
 	printf '%s [y/N] ' "$1"
@@ -326,6 +395,19 @@ commands)
 	commands "$(kind)" "$@"
 	exit
 	;;
+hub-port)
+	[ $# -eq 0 ] || usage
+	if [ -f "$hubstate" ]; then
+		read -r _ p <"$hubstate" || true
+		echo "$p"
+	fi
+	exit
+	;;
+hub-commands)
+	[ $# -eq 1 ] || usage
+	hub_commands "$1"
+	exit
+	;;
 esac
 if [ "$(id -u)" -ne 0 ]; then
 	echo "firewall.sh: run it with sudo" >&2
@@ -344,6 +426,14 @@ open)
 close)
 	[ $# -eq 0 ] || usage
 	close
+	;;
+hub-open)
+	[ $# -eq 1 ] || usage
+	hub_open "$1"
+	;;
+hub-close)
+	[ $# -eq 0 ] || usage
+	hub_close
 	;;
 *) usage ;;
 esac

@@ -467,7 +467,7 @@ jobs:
         run: |
           Expand-Archive "$env:RUNNER_TEMP\release\clipboardbridge-windows-amd64.zip" "$env:RUNNER_TEMP\unpacked"
           $install = "$env:RUNNER_TEMP\unpacked\clipboardbridge\packaging\windows\install.ps1"
-          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
+          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'clipboardbridge-hub' } | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
           function check($want) {
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
@@ -531,8 +531,14 @@ jobs:
           awayAllow 'on 198.51.100.9'
           if ((blocked clipboardbridge-home-only).Count -ne 10) { throw "after -HomeCgnat off: $(blocked clipboardbridge-home-only)" }
           # A hub at its own address answers its clients anywhere on its UDP port only.
+          # Without a console nobody answers, and the hub's port stays closed.
           & $cbb global hub 203.0.113.7:8764
           if ($LASTEXITCODE -ne 0) { throw 'cbb global hub failed' }
+          if (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue) { throw 'the hub''s port was opened without an answer' }
+          & $cbb global hub -firewall yes 203.0.113.7:8764
+          if ($LASTEXITCODE -ne 0) { throw 'cbb global hub -firewall yes failed' }
+          $hp = Get-NetFirewallRule -Name clipboardbridge-hub | Get-NetFirewallPortFilter
+          if ("$($hp.Protocol) $($hp.LocalPort)" -ne 'UDP 8764') { throw "the hub's port rule: $($hp.Protocol) $($hp.LocalPort)" }
           awayAllow 'on hub-port:8764'
           $udp = Get-NetFirewallRule -Name clipboardbridge-home-only-udp | Get-NetFirewallPortFilter
           if ("$($udp.Protocol) $($udp.LocalPort -join ',')" -ne 'UDP 1-8763,8765-65535') { throw "the UDP rule: $($udp.Protocol) $($udp.LocalPort)" }
@@ -542,9 +548,11 @@ jobs:
           check ''
           awayAllow 'on hub-port:8764'
           if (-not (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'a reinstall dropped the hub''s UDP rule' }
+          if (-not (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue)) { throw 'a reinstall dropped the hub''s port' }
           & $cbb global off
           if ($LASTEXITCODE -ne 0) { throw 'cbb global off failed' }
           awayAllow ''
+          if (Get-NetFirewallRule -Name clipboardbridge-hub -ErrorAction SilentlyContinue) { throw 'cbb global off left the hub''s port open' }
           homeOnly 'Outbound Block True'
           if ((blocked clipboardbridge-home-only).Count -ne 9 -or (Get-NetFirewallRule -Name clipboardbridge-home-only-udp -ErrorAction SilentlyContinue)) { throw 'cbb global off left the servers' }
           # The answer -NoFirewall gave is kept, until -Express.
