@@ -129,7 +129,6 @@ type Service struct {
 	discoveryDone chan struct{}
 	port          uint16
 	window        *pair.Window // announced; takes pairing connections
-	dialWindow    *pair.Window // not announced; dials a listening joiner for the phone
 	opening       bool         // a pairing window is being opened, maybe with a new group
 	phoneWindow   *phone.Window
 	phoneOpening  bool          // an iPhone pairing window is being opened
@@ -378,14 +377,11 @@ func (s *Service) startGroup(id *group.Identity) error {
 func (s *Service) stopGroup() {
 	s.mu.Lock()
 	s.stopping = true
-	cancel, nd, w, dw, pw := s.groupCancel, s.nd, s.window, s.dialWindow, s.phoneWindow
+	cancel, nd, w, pw := s.groupCancel, s.nd, s.window, s.phoneWindow
 	stopDiscovery, discoveryDone := s.discoveryStop, s.discoveryDone
 	s.mu.Unlock()
 	if w != nil {
 		w.Close()
-	}
-	if dw != nil {
-		dw.Close()
 	}
 	if pw != nil {
 		pw.Close()

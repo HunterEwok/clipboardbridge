@@ -50,7 +50,7 @@ apps" below).
   TLS (Macs since D-46); phones only dial. The first bytes of a connection pick what it gets (docs/protocol.md, section 3):
   - members and the phone app, with the member ALPN protocol and mutual TLS;
   - pairing, with its own ALPN protocol;
-  - the shortcut's HTTPS (`/sync`, `/admit` and the pairing page `/pair`), with no client
+  - the shortcut's HTTPS (`/sync` and the pairing page `/pair`), with no client
     certificate, for any other ALPN protocol;
   - plain HTTP that serves only the iPhone CA's configuration profile, and only while a
     phone pairing window is open. The profile is public, and the user checks its
@@ -61,17 +61,14 @@ apps" below).
 
 ## Group and pairing
 
-- **The phone is the main device.** The usual way to build a group starts from the phone:
-  `cbb new` on the first Linux machine creates the group and `cbb pair -phone` pairs the
-  phone; every further computer runs `cbb pair`, which shows a QR code with a fresh
-  code, and the phone's second shortcut ("clipboardbridge: add a computer") scans it and posts
-  the code to `/admit` on `clipboardbridge.local` with its token. The member there opens a
-  pairing window with exactly that code, and the computer, which browses for a window for
-  up to five minutes, joins through the same CPace exchange as below. The keys of the group
-  stay on the Linux members, which must be on; the phone's token is the authority to add a
-  computer, so a stolen token lets its holder add a computer (and a Linux one gets the CA
-  keys). Each admission is logged. Admitting from a Linux member with `cbb pair` and
-  `cbb pair -code` stays for groups without a phone.
+- **The shortcut only syncs.** With the shortcut (no app), `cbb new` on the first Linux
+  machine creates the group and `cbb pair -phone` pairs the phone; every further computer
+  joins with `cbb pair` on the root or an admin, which shows a six-digit code to type on the
+  new computer. The shortcut's token gives only `/sync`: a copied or stolen token can sync
+  the clipboard until it is revoked, but cannot add a device. `cbb pair -phone -new-token`
+  revokes every shortcut's token and pairs the iPhone again; `cbb revoke` removes one. With
+  the phone app, the phone admits computers by their QR code (section 6 of the protocol,
+  "The joiner listens").
 - **Creating the group**: the first `cbb pair` or `cbb pair -phone` on a Linux
   machine that is in no group creates it: the group CA and the iPhone CA. A Mac cannot start
   a group.

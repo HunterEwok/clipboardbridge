@@ -75,6 +75,7 @@ type Header struct {
 	Address      string   `json:"address,omitempty"`     // a member's address for join
 	Addrs        []string `json:"addrs,omitempty"`       // where a listening join waits, for its QR code
 	Listen       bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
+	NewToken     bool     `json:"new_token,omitempty"`   // pair-phone: revoke every shortcut's token first
 	Name         string   `json:"name,omitempty"`        // a device name
 	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default

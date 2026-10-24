@@ -725,16 +725,11 @@ one success, three wrong codes; any code that is not six digits counts as wrong)
 | `token` | string | the new token; only when `ok` |
 | `message` | string | a human message |
 
-### POST /admit
-
-Lets a paired phone add a computer. Request body (at most 4096 bytes), with
-`Authorization`: `{"v": 1, "code": "clipboardbridge://join?code=123456&addr=...&fp=..."}` (the
-scanned QR text; unknown query fields are ignored, at most four `addr` are used). The member
-opens an unannounced window with that code and dials the addresses in order, pairing with
-the computer whose certificate `fp` names (section 6, "The joiner listens"). The reply has
-the shape of a `/sync` reply, always HTTP 200, and comes as soon as the dialing starts:
-`none`, `unpaired` for a missing or unknown token, `error` otherwise (wrong method, bad body
-or version, not a join QR code, no `addr` or `fp`, a window already open).
+The shortcut's token gives only `/sync`. Up to 0.4 a `POST /admit` let a paired shortcut add
+a computer; it is gone, and requests to it get HTTP 404. Computers join through the phone
+apps or `cbb pair`. `cbb pair -phone -new-token` revokes the token of every shortcut (one
+revocation record naming their keys, section 10) before it opens the window, so a copied
+token stops working and the iPhone gets a new one.
 
 ### Profile on the member port
 
@@ -746,7 +741,6 @@ pairing window is open, same address restriction:
 | `GET /` | an HTML page with the steps and the iPhone CA fingerprint |
 | `GET /clipboardbridge.mobileconfig` | the configuration profile, `application/x-apple-aspen-config` |
 | `GET /clipboardbridge.shortcut` | the signed sync shortcut, `application/octet-stream` (404 if the build has none) |
-| `GET /clipboardbridge-add.shortcut` | the signed shortcut that adds a computer (404 if none) |
 
 The profile has the fixed identifier `io.github.hunterewok.clipboardbridge` with one payload of
 type `com.apple.security.root` (identifier `io.github.hunterewok.clipboardbridge.ca`) carrying
@@ -866,7 +860,6 @@ iPhone CA as well (section 10, "Admins").
 - **Join QR code and pairing direction.** `cbb pair` listens and shows its addresses and
   certificate fingerprint; the app dials it as the admitting side, confirms first (section
   6, "The joiner listens") and sends a Welcome with a member certificate signed by its CA.
-  When the shortcut posts the QR code to `/admit`, a Linux member dials instead.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it finds members through mDNS browsing as a Mac does.
   The shortcut endpoints of section 7 stay for phones without the app.

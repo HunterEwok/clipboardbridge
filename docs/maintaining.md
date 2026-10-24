@@ -137,9 +137,9 @@ Rules for workflows:
   and Go itself, written by `packaging/archive.sh`) and `packaging/`. The `cbb-lite-linux-*`
   archives hold `cbb-lite/` in the same way, with the crates' licenses
   (`lite/packaging/notices.sh`).
-- The iPhone shortcuts are the one exception: iOS imports only shortcuts signed with an
-  Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist` or
-  `clipboardbridge-add.plist`, sign each changed one (here `NAME`) on a Mac:
+- The iPhone shortcut is the one exception: iOS imports only shortcuts signed with an
+  Apple ID, which needs a Mac. When `go run ./tools/shortcut` changes `clipboardbridge.plist`,
+  sign it (here `NAME`) on a Mac:
   `plutil -convert binary1 -o /tmp/NAME-unsigned.shortcut internal/phone/shortcut/NAME.plist`
   (`shortcuts sign` reads only the binary form) and
   `shortcuts sign --mode anyone --input /tmp/NAME-unsigned.shortcut --output internal/phone/shortcut/NAME.shortcut`,

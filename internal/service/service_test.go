@@ -34,7 +34,6 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
-	"github.com/HunterEwok/clipboardbridge/internal/phone"
 )
 
 // hub is a fake network for discovery: every member sees the others on the
@@ -1142,9 +1141,11 @@ func TestIPhone(t *testing.T) {
 	}
 }
 
-// shortcutPhone pairs the iPhone shortcut with pi, which creates the group,
-// and returns how the shortcut admits a device by its QR code.
-func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string) map[string]any, token string) {
+// shortcutPhone makes a group on pi and pairs an iPhone with the shortcut
+// the way the shortcut does; post sends a request to the shortcut's HTTPS
+// with a token and returns the status and the JSON reply, and pairAgain
+// pairs it again, with newToken revoking every shortcut's token first.
+func shortcutPhone(t *testing.T, pi *testService) (post func(path, token, body string) (int, map[string]any), pairAgain func(newToken bool) string, token string) {
 	t.Helper()
 	if _, err := pi.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "cbb new") {
 		t.Errorf("pair -phone in no group: %v", err)
@@ -1152,53 +1153,64 @@ func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string
 	if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
 		t.Fatal(err)
 	}
-	c := pi.dial(t)
-	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
-	if err != nil {
-		t.Fatalf("pair -phone: %v", err)
-	}
-	// The iPhone port starts with the group, just after it.
-	waitFor(t, "the iPhone port", func() bool { a, _ := pi.addrs(); return a != "" })
-	phoneAddr, profileAddr := pi.addrs()
-	resp, err := http.Get("http://" + profileAddr + "/clipboardbridge.mobileconfig")
-	if err != nil {
-		t.Fatal(err)
-	}
-	profile, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	der := regexp.MustCompile(`<data>([A-Za-z0-9+/=]+)</data>`).FindSubmatch(profile)
-	raw, _ := base64.StdEncoding.DecodeString(string(der[1]))
-	ca, err := x509.ParseCertificate(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	roots := x509.NewCertPool()
-	roots.AddCert(ca)
-	shortcutTLS := &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}
-	// The shortcut's HTTPS takes the member port's connections a moment
-	// after the port opens; until then the member TLS answers them.
-	waitFor(t, "the shortcut's HTTPS", func() bool {
-		c, err := tls.Dial("tcp", phoneAddr, shortcutTLS)
-		if err == nil {
-			c.Close()
-		}
-		return err == nil
-	})
-	iphone := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: shortcutTLS}}
-	resp, err = iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var paired struct{ Token string }
-	json.NewDecoder(resp.Body).Decode(&paired)
-	resp.Body.Close()
-	if _, err := c.Receive(); err != nil {
-		t.Fatal(err)
-	}
-	admit = func(token, code string) map[string]any {
+	var iphone *http.Client
+	var phoneAddr string
+	pairAgain = func(newToken bool) string {
 		t.Helper()
-		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+"/admit", strings.NewReader(`{"v":1,"code":"`+code+`"}`))
+		c := pi.dial(t)
+		defer c.Close()
+		m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone, NewToken: newToken}})
+		if err != nil {
+			t.Fatalf("pair -phone: %v", err)
+		}
+		if iphone == nil {
+			// The iPhone port starts with the group, just after it.
+			waitFor(t, "the iPhone port", func() bool { a, _ := pi.addrs(); return a != "" })
+			var profileAddr string
+			phoneAddr, profileAddr = pi.addrs()
+			resp, err := http.Get("http://" + profileAddr + "/clipboardbridge.mobileconfig")
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			der := regexp.MustCompile(`<data>([A-Za-z0-9+/=]+)</data>`).FindSubmatch(profile)
+			raw, _ := base64.StdEncoding.DecodeString(string(der[1]))
+			ca, err := x509.ParseCertificate(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roots := x509.NewCertPool()
+			roots.AddCert(ca)
+			shortcutTLS := &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}
+			// The shortcut's HTTPS takes the member port's connections a
+			// moment after the port opens; until then the member TLS
+			// answers them.
+			waitFor(t, "the shortcut's HTTPS", func() bool {
+				c, err := tls.Dial("tcp", phoneAddr, shortcutTLS)
+				if err == nil {
+					c.Close()
+				}
+				return err == nil
+			})
+			iphone = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: shortcutTLS}}
+		}
+		resp, err := iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var paired struct{ Token string }
+		json.NewDecoder(resp.Body).Decode(&paired)
+		resp.Body.Close()
+		if _, err := c.Receive(); err != nil {
+			t.Fatal(err)
+		}
+		return paired.Token
+	}
+	token = pairAgain(false)
+	post = func(path, token, body string) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, "https://"+phoneAddr+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := iphone.Do(req)
 		if err != nil {
@@ -1207,58 +1219,41 @@ func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string
 		defer resp.Body.Close()
 		var rep map[string]any
 		json.NewDecoder(resp.Body).Decode(&rep)
-		return rep
+		return resp.StatusCode, rep
 	}
-	return admit, paired.Token
+	return post, pairAgain, token
 }
 
-func TestPhoneAddsAComputer(t *testing.T) {
-	// The phone is the main device: it pairs with the first computer, which
-	// creates the group, and adds the next computer by scanning its code.
+func TestShortcutTokenOnlySyncs(t *testing.T) {
+	// The shortcut's token syncs and does nothing else: there is no way to
+	// add a computer with it, and pair -phone -new-token revokes it.
 	var h hub
 	pi := startService(t, &h, "pi")
-	admit, token := shortcutPhone(t, pi)
-
-	// A new computer runs cbb pair: it listens, shows its QR code
-	// and waits.
-	laptop := startService(t, &h, "laptop")
-	lc := laptop.dial(t)
-	defer lc.Close()
-	where, err := lc.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Code: "246802", Expires: 60, Listen: true}})
-	if err != nil || len(where.Addrs) == 0 || where.Fingerprint == "" {
-		t.Fatalf("a listening join: %+v, %v", where, err)
+	post, pairAgain, token := shortcutPhone(t, pi)
+	if code, rep := post("/sync", token, `{"v":1,"text":"from the iPhone"}`); code != http.StatusOK || rep["direction"] != "from_iphone" {
+		t.Fatalf("sync: %d %v", code, rep)
 	}
-	qr := phone.JoinQR(phone.JoinCode{Code: "246802", Addrs: where.Addrs, Fingerprint: where.Fingerprint})
-	joined := make(chan error, 1)
-	go func() {
-		_, err := lc.Receive()
-		joined <- err
-	}()
-	if rep := admit("cb1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", qr); rep["direction"] != "unpaired" {
-		t.Errorf("a forged token: %v", rep)
+	if code, _ := post("/admit", token, `{"v":1,"code":"clipboardbridge://join?code=246802&addr=127.0.0.1:1&fp=x"}`); code != http.StatusNotFound {
+		t.Errorf("/admit answered %d, want 404", code)
 	}
-	if rep := admit(token, "clipboardbridge://join?code=246802"); rep["direction"] != "error" {
-		t.Errorf("a QR code without an address: %v", rep)
-	}
-	if rep := admit(token, qr); rep["direction"] != "none" {
-		t.Fatalf("admit: %v", rep)
-	}
-	select {
-	case err := <-joined:
-		if err != nil {
-			t.Fatalf("join: %v", err)
+	second := pairAgain(false)
+	fresh := pairAgain(true)
+	for _, old := range []string{token, second} {
+		if _, rep := post("/sync", old, `{"v":1,"text":"x"}`); rep["direction"] != "unpaired" {
+			t.Errorf("a token from before -new-token: %v", rep)
 		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("the laptop never joined")
 	}
-	if laptop.status(t).Group != pi.status(t).Group {
-		t.Error("the laptop is not in the phone's group")
+	if _, rep := post("/sync", fresh, `{"v":1,"text":"again"}`); rep["direction"] != "from_iphone" {
+		t.Errorf("the new token: %v", rep)
 	}
-	waitFor(t, "the laptop connected", func() bool { return len(laptop.status(t).Peers) == 1 })
-	// The window closed: a second admit with the same code opens a new one,
-	// which nobody uses; a code that is not six digits is refused.
-	if rep := admit(token, "clipboardbridge://join?code=12345"); rep["direction"] != "error" {
-		t.Errorf("five digits: %v", rep)
+	shortcuts := 0
+	for _, d := range pi.devices(t) {
+		if d.Role == group.RoleShortcut {
+			shortcuts++
+		}
+	}
+	if shortcuts != 1 {
+		t.Errorf("%d shortcuts listed after -new-token, want 1", shortcuts)
 	}
 }
 

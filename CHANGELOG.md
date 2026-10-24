@@ -94,6 +94,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: the iPhone shortcut's token only syncs. `POST /admit` and the shortcut
+  "clipboardbridge: add a computer" are gone, so a copied token can no longer add a computer
+  (which on Linux got the group's keys); computers join through the phone apps or
+  `cbb pair`. `cbb pair -phone -new-token` revokes every shortcut's token and pairs the
+  iPhone with a new one.
+
 - Security: only the group's root or an admin can be the hub for sync away from home. A
   member, phone or computer, ignores tunnel offers from any other device, and once it keeps
   a hub's offer it ignores other hubs until sync away from home is turned off and on again,
