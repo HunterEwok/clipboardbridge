@@ -79,7 +79,7 @@ again after the connection drops.
 Once the board has an address, type `join`. It prints a `clipboardbridge://join?...` link
 with a new pairing code, its address and port 8764 and the fingerprint of its pairing
 certificate; in the app, tap "Connect a new device" and paste it. The phone dials the
-board, and the two run the pairing of docs/protocol.md over TLS 1.3 (`src/pair.rs`, the
+board, and the two run the pairing of docs/protocol.md over TLS 1.3 (`lite/embassy`, the
 same exchange as the lite member's `cbb join`, with the core's `Joiner`). The phone proves the code
 first; three wrong codes, or five minutes without a phone, end the attempt. The board
 takes connections from private addresses only. It saves the identity the phone's Welcome
@@ -116,3 +116,13 @@ That build has no Wi-Fi (QEMU does not emulate the S3's radio) and skips esp-hal
 because QEMU does not emulate the clock calibration it waits for; without init the chip's
 generator does not work, so it uses a fixed pseudo-random sequence instead: its keys are
 not secret, and it says so when it starts. Never flash the `qemu` build to a board.
+
+## Test the network code on Linux
+
+The pairing lives in the crate [`lite/embassy`](../embassy), on embassy-net and nothing of
+the chip. Its feature `host` builds `esp32-on-linux`, which runs the same code on Linux:
+embassy-net over a TAP interface with a fixed address takes the place of the Wi-Fi and
+DHCP, and `esp32-on-linux` joins a group by the phone as the board's `join` does. The Go test
+`TestEmbassyJoiner` plays the phone and has a Go member admit it (CONTRIBUTING.md, "The
+other parts", has the commands; CI's `lite` job runs it). Only the Wi-Fi driver and the
+flash stay for a real board.
