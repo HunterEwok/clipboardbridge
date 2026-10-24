@@ -66,11 +66,12 @@ pair() { # admin, joiner
 	docker exec -d "$run-$1" sh -c '/cb/cbb pair >/tmp/pair.out 2>&1'
 	eventually "a code on $1" docker exec "$run-$1" grep -q 'Pairing code' /tmp/pair.out
 	code=$(docker exec "$run-$1" sed -n 's/^Pairing code: \([0-9]*\) \([0-9]*\)$/\1\2/p' /tmp/pair.out)
-	printf '%s\n' "$code" | cb "$2" join -code || fail "$2 could not join with the code from $1"
+	printf '%s\n' "$code" | cb "$2" pair -code || fail "$2 could not join with the code from $1"
 	eventually "$1 reports the new member" docker exec "$run-$1" grep -q "host-$2 joined" /tmp/pair.out
 }
 
 say "pairing: a creates the group and admits b, makes b an admin; b admits c"
+cb a new >/dev/null || fail "a could not create the group"
 pair a b
 eventually "a makes b an admin" cb a admin host-b
 is_admin() { cb "$1" status | grep '(this device)' | grep -q ' admin '; }
@@ -138,7 +139,7 @@ docker exec -d "$run-$admin" sh -c '/cb/cbb pair >/tmp/pair2.out 2>&1'
 eventually "a code" docker exec "$run-$admin" grep -q 'Pairing code' /tmp/pair2.out
 code=$(docker exec "$run-$admin" sed -n 's/^Pairing code: \([0-9]*\) \([0-9]*\)$/\1\2/p' /tmp/pair2.out)
 [ "$code" = "$wrong" ] && wrong=111111
-if printf '%s\n' "$wrong" | cb d join -code >/dev/null 2>&1; then
+if printf '%s\n' "$wrong" | cb d pair -code >/dev/null 2>&1; then
 	fail "d joined with a wrong code"
 fi
 cb d status | grep -q 'Not in a group' || fail "d is in a group after a wrong code"

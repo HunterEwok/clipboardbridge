@@ -134,7 +134,7 @@ func writeBlob(w io.Writer, b []byte) error {
 }
 
 // TestSwiftMemberAdmitsGoJoinerTLS is the same with real TLS: the joiner
-// listens with Accept, as cbb join does, and the phone app's code
+// listens with Accept, as cbb pair does, and the phone app's code
 // dials it with Network.framework, checks the QR code's fingerprint and
 // binds CPace to the TLS exporter. It needs macOS (CBB_SWIFT_INTEROP_TLS
 // names the tool there).

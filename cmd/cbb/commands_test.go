@@ -20,6 +20,17 @@ import (
 // records the requests.
 func fakeService(t *testing.T, answers ...control.Message) chan *control.Message {
 	t.Helper()
+	return fakeHandler(t, func(_ *control.Message, _ *control.Reader, c net.Conn) {
+		for _, a := range answers {
+			a.Op = control.OpReply
+			control.Write(c, &a)
+		}
+	})
+}
+
+// fakeHandler is fakeService with a handler that answers each request.
+func fakeHandler(t *testing.T, handle func(m *control.Message, r *control.Reader, c net.Conn)) chan *control.Message {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
 	if err != nil {
 		t.Fatal(err)
@@ -32,25 +43,35 @@ func fakeService(t *testing.T, answers ...control.Message) chan *control.Message
 	}
 	t.Cleanup(func() { ln.Close() })
 	t.Setenv("CBB_SOCKET", socket)
-	got := make(chan *control.Message, 4)
+	got := make(chan *control.Message, 8)
 	go func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			m, err := control.NewReader(c).Read()
+			r := control.NewReader(c)
+			m, err := r.Read()
 			if err == nil {
 				got <- m
-				for _, a := range answers {
-					a.Op = control.OpReply
-					control.Write(c, &a)
-				}
+				handle(m, r, c)
 			}
 			c.Close()
 		}
 	}()
 	return got
+}
+
+// answer writes the answer a on c.
+func answer(c net.Conn, a control.Message) {
+	a.Op = control.OpReply
+	control.Write(c, &a)
+}
+
+// inGroup answers a status request: in the group g, or in none when g is
+// empty.
+func inGroup(c net.Conn, g string) {
+	answer(c, control.Message{Header: control.Header{Status: &control.Status{Role: "full", OS: "linux", Group: g}, Done: true}})
 }
 
 func request(t *testing.T, got chan *control.Message) *control.Message {
@@ -85,17 +106,18 @@ func TestCopy(t *testing.T) {
 	}
 }
 
-func TestJoin(t *testing.T) {
+func TestPairWithACode(t *testing.T) {
 	got := fakeService(t, control.Message{Header: control.Header{Done: true}})
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"join", "-code", "192.168.1.5:4000"}, strings.NewReader("123 456\n"), &stdout, &stderr); code != 0 {
-		t.Fatalf("join: %d, %s", code, stderr.String())
+	if code := run([]string{"pair", "-code", "192.168.1.5:4000"}, strings.NewReader("123 456\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("pair -code: %d, %s", code, stderr.String())
 	}
 	if m := request(t, got); m.Op != control.OpJoin || m.Code != "123456" || m.Address != "192.168.1.5:4000" {
-		t.Errorf("join sent %+v", m.Header)
+		t.Errorf("pair -code sent %+v", m.Header)
 	}
 	// The code is never taken from the command line.
-	for _, args := range [][]string{{"join", "-code", "123456"}, {"join", "-code", "123", "456"}, {"join", "192.168.1.5:4000"}} {
+	for _, args := range [][]string{{"pair", "-code", "123456"}, {"pair", "-code", "123", "456"}, {"pair", "192.168.1.5:4000"},
+		{"pair", "-phone", "-code"}, {"pair", "-invite", "x", "-code"}} {
 		stderr.Reset()
 		if code := run(args, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "usage") {
 			t.Errorf("%v: %d, %q", args, code, stderr.String())
@@ -103,8 +125,8 @@ func TestJoin(t *testing.T) {
 	}
 	// A bad code fails before the service is asked.
 	stderr.Reset()
-	if code := run([]string{"join", "-code"}, strings.NewReader("12345\n"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "six digits") {
-		t.Errorf("join with five digits: %d, %q", code, stderr.String())
+	if code := run([]string{"pair", "-code"}, strings.NewReader("12345\n"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "six digits") {
+		t.Errorf("pair -code with five digits: %d, %q", code, stderr.String())
 	}
 	select {
 	case m := <-got:
@@ -113,13 +135,84 @@ func TestJoin(t *testing.T) {
 	}
 }
 
+func TestNew(t *testing.T) {
+	got := fakeHandler(t, func(_ *control.Message, _ *control.Reader, c net.Conn) { inGroup(c, "g1") })
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"new"}, strings.NewReader(""), &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "group g1") {
+		t.Fatalf("new: %d, %q, %q", code, stdout.String(), stderr.String())
+	}
+	if m := request(t, got); m.Op != control.OpNew {
+		t.Errorf("new sent %+v", m.Header)
+	}
+	if code := run([]string{"new", "x"}, strings.NewReader(""), &stdout, &stderr); code != 2 {
+		t.Errorf("new with an argument: %d", code)
+	}
+}
+
+// TestPairInAGroup checks that cbb pair in a group opens a window.
+func TestPairInAGroup(t *testing.T) {
+	got := fakeHandler(t, func(m *control.Message, _ *control.Reader, c net.Conn) {
+		if m.Op == control.OpStatus {
+			inGroup(c, "g1")
+			return
+		}
+		answer(c, control.Message{Header: control.Header{Code: "123456", Expires: 300, Address: "192.168.1.5:8764"}})
+		answer(c, control.Message{Header: control.Header{Name: "deck", Done: true}})
+	})
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"pair"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("pair: %d, %s", code, stderr.String())
+	}
+	if m := request(t, got); m.Op != control.OpStatus {
+		t.Errorf("pair asked first %+v", m.Header)
+	}
+	if m := request(t, got); m.Op != control.OpPair {
+		t.Errorf("pair sent %+v", m.Header)
+	}
+	if out := stdout.String(); !strings.Contains(out, "Pairing code: 123 456") || !strings.Contains(out, "cbb pair -code 192.168.1.5:8764") ||
+		!strings.Contains(out, "deck joined") {
+		t.Errorf("pair printed:\n%s", out)
+	}
+}
+
+// TestPairTypedWhileWaiting checks that a code typed while cbb pair waits
+// for the phone ends that wait and joins with the code.
+func TestPairTypedWhileWaiting(t *testing.T) {
+	got := fakeHandler(t, func(m *control.Message, r *control.Reader, c net.Conn) {
+		switch {
+		case m.Op == control.OpStatus:
+			inGroup(c, "")
+		case m.Listen:
+			answer(c, control.Message{Header: control.Header{Addrs: []string{"192.168.1.20:40123"}, Fingerprint: "q83vEjRWeJA"}})
+			r.Read() // the client gave up on the phone
+			answer(c, control.Message{Header: control.Header{Error: "cancelled", Done: true}})
+		default:
+			answer(c, control.Message{Header: control.Header{Done: true}})
+		}
+	})
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"pair"}, strings.NewReader("12345\n654 321\n"), &stdout, &stderr); code != 0 {
+		t.Fatalf("pair: %d, %s", code, stderr.String())
+	}
+	request(t, got) // status
+	if m := request(t, got); !m.Listen {
+		t.Errorf("pair did not listen for the phone first: %+v", m.Header)
+	}
+	if m := request(t, got); m.Op != control.OpJoin || m.Listen || m.Code != "654321" {
+		t.Errorf("pair joined with %+v", m.Header)
+	}
+	if !strings.Contains(stderr.String(), "six digits") || !strings.Contains(stdout.String(), "Joined the group") {
+		t.Errorf("pair printed %q, %q", stdout.String(), stderr.String())
+	}
+}
+
 func TestStatus(t *testing.T) {
 	for _, tt := range []struct {
 		st   control.Status
 		want string
 	}{
-		{control.Status{Role: "full", OS: "linux"}, "Run cbb pair here to start one"},
-		{control.Status{Role: "full", OS: "macos"}, "Run cbb pair here to start one"},
+		{control.Status{Role: "full", OS: "linux"}, "Run cbb new here to start one"},
+		{control.Status{Role: "full", OS: "macos"}, "Run cbb new here to start one"},
 		{control.Status{Role: "full", OS: "windows", Device: "d1", Group: "g1", Holder: true}, "Device d1 (Windows, full), group g1"},
 		{control.Status{Role: "full", OS: "macos", Device: "d2", Group: "g1", Removed: true}, "This device was removed from the group"},
 	} {
@@ -145,30 +238,39 @@ func TestPasteWriteError(t *testing.T) {
 	}
 }
 
-func TestJoinWithThePhone(t *testing.T) {
-	// By default join asks the service to listen, shows a QR code with
+func TestPairWithThePhone(t *testing.T) {
+	// In no group pair asks the service to listen, shows a QR code with
 	// its code, address and fingerprint, and waits for the member to dial.
-	got := fakeService(t,
-		control.Message{Header: control.Header{Addrs: []string{"192.168.1.20:40123"}, Fingerprint: "q83vEjRWeJA"}},
-		control.Message{Header: control.Header{Done: true}})
-	var stdout, stderr bytes.Buffer
-	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
-		t.Fatalf("join: %d, %s", code, stderr.String())
+	listen := func(addrs []string) chan *control.Message {
+		return fakeHandler(t, func(m *control.Message, _ *control.Reader, c net.Conn) {
+			if m.Op == control.OpStatus {
+				inGroup(c, "")
+				return
+			}
+			answer(c, control.Message{Header: control.Header{Addrs: addrs, Fingerprint: "q83vEjRWeJA"}})
+			answer(c, control.Message{Header: control.Header{Done: true}})
+		})
 	}
+	got := listen([]string{"192.168.1.20:40123"})
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"pair"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("pair: %d, %s", code, stderr.String())
+	}
+	request(t, got) // status
 	m := request(t, got)
 	if m.Op != control.OpJoin || len(m.Code) != 6 || m.Expires != 300 || m.Address != "" || !m.Listen {
-		t.Errorf("join sent %+v", m.Header)
+		t.Errorf("pair sent %+v", m.Header)
 	}
 	if !strings.Contains(stdout.String(), "Connect a new device") || !strings.Contains(stdout.String(), "\x1b[") ||
 		!strings.Contains(stdout.String(), "paste this into the app: clipboardbridge://") ||
 		!strings.Contains(stdout.String(), "Joined the group") {
-		t.Errorf("join printed:\n%s", stdout.String())
+		t.Errorf("pair printed:\n%s", stdout.String())
 	}
 	// Without an address on the home network there is nothing to show.
-	fakeService(t, control.Message{Header: control.Header{}})
+	listen(nil)
 	stdout.Reset()
-	if code := run([]string{"join"}, strings.NewReader(""), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "no address") {
-		t.Errorf("join without an address: %d, %s", code, stderr.String())
+	if code := run([]string{"pair"}, strings.NewReader(""), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "no address") {
+		t.Errorf("pair without an address: %d, %s", code, stderr.String())
 	}
 }
 

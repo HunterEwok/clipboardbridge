@@ -40,7 +40,7 @@ func fail(c net.Conn, err error) {
 
 // errNoGroup is the error for a request that needs a group.
 func (s *Service) errNoGroup() error {
-	return errors.New("this device is in no group; run cbb pair here to start one, or cbb join to join one")
+	return errors.New("this device is in no group; run cbb new here to start one, or cbb pair to join one")
 }
 
 func (s *Service) handleControl(ctx context.Context, c net.Conn) {
@@ -75,6 +75,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 		reply(c, control.Header{Kind: kindName(kind), Done: true}, []byte(text))
 	case control.OpStatus:
 		reply(c, control.Header{Status: s.statusWithRemoved(), Done: true}, nil)
+	case control.OpNew:
+		if _, err := s.newGroup(); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpPair:
 		s.pair(ctx, c, r)
 	case control.OpPairPhone:
@@ -205,10 +211,9 @@ func (s *Service) statusWithRemoved() *control.Status {
 }
 
 // pair opens a pairing window and reports its end; a client that hangs up
-// closes the window. On a device in no group, it creates the group first,
-// with this device as its root.
+// closes the window.
 func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
-	w, _, end, err := s.openWindow(pair.NewCode(), true, true)
+	w, _, end, err := s.openWindow(pair.NewCode(), true)
 	if err != nil {
 		fail(c, err)
 		return
@@ -239,14 +244,13 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 	reply(c, control.Header{Name: res.Info.Name, Done: true}, nil)
 }
 
-// openWindow reserves the pairing window and opens it with code. On a
-// device in no group it first creates the group, when create is set.
-// With announce, the window is published and takes pairing connections on
+// openWindow reserves the pairing window and opens it with code, on the
+// group's root or an admin. With announce, the window is published and takes pairing connections on
 // the member port; without, it only serves the member's own dials to a
 // listening joiner. end closes the window and frees it; it may be called
 // more than once, and runs before the last answer to a client, so it can
 // pair again at once.
-func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, *group.Identity, func(), error) {
+func (s *Service) openWindow(code string, announce bool) (*pair.Window, *group.Identity, func(), error) {
 	s.mu.Lock()
 	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
 	if !busy && !joining {
@@ -280,16 +284,13 @@ func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, 
 		s.opening = false
 		s.mu.Unlock()
 	}
-	if id == nil {
-		if !create {
-			end()
-			return nil, nil, nil, s.errNoGroup()
-		}
-		var err error
-		if id, err = s.createGroup(); err != nil {
-			end()
-			return nil, nil, nil, err
-		}
+	switch {
+	case id == nil:
+		end()
+		return nil, nil, nil, s.errNoGroup()
+	case !id.IsAdmin():
+		end()
+		return nil, nil, nil, s.errNotAdmitter()
 	}
 	opened, err := pair.Open(id, code, pair.Options{})
 	if err != nil {
@@ -307,6 +308,40 @@ func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, 
 	s.opening = false
 	s.mu.Unlock()
 	return w, id, end, nil
+}
+
+// newGroup creates a group with this device as its root and starts it;
+// a device that is in a group already keeps it.
+func (s *Service) newGroup() (*group.Identity, error) {
+	s.mu.Lock()
+	in, busy := s.id != nil, s.joining
+	s.mu.Unlock()
+	switch {
+	case in:
+		return nil, errors.New("this device is already in a group; cbb status shows it")
+	case busy:
+		return nil, errors.New("this device is joining a group")
+	}
+	return s.createGroup()
+}
+
+// errNotAdmitter is the error for a member that may not admit devices: it
+// names those that may.
+func (s *Service) errNotAdmitter() error {
+	devs, err := s.devices()
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, d := range devs {
+		if (d.Root || d.Admin) && !d.Self {
+			names = append(names, d.Name)
+		}
+	}
+	if len(names) == 0 {
+		return errors.New("only the group's root or an admin adds devices, and this device is neither")
+	}
+	return fmt.Errorf("only the group's root or an admin adds devices; run cbb pair on %s", strings.Join(names, " or "))
 }
 
 // createGroup creates a group on a device in no group, with this device as
@@ -364,7 +399,7 @@ func (s *Service) admit(jc phone.JoinCode) error {
 	if len(jc.Addrs) == 0 || jc.Fingerprint == "" {
 		return errors.New("the QR code is from an older clipboardbridge; update clipboardbridge on the computer")
 	}
-	w, _, end, err := s.openWindow(jc.Code, false, false)
+	w, _, end, err := s.openWindow(jc.Code, false)
 	if err != nil {
 		return err
 	}
@@ -584,7 +619,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 		raw, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run cbb pair on the group's root or an admin and cbb join -code here")
+				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run cbb pair on the group's root or an admin and type its code here")
 			}
 			return nil, err
 		}

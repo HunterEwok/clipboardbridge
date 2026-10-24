@@ -28,11 +28,12 @@ Commands:
                           Show or set whether this computer holds clipboardbridge.local.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
-  pair                    Admit a new computer: show a code for cbb join.
+  new                     Create a group with this computer as its root.
+  pair                    In a group: show a code for a new computer. In none: join one,
+                          by the phone's QR code or the code from cbb pair on the group.
+  pair -code [address]    Join with the code from cbb pair on the root or an admin.
   pair -phone             Pair an iPhone or iPad with the shortcut.
-  join                    Join a group: show a QR code for the phone to scan.
-  join -code [address]    Join with the code from cbb pair on the root or an admin.
-  join -invite file       Join from afar with an invitation from cbb invite.
+  pair -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link the Mac's or Windows clipboard to the service (started at sign-in).
@@ -75,10 +76,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdRevoke(rest, stdout, stderr)
 	case "admin":
 		return cmdAdmin(rest, stdout, stderr)
+	case "new":
+		return cmdNew(rest, stdout, stderr)
 	case "pair":
-		return cmdPair(rest, stdout, stderr)
-	case "join":
-		return cmdJoin(rest, stdin, stdout, stderr)
+		return cmdPair(rest, stdin, stdout, stderr)
 	case "invite":
 		return cmdInvite(rest, stdin, stdout, stderr)
 	case "holder":

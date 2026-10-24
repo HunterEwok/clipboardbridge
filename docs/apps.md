@@ -26,7 +26,7 @@ they look, so both apps are built to the same plan.
 ## Screens
 
 1. **Start** (no group yet): one sentence, the big button "Connect a new device" with a hint
-   below it (on a computer, run `cbb join` and scan the code it shows; `clipboardbridge
+   below it (on a computer, run `cbb pair` and scan the code it shows; `clipboardbridge
    pair -phone` in the mode without the app), and a second button, "I already use
    clipboardbridge on another phone", which joins that phone's group. The camera opens at once;
    after the scan the app creates the group key in the Secure Enclave or StrongBox, admits

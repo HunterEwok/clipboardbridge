@@ -30,6 +30,7 @@ const (
 	OpCopy      = "copy"       // client → service: make an event from a deliberate action
 	OpPaste     = "paste"      // client → service: ask for the member's own clipboard text
 	OpStatus    = "status"     // client → service: ask for the status
+	OpNew       = "new"        // client → service: create a group with this device as its root
 	OpPair      = "pair"       // client → service: open a pairing window; answers follow
 	OpPairPhone = "pair-phone" // client → service: open an iPhone pairing window; answers follow
 	OpJoin      = "join"       // client → service: join a group with a code
@@ -151,7 +152,7 @@ type Joining struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	OS          string `json:"os"`
-	Fingerprint string `json:"fingerprint"` // of its key, as cbb join shows it on the device
+	Fingerprint string `json:"fingerprint"` // of its key, as cbb pair shows it on the device
 }
 
 // Device is a member as status shows it, or a device of the group as

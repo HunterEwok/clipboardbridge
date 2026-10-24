@@ -108,12 +108,11 @@ func startService(t *testing.T) string {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Create the group: pair opens a window, which the test then closes.
 	c, err := control.Dial(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPair}}); err != nil {
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpNew}}); err != nil {
 		t.Fatal(err)
 	}
 	c.Close()

@@ -127,7 +127,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
 	if st.Group == "" {
-		fmt.Fprintln(w, "Not in a group. Run cbb pair here to start one, or cbb join to join one.")
+		fmt.Fprintln(w, "Not in a group. Run cbb new here to start one, or cbb pair to join one.")
 		return
 	}
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
@@ -142,22 +142,96 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	writeDevices(w, devs, st.Peers, now)
 }
 
-// cmdPair opens a pairing window and waits until a device joins, the
-// window closes, or the user presses Ctrl+C.
-func cmdPair(args []string, stdout, stderr io.Writer) int {
+// cmdNew creates a group with this computer as its root.
+func cmdNew(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "cbb: new takes no arguments")
+		return 2
+	}
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpNew}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "Created the group %s; this computer is its root.\n", m.Status.Group)
+	fmt.Fprintln(stdout, "Add a computer: cbb pair here, then cbb pair on the new computer.")
+	fmt.Fprintln(stdout, "Add an iPhone with the shortcut: cbb pair -phone.")
+	return 0
+}
+
+// cmdPair adds a device, on whichever side this computer is: in a group it
+// opens a pairing window for a new computer; in no group it joins one, by
+// the phone's QR code or by the code that cbb pair shows on the group's
+// root or an admin.
+func cmdPair(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pair", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	phone := fs.Bool("phone", false, "pair an iPhone or iPad instead of a computer")
+	phone := fs.Bool("phone", false, "pair an iPhone or iPad with the shortcut")
+	typed := fs.Bool("code", false, "join with the code that cbb pair shows on the group's root or an admin, read from standard input")
+	invitation := fs.String("invite", "", "join from afar with the invitation file that cbb invite made on the group's hub")
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "cbb: pair takes only -phone")
+	rest := fs.Args()
+	switch {
+	case *phone && (*typed || *invitation != "" || len(rest) != 0),
+		*invitation != "" && (*typed || len(rest) != 0),
+		len(rest) > 1 || len(rest) == 1 && (!*typed || !strings.Contains(rest[0], ":")):
+		fmt.Fprintln(stderr, pairUsage)
 		return 2
-	}
-	if *phone {
+	case *phone:
 		return cmdPairPhone(stdout, stderr)
+	case *invitation != "":
+		return cmdJoinInvite(*invitation, stdin, stdout, stderr)
+	case *typed:
+		address := ""
+		if len(rest) == 1 {
+			address = rest[0]
+		}
+		fmt.Fprint(stdout, "Pairing code: ")
+		line, err := readLine(stdin)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return joinWithCode(line, address, stdout, stderr)
 	}
+	st, err := serviceStatus()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if st.Group == "" {
+		return joinByQR(stdin, stdout, stderr)
+	}
+	return admit(stdout, stderr)
+}
+
+const pairUsage = `usage: cbb pair                  in a group: show a code for a new computer;
+                                in no group: join by the phone's QR code or a typed code
+       cbb pair -code [address:port]   join with the code, read from standard input
+       cbb pair -phone          pair an iPhone with the shortcut
+       cbb pair -invite file    join from afar with an invitation`
+
+// serviceStatus asks the service for its status.
+func serviceStatus() (*control.Status, error) {
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}})
+	if err != nil {
+		return nil, err
+	}
+	return m.Status, nil
+}
+
+// admit opens a pairing window and waits until a device joins, the window
+// closes, or the user presses Ctrl+C.
+func admit(stdout, stderr io.Writer) int {
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
@@ -168,9 +242,9 @@ func cmdPair(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Pairing code: %s %s\n\n", m.Code[:3], m.Code[3:])
-	fmt.Fprintln(stdout, "On the new computer run:  cbb join -code")
+	fmt.Fprintln(stdout, "On the new computer run cbb pair and type the code.")
 	if m.Address != "" {
-		fmt.Fprintf(stdout, "If it cannot find this one: cbb join -code %s\n", m.Address)
+		fmt.Fprintf(stdout, "If it cannot find this one: cbb pair -code %s\n", m.Address)
 	}
 	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
 	m, err = c.Receive()
@@ -218,50 +292,33 @@ func shortFingerprint(fp string) string {
 	return fp
 }
 
-// cmdJoin joins this device to a group. By default it shows a QR code for
-// the phone, the group's main device, to scan with the clipboardbridge
-// shortcut that adds a computer, and waits for the window that the phone
-// opens. With -code it asks for the code that cbb pair shows on a
-// root or an admin instead; that code is read from standard input, never taken
-// from the command line, where other users of the machine could read it.
-func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("join", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	typed := fs.Bool("code", false, "type the code that cbb pair shows on the group's root or an admin")
-	invitation := fs.String("invite", "", "join with the invitation file that cbb invite made on the group's hub")
-	if fs.Parse(args) != nil {
-		return 2
+// joinWithCode joins the group with the code that cbb pair shows on the
+// group's root or an admin, at address or at the member that announces an
+// open window. The code comes from standard input, never from the command
+// line, where other users of the machine could read it.
+func joinWithCode(line, address string, stdout, stderr io.Writer) int {
+	code, err := pair.NormalizeCode(line)
+	if err != nil {
+		return fail(stderr, err)
 	}
-	rest := fs.Args()
-	if *invitation != "" {
-		if *typed || len(rest) != 0 {
-			fmt.Fprintln(stderr, "usage: cbb join -invite file")
-			return 2
-		}
-		return cmdJoinInvite(*invitation, stdin, stdout, stderr)
+	c, err := control.Dial(control.SocketPath())
+	if err != nil {
+		return fail(stderr, err)
 	}
-	if len(rest) > 1 || len(rest) == 1 && (!*typed || !strings.Contains(rest[0], ":")) {
-		fmt.Fprintln(stderr, "usage: cbb join            (scan the QR code with the phone)\n       cbb join -code [address:port]\n       cbb join -invite file\nThe code is asked for, or read from standard input.")
-		return 2
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Code: code, Address: address}}); err != nil {
+		return fail(stderr, err)
 	}
-	h := control.Header{Op: control.OpJoin}
-	if *typed {
-		if len(rest) == 1 {
-			h.Address = rest[0]
-		}
-		fmt.Fprint(stdout, "Pairing code: ")
-		line, err := readLine(stdin)
-		if err != nil {
-			return fail(stderr, err)
-		}
-		if h.Code, err = pair.NormalizeCode(line); err != nil {
-			return fail(stderr, err)
-		}
-	} else {
-		h.Code = pair.NewCode()
-		h.Expires = int(pair.Lifetime / time.Second)
-		h.Listen = true
-	}
+	fmt.Fprintln(stdout, "Joined the group.")
+	return 0
+}
+
+// joinByQR joins a group by the QR code the phone scans, the group's main
+// device: it shows the QR code and waits for the window the phone opens.
+// Meanwhile the user may type the code that cbb pair shows on a computer
+// of the group instead.
+func joinByQR(stdin io.Reader, stdout, stderr io.Writer) int {
+	h := control.Header{Op: control.OpJoin, Code: pair.NewCode(), Expires: int(pair.Lifetime / time.Second), Listen: true}
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
@@ -271,37 +328,69 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if !*typed {
-		// The service listens and answers first with where, for the QR
-		// code, then once more when the join ends.
-		if len(m.Addrs) == 0 {
-			return fail(stderr, errors.New("this device has no address on the home network; connect it to the network, or use cbb join -code"))
+	// The service listens and answers first with where, for the QR code,
+	// then once more when the join ends.
+	if len(m.Addrs) == 0 {
+		return fail(stderr, errors.New("this device has no address on the home network; connect it to the network, or use cbb pair -code"))
+	}
+	fmt.Fprintln(stdout, "In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut")
+	fmt.Fprintln(stdout, "\"clipboardbridge: add a computer\") and scan this:")
+	fmt.Fprintln(stdout)
+	jc := phone.JoinCode{Code: h.Code, Addrs: m.Addrs, Fingerprint: m.Fingerprint}
+	text := phone.JoinQR(jc)
+	if err := writeQR(stdout, text); err != nil {
+		return fail(stderr, err)
+	}
+	// The same code as text, for a phone without a camera, such as the
+	// app in the iOS simulator.
+	fmt.Fprintf(stdout, "\nOr paste this into the app: %s\n", text)
+	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
+	port, err := service.Port()
+	if err != nil {
+		port = service.MemberPort
+	}
+	fmt.Fprintf(stdout, "If the phone cannot connect, a firewall may be in the way: TCP %d must be open to\n", port)
+	fmt.Fprintln(stdout, "the home network; the installer opens it in ufw or firewalld (docs/quickstart.md).")
+	fmt.Fprint(stdout, "\nWithout a phone: run cbb pair on the group's root or an admin and type its code here: ")
+
+	ended := make(chan error, 1)
+	go func() {
+		_, err := c.Receive()
+		ended <- err
+	}()
+	lines := make(chan string)
+	go func() {
+		for {
+			line, err := readLine(stdin)
+			if err != nil {
+				return // no terminal, or it closed: the phone may still come
+			}
+			lines <- line
 		}
-		fmt.Fprintln(stdout, "In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut")
-		fmt.Fprintln(stdout, "\"clipboardbridge: add a computer\") and scan this:")
-		fmt.Fprintln(stdout)
-		jc := phone.JoinCode{Code: h.Code, Addrs: m.Addrs, Fingerprint: m.Fingerprint}
-		text := phone.JoinQR(jc)
-		if err := writeQR(stdout, text); err != nil {
-			return fail(stderr, err)
-		}
-		// The same code as text, for a phone without a camera, such as the
-		// app in the iOS simulator.
-		fmt.Fprintf(stdout, "\nOr paste this into the app: %s\n", text)
-		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
-		fmt.Fprintln(stdout, "Without a phone: run cbb pair on the group's root or an admin and cbb join -code here.")
-		port, err := service.Port()
-		if err != nil {
-			port = service.MemberPort
-		}
-		fmt.Fprintf(stdout, "If the phone cannot connect, a firewall may be in the way: TCP %d must be open to\n", port)
-		fmt.Fprintln(stdout, "the home network; the installer opens it in ufw or firewalld (docs/quickstart.md).")
-		if _, err := c.Receive(); err != nil {
-			return fail(stderr, err)
+	}()
+	for {
+		select {
+		case err := <-ended:
+			if err != nil {
+				return fail(stderr, err)
+			}
+			fmt.Fprintln(stdout, "\nJoined the group.")
+			return 0
+		case line := <-lines:
+			if line == "" {
+				continue
+			}
+			if _, err := pair.NormalizeCode(line); err != nil {
+				fmt.Fprintf(stderr, "cbb: %v; type the six digits again: ", err)
+				continue
+			}
+			// Any message ends the wait for the phone; the join with the
+			// code starts once the service has said so.
+			c.Send(&control.Message{Header: control.Header{Op: control.OpAnswer}})
+			<-ended
+			return joinWithCode(line, "", stdout, stderr)
 		}
 	}
-	fmt.Fprintln(stdout, "Joined the group.")
-	return 0
 }
 
 func readLine(r io.Reader) (string, error) {

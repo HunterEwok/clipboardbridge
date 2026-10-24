@@ -234,7 +234,7 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
   home"). The phones and the lite member do not use the tunnel yet; a lite member can be
   given a member's address with `-peer`.
-- A computer that joined at an address the user gave (`cbb join -code ADDRESS`, as through
+- A computer that joined at an address the user gave (`cbb pair -code ADDRESS`, as through
   an SSH forward or a VPN) also dials the member that admitted it at that address, whatever
   the rules above say, while discovery does not find that member and no other connection to
   it is up. It keeps doing so, with the same waits, until it holds the hub's tunnel offer
@@ -590,7 +590,7 @@ plus the browse time.
 
 ### The joiner listens (for the phone)
 
-`cbb join` without `-code` turns the direction round, so that the device that scans
+`cbb pair` without `-code` turns the direction round, so that the device that scans
 the QR code dials the computer, and nothing is announced:
 
 - The joiner listens on its member port, which nothing holds while it is in no group, when
@@ -810,8 +810,9 @@ A connection carries one request: the service reads the first message and dispat
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
 | `status` | none | `{status, done}`; `status` = `{device, group, role, os, holder, peers: [{id, role, os, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
-| `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
-| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
+| `new` | none | `{status, done}`: the device creates a group and is its root (section 10). Only on a device in no group |
+| `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. Only on the group's root or an admin; elsewhere the error names them. Hanging up closes the window |
+| `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on a member that holds the iPhone CA (in a group a computer created, the root or an admin) and answers for `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
 | `invite` | `{expires?}`: seconds, 3600 if absent, at most 86 400 | Only on the group's hub, when it can admit devices. First `{invite, expires}`: the invitation's text. Then, for each device that used it and proved it knows the secret, `{joining: {id, name, os, fingerprint}}`, which the client answers with `{"op": "answer", consent}` (`true` admits it); last `{name, done}` or an error. Hanging up cancels the invitation |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
@@ -862,7 +863,7 @@ iPhone CA as well (section 10, "Admins").
   members (a phone cannot accept connections in the background), so members MUST NOT dial a
   `phone` member; it publishes no mDNS records. It listens only for pairing, while another
   phone joins it (section 6, "The joiner listens").
-- **Join QR code and pairing direction.** `cbb join` listens and shows its addresses and
+- **Join QR code and pairing direction.** `cbb pair` listens and shows its addresses and
   certificate fingerprint; the app dials it as the admitting side, confirms first (section
   6, "The joiner listens") and sends a Welcome with a member certificate signed by its CA.
   When the shortcut posts the QR code to `/admit`, a Linux member dials instead.
@@ -1199,7 +1200,7 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
 
 A device that shares no network with the group joins through the hub's tunnel with a remote
 invitation ([design.md](design.md), "Joining from another network"). Implemented in Go
-(`internal/invite`, `internal/service/invite.go`, `cbb invite`, `cbb join -invite`) for
+(`internal/invite`, `internal/service/invite.go`, `cbb invite`, `cbb pair -invite`) for
 computers; the phones neither make nor use invitations yet.
 
 ### The invitation
@@ -1222,7 +1223,7 @@ in it as in the rest of this document):
 | `o` | object or absent | the hub's obfuscation settings, as in its offer (section 11, "Obfuscation") |
 
 It travels as a file of one line (`.cbbinvite`, mode 0600, which `cbb invite` deletes when
-the invitation ends and `cbb join -invite` deletes once it joined) or, later, a QR code; it
+the invitation ends and `cbb pair -invite` deletes once it joined) or, later, a QR code; it
 is never typed. It is a secret until it is used. It serves one device once, for 1 hour
 unless the admin asks for up to 24 hours, and closes after three failed attempts or when
 the admin cancels it.

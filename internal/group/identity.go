@@ -22,7 +22,7 @@ import (
 const FileName = "identity.json"
 
 // ErrNoGroup reports that the device is in no group yet.
-var ErrNoGroup = errors.New("group: this device is in no group; run cbb pair or cbb join")
+var ErrNoGroup = errors.New("group: this device is in no group; run cbb new to start one or cbb pair to join one")
 
 // An Identity is this device's place in a group: its device ID, its key,
 // its member certificate and the group CA. The computer that created the

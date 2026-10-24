@@ -352,9 +352,15 @@ func (s *testService) paste(t *testing.T) string {
 	return string(m.Payload)
 }
 
-// openWindow opens a pairing window on admin; closing the client closes it.
+// openWindow opens a pairing window on admin, which first creates a group
+// when it is in none; closing the client closes it.
 func openWindow(t *testing.T, admin *testService) (*control.Client, string) {
 	t.Helper()
+	if admin.status(t).Group == "" {
+		if _, err := admin.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+			t.Fatalf("new on %s: %v", admin.name, err)
+		}
+	}
 	c := admin.dial(t)
 	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPair}})
 	if err != nil {
@@ -425,11 +431,11 @@ func TestThreeMembers(t *testing.T) {
 	if st := a.status(t); st.Group != "" {
 		t.Fatalf("a new service is in a group: %+v", st)
 	}
-	if _, err := a.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair here to start one") {
+	if _, err := a.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "cbb new here to start one") {
 		t.Errorf("paste in no group: %v", err)
 	}
 	pairWith(t, a, b) // creates the group on alpha, its root
-	if _, err := b.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+	if _, err := b.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "root or an admin") {
 		t.Errorf("pair on a member that is no admin: %v", err)
 	}
 	makeAdmin(t, a, b)
@@ -647,7 +653,7 @@ func TestMac(t *testing.T) {
 		seen[macLower] = true
 		t.Logf("the Mac's ID is lower: %v", macLower)
 		waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
-		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "root or an admin") {
 			t.Errorf("pair on a Mac: %v", err)
 		}
 		if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
@@ -764,9 +770,15 @@ func TestPairingWindow(t *testing.T) {
 }
 
 func TestConcurrentPairs(t *testing.T) {
-	// Two pairs on a device in no group make one group and one window.
+	// Two pairs at once open one window.
 	var h hub
 	a := startService(t, &h, "alpha")
+	if _, err := a.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpNew}, ""); err == nil || !strings.Contains(err.Error(), "already in a group") {
+		t.Errorf("a second new: %v", err)
+	}
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	clients := make([]*control.Client, 2)
@@ -892,8 +904,8 @@ func TestDiscoveryFails(t *testing.T) {
 		c.Discover = func(DiscoveryConfig) (Discovery, error) { return nil, errors.New("no network") }
 	})
 	for range 2 {
-		if _, err := a.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "no network") {
-			t.Errorf("pair: %v", err)
+		if _, err := a.do(t, control.Header{Op: control.OpNew}, ""); err == nil || !strings.Contains(err.Error(), "no network") {
+			t.Errorf("new: %v", err)
 		}
 		if st := a.status(t); st.Group != "" {
 			t.Errorf("in a group after a failed start: %+v", st)
@@ -1134,14 +1146,17 @@ func TestIPhone(t *testing.T) {
 // and returns how the shortcut admits a device by its QR code.
 func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string) map[string]any, token string) {
 	t.Helper()
+	if _, err := pi.do(t, control.Header{Op: control.OpPairPhone}, ""); err == nil || !strings.Contains(err.Error(), "cbb new") {
+		t.Errorf("pair -phone in no group: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+		t.Fatal(err)
+	}
 	c := pi.dial(t)
 	defer c.Close()
 	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPairPhone}})
 	if err != nil {
-		t.Fatalf("pair -phone in no group: %v", err)
-	}
-	if pi.status(t).Group == "" {
-		t.Fatal("pair -phone did not create the group")
+		t.Fatalf("pair -phone: %v", err)
 	}
 	// The iPhone port starts with the group, just after it.
 	waitFor(t, "the iPhone port", func() bool { a, _ := pi.addrs(); return a != "" })
@@ -1195,7 +1210,7 @@ func TestPhoneAddsAComputer(t *testing.T) {
 	pi := startService(t, &h, "pi")
 	admit, token := shortcutPhone(t, pi)
 
-	// A new computer runs cbb join: it listens, shows its QR code
+	// A new computer runs cbb pair: it listens, shows its QR code
 	// and waits.
 	laptop := startService(t, &h, "laptop")
 	lc := laptop.dial(t)

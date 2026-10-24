@@ -34,10 +34,10 @@ In scope for 0.4:
 | Area | What is tested |
 |---|---|
 | Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux, `install.sh` and Homebrew on macOS, `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
-| Group and pairing | `cbb pair` / `cbb join -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
+| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
-| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb join -invite`, a device on another network (mobile data), reconnect, roaming |
+| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
 | The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb away hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
 | Failure cases | section 8 |
 | Security | section 9 (top priority for everything off the home network) |
@@ -162,7 +162,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
-| P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |

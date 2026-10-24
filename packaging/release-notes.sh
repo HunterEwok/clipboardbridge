@@ -67,13 +67,13 @@ Or with Homebrew, on macOS or Linux (x86-64, ARM64): \`brew install hunterewok/t
 then the command it prints to start the service.
 
 **Android** 10 or later: open \`clipboardbridge-$version.apk\` on the phone and allow the
-install. The app makes its own group and adds the computers by their \`cbb join\` QR code.
+install. The app makes its own group and adds the computers by their \`cbb pair\` QR code.
 
 **Lite member** for small Linux devices (a router, a Raspberry Pi Zero): unpack
 \`cbb-lite-linux-<arch>.tar.gz\` and follow \`cbb-lite/README.md\`, section "Install".
 
-Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb pair -phone\`
-on the first computer for the iPhone, and \`cbb join\` on each further computer.
+Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb new\` and
+\`cbb pair -phone\` on the first computer for the iPhone, and \`cbb pair\` on each further computer.
 
 ## Verify the downloads
 

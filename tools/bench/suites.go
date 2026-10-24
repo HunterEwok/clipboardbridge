@@ -25,7 +25,7 @@ var (
 	groupRE  = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
 	deviceRE = regexp.MustCompile(`(?i)device\s+([0-9a-f]{8,})`)
 	codeRE   = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
-	addrRE   = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
+	addrRE   = regexp.MustCompile(`cbb pair -code (\S+:\d+)`)
 )
 
 // Check reaches every device: SSH, the clock, the installed version and its
@@ -114,7 +114,7 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 	}
 	if hub == nil || hub.OS != "linux" {
 		r.Do("smoke/setup", func() error {
-			return errors.New("smoke needs a Linux device with the role hub in the inventory: it makes the group with cbb pair")
+			return errors.New("smoke needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
 		})
 		return
 	}
@@ -158,6 +158,12 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 	}
 
 	var group string
+	if r.Do("smoke/"+hub.Name+"/new", func() error {
+		_, err := Run(ctx, hub, "cbb new", "")
+		return err
+	}) != nil {
+		return
+	}
 	members := []*Device{hub}
 	for _, d := range devices {
 		if d == hub {
@@ -270,7 +276,7 @@ func deviceOf(ctx context.Context, d *Device) (string, error) {
 }
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and
-// cbb join -code (cbb-lite join -code) with its code on the device.
+// cbb pair -code (cbb-lite join -code) with its code on the device.
 func pairOne(ctx context.Context, hub, d *Device) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -306,7 +312,10 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 		return fmt.Errorf("cbb pair on %s showed no code", hub.Name)
 	}
 	addr := d.addrFor(hub, w.addr)
-	join := cbbCmd(d) + " join -code"
+	join := cbbCmd(d) + " pair -code"
+	if d.OS == "linux-lite" {
+		join = cbbCmd(d) + " join -code"
+	}
 	if d.OS == "linux-lite" {
 		// The lite member joins as its service's user, which alone may
 		// write its keys (lite/README.md); the bench user has sudo.

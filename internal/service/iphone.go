@@ -97,13 +97,9 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 // clipboardbridge.local, serves the profile while it is open, and reports the
 // end; a client that hangs up closes the window.
 func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader) {
-	// The phone is the group's main device: pairing it with the first
-	// computer creates the group.
 	if s.engine() == nil {
-		if _, err := s.createGroup(); err != nil {
-			fail(c, err)
-			return
-		}
+		fail(c, s.errNoGroup())
+		return
 	}
 	s.mu.Lock()
 	id, holder, busy := s.id, s.holder, s.phoneWindow != nil || s.phoneOpening
