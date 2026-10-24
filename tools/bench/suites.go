@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -143,6 +144,19 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 		return
 	}
 
+	// mDNS does not cross subnets: a lite member is told where the hub is
+	// for the run, and the service goes back to its own settings after it.
+	if hub.Address != "" {
+		for _, d := range devices {
+			if d.OS != "linux-lite" {
+				continue
+			}
+			if r.Do("smoke/"+d.Name+"/peer", func() error { return litePeer(ctx, d, hub.Address) }) == nil {
+				defer r.Do("smoke/"+d.Name+"/unpeer", func() error { return litePeer(context.WithoutCancel(ctx), d, "") })
+			}
+		}
+	}
+
 	var group string
 	members := []*Device{hub}
 	for _, d := range devices {
@@ -226,6 +240,21 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 			return err
 		})
 	}
+}
+
+// liteDropIn is the bench's systemd drop-in for the lite member's service.
+const liteDropIn = "/etc/systemd/system/cbb-lite.service.d/cbbbench.conf"
+
+// litePeer restarts the lite member's service with -peer addr, or without
+// the bench's drop-in when addr is "".
+func litePeer(ctx context.Context, d *Device, addr string) error {
+	cmd := "sudo -n rm -f " + liteDropIn
+	if addr != "" {
+		conf := "[Service]\nExecStart=\nExecStart=/usr/local/bin/cbb-lite run -peer " + addr + "\n"
+		cmd = "sudo -n mkdir -p " + path.Dir(liteDropIn) + " && printf '" + conf + "' | sudo -n tee " + liteDropIn + " >/dev/null"
+	}
+	_, err := Run(ctx, d, cmd+" && sudo -n systemctl daemon-reload && sudo -n systemctl restart cbb-lite", "")
+	return err
 }
 
 // deviceOf returns the device's ID from its status.
