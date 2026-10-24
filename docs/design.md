@@ -587,7 +587,7 @@ and cover traffic cannot hide a large transfer.
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
 | Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
-| An admin orders a paste on a member (planned, 0.5)            | only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is removed like any device (see "Remote paste") |
+| An admin orders a paste on a member (planned, 0.5)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is removed like any device (see "Remote paste") |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -783,8 +783,14 @@ user can run `cbb forward` on a server of their own.
   the network and can at most stop forwarding.
 - It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
   clients, and the timing and sizes of packets: any forwarder has to know which hub a client's
-  packets go to. It does not learn the texts, the devices' names, or which address is which
-  device. It writes nothing to disk, logs included; what it knows lives in memory while the
+  packets go to. From the registration it also learns the hub's member certificate (its
+  device ID, its validity and its admin CA if it has one), the group's root certificates,
+  the group's obfuscation settings and, with VLESS, the group's VLESS user ID; and from the
+  number of clients that send packets, roughly how many devices are away from home. It does
+  not learn the texts, the devices' names, or which client address is which device. This
+  metadata is accepted by design (owner decision, 2026-10-24): it reveals that a group
+  exists and how busy it is, never what it syncs, and hiding it would need certificate-less
+  registration or a chain of relays. It writes nothing to disk, logs included; what it knows lives in memory while the
   connections last. The clients' addresses cannot be hidden from it, since they are where its
   answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
   complexity that the project does not take on.
@@ -1338,13 +1344,28 @@ does not, the screen's own session.
 ### Who may paste where
 
 A device in a group trusts its admins: they already admit it, renew its certificate and
-remove it. So **every admin may paste on every member** that can take it, with no consent
-on the target and no setting to turn it on (D-54). The admins are the root and admin
-phones, the admin computers of a phone group, and in a group a computer created the root
-computer and the admins it made. Members that are not admins never send. The only things
-the target's user sets up are the permissions the operating system demands once, at
-install time (below); without them the system refuses the input, and the sender is told
-so.
+remove it. Still, typing into a device is more than syncing a clipboard, so **remote paste
+is off on every device until its own user turns it on there** (`cbb paste-receive on`, a
+switch in the apps; D-59). Once it is on, every admin may paste on it with no further
+consent. The admins are the root and admin phones, the admin computers of a phone group,
+and in a group a computer created the root computer and the admins it made. Members that
+are not admins never send. Besides the switch, the target's user sets up only the
+permissions the operating system demands once (below); without them the system refuses the
+input, and the sender is told so.
+
+- **Enter and root consoles are off by default** even when remote paste is on: the `enter`
+  flag is refused, and so are the Linux text console helper and a tmux session of root,
+  until the device's user turns each on there (`cbb paste-receive on -enter`,
+  `-console`). So a paste can at most put text in front of the user, not run it.
+- **Any admin turns it off on any member** with a signed command, like the sync mode
+  (D-55), when an admin device is lost: it takes effect at once, needs no consent, and only
+  the device's own user turns it on again.
+- **A stolen admin is cut off quickly.** The root or an admin phone removes it with one
+  action (`cbb revoke`, Devices in the apps), which revokes its member and admin keys
+  together; from then on nothing it signs counts on any member, pastes included. An admin
+  computer cannot remove another admin (protocol section 10), but it can turn remote paste
+  off on every member at once (`cbb paste-receive off --all`) until the root or an admin
+  phone does.
 
 ### How the text gets in
 
@@ -1406,10 +1427,11 @@ such as the hub, cannot forge or change it.
 - Away from home only inside the group's tunnel, under the rules of "Sync away from home".
 
 **A stolen admin device.** A phone cannot paste without its owner's face or finger. An
-admin computer keeps its admin key in a file, so a thief with it can type commands into
-every member that takes input, root consoles included, until another admin removes it;
-removal reaches every member through the records, and from then on its commands fail the
-signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
+admin computer keeps its admin key in a file, so a thief with it can paste text on the
+members whose users turned remote paste on, but presses Enter and reaches root consoles
+only where those were turned on too, and only until another admin turns remote paste off
+or the root or an admin phone removes it; removal reaches every member through the
+records, and from then on its commands fail the signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
 narrow this to a thief who also has the computer running.
 
 ## Open questions
@@ -1504,8 +1526,9 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-51 | In a group a computer creates, only the creating computer (the root) and the members it makes admins hold CA keys, through the admin CAs of D-33 under a root with path length 1; any device but the root is removed by a record without a new group, and a lost root is taken over by an admin. |
 | D-52 | Groups made before D-51 are upgraded in place with a `root` record signed by the old group CA key and a revocation of that key; a leftover copy of the old key can break such a group but never take it over. |
 | D-53 | `clipboardbridge.local` is held only by a member with the iPhone CA key, machines that do not sleep first and laptops as a fallback, guessed from a battery and set by a setting. |
-| D-54 | Every admin may paste a text on any member, the target pressing nothing and consenting to nothing, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
+| D-54 | Every admin may paste a text on any member that turned remote paste on (D-59), the target pressing nothing per paste, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
 | D-55 | Each device has a sync mode, own (the default), shared, receive only or send only, which decides only what moves between its clipboard and the group; it stays connected in every mode, changes its own mode, and any admin changes the mode of any member with a signed command. |
 | D-56 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
 | D-57 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
 | D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
+| D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |

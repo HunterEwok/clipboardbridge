@@ -1315,6 +1315,15 @@ not built.
   forwarder's endpoint after its own (section 11). Clients need nothing else: to them the
   forwarder is one more address of the hub.
 
+### What the forwarder learns
+
+Accepted by design ([design.md](design.md), "The forwarder"): the group tag and root
+certificates, the hub's member certificate (device ID, validity, admin CA) and WireGuard
+public key, the group's obfuscation settings and VLESS user ID when set, the addresses of
+the hub and its clients, and the timing and sizes of their packets. It never sees a member
+key, a text, a device name, or which client address is which device, and it keeps nothing
+on disk.
+
 ### Registration
 
 1. The hub connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-forward/1` and no

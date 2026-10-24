@@ -85,7 +85,8 @@ The order may change.
     key that cannot be revoked by a record.
 18. **Planned for 0.5.** Remote paste: an admin device sends a text to one member and has
     it pasted or typed where that member's focus is, with nothing pressed on the target;
-    every admin may do it on every member (D-54), the iPhone only sends. See "Remote paste"
+    every admin may do it on every member whose user turned it on, Enter and root consoles
+    separately (D-54, D-59), the iPhone only sends. See "Remote paste"
     in [design.md](design.md#remote-paste-planned-for-05). One pull request each:
     1. the signed `paste` command, its result and its forwarding, in Go and both phone
        kits with interop vectors; `cbb paste --on DEVICE`;
