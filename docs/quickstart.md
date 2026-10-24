@@ -36,7 +36,9 @@ source and purpose, and asks `Add these rules now? [y/N]`:
 - **`--express`** (`-Express` or `$env:CBB_FIREWALL = "express"` on Windows): it adds them
   without asking and reports what it added. `--no-firewall` answers No without asking.
 
-The answer is kept for updates; `--express` or `--no-firewall` changes it. nftables and
+The answer is kept for updates; `--express` or `--no-firewall` changes it. Rules that an
+installation from before this question added count as a Yes, so an update never removes
+them without an answer; with no terminal and no answer kept, nothing is added or removed. nftables and
 iptables get the commands only, since rules added at run time do not survive a restart
 there. If you turn a firewall on later, run the installer again (it is also how you
 update). By hand with ufw, for example from `192.168.0.0/24`:

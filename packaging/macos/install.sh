@@ -233,6 +233,13 @@ fw=/usr/libexec/ApplicationFirewall/socketfilterfw
 listed="/Library/Application Support/clipboardbridge/firewall"
 answer=/etc/clipboardbridge/firewall.answer
 if [ -x "$fw" ]; then
+	# An installation from before the question listed the program without
+	# one: that counts as a Yes, kept from now on, so that an update never
+	# takes the listing away without an answer.
+	earlier=
+	if [ -f "$listed" ] && [ ! -f "$answer" ]; then
+		earlier=yes
+	fi
 	if [ -f "$listed" ]; then
 		"$fw" --remove "$(cat "$listed")" >/dev/null 2>&1 || true
 		rm -f "$listed"
@@ -253,6 +260,9 @@ if [ -x "$fw" ]; then
 	elif [ "$yes" = ask ]; then
 		yes=$(cat "$answer" 2>/dev/null || true)
 		how=" (as answered before)"
+		if [ -n "$earlier" ]; then
+			yes=yes how=" (kept from an earlier installation)"
+		fi
 	fi
 	if [ "$yes" != yes ] && [ "$yes" != no ] && [ "$yes" != express ]; then
 		echo "With Yes, clipboardbridge adds this rule, keeps it current on every update and removes it on uninstall."

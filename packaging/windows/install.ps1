@@ -267,7 +267,8 @@ $step = 'allowing clipboardbridge in Windows Firewall'
 # Every rule carries the group clipboardbridge, so these lines and
 # uninstall.ps1 remove exactly the rules added here. The outbound rules
 # and the hub's port (clipboardbridge-hub) stay as cbb global left them.
-Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' -and $_.Name -ne "$name-hub" } | Remove-NetFirewallRule
+$ours = @(Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Inbound' -and $_.Name -ne "$name-hub" })
+$ours | Remove-NetFirewallRule
 $on = @(Get-NetFirewallProfile | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { $_.Name })
 $fwState = if ($on.Count -gt 0) { "on for $($on -join ', ')" } else { 'off' }
 # With -HomeCgnat on, 100.64.0.0/10 is the home network too.
@@ -289,6 +290,13 @@ if ($answer -eq 'ask') {
 	$kept = Get-ItemProperty -Path $serviceKey -Name FirewallAnswer -ErrorAction SilentlyContinue
 	$answer = if ($kept) { $kept.FirewallAnswer } else { '' }
 	$how = ' (as answered before)'
+	# An installation from before the question added its rules without
+	# one: they count as a Yes, kept from now on, so that an update never
+	# removes rules without an answer.
+	if (-not $kept -and $ours.Count -gt 0) {
+		$answer = 'yes'
+		$how = ' (kept from an earlier installation)'
+	}
 }
 if ($answer -notin @('yes', 'no', 'express')) {
 	Write-Host 'With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall.'

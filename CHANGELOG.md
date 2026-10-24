@@ -157,6 +157,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- An update without a terminal over an installation from before the firewall question no
+  longer removes the firewall rules it had added: rules that are there without a kept answer
+  count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing
+  is added or removed. `cbb global` returns only once a service it restarted answers again.
 - A used remote invitation no longer reaches the hub: its guest tunnel goes as soon as the new
   device's member connection through it ends after the hub answered its tunnel key (at most
   2 minutes after the admission, as before), and the hub refuses a second pairing through it.

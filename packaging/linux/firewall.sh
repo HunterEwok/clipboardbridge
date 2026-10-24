@@ -323,6 +323,14 @@ manual() {
 	esac
 }
 
+# present says whether rules an earlier installation added are there: the
+# state file, or ufw rules tagged by get.sh before the file existed.
+present() {
+	[ -s "$state" ] && return 0
+	command -v ufw >/dev/null 2>&1 &&
+		ufw status 2>/dev/null | grep -Eq '# clipboardbridge( mDNS)? *$'
+}
+
 setup() {
 	mode=$1
 	shift
@@ -353,17 +361,24 @@ setup() {
 		case $kept in
 		yes | no) yes=$kept how=" (as answered before)" ;;
 		*)
-			echo "With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall."
-			if ask "Add these rules now?"; then
-				yes=yes
-			elif [ $? -eq 2 ]; then
-				# Not an answer: the next run with a terminal asks again.
-				close
-				manual "$k" "$@"
-				echo "To let clipboardbridge add and manage them, run the installer again with --express."
-				return
+			# An installation from before the question added its rules
+			# without one: they count as a Yes, kept from now on, so that an
+			# update never removes rules without an answer.
+			if present; then
+				yes=yes how=" (kept from an earlier installation)"
 			else
-				yes=no
+				echo "With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall."
+				if ask "Add these rules now?"; then
+					yes=yes
+				elif [ $? -eq 2 ]; then
+					# Not an answer: nothing is added or removed, and the next run
+					# with a terminal asks again.
+					manual "$k" "$@"
+					echo "To let clipboardbridge add and manage them, run the installer again with --express."
+					return
+				else
+					yes=no
+				fi
 			fi
 			;;
 		esac
