@@ -9,7 +9,8 @@
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
 # a LaunchAgent, adds the user who ran sudo to the group, lets the service
-# take connections through the application firewall, and starts or
+# take connections through the application firewall, keeps it on the home
+# network with pf until cbb away on (pf.sh), and starts or
 # restarts both. With --in-place both run the binary where it is instead of
 # a copy, for Homebrew, whose upgrades replace it there: the formula's
 # caveats pass its opt path, and running this again after an upgrade
@@ -141,6 +142,13 @@ fi
 # as on Linux.
 install -d -m 0755 /usr/local/share/clipboardbridge
 install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
+
+# pf keeps the service on the home network until cbb away on, and lets only
+# the home network reach its port (pf.sh); a LaunchDaemon loads the rules
+# again at boot. It is a limit, not an opening, so CBB_FIREWALL=no keeps it.
+install -m 0644 "$here/pf.sh" /usr/local/share/clipboardbridge/pf.sh
+install -m 0644 "$here/$daemon.pf.plist" "/Library/LaunchDaemons/$daemon.pf.plist"
+sh /usr/local/share/clipboardbridge/pf.sh load
 
 # restart DOMAIN LABEL PLIST stops the job if it runs and starts it again.
 # bootout returns before launchd has let the job go, and a bootstrap in that

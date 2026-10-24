@@ -125,7 +125,7 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	// The join reaches the hub on the internet, so the service must be
 	// allowed to before it starts; a failed join closes that again.
-	opened, err := setAwayNet(true)
+	opened, _, err := setAwayNet(true)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -133,7 +133,7 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if opened {
 		defer func() {
 			if !joined {
-				if _, err := setAwayNet(false); err != nil {
+				if _, _, err := setAwayNet(false); err != nil {
 					fmt.Fprintf(stderr, "cbb: the service may still reach the internet: %v\n", err)
 				}
 			}

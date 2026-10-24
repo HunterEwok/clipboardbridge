@@ -354,11 +354,32 @@ jobs:
           sudo "$opt/bin/cbb" status | grep -q 'Not in a group'
           fw=/usr/libexec/ApplicationFirewall/socketfilterfw
           sudo "$fw" --listapps | grep -qF "$(readlink -f "$opt/bin/cbb")"
+          plutil -lint "/Library/LaunchDaemons/$daemon.pf.plist"
+          # pf keeps the service's user on the home network until cbb away
+          # on, and lets other users out.
+          sudo pfctl -a com.apple/clipboardbridge -s rules
+          sudo pfctl -s info | grep -q 'Status: Enabled'
+          out() { sudo -u "$1" /usr/bin/curl -sS -o /dev/null --max-time 10 http://1.1.1.1/; }
+          out "$(id -un)"
+          if out _clipboardbridge; then
+            echo "the service's user reached the internet without sync away from home" >&2
+            exit 1
+          fi
+          sudo "$opt/bin/cbb" new
+          echo yes | sudo "$opt/bin/cbb" away on
+          test -f /etc/clipboardbridge/away
+          out _clipboardbridge
+          sudo "$opt/bin/cbb" away off
+          if out _clipboardbridge; then
+            echo "cbb away off left the internet open" >&2
+            exit 1
+          fi
           # Again, as after an upgrade: it restarts the service.
           sudo sh "$share/install.sh" --in-place "$opt/bin/cbb"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
           sudo sh "$share/uninstall.sh" --purge
           for f in "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$daemon.agent.plist" \
+            "/Library/LaunchDaemons/$daemon.pf.plist" /etc/clipboardbridge \
             "/Library/Application Support/clipboardbridge" /Library/Logs/clipboardbridge; do
             if [ -e "$f" ]; then
               echo "uninstall.sh left $f" >&2
@@ -367,6 +388,10 @@ jobs:
           done
           if sudo launchctl print "system/$daemon" >/dev/null 2>&1; then
             echo "uninstall.sh left the service running" >&2
+            exit 1
+          fi
+          if [ -n "$(sudo pfctl -a com.apple/clipboardbridge -s rules 2>/dev/null)" ]; then
+            echo "uninstall.sh left the pf rules" >&2
             exit 1
           fi
           if sudo "$fw" --listapps | grep -qF "$(readlink -f "$opt/bin/cbb")"; then
@@ -447,7 +472,7 @@ jobs:
         run: |
           Expand-Archive "$env:RUNNER_TEMP\release\clipboardbridge-windows-amd64.zip" "$env:RUNNER_TEMP\unpacked"
           $install = "$env:RUNNER_TEMP\unpacked\clipboardbridge\packaging\windows\install.ps1"
-          function ports { @(Get-NetFirewallRule -Group clipboardbridge -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
+          function ports { @(Get-NetFirewallRule -Group clipboardbridge -Direction Inbound -ErrorAction SilentlyContinue | Get-NetFirewallPortFilter | ForEach-Object { "$($_.Protocol) $($_.LocalPort)" }) | Sort-Object }
           function check($want) {
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
@@ -460,9 +485,28 @@ jobs:
           check 'TCP 9000, UDP 5353'
           $svcEnv = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge).Environment
           if ($svcEnv -ne 'CBB_PORT=9000') { throw "the service environment: $svcEnv" }
+          function homeOnly($want) {
+            $r = Get-NetFirewallRule -Name clipboardbridge-home-only -ErrorAction SilentlyContinue
+            $got = if ($r) { "$($r.Direction) $($r.Action) $($r.Enabled)" } else { 'none' }
+            if ($got -ne $want) { throw "the outbound rule: $got, want $want" }
+          }
+          homeOnly 'Outbound Block True'
+          $filter = Get-NetFirewallRule -Name clipboardbridge-home-only | Get-NetFirewallAddressFilter
+          if ($filter.RemoteAddress -contains '192.168.0.0/16' -or $filter.RemoteAddress.Count -ne 9) { throw "the outbound rule's addresses: $($filter.RemoteAddress -join ', ')" }
+          # cbb away on lifts the rule, a reinstall keeps that, and cbb away off puts it back.
+          $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
+          & $cbb new
+          if ($LASTEXITCODE -ne 0) { throw 'cbb new failed' }
+          'yes' | & $cbb away on
+          if ($LASTEXITCODE -ne 0) { throw 'cbb away on failed' }
+          homeOnly 'Outbound Block False'
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 8764 -NoFirewall
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
+          homeOnly 'Outbound Block False'
+          & $cbb away off
+          if ($LASTEXITCODE -ne 0) { throw 'cbb away off failed' }
+          homeOnly 'Outbound Block True'
           powershell -NoProfile -ExecutionPolicy Bypass -File $install
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check 'TCP 8764, UDP 5353'
@@ -477,7 +521,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" -Purge
           if ($LASTEXITCODE -ne 0) { exit 1 }
           if (Get-Service clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left the service' }
-          if (ports) { throw 'uninstall.ps1 left firewall rules' }
+          if (Get-NetFirewallRule -Group clipboardbridge -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left firewall rules' }
           foreach ($p in @("$env:ProgramFiles\clipboardbridge", "$env:ProgramData\clipboardbridge",
               'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\clipboardbridge')) {
             if (Test-Path $p) { throw "uninstall.ps1 left $p" }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (C) 2026 HunterEwok -->
+<!-- Loads clipboardbridge's pf rules at boot (packaging/macos/pf.sh), which pf forgets at a restart. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>io.github.hunterewok.clipboardbridge.pf</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>/usr/local/share/clipboardbridge/pf.sh</string>
+		<string>load</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/clipboardbridge/pf.log</string>
+</dict>
+</plist>

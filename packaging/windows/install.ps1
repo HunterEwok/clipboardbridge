@@ -17,7 +17,9 @@
 # allows mDNS and the member port from the local network in Windows
 # Firewall, on every run, after removing the rules it added before, so an
 # old port stays closed; -NoFirewall (or CBB_FIREWALL=no) leaves the
-# firewall alone. uninstall.ps1 removes it all again.
+# firewall alone. An outbound rule keeps the service on the home network
+# until cbb away on lifts it, as the unit does on Linux; -NoFirewall keeps
+# that rule. uninstall.ps1 removes it all again.
 #
 # A failure prints what failed and the system's message; -Details (or
 # CBB_ERROR_DETAILS=1) adds the full error record and where in the script
@@ -227,6 +229,9 @@ exe icacls.exe @($dataDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', 
 $step = 'allowing clipboardbridge in Windows Firewall'
 # Every rule carries the group clipboardbridge, so these lines and
 # uninstall.ps1 remove exactly the rules added here.
+# cbb away on turns the outbound rule off; a reinstall keeps that.
+$homeOnly = Get-NetFirewallRule -Name "$name-home-only" -ErrorAction SilentlyContinue
+$awayOn = $homeOnly -and [string]$homeOnly.Enabled -eq 'False'
 Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 if (-not $NoFirewall) {
 	New-NetFirewallRule -Group $name -DisplayName "clipboardbridge (TCP $Port)" -Direction Inbound -Action Allow `
@@ -236,6 +241,24 @@ if (-not $NoFirewall) {
 		-Protocol UDP -LocalPort 5353 -Program $cbb -RemoteAddress LocalSubnet -Profile Any `
 		-Description 'clipboardbridge finds the other devices at home with mDNS.' | Out-Null
 }
+
+$step = 'keeping the service on the home network'
+# The service may reach only the home network, as its systemd unit allows
+# on Linux: a block rule beats every allow rule, so it holds whatever else
+# the firewall allows. It is a limit, not an opening, so -NoFirewall keeps
+# it. Allowed are loopback, private IPv4, link-local, multicast and
+# broadcast, and unique-local, link-local and multicast IPv6; the rule
+# lists the rest. cbb away on turns it off for sync away from home, and cbb
+# away off on again.
+$outside = @(
+	'0.0.0.0-9.255.255.255', '11.0.0.0-126.255.255.255', '128.0.0.0-169.253.255.255',
+	'169.255.0.0-172.15.255.255', '172.32.0.0-192.167.255.255', '192.169.0.0-223.255.255.255',
+	'::2-fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'fe00::-fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
+	'fec0::-feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')
+$enabled = if ($awayOn) { 'False' } else { 'True' }
+New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
+	-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any -Enabled $enabled `
+	-Description 'The clipboardbridge service reaches only the home network until cbb away on turns this rule off.' | Out-Null
 
 $step = 'starting the service'
 Start-Service -Name $name

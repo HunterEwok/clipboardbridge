@@ -144,14 +144,19 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	if args[0] == "on" || args[0] == "off" {
-		changed, err := setAwayNet(args[0] == "on")
+		changed, restarted, err := setAwayNet(args[0] == "on")
 		if err != nil {
 			return fail(stderr, fmt.Errorf("sync away from home is %s, but the service's network did not change: %w", args[0], err))
 		}
-		if changed && args[0] == "on" {
-			fmt.Fprintln(stdout, "The service may now reach the internet; it restarted for that.")
-		} else if changed {
-			fmt.Fprintln(stdout, "The service may again reach only the home network; it restarted for that.")
+		if changed {
+			msg := "The service may again reach only the home network"
+			if args[0] == "on" {
+				msg = "The service may now reach the internet"
+			}
+			if restarted {
+				msg += "; it restarted for that"
+			}
+			fmt.Fprintln(stdout, msg+".")
 		}
 	}
 	if m.Status != nil {
@@ -195,7 +200,7 @@ func writeAway(w io.Writer, a *control.Away) {
 		return
 	}
 	if confined() && !awayNetOpen() {
-		fmt.Fprintln(w, "This computer's service may reach only the home network: sudo cbb away on lets it reach the internet.")
+		fmt.Fprintln(w, "This computer's service may reach only the home network: "+awayOnHint+" lets it reach the internet.")
 	}
 	switch {
 	case a.Hub:
