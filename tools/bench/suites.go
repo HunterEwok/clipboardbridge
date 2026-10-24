@@ -278,6 +278,11 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 	}
 	addr := d.addrFor(hub, w.addr)
 	join := cbbCmd(d) + " join -code"
+	if d.OS == "linux-lite" {
+		// The lite member joins as its service's user, which alone may
+		// write its keys (lite/README.md); the bench user has sudo.
+		join = "sudo -n -u cbb-lite " + join
+	}
 	if d.OS == "linux-lite" || addr != "" {
 		if addr == "" {
 			cancel()
