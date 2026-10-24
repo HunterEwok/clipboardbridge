@@ -266,7 +266,7 @@ func (h *Hub) SetPeers(peers []Peer) error {
 // it.
 func (h *Hub) Close() error {
 	h.listener.Close()
-	h.dev.Close()
+	closeDevice(h.dev)
 	return nil
 }
 
@@ -347,8 +347,18 @@ func (c *Client) SetEndpoint(ep netip.AddrPort) error {
 
 // Close stops the tunnel and every connection through it.
 func (c *Client) Close() error {
-	c.dev.Close()
+	closeDevice(c.dev)
 	return nil
+}
+
+// closeDevice stops the peers before it closes the device. Device.Close
+// closes the network stack first, while a peer may still be handing it a
+// packet whose answer (such as a TCP reset) goes to the stack's outgoing
+// channel, which Close closes: a data race in wireguard-go. Down waits for
+// the peers' goroutines to stop.
+func closeDevice(dev *device.Device) {
+	dev.Down()
+	dev.Close()
 }
 
 // freeUDPPort returns a UDP port that is free on IPv4 at the moment.

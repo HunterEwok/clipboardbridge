@@ -25,6 +25,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Installing again on a Mac, as after `brew upgrade`, no longer fails now and then with
   "Bootstrap failed: 5: Input/output error": the installer waits for launchd to let the
   old service go before starting it.
+- Stopping a tunnel for sync away from home while a packet comes in no longer races in
+  WireGuard's network stack, which could crash the service: the peers stop first.
 
 ## [0.3.0] - 2026-10-24
 
