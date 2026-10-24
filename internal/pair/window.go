@@ -444,7 +444,7 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 	if err != nil {
 		return nil, true, err
 	}
-	welcome, err := w.welcome(cert, info.OS == "linux" && info.Role != RoleLite && !w.noCAKeys && w.admin.Admin())
+	welcome, err := w.welcome(cert, info.holdsKeys() && !w.noCAKeys && w.admin.Admin())
 	if err != nil {
 		return nil, true, err
 	}

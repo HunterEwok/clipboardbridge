@@ -90,7 +90,7 @@ func TestSecretConfirmed(t *testing.T) {
 // nothing, and that the refusal counts as a failed attempt.
 func TestSecretDeclined(t *testing.T) {
 	f, secret := secretWindow(t, func(context.Context, Request) error { return errors.New("no") })
-	out := f.attemptSecret(t, newJoiner(t, "darwin"), secret)
+	out := f.attemptSecret(t, newJoiner(t, "macos"), secret)
 	if !errors.Is(out.joinErr, ErrDeclined) || out.id != nil || out.savedCalls != 0 {
 		t.Errorf("join: %v, %v, %d saves", out.joinErr, out.id, out.savedCalls)
 	}

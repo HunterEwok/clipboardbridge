@@ -54,7 +54,7 @@ func mac(key []byte, id []byte) []byte {
 }
 
 // NewToken issues a token for a new phone and returns it with the phone's
-// ID, which names it in cbb devices.
+// ID, which names it in cbb status.
 func NewToken(ca *group.CA) (token, phoneID string, err error) {
 	key, err := tokenKey(ca)
 	if err != nil {

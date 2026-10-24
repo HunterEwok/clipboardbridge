@@ -85,7 +85,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     public struct Computer: Codable, Equatable, Sendable, Identifiable {
         public var device: String
         public var name: String
-        /// "linux" or "darwin", as its pairing Info says.
+        /// "linux", "windows" or "macos", as its pairing Info says.
         public var os: String
         public var cert: Data
         public var admitted: Date
@@ -103,7 +103,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let device = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: device, publicKey: memberKey, ca: ca, caSigner: caSigner, now: now)
         var g = PhoneGroup(device: device, groupCA: ca, memberCert: cert, computers: [])
-        _ = try g.record(device: device, name: Self.validName(name), role: "phone", key: Records.keyHash(spki: memberKey),
+        _ = try g.record(device: device, name: Self.validName(name), role: "phone", os: "ios", key: Records.keyHash(spki: memberKey),
                          caSigner: caSigner, now: now)
         return g
     }
@@ -146,11 +146,11 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     }
 
     /// Signs and adds a device record.
-    mutating func record(device: String, name: String, role: String, key: Data, admin: Data? = nil, caSigner: CertificateSigner,
-                         now: Date) throws -> Member.Record {
+    mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
+                         caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        let r = try Records.device(device, name: name, role: role, key: key, admin: admin, group: tag, by: self.device, now: now,
-                                   signer: caSigner, adminCA: adminCA)
+        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, group: tag, by: self.device,
+                                   now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)
         return r
     }
@@ -181,7 +181,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         records.add(out[0], groupCA: groupCA)
         out.append(try Records.revoke([oldRoot, d.key] + (d.adminKey.map { [$0] } ?? []), keep: keep, group: tag, by: device, now: now,
                                       signer: rootSigner))
-        out.append(try Records.device(device, name: me.name, role: "phone", key: me.key, admin: me.adminKey, group: tag, by: device,
+        out.append(try Records.device(device, name: me.name, role: "phone", os: me.os ?? "ios", key: me.key, admin: me.adminKey, group: tag, by: device,
                                       now: now, signer: rootSigner))
         for r in out.dropFirst() { records.add(r, groupCA: groupCA) }
         adoptRoots()
@@ -246,9 +246,9 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                                    now: Date) throws -> (adminCA: Data, record: Member.Record) {
         guard isRoot else { throw Failure.notRoot }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
-        guard d.role == "linux" || d.role == "mac" else { throw Failure.notAComputer }
+        guard d.role == "full" else { throw Failure.notAComputer }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
-        let r = try record(device: device, name: d.name, role: d.role, key: d.key, admin: Records.keyHash(cert: ca),
+        let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
                            caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
         return (ca, r)
@@ -290,14 +290,15 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         }
         let name = Self.validName(admitted.info.name), key = try Records.keyHash(cert: admitted.cert)
         if admitted.info.isPhone {
-            _ = try record(device: admitted.device, name: name, role: "phone", key: key, admin: adminKey.map(Records.keyHash(spki:)),
+            _ = try record(device: admitted.device, name: name, role: "phone", os: admitted.info.os, key: key,
+                           admin: adminKey.map(Records.keyHash(spki:)),
                            caSigner: caSigner, now: now)
             return admitted
         }
         computers.removeAll { $0.device == admitted.device }
         computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now))
-        _ = try record(device: admitted.device, name: name, role: admitted.info.role == Pairing.Info.lite ? "lite" : admitted.info.os == "darwin" ? "mac" : "linux",
-                       key: key, caSigner: caSigner, now: now)
+        _ = try record(device: admitted.device, name: name, role: admitted.info.role == Pairing.Info.lite ? "lite" : "full",
+                       os: admitted.info.os, key: key, caSigner: caSigner, now: now)
         return admitted
     }
 

@@ -216,8 +216,7 @@ keys. The phones cannot sync away from home yet.
 ## 6. Look after the group
 
 ```sh
-cbb status     # this device, the group and the connected members
-cbb devices    # every device of the group, and when it was last seen
+cbb status     # this device, the group, and every device: its system, role and when it was seen
 cbb revoke NAME  # remove a lost device; on a Linux machine, or Devices in the app
 ```
 

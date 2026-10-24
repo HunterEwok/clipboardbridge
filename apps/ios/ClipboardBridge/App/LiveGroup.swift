@@ -107,9 +107,10 @@ final class LiveGroup: GroupController {
         guard let g = state else { return [] }
         let root = g.records.rootDevice
         return g.devices.map {
-            .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, isSelf: $0.id == g.device,
+            .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, os: $0.os,
+                  isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
-                  canMakeAdmin: g.isRoot && !$0.admin && ["linux", "mac"].contains($0.role) && offers[$0.id] != nil)
+                  canMakeAdmin: g.isRoot && !$0.admin && $0.role == "full" && offers[$0.id] != nil)
         }
     }
 
@@ -424,7 +425,7 @@ final class LiveGroup: GroupController {
         // on, and the hub's answer goes to AwayFromHome.
         let awayState = AwayKeychain.load()
         let awayRef = Ref<AwayFromHome>()
-        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
+        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
                               tunnelKey: awayState.flatMap { try? GoTunnels().publicKey($0.key) },
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })

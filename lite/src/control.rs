@@ -60,6 +60,8 @@ pub struct Status {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub group: String,
     pub role: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub os: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<Device>,
     pub version: String,
@@ -72,6 +74,8 @@ pub struct Device {
     pub name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub role: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub os: String,
     #[serde(default, skip_serializing_if = "is_zero_i")]
     pub skew_ms: i64,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

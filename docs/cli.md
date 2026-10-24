@@ -13,8 +13,7 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 |---|---|
 | `cbb copy [-secret]` | Sends standard input to the group, and to this device's own clipboard. `-secret` sends it as a secret: kept only in memory and gone 60 seconds after the copy. |
 | `cbb paste` | Prints this device's clipboard text. |
-| `cbb status` | This device, its group, the connected members, and sync away from home. |
-| `cbb devices` | Every device of the group, its role and when it was last seen. |
+| `cbb status` | This device, its group, sync away from home, and every device of the group: its system (Linux, Windows, macOS, iOS, Android), its role (`full`, `lite`, `phone`, `shortcut`), whether it is the root or an admin, when it was last seen and whether its clock is off. |
 | `cbb revoke NAME` | Removes a device, by name or device ID. Runs on a device that holds the group's CA keys: a Linux member in a group that a computer created, or a computer the root phone made an admin. In a phone's group, remove devices in the app (Devices). |
 | `cbb pair` | Admits a new computer: creates the group if there is none and shows a six-digit code for `cbb join -code` on the new computer. Same rule as `revoke` for who may run it. |
 | `cbb pair -phone` | Creates the group if needed and pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on a Linux machine: only Linux members serve the shortcut. |
@@ -47,8 +46,7 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 | `cbb-lite run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
 | `cbb-lite copy [-secret]` | Sends standard input to the group. |
 | `cbb-lite paste` | Prints this member's clipboard text. |
-| `cbb-lite status` | The group and the connected members. |
-| `cbb-lite devices` | The devices of the group. |
+| `cbb-lite status` | This device, its group, and every device of the group with its system, role and marks. |
 | `cbb-lite watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
 | `cbb-lite next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
 | `cbb-lite version`, `cbb-lite help` | The version; this help. |

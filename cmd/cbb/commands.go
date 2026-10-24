@@ -15,11 +15,11 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/pasteboard"
@@ -102,43 +102,47 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	if st == nil {
 		return fail(stderr, errors.New("the service sent no status"))
 	}
+	var devs []control.Device
+	if st.Group != "" {
+		d, err := control.Dial(control.SocketPath())
+		if err != nil {
+			return fail(stderr, err)
+		}
+		defer d.Close()
+		m, err := d.Do(&control.Message{Header: control.Header{Op: control.OpDevices}})
+		if err != nil {
+			return fail(stderr, err)
+		}
+		devs = m.Devices
+	}
 	var out bytes.Buffer
-	writeStatus(&out, st)
+	writeStatus(&out, st, devs, time.Now())
 	if _, err := stdout.Write(out.Bytes()); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
 }
 
-func writeStatus(w io.Writer, st *control.Status) {
+// writeStatus prints this device, its group and the group's devices.
+func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
 	if st.Group == "" {
-		if st.Role == string(node.Linux) {
+		if st.OS != group.OSMacOS {
 			fmt.Fprintln(w, "Not in a group. Run cbb pair here to start one, or cbb join to join one.")
 		} else {
-			fmt.Fprintln(w, "Not in a group. Run cbb pair on a Linux member, then cbb join here.")
+			fmt.Fprintln(w, "Not in a group. Run cbb pair on a Linux or Windows member, then cbb join here.")
 		}
 		return
 	}
-	fmt.Fprintf(w, "Device %s (%s), group %s\n", st.Device, st.Role, st.Group)
+	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
 	if st.Holder {
 		fmt.Fprintln(w, "This member answers for clipboardbridge.local.")
 	}
 	writeAway(w, st.Away)
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")
-		return
 	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "MEMBER\tROLE\tCLOCK")
-	for _, p := range st.Peers {
-		clock := "ok"
-		if d := time.Duration(p.SkewMS) * time.Millisecond; d > 5*time.Second || d < -5*time.Second {
-			clock = fmt.Sprintf("off by %v; check its time", d.Round(time.Second))
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", p.ID, p.Role, clock)
-	}
-	tw.Flush()
+	writeDevices(w, devs, st.Peers, now)
 }
 
 // cmdPair opens a pairing window and waits until a device joins, the
@@ -383,17 +387,23 @@ func cmdService(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: service takes only flags")
 		return 2
 	}
-	// Windows listens like Linux, so it speaks as a Linux member.
-	role := node.Linux
-	if runtime.GOOS == "darwin" {
-		role = node.Mac
-	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
-		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: role, Logf: logf})
+		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(), Logf: logf})
 	})
 }
 
 func fail(stderr io.Writer, err error) int {
 	fmt.Fprintln(stderr, "clipboardbridge:", err)
 	return 1
+}
+
+// hostOS names this computer's operating system as device records do.
+func hostOS() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return group.OSMacOS
+	case "windows":
+		return group.OSWindows
+	}
+	return group.OSLinux
 }

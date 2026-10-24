@@ -39,10 +39,10 @@ func fail(c net.Conn, err error) {
 
 // errNoGroup is the error for a request that needs a group.
 func (s *Service) errNoGroup() error {
-	if s.cfg.Role == node.Linux {
+	if !s.mac() {
 		return errors.New("this device is in no group; run cbb pair here to start one, or cbb join to join one")
 	}
-	return errors.New("this device is in no group; run cbb pair on a Linux member, then cbb join here")
+	return errors.New("this device is in no group; run cbb pair on a Linux or Windows member, then cbb join here")
 }
 
 func (s *Service) handleControl(ctx context.Context, c net.Conn) {
@@ -166,14 +166,14 @@ func (s *Service) withNode(f func(*node.Node) error) error {
 func (s *Service) status() *control.Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := &control.Status{Role: string(s.cfg.Role), Version: version.String(), Holder: s.holder}
+	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder}
 	if s.id == nil {
 		return st
 	}
 	st.Device, st.Group = string(s.id.ID), group.Tag(s.id.GroupCA.Cert)
 	skews := s.eng.Skews()
 	for _, p := range s.nd.Peers() {
-		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), SkewMS: skews[string(p.ID)].Milliseconds()})
+		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), OS: p.OS, SkewMS: skews[string(p.ID)].Milliseconds()})
 	}
 	st.Away = s.awayStatus()
 	return st
@@ -222,8 +222,8 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 // more than once, and runs before the last answer to a client, so it can
 // pair again at once.
 func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, *group.Identity, func(), error) {
-	if s.cfg.Role != node.Linux {
-		return nil, nil, nil, errors.New("only a Linux member can admit devices; run cbb pair on one")
+	if s.mac() {
+		return nil, nil, nil, errors.New("a Mac cannot admit devices yet; run cbb pair on a Linux or Windows member")
 	}
 	s.mu.Lock()
 	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
@@ -462,12 +462,7 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		cancel()
 	}()
 
-	// A Linux member gets the CA keys and can admit devices; a Mac cannot.
-	osName := "darwin"
-	if s.cfg.Role == node.Linux {
-		osName = "linux"
-	}
-	j, err := pair.NewJoiner(pair.Info{Name: s.cfg.Name, OS: osName})
+	j, err := pair.NewJoiner(pair.Info{Name: s.cfg.Name, OS: s.cfg.OS})
 	if err != nil {
 		end()
 		fail(c, err)

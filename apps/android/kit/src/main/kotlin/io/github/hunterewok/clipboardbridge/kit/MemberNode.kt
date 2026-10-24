@@ -61,6 +61,8 @@ class MemberNode(
      * of serve named it by: the hub's answer to the tunnel key.
      */
     private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
+    /** This device's operating system, which the hellos state. */
+    val os: String? = null,
 ) {
     private val lock = Any()
     private val conns = mutableSetOf<Conn>()
@@ -113,7 +115,7 @@ class MemberNode(
         val c = Conn(t, peer)
         synchronized(lock) {
             conns.add(c)
-            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey())
+            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey(), os = os)
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()

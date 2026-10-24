@@ -144,7 +144,7 @@ apps" below).
   A relay on the home network cannot present a certificate from the verified CA, so it sees
   neither the code nor the token. The profile has a fixed identifier, so a new one replaces
   the old. Only a hash of each token is stored, and the hashes spread to every Linux member.
-- **Devices and revocation**: `cbb devices` lists the members and iPhones;
+- **Devices and revocation**: `cbb status` lists the members and iPhones;
   `cbb revoke <name>` removes one. Revocations are signed records that only grow and
   spread to every member. A revoked Linux member still holds the CA keys, so revoking it also
   replaces both CAs. The Linux member where `revoke` runs (on a Mac, a connected Linux
@@ -337,8 +337,8 @@ and lifetimes. The installer enables what the device needs.
   holds; a write that no connector got, such as the group's text at boot, goes to the next
   one that connects, if it is still the member's own text.
 - Command line: `cbb copy` (standard input to the group), `cbb paste` (the
-  member's own clipboard text to standard output), `cbb pair`, `join`, `devices`,
-  `revoke`, `status`. `cbb pair` on a Linux machine in no group creates the group.
+  member's own clipboard text to standard output), `cbb pair`, `join`,
+  `revoke`, `status` (which lists the group's devices too). `cbb pair` on a Linux machine in no group creates the group.
   `cbb join` finds the member with an open pairing window by its TXT record, or uses
   the address that `pair` prints, for networks where multicast does not pass. It talks to
   one member only, tries that member's addresses (IPv4 first, link-local last) until one
@@ -1105,7 +1105,7 @@ Every app and the command line show it:
 - The phone apps: a **Devices** screen (see [apps.md](apps.md)) with every device, its role,
   an admin mark, whether it is online now and when this phone last saw it; on an admin phone
   each row has "Remove".
-- The command line on Linux and the Mac: `cbb devices` prints the same list;
+- The command line on Linux and the Mac: `cbb status` prints the same list;
   `cbb revoke <name or ID>` removes a device; it runs where the device is an admin (a
   Linux member in a group that a computer created, or a computer the root phone made an
   admin; elsewhere the command says so).
@@ -1145,14 +1145,14 @@ why it is a choice, not the default.
 
 **Groups that a computer created** keep working as today (the CA keys on the Linux members):
 the device records and revocation records exist there too, signed with the group CA key, so
-`cbb devices` shows the group and `cbb revoke` removes a Mac or an iPhone's
+`cbb status` shows the group and `cbb revoke` removes a Mac or an iPhone's
 token without replacing anything. Revoking a Linux member there still replaces both CAs, as
 "Devices and revocation" above says, because it holds the CA keys. "Full members, admins and
 the operating system" below changes this: such groups get a root and admins as a phone group
 has, and any device but the root is removed by a record.
 
 **Order of work.** The Go side first, since it needs no phone: the records, their exchange
-in the member protocol, refusing revoked keys, `cbb devices` and `cbb revoke`
+in the member protocol, refusing revoked keys, the devices list and `cbb revoke`
 in groups a computer created, and members that verify certificates through an admin CA. Then
 the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
 
@@ -1183,7 +1183,7 @@ The `linux` and `mac` roles are gone: everything that set the Mac apart was a ch
 limit of macOS, and the Mac is a full member like the others. The `iphone` role is now
 `shortcut`. Records of an earlier group that say `linux` or `mac` are read as `full`, and
 `iphone` as `shortcut`. A phone with the app, an iPhone or an Android phone, has its own
-key and member certificate and the role `phone`. `cbb devices` and the Devices screens of the
+key and member certificate and the role `phone`. `cbb status` and the Devices screens of the
 apps show each device's system (Linux, Windows, macOS, iOS, Android, or "device" for
 firmware) and mark the root and the admins. A device's record takes its `os` from the
 pairing Info; when a device's hello states another `os` than its record, an admin that
@@ -1252,7 +1252,7 @@ and that member becomes the root:
 4. It signs a new device record for every device, with role `full` or `lite` and the `os`
    its hello states, and renews certificates from the new root as members connect.
 5. Each member that gets the records deletes its copies of the old CA keys and says so in
-   its hello. Until a member has said so, `cbb devices` marks it as still holding the old
+   its hello. Until a member has said so, `cbb status` marks it as still holding the old
    keys, and removing it needs a new group, as before the upgrade. Members that were off
    follow when they come back.
 
@@ -1269,8 +1269,9 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
 1. This decision.
 2. The `os` beside the role: `os` in the pairing Info (`windows` allowed), the hello and
    device records; the roles `full`, `lite`, `phone` and `shortcut` in Go, `cbb-lite` and both
-   phone kits; `cbb devices` and the Devices screens show the system and the root and admin
-   marks; an admin re-signs a record whose `os` is wrong.
+   phone kits; `cbb status` (which takes in `cbb devices`) and the Devices screens show
+   the system and the root and admin marks; an admin re-signs a record whose `os` is
+   wrong.
 3. The Mac as a full member: the dialing rule above, listening like the others, holding
    `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb away hub`
    says that nothing syncs away from home while the hub is off.

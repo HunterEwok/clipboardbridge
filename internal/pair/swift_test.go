@@ -159,7 +159,7 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ln.Close()
-			j := newJoiner(t, "darwin")
+			j := newJoiner(t, "macos")
 			j.Now = time.Now
 			fp, err := j.Fingerprint()
 			if err != nil {

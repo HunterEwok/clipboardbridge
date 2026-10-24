@@ -81,7 +81,7 @@ class EngineTest {
         val (pa, pb) = Pipe.pair()
         val changes = Collections.synchronizedList(mutableListOf<String>())
         val a = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), "Pixel")
-        val b = MemberNode(SyncEngine("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", HybridClock()), "pi", Member.Role.LINUX, onChange = { changes.add(it.text) })
+        val b = MemberNode(SyncEngine("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", HybridClock()), "pi", Member.Role.FULL, onChange = { changes.add(it.text) })
         a.send("before", Member.Kind.TEXT)
         val ta = Background { a.serve(pa) }
         val tb = Background { b.serve(pb) }
@@ -106,7 +106,7 @@ class EngineTest {
         val phoneStore = Store(g.groupCA, g.records)
         val peerStore = Store(g.groupCA, RecordSet())
         val phone = MemberNode(SyncEngine(g.device, HybridClock()), "Pixel", records = phoneStore)
-        val peer = MemberNode(SyncEngine(pc, HybridClock()), "pi", Member.Role.LINUX, records = peerStore)
+        val peer = MemberNode(SyncEngine(pc, HybridClock()), "pi", Member.Role.FULL, records = peerStore)
         val (a, b) = Pipe.pair()
         val ta = Background { phone.serve(a, pc) }
         val tb = Background { peer.serve(b) }
@@ -136,7 +136,7 @@ class EngineTest {
         val (a, b) = Pipe.pair()
         a.peerChain = listOf(byteArrayOf(1))
         val task = Background { phone.serve(a, pi) }
-        b.write(Member.encode(Member.Message.Hello(Member.Role.LINUX, Member.Hello(0, adminKey = key))))
+        b.write(Member.encode(Member.Message.Hello(Member.Role.FULL, Member.Hello(0, adminKey = key))))
         val got = mutableListOf<Member.Message>()
         while (got.none { it is Member.Message.Admin }) got.add(Member.decode(b.read(Member.length(b.read(4)))))
         assertTrue(Member.Message.Cert(renewed) in got)
@@ -165,7 +165,7 @@ class EngineTest {
         val task = Background { phone.serve(a, hub) }
         val hello = assertIs<Member.Message.Hello>(Member.decode(b.read(Member.length(b.read(4)))))
         assertContentEquals(key, hello.hello.tunnelKey)
-        b.write(Member.encode(Member.Message.Hello(Member.Role.LINUX, Member.Hello(0))))
+        b.write(Member.encode(Member.Message.Hello(Member.Role.FULL, Member.Hello(0))))
         // A bad offer is dropped; a good one reaches onTunnel.
         b.write(Member.encode(Member.Message.Tunnel(Member.TunnelOffer(ByteArray(31), ByteArray(32)))))
         b.write(Member.encode(Member.Message.Tunnel(null)))

@@ -26,6 +26,7 @@ object Records {
         val device: String? = null,
         val name: String? = null,
         val role: String? = null,
+        val os: String? = null,
         val key: ByteArray? = null,
         val admin: ByteArray? = null,
         // revoke
@@ -44,6 +45,7 @@ object Records {
                 "device" to Wire.str(device),
                 "name" to Wire.str(name),
                 "role" to Wire.str(role),
+                "os" to Wire.str(os),
                 "key" to Wire.bytes(key),
                 "admin" to Wire.bytes(admin),
                 "keys" to Wire.list(keys),
@@ -66,6 +68,7 @@ object Records {
                         device = o.optString("device"),
                         name = o.optString("name"),
                         role = o.optString("role"),
+                        os = o.optString("os"),
                         key = o.optBytes("key"),
                         admin = o.optBytes("admin"),
                         keys = o.optBytesList("keys"),
@@ -106,8 +109,27 @@ object Records {
         signer: CertificateSigner,
         admin: ByteArray? = null,
         adminCA: ByteArray? = null,
+        os: String? = null,
     ): Member.Record =
-        sign(Body(type = "device", group = group, timeMS = now.toEpochMilli(), by = by, device = device, name = name, role = role, key = key, admin = admin), signer, adminCA)
+        sign(
+            Body(type = "device", group = group, timeMS = now.toEpochMilli(), by = by, device = device, name = name, role = role, os = os, key = key, admin = admin),
+            signer,
+            adminCA,
+        )
+
+    /** The role a record names, with the roles of earlier records read as today's: "linux" and "mac" as "full", "iphone" as "shortcut". */
+    fun role(r: String?): String = when (r) {
+        "linux", "mac" -> "full"
+        "iphone" -> "shortcut"
+        else -> r ?: ""
+    }
+
+    /** The system a record names, or the one its earlier role implies; null when neither tells. */
+    fun os(b: Body): String? = b.os ?: when (b.role) {
+        "mac" -> "macos"
+        "iphone", "shortcut" -> "ios"
+        else -> null
+    }
 
     /** A revocation record for keys; keep names the keys of devices that a revoked admin admitted and that stay. */
     fun revoke(
@@ -146,15 +168,18 @@ class RecordSet {
     data class Device(
         val id: String,
         val name: String,
+        /** "full", "phone", "lite" or "shortcut". */
         val role: String,
         val key: ByteArray,
         /** Whether it is an admin whose admin CA is not revoked. */
         val admin: Boolean = false,
         /** The key hash of its admin CA, for an admin. */
         val adminKey: ByteArray? = null,
+        /** Its operating system; null when its record does not tell. */
+        val os: String? = null,
     ) {
         override fun equals(other: Any?): Boolean =
-            other is Device && id == other.id && name == other.name && role == other.role && key.contentEquals(other.key) &&
+            other is Device && id == other.id && name == other.name && role == other.role && os == other.os && key.contentEquals(other.key) &&
                 admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey)
 
         override fun hashCode(): Int = id.hashCode()
@@ -356,7 +381,7 @@ class RecordSet {
             return latest.mapNotNull { (d, e) ->
                 val key = e.body.key ?: return@mapNotNull null
                 if (Key(key) in ev.revoked) return@mapNotNull null
-                Device(d, e.body.name ?: d, e.body.role ?: "", key, e.body.admin?.let { Key(it) !in ev.revoked } ?: false, e.body.admin)
+                Device(d, e.body.name ?: d, Records.role(e.body.role), key, e.body.admin?.let { Key(it) !in ev.revoked } ?: false, e.body.admin, Records.os(e.body))
             }.sortedWith(compareBy({ it.name }, { it.id }))
         }
 

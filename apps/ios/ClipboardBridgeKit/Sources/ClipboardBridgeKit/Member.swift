@@ -19,7 +19,9 @@ public enum Member {
     public static let maxText = 1 << 20
 
     /// What kind of member is at the other end.
-    public enum Role: String, Codable, Sendable { case linux, mac, phone, lite }
+    /// What a member does: `full` is a computer with the service (Linux,
+    /// Windows or macOS); its system is the hello's `os`.
+    public enum Role: String, Codable, Sendable { case full, phone, lite }
 
     /// The kind of a text: a secret is kept only briefly (section 5).
     public enum Kind: String, Codable, Sendable { case text, secret }
@@ -160,6 +162,9 @@ public enum Member {
         public var records: String?
         /// The sender's device name.
         public var name: String?
+        /// The sender's operating system: "linux", "windows", "macos",
+        /// "ios", "android" or "none"; shown, never trusted.
+        public var os: String?
         /// From a computer that is no admin yet: the SubjectPublicKeyInfo of
         /// its admin key, for the root to certify (section 10, "A computer
         /// as admin").
@@ -168,10 +173,10 @@ public enum Member {
         /// hub (section 11).
         public var tunnelKey: Data?
 
-        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, adminKey: Data? = nil,
-                    tunnelKey: Data? = nil) {
-            (self.wallMS, self.current, self.records, self.name, self.adminKey, self.tunnelKey) =
-                (wallMS, current, records, name, adminKey, tunnelKey)
+        public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
+                    adminKey: Data? = nil, tunnelKey: Data? = nil) {
+            (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
+                (wallMS, current, records, name, os, adminKey, tunnelKey)
         }
     }
 
@@ -295,7 +300,7 @@ public enum Member {
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
-                                      adminKey: h.admin_key, tunnelKey: h.tunnel_key))
+                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -319,6 +324,7 @@ public enum Member {
         var current: Lenient<Event>?
         var records: String?
         var name: String?
+        var os: String?
         var admin_key: Data?
         var tunnel_key: Data?
     }
@@ -340,7 +346,7 @@ public enum Member {
         init(_ m: Message) { self.m = m }
 
         enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, admin_key, tunnel_key }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, admin_key, tunnel_key }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -353,6 +359,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.current, forKey: .current)
                 try hc.encodeIfPresent(h.records, forKey: .records)
                 try hc.encodeIfPresent(h.name, forKey: .name)
+                try hc.encodeIfPresent(h.os, forKey: .os)
                 try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
                 try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
             case let .event(e):

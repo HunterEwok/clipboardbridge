@@ -39,9 +39,13 @@ const markFile = "hlc.mark"
 type Config struct {
 	StateDir string    // identity and clock mark
 	Socket   string    // the control socket
-	Role     node.Role // every role listens and publishes; only Linux holds clipboardbridge.local
-	Name     string    // this device's name, shown to the others; the host name if empty
-	Logf     func(format string, args ...any)
+	Role     node.Role // every role listens and publishes; a computer is node.Full
+	// OS is this device's operating system (group.OSLinux, OSWindows or
+	// OSMacOS), shown to the others; a Mac neither admits devices nor holds
+	// clipboardbridge.local yet.
+	OS   string
+	Name string // this device's name, shown to the others; the host name if empty
+	Logf func(format string, args ...any)
 
 	// Discover publishes this member and finds the others; mDNS if nil.
 	// Tests replace it.
@@ -283,7 +287,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunnel, s.tunCtx, s.tunSelf = tun, gctx, string(id.ID)
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, Engine: eng,
+		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
@@ -296,7 +300,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		cancel()
 		return err
 	}
-	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.cfg.Role, false), OnPeers: s.found, Logf: s.logf,
+	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.mac(), false), OnPeers: s.found, Logf: s.logf,
 		Port: uint16(ln.Addr().(*net.TCPAddr).Port)}
 	r, err := s.cfg.Discover(dc)
 	if err != nil {
@@ -382,13 +386,16 @@ func (s *Service) stopGroup() {
 }
 
 // txtLocked returns the TXT record of this member.
-func (s *Service) txtLocked() []string { return txt(s.id, s.cfg.Role, s.window != nil) }
+func (s *Service) txtLocked() []string { return txt(s.id, s.mac(), s.window != nil) }
+
+// mac reports whether this member is a Mac, which only dials the others.
+func (s *Service) mac() bool { return s.cfg.OS == group.OSMacOS }
 
 // txt returns a TXT record: the protocol version, the group tag, r=mac on
 // a Mac, and whether a pairing window is open.
-func txt(id *group.Identity, role node.Role, window bool) []string {
+func txt(id *group.Identity, mac, window bool) []string {
 	t := []string{"v=1", "g=" + group.Tag(id.GroupCA.Cert)}
-	if role == node.Mac {
+	if mac {
 		t = append(t, "r=mac") // the Linux members leave it to dial them
 	}
 	if window {

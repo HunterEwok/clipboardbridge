@@ -22,7 +22,6 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
-	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 // publishLite puts a lite member on the fake network, as cbb-lite
@@ -67,7 +66,7 @@ func TestLiteDialedByMacsOnly(t *testing.T) {
 	if n := dialed.Load(); n != 0 {
 		t.Fatalf("the Linux members dialed the lite member %d times", n)
 	}
-	mac := startRole(t, &h, "mac", node.Mac)
+	mac := startRole(t, &h, "mac", group.OSMacOS)
 	pairWith(t, pi, mac)
 	waitFor(t, "the Mac dials the lite member", func() bool { return dialed.Load() > 0 })
 }
@@ -249,7 +248,7 @@ func TestLiteMember(t *testing.T) {
 	// lite member and connects to it; with the computers off the two still
 	// sync.
 	publishLite(&h, st.Device, st.Group, port)
-	mac := startRole(t, &h, "mac", node.Mac)
+	mac := startRole(t, &h, "mac", group.OSMacOS)
 	pairWith(t, pi, mac)
 	waitFor(t, "the Mac connected to all three", func() bool { return len(mac.status(t).Peers) == 3 })
 	pi.stop()

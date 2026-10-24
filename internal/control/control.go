@@ -91,6 +91,7 @@ type Status struct {
 	Device  string   `json:"device"`
 	Group   string   `json:"group,omitempty"` // the group tag; empty when in no group
 	Role    string   `json:"role"`
+	OS      string   `json:"os,omitempty"`     // this device's operating system
 	Holder  bool     `json:"holder,omitempty"` // answers for clipboardbridge.local
 	Peers   []Device `json:"peers,omitempty"`
 	Away    *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
@@ -146,9 +147,11 @@ type Device struct {
 	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
 	Role   string `json:"role,omitempty"`
+	OS     string `json:"os,omitempty"`      // its operating system; "" when unknown
 	SkewMS int64  `json:"skew_ms,omitempty"` // how far its clock is ahead of this one
 
 	Admin      bool  `json:"admin,omitempty"`        // it can admit and remove devices
+	Root       bool  `json:"root,omitempty"`         // it holds the group's root
 	Online     bool  `json:"online,omitempty"`       // connected to this member now
 	LastSeenMS int64 `json:"last_seen_ms,omitempty"` // when this member last saw it connected, Unix milliseconds; 0 if never
 	Self       bool  `json:"self,omitempty"`         // this device

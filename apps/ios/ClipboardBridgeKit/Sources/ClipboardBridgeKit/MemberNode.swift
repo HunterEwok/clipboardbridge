@@ -38,6 +38,8 @@ public protocol RecordStore: AnyObject, Sendable {
 public actor MemberNode {
     public let role: Member.Role
     public let name: String?
+    /// This device's operating system, which the hellos state.
+    public let os: String?
     let engine: SyncEngine
     private var conns: [ObjectIdentifier: Conn] = [:]
     private let onChange: @Sendable (Member.Event) -> Void
@@ -70,7 +72,7 @@ public actor MemberNode {
     /// the key the hellos offer the hub, and onTunnel gets each valid offer
     /// a peer sends for it, with the device ID the caller of serve named
     /// the peer by.
-    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, records: RecordStore? = nil,
+    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
                 adminCA: (@Sendable (Data) -> Data?)? = nil,
                 tunnelKey: Data? = nil,
@@ -79,7 +81,7 @@ public actor MemberNode {
                 onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
-        (self.tunnelKey, self.onTunnel) = (tunnelKey, onTunnel)
+        (self.tunnelKey, self.onTunnel, self.os) = (tunnelKey, onTunnel, os)
     }
 
     /// Replaces the tunnel key that the next connections' hellos offer;
@@ -131,6 +133,7 @@ public actor MemberNode {
         let id = ObjectIdentifier(c)
         conns[id] = c
         var hello = engine.hello(name: name)
+        hello.os = os
         hello.records = records?.digest
         hello.tunnelKey = tunnelKey
         c.enqueue(.hello(role, hello))

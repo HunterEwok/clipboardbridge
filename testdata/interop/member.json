@@ -2,7 +2,7 @@
 	"frames": [
 		{
 			"t": "hello",
-			"role": "linux",
+			"role": "full",
 			"hello": {
 				"wall_ms": 1761024000500,
 				"current": {
@@ -14,12 +14,13 @@
 					"text": "hello \u003cworld\u003e \u0026 \"you\" / ✓"
 				},
 				"records": "q83vEjRWeJA=",
-				"name": "pi"
+				"name": "pi",
+				"os": "linux"
 			}
 		},
 		{
 			"t": "hello",
-			"role": "mac",
+			"role": "full",
 			"hello": {
 				"wall_ms": 1761024000500,
 				"current": {
@@ -30,14 +31,16 @@
 					"age_ms": 20,
 					"kind": "secret",
 					"text": ""
-				}
+				},
+				"os": "macos"
 			}
 		},
 		{
 			"t": "hello",
 			"role": "phone",
 			"hello": {
-				"wall_ms": 0
+				"wall_ms": 0,
+				"os": "ios"
 			}
 		},
 		{

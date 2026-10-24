@@ -87,7 +87,7 @@ final class RecordsTests: XCTestCase {
         let phoneStore = Store(groupCA: g.groupCA, set: g.records)
         let peerStore = Store(groupCA: g.groupCA)
         let phone = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: "iPhone", records: phoneStore)
-        let peer = MemberNode(engine: SyncEngine(device: pc, clock: HybridClock()), name: "pi", role: .linux, records: peerStore)
+        let peer = MemberNode(engine: SyncEngine(device: pc, clock: HybridClock()), name: "pi", role: .full, records: peerStore)
         let (a, b) = Pipe.pair()
         let ta = Task { try await phone.serve(a, peer: pc) }
         let tb = Task { try await peer.serve(b) }

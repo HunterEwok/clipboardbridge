@@ -24,7 +24,7 @@ final class ComputerAdminTests: XCTestCase {
 
     func testWire() throws {
         let key = SoftwareSigner().publicKeyDER
-        let hello = Member.Message.hello(.linux, Member.Hello(wallMS: 1, name: "pi", adminKey: key))
+        let hello = Member.Message.hello(.full, Member.Hello(wallMS: 1, name: "pi", adminKey: key))
         let body = Data(try Member.encode(hello).dropFirst(4))
         XCTAssertTrue(String(decoding: body, as: UTF8.self).contains("\"admin_key\""))
         XCTAssertEqual(try Member.decode(body: body), hello)
@@ -32,7 +32,7 @@ final class ComputerAdminTests: XCTestCase {
         let adminBody = Data(try Member.encode(admin).dropFirst(4))
         XCTAssertEqual(String(decoding: adminBody, as: UTF8.self), #"{"admin_ca":"AQID","t":"admin"}"#)
         XCTAssertEqual(try Member.decode(body: adminBody), admin)
-        guard case let .hello(_, h) = try Member.decode(body: Data(#"{"t":"hello","role":"linux","hello":{"wall_ms":0}}"#.utf8)) else {
+        guard case let .hello(_, h) = try Member.decode(body: Data(#"{"t":"hello","role":"full","hello":{"wall_ms":0}}"#.utf8)) else {
             return XCTFail("not a hello")
         }
         XCTAssertNil(h.adminKey)
@@ -100,7 +100,7 @@ final class ComputerAdminTests: XCTestCase {
         let pi = SyncEngine.newID()
         let (a, b) = Pipe.pair()
         let task = Task { try await phone.serve(a, peer: pi) }
-        try await b.write(Member.encode(.hello(.linux, Member.Hello(wallMS: 0, adminKey: key))))
+        try await b.write(Member.encode(.hello(.full, Member.Hello(wallMS: 0, adminKey: key))))
         let first = try await next(from: b) { if case .admin = $0 { true } else { false } }
         XCTAssertEqual(first, .admin(ca), "the root sends the admin CA it issued for the offered key")
         let offered = await phone.offeredAdminKeys

@@ -4,41 +4,27 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"text/tabwriter"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
-// cmdDevices lists the devices of the group.
-func cmdDevices(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "cbb: devices takes no arguments")
-		return 2
+// writeDevices prints the devices list, with the clock of each connected
+// peer from peers.
+func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
+	if len(devs) == 0 {
+		return
 	}
-	c, err := control.Dial(control.SocketPath())
-	if err != nil {
-		return fail(stderr, err)
+	skew := map[string]int64{}
+	for _, p := range peers {
+		skew[p.ID] = p.SkewMS
 	}
-	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpDevices}})
-	if err != nil {
-		return fail(stderr, err)
-	}
-	var out bytes.Buffer
-	writeDevices(&out, m.Devices, time.Now())
-	if _, err := stdout.Write(out.Bytes()); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
-}
-
-func writeDevices(w io.Writer, devs []control.Device, now time.Time) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tROLE\tADMIN\tSEEN\tID")
+	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tSEEN\tCLOCK\tID")
 	unlisted := false
 	for _, d := range devs {
 		name := d.Name
@@ -50,10 +36,20 @@ func writeDevices(w io.Writer, devs []control.Device, now time.Time) {
 			unlisted = true
 		}
 		admin := ""
-		if d.Admin {
-			admin = "yes"
+		switch {
+		case d.Root:
+			admin = "root"
+		case d.Admin:
+			admin = "admin"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, d.Role, admin, seen(d, now), d.ID)
+		clock := ""
+		if ms, ok := skew[d.ID]; ok {
+			clock = "ok"
+			if d := time.Duration(ms) * time.Millisecond; d > 5*time.Second || d < -5*time.Second {
+				clock = fmt.Sprintf("off by %v; check its time", d.Round(time.Second))
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, seen(d, now), clock, d.ID)
 	}
 	tw.Flush()
 	if unlisted {
@@ -84,7 +80,7 @@ func seen(d control.Device, now time.Time) string {
 // cmdRevoke removes a device from the group.
 func cmdRevoke(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "cbb: usage: cbb revoke <name or device ID>; cbb devices lists them")
+		fmt.Fprintln(stderr, "cbb: usage: cbb revoke <name or device ID>; cbb status lists them")
 		return 2
 	}
 	c, err := control.Dial(control.SocketPath())

@@ -16,6 +16,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/service"
 )
@@ -92,7 +93,7 @@ func startService(t *testing.T) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- service.Run(ctx, service.Config{StateDir: dir, Socket: socket, Role: node.Linux, Name: "pi",
+		done <- service.Run(ctx, service.Config{StateDir: dir, Socket: socket, Role: node.Full, OS: group.OSLinux, Name: "pi",
 			Discover: func(service.DiscoveryConfig) (service.Discovery, error) { return noDiscovery{}, nil }})
 	}()
 	t.Cleanup(func() { cancel(); <-done })
