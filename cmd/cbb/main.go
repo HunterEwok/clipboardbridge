@@ -20,6 +20,7 @@ Commands:
   paste                   Print this member's clipboard text.
   status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
+  admin <name or ID>      Make a computer an admin of the group (on the group's root).
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
   away relay address:port Meet the group's other devices away from home at a relay.
@@ -30,7 +31,7 @@ Commands:
   pair                    Admit a new computer: show a code for cbb join.
   pair -phone             Pair an iPhone or iPad with the shortcut.
   join                    Join a group: show a QR code for the phone to scan.
-  join -code [address]    Join with the code from cbb pair on a Linux member.
+  join -code [address]    Join with the code from cbb pair on the root or an admin.
   join -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
   service                 Run the service (started by systemd, launchd or Windows).
@@ -72,6 +73,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdAway(rest, stdin, stdout, stderr)
 	case "revoke":
 		return cmdRevoke(rest, stdout, stderr)
+	case "admin":
+		return cmdAdmin(rest, stdout, stderr)
 	case "pair":
 		return cmdPair(rest, stdout, stderr)
 	case "join":

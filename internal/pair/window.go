@@ -91,7 +91,7 @@ type Result struct {
 // Open opens a pairing window for the code.
 func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if ca, _ := admin.Signer(); ca == nil {
-		return nil, errors.New("pair: only an admin can admit devices: a Linux member of a group a computer made, or a computer the group's root phone made an admin")
+		return nil, errors.New("pair: only an admin can admit devices: the computer that created the group, or a member its root made an admin")
 	}
 	switch {
 	case opt.Secret != nil && len(opt.Secret) < MinSecret:
@@ -444,7 +444,8 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 	if err != nil {
 		return nil, true, err
 	}
-	welcome, err := w.welcome(cert, info.holdsKeys() && !w.noCAKeys && w.admin.Admin())
+	// Only a legacy group hands its CA keys to the computers it admits.
+	welcome, err := w.welcome(cert, info.holdsKeys() && !w.noCAKeys && w.admin.Legacy() && w.admin.ServesPhone())
 	if err != nil {
 		return nil, true, err
 	}
@@ -474,7 +475,7 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 
 func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
-	// An admin computer of a phone group issues from its admin CA.
+	// An admin that is not the root issues from its admin CA.
 	if w.admin.AdminCA != nil {
 		wel.Issuer = w.admin.AdminCA.Raw
 	}

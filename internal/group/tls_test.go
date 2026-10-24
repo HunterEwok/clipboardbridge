@@ -67,7 +67,7 @@ func TestMemberHandshake(t *testing.T) {
 }
 
 func TestMemberHandshakeRejects(t *testing.T) {
-	admin := newGroup(t)
+	admin := newLegacyGroup(t)
 	mac := join(t, admin, false, t0)
 	linux := join(t, admin, true, t0)
 	stranger := newGroup(t)

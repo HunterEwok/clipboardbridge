@@ -47,8 +47,9 @@ rely on them. Source: `internal/group/cert.go`, `internal/group/tls.go`, `intern
 
 | Certificate | Subject CN | SAN | Validity | Extensions |
 |-------------|-----------|-----|----------|------------|
-| Group CA | `clipboardbridge group CA YYYY-MM-DD` (UTC creation date) | none | NotBefore = creation - 24 h; NotAfter = creation + 20 years | CA, path length 0 (MaxPathLen 0); key usage certSign, cRLSign |
-| iPhone CA | `clipboardbridge iPhone CA YYYY-MM-DD` | none | as the group CA | as the group CA, plus critical name constraints (below) |
+| Group root CA | `clipboardbridge group root YYYY-MM-DD` (UTC creation date) | none | NotBefore = creation - 24 h; NotAfter = creation + 20 years | CA, path length 1 (MaxPathLen 1); key usage certSign, cRLSign |
+| Group CA of a legacy group | `clipboardbridge group CA YYYY-MM-DD` | none | as the root CA | CA, path length 0 (MaxPathLen 0); key usage certSign, cRLSign |
+| iPhone CA | `clipboardbridge iPhone CA YYYY-MM-DD` | none | as the root CA | CA, path length 0; key usage certSign, cRLSign; plus critical name constraints (below) |
 | Member certificate (from the group CA) | the device ID | DNS `cb-<device ID>.local`, exactly one | NotBefore = the group CA's NotBefore; NotAfter = min(issue + 2 years, CA NotAfter) | key usage digitalSignature; EKU serverAuth and clientAuth; not a CA |
 | `clipboardbridge.local` server certificate (from the iPhone CA) | `clipboardbridge.local` | DNS `clipboardbridge.local` | NotBefore = max(issue - 24 h, CA NotBefore); NotAfter = min(NotBefore + 397 days, CA NotAfter) | key usage digitalSignature; EKU serverAuth; not a CA |
 | Joiner's self-signed certificate (pairing only) | the joiner's new device ID | none | 1970-01-01T00:00:00Z to 9999-12-31T23:59:59Z | none set |
@@ -57,11 +58,17 @@ iPhone CA name constraints, marked critical: permitted DNS domains `clipboardbri
 name and names below it); permitted e-mail and URI domains `clipboardbridge.invalid` (a domain
 that never exists, so no such name is valid); excluded IP ranges `0.0.0.0/0` and `::/0`.
 
-A device has one key. The member certificate and, on a Linux member, the `clipboardbridge.local`
-certificate certify the same key. A CA refuses to issue when the local clock is outside its
-own validity. A Linux member holds both CA keys; a Mac holds neither and has no
-`clipboardbridge.local` certificate. The joiner's certificate carries the key that the member
-certifies in the welcome (section 6).
+A device has one key. The member certificate and, on a member that serves the shortcut, the
+`clipboardbridge.local` certificate certify the same key. A CA refuses to issue when the local
+clock is outside its own validity. The computer that creates a group is its **root**: it
+makes the group root CA (the `group_ca` that names the group, as a phone does, section 9) and
+the iPhone CA and holds both keys. The admins it makes (section 10, "Admins") hold an admin
+CA under the root and the iPhone CA key; every other member holds neither and has no
+`clipboardbridge.local` certificate. A **legacy group**, made before admin CAs, has a group CA
+with path length 0, and every Linux and Windows member of it holds both CA keys, a Mac
+neither; it is upgraded in place later (design.md, "Full members, admins and the operating
+system"). The joiner's certificate carries the key that the member certifies in the welcome
+(section 6).
 
 Checking a member certificate (`checkPeer`, `DeviceOf`): the chain MUST verify to the group
 CA at the time max(now, group CA NotBefore), so a device whose clock is behind still accepts
@@ -72,7 +79,8 @@ Renewal rules (`Identity.Renew`): a member certificate is renewed when less than
 remain, a `clipboardbridge.local` certificate when less than 60 days remain or when its NotBefore
 is in the future; neither is renewed when it already ends with its CA.
 
-When renewal runs: a member that holds the CA keys checks its own certificates when the group
+When renewal runs: a member that holds a CA key (the root, an admin, a key holder of a legacy
+group) checks its own certificates when the group
 starts and every 12 hours, saves renewed ones and presents them on new connections at once
 (running connections keep theirs). It renews the certificates of other members too: when a
 peer's hello arrives, and every 12 hours for the running connections, it checks the
@@ -268,14 +276,16 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records` or `admin` |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca` or `tunnel` |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
 | `issuer` | string | cert | from an admin phone or computer: its admin CA, which issued `cert`, DER in base64; absent when a root did (section 10) |
 | `records` | array | records | signed records (section 10) |
-| `admin_ca` | string | admin | from the root phone: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "A computer as admin") |
+| `admin_ca` | string | admin | from the group's root, a phone or a computer: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "Admins") |
+| `phone_ca` | string | phone_ca | from the root or an admin of a group a computer created: the group's iPhone CA, DER in base64 (section 10, "Admins") |
+| `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
 
 ```json
 {"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -288,8 +298,8 @@ Message object:
 ### Message order
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
-2. Then events follow, in any number, interleaved with pings, records messages, `admin`
-   and `tunnel` messages and at most one `cert`.
+2. Then events follow, in any number, interleaved with pings, records messages, `admin`,
+   `phone_ca` and `tunnel` messages and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -317,10 +327,9 @@ Rules for the receiver:
 Roles: a `phone` member dials every member, publishes nothing and is never dialed. A `lite`
 member publishes itself with `r=lite`, dials the full members and accepts phones and lite
 members with a lower device ID (above, "Who dials whom"); it never holds
-`clipboardbridge.local`. A `full` member is any computer with the service, a Mac included;
-until a Mac can hold the group's keys (design.md, "Full members, admins and the operating
-system"), a member with `os` `macos` does not admit devices, and without the iPhone CA key
-it does not hold the name.
+`clipboardbridge.local`. A `full` member is any computer with the service, a Mac included:
+any of them can create a group and be its root, or be made an admin. Only the root and the
+admins admit devices, and only a member with the iPhone CA key holds the name.
 
 ### Hello
 
@@ -331,7 +340,8 @@ it does not hold the name.
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
 | `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one |
-| `admin_key` | string or absent | from a computer of a phone group that is no admin yet: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "A computer as admin") |
+| `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
+| `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
 
 ### Event
@@ -456,7 +466,8 @@ Source: `internal/pair`, `internal/third_party/cpace`, `internal/service/socket.
 
 ### Window
 
-A Linux member that holds the CA keys opens a window with a six-digit code. While it is open
+The root or an admin (section 10, "Admins"), or in a legacy group a Linux or Windows member
+that holds the CA keys, opens a window with a six-digit code. While it is open
 the member publishes `p=1`. The window lives 5 minutes (counting sleep); an attempt that has
 started may finish after that. One attempt at a time; another gets `busy`. The window closes
 after a success or after the third failed attempt (`too-many`). An attempt fails (counts)
@@ -546,7 +557,7 @@ put words in front of the user.
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
-| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux` or `windows` without `role` `lite`, and not in a group whose root is the phone |
+| `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 | `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
@@ -556,11 +567,11 @@ admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certi
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
 verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `macos` or lite joiner refuses them; when present, the keys are P-256 and
-match. A Linux or Windows joiner that got them then issues its own `clipboardbridge.local` certificate from
-the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
-phone (section 9): it publishes and listens, but admits nobody until the root phone makes it
-an admin (section 10, "A computer as admin"), serves no iPhone and never holds
-`clipboardbridge.local`.
+match, and `group_ca` has path length 0: a group with a root never hands out CA keys. A Linux
+or Windows joiner of a legacy group that got them then issues its own `clipboardbridge.local`
+certificate from the iPhone CA; any other is a member without CA keys: it publishes and
+listens, but admits nobody until the root makes it an admin (section 10, "Admins"), and
+until then serves no iPhone and never holds `clipboardbridge.local`.
 
 Note: design.md (lines 100-103) says the new member also receives the group state and, on
 Linux, the token hashes; the Welcome has neither (`internal/pair/pair.go:181`). Tokens need no
@@ -833,8 +844,9 @@ The `devices` and `revoke` operations are in section 10.
 ## 9. The phone as the root
 
 In a group that a phone app creates, the phone is the root of trust ("The phone apps" in
-[design.md](design.md)). Sections 1-8 hold for it too; groups
-created by a computer (`cbb pair`, `cbb pair -phone`) keep working as before.
+[design.md](design.md)). Sections 1-8 hold for it too. A group a computer creates (`cbb pair`,
+`cbb pair -phone`) has a root of the same form, which the computer holds in a file, and an
+iPhone CA as well (section 10, "Admins").
 
 - **Group CA.** The app creates the group root CA: a P-256 key in the Secure Enclave or
   StrongBox that cannot be exported, with the certificate profile of section 2 except
@@ -842,9 +854,9 @@ created by a computer (`cbb pair`, `cbb pair -phone`) keep working as before.
   phone has an admin CA (section 10). Computers get member certificates; a computer holds a
   CA key only when the root phone makes it an admin (section 10, "A computer as admin").
   The iPhone app asks for Face ID or the passcode before it signs with the root key, once
-  per action. Go accepts a group CA with path length 0 or 1 (`checkCA`). A Welcome without
-  CA keys makes a Linux member without them (section 6), and such members never hold
-  `clipboardbridge.local`. There is no iPhone CA in such a group.
+  per action. Go accepts a group CA with path length 0 (a legacy group) or 1 (`checkCA`). A
+  Welcome without CA keys makes a Linux member without them (section 6). There is no iPhone
+  CA in such a group, so no member of it holds `clipboardbridge.local`.
 - **The app is a member.** It holds a member certificate of its own group with role
   `phone` and speaks the member protocol of section 4. It dials and never listens for
   members (a phone cannot accept connections in the background), so members MUST NOT dial a
@@ -879,9 +891,10 @@ ClipboardBridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` rec
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
 `testdata/interop/go-root.json` holds a handover for the phone kit to check) and in
 ClipboardBridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
-`roots`; `TestSwiftRoot` checks a takeover the kit signs). A computer as admin is
+`roots`; `TestSwiftRoot` checks a takeover the kit signs). Admins are
 implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, the hello's
-`admin_key`, the `admin` message).
+`admin_key` and `phone_ca`, the `admin` and `phone_ca` messages, `cbb admin`;
+`internal/service/admin.go`).
 
 ### Admin CA and chains
 
@@ -904,38 +917,61 @@ implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, t
 - A member certificate issued by an admin CA has the profile of section 2, issuer the admin
   CA, NotBefore = the admin CA's NotBefore.
 
-### A computer as admin
+### Admins
 
-A computer of a phone group can be an admin too, so that devices can be admitted and removed
-from its command line. Its admin key is a file next to its identity, not a Secure Enclave
-key, so a thief with the computer can act as an admin until another admin removes it.
+Any full member can be an admin, in a group a phone created and in one a computer created.
+Its admin key is a file next to its identity, not a Secure Enclave key, so a thief with the
+computer can act as an admin until another admin removes it.
 
-- Every computer of a phone group makes a P-256 admin key when it starts in the group and
-  keeps it in the identity file (`admin_key`, PKCS #8). Until it holds an admin CA, its hello
-  carries `admin_key`: the key's SubjectPublicKeyInfo.
-- The root phone makes it an admin: it issues the computer's admin CA for that key (the
-  profile above, CN `clipboardbridge admin <device ID>`), sends `{"t":"admin","admin_ca":...}`
-  on its connection to the computer, and signs a `device` record for the computer that names
-  that admin CA in `admin`.
-- The computer checks that the admin CA is for its admin key, names its device ID and stands
+- Every full member that is not the root makes a P-256 admin key when it starts in a group
+  with a root (not in a legacy group) and keeps it in the identity file (`admin_key`,
+  PKCS #8). Until it holds an admin CA, its hello carries `admin_key`: the key's
+  SubjectPublicKeyInfo.
+- The root makes it an admin, the root phone with "Make it an admin" and the root computer
+  with `cbb admin NAME`: it issues the member's admin CA for that key (the profile above, CN
+  `clipboardbridge admin <device ID>`), signs a `device` record for the member that names
+  that admin CA in `admin`, and sends `{"t":"admin","admin_ca":...}` on its connection to
+  the member. The member must be connected.
+- The member checks that the admin CA is for its admin key, names its device ID and stands
   under one of the group's roots, and that the records do not refuse it; it keeps it in the
   identity file (`admin_ca`) and issues itself a new member certificate from it, so the
   `issuer` of its Welcome also issued its own certificate. Its hello no longer carries
   `admin_key`.
-- From then on it acts as an admin phone does, with its admin CA: a Linux one opens pairing
-  windows (`cbb pair`) and admits computers, never phones, with a Welcome that carries
-  `issuer` and `roots` and no CA keys; it signs the `device` record of each device it admits
-  and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
+- From then on it acts as an admin phone does, with its admin CA: it opens pairing windows
+  (`cbb pair`) and admits computers and lite members, never phones, with a Welcome that
+  carries `issuer` and `roots` and no CA keys; it signs the `device` record of each device it
+  admits and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
   keep the devices it admitted; it renews its own certificate and those of the computers it
-  is connected to. It never removes the root phone, makes no admins and does not take the
-  group over.
+  is connected to. It never removes the root, makes no admins and does not take the group
+  over.
+- **The iPhone CA.** In a group a computer created, the root holds the iPhone CA, and so does
+  every admin, so the shortcut works while any of them is on. A member that holds its key
+  says so in its hello (`phone_ca`). When a member that holds a key that is not revoked meets
+  the root or an admin whose hello names another key or none, it sends `{"t":"phone_ca",
+  "phone_ca":..., "phone_ca_key":...}`; the root sends it right after the `admin` message
+  too. A peer counts as the root or an admin when its TLS chain carries its own admin CA, or
+  the records list it as the root or as an admin with the key it presented. The receiver
+  takes it only from the root or an admin, only when it is the root or an admin itself, and
+  only when the records do not revoke the new CA's key; it keeps it when it holds none, when
+  the records revoke the one it holds, or when both stand and the new one's SHA-256 is the
+  smaller (so two replacements at once settle on one); otherwise it keeps it aside, in case
+  the records revoke its own later. It then issues itself a `clipboardbridge.local`
+  certificate and passes the CA on to the admins it is connected to. A member whose iPhone CA
+  key the records revoke deletes it and its `clipboardbridge.local` certificate, and serves
+  the shortcut again only once another admin sends the new one. A group a phone created has
+  no iPhone CA, and its admins never get one.
 - It is removed as an admin phone is: a revocation of its member key and its admin key that
-  keeps the devices it admitted.
+  keeps the devices it admitted. In a group a computer created it held the iPhone CA, so the
+  member that removes it, the root or an admin with the iPhone CA, makes a new iPhone CA,
+  revokes in the same record the old one's key and the key of every `shortcut` device (their
+  tokens stop working), takes the new CA itself and sends it to the admins as above; the
+  iPhones that use the shortcut pair again with the new profile. An admin without the iPhone
+  CA does not remove another admin of such a group.
 - In the member handshake (section 4) a member MUST send its certificate followed by its
   issuer when the issuer is not the group CA. Checking a peer: the chain MUST verify to the
   group CA through at most one intermediate that is a CA with path length 0, with the time
-  rule of section 2; then the revocation rules below apply. A group whose CA has path length
-  0 (every group a computer created) has no intermediates.
+  rule of section 2; then the revocation rules below apply. A legacy group, whose CA has path
+  length 0, has no intermediates.
 
 ### Records
 
@@ -945,7 +981,7 @@ A record is a signed JSON body. On the wire and on disk it is an envelope:
 |-------|------|---------|
 | `body` | bytes | the record body, JSON (below); signed as these exact bytes, never re-encoded |
 | `sig` | bytes | ECDSA P-256 with SHA-256 over `body`, DER |
-| `chain` | array of bytes | the signer's certificates below the group CA: empty when the group CA key signed (groups a computer created, or the root), else the admin CA certificate |
+| `chain` | array of bytes | the signer's certificates below the group CA: empty when the group CA key signed (the root, or a key holder of a legacy group), else the admin CA certificate |
 
 Body fields common to every record: `v` (1), `type`, `group` (the group tag), `time_ms` (the
 signer's wall clock; informative only, never used for ordering), `by` (the signer's device
@@ -953,7 +989,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
 
@@ -979,7 +1015,7 @@ Validity and evaluation, which depend only on the set of records, never on their
    root.
 5. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
-   only in a phone group (its root has path length 1), and its `root` is a self-signed CA
+   only in a group with a root (path length 1), not in a legacy group, and its `root` is a self-signed CA
    with path length 1 and a P-256 key. Records are signed under any root the set knows: the
    group CA and the new root of every valid `root` record; a member adds a batch of records
    until nothing new is added, so a record signed under a new root is taken together with
@@ -1008,8 +1044,10 @@ identity.
 
 The devices list is, for each device, the `device` record that counts with the largest
 `time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
-record names an admin CA whose key is not revoked. A Linux member that holds the CA keys is
-an admin in a group a computer created. Go keeps the records in `records.json` next to the
+record names an admin CA whose key is not revoked. The **root** is the phone or computer whose
+own `device` record (`by` = `device`, role `phone` or `full`) the current root's key signed,
+the latest of them; a legacy group has none, and there every Linux and Windows member that
+holds the CA keys is an admin. Go keeps the records in `records.json` next to the
 identity (mode 0600) and the path in the identity file's `roots`.
 
 ### Exchange in the member protocol
@@ -1027,7 +1065,8 @@ identity (mode 0600) and the path in the identity file's `roots`.
   connected gets the record that revokes it. A member that learns that its own key is
   revoked logs that it was removed from the group, and its status says so (`removed`); the
   others refuse it.
-- A member that holds the group CA key records every device it admits (its name and `os`
+- A member that holds the group CA key (the root, or a key holder of a legacy group) records
+  every device it admits (its name and `os`
   from the pairing Info, role `full` or `lite`) and every iPhone it pairs (`shortcut`, `os`
   `ios`, name `iPhone`, device = the phone ID), and, for groups made before the list
   existed, itself and every connected peer that has no record yet, with the name and `os`
@@ -1042,7 +1081,8 @@ identity (mode 0600) and the path in the identity file's `roots`.
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, os, admin, root, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
-| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
+| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root phone is removed only from another admin phone, which takes the group over, and the root computer not yet; removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
+| `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
 
 ## 11. Tunnel keys
 

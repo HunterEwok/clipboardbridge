@@ -119,7 +119,7 @@ func TestStatus(t *testing.T) {
 		want string
 	}{
 		{control.Status{Role: "full", OS: "linux"}, "Run cbb pair here to start one"},
-		{control.Status{Role: "full", OS: "macos"}, "Run cbb pair on a Linux or Windows member"},
+		{control.Status{Role: "full", OS: "macos"}, "Run cbb pair here to start one"},
 		{control.Status{Role: "full", OS: "windows", Device: "d1", Group: "g1", Holder: true}, "Device d1 (Windows, full), group g1"},
 		{control.Status{Role: "full", OS: "macos", Device: "d2", Group: "g1", Removed: true}, "This device was removed from the group"},
 	} {

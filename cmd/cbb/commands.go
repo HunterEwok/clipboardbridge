@@ -127,11 +127,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
 	if st.Group == "" {
-		if st.OS != group.OSMacOS {
-			fmt.Fprintln(w, "Not in a group. Run cbb pair here to start one, or cbb join to join one.")
-		} else {
-			fmt.Fprintln(w, "Not in a group. Run cbb pair on a Linux or Windows member, then cbb join here.")
-		}
+		fmt.Fprintln(w, "Not in a group. Run cbb pair here to start one, or cbb join to join one.")
 		return
 	}
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
@@ -226,12 +222,12 @@ func shortFingerprint(fp string) string {
 // the phone, the group's main device, to scan with the clipboardbridge
 // shortcut that adds a computer, and waits for the window that the phone
 // opens. With -code it asks for the code that cbb pair shows on a
-// Linux member instead; that code is read from standard input, never taken
+// root or an admin instead; that code is read from standard input, never taken
 // from the command line, where other users of the machine could read it.
 func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	typed := fs.Bool("code", false, "type the code that cbb pair shows on a Linux member")
+	typed := fs.Bool("code", false, "type the code that cbb pair shows on the group's root or an admin")
 	invitation := fs.String("invite", "", "join with the invitation file that cbb invite made on the group's hub")
 	if fs.Parse(args) != nil {
 		return 2
@@ -293,7 +289,7 @@ func cmdJoin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		// app in the iOS simulator.
 		fmt.Fprintf(stdout, "\nOr paste this into the app: %s\n", text)
 		fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", h.Expires/60)
-		fmt.Fprintln(stdout, "Without a phone: run cbb pair on a Linux member and cbb join -code here.")
+		fmt.Fprintln(stdout, "Without a phone: run cbb pair on the group's root or an admin and cbb join -code here.")
 		port, err := service.Port()
 		if err != nil {
 			port = service.MemberPort

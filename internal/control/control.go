@@ -37,6 +37,7 @@ const (
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
 	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
 	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now

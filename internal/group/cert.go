@@ -40,6 +40,7 @@ const (
 	backdate           = 24 * time.Hour // for a device whose clock is a little behind
 	phoneCAName        = "clipboardbridge iPhone CA"
 	groupCAName        = "clipboardbridge group CA"
+	rootCAName         = "clipboardbridge group root"
 	notPermittedDomain = "clipboardbridge.invalid"
 )
 
@@ -78,10 +79,23 @@ type CA struct {
 	Key  *ecdsa.PrivateKey // nil when this device does not hold the key
 }
 
-// NewGroupCA creates a group CA, which certifies the members.
+// NewGroupCA creates a group CA with path length 0, which certifies the
+// members, as groups were made before admin CAs; every Linux and Windows
+// member of such a group holds its key. New groups have a root CA
+// (NewRootCA).
 func NewGroupCA(now time.Time) (*CA, error) {
 	return newCA(&x509.Certificate{
 		Subject: pkix.Name{CommonName: groupCAName + " " + now.UTC().Format(time.DateOnly)},
+	}, now)
+}
+
+// NewRootCA creates the root CA of a new group: path length 1, so it
+// certifies the admins' admin CAs as well as members, as the root a phone
+// creates does (docs/protocol.md, section 9).
+func NewRootCA(now time.Time) (*CA, error) {
+	return newCA(&x509.Certificate{
+		Subject:    pkix.Name{CommonName: rootCAName + " " + now.UTC().Format(time.DateOnly)},
+		MaxPathLen: 1,
 	}, now)
 }
 
@@ -113,8 +127,7 @@ func newCA(tmpl *x509.Certificate, now time.Time) (*CA, error) {
 	tmpl.NotAfter = now.AddDate(caYears, 0, 0)
 	tmpl.IsCA = true
 	tmpl.BasicConstraintsValid = true
-	tmpl.MaxPathLen = 0
-	tmpl.MaxPathLenZero = true
+	tmpl.MaxPathLenZero = tmpl.MaxPathLen == 0
 	tmpl.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 	cert, err := create(tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -139,8 +152,8 @@ func (ca *CA) IssueMember(id DeviceID, pub *ecdsa.PublicKey, now time.Time) (*x5
 	}, pub, now)
 }
 
-// IssuePhone certifies a Linux member's public key for clipboardbridge.local,
-// for 397 days.
+// IssuePhone certifies the public key of a member that serves the shortcut
+// for clipboardbridge.local, for 397 days.
 func (ca *CA) IssuePhone(pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
 	notBefore := maxTime(now.Add(-backdate), ca.Cert.NotBefore)
 	return ca.issue(&x509.Certificate{
@@ -150,6 +163,35 @@ func (ca *CA) IssuePhone(pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate
 		NotAfter:    notBefore.Add(phoneLifetime),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}, pub, now)
+}
+
+// IssueAdmin certifies the admin key pub of the device dev as its admin CA,
+// as the root does when it makes a member an admin: path length 0 and the
+// root's lifetime (docs/protocol.md, section 10). Only a root issues one.
+func (ca *CA) IssueAdmin(dev DeviceID, pub *ecdsa.PublicKey, now time.Time) (*x509.Certificate, error) {
+	if _, err := ParseDeviceID(string(dev)); err != nil {
+		return nil, err
+	}
+	if ca.Cert.MaxPathLen != 1 {
+		return nil, errors.New("group: only a root with path length 1 issues admin CAs")
+	}
+	switch {
+	case ca.Key == nil:
+		return nil, errors.New("group: this device does not hold the root key")
+	case pub == nil || pub.Curve != elliptic.P256():
+		return nil, errors.New("group: the admin key is not a P-256 key")
+	case now.Before(ca.Cert.NotBefore) || !now.Before(ca.Cert.NotAfter):
+		return nil, fmt.Errorf("group: the clock (%v) is outside the lifetime of %q; check the date", now.UTC(), ca.Cert.Subject.CommonName)
+	}
+	return create(&x509.Certificate{
+		Subject:               pkix.Name{CommonName: AdminName(dev)},
+		NotBefore:             ca.Cert.NotBefore,
+		NotAfter:              ca.Cert.NotAfter,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		MaxPathLenZero:        true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}, ca.Cert, pub, ca.Key)
 }
 
 // issue signs tmpl. A clock outside the CA's lifetime is an error: the

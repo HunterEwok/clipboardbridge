@@ -53,7 +53,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: group CA holder in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
+| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
 | `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |
@@ -69,7 +69,8 @@ accessibility overlay) stays in the README's status table as "not yet" until the
 
 Two group layouts are tested, because both exist for users:
 
-- **A. A computer's group**: `deck` runs `cbb pair`; the others join by code.
+- **A. A computer's group**: `deck` runs `cbb pair` and is the root; the others join by
+  code; `deck` makes `win` an admin (`cbb admin win`).
 - **B. A phone's group** (needs `phone`): the Android app is the root; computers and
   `rpi0w` join by its QR code; `mac` becomes an admin.
 
@@ -134,7 +135,11 @@ the same text is on every device at the end.
   keys, and its certificate is refused by every member including `rpi0w`.
 - Renewal: certificates near expiry are renewed (the bench sets the clock forward on a
   disposable device, or uses a short test lifetime build).
-- Admin: `mac` made an admin in layout B pairs and revokes.
+- Admin: `mac` made an admin in layout B pairs and revokes; in layout A `win`, made an admin
+  by `deck`, pairs a device, serves the shortcut while `deck` is off, and when `deck` removes
+  it, `deck` replaces the iPhone CA and the shortcut iPhones pair again.
+- Removing a member that is no admin in layout A (a Linux one, a Windows one, the Mac): the
+  group stays, nobody pairs again.
 - The holder of `clipboardbridge.local` goes away; another member takes it over.
 - Upgrade: every device on 0.3.x, then updated one by one to the 0.4 candidate; mixed
   versions keep syncing during the upgrade; state and keys survive.

@@ -379,6 +379,28 @@ func pairWith(t *testing.T, admin, s *testService) {
 	}
 }
 
+// makeAdmin makes s an admin on the group's root and waits until it holds
+// its admin CA and the iPhone CA.
+func makeAdmin(t *testing.T, root, s *testService) {
+	t.Helper()
+	waitFor(t, s.name+" is connected to the root", func() bool {
+		for _, p := range root.status(t).Peers {
+			if p.ID == s.status(t).Device {
+				return true
+			}
+		}
+		return false
+	})
+	m, err := root.do(t, control.Header{Op: control.OpAdmin, Name: s.name}, "")
+	if err != nil || m.Name != s.name {
+		t.Fatalf("admin %s on %s: %+v, %v", s.name, root.name, m, err)
+	}
+	waitFor(t, s.name+" is an admin", func() bool {
+		id, err := group.Load(s.dir)
+		return err == nil && id.AdminCA != nil && id.ServesPhone()
+	})
+}
+
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	waitUpTo(t, 10*time.Second, what, ok)
@@ -406,8 +428,12 @@ func TestThreeMembers(t *testing.T) {
 	if _, err := a.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair here to start one") {
 		t.Errorf("paste in no group: %v", err)
 	}
-	pairWith(t, a, b) // creates the group on alpha
-	pairWith(t, b, c) // any Linux member can admit
+	pairWith(t, a, b) // creates the group on alpha, its root
+	if _, err := b.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+		t.Errorf("pair on a member that is no admin: %v", err)
+	}
+	makeAdmin(t, a, b)
+	pairWith(t, b, c) // an admin admits too
 	group := a.status(t).Group
 	for _, s := range []*testService{b, c} {
 		if g := s.status(t).Group; g != group {
@@ -424,7 +450,8 @@ func TestThreeMembers(t *testing.T) {
 	for _, s := range []*testService{a, b, c} {
 		waitFor(t, s.name+" has the text", func() bool { return s.paste(t) == "from alpha" })
 	}
-	// Exactly one member holds clipboardbridge.local: the lowest device ID.
+	// Exactly one member holds clipboardbridge.local: the lowest device ID
+	// of the two that hold the iPhone CA.
 	holders := func() []string {
 		var out []string
 		for _, s := range []*testService{a, b, c} {
@@ -436,7 +463,7 @@ func TestThreeMembers(t *testing.T) {
 	}
 	waitFor(t, "one holder", func() bool { return len(holders()) == 1 })
 	lowest := a
-	for _, s := range []*testService{b, c} {
+	for _, s := range []*testService{b} {
 		if s.status(t).Device < lowest.status(t).Device {
 			lowest = s
 		}
@@ -601,10 +628,10 @@ func TestRestartWithANewPort(t *testing.T) {
 }
 
 func TestMac(t *testing.T) {
-	// A Mac joins through a Linux member, cannot admit devices itself, and
-	// syncs in both directions; it never holds clipboardbridge.local. Its rules
-	// must hold whichever device ID is lower, so the test runs until it saw
-	// both orders.
+	// A Mac joins through a Linux member, admits no devices until it is an
+	// admin, and syncs in both directions; until then it never holds
+	// clipboardbridge.local. Its rules must hold whichever device ID is
+	// lower, so the test runs until it saw both orders.
 	seen := map[bool]bool{}
 	for i := 0; i < 16 && len(seen) < 2; i++ {
 		var h hub
@@ -620,7 +647,7 @@ func TestMac(t *testing.T) {
 		seen[macLower] = true
 		t.Logf("the Mac's ID is lower: %v", macLower)
 		waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
-		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "a Mac cannot admit devices yet") {
+		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
 			t.Errorf("pair on a Mac: %v", err)
 		}
 		if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
@@ -677,18 +704,25 @@ func TestRenewal(t *testing.T) {
 	waitFor(t, "connected with the renewed certificates", func() bool { return len(mac.status(t).Peers) == 1 })
 }
 
-func TestMacInNoGroup(t *testing.T) {
-	// A Mac in no group cannot start one: it would hold no CA keys.
+func TestMacCreatesAGroup(t *testing.T) {
+	// A Mac starts a group as any computer does and is its root: it admits
+	// a Linux member and makes it an admin.
 	var h hub
 	mac := startRole(t, &h, "mac", group.OSMacOS)
-	if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "a Mac cannot admit devices yet") {
-		t.Errorf("pair on a Mac in no group: %v", err)
+	pi := startService(t, &h, "pi")
+	pairWith(t, mac, pi)
+	id, err := group.Load(mac.dir)
+	if err != nil || !id.IsRoot() || !id.ServesPhone() {
+		t.Fatalf("the Mac is not the group's root: %v", err)
 	}
-	if st := mac.status(t); st.Group != "" {
-		t.Errorf("the Mac is in a group: %+v", st)
+	if id, err := group.Load(pi.dir); err != nil || id.IsAdmin() || id.ServesPhone() || id.AdminKey == nil {
+		t.Fatalf("the pi holds keys, or no admin key: %v", err)
 	}
-	if _, err := mac.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair on a Linux or Windows member") {
-		t.Errorf("paste on a Mac in no group: %v", err)
+	makeAdmin(t, mac, pi)
+	for _, d := range mac.devices(t) {
+		if d.Root != (d.Name == "mac") || d.Admin != (d.Name == "pi") && d.Name != "mac" {
+			t.Errorf("on the Mac: %+v", d)
+		}
 	}
 }
 
@@ -960,6 +994,7 @@ func TestIPhone(t *testing.T) {
 	pi := startService(t, &h, "pi")
 	other := startService(t, &h, "other")
 	pairWith(t, pi, other) // creates the group
+	makeAdmin(t, pi, other)
 	waitFor(t, "one holder", func() bool { return pi.status(t).Holder != other.status(t).Holder })
 	holder, notHolder := pi, other
 	if other.status(t).Holder {
@@ -1311,7 +1346,7 @@ func TestDevicesAndRevoke(t *testing.T) {
 	}
 	waitFor(t, "the Mac connects to both", func() bool { return len(mac.status(t).Peers) == 2 })
 	for _, d := range mac.devices(t) {
-		if want := d.OS == "linux"; d.Admin != want || !d.Online || d.Role != "full" {
+		if d.Admin || d.Root != (d.Name == "pi") || !d.Online || d.Role != "full" {
 			t.Errorf("on the Mac: %+v", d)
 		}
 		if d.Self != (d.Name == "mac") {
@@ -1322,16 +1357,31 @@ func TestDevicesAndRevoke(t *testing.T) {
 	if _, err := mac.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
 		t.Errorf("revoke on the Mac: %v", err)
 	}
-	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "needs a new group") {
-		t.Errorf("revoking a Linux member: %v", err)
-	}
 	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "cannot remove itself") {
 		t.Errorf("revoking itself: %v", err)
 	}
 	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "toaster"}, ""); err == nil {
 		t.Error("revoked a device that is not there")
 	}
-	// Any Linux member holds the keys; deck removes the Mac.
+	if _, err := deck.do(t, control.Header{Op: control.OpAdmin, Name: "mac"}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("admin on a member that is not the root: %v", err)
+	}
+	makeAdmin(t, pi, deck)
+	if _, err := pi.do(t, control.Header{Op: control.OpAdmin, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "already an admin") {
+		t.Errorf("making an admin twice: %v", err)
+	}
+	waitFor(t, "the Mac sees the admin", func() bool {
+		for _, d := range mac.devices(t) {
+			if d.Name == "deck" {
+				return d.Admin
+			}
+		}
+		return false
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpRevoke, Name: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "holds the group's root") {
+		t.Errorf("revoking the root: %v", err)
+	}
+	// The admin removes a member.
 	m, err := deck.do(t, control.Header{Op: control.OpRevoke, Name: "MAC"}, "")
 	if err != nil || m.Name != "mac" {
 		t.Fatalf("revoke the Mac: %+v, %v", m, err)
@@ -1342,11 +1392,57 @@ func TestDevicesAndRevoke(t *testing.T) {
 		})
 	}
 	waitFor(t, "the Mac is alone", func() bool { return len(mac.status(t).Peers) == 0 })
+	// The root removes the admin, which held the iPhone CA: the root makes
+	// a new one.
+	before, _ := group.Load(pi.dir)
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err != nil {
+		t.Fatalf("revoke the admin: %v", err)
+	}
+	waitFor(t, "the pi is alone", func() bool { return listed(pi.devices(t)) == "pi" && len(pi.status(t).Peers) == 0 })
+	after, err := group.Load(pi.dir)
+	if err != nil || !after.ServesPhone() || after.PhoneCA.Cert.Equal(before.PhoneCA.Cert) {
+		t.Fatalf("the root did not replace the iPhone CA: %v", err)
+	}
 	// The records survive a restart.
 	pi.stop()
 	pi = restartService(t, &h, pi)
-	if got := listed(pi.devices(t)); got != "deck pi" {
+	if got := listed(pi.devices(t)); got != "pi" {
 		t.Errorf("after a restart the pi lists %q", got)
+	}
+}
+
+// TestAdminsShareTheIPhoneCA checks that when the root removes an admin,
+// the iPhone CA it makes in place of the old one reaches the other admin,
+// and that an admin removed while it was off gets nothing new.
+func TestAdminsShareTheIPhoneCA(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	makeAdmin(t, pi, b)
+	root, _ := group.Load(pi.dir)
+	for _, s := range []*testService{a, b} {
+		if id, _ := group.Load(s.dir); !id.PhoneCA.Cert.Equal(root.PhoneCA.Cert) {
+			t.Fatalf("%s holds another iPhone CA than the root", s.name)
+		}
+	}
+	b.stop()
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a takes the new iPhone CA", func() bool {
+		r, err1 := group.Load(pi.dir)
+		id, err2 := group.Load(a.dir)
+		return err1 == nil && err2 == nil && id.ServesPhone() && id.PhoneCA.Cert.Equal(r.PhoneCA.Cert) &&
+			!r.PhoneCA.Cert.Equal(root.PhoneCA.Cert)
+	})
+	b = restartService(t, &h, b)
+	time.Sleep(500 * time.Millisecond)
+	if id, _ := group.Load(b.dir); id.ServesPhone() && !id.PhoneCA.Cert.Equal(root.PhoneCA.Cert) {
+		t.Error("the removed admin got the new iPhone CA")
 	}
 }
 
@@ -1390,6 +1486,7 @@ func TestHolderPriority(t *testing.T) {
 	desktop := startService(t, &h, "desktop")
 	pairWith(t, laptop, desktop)
 	waitFor(t, "connected", func() bool { return len(laptop.status(t).Peers) == 1 })
+	makeAdmin(t, laptop, desktop)
 	waitFor(t, "the desktop holds the name", func() bool { return desktop.status(t).Holder && !laptop.status(t).Holder })
 	if st := laptop.status(t); st.HoldSetting != HolderAuto || st.HoldPriority != prioFallback || !st.Battery {
 		t.Errorf("the laptop's status: setting %q, priority %d, battery %v", st.HoldSetting, st.HoldPriority, st.Battery)
@@ -1470,7 +1567,7 @@ func TestRecordsTheSystem(t *testing.T) {
 	waitFor(t, "pi records Windows", func() bool {
 		for _, d := range pi.devices(t) {
 			if d.Name == "pc" {
-				return d.OS == group.OSWindows && !d.Online && d.Admin && d.Role == group.RoleFull
+				return d.OS == group.OSWindows && !d.Online && !d.Admin && d.Role == group.RoleFull
 			}
 		}
 		return false

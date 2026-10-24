@@ -90,8 +90,8 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			if joinErr != nil || toolErr != nil {
 				t.Fatalf("join %v; tool %v: %s", joinErr, toolErr, errOut.String())
 			}
-			if err := id.Check(); err != nil || id.Admin() || saved != 1 {
-				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.Admin(), saved)
+			if err := id.Check(); err != nil || id.ServesPhone() || saved != 1 {
+				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.ServesPhone(), saved)
 			}
 			caDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.String()))
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
@@ -189,8 +189,8 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			if joinErr != nil || toolErr != nil {
 				t.Fatalf("join %v; tool %v: %s", joinErr, toolErr, errOut.String())
 			}
-			if err := id.Check(); err != nil || id.Admin() || saved != 1 {
-				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.Admin(), saved)
+			if err := id.Check(); err != nil || id.ServesPhone() || saved != 1 {
+				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.ServesPhone(), saved)
 			}
 			caDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.String()))
 			if err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {

@@ -15,9 +15,10 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb paste` | Prints this device's clipboard text. |
 | `cbb status` | This device, its group, sync away from home, and every device of the group: its system (Linux, Windows, macOS, iOS, Android), its role (`full`, `lite`, `phone`, `shortcut`), whether it is the root or an admin, when it was last seen and whether its clock is off. It also says whether this computer answers for `clipboardbridge.local`. |
 | `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
-| `cbb revoke NAME` | Removes a device, by name or device ID. Runs on a device that holds the group's CA keys: a Linux member in a group that a computer created, or a computer the root phone made an admin. In a phone's group, remove devices in the app (Devices). |
-| `cbb pair` | Admits a new computer: creates the group if there is none and shows a six-digit code for `cbb join -code` on the new computer. Same rule as `revoke` for who may run it. |
-| `cbb pair -phone` | Creates the group if needed and pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on a Linux machine: only Linux members serve the shortcut. |
+| `cbb revoke NAME` | Removes a device, by name or device ID, with a signed record; the group stays. Runs on an admin: the computer that created the group (its root), a computer the root made an admin (`cbb admin`), or a computer the root phone made an admin. Removing an admin of a computer's group also replaces the iPhone CA, so iPhones that use the shortcut pair again. The root itself cannot be removed yet. In a phone's group, remove devices in the app (Devices). |
+| `cbb admin NAME` | On the group's root: makes the computer NAME (a name or a device ID) an admin, which can then admit and remove devices and serve the shortcut. It must be connected. In a phone's group, use "Make it an admin" on the root phone. |
+| `cbb pair` | Admits a new computer: creates the group if there is none, with this computer as its root, and shows a six-digit code for `cbb join -code` on the new computer. Same rule as `revoke` for who may run it. |
+| `cbb pair -phone` | Creates the group if needed and pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on the root or an admin that answers for `clipboardbridge.local`. |
 | `cbb join` | Joins a group by QR code: shows a QR code for the phone app, or for the shortcut "clipboardbridge: add a computer", and waits. |
 | `cbb join -code [ADDRESS]` | Joins with the code from `cbb pair`. Without an address it finds the member on the home network; with one (`host:port`) it dials it, for example through an SSH tunnel or your own VPN (see the [quick start](quickstart.md)). |
 | `cbb join -invite FILE` | Joins from afar with an invitation file from `cbb invite`, through the hub's guest tunnel. Both sides show the new device's key fingerprint; the hub admits it once its admin types `yes`. |
@@ -43,7 +44,7 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 | Command | What it does |
 |---|---|
 | `cbb-lite join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | Joins a group by QR code, scanned by the phone app or the shortcut. `-addr` names where the phone reaches this device, when the QR code would name the wrong addresses. |
-| `cbb-lite join -code HOST:PORT` | Joins with the code from `cbb pair` on a Linux member. |
+| `cbb-lite join -code HOST:PORT` | Joins with the code from `cbb pair` on the group's root or an admin. |
 | `cbb-lite run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
 | `cbb-lite copy [-secret]` | Sends standard input to the group. |
 | `cbb-lite paste` | Prints this member's clipboard text. |

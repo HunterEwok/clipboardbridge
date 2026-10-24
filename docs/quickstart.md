@@ -115,11 +115,20 @@ cbb join
 It shows a QR code. On the iPhone, run the shortcut "clipboardbridge: add a computer" and scan
 it. The computer joins within seconds.
 
-Without the iPhone: run `cbb pair` on a Linux machine of the group, then
+Without the iPhone: run `cbb pair` on the computer that created the group, then
 `cbb join -code` on the new computer and type the code it showed.
 
+The computer that created the group is its root: only it and the admins it makes can add
+and remove devices and serve the iPhone shortcut. To make another computer an admin, so the
+group does not depend on one machine, run on the root:
+
+```sh
+cbb admin NAME        # NAME as cbb status shows it; that computer must be on
+```
+
 A computer that is not on the home network joins with an invitation, once sync away from
-home is on and a hub is set up (see "Sync away from home" below). On the hub:
+home is on and a hub is set up (see "Sync away from home" below). On the hub, which must be
+the root or an admin:
 
 ```sh
 cbb invite            # writes clipboardbridge.cbbinvite, valid for an hour (-for 24h at most)
@@ -132,11 +141,11 @@ then syncs through the hub wherever it is.
 
 Or through a path you control:
 
-- **SSH** to a Linux machine of the group: on the new computer run
+- **SSH** to the root or an admin of the group: on the new computer run
   `ssh -N -L 18764:localhost:8764 user@that-machine`, then `cbb pair` there (in another SSH
   session) and `cbb join -code 127.0.0.1:18764` here.
 - **Your own VPN** that gives both machines private addresses (10.x, 172.16–31.x,
-  192.168.x or IPv6 `fd..`): `cbb pair` on the Linux machine, then
+  192.168.x or IPv6 `fd..`): `cbb pair` on the root or an admin, then
   `cbb join -code <its VPN address>:8764` here. On Linux, run the installer again after
   setting up the VPN, so its firewall rules allow the VPN's network.
 

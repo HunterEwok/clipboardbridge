@@ -70,8 +70,11 @@ pair() { # admin, joiner
 	eventually "$1 reports the new member" docker exec "$run-$1" grep -q "host-$2 joined" /tmp/pair.out
 }
 
-say "pairing: a creates the group and admits b; b admits c"
+say "pairing: a creates the group and admits b, makes b an admin; b admits c"
 pair a b
+eventually "a makes b an admin" cb a admin host-b
+is_admin() { cb "$1" status | grep '(this device)' | grep -q ' admin '; }
+eventually "b is an admin" is_admin b
 pair b c
 wrong=000000
 cb a status | grep -q '^Device .*, group ' || fail "a is in no group"
@@ -91,7 +94,7 @@ done
 printf 'a secret' | cb c copy -secret
 eventually "a has the secret" sh -c "[ \"\$(docker exec $run-a /cb/cbb paste)\" = 'a secret' ]"
 
-say "one member holds clipboardbridge.local"
+say "one of the root and the admin holds clipboardbridge.local"
 holders() {
 	n=0
 	for m in $members; do

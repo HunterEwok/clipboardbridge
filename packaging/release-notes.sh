@@ -73,7 +73,7 @@ install. The app makes its own group and adds the computers by their \`cbb join\
 \`cbb-lite-linux-<arch>.tar.gz\` and follow \`cbb-lite/README.md\`, section "Install".
 
 Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb pair -phone\`
-on a Linux machine for the iPhone, and \`cbb join\` on each further computer.
+on the first computer for the iPhone, and \`cbb join\` on each further computer.
 
 ## Verify the downloads
 

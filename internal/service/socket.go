@@ -40,10 +40,7 @@ func fail(c net.Conn, err error) {
 
 // errNoGroup is the error for a request that needs a group.
 func (s *Service) errNoGroup() error {
-	if !s.mac() {
-		return errors.New("this device is in no group; run cbb pair here to start one, or cbb join to join one")
-	}
-	return errors.New("this device is in no group; run cbb pair on a Linux or Windows member, then cbb join here")
+	return errors.New("this device is in no group; run cbb pair here to start one, or cbb join to join one")
 }
 
 func (s *Service) handleControl(ctx context.Context, c net.Conn) {
@@ -107,6 +104,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpAdmin:
+		name, err := s.makeAdmin(m.Name)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: name, Done: true}, nil)
 	case control.OpRevoke:
 		name, err := s.revoke(m.Name)
 		if err != nil {
@@ -201,8 +205,8 @@ func (s *Service) statusWithRemoved() *control.Status {
 }
 
 // pair opens a pairing window and reports its end; a client that hangs up
-// closes the window. On a Linux device in no group, it creates the group
-// first.
+// closes the window. On a device in no group, it creates the group first,
+// with this device as its root.
 func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 	w, _, end, err := s.openWindow(pair.NewCode(), true, true)
 	if err != nil {
@@ -236,16 +240,13 @@ func (s *Service) pair(ctx context.Context, c net.Conn, r *control.Reader) {
 }
 
 // openWindow reserves the pairing window and opens it with code. On a
-// Linux device in no group it first creates the group, when create is set.
+// device in no group it first creates the group, when create is set.
 // With announce, the window is published and takes pairing connections on
 // the member port; without, it only serves the member's own dials to a
 // listening joiner. end closes the window and frees it; it may be called
 // more than once, and runs before the last answer to a client, so it can
 // pair again at once.
 func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, *group.Identity, func(), error) {
-	if s.mac() {
-		return nil, nil, nil, errors.New("a Mac cannot admit devices yet; run cbb pair on a Linux or Windows member")
-	}
 	s.mu.Lock()
 	id, busy, joining := s.id, s.window != nil || s.dialWindow != nil || s.opening, s.joining
 	if !busy && !joining {
@@ -308,7 +309,8 @@ func (s *Service) openWindow(code string, create, announce bool) (*pair.Window, 
 	return w, id, end, nil
 }
 
-// createGroup creates a group on a Linux device in no group and starts it.
+// createGroup creates a group on a device in no group, with this device as
+// its root, and starts it.
 // One creation runs at a time, so two requests cannot save two identities.
 func (s *Service) createGroup() (*group.Identity, error) {
 	s.createMu.Lock()
@@ -429,7 +431,7 @@ const joinTimeout = 2 * time.Minute
 // join joins a group with a code. With Listen it waits for a member to dial
 // this device, at the addresses and with the certificate it answers with
 // first, for the QR code; otherwise it dials the address the user gave, or
-// the one Linux member that announces an open pairing window; with an
+// the one member that announces an open pairing window; with an
 // invitation, it joins through the hub's tunnel (invite.go). A client that
 // hangs up cancels the join.
 func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *control.Message) {
@@ -582,7 +584,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 		raw, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run cbb pair on a Linux member and cbb join -code here")
+				return nil, errors.New("no device added this one in time; scan the QR code with the phone, or run cbb pair on the group's root or an admin and cbb join -code here")
 			}
 			return nil, err
 		}
@@ -678,7 +680,7 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 		}
 		return addresses(open[0]), nil
 	case <-ctx.Done():
-		return nil, errors.New("no member with an open pairing window found; run cbb pair on a Linux member, or give its address")
+		return nil, errors.New("no member with an open pairing window found; run cbb pair on the group's root or an admin, or give its address")
 	}
 }
 
