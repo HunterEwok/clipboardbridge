@@ -616,7 +616,7 @@ Away from home, and between subnets that mDNS does not reach (for example a Pi o
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
 group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
-each other), the exchange of its keys among Go members, and `cbb away`, which turns it on
+each other), the exchange of its keys among Go members, and `cbb global`, which turns it on
 with the consent below and makes a computer the hub; Go members sync through it when the
 hub is not on their network; a computer with a remote invitation joins from afar (`cbb
 invite` on the hub); a hub that clients cannot reach directly registers with a forwarder
@@ -677,7 +677,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   on: while it is off, nothing syncs away from home, and the devices at home still sync
   among themselves. The user chooses: a computer that is always on, one that is turned on
   when sync away from home is needed (for example to copy codes from afar for an hour), or
-  no hub and sync at home only. `cbb away hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
+  no hub and sync at home only. `cbb global hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
   of work. Phones and lite members are clients: a phone is not always on
   and cannot accept connections in the background, and a lite member has no room for it.
@@ -738,7 +738,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 For homes behind carrier-grade NAT, and for clients without IPv6, the project runs a
 forwarder on its own server for all users. It holds no keys and only passes encrypted
 WireGuard packets between a group's clients and that group's hub. The forwarder is built
-(`cbb forward`, `cbb away hub -forwarder`; the wire format is in
+(`cbb forward`, `cbb global hub -forwarder`; the wire format is in
 [protocol.md](protocol.md), section 13), with routing by `mac1`; the computed port below is
 not. The project's own forwarder does not run yet: it needs a server, and until then a
 user can run `cbb forward` on a server of their own.
@@ -895,7 +895,7 @@ themselves and is never switched on in the project's own forwarder, which collec
 about who talks to whom.
 
 - `cbb relay -group TAG` runs it on the user's server, for the groups whose tags it is
-  given and no other. Each device turns it on with `cbb away relay ADDRESS -key KEY`, in
+  given and no other. Each device turns it on with `cbb global relay ADDRESS -key KEY`, in
   place of a hub; the key is the pin of the relay's own key, as with the forwarder.
 - A device registers with its member certificate and proves it holds its WireGuard key, as
   a hub does with the forwarder. The relay then gives it a tunnel, a preshared key and a
@@ -916,7 +916,7 @@ about who talks to whom.
 
 1. **AmneziaWG**, a fork of wireguard-go that randomises message headers, adds junk and
    imitation packets before the handshake and pads messages. Same keys and code; the user
-   switches it on per group, on the hub (`cbb away hub -obfuscate`). `cbb` and the phones'
+   switches it on per group, on the hub (`cbb global hub -obfuscate`). `cbb` and the phones'
    tunnel run on amneziawg-go always; without settings it is plain WireGuard on the wire.
    - The hub makes the group's settings once, at random, and keeps them while obfuscation
      stays on: 3 to 8 junk packets of 40 to 600 bytes before each handshake, 16 to 64 random
@@ -952,7 +952,7 @@ about who talks to whom.
      -vless-site www.example.com`): the forwarder listens on TCP 443, and whoever is not a
      client gets that site's own TLS and pages, by REALITY. Its REALITY key stays in its key
      file.
-   - The hub's user switches it on per group (`cbb away hub -forwarder ... -vless`). The hub
+   - The hub's user switches it on per group (`cbb global hub -forwarder ... -vless`). The hub
      makes the group's VLESS user ID, the forwarder lets that ID in while the hub is
      registered and tells the hub its REALITY key, short ID and site, and the hub gives all
      of it to its clients with its offer, inside the member TLS at home.
@@ -1040,9 +1040,9 @@ only adds to it.
    switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
    found at home. The invitations follow.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
-   run on amneziawg-go; obfuscation per group between computers (`cbb away hub
+   run on amneziawg-go; obfuscation per group between computers (`cbb global hub
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
-   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb away hub -vless`)
+   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb global hub -vless`)
    and on both phones.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
@@ -1294,7 +1294,7 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
    the system and the root and admin marks; an admin re-signs a record whose `os` is
    wrong.
 3. The Mac as a full member: the dialing rule above, listening like the others, holding
-   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb away hub`
+   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb global hub`
    says that nothing syncs away from home while the hub is off.
 4. New groups made by a computer with a root of path length 1: the CA keys on the creator
    only, the admin key on every full member, `cbb admin`, the iPhone CA key for admins,

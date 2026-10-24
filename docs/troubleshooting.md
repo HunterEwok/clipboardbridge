@@ -51,9 +51,9 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 
 ## Sync away from home
 
-`cbb away` on the device and on the hub says what is wrong. The usual causes: the router does
+`cbb global` on the device and on the hub says what is wrong. The usual causes: the router does
 not forward the hub's UDP port to the hub, the hub's firewall drops it, or the address given
-to `cbb away hub` is not the one the internet reaches. With `CBB_DEBUG=1` in the service's
+to `cbb global hub` is not the one the internet reaches. With `CBB_DEBUG=1` in the service's
 environment the log also shows WireGuard's handshakes. On Linux:
 
 ```sh

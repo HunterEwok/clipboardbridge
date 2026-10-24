@@ -1096,14 +1096,14 @@ Go (`mobile/cbbtun`), and both apps turn it on in their settings; the kits keep 
 the offer and hand them to the tunnel. The lite member does not take part yet.
 
 - Sync away from home is off by default; nothing in this section happens on a device until
-  the user turns it on there (`cbb away on`, the control operation `away`). Go turns it on
+  the user turns it on there (`cbb global on`, the control operation `away`). Go turns it on
   by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
   rest of this section's state.
 - Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member where sync
   away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
   only.
-- The group's hub is one member, chosen on that member (`cbb away hub`; `is_hub`,
+- The group's hub is one member, chosen on that member (`cbb global hub`; `is_hub`,
   `endpoints`, `listen_port` and `forwarder` in its `tunnel.json`). When
   a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
   with the certificate chain the peer presented in this connection's TLS handshake, and
@@ -1135,7 +1135,7 @@ the offer and hand them to the tunnel. The lite member does not take part yet.
 
 ### Obfuscation
 
-A hub where the user asked for it (`cbb away hub -obfuscate`; `obfuscation` in its
+A hub where the user asked for it (`cbb global hub -obfuscate`; `obfuscation` in its
 `tunnel.json`) speaks AmneziaWG instead of plain WireGuard. Its offer carries the settings,
 with AmneziaWG's own names; every client sets them on its end before the hub as its peer:
 
@@ -1155,7 +1155,7 @@ with AmneziaWG's own names; every client sets them on its end before the hub as 
 
 ### VLESS
 
-A hub with a forwarder where the user asked for it (`cbb away hub -forwarder ... -vless`)
+A hub with a forwarder where the user asked for it (`cbb global hub -forwarder ... -vless`)
 has its clients reach the forwarder only inside VLESS with REALITY, which to the network is
 TLS 1.3 to a well-known site (docs/design.md, "Blocked networks"). The hub makes a VLESS user
 ID for the group once and keeps it (`forwarder.vless_id` in its `tunnel.json`); it learns the

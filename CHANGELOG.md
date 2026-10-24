@@ -10,11 +10,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - VLESS with REALITY for networks that block WireGuard and AmneziaWG alike: `cbb forward
   -vless-site www.example.com` also takes VLESS on TCP 443, borrowing that site's TLS, and
-  `cbb away hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
+  `cbb global hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
   way, inside what looks like HTTPS to the site. The group's WireGuard and member TLS go
   inside it unchanged. Xray-core runs in `cbb` and in the phones' tunnel (`mobile/cbbtun`),
   so both apps take the way over VLESS from the hub's offer too.
-- Obfuscation for networks that block WireGuard: `cbb away hub -obfuscate` makes the group's
+- Obfuscation for networks that block WireGuard: `cbb global hub -obfuscate` makes the group's
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub
   makes the group's settings and gives them to its clients with its offer at home and in
@@ -40,18 +40,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Espressif's QEMU. Pairing and syncing come next; not yet run on a real board.
 - A forwarder for hubs that the computers cannot reach directly, for example behind
   carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
-  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
+  `cbb global hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
   member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
   only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
   groups apart, limits each group, and writes nothing about the groups, not even to its
-  log. `cbb away` on the hub shows the registration.
+  log. `cbb global` on the hub shows the registration.
 - A blind relay for a group without a computer to be its hub: `cbb relay -group TAG` runs it
-  on a server you run, and `cbb away relay ADDRESS:PORT -key KEY` on each computer meets the
+  on a server you run, and `cbb global relay ADDRESS:PORT -key KEY` on each computer meets the
   group's other computers there away from home. It holds none of the group's keys: each
   computer registers with its member certificate and gets its own WireGuard tunnel to the
   relay, which joins two computers' member connections end to end, so it sees who talks
   and when but cannot read the clipboard or pose as a device. It serves only the groups it
-  is given and writes nothing about them. `cbb away` shows the link.
+  is given and writes nothing about them. `cbb global` shows the link.
 - `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
   `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
@@ -59,6 +59,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- `cbb away` is now `cbb global`, with the same subcommands (`on`, `off`, `hub`, `relay`):
+  it turns on sync over the internet, beyond the home network.
 - A computer that creates a group is now its root, as a phone is in its own group: only it
   and the admins it makes hold CA keys, and the computers that join get only their
   certificates, the Mac, Linux and Windows alike. `cbb admin NAME` on the root makes a

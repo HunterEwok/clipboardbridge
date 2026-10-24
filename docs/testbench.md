@@ -37,8 +37,8 @@ In scope for 0.4:
 | Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
-| Sync away from home | `cbb away hub`, `cbb away on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
-| The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb away hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
+| Sync away from home | `cbb global hub`, `cbb global on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
+| The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb global hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
 | Failure cases | section 8 |
 | Security | section 9 (top priority for everything off the home network) |
 | Debug/release error details | each tested error shows the user message; with `CBB_DEBUG=1` the underlying error too; the log always has it |
@@ -84,7 +84,7 @@ Two group layouts are tested, because both exist for users:
 | N4 | Away through the relay | as N3, with the hub reachable only through the forwarder |
 | N5 | Bad network | `tc netem` on the Linux devices: latency, loss, reordering, bandwidth limit; always with an automatic revert timer |
 | N6 | Network gone | firewall rules that drop the member port or the tunnel port for a time, with an automatic revert; no Wi-Fi switching on `rpi0w` |
-| N7 | IPv6 only / IPv4 only for the tunnel | address family chosen per run on the hub's `cbb away hub` addresses |
+| N7 | IPv6 only / IPv4 only for the tunnel | address family chosen per run on the hub's `cbb global hub` addresses |
 
 ## 5. Test design
 
@@ -162,7 +162,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
-| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb global on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb global` explains what is missing |
 | P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
@@ -173,7 +173,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P19 | IPv6 on the home network: AAAA records, link-local and global addresses, an IPv6-only member | members find and reach each other over IPv6 |
 | P20 | A network that blocks UDP (a hotel or an office) for an away device | as designed for the transports that exist (WireGuard over UDP fails with a clear message; the TCP transport when it exists) |
 | P21 | Invitations: the admin answers `no`; `-for 24h` and one second past it; the hub off when the invitation is used | refused with a clear message each time; nothing is left on the hub |
-| P22 | `cbb away off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
+| P22 | `cbb global off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
 (`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
@@ -190,7 +190,7 @@ those builds are covered only by CI. It has no real Android phone and no iPhone 
 | F3 | Mac sleeps and wakes; the VM pauses and resumes | reconnects within 30 s of wake |
 | F4 | 30% loss, 300 ms latency, reordering (N5) | texts arrive, no duplicates, no crash |
 | F5 | Member port blocked for 5 minutes (N6) | texts copied meanwhile arrive after the block ends (latest wins) |
-| F6 | Hub down while devices are away | away devices report it in `cbb away` and `cbb status`; nothing is sent another way |
+| F6 | Hub down while devices are away | away devices report it in `cbb global` and `cbb status`; nothing is sent another way |
 | F7 | Relay down or unreachable | fallback port tried as designed; then a clear error; never a cleartext path |
 | F8 | Clock skew of hours on one device | certificates still accepted within the protocol's margin; HLC order holds |
 | F9 | Disk full on a Linux member | clear error, no corrupted state after space returns |

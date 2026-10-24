@@ -104,12 +104,12 @@ the interop vectors and an e2e test among Go members, not yet run on a real Pi; 
 Android app (`apps/android`) does what the iPhone app does, receives copies by itself in a
 foreground service and sends them with the accessibility service or one tap, and each
 release carries its signed APK (docs/apps.md); Homebrew (`hunterewok/tap`); sync away
-from home between computers, through a hub's WireGuard tunnel (`cbb away`).
+from home between computers, through a hub's WireGuard tunnel (`cbb global`).
 
 Next steps, roughly in order:
 
 1. TestFlight (needs the Apple account), a signed macOS `.pkg`, sync away from home for
-   the phones and the lite member (it works between computers: `cbb away`, docs/protocol.md
+   the phones and the lite member (it works between computers: `cbb global`, docs/protocol.md
    section 11), the lite member on the ESP32 (see docs/roadmap.md).
 
 Windows (the service, the agent, the installers) passes CI on windows-latest but is not yet
