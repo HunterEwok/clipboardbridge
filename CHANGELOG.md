@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The first firmware for the Arduino Nano ESP32 (`lite/esp32`, Rust on the ESP32-S3): a
+  self-test that makes keys and certificates with the chip's true random number generator
+  and runs a TLS 1.3 handshake of the protocol core on the chip. CI runs it in Espressif's
+  QEMU. Wi-Fi, pairing and syncing come next; not yet run on a real board.
 - A forwarder for hubs that the computers cannot reach directly, for example behind
   carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
   `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
