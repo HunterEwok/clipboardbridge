@@ -23,7 +23,6 @@ experiment are under [open questions](#open-questions).
 - Working around iOS. iOS lets an app read the clipboard only after a user action.
 - Sync between Apple devices. Universal Clipboard already does it.
 - Clipboard history.
-- Images and files in the first version: text only.
 
 ## Devices and roles
 
@@ -466,7 +465,111 @@ Not built yet (roadmap item 10); the design:
 
 ## Limits
 
-- Text only, UTF-8, up to 1 MiB per item.
+- Text: UTF-8, up to 1 MiB per item.
+- Images and files (planned for 0.5): up to 100 MiB per copy at home and 25 MiB away from
+  home by default, set on each device up to 1 GiB (see "Images and files").
+
+## Images and files (planned for 0.5)
+
+Images, files and folders travel wherever the platform lets a program read and write them,
+with the same protection as text; formatted text (HTML next to the plain text) comes last
+and is optional (D-55). Today's event carries its whole text and sits in every hello and
+queue, so large content cannot simply go inside it.
+
+### Where
+
+| Device | Images | Files and folders | HTML |
+|---|---|---|---|
+| Linux, Wayland (data-control) | `image/png`, `image/jpeg` | `text/uri-list`, `x-special/gnome-copied-files`, KDE's types | `text/html` |
+| Linux, X11 and GNOME through XWayland | the same targets, large ones in INCR pieces | the same | the same |
+| Linux without a desktop | `cbb copy FILE...`, `cbb paste -o DIR` | the same | no |
+| Windows | `CF_DIBV5` and the registered `PNG` format | `CF_HDROP` with the paths of the received copies; virtual files (Outlook attachments, ZIP contents) later | `HTML Format` |
+| Mac | `public.png`, `public.jpeg`, `public.tiff` (sent as PNG) | `public.file-url` items | `public.html` |
+| iPhone app | on the button, as text; HEIC is sent as JPEG | files copied in Files and other apps (named after their type when iOS gives no name); a share extension later | yes |
+| Android app | reads a `content://` image with the clipboard, writes one through its FileProvider | Android file managers have no system copy, so files come through the share sheet; received files are offered in the notification ("Open", "Save to Downloads") | yes |
+| iPhone shortcut, `cbb-lite`, ESP32, ZX Next | no | no | no |
+
+Text-only devices take the event, so the group converges, but never fetch its content and
+keep their last text; a copy that carries text next to its image (a browser copies both)
+gives them that text. Secrets and remote paste stay text only. Cut in a file manager counts
+as copy: nothing is ever deleted on the source.
+
+Images travel as PNG (screenshots) or JPEG (photos, which would grow about five times as
+PNG); the sender converts HEIC and TIFF, and a receiver converts JPEG to PNG when an
+application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
+
+### Manifest and chunks
+
+- A `media` event carries a **manifest** instead of the bytes: for each part its type (or
+  name and path inside a copied folder), size and SHA-256, the total size and an optional
+  plain-text alternative. It is small, so it travels in events and hellos like a text, and
+  the sync model applies unchanged; duplicates (two Macs reporting one Universal Clipboard
+  image) are recognised by hash.
+- A member that wants the content sends `get` (hash, offset, length) to a connected member
+  that has it, preferably the origin, and receives binary `chunk` frames of 256 KiB (not
+  base64 in JSON, which costs a third more). It asks for at most 4 MiB at a time, more as
+  chunks arrive, and continues from the last offset after a reconnect.
+- Events, hellos, pings and records go first; chunks go only while the event queue is empty
+  and do not count against the 256-message queue limit, so text keeps flowing during a large
+  transfer.
+- Content is addressed by its hash, so any member that has it serves it, and a member asked
+  for a part it lacks fetches it and passes the chunks on as they arrive. Away from home that
+  is the hub serving its clients, which never talk to each other.
+- A receiver fetches in the background once the event is the group's current live event and
+  fits its limit, and writes its clipboard only when every part has arrived and matches its
+  hash, so a paste never gives half a file; a newer copy stops the fetch. Progress shows in
+  `cbb status` and the apps' notification.
+- Android on the home Wi-Fi fetches images by itself; files, and anything away from home,
+  wait for a tap on the notification. The iPhone fetches on its button.
+
+### Storage
+
+The service keeps fetched content as files in a cache in its state directory, readable only
+by the service, so a Pi Zero never holds a large copy in memory; files the clipboard points
+at live in a folder per copy readable only by the user. The cache keeps the current copy,
+deletes older ones 10 minutes after they are replaced and everything on restart, within
+twice the device's limit. The apps keep it in their sandbox. Nothing is kept as history.
+
+Received names are cleaned (no path separators, `..`, control characters or reserved Windows
+names, at most 255 bytes); links inside folders are neither followed nor created; nothing is
+made executable; on Mac and Windows received files carry the system's mark of a download
+(quarantine, Mark of the Web).
+
+### Size limit
+
+| Setting | Default | Range |
+|---|---|---|
+| Largest copy a device sends or fetches at home (`cbb config max-copy`, the apps' settings) | 100 MiB | 1 MiB to 1 GiB |
+| The same away from home (`max-copy-away`) | 25 MiB | 1 MiB to the home limit |
+| Text | 1 MiB | fixed |
+
+The receiver's limit decides (D-56): a sender offers any copy within its own limit, each
+receiver fetches only what fits its own and says once that a copy was too large ("A 300 MB
+copy from Mac is over this device's limit of 100 MB"). The hub's away limit caps its whole
+star. The limit protects the memory and disks of small devices, mobile data, the hub and the
+forwarder's 2 MiB a second per group; beyond 1 GiB clipboardbridge is the wrong tool.
+
+### Security
+
+The rules of "Sync away from home" hold unchanged (D-57): at home chunks travel inside the
+member connection's mutual TLS 1.3, away from home only inside the group's WireGuard tunnel
+with member TLS inside it, so the forwarder and the blind relay see neither content nor
+headers nor inner addresses. Only group members hold the plaintext, and every part is
+checked against the SHA-256 of a manifest that came over an authenticated connection, so a
+member serving from its cache cannot change it. What stays visible: the network between a
+client and the hub sees that roughly so many megabytes went; chunks are padded to 256 KiB,
+and cover traffic cannot hide a large transfer.
+
+### Order of work
+
+1. The `media` event, the content cache, `get` and `chunk`, priorities and limits in Go;
+   interop vectors for the Swift and Kotlin kits and the lite core (which learns to ignore
+   content); `cbb copy FILE` and `cbb paste -o DIR` without a desktop.
+2. Images in the desktop connectors: Wayland, X11, Mac, Windows.
+3. Files and folders in the desktop connectors.
+4. The phone apps: images, then files and the share targets.
+5. Away from home: the away limit, the hub serving its clients, the bench's tests.
+6. HTML, optional.
 
 ## Security
 
@@ -1035,7 +1138,8 @@ These need experiments on real devices; CI cannot answer them.
 - Does the macOS application firewall, set to block incoming connections, filter the mDNS
   answers that reach the service's own socket on UDP 5353 (it is not mDNSResponder)? If so,
   the installer must add an exception for the service.
-- Images and files after the first version.
+- Which applications on each system paste images and file lists that another program wrote
+  (Android keyboards and apps, Windows Explorer with `CF_HDROP` from the agent, iOS apps)?
 
 ## Decision log
 
@@ -1090,3 +1194,6 @@ These need experiments on real devices; CI cannot answer them.
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
 | D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
+| D-55 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
+| D-56 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
+| D-57 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |

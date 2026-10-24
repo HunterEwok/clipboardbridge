@@ -70,6 +70,18 @@ The order may change.
     into any computer without clipboardbridge (Latin characters only: a USB keyboard
     cannot type most other scripts), and it can show texts on a display and send one with
     a button.
+19. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
+    (D-55 to D-57): the event carries a manifest with SHA-256 hashes, the bytes are fetched
+    in chunks at lower priority than events, and each device has its own limit (100 MiB at
+    home, 25 MiB away from home, at most 1 GiB). See "Images and files" in
+    [design.md](design.md#images-and-files-planned-for-05). One pull request each:
+    1. the `media` event, the content cache, `get` and `chunk`, the limits, interop vectors;
+       `cbb copy FILE` and `cbb paste -o DIR`;
+    2. images in the desktop connectors (Wayland, X11, Mac, Windows);
+    3. files and folders in the desktop connectors;
+    4. the phone apps: images, then files and the share targets;
+    5. away from home: the away limit and the hub serving its clients, on the bench;
+    6. HTML, optional.
 
 ## Device keys in hardware
 
