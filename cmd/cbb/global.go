@@ -37,20 +37,20 @@ the group. To keep that from happening:
 
 `
 
-// cmdAway shows or changes sync away from home on this device.
-func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	usage := "usage: cbb away                       show sync away from home\n" +
-		"       cbb away on                    turn it on here\n" +
-		"       cbb away off                   turn it off here and forget its keys\n" +
-		"       cbb away hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
+// cmdGlobal shows or changes sync away from home on this device.
+func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	usage := "usage: cbb global                     show sync away from home\n" +
+		"       cbb global on                  turn it on here\n" +
+		"       cbb global off                 turn it off here and forget its keys\n" +
+		"       cbb global hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
 		"                                      -vless for clients that reach the forwarder only over VLESS\n" +
-		"       cbb away relay address:port -key KEY\n" +
+		"       cbb global relay address:port -key KEY\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
 		"                                      without a hub"
 	if len(args) == 0 {
-		return cmdAwayStatus(stdout, stderr)
+		return cmdGlobalStatus(stdout, stderr)
 	}
 	h := control.Header{Op: control.OpAway, Name: args[0]}
 	switch args[0] {
@@ -82,7 +82,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return fail(stderr, err)
 		}
 	case "hub":
-		fs := flag.NewFlagSet("away hub", flag.ContinueOnError)
+		fs := flag.NewFlagSet("global hub", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		port := fs.Int("port", 0, "the UDP port the hub listens on (default 8764)")
 		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
@@ -104,7 +104,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate, h.VLESS = *port, fs.Args(), *fwd, *fwdKey, *obfuscate, *vlessOnly
 	case "relay":
-		fs := flag.NewFlagSet("away relay", flag.ContinueOnError)
+		fs := flag.NewFlagSet("global relay", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		key := fs.String("key", "", "the relay's key, which cbb relay prints")
 		// The address may come before the flag or after it.
@@ -170,7 +170,7 @@ at home the devices sync with each other without it. Keep it on all the time, tu
 it on when you need it, or sync only at home.
 `
 
-func cmdAwayStatus(stdout, stderr io.Writer) int {
+func cmdGlobalStatus(stdout, stderr io.Writer) int {
 	c, err := control.Dial(control.SocketPath())
 	if err != nil {
 		return fail(stderr, err)
@@ -191,11 +191,11 @@ func cmdAwayStatus(stdout, stderr io.Writer) int {
 // debug build or with CBB_DEBUG=1, and only the short message otherwise.
 func writeAway(w io.Writer, a *control.Away) {
 	if a == nil {
-		fmt.Fprintln(w, "Sync away from home: off (cbb away on turns it on).")
+		fmt.Fprintln(w, "Sync away from home: off (cbb global on turns it on).")
 		return
 	}
 	if confined() && !awayNetOpen() {
-		fmt.Fprintln(w, "This computer's service may reach only the home network: sudo cbb away on lets it reach the internet.")
+		fmt.Fprintln(w, "This computer's service may reach only the home network: sudo cbb global on lets it reach the internet.")
 	}
 	switch {
 	case a.Hub:
@@ -211,7 +211,7 @@ func writeAway(w io.Writer, a *control.Away) {
 			fmt.Fprintf(w, "  Reached at %s.\n", strings.Join(a.Endpoints, ", "))
 			fmt.Fprintf(w, "  The router must forward UDP port %d to this device, and its firewall must allow it.\n", a.Port)
 		case a.Forwarder == nil:
-			fmt.Fprintln(w, "  The hub has no address away from home: cbb away hub address:port...")
+			fmt.Fprintln(w, "  The hub has no address away from home: cbb global hub address:port...")
 		}
 		if f := a.Forwarder; f != nil {
 			switch {

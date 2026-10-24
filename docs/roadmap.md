@@ -29,21 +29,21 @@ The order may change.
     listens for phones, so a phone and a lite member sync with no computer on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the
+    Rust member among Go members. Done for Linux in `lite/` (its command is `cbb` too, built for the
     Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
     crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
     place of ring), with the member TLS in it (rustls without std and a RustCrypto
-    provider; `cbb-lite` uses the same code), which CI builds for the ESP32-C6 (RISC-V)
+    provider; the lite member on Linux uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
-12. **Partly: built between computers (`cbb away`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
-    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb away` is to be renamed `cbb global`, with
+12. **Partly: built between computers (`cbb global`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
+    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb global` is to be renamed `cbb global`, with
     the same subcommands: it turns on sync over the internet, beyond the home network.
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
-14. **Started: `cbb-lite next` and the `.cbb` dot command (`apps/zxnext`) are written, not yet
+14. **Started: `cbb next` on the lite member and the `.cbb` dot command (`apps/zxnext`) are written, not yet
     run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
     Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
     Raspberry Pi Zero on its accelerator header, wired to the FPGA's second UART, with
-    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. `cbb-lite` runs on
+    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. The lite member runs on
     this Pi as an ordinary lite member, installed on the NextPi card itself (its user
     partition and a start script), so NextPi's own tools keep working. It speaks the
     member protocol with TLS 1.3 like any other member and reaches the network in one of
@@ -51,9 +51,9 @@ The order may change.
     turn back on; or, on a Zero without a radio, the Next's built-in ESP8266, which then
     only carries the Pi's TLS bytes: the Z80 copies them between the Pi's UART and the
     ESP's, and the ESP never sees anything but ciphertext. A dot command on the Next,
-    `.cbb`, talks to `cbb-lite` over the internal UART the way NextPi's own tools do
+    `.cbb`, talks to the lite member over the internal UART the way NextPi's own tools do
     (`.pisend`): it copies a text to the group, pastes the latest one, and joins by
-    drawing the QR code for the phone app on the Next's screen (`cbb-lite next`,
+    drawing the QR code for the phone app on the Next's screen (`cbb next`,
     lite/README.md). The UART is a trace on the
     Next's board and never leaves the case, so it carries the texts in the clear. The Pi
     converts between UTF-8 and the Spectrum character set: printable ASCII first, with
@@ -93,7 +93,7 @@ The order may change.
        (item 10);
     3. Windows and macOS targets;
     4. sending from the iPhone and Android apps, and the Android target;
-    5. the `cbb-lite` target, then the Nano ESP32's keyboard.
+    5. the lite member's target, then the Nano ESP32's keyboard.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
     "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
@@ -109,6 +109,92 @@ The order may change.
     4. the phone apps: images, then files and the share targets;
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
+21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
+    member and the natural hub, `cbb-lite` for small routers. See "OpenWrt routers" below.
+
+## OpenWrt routers
+
+Planned for 0.5.
+
+A router has no desktop and no clipboard of its own, so on a router clipboardbridge is
+infrastructure, not a place to copy and paste:
+
+- **The hub for sync away from home.** The router is always on and is the device with the
+  public address, so it needs no port forwarding: it opens the hub's UDP port on its own
+  WAN. Today the hub is a computer that must stay on.
+- **An always-on member at home.** Phones and lite members sync through it when no
+  computer is on, and it holds `clipboardbridge.local` (it is never on battery).
+- **A member on every subnet.** A router sits on the home network and the IoT subnet at
+  once, so a device on the IoT subnet syncs with the router directly, and the router passes
+  its events on as every member does. No rule from the IoT subnet into the home network is
+  needed, only one that lets the IoT subnet reach the router's member port.
+- **Not a place for remote paste or CA keys.** It has no screen to paste on. It should
+  join as an ordinary full member, never as the creator or an admin: CA keys do not belong
+  on a box that faces the internet.
+
+### Full or lite
+
+| | `cbb` (Go, full member) | `cbb-lite` (Rust) |
+|---|---|---|
+| Size of the binary | about 25 MB stripped (6.4 MB compressed with xz) for arm64; armv7, mips and mipsle the same order | 1.7 MB for arm64 (static musl) |
+| Routers it fits | 128 MB of flash or more, or eMMC (for example the Banana Pi BPI-R4); 256 MB of RAM or more | almost any OpenWrt router, 16 MB of flash and 64 MB of RAM |
+| Hub | yes | no: lite members are clients only |
+| Away from home | yes, as hub or client, with obfuscation and VLESS | not yet (GotaTun, item 12); never AmneziaWG |
+| Builds | Go cross-compiles statically for every OpenWrt CPU: aarch64, armv7, mips and mipsle (softfloat), x86-64; arm64 and armv7 are in every release already | aarch64, armv7, x86-64 with stable Rust; mips and mipsle are Tier 3 in Rust (nightly and `-Zbuild-std`) |
+
+Recommendation: the full service first, aimed at routers with room for it, because the hub
+is what a router adds that nothing else does; `cbb-lite` afterwards for small routers, as
+packaging around what exists.
+
+### What OpenWrt needs that other Linux does not
+
+- **No systemd.** A procd init script (`/etc/init.d/clipboardbridge`) runs the service as
+  its own user with respawn, and a UCI file (`/etc/config/clipboardbridge`) holds the
+  settings: interfaces, port, hub.
+- **`/var` is in RAM.** The state goes to `/etc/clipboardbridge`, which survives reboots,
+  and a file in `/lib/upgrade/keep.d` keeps it across `sysupgrade`. The service writes it
+  rarely (the identity, the records, the clock mark), so the flash does not wear.
+- **The firewall is fw4 (nftables), driven by UCI.** The installer adds named rules
+  (`clipboardbridge ...`): the member port and mDNS from the zones the user names (the
+  `lan` zone already accepts input; an IoT zone usually does not), and the hub's UDP port
+  from `wan` only while the router is the hub. It remembers what it added and removes
+  exactly that, as on other Linux.
+- **mDNS only on the inside.** Today `cbb` announces on every interface. On a router that
+  would send the group's names and device IDs onto the provider's network, so the service
+  gets a list of interfaces for mDNS and the member port, by default the devices of the
+  `lan` zone. Avahi, already installed on many routers, keeps working: `cbb` shares port
+  5353 with it as it does on desktop Linux.
+- **Time.** Many routers have no clock that runs while they are off, and certificates need
+  the right time, so the init script starts the service after NTP has set the clock.
+- **Packages.** OpenWrt 25.12 installs `.apk` packages (apk 3); 24.10 and older use
+  `.ipk` (opkg). The first step installs with a script, as `get.sh` does elsewhere;
+  packages built with the OpenWrt SDK in CI come after.
+- **The router's own WireGuard or AmneziaWG** stays separate: `cbb` runs its tunnel in its
+  own process (amneziawg-go with netstack) on a port of its own and adds no interface or
+  route.
+
+The security rules of sync away from home do not change: the router is the user's own
+device, the tunnel is the group's own WireGuard, member TLS runs inside it, and nothing but
+the hub's UDP port faces the internet.
+
+### Steps
+
+One pull request each, smaller ones together:
+
+1. The service on a router: a list of interfaces for mDNS and the member port, and release
+   builds for mips and mipsle (softfloat).
+2. `packaging/openwrt`: the procd script, the UCI file, install and uninstall through
+   `get.sh` (it recognises OpenWrt by `/etc/openwrt_release`), the fw4 rules, the state in
+   `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in an
+   OpenWrt root file system.
+3. The router as the hub: `cbb global hub` opens its UDP port on `wan` and `cbb global off`
+   closes it; the bench gets the router as a device under test with cases for it in
+   [testbench.md](testbench.md).
+4. `.apk` and `.ipk` packages from the OpenWrt SDK in CI, attached to each release.
+5. `cbb-lite` on OpenWrt: its procd script and installer path, builds for armv7 and, with
+   nightly Rust, mips and mipsle.
+
+Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Device keys in hardware
 

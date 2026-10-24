@@ -11,7 +11,7 @@ the underlying error under it. The service's log always has the details:
 | Linux | `journalctl -u clipboardbridge`; the desktop connector logs to the session's journal, `journalctl --user` |
 | macOS | `/Library/Logs/clipboardbridge/service.log` |
 | Windows | `ProgramData\clipboardbridge\logs\service.log`, and the agent's `LocalAppData\clipboardbridge\agent.log` |
-| Lite member | `journalctl -u cbb-lite` |
+| Lite member | `journalctl -u clipboardbridge`, as on Linux |
 
 ## Commands
 
@@ -32,7 +32,7 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 - **Another subnet or VLAN.** mDNS does not cross routers, so devices on, say,
   192.168.0.x and 192.168.20.x do not find each other. Turn on sync away from home with a
   hub on one side (the [quick start](quickstart.md), "Sync away from home"), or, for a lite
-  member, name a computer with `cbb-lite run -peer ADDRESS:8764`.
+  member, name a computer with `cbb run -peer ADDRESS:8764` (lite/README.md).
 - **Guest Wi-Fi or client isolation** on the router keeps devices from talking to each
   other at all; put them on the main network.
 - **A different group.** `cbb status` shows the group; devices of two groups never
@@ -51,9 +51,9 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 
 ## Sync away from home
 
-`cbb away` on the device and on the hub says what is wrong. The usual causes: the router does
+`cbb global` on the device and on the hub says what is wrong. The usual causes: the router does
 not forward the hub's UDP port to the hub, the hub's firewall drops it, or the address given
-to `cbb away hub` is not the one the internet reaches. With `CBB_DEBUG=1` in the service's
+to `cbb global hub` is not the one the internet reaches. With `CBB_DEBUG=1` in the service's
 environment the log also shows WireGuard's handshakes. On Linux:
 
 ```sh

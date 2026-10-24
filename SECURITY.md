@@ -18,7 +18,7 @@ Include, if you can:
 
 - the affected component (the service on Linux, macOS or Windows, the desktop connector,
   the macOS or Windows clipboard agent, sync away from home, the iPhone or Android app, the
-  iOS shortcut, or the lite member `cbb-lite`) and the version or commit;
+  iOS shortcut, or the lite member) and the version or commit;
 - the steps to reproduce;
 - the impact: what an attacker can read, change or run.
 

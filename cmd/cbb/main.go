@@ -22,9 +22,10 @@ Commands:
   revoke <name or ID>     Remove a device from the group.
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
   takeover <name or ID>   Take the group over from its lost root computer (on an admin).
-  away [on|off]           Show, or turn on or off, sync away from home on this device.
-  away hub address:port   Make this device the group's hub for sync away from home.
-  away relay address:port Meet the group's other devices away from home at a relay.
+  global [on|off]         Show, or turn on or off, sync over the internet on this device.
+  global hub address:port Make this device the group's hub for sync over the internet.
+  global relay address:port
+                          Meet the group's other devices over the internet at a relay.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
   new                     Create a group with this computer as its root.
@@ -72,8 +73,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPaste(rest, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
-	case "away":
-		return cmdAway(rest, stdin, stdout, stderr)
+	case "global":
+		return cmdGlobal(rest, stdin, stdout, stderr)
 	case "revoke":
 		return cmdRevoke(rest, stdout, stderr)
 	case "takeover":

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
+# The lite member's unit. The release archive carries it as
+# packaging/linux/clipboardbridge.service, in place of the full member's, for
+# the same install.sh (lite/packaging/archive.sh).
+
 [Unit]
 Description=clipboardbridge lite member
 Documentation=https://github.com/HunterEwok/clipboardbridge
@@ -9,12 +13,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/cbb-lite run
-User=cbb-lite
-Group=cbb-lite
-StateDirectory=cbb-lite
+# install.sh --port N writes CBB_PORT here.
+EnvironmentFile=-/etc/clipboardbridge/clipboardbridge.env
+ExecStart=/usr/local/bin/cbb run
+User=clipboardbridge
+Group=clipboardbridge
+StateDirectory=clipboardbridge
 StateDirectoryMode=0700
-RuntimeDirectory=cbb-lite
+RuntimeDirectory=clipboardbridge
 RuntimeDirectoryMode=0750
 UMask=0007
 Restart=on-failure

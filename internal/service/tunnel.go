@@ -283,7 +283,7 @@ func (s *Service) runTunnelLocked() {
 		link := *st.ToHub
 		if len(link.Endpoints) == 0 {
 			cancel()
-			s.tunFailedLocked("the hub has no address away from home yet; run cbb away hub with its addresses there", nil)
+			s.tunFailedLocked("the hub has no address away from home yet; run cbb global hub with its addresses there", nil)
 			return
 		}
 		hubAddr, err := tunnel.Addr(link.Device)
@@ -527,7 +527,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, nil
 		}
 		if keysInFile && !m.Consent {
-			return false, nil, errors.New("this device keeps its keys in files, so sync away from home needs your consent; run cbb away on and read what it says")
+			return false, nil, errors.New("this device keeps its keys in files, so sync away from home needs your consent; run cbb global on and read what it says")
 		}
 		st, err := tunnel.NewState()
 		if err != nil {
@@ -556,7 +556,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 	case "hub":
 		st := s.tunnel
 		if st == nil {
-			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb away on")
+			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb global on")
 		}
 		if m.Port < 0 || m.Port > 65535 {
 			return false, nil, fmt.Errorf("a bad port %d", m.Port)
@@ -627,7 +627,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 	case "relay":
 		st := s.tunnel
 		if st == nil {
-			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb away on")
+			return false, nil, errors.New("sync away from home is off here; turn it on first: cbb global on")
 		}
 		ep, err := netip.ParseAddrPort(m.Relay)
 		if err != nil || ep.Port() == 0 {

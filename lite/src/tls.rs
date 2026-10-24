@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//! TLS for cbb-lite: the core's TLS (cbb_core::tls, the same code a
+//! TLS for the lite member: the core's TLS (cbb_core::tls, the same code a
 //! microcontroller runs) with the system clock, driven over blocking
 //! sockets.
 

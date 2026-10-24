@@ -34,7 +34,7 @@ experiment are under [open questions](#open-questions).
 | Windows                 | service + clipboard agent         | automatic                                                      |
 | iPhone, iPad            | the app, or a shortcut            | the app: one tap or the Action button; the shortcut: one press |
 | Android phone           | the app                           | receives by itself; sends by itself (accessibility service) or with one tap |
-| Small Linux device      | the lite member `cbb-lite`        | `cbb-lite copy`/`paste`/`watch`; no desktop clipboard          |
+| Small Linux device      | the lite member, `cbb`            | `cbb copy`/`paste`/`watch`; no desktop clipboard               |
 
 Linux machines, Windows PCs, Macs and lite members are equal **members** of a **group**, and
 so is a phone with the app. There is no central server, and any member may be switched off
@@ -492,7 +492,7 @@ queue, so large content cannot simply go inside it.
 | Mac | `public.png`, `public.jpeg`, `public.tiff` (sent as PNG) | `public.file-url` items | `public.html` |
 | iPhone app | on the button, as text; HEIC is sent as JPEG | files copied in Files and other apps (named after their type when iOS gives no name); a share extension later | yes |
 | Android app | reads a `content://` image with the clipboard, writes one through its FileProvider | Android file managers have no system copy, so files come through the share sheet; received files are offered in the notification ("Open", "Save to Downloads") | yes |
-| iPhone shortcut, `cbb-lite`, ESP32, ZX Next | no | no | no |
+| iPhone shortcut, the lite member, ESP32, ZX Next | no | no | no |
 
 Text-only devices take the event, so the group converges, but never fetch its content and
 keep their last text; a copy that carries text next to its image (a browser copies both)
@@ -622,7 +622,7 @@ Away from home, and between subnets that mDNS does not reach (for example a Pi o
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
 group's own WireGuard tunnel in a star around one member, the hub. Built so far: the tunnel
 itself (`internal/tunnel`: the hub and the Go client, with tests that clients cannot reach
-each other), the exchange of its keys among Go members, and `cbb away`, which turns it on
+each other), the exchange of its keys among Go members, and `cbb global`, which turns it on
 with the consent below and makes a computer the hub; Go members sync through it when the
 hub is not on their network; a computer with a remote invitation joins from afar (`cbb
 invite` on the hub); a hub that clients cannot reach directly registers with a forwarder
@@ -641,7 +641,7 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    its tunnel key and offer it to the hub. The screen that turns it on says what changes: the
    hub's port is reachable from the internet, only through WireGuard with the group's keys.
    On Linux the service's systemd unit lets it reach only the home network, so turning it on
-   (`sudo cbb away on`, or `sudo cbb pair -invite`) also adds a drop-in that lets the service
+   (`sudo cbb global on`, or `sudo cbb pair -invite`) also adds a drop-in that lets the service
    reach the internet, and turning it off removes the drop-in: the second line of defence
    stays in place on every computer that syncs only at home.
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
@@ -687,7 +687,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   on: while it is off, nothing syncs away from home, and the devices at home still sync
   among themselves. The user chooses: a computer that is always on, one that is turned on
   when sync away from home is needed (for example to copy codes from afar for an hour), or
-  no hub and sync at home only. `cbb away hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
+  no hub and sync at home only. `cbb global hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
   of work. Phones and lite members are clients: a phone is not always on
   and cannot accept connections in the background, and a lite member has no room for it.
@@ -748,7 +748,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 For homes behind carrier-grade NAT, and for clients without IPv6, the project runs a
 forwarder on its own server for all users. It holds no keys and only passes encrypted
 WireGuard packets between a group's clients and that group's hub. The forwarder is built
-(`cbb forward`, `cbb away hub -forwarder`; the wire format is in
+(`cbb forward`, `cbb global hub -forwarder`; the wire format is in
 [protocol.md](protocol.md), section 13), with routing by `mac1`; the computed port below is
 not. The project's own forwarder does not run yet: it needs a server, and until then a
 user can run `cbb forward` on a server of their own.
@@ -905,7 +905,7 @@ themselves and is never switched on in the project's own forwarder, which collec
 about who talks to whom.
 
 - `cbb relay -group TAG` runs it on the user's server, for the groups whose tags it is
-  given and no other. Each device turns it on with `cbb away relay ADDRESS -key KEY`, in
+  given and no other. Each device turns it on with `cbb global relay ADDRESS -key KEY`, in
   place of a hub; the key is the pin of the relay's own key, as with the forwarder.
 - A device registers with its member certificate and proves it holds its WireGuard key, as
   a hub does with the forwarder. The relay then gives it a tunnel, a preshared key and a
@@ -926,7 +926,7 @@ about who talks to whom.
 
 1. **AmneziaWG**, a fork of wireguard-go that randomises message headers, adds junk and
    imitation packets before the handshake and pads messages. Same keys and code; the user
-   switches it on per group, on the hub (`cbb away hub -obfuscate`). `cbb` and the phones'
+   switches it on per group, on the hub (`cbb global hub -obfuscate`). `cbb` and the phones'
    tunnel run on amneziawg-go always; without settings it is plain WireGuard on the wire.
    - The hub makes the group's settings once, at random, and keeps them while obfuscation
      stays on: 3 to 8 junk packets of 40 to 600 bytes before each handshake, 16 to 64 random
@@ -950,7 +950,7 @@ about who talks to whom.
      headers, never a key that decrypts anything. The hub's hellos to the forwarder are
      masked with a key the forwarder gives every hub, so they show no constant either.
    - The phones keep the settings with the hub's offer and start their tunnel with them
-     (`mobile/cbbtun` takes them as JSON). `cbb-lite`'s Rust WireGuard does not speak
+     (`mobile/cbbtun` takes them as JSON). The lite member's Rust WireGuard does not speak
      AmneziaWG, so in an obfuscated group it reaches the hub at home only.
 2. **WireGuard inside VLESS with REALITY**, between a client and the forwarder, with
    Xray-core (MPL-2.0) as a Go module in `cbb`, and in the phones' Go tunnel
@@ -962,7 +962,7 @@ about who talks to whom.
      -vless-site www.example.com`): the forwarder listens on TCP 443, and whoever is not a
      client gets that site's own TLS and pages, by REALITY. Its REALITY key stays in its key
      file.
-   - The hub's user switches it on per group (`cbb away hub -forwarder ... -vless`). The hub
+   - The hub's user switches it on per group (`cbb global hub -forwarder ... -vless`). The hub
      makes the group's VLESS user ID, the forwarder lets that ID in while the hub is
      registered and tells the hub its REALITY key, short ID and site, and the hub gives all
      of it to its clients with its offer, inside the member TLS at home.
@@ -982,8 +982,8 @@ sing-box is not used (GPL).
 | Go service (Linux, macOS, Windows) | amneziawg-go with netstack in `cbb`; Xray-core as a Go module                             | hub, forwarder, relay or client |
 | iPhone app                     | in the app process, no Network Extension, one Go framework for WireGuard and Xray             | client, while the app is open |
 | Android app                    | in the app process, in the foreground service the app already has; no `VpnService`            | client                   |
-| `cbb-lite` on Linux            | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
-| `cbb-lite` on the ESP32        | none: the home network only, until a mature WireGuard exists for it                           | home only                |
+| the lite member on Linux       | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
+| the lite member on the ESP32   | none: the home network only, until a mature WireGuard exists for it                           | home only                |
 
 - On phones the tunnel is ordinary UDP traffic of the app. It does not take the phone's
   single VPN slot, the user's own VPN keeps working, and the app is not a VPN app (Apple's
@@ -1050,11 +1050,11 @@ only adds to it.
    switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
    found at home. The invitations follow.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
-   run on amneziawg-go; obfuscation per group between computers (`cbb away hub
+   run on amneziawg-go; obfuscation per group between computers (`cbb global hub
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
-   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb away hub -vless`)
+   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb global hub -vless`)
    and on both phones.
-9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
+9. The lite member on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Device keys in hardware
 
@@ -1206,7 +1206,7 @@ pairing Info's `darwin`. The `os` is shown, never trusted for anything else. The
 | Role     | Devices                                     | What it does                                                    |
 |----------|---------------------------------------------|-----------------------------------------------------------------|
 | `full`   | a computer with the service: Linux, Windows, macOS | listens on the member port, dials the other full members and the lite members, may hold `clipboardbridge.local`, may create a group and be an admin |
-| `lite`   | `cbb-lite`                                  | dials the full members, listens for phones; never holds keys     |
+| `lite`   | the lite member (`lite/`)                   | dials the full members, listens for phones; never holds keys     |
 | `phone`  | a phone with the app                        | dials every member, never listens for members                   |
 | `shortcut` | an iPhone without the app: a shortcut's token, not a member (legacy, below) | uses the endpoints of the member that holds `clipboardbridge.local` |
 
@@ -1299,12 +1299,12 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
 
 1. This decision.
 2. The `os` beside the role: `os` in the pairing Info (`windows` allowed), the hello and
-   device records; the roles `full`, `lite`, `phone` and `shortcut` in Go, `cbb-lite` and both
+   device records; the roles `full`, `lite`, `phone` and `shortcut` in Go, the lite member and both
    phone kits; `cbb status` (which takes in `cbb devices`) and the Devices screens show
    the system and the root and admin marks; an admin re-signs a record whose `os` is
    wrong.
 3. The Mac as a full member: the dialing rule above, listening like the others, holding
-   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb away hub`
+   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb global hub`
    says that nothing syncs away from home while the hub is off.
 4. New groups made by a computer with a root of path length 1: the CA keys on the creator
    only, the admin key on every full member, `cbb admin`, the iPhone CA key for admins,
@@ -1375,7 +1375,7 @@ pasted newline before the user sees it. The `enter` flag presses Enter afterward
 | macOS | the pasteboard agent: pasteboard and Cmd+V through `CGEventPost`, or `CGEventKeyboardSetUnicodeString` | the Accessibility permission, granted once in System Settings; an ad hoc signed agent loses it on each update, so it waits for the signed `.pkg` to be practical; Secure Event Input (password fields, Terminal's Secure Keyboard Entry) and the lock screen refuse it |
 | Android | the app's accessibility service: the clipboard, then `ACTION_PASTE` on the focused input node (or `ACTION_SET_TEXT`) | views without an editable node (some terminals and games); not on the lock screen |
 | iPhone, iPad | not possible: iOS lets no app put text into another app | sender only |
-| `cbb-lite` on Linux | the console helper or tmux, as on Linux | as Linux |
+| the lite member on Linux | the console helper or tmux, as on Linux | as Linux |
 | Nano ESP32 | its USB keyboard (roadmap item 15) types into the computer it is plugged into | Latin characters only |
 | ZX Spectrum Next | none: `.cbb` runs only when started | |
 
@@ -1509,7 +1509,7 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
 | D-46 | (Replaced by D-50.) Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
-| D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
+| D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs the lite member; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
 | D-50 | A device's operating system (`os`) is stated apart from its role, so a Windows PC is shown as Windows; the roles are `full` (every computer with the service, the Mac included), `lite`, `phone` and `iphone`, and the `linux` and `mac` roles are dropped. |
 | D-51 | In a group a computer creates, only the creating computer (the root) and the members it makes admins hold CA keys, through the admin CAs of D-33 under a root with path length 1; any device but the root is removed by a record without a new group, and a lost root is taken over by an admin. |
