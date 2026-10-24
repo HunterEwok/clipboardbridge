@@ -45,7 +45,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|smoke")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|smoke|full")
 		return 2
 	}
 	inv, err := LoadInventory(*invPath)
@@ -67,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Check(ctx, r, devices)
 	case "smoke":
 		Smoke(ctx, r, inv, devices, *timeout)
+	case "full":
+		Full(ctx, r, devices, *timeout)
 	default:
 		fmt.Fprintf(stderr, "bench: unknown suite %q\n", fs.Arg(0))
 		return 2
