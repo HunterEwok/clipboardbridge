@@ -17,6 +17,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
@@ -423,7 +424,7 @@ func (s *Service) admit(jc phone.JoinCode) error {
 		defer stop()
 		var lastErr error
 		for _, addr := range jc.Addrs {
-			d := net.Dialer{Timeout: handshakeTimeout}
+			d := net.Dialer{Timeout: handshakeTimeout, Control: netguard.Control}
 			raw, err := d.DialContext(ctx, "tcp", addr)
 			if err != nil {
 				lastErr = err
@@ -584,7 +585,7 @@ func (s *Service) dialMember(ctx context.Context, j *pair.Joiner, code, address 
 		if i == pair.MaxFailures {
 			break
 		}
-		d := net.Dialer{Timeout: handshakeTimeout}
+		d := net.Dialer{Timeout: handshakeTimeout, Control: netguard.Control}
 		raw, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			lastErr = err

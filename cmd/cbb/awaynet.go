@@ -16,13 +16,15 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 )
 
-// On every computer the installer lets the service reach only the home
-// network: on Linux its systemd unit (packaging/linux/clipboardbridge.service),
-// on Windows an outbound rule of Windows Firewall (packaging/windows/install.ps1),
-// on a Mac a pf anchor (packaging/macos/pf.sh). Sync away from home reaches
-// the group's hub, forwarder or relay on the internet, so turning it on lifts
-// that limit, and turning it off puts it back. Both need root or an
-// administrator.
+// On Linux and Windows the installer lets the service reach only the home
+// network from outside the program: on Linux its systemd unit
+// (packaging/linux/clipboardbridge.service), on Windows an outbound rule of
+// Windows Firewall (packaging/windows/install.ps1). Sync away from home
+// reaches the group's hub, forwarder or relay on the internet, so turning it
+// on lifts that limit, and turning it off puts it back. Both need root or
+// an administrator. On a Mac, and everywhere as well, the service keeps
+// its own connections on the home network (internal/netguard); a Network
+// Extension of the Mac app will add the system's limit there.
 
 // A netLimit is one system's way of keeping the service on the home network.
 type netLimit struct {
@@ -33,7 +35,7 @@ type netLimit struct {
 }
 
 var (
-	limit = map[string]*netLimit{"linux": &linuxLimit, "darwin": &macLimit, "windows": &windowsLimit}[runtime.GOOS]
+	limit = map[string]*netLimit{"linux": &linuxLimit, "windows": &windowsLimit}[runtime.GOOS]
 	// elevated reports whether this process may change the limit: root,
 	// or an administrator's elevated process on Windows.
 	elevated = isElevated
@@ -111,34 +113,6 @@ var linuxLimit = netLimit{
 			return err
 		}
 		return systemctl("restart", "clipboardbridge.service")
-	},
-}
-
-// macOS: pf.sh loads the rules of the anchor com.apple/clipboardbridge for
-// the service's user, without those for the home network while the file
-// awayMark exists; pf applies them at once, so nothing restarts. awayMark
-// sits where only root writes, so the service cannot lift its own limit.
-var (
-	pfScript = "/usr/local/share/clipboardbridge/pf.sh"
-	awayMark = "/etc/clipboardbridge/away"
-	sh       = func(args ...string) error { return runCmd("/bin/sh", args...) }
-)
-
-var macLimit = netLimit{
-	present: func() bool { return exists(pfScript) },
-	lifted:  func() bool { return exists(awayMark) },
-	lift: func(on bool) error {
-		if on {
-			if err := os.MkdirAll(filepath.Dir(awayMark), 0o755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(awayMark, []byte("# Written by cbb away on; cbb away off removes it.\n"), 0o644); err != nil {
-				return err
-			}
-		} else if err := os.Remove(awayMark); err != nil {
-			return err
-		}
-		return sh(pfScript, "load")
 	},
 }
 

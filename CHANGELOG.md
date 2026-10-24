@@ -103,12 +103,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   its hub. `sudo cbb away on` (and `sudo cbb pair -invite`) now add a systemd drop-in that lets
   the service reach the internet, and `sudo cbb away off` removes it; until then `cbb away`
   says what is missing.
-- Windows and macOS keep the service on the home network too, until sync away from home is
-  on: the Windows installer adds an outbound block rule of Windows Firewall for the service
-  (`clipboardbridge-home-only`), and the Mac installer pf rules for the service's user, loaded
-  again at boot; `cbb away on` and `cbb pair -invite` (as administrator on Windows, with
-  `sudo` on a Mac) lift the limit, and `cbb away off` puts it back. On a Mac pf also lets only
-  the home network reach the member port, as the Linux and Windows firewall rules do.
+- Every computer keeps the service on the home network until sync away from home is on: the
+  service refuses its own connections outside the home network (`internal/netguard`), as the
+  member port already refused connections from there. On Windows the installer adds an
+  outbound block rule of Windows Firewall for the service (`clipboardbridge-home-only`) as
+  well, which `cbb away on` and `cbb pair -invite`, run as administrator, lift, and `cbb away
+  off` puts back, as `sudo` does on Linux. A Mac gets the system's own limit with the Mac
+  app's Network Extension later (docs/roadmap.md).
 - `cbb away hub -forwarder` and `cbb away relay` take a server's name as well as its address.
 - A device whose group file is damaged says so: the service keeps running without its group,
   `cbb status` and every other command explain what is wrong and how to recover (with the

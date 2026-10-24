@@ -20,6 +20,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -534,6 +535,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
 		}
 		s.tunnel = st
+		netguard.SetOpen(true)
 		s.logf("cbb: sync away from home is on")
 		return true, tunnelKey(st), nil
 	case "off":
@@ -545,6 +547,7 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 			return false, nil, err
 		}
 		s.tunnel = nil
+		netguard.SetOpen(false)
 		s.tunFailedLocked("", nil)
 		s.logf("cbb: sync away from home is off; its keys are gone")
 		return true, nil, nil

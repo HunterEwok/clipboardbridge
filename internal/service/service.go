@@ -27,6 +27,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
@@ -317,6 +318,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()
 	s.tunnel, s.tunCtx, s.tunSelf = tun, gctx, string(id.ID)
+	netguard.SetOpen(tun != nil)
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Engine: eng,

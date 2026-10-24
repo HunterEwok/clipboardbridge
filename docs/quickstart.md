@@ -176,9 +176,9 @@ the hub. See "Joining from another network" in [design.md](design.md).
 Off by default: the group syncs on the home network only. To sync when a computer is away,
 one computer at home becomes the hub, and each computer that should reach it from afar turns
 sync away from home on. Do it while the computers are at home. `cbb away on` and
-`cbb pair -invite` run with `sudo` (on Windows, in a terminal opened as administrator): until
-then the service may reach only the home network, and they let it reach the internet;
-`cbb away off`, run the same way, takes that back.
+`cbb pair -invite` run with `sudo` on Linux and in a terminal opened as administrator on
+Windows: until then the service may reach only the home network, and they let it reach the
+internet; `cbb away off`, run the same way, takes that back.
 
 The hub does not have to stay on. While it is off, nothing syncs away from home, and at home
 the devices sync with each other without it. So choose: a computer that is always on, one you

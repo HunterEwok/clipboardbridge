@@ -109,6 +109,15 @@ The order may change.
     4. the phone apps: images, then files and the share targets;
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
+21. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
+    and notarized, that carries the service and a Network Extension (a content filter): the
+    system then keeps the service on the home network until sync away from home is on, and
+    lets only the home network reach its port, as the systemd unit does on Linux and Windows
+    Firewall on Windows. Until then the Mac has the service's own limit only
+    (`internal/netguard`, and the member port's check of the address), which every computer
+    has as well; macOS has no per-program limit without such an app (the application firewall
+    allows or blocks a program, and pf is shared by the whole system), so this is the one
+    difference between the computers, and it goes away with the app.
 
 ## Device keys in hardware
 

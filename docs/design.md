@@ -636,19 +636,18 @@ Every widening of what the group exposes is the user's own choice, made in turn:
    away from home (`cbb` on a computer, a switch in the app). Only then does the device make
    its tunnel key and offer it to the hub. The screen that turns it on says what changes: the
    hub's port is reachable from the internet, only through WireGuard with the group's keys.
-   On every computer the installer lets the service reach only the home network (loopback,
-   private IPv4, link-local, multicast, unique-local IPv6), outside the program, as a second
-   line of defence: on Linux the systemd unit (`IPAddressDeny`/`IPAddressAllow`), on Windows
-   the outbound block rule `clipboardbridge-home-only` of Windows Firewall for the service,
-   on a Mac pf rules for the service's user `_clipboardbridge` in the anchor
-   `com.apple/clipboardbridge` (`packaging/macos/pf.sh`, loaded again at boot by a
-   LaunchDaemon). Turning sync away from home on (`cbb away on`, or `cbb pair -invite`, with
-   `sudo` or as administrator) lifts that limit, and turning it off puts it back, so the
-   limit stays on every computer that syncs only at home. On a Mac pf also lets only the
-   home network reach the member port, always, as the firewall rules of the Linux and
-   Windows installers do; the macOS application firewall can only allow or block a program.
-   pf is shared by the whole system: another program can turn it off, and at boot the
-   service may start a moment before its rules are loaded.
+   Until then the service reaches only the home network (loopback, private IPv4,
+   link-local, multicast, unique-local IPv6), and only the home network reaches its member
+   port. Every computer enforces it in the program: the member port drops other addresses,
+   and the service's own connections are refused outside the home network until sync away
+   from home is on (`internal/netguard`). Linux and Windows add a second line of defence
+   outside the program: on Linux the systemd unit (`IPAddressDeny`/`IPAddressAllow`), on
+   Windows the outbound block rule `clipboardbridge-home-only` of Windows Firewall for the
+   service and inbound rules for the local subnet. Turning sync away from home on (`cbb away
+   on`, or `cbb pair -invite`, with `sudo` or as administrator) lifts that limit, and turning
+   it off puts it back. A Mac has the program's limit only, since macOS limits a single
+   program's network only through a Network Extension of a signed app; the Mac app will add
+   it (item 21 of [roadmap.md](roadmap.md)).
 3. **A device whose keys sit in a file**: a computer without a TPM or a Secure Enclave (see
    "Device keys in hardware") can turn sync away from home on only after a second, separate
    consent. It explains that whoever copies the files (root on that device, its disk or

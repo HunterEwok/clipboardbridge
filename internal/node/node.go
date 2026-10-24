@@ -32,6 +32,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
@@ -228,7 +229,7 @@ func (n *Node) ServerTLS() *tls.Config { return n.identity().ServerTLS(n.tlsOpti
 // ends. Of two full members the one with the lower device ID dials, and the
 // other only when that has not connected for a while (see Serve).
 func (n *Node) Dial(ctx context.Context, peer group.DeviceID, addr string) error {
-	d := net.Dialer{Timeout: handshakeTimeout, KeepAlive: -1}
+	d := net.Dialer{Timeout: handshakeTimeout, KeepAlive: -1, Control: netguard.Control}
 	raw, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return err

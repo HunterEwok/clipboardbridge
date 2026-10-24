@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -200,7 +201,7 @@ func joinOnce(ctx context.Context, cfg MemberConfig) error {
 // register runs the registration's setup and returns its connection, which
 // the member keeps open while it is registered.
 func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error) {
-	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second}
+	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second, Control: netguard.Control}
 	raw, err := d.DialContext(ctx, "tcp", cfg.Link.Endpoint.String())
 	if err != nil {
 		return nil, welcome{}, fmt.Errorf("reaching the relay: %w", err)

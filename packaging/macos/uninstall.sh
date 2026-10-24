@@ -7,8 +7,7 @@
 #   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service and the pasteboard agent of every user and removes
-# their plists, the service's entry in the application firewall, its pf
-# rules (pf.sh unload) and /etc/clipboardbridge, the binary
+# their plists, the service's entry in the application firewall, the binary
 # in /usr/local/bin (but not Homebrew's link there: brew uninstall removes
 # that) and the logs. The device's keys and group, in
 # /Library/Application Support/clipboardbridge/state, stay for a reinstall
@@ -41,13 +40,6 @@ if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	launchctl bootout "gui/$(id -u "$SUDO_USER")/$agent" 2>/dev/null || true
 fi
 rm -f "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist"
-# pf's rules go with the service; so does sync away from home's mark.
-if [ -f /usr/local/share/clipboardbridge/pf.sh ]; then
-	sh /usr/local/share/clipboardbridge/pf.sh unload
-fi
-launchctl bootout "system/$daemon.pf" 2>/dev/null || true
-rm -f "/Library/LaunchDaemons/$daemon.pf.plist"
-rm -rf /etc/clipboardbridge
 if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 	rm -f /usr/local/bin/cbb
 fi

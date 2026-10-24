@@ -102,37 +102,6 @@ func TestAwayNetNotConfined(t *testing.T) {
 	}
 }
 
-// On a Mac the mark tells pf.sh to load the anchor without the rules for
-// the home network; nothing restarts.
-func TestAwayNetMac(t *testing.T) {
-	fakeLimit(t, &macLimit, true)
-	dir := t.TempDir()
-	oldScript, oldMark, oldSh := pfScript, awayMark, sh
-	t.Cleanup(func() { pfScript, awayMark, sh = oldScript, oldMark, oldSh })
-	pfScript, awayMark = filepath.Join(dir, "pf.sh"), filepath.Join(dir, "etc", "away")
-	var calls []string
-	sh = func(args ...string) error {
-		calls = append(calls, strings.Join(args, " "))
-		return nil
-	}
-	if confined() {
-		t.Fatal("confined without pf.sh")
-	}
-	if err := os.WriteFile(pfScript, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	changed, restarted, err := setAwayNet(true)
-	if err != nil || !changed || restarted || !awayNetOpen() {
-		t.Fatalf("on: changed %v, restarted %v, open %v, %v", changed, restarted, awayNetOpen(), err)
-	}
-	if changed, _, err := setAwayNet(false); err != nil || !changed || awayNetOpen() {
-		t.Fatalf("off: changed %v, open %v, %v", changed, awayNetOpen(), err)
-	}
-	if want := []string{pfScript + " load", pfScript + " load"}; !slices.Equal(calls, want) {
-		t.Fatalf("sh %q, want %q", calls, want)
-	}
-}
-
 // On Windows the firewall rule's state is the limit.
 func TestAwayNetWindows(t *testing.T) {
 	fakeLimit(t, &windowsLimit, false)
