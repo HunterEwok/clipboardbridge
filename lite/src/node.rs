@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The member protocol (docs/protocol.md, section 4) on a lite member: it
-//! dials the Linux members, and takes the connections of phones, Macs and
+//! dials the computers, and takes the connections of phones and of the
 //! lite members with a lower device ID; it sends its hello, forwards each
 //! event the first time the engine sees it to every other connection,
 //! exchanges the group's records and keeps a renewed certificate.
@@ -238,7 +238,7 @@ impl Node {
         self.run(sock, conn, id, chain, addr)
     }
 
-    /// Runs a connection that a member (a phone, a Mac or a lite member)
+    /// Runs a connection that a member (a phone or a lite member)
     /// opened to this one until it ends. It replaces an older connection
     /// to the same device. handshaken is called once the handshake is over,
     /// whether it worked or not.

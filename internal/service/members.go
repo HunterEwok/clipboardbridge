@@ -24,6 +24,9 @@ const (
 	handshakeTimeout = 10 * time.Second
 	minBackoff       = time.Second
 	maxBackoff       = 30 * time.Second
+	// fallbackDial is how long a full member waits for one with a lower
+	// device ID to dial it before it dials that one itself.
+	fallbackDial = 30 * time.Second
 )
 
 // serveMember runs one connection to the member port (see demux.go): plain
@@ -117,15 +120,19 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 type dialer struct {
 	cancel context.CancelFunc
 	addrs  []string // where discovery last saw the member, best first
+	// later says the member has the lower device ID, so it dials this one:
+	// this one dials only when no connection has been up for a while.
+	later bool
 }
 
-// found handles the members that discovery found. A Mac dials every Linux
-// and lite member, since its firewall may keep them from reaching it, and
-// the Macs (TXT r=mac) whose device ID is greater than its own; a Linux
-// member dials the Linux members whose device ID is greater than its own,
-// and leaves the Macs and the lite members (TXT r=lite) to dial it. So two
-// members make one connection between them. A member's dialer takes its
-// new addresses or port on its next round.
+// found handles the members that discovery found. Of two full members the
+// one with the lower device ID dials, and the other one too when no
+// connection between them has come up for fallbackAfter, since a firewall
+// may keep the first from reaching it; node keeps the connection the lower
+// ID dialed. The lite members (TXT r=lite) dial the full members, and the
+// phones dial everyone. A member's dialer takes its new addresses or port on
+// its next round. found also notes the holder priority each member
+// publishes (TXT h) and elects the holder of clipboardbridge.local again.
 func (s *Service) found(peers []mdns.Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,8 +140,13 @@ func (s *Service) found(peers []mdns.Peer) {
 		return
 	}
 	tag := group.Tag(s.id.GroupCA.Cert)
-	want := map[group.DeviceID][]string{}
+	type target struct {
+		addrs []string
+		later bool
+	}
+	want := map[group.DeviceID]target{}
 	s.nearby = map[group.DeviceID]bool{}
+	s.prio = map[group.DeviceID]int{}
 	for _, p := range peers {
 		id, err := group.ParseDeviceID(p.ID)
 		if err != nil || id == s.id.ID {
@@ -144,35 +156,36 @@ func (s *Service) found(peers []mdns.Peer) {
 			continue // another group, or an old CA
 		}
 		s.nearby[id] = true
-		r, _ := p.TXTValue("r")
-		mac, lite := strings.EqualFold(r, "mac"), strings.EqualFold(r, "lite")
-		switch {
-		case !s.mac() && (mac || lite):
-			continue // it dials the Linux members
-		case (!s.mac() || mac) && !lite && id < s.id.ID:
-			continue // of two Linux members, or two Macs, the lower ID dials
+		if h, ok := p.TXTValue("h"); ok {
+			if n := parsePriority(h); n > 0 {
+				s.prio[id] = n
+			}
 		}
-		want[id] = addresses(p)
+		if r, _ := p.TXTValue("r"); strings.EqualFold(r, "lite") {
+			continue // it dials the full members
+		}
+		want[id] = target{addresses(p), id < s.id.ID}
 	}
 	for id, d := range s.dialers {
-		if _, ok := want[id]; !ok {
+		if t, ok := want[id]; !ok || t.later != d.later {
 			d.cancel()
 			delete(s.dialers, id)
 		}
 	}
-	for id, addrs := range want {
+	for id, t := range want {
 		if d, ok := s.dialers[id]; ok {
-			d.addrs = addrs
+			d.addrs = t.addrs
 			continue
 		}
 		ctx, cancel := context.WithCancel(s.groupCtx)
-		s.dialers[id] = &dialer{cancel: cancel, addrs: addrs}
+		s.dialers[id] = &dialer{cancel: cancel, addrs: t.addrs, later: t.later}
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			s.dial(ctx, id)
+			s.dial(ctx, id, t.later)
 		}()
 	}
+	s.electLocked()
 }
 
 // addresses returns a member's addresses with its port, best first.
@@ -202,10 +215,14 @@ func rank(a netip.Addr) int {
 
 // dial keeps a connection to a member up while it is found: it tries the
 // addresses that discovery last saw in turn, and waits longer after each
-// round that failed.
-func (s *Service) dial(ctx context.Context, id group.DeviceID) {
+// round that failed. With later, it first waits until no connection to the
+// member has been up for fallbackAfter.
+func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 	backoff := minBackoff
 	for ctx.Err() == nil {
+		if later && !s.waitUnconnected(ctx, id) {
+			return
+		}
 		s.mu.Lock()
 		var addrs []string
 		if d := s.dialers[id]; d != nil {
@@ -230,6 +247,28 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID) {
 		case <-time.After(backoff):
 		}
 		backoff = min(2*backoff, maxBackoff)
+	}
+}
+
+// waitUnconnected waits until no connection to the member id has been up
+// for fallbackAfter; it reports false if ctx ended first.
+func (s *Service) waitUnconnected(ctx context.Context, id group.DeviceID) bool {
+	tick := min(time.Second, s.cfg.fallbackAfter)
+	since := uptime.Now()
+	for {
+		s.mu.Lock()
+		nd := s.nd
+		s.mu.Unlock()
+		if nd != nil && slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id }) {
+			since = uptime.Now()
+		} else if uptime.Now()-since >= s.cfg.fallbackAfter {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(tick):
+		}
 	}
 }
 
@@ -321,9 +360,8 @@ func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string
 	}
 }
 
-// peersChanged elects the holder of clipboardbridge.local: the Linux member with
-// the lowest device ID among this one and the Linux members it is
-// connected to.
+// peersChanged elects the holder of clipboardbridge.local again (see
+// electLocked).
 func (s *Service) peersChanged() {
 	s.mu.Lock()
 	s.electLocked()
@@ -336,16 +374,22 @@ func (s *Service) peersChanged() {
 	s.ensureListed()
 }
 
+// electLocked elects the holder of clipboardbridge.local among this member
+// and the full members it is connected to that discovery finds with a
+// holder priority: the lowest priority number, then the lowest device ID.
+// A member without the iPhone CA key, as in a group whose root is a phone,
+// or set to never, does not take part.
 func (s *Service) electLocked() {
-	if s.id == nil || s.mac() || s.responder == nil || s.stopping {
+	if s.id == nil || s.responder == nil || s.stopping {
 		return // a stopping member keeps what it had until its goodbye
 	}
-	if s.id.Phone == nil {
-		return // without the CA keys, as in a group whose root is the phone, it never holds the name
-	}
-	hold := true
+	me := s.priorityLocked(s.id)
+	hold := me > 0
 	for _, p := range s.nd.Peers() {
-		if p.Role == node.Full && p.OS != group.OSMacOS && p.ID < s.id.ID {
+		if !hold {
+			break
+		}
+		if q := s.prio[p.ID]; p.Role == node.Full && q > 0 && (q < me || q == me && p.ID < s.id.ID) {
 			hold = false
 		}
 	}

@@ -1,5 +1,6 @@
 # Build output
 /clipboardbridge
+/cbb
 /bin/
 /dist/
 *.exe

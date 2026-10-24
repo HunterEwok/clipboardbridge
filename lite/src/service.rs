@@ -44,7 +44,7 @@ pub struct Config {
     pub peers: Vec<SocketAddr>,
     /// Find the members with mDNS, and publish this one.
     pub mdns: bool,
-    /// The member port, where phones, Macs and other lite members dial
+    /// The member port, where phones and other lite members dial
     /// this one; None listens nowhere.
     pub port: Option<u16>,
 }

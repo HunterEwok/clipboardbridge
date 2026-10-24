@@ -100,6 +100,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpHolder:
+		if err := s.setHolder(m.Name); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpRevoke:
 		name, err := s.revoke(m.Name)
 		if err != nil {
@@ -166,7 +172,8 @@ func (s *Service) withNode(f func(*node.Node) error) error {
 func (s *Service) status() *control.Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder}
+	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder,
+		HoldSetting: s.holdSetting, HoldPriority: s.priorityLocked(s.id), Battery: s.battery}
 	if s.id == nil {
 		return st
 	}

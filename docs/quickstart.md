@@ -159,10 +159,13 @@ the hub. See "Joining from another network" in [design.md](design.md).
 ## 5. Sync away from home (optional)
 
 Off by default: the group syncs on the home network only. To sync when a computer is away,
-one computer at home becomes the hub, and each computer that should reach it from afar
-turns sync away from home on. The hub need not stay on, but while it is off nothing syncs
-away from home (the devices at home still sync): keep it on, turn it on when you need it,
-or sync at home only. Do it while the computers are at home:
+one computer at home becomes the hub, and each computer that should reach it from afar turns
+sync away from home on. Do it while the computers are at home.
+
+The hub does not have to stay on. While it is off, nothing syncs away from home, and at home
+the devices sync with each other without it. So choose: a computer that is always on, one you
+turn on when you need it (set the group up beforehand, turn the hub on, copy, turn it off),
+or no hub, and sync only at home. To set it up:
 
 ```sh
 cbb away on                                  # on the hub and on each computer; read what it says
@@ -192,7 +195,7 @@ cbb away hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
 The computers then try the hub's own addresses first and the forwarder last. The project's
 own forwarder is not running yet.
 
-No computer that is always on to be the hub? Run a blind relay of your own on a server with a
+No computer at home to be the hub? Run a blind relay of your own on a server with a
 public address. It serves only your groups and holds none of their keys, but it sees which
 of your devices talk and when, which a hub would not let out. On the server, with the
 group's tag from `cbb status`:

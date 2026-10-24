@@ -36,6 +36,7 @@ const (
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
+	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
 	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
 	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
@@ -88,14 +89,20 @@ type Header struct {
 
 // Status describes the service for cbb status.
 type Status struct {
-	Device  string   `json:"device"`
-	Group   string   `json:"group,omitempty"` // the group tag; empty when in no group
-	Role    string   `json:"role"`
-	OS      string   `json:"os,omitempty"`     // this device's operating system
-	Holder  bool     `json:"holder,omitempty"` // answers for clipboardbridge.local
-	Peers   []Device `json:"peers,omitempty"`
-	Away    *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
-	Version string   `json:"version"`
+	Device string `json:"device"`
+	Group  string `json:"group,omitempty"` // the group tag; empty when in no group
+	Role   string `json:"role"`
+	OS     string `json:"os,omitempty"`     // this device's operating system
+	Holder bool   `json:"holder,omitempty"` // answers for clipboardbridge.local
+	// HoldSetting is the holder setting: auto, first, fallback or never.
+	HoldSetting string `json:"hold_setting,omitempty"`
+	// HoldPriority is the holder priority it publishes: 1 first, 2 as a
+	// fallback, 0 never, as without the iPhone CA key.
+	HoldPriority int      `json:"hold_priority,omitempty"`
+	Battery      bool     `json:"battery,omitempty"` // the machine has a battery, as the service guesses
+	Peers        []Device `json:"peers,omitempty"`
+	Away         *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
+	Version      string   `json:"version"`
 }
 
 // Away describes sync away from home on this device.

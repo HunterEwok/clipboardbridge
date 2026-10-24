@@ -3,7 +3,7 @@
 
 // Package service is the clipboardbridge service: it holds the device's identity,
 // the sync engine and the member connections, publishes and browses with
-// mDNS (D-12, D-32; a Mac publishes itself with r=mac, D-46), admits devices,
+// mDNS (D-12, D-32), admits devices,
 // and serves the local control socket.
 package service
 
@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,8 +42,7 @@ type Config struct {
 	Socket   string    // the control socket
 	Role     node.Role // every role listens and publishes; a computer is node.Full
 	// OS is this device's operating system (group.OSLinux, OSWindows or
-	// OSMacOS), shown to the others; a Mac neither admits devices nor holds
-	// clipboardbridge.local yet.
+	// OSMacOS), shown to the others; a Mac does not admit devices yet.
 	OS   string
 	Name string // this device's name, shown to the others; the host name if empty
 	Logf func(format string, args ...any)
@@ -64,6 +64,12 @@ type Config struct {
 	// joinAddresses if nil.
 	joinListen func() (net.Listener, error)
 	joinAddrs  func(port uint16) []string
+	// battery reports whether the machine has a battery, for the holder
+	// priority; hasBattery if nil.
+	battery func() bool
+	// fallbackAfter is how long a full member waits for one with a lower
+	// device ID to dial it before it dials that one; fallbackDial if zero.
+	fallbackAfter time.Duration
 }
 
 // MemberPort is the member port by default (CBB_PORT moves it, see
@@ -133,8 +139,11 @@ type Service struct {
 	joining       bool          // a join is running
 	stopping      bool          // the service is stopping: no new group, no election
 	holder        bool
+	holdSetting   string // HolderAuto, HolderFirst, HolderFallback or HolderNever
+	battery       bool   // the machine has a battery, guessed at the start
 	dialers       map[group.DeviceID]*dialer
 	nearby        map[group.DeviceID]bool // the members of the group that discovery finds on this network
+	prio          map[group.DeviceID]int  // their holder priority (TXT h), for those that can hold the name
 	watchers      map[*watcher]bool
 	lastSeq       uint64
 	pending       *node.Write                  // a write that no watcher got, for the next one
@@ -195,8 +204,18 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.joinAddrs == nil {
 		cfg.joinAddrs = joinAddresses
 	}
+	if cfg.battery == nil {
+		cfg.battery = hasBattery
+	}
+	if cfg.fallbackAfter == 0 {
+		cfg.fallbackAfter = fallbackDial
+	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
-		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}}
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, battery: cfg.battery()}
+	var err error
+	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
+		cfg.Logf("cbb: the holder setting: %v; using auto", err)
+	}
 
 	floor, err := loadMark(cfg.StateDir)
 	if err != nil {
@@ -292,15 +311,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 	})
-	// Every member listens: a Mac too, so that phones, other Macs and lite
-	// members reach it with no Linux member on (it still dials the Linux
-	// members itself, see found).
+	// Every member listens, so that phones and lite members reach it, and
+	// the other full members when it has the lower device ID.
 	ln, err := s.cfg.listen()
 	if err != nil {
 		cancel()
 		return err
 	}
-	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.mac(), false), OnPeers: s.found, Logf: s.logf,
+	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.priorityLocked(id), false), OnPeers: s.found, Logf: s.logf,
 		Port: uint16(ln.Addr().(*net.TCPAddr).Port)}
 	r, err := s.cfg.Discover(dc)
 	if err != nil {
@@ -343,7 +361,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 			s.logf("cbb: discovery: %v", err)
 		}
 	}(s.discoveryDone)
-	s.electLocked() // alone, a Linux member holds clipboardbridge.local at once
+	s.electLocked() // alone, a member that can hold clipboardbridge.local holds it at once
 	s.tunMu.Lock()
 	s.runTunnelLocked()
 	s.tunMu.Unlock()
@@ -386,17 +404,25 @@ func (s *Service) stopGroup() {
 }
 
 // txtLocked returns the TXT record of this member.
-func (s *Service) txtLocked() []string { return txt(s.id, s.mac(), s.window != nil) }
+func (s *Service) txtLocked() []string { return txt(s.id, s.priorityLocked(s.id), s.window != nil) }
 
-// mac reports whether this member is a Mac, which only dials the others.
+// priorityLocked returns this member's priority for clipboardbridge.local,
+// 0 if it never holds the name (see priority).
+func (s *Service) priorityLocked(id *group.Identity) int {
+	return priority(s.holdSetting, id != nil && id.Phone != nil, s.battery)
+}
+
+// mac reports whether this member is a Mac, which does not admit devices
+// yet.
 func (s *Service) mac() bool { return s.cfg.OS == group.OSMacOS }
 
-// txt returns a TXT record: the protocol version, the group tag, r=mac on
-// a Mac, and whether a pairing window is open.
-func txt(id *group.Identity, mac, window bool) []string {
+// txt returns a TXT record: the protocol version, the group tag, the
+// holder priority if the member can hold clipboardbridge.local, and whether
+// a pairing window is open.
+func txt(id *group.Identity, prio int, window bool) []string {
 	t := []string{"v=1", "g=" + group.Tag(id.GroupCA.Cert)}
-	if mac {
-		t = append(t, "r=mac") // the Linux members leave it to dial them
+	if prio > 0 {
+		t = append(t, "h="+strconv.Itoa(prio))
 	}
 	if window {
 		t = append(t, "p=1")

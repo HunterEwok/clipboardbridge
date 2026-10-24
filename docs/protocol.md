@@ -90,16 +90,16 @@ separated by spaces; the short form is the first 8 bytes (23 characters).
 
 ## 3. Discovery (mDNS)
 
-Linux members, Macs and lite members publish and browse; phones and joining devices only
-browse. A Mac publishes the records of a Linux member with `r=mac` in its TXT and never
-holds `clipboardbridge.local`.
+Full members (Linux, Windows and macOS computers) and lite members publish and browse;
+phones and joining devices only browse. Only a full member that holds the iPhone CA key
+publishes a holder priority (`h`) and may hold `clipboardbridge.local`.
 RFC 6762 and RFC 6763 apply where this section is silent. Source: `internal/mdns`; a lite
 member publishes and browses with the `mdns-sd` crate (`lite/src/discovery.rs`), which
 follows the same RFCs but not every detail below: it publishes the PTR, SRV, TXT and A/AAAA
 records of the table (the TXT with `r=lite`), with the addresses of its interfaces except
 loopback, and never holds `clipboardbridge.local`.
 
-### Records a Linux member publishes
+### Records a full member publishes
 
 | Name | Type | Data | TTL | Cache-flush |
 |------|------|------|-----|-------------|
@@ -119,14 +119,15 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
-| `r` | `lite` or `mac` | present only on a lite member or a Mac, which Linux members do not dial (section 4) |
+| `r` | `lite` | present only on a lite member, which the full members do not dial (section 4) |
+| `h` | `1` or `2` | the holder priority, present only on a full member that may hold `clipboardbridge.local`: `1` first, `2` only as a fallback |
 
-The Go code publishes them in the order `v=1`, `g=<tag>`, `r=mac` (on a Mac), `p=1`; a lite
-member publishes `v=1`, `g=<tag>`, `r=lite`. Keys are matched without
+The Go code publishes them in the order `v=1`, `g=<tag>`, `h=<priority>` (if any), `p=1`; a
+lite member publishes `v=1`, `g=<tag>`, `r=lite`. An unknown `h` value counts as absent. Keys are matched without
 regard to case; the value is what follows the first `=`.
 
-Note: browsers check only `g` (when dialing), `r` (when dialing, on Linux members, Macs and
-lite members)
+Note: browsers check only `g` (when dialing), `r` (when dialing, on full and lite members),
+`h` (in the election, on full members)
 and `p` (when joining); nothing checks `v` (`internal/service/members.go`,
 `internal/service/socket.go`, `lite/src/discovery.rs`).
 
@@ -186,13 +187,18 @@ rescanned every 10 s.
 
 ### The holder of `clipboardbridge.local`
 
-Election (`electLocked`, `internal/service/members.go`): a Linux or Windows member holds
-`clipboardbridge.local` when no connected peer that has sent its hello has role `full`, an
-`os` other than `macos` and a lower device ID. A member alone holds it at once. Macs never
-hold it, nor do members without the CA keys. A group's Linux and Windows members either all
-hold the keys (its root is a computer) or none do (its root is the phone), so the rule needs
-to know no more about peers. The election runs
-whenever the set of connected peers changes, so a holder that leaves with a goodbye is
+Election (`electLocked`, `internal/service/members.go`): a full member takes part when it
+holds the iPhone CA key and its holder setting is not `never`; its priority is `1` (first)
+or `2` (fallback), and it publishes it as `h`. With the setting `auto`, the default, a
+machine with a battery of its own (a laptop: on Linux a power supply of type `Battery` whose
+scope is not `Device`, on macOS `pmset -g batt` listing `InternalBattery`, on Windows
+`GetSystemPowerStatus` with a system battery) gets `2` and any other `1`; `first` and
+`fallback` set it, and `cbb holder` changes the setting (state file `holder`). It holds
+`clipboardbridge.local` when no connected peer with role `full` whose discovered TXT has an
+`h` comes before it: a lower priority number, or the same with a lower device ID. A member
+alone holds it at once. Members without the iPhone CA key never hold it: in a group whose
+root is the phone none has it. The election runs whenever the set of connected peers or
+what discovery finds changes, so a holder that leaves with a goodbye is
 replaced at once and one that falls silent after the 15-second timeout. Two holders for a
 moment are harmless.
 
@@ -203,18 +209,19 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 
 ### Who dials whom
 
-- A Linux member dials every found Linux member whose device ID is greater than its own and
-  whose `g` matches its group tag; the other side accepts. It dials no lite member (TXT
-  `r=lite`) and no Mac (TXT `r=mac`): they dial it.
-- A lite member dials every found Linux member with a matching `g`, and every found lite
-  member whose device ID is greater than its own; it accepts the others, and phones and
-  Macs. It dials no Mac.
-- A Mac dials every found Linux and lite member with a matching `g`, since its firewall may
-  keep them from reaching it, and every found Mac whose device ID is greater than its own;
-  it accepts phones and the other Macs.
+- A full member (Linux, Windows or macOS) dials every found full member whose device ID is
+  greater than its own and whose `g` matches its group tag; the other side accepts. When no
+  connection to a found full member with a lower device ID has been up for 30 s, it dials
+  that one as well, since a firewall may keep the other from reaching it. Of two
+  connections between the same two members, the one the lower device ID dialed stays: a
+  member refuses a new connection when the one the lower ID dialed is up and the new one
+  is not that, and otherwise the new one replaces the old. It dials no lite member (TXT
+  `r=lite`): they dial it.
+- A lite member dials every found full member with a matching `g`, and every found lite
+  member whose device ID is greater than its own; it accepts the others and phones.
 - A phone app dials every found member with a matching `g`. Phones accept nothing and never
-  connect to each other; so a phone syncs with a lite member or a Mac with no other
-  computer on.
+  connect to each other; so a phone syncs with a lite member or any one computer with
+  no other on.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
   home"). The phones and the lite member do not use the tunnel yet; a lite member can be
@@ -301,17 +308,19 @@ Rules for the receiver:
 - Timeouts: each frame must start arriving within 15 s of the previous one; once its length
   is known, the frame gets 15 s plus 1 s per full 16 KiB (16 384 bytes). Writes have the same
   allowance. A connection silent for 15 s is closed.
-- A new connection from a device replaces its old one, which is closed without a goodbye.
+- A new connection from a device replaces its old one, which is closed without a goodbye,
+  unless the old one was dialed by the member with the lower device ID and the new one was
+  not ("Who dials whom").
 - A peer whose outgoing queue (256 messages) is full is disconnected; it gets the current
   event again in the next hello.
 
 Roles: a `phone` member dials every member, publishes nothing and is never dialed. A `lite`
-member publishes itself with `r=lite`, dials Linux and Windows members and accepts phones,
-Macs and lite members with a lower device ID (above, "Who dials whom"). The Linux and Windows
-members treat it as a Mac (`os` `macos`): neither holds `clipboardbridge.local`. Until the Mac
-becomes a full member like the others (design.md, "Full members, admins and the operating
-system"), a member with role `full` and `os` `macos` publishes `r=mac`, only dials, and
-neither admits devices nor holds the name.
+member publishes itself with `r=lite`, dials the full members and accepts phones and lite
+members with a lower device ID (above, "Who dials whom"); it never holds
+`clipboardbridge.local`. A `full` member is any computer with the service, a Mac included;
+until a Mac can hold the group's keys (design.md, "Full members, admins and the operating
+system"), a member with `os` `macos` does not admit devices, and without the iPhone CA key
+it does not hold the name.
 
 ### Hello
 

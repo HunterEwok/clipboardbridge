@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -121,7 +122,7 @@ func linkCtx(t *testing.T, ctx context.Context, client, server *member) (clientD
 		serverDone <- server.Serve(context.Background(), tls.Server(b, server.ServerTLS()))
 	}()
 	go func() {
-		clientDone <- client.Serve(ctx, tls.Client(a, client.id.ClientTLS(server.id.ID, group.TLSOptions{})))
+		clientDone <- client.run(ctx, tls.Client(a, client.id.ClientTLS(server.id.ID, group.TLSOptions{})), true)
 	}()
 	return clientDone, serverDone
 }
@@ -575,6 +576,42 @@ func TestReconnectReplacesTheOldConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitWrite(t, pi, "after the reconnect")
+}
+
+func TestTheConnectionTheLowerIDDialedStays(t *testing.T) {
+	a, b := newMember(t, Full), newMember(t, Full)
+	low, high := a, b
+	if b.id.ID < a.id.ID {
+		low, high = b, a
+	}
+	cd, _ := link(t, low, high)
+	waitPeers(t, high, 1)
+	hd, ld := link(t, high, low)
+	if err := wait(t, ld, "the low member to refuse the second connection"); !errors.Is(err, errOtherConn) {
+		t.Fatalf("the low member's side of the second connection: %v, want errOtherConn", err)
+	}
+	wait(t, hd, "the second connection to end")
+	select {
+	case err := <-cd:
+		t.Fatalf("the connection the lower ID dialed ended: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if _, err := high.Copied("over the first connection", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	waitWrite(t, low, "over the first connection")
+
+	// The other way round, the connection the lower ID dials replaces one
+	// the higher ID dialed.
+	c, d := newMember(t, Full), newMember(t, Full)
+	low, high = c, d
+	if d.id.ID < c.id.ID {
+		low, high = d, c
+	}
+	first, _ := link(t, high, low)
+	waitPeers(t, low, 1)
+	link(t, low, high)
+	wait(t, first, "the connection the higher ID dialed to end")
 }
 
 func TestBadFirstMessage(t *testing.T) {

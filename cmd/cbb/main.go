@@ -23,6 +23,8 @@ Commands:
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
   away relay address:port Meet the group's other devices away from home at a relay.
+  holder [auto|first|fallback|never]
+                          Show or set whether this computer holds clipboardbridge.local.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
   pair                    Admit a new computer: show a code for cbb join.
@@ -76,6 +78,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdJoin(rest, stdin, stdout, stderr)
 	case "invite":
 		return cmdInvite(rest, stdin, stdout, stderr)
+	case "holder":
+		return cmdHolder(rest, stdout, stderr)
 	case "forward":
 		return cmdForward(rest, stdout, stderr)
 	case "relay":

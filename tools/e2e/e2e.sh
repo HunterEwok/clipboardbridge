@@ -95,7 +95,7 @@ say "one member holds clipboardbridge.local"
 holders() {
 	n=0
 	for m in $members; do
-		if docker inspect "$run-$m" >/dev/null 2>&1 && cb "$m" status | grep -q 'answers for clipboardbridge.local'; then
+		if docker inspect "$run-$m" >/dev/null 2>&1 && cb "$m" status | grep -q '^Answers for clipboardbridge.local ('; then
 			n=$((n + 1))
 			holder=$m
 		fi
