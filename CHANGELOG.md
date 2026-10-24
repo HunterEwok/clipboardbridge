@@ -44,6 +44,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The desktop connectors (the Mac's and Windows's agent, `cbb desktop` on Linux) take the
+  first texts soon after the device joins a group. While the service turned them down for
+  being in no group, they waited up to 30 seconds between tries, and the texts that came
+  meanwhile reached the clipboard late; now they ask again every 2 seconds, and log it once.
 - Installing again on a Mac, as after `brew upgrade`, no longer fails now and then with
   "Bootstrap failed: 5: Input/output error": the installer waits for launchd to let the
   old service go before starting it.
