@@ -85,8 +85,8 @@ cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
 ```
 
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
-no Android dependencies and builds anywhere; the app needs the Android SDK and Google's Maven
-repository (CI, or a Mac with Android Studio):
+no Android dependencies and builds anywhere; the app needs the Android SDK with its NDK, Go
+for the tunnel (see below) and Google's Maven repository (CI, or a Mac with Android Studio):
 
 ```sh
 cd apps/android && ./gradlew -p kit test
@@ -105,10 +105,12 @@ Xcode for the framework):
 
 ```sh
 go test -race ./mobile/...
-go build -o bin/ golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind && PATH=$PWD/bin:$PATH
-ANDROID_NDK_HOME=<ndk> gomobile bind -target=android -androidapi 29 -o cbbtun.aar ./mobile/cbbtun
-gomobile bind -target=ios,iossimulator -iosversion 17.0 -o Cbbtun.xcframework ./mobile/cbbtun
+ANDROID_NDK_HOME=<ndk> mobile/cbbtun/bind.sh android cbbtun.aar
+mobile/cbbtun/bind.sh ios Cbbtun.xcframework   # macOS with Xcode
 ```
+
+The Android app's build runs `bind.sh` itself (the `bindTunnel` task), so building the app
+needs Go besides the Android SDK and its NDK.
 
 Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
 
