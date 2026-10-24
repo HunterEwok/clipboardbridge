@@ -395,6 +395,9 @@ jobs:
           # --port moves the member port, and a reinstall without it keeps it.
           sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall --port 9000 | grep -q 'TCP port 9000'
           grep -qx 'CBB_PORT=9000' /etc/clipboardbridge/clipboardbridge.env
+          # The member port listens once the Mac is in a group.
+          for _ in $(seq 20); do sudo /usr/local/bin/cbb status >/dev/null && break; sleep 0.5; done
+          sudo /usr/local/bin/cbb new
           for _ in $(seq 20); do sudo lsof -nP -iTCP:9000 -sTCP:LISTEN && break; sleep 0.5; done
           sudo lsof -nP -iTCP:9000 -sTCP:LISTEN | grep -q cbb
           sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --no-firewall | grep -q 'TCP port 9000'
