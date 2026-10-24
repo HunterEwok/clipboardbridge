@@ -53,7 +53,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
+| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
 | `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |

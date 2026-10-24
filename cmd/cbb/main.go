@@ -36,8 +36,7 @@ Commands:
   pair -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
   service                 Run the service (started by systemd, launchd or Windows).
-  agent                   Link the Mac's or Windows clipboard to the service (started at sign-in).
-  desktop                 Link a Linux desktop's clipboard to the service (started with the session).
+  agent                   Link this desktop's clipboard to the service (started at sign-in).
   version                 Print the version and the platform.
   help                    Print this help.
 
@@ -92,8 +91,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdService(rest, stderr)
 	case "agent":
 		return cmdAgent(rest, stderr)
-	case "desktop":
-		return cmdDesktop(rest, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

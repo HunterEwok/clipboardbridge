@@ -3,7 +3,7 @@
 
 Every command of `cbb` (Linux, macOS, Windows) and `cbb-lite` (the lite member), with their
 flags and environment variables. `cbb help` and `cbb-lite help` print the short form.
-Commands other than `service`, `agent`, `desktop`, `version` and `help` talk to the running
+Commands other than `service`, `agent`, `version` and `help` talk to the running
 service through its control socket, so they need the `clipboardbridge` group (Linux, Windows,
 macOS) or root; `copy`, `paste` and `status` work for members of the group without `sudo`.
 
@@ -32,8 +32,7 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb relay -group TAG[,TAG...] [-listen ADDRESS:PORT] [-key FILE] [-show-key]` | Runs a blind relay on a server you run, for your groups that have no computer to be the hub (default port 8764, UDP and TCP). It serves only the groups whose tags `-group` lists (`cbb status` shows a group's tag), holds none of their keys, reads nothing of the clipboard, and writes nothing about them; it sees which devices of a group talk, when and how much. Its keys are made in `-key` on the first run (default `relay.pem` in systemd's state directory, or in the service's state directory), and the key to give `cbb away relay -key` is printed at start, or alone with `-show-key`. |
 | `cbb version` | Prints the version and the platform. |
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
-| `cbb agent` | Links the Mac's or Windows clipboard to the service; started at sign-in (`cbbw.exe agent` on Windows). |
-| `cbb desktop` | Links a Linux desktop's clipboard to the service; started with the desktop session. |
+| `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 
 ## cbb-lite
 
