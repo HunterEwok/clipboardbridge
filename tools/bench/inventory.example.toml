@@ -9,7 +9,7 @@ controller = "pi4"
 [device.deck]
 os = "linux"
 ssh = "user@deck.lan"
-# GNOME has no Wayland data-control protocol: cbb desktop and the bench use
+# GNOME has no Wayland data-control protocol: cbb agent and the bench use
 # its XWayland display. On KDE or wlroots, "wayland".
 clipboard = "x11"
 roles = ["member", "hub", "away"]
