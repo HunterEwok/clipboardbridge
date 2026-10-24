@@ -88,6 +88,34 @@ class RecordsTest {
     }
 
     /**
+     * testdata/interop/go-admins.json, from Go's TestGoAdminVectors: a
+     * computer's admin CA removes a device but neither the admin phone nor
+     * the root, nor hands the group over, and nothing it signs after the
+     * admin phone removed it counts.
+     */
+    @Test
+    fun goAdminPowers() {
+        val v = Interop.read("go-admins.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+        val set = RecordSet()
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        assertEquals(v.str("digest"), set.digest)
+        assertTrue(set.roots.isEmpty(), "a computer admin handed the group over")
+        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
+        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
+        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
+        for (k in v.getValue("keys").jsonArray) {
+            val o = k.jsonObject
+            assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), o.str("name"))
+        }
+        for (c in v.getValue("chains").jsonArray) {
+            val o = c.jsonObject
+            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
+            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
+        }
+    }
+
+    /**
      * Writes records this kit signed for internal/group's TestSwiftRecords,
      * under the Swift kit's file name, when CBB_INTEROP_OUT names a directory.
      */

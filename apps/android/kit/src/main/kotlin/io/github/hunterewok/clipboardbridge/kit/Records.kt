@@ -160,6 +160,9 @@ class RecordSet {
     private val list = mutableListOf<Member.Record>()
     val records: List<Member.Record> get() = list
 
+    /** The records each admin CA signed ([MAX_PER_ADMIN]). */
+    private val perSigner = mutableMapOf<Key, Int>()
+
     /** The group's first root, which names it; the first add sets it. */
     var groupCA: ByteArray? = null
         internal set
@@ -204,6 +207,12 @@ class RecordSet {
             val pathLength = runCatching { ParsedCertificate(anchor.first).pathLength }.getOrNull()
             val root = body.root ?: return false
             if (pathLength != 1 || runCatching { GroupCertificates.checkRoot(root) }.isFailure) return false
+        }
+        if (!r.chain.isNullOrEmpty()) {
+            val signer = Key(anchor.second)
+            val n = perSigner[signer] ?: 0
+            if (n >= MAX_PER_ADMIN) return false
+            perSigner[signer] = n + 1
         }
         list.add(r)
         return true
@@ -253,10 +262,25 @@ class RecordSet {
         val anchor: Key,
     )
 
-    /** What the set says, worked out once for a question: the records with their signers, the revoked keys and the path of roots. */
+    /**
+     * What the set says, worked out once for a question: the records with
+     * their signers, the revoked keys and the path of roots. Revocations
+     * are worked out in strata that do not depend on each other in a
+     * circle, as Go's group.Records.eval (docs/protocol.md, section 10,
+     * rules 2 and 3).
+     */
     private class Eval(set: RecordSet) {
         val entries: List<Entry>
-        val revoked: Set<Key>
+        val revoked = mutableSetOf<Key>()
+
+        /** The records that revoked each key. */
+        val revokers = mutableMapOf<Key, MutableList<Entry>>()
+
+        /** The admin CAs of admin phones, which a root recorded. */
+        val phoneAdmin = mutableSetOf<Key>()
+
+        /** The known roots: the group CA and the new roots that a known root or an admin phone under one handed the group to. */
+        var known: Set<Key> = emptySet()
 
         /** The roots from the group CA to the current one, DER. */
         val path = mutableListOf<ByteArray>()
@@ -266,7 +290,6 @@ class RecordSet {
             val groupCA = set.groupCA
             if (groupCA == null) {
                 entries = emptyList()
-                revoked = emptySet()
             } else {
                 val roots = set.knownRoots(groupCA)
                 entries = set.list.mapNotNull { r ->
@@ -275,7 +298,7 @@ class RecordSet {
                     val anchor = runCatching { Records.keyHashOfCert(a.first) }.getOrNull() ?: return@mapNotNull null
                     Entry(r, b, Key(a.second), Key(anchor))
                 }
-                revoked = entries.filter { it.body.type == "revoke" }.flatMap { e -> e.body.keys.orEmpty().map { Key(it) } }.toSet()
+                evaluate(groupCA, roots)
                 // From each root, the root record under it that counts and
                 // whose new root has the smallest SHA-256 leads to the next.
                 path.add(groupCA)
@@ -286,7 +309,7 @@ class RecordSet {
                         val root = e.body.root
                         if (e.body.type != "root" || e.anchor != cur || root == null) return@mapNotNull null
                         val k = runCatching { Key(Records.keyHashOfCert(root)) }.getOrNull() ?: return@mapNotNull null
-                        if (k in onPath || e.signer in revoked || !fromRoot(e)) null else root to k
+                        if (k in onPath || e.signer in revoked || !fromRoot(e) || !mayHandOver(e)) null else root to k
                     }.minWithOrNull { x, y -> compareBytes(sha256(x.first), sha256(y.first)) } ?: break
                     path.add(next.first)
                     onPath.add(next.second)
@@ -294,15 +317,91 @@ class RecordSet {
             }
         }
 
+        private fun rootKey(der: ByteArray): Key? = runCatching { Key(Records.keyHashOfCert(der)) }.getOrNull()
+
+        /** Whether a known root's own key signed e. */
+        fun rootSigned(e: Entry): Boolean = e.signer == e.anchor && e.anchor in known
+
+        /** Whether the signer of a root record may hand the group over: a known root's own key or an admin phone's admin CA, never a computer's. */
+        fun mayHandOver(e: Entry): Boolean = rootSigned(e) || (e.signer in phoneAdmin && e.anchor in known)
+
+        /** The admin CA key that e, a device record of a phone signed by the own key of one of roots, names; null for any other record. */
+        private fun phoneAdminOf(e: Entry, roots: Set<Key>): Key? {
+            val admin = e.body.admin ?: return null
+            if (e.body.type != "device" || Records.role(e.body.role) != "phone" || e.signer != e.anchor || e.signer !in roots) return null
+            return Key(admin)
+        }
+
+        private fun evaluate(groupCA: ByteArray, roots: List<ByteArray>) {
+            val all = roots.mapNotNull(::rootKey).toSet()
+            // The known roots, until nothing is added.
+            val k = mutableSetOf<Key>()
+            rootKey(groupCA)?.let(k::add)
+            while (true) {
+                val phones = entries.mapNotNull { phoneAdminOf(it, k) }.toSet()
+                var grew = false
+                for (e in entries) {
+                    val root = e.body.root ?: continue
+                    if (e.body.type != "root" || e.anchor !in k || (e.signer != e.anchor && e.signer !in phones)) continue
+                    val rk = rootKey(root) ?: continue
+                    if (k.add(rk)) grew = true
+                }
+                if (!grew) break
+            }
+            known = k
+            val byRoot = mutableMapOf<Key, MutableList<Entry>>()
+            val privileged = all.toMutableSet()
+            for (e in entries) {
+                if (e.body.type == "revoke" && rootSigned(e)) {
+                    for (key in e.body.keys.orEmpty()) byRoot.getOrPut(Key(key)) { mutableListOf() }.add(e)
+                } else if (e.body.type == "device") {
+                    e.body.admin?.let { privileged.add(Key(it)) }
+                }
+                if (e.signer != e.anchor) privileged.add(e.signer)
+            }
+            fun standsForRoots(issuer: Key, key: Key): Boolean =
+                byRoot[issuer].orEmpty().all { r -> r.body.keep.orEmpty().any { Key(it) == key } }
+            for (e in entries) {
+                val a = phoneAdminOf(e, known) ?: continue
+                if (standsForRoots(e.signer, a)) phoneAdmin.add(a)
+            }
+            val disabled = mutableSetOf<Key>()
+            for (e in entries) {
+                val fromPhone = e.signer in phoneAdmin && e.anchor in known
+                if (e.body.type != "revoke" || !(rootSigned(e) || fromPhone)) continue
+                for (raw in e.body.keys.orEmpty()) {
+                    val key = Key(raw)
+                    if (key in privileged && (rootSigned(e) || key !in known)) {
+                        disabled.add(key)
+                        revoked.add(key)
+                        revokers.getOrPut(key) { mutableListOf() }.add(e)
+                    }
+                }
+            }
+            for (e in entries) {
+                if (e.body.type != "revoke") continue
+                val keys = e.body.keys.orEmpty().map { Key(it) }
+                val counts = if (e.signer == e.anchor) {
+                    e.anchor in known
+                } else {
+                    e.anchor in known && e.signer !in disabled && standsForRoots(e.anchor, e.signer) &&
+                        keys.none { it in known || (it in privileged && e.signer !in phoneAdmin) }
+                }
+                if (!counts) continue
+                for (key in keys) {
+                    val rs = revokers.getOrPut(key) { mutableListOf() }
+                    if (rs.none { it === e }) {
+                        rs.add(e)
+                        revoked.add(key)
+                    }
+                }
+            }
+        }
+
         /** Whether issuer is revoked only by records that keep the key k, as when an admin is removed and the devices it admitted stay. */
         fun kept(issuer: Key, k: Key): Boolean {
-            var revokedIt = false
-            for (e in entries) {
-                if (e.body.type != "revoke" || e.body.keys.orEmpty().none { Key(it) == issuer }) continue
-                if (e.body.keep.orEmpty().none { Key(it) == k }) return false
-                revokedIt = true
-            }
-            return revokedIt
+            val rs = revokers[issuer].orEmpty()
+            return rs.isNotEmpty() && rs.all { e -> e.body.keep.orEmpty().any { Key(it) == k } }
         }
 
         /** Whether what issuer certified, the key k, still stands. */
@@ -312,7 +411,7 @@ class RecordSet {
         fun fromRoot(e: Entry): Boolean = e.signer == e.anchor || issued(e.anchor, e.signer)
     }
 
-    /** The revoked keys: named by any revocation record, whether or not its signer is itself revoked. */
+    /** The revoked keys (docs/protocol.md, section 10, rule 3). */
     val revoked: Set<String> get() = Eval(this).revoked.map { it.hex }.toSet()
 
     /** Whether a key hash is revoked. */
@@ -389,6 +488,24 @@ class RecordSet {
         }
 
     /**
+     * The keys that revocations signed by the admin CA with key hash admin
+     * revoked and that count: what the record that removes that admin
+     * names again, so its removals stand once its own records no longer
+     * count (section 10).
+     */
+    fun revokedBy(admin: ByteArray): List<ByteArray> {
+        val ev = Eval(this)
+        val keys = mutableListOf<ByteArray>()
+        for (e in ev.entries) {
+            if (e.body.type != "revoke" || e.signer != Key(admin)) continue
+            for (k in e.body.keys.orEmpty()) {
+                if (ev.revokers[Key(k)].orEmpty().any { it === e } && keys.none { it.contentEquals(k) }) keys.add(k)
+            }
+        }
+        return keys
+    }
+
+    /**
      * The keys of the devices whose records the CA with key hash admin
      * signed (an admin CA, or a root's own key): the devices it admitted,
      * which stay when it is removed.
@@ -452,6 +569,9 @@ class RecordSet {
     companion object {
         /** Records beyond this many are refused. */
         const val MAX = 4096
+
+        /** Records one admin CA signs at most, so a stolen admin cannot fill the set. */
+        const val MAX_PER_ADMIN = 1024
 
         /** A set kept with toJson; records that no longer verify are dropped. */
         fun fromJson(data: ByteArray): RecordSet {

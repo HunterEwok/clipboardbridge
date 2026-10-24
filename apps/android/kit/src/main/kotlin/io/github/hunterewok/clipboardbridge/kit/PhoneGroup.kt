@@ -202,7 +202,9 @@ class PhoneGroup internal constructor(
         val admin = d.adminKey
         if (admin != null) {
             keys.add(admin)
-            keep = records.admitted(admin).filterNot { it.contentEquals(d.key) }
+            // Its own removals stop counting with it, so this record names them again.
+            for (k in records.revokedBy(admin)) if (keys.none { it.contentEquals(k) }) keys.add(k)
+            keep = records.admitted(admin).filterNot { k -> keys.any { it.contentEquals(k) } }
         }
         val r = Records.revoke(keys, tag, this.device, now, caSigner, keep, adminCA)
         records.add(r, groupCA)

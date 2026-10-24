@@ -228,7 +228,9 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         var keys = [d.key], keep: [Data]?
         if let admin = d.adminKey {
             keys.append(admin)
-            keep = records.admitted(by: admin).filter { $0 != d.key }
+            // Its own removals stop counting with it, so this record names them again.
+            for k in records.revokedBy(admin) where !keys.contains(k) { keys.append(k) }
+            keep = records.admitted(by: admin).filter { !keys.contains($0) }
         }
         let r = try Records.revoke(keys, keep: keep, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)

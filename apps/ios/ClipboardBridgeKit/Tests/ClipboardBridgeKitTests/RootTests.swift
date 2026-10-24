@@ -180,6 +180,35 @@ final class RootTests: XCTestCase {
         for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
     }
 
+    /// Reads testdata/interop/go-admins.json, from Go's TestGoAdminVectors:
+    /// a computer's admin CA removes a device but neither the admin phone
+    /// nor the root, nor hands the group over, and nothing it signs after
+    /// the admin phone removed it counts.
+    func testGoAdminPowers() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Device: Decodable { var id: String, name: String, admin: Bool }
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
+            var group_ca: Data
+            var records: [Member.Record]
+            var devices: [Device]
+            var keys: [Key]
+            var chains: [Chain]
+            var digest: String
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-admins.json")))
+        var set = RecordSet()
+        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count)
+        XCTAssertEqual(set.digest, v.digest)
+        XCTAssertTrue(set.roots.isEmpty, "a computer admin handed the group over")
+        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
+        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
+        for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, k.name) }
+        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
+    }
+
     /// Writes swift-root.json for internal/group's TestSwiftRoot: a takeover
     /// as this kit signs it.
     func testTakeOverForGo() throws {

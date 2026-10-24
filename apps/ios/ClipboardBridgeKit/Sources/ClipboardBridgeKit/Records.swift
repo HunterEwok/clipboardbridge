@@ -113,6 +113,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
     /// Records beyond this many are refused.
     public static let max = 4096
+    /// Records one admin CA signs at most, so a stolen admin cannot fill
+    /// the set and shut the others out.
+    public static let maxPerAdmin = 1024
 
     public init() {}
 
@@ -149,6 +152,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             guard (try? ParsedCertificate(der: anchor.root))?.pathLength == 1, let root = body.root,
                   (try? GroupCertificates.checkRoot(root)) != nil else { return false }
         }
+        if let admin = r.chain?.first, records.lazy.filter({ $0.chain?.first == admin }).count >= Self.maxPerAdmin { return false }
         records.append(r)
         return true
     }
@@ -217,10 +221,20 @@ public struct RecordSet: Codable, Equatable, Sendable {
     }
 
     /// What the set says, worked out once for a question: the records with
-    /// their signers, the revoked keys and the path of roots.
+    /// their signers, the revoked keys and the path of roots. Revocations
+    /// are worked out in strata that do not depend on each other in a
+    /// circle, as Go's group.Records.eval (docs/protocol.md, section 10,
+    /// rules 2 and 3).
     private struct Eval {
         var entries: [Entry] = []
         var revoked: Set<Data> = []
+        /// The records that revoked each key, by record ID.
+        var revokers: [Data: [Data]] = [:]
+        /// The admin CAs of admin phones, which a root recorded.
+        var phoneAdmin: Set<Data> = []
+        /// The known roots: the group CA and the new roots that a known
+        /// root or an admin phone under one handed the group to.
+        var known: Set<Data> = []
         /// The roots from the group CA to the current one, DER.
         var path: [Data] = []
         var onPath: Set<Data> = []
@@ -233,7 +247,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
                       let a = RecordSet.anchor(r, roots: roots), let anchor = try? Records.keyHash(cert: a.root) else { return nil }
                 return Entry(record: r, body: b, signer: a.signer, anchor: anchor)
             }
-            revoked = Set(entries.filter { $0.body.type == "revoke" }.flatMap { $0.body.keys ?? [] })
+            evaluate(groupCA: groupCA, roots: roots)
             // From each root, the root record under it that counts and
             // whose new root has the smallest SHA-256 leads to the next.
             path = [groupCA]
@@ -241,7 +255,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             while let cur = path.last.flatMap({ try? Records.keyHash(cert: $0) }) {
                 let next = entries.compactMap { e -> (Data, Data)? in
                     guard e.body.type == "root", e.anchor == cur, let root = e.body.root, let k = try? Records.keyHash(cert: root),
-                          !onPath.contains(k), !revoked.contains(e.signer), fromRoot(e) else { return nil }
+                          !onPath.contains(k), !revoked.contains(e.signer), fromRoot(e), mayHandOver(e) else { return nil }
                     return (root, k)
                 }.min { Data(SHA256.hash(data: $0.0)).lexicographicallyPrecedes(Data(SHA256.hash(data: $1.0))) }
                 guard let next else { break }
@@ -250,15 +264,83 @@ public struct RecordSet: Codable, Equatable, Sendable {
             }
         }
 
+        /// Whether a known root's own key signed e.
+        func rootSigned(_ e: Entry) -> Bool { e.signer == e.anchor && known.contains(e.anchor) }
+
+        /// Whether the signer of a root record may hand the group over: a
+        /// known root's own key or an admin phone's admin CA, never a
+        /// computer's, whose key sits in a file.
+        func mayHandOver(_ e: Entry) -> Bool { rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor)) }
+
+        /// The admin CA key that e, a device record of a phone signed by the
+        /// own key of one of roots, names; nil for any other record.
+        private static func phoneAdmin(of e: Entry, roots: Set<Data>) -> Data? {
+            guard e.body.type == "device", Records.role(e.body.role) == "phone", e.signer == e.anchor, roots.contains(e.signer) else {
+                return nil
+            }
+            return e.body.admin
+        }
+
+        private mutating func evaluate(groupCA: Data, roots: [Data]) {
+            let all = Set(roots.compactMap { try? Records.keyHash(cert: $0) })
+            // The known roots, until nothing is added.
+            var k: Set<Data> = Set([try? Records.keyHash(cert: groupCA)].compactMap { $0 })
+            while true {
+                let phones = Set(entries.compactMap { Self.phoneAdmin(of: $0, roots: k) })
+                var grew = false
+                for e in entries where e.body.type == "root" && k.contains(e.anchor) && (e.signer == e.anchor || phones.contains(e.signer)) {
+                    if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { grew = true }
+                }
+                if !grew { break }
+            }
+            known = k
+            var byRoot: [Data: [Entry]] = [:]
+            var privileged = all
+            for e in entries {
+                if e.body.type == "revoke" && rootSigned(e) {
+                    for key in e.body.keys ?? [] { byRoot[key, default: []].append(e) }
+                } else if e.body.type == "device", let a = e.body.admin {
+                    privileged.insert(a)
+                }
+                if e.signer != e.anchor { privileged.insert(e.signer) }
+            }
+            func standsForRoots(_ issuer: Data, _ key: Data) -> Bool {
+                (byRoot[issuer] ?? []).allSatisfy { ($0.body.keep ?? []).contains(key) }
+            }
+            for e in entries {
+                if let a = Self.phoneAdmin(of: e, roots: known), standsForRoots(e.signer, a) { phoneAdmin.insert(a) }
+            }
+            var disabled: Set<Data> = []
+            for e in entries where e.body.type == "revoke" && (rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor))) {
+                for key in e.body.keys ?? [] where privileged.contains(key) && (rootSigned(e) || !known.contains(key)) {
+                    disabled.insert(key)
+                    revoked.insert(key)
+                    revokers[key, default: []].append(Records.id(e.record))
+                }
+            }
+            for e in entries where e.body.type == "revoke" {
+                let keys = e.body.keys ?? []
+                let counts: Bool
+                if e.signer == e.anchor {
+                    counts = known.contains(e.anchor)
+                } else {
+                    counts = known.contains(e.anchor) && !disabled.contains(e.signer) && standsForRoots(e.anchor, e.signer)
+                        && !keys.contains { known.contains($0) || (privileged.contains($0) && !phoneAdmin.contains(e.signer)) }
+                }
+                guard counts else { continue }
+                let id = Records.id(e.record)
+                for key in keys where !(revokers[key] ?? []).contains(id) {
+                    revokers[key, default: []].append(id)
+                    revoked.insert(key)
+                }
+            }
+        }
+
         /// Whether issuer is revoked only by records that keep the key k, as
         /// when an admin is removed and the devices it admitted stay.
         func kept(_ issuer: Data, _ k: Data) -> Bool {
-            var revokedIt = false
-            for e in entries where e.body.type == "revoke" && (e.body.keys ?? []).contains(issuer) {
-                guard (e.body.keep ?? []).contains(k) else { return false }
-                revokedIt = true
-            }
-            return revokedIt
+            guard let ids = revokers[issuer], !ids.isEmpty else { return false }
+            return entries.filter { ids.contains(Records.id($0.record)) }.allSatisfy { ($0.body.keep ?? []).contains(k) }
         }
 
         /// Whether what issuer certified, the key k, still stands.
@@ -269,8 +351,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         func fromRoot(_ e: Entry) -> Bool { e.signer == e.anchor || issued(e.anchor, e.signer) }
     }
 
-    /// The revoked keys: named by any revocation record, whether or not its
-    /// signer is itself revoked.
+    /// The revoked keys (docs/protocol.md, section 10, rule 3).
     public var revoked: Set<Data> { Eval(self).revoked }
 
     /// The roots that took the group over from the group CA, in order, DER;
@@ -329,6 +410,20 @@ public struct RecordSet: Codable, Equatable, Sendable {
             return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
                           admin: rb.1.admin.map { !ev.revoked.contains($0) } ?? false, adminKey: rb.1.admin)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+    }
+
+    /// The keys that revocations signed by the admin CA with key hash admin
+    /// revoked and that count: what the record that removes that admin
+    /// names again, so its removals stand once its own records no longer
+    /// count (section 10).
+    public func revokedBy(_ admin: Data) -> [Data] {
+        let ev = Eval(self)
+        var keys: [Data] = []
+        for e in ev.entries where e.body.type == "revoke" && e.signer == admin {
+            let id = Records.id(e.record)
+            for k in e.body.keys ?? [] where (ev.revokers[k] ?? []).contains(id) && !keys.contains(k) { keys.append(k) }
+        }
+        return keys
     }
 
     /// The keys of the devices whose records the CA with key hash admin
