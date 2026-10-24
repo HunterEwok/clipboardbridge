@@ -881,8 +881,10 @@ only adds to it.
    computed port as a fallback if AmneziaWG needs it; the project's own server.
 6. The blind relay, self-hosted only (done for computers).
 7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,
-   making and opening remote invitations. The tunnel itself is done: `mobile/cbbtun`, bound
-   by gomobile into an AAR and an xcframework.
+   making and opening remote invitations. Done: the tunnel, `mobile/cbbtun`, bound by
+   gomobile into an AAR and an xcframework; the tunnel offer in both kits; the Android app's
+   switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
+   found at home. The iPhone app and the invitations follow.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 

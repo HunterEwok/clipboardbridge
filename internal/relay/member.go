@@ -212,7 +212,7 @@ func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error)
 		return nil, welcome{}, err
 	}
 	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, forward.PinnedTLS(cfg.Cert(), Protocol, cfg.Link.Pin, "relay"))
+	tc := tls.Client(raw, forward.TLSVerifiedByPin(cfg.Cert(), Protocol, cfg.Link.Pin, "relay"))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fail(fmt.Errorf("registering with the relay: %w", err))
 	}

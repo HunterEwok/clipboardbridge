@@ -6,6 +6,7 @@ package io.github.hunterewok.clipboardbridge
 import android.content.Context
 import android.os.Build
 import android.provider.Settings as SystemSettings
+import android.util.Log
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
 import io.github.hunterewok.clipboardbridge.kit.GroupCertificates
 import io.github.hunterewok.clipboardbridge.kit.HybridClock
@@ -78,6 +79,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private var browser: NsdBrowser? = null
     private var dialer: MemberDialer? = null
     private var found: Set<FoundMember> = emptySet()
+    private var away: AwayFromHome? = null
+    private val awayFile = AwayFile(File(file.parentFile, "away.bin"))
 
     /** The node, read under the lock; its methods are called outside it, as it calls back into the group under its own. */
     private val currentNode: MemberNode? get() = synchronized(lock) { node }
@@ -115,6 +118,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
 
     val computers: List<Device> get() = devices.filter { !it.isSelf }
+
+    /** Sync away from home on this phone: null without a group. */
+    val awayFromHome: AwayFromHome? get() = synchronized(lock) { away }
+
+    /**
+     * Turns sync away from home on or off, then connects again, so the
+     * hellos offer the new key and the hub answers it.
+     */
+    fun setAwayFromHome(on: Boolean) {
+        val a = awayFromHome ?: return
+        if (on) a.turnOn() else a.turnOff()
+        restartSync()
+    }
 
     init {
         startSync()
@@ -365,12 +381,29 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private fun startSync() {
         val b = startBrowsing() ?: return
         b.start()
+        awayFromHome?.start()
     }
 
     private fun startBrowsing(): NsdBrowser? = synchronized(lock) {
         val g = state ?: return null
         if (node != null) return null
         val member = runCatching { memberSigner() }.getOrNull() ?: return null
+        // Through the tunnel the phone dials the hub's member port with the
+        // same TLS as at home, and only while the hub is not found here.
+        val a = AwayFromHome(
+            g.device,
+            GoTunnels,
+            load = awayFile::read,
+            save = { s -> if (s == null) awayFile.delete() else awayFile.write(s) },
+            atHome = { hub -> synchronized(lock) { found.any { it.device == hub } } },
+            dial = { port, hub ->
+                TLSTransport.dial("127.0.0.1", port, Member.ALPN, member.privateKey, g.memberChain) { peer ->
+                    runCatching { GroupCertificates.verifyMember(peer, g.trusted, Instant.now()) }.getOrNull() == hub
+                }
+            },
+            serve = { t, hub -> currentNode?.serve(t, hub) ?: t.close() },
+            log = { what, e -> Log.w(TAG, what, e) },
+        )
         val n = MemberNode(
             SyncEngine(g.device, HybridClock()),
             deviceName,
@@ -383,6 +416,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             onChange = { e ->
                 if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS) onCopy?.invoke(e.text, e.kind)
             },
+            tunnelKey = { a.publicKey },
+            onTunnel = a::keep,
         )
         val b = NsdBrowser(context) { members ->
             synchronized(lock) { found = members }
@@ -391,6 +426,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         dialer = MemberDialer(n, g.tag, dial = b.dialer(member, g.memberChain, g.trusted))
         node = n
         browser = b
+        away = a
         b
     }
 
@@ -406,6 +442,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 node = null
             }
         }
+        val a = synchronized(lock) { away.also { away = null } }
+        a?.stop()
         d?.stop()
         b?.stop()
         n?.closeAll()
@@ -523,6 +561,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     @Volatile var onCopy: ((String, Member.Kind) -> Unit)? = null
 
     companion object {
+        private const val TAG = "clipboardbridge"
+
         /** How long admitting a device may take once it is dialed: a computer that stops answering mid-pairing fails then. */
         const val PAIRING_DEADLINE_MS = 30_000L
 

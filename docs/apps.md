@@ -60,7 +60,15 @@ they look, so both apps are built to the same plan.
    `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A phone that is not an admin shows the list without
    actions and says which phones are admins.
-5. **Settings**: theme, language, about. Nothing else.
+5. **Settings**: theme, language, about, and once there is a group, "Away from home": one
+   switch that turns sync away from home on for this phone (docs/design.md, "Sync away from
+   home"), the words of the design on what changes, and where it stands: waiting for the
+   hub's answer, which comes on the next connection at home; at home, syncing directly;
+   connecting; connected through the tunnel. Turning it off forgets the phone's tunnel key.
+   On Android the WireGuard key sits in the app's files, encrypted with a Keystore key that
+   needs no unlock, so the foreground service syncs away from home as it does at home; the
+   tunnel runs in the app's process (`mobile/cbbtun`) and opens a loopback port that the kit
+   dials with its own member TLS, checking that the peer is the hub. The iPhone app follows.
 
 The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
 Devices on your other phone and remove it." When the group has a single admin, Devices
