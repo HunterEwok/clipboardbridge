@@ -61,6 +61,16 @@
         }
       }
     },
+    "Another admin froze this computer, as one does with a stolen one: it changes nothing and the others refuse it. Unfreeze it only if it is in safe hands; otherwise remove it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другой админ заморозил этот компьютер, как делают с украденным: он ничего не меняет, и остальные его не принимают. Размораживайте, только если он в надёжных руках, иначе удалите его."
+          }
+        }
+      }
+    },
     "At home: syncing directly.": {
       "localizations": {
         "ru": {
@@ -217,6 +227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключ хранится в файле на компьютере, поэтому делайте так только для компьютера, который надёжно защищён."
+          }
+        }
+      }
+    },
+    "It is an admin again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он снова админ."
           }
         }
       }
@@ -751,6 +771,36 @@
         }
       }
     },
+    "Unfreeze": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разморозить"
+          }
+        }
+      }
+    },
+    "Unfreeze %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разморозить %@?"
+          }
+        }
+      }
+    },
+    "Unfreeze an admin computer": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разморозить компьютер-админа"
+          }
+        }
+      }
+    },
     "Version": {
       "localizations": {
         "ru": {
@@ -793,6 +843,16 @@
     },
     "clipboardbridge": {
       "shouldTranslate": false
+    },
+    "frozen": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "заморожен"
+          }
+        }
+      }
     },
     "offline": {
       "localizations": {

@@ -117,6 +117,7 @@ final class AwayFromHomeTests: XCTestCase {
                 // Runs until the test lets it end, as a connection does.
                 while release.current <= mine { try await Task.sleep(for: .milliseconds(2)) }
             },
+            mayHost: { $0 == hub },
             firstWait: Self.short.first, maxWait: Self.short.max, homeCheck: Self.short.home)
         await a.start()
 
@@ -134,6 +135,9 @@ final class AwayFromHomeTests: XCTestCase {
         try await eventually("waiting for the hub") { await a.status == .waitingForHub }
         XCTAssertTrue(tunnels.started.isEmpty)
 
+        // An offer from a device that is neither the root nor an admin is ignored.
+        await a.keep(from: "cccccccccccccccccccccccccccccccc", offer: offer)
+        XCTAssertNil(saved.current?.hub)
         // The hub's answer, from a peer the node named: away, the tunnel starts on its first endpoint.
         await a.keep(from: nil, offer: offer)
         await a.keep(from: hub, offer: offer)
@@ -184,12 +188,14 @@ final class AwayFromHomeTests: XCTestCase {
             state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
             atHome: { _ in false }, dial: { _, _ in Pipe() },
             serve: { _, _ in while release.current == 0 { try await Task.sleep(for: .milliseconds(2)) } },
+            mayHost: { _ in true },
             firstWait: Self.short.first, maxWait: Self.short.max, homeCheck: Self.short.home)
         await a.start()
         try await eventually("connected") { await a.status == .connected }
         let t = tunnels.started[0]
-        // The same offer again changes nothing; a new one closes the tunnel and starts with it.
+        // The same offer again changes nothing, nor does another admin's; a new one closes the tunnel and starts with it.
         await a.keep(from: hub, offer: offer)
+        await a.keep(from: "dddddddddddddddddddddddddddddddd", offer: Member.TunnelOffer(hubKey: offer.hubKey, psk: offer.psk, endpoints: ["203.0.113.7:8764"]))
         XCTAssertFalse(t.closed)
         await a.keep(from: hub, offer: Member.TunnelOffer(hubKey: offer.hubKey, psk: offer.psk, endpoints: ["198.51.100.9:8764"]))
         XCTAssertTrue(t.closed)

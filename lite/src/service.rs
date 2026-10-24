@@ -196,10 +196,24 @@ fn listen(path: &Path) -> Result<UnixListener> {
         return Err(Error::msg(format!("another lite member service runs at {}", path.display())));
     }
     let _ = std::fs::remove_file(path);
-    let ln = UnixListener::bind(path).context(format!("cannot listen at {}", path.display()))?;
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660)).context("cannot set the socket's mode")?;
-    Ok(ln)
+    // The socket is made in a new directory that only the service can enter,
+    // narrowed there and then moved into place, so nobody can connect before
+    // its mode is right, whatever the umask.
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let tmp = dir.join(format!(".c{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::DirBuilder::new().mode(0o700).create(&tmp).context(format!("cannot create {}", tmp.display()))?;
+    let made = (|| {
+        let tmp_path = tmp.join("s");
+        let ln = UnixListener::bind(&tmp_path).context(format!("cannot listen at {}", path.display()))?;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o660))
+            .context("cannot set the socket's mode")?;
+        std::fs::rename(&tmp_path, path).context(format!("cannot move the socket to {}", path.display()))?;
+        Ok(ln)
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    made
 }
 
 fn kind_of(s: &str) -> Result<Kind> {

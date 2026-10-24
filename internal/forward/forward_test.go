@@ -407,6 +407,37 @@ func TestRouteLimits(t *testing.T) {
 	}
 }
 
+// TestScanLimit checks that handshakes to unknown groups, from any number
+// of sources, cost the forwarder at most ScanRate group checks a second.
+func TestScanLimit(t *testing.T) {
+	cert, _ := NewCert()
+	limits := DefaultLimits
+	limits.SourceRate = 1000
+	limits.ScanRate = 10 // a burst of 20 checks
+	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, Limits: limits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for i := range 4 {
+		fakeReg(f, string(rune('a'+i)), netip.AddrPortFrom(netip.MustParseAddr("198.51.100.1"), uint16(8000+i)))
+	}
+	now := time.Now()
+	var stranger [32]byte
+	rand.Read(stranger[:])
+	for i := range 5 { // 5 handshakes x 4 groups spend the burst
+		from := netip.AddrPortFrom(netip.MustParseAddr("203.0.113.5"), uint16(40000+i))
+		f.route(from, initiation(stranger, uint32(i)), now)
+	}
+	_, pub := fakeReg(f, "e", netip.MustParseAddrPort("198.51.100.2:8764"))
+	if _, ok := f.route(netip.MustParseAddrPort("203.0.113.6:40000"), initiation(pub, 1), now); ok {
+		t.Error("a handshake passed after the scan budget was spent")
+	}
+	if _, ok := f.route(netip.MustParseAddrPort("203.0.113.6:40000"), initiation(pub, 1), now.Add(time.Second)); !ok {
+		t.Error("a handshake did not pass once the budget refilled")
+	}
+}
+
 func TestHello(t *testing.T) {
 	cert, _ := NewCert()
 	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert})

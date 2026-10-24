@@ -372,6 +372,7 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
     val scope = rememberCoroutineScope()
     var removing by remember { mutableStateOf<LiveGroup.Device?>(null) }
     var promoting by remember { mutableStateOf<LiveGroup.Device?>(null) }
+    var thawing by remember { mutableStateOf<LiveGroup.Device?>(null) }
     Page(stringResource(R.string.devices), back) {
         if (model.devices.isEmpty()) Text(stringResource(R.string.no_computers), color = palette.textDim)
         Column(Modifier.fillMaxWidth().card()) {
@@ -382,6 +383,8 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
                     canRemove = model.isAdmin && !d.isSelf,
                     remove = { removing = d },
                     promote = { promoting = d },
+                    canUnfreeze = model.isAdmin && d.frozen,
+                    unfreeze = { thawing = d },
                 )
             }
         }
@@ -408,13 +411,21 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
             dismiss = { promoting = null },
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
+    thawing?.let { d ->
+        Confirm(
+            title = stringResource(R.string.unfreeze_title, d.name),
+            body = stringResource(R.string.unfreeze_body),
+            action = stringResource(R.string.unfreeze),
+            dismiss = { thawing = null },
+        ) { scope.launch { model.unfreeze(d.id) } }
+    }
 }
 
 @Composable
-private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Unit, promote: () -> Unit) {
+private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Unit, promote: () -> Unit, canUnfreeze: Boolean, unfreeze: () -> Unit) {
     val palette = LocalPalette.current
     var menu by remember { mutableStateOf(false) }
-    val hasMenu = canRemove || d.canMakeAdmin
+    val hasMenu = canRemove || d.canMakeAdmin || canUnfreeze
     Row(
         Modifier.fillMaxWidth().then(if (hasMenu) Modifier.clickable { menu = true } else Modifier)
             .padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall + 4.dp)
@@ -427,6 +438,7 @@ private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Uni
             val note = when {
                 d.isSelf && d.admin -> stringResource(R.string.this_phone_admin)
                 d.isSelf -> stringResource(R.string.this_phone)
+                d.frozen -> "${systemName(d)} · ${stringResource(R.string.frozen)}"
                 d.admin -> "${systemName(d)} · ${stringResource(R.string.admin)}"
                 else -> systemName(d)
             }
@@ -441,6 +453,12 @@ private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Uni
             Box {
                 Text("⋮", modifier = Modifier.padding(start = Tokens.spacingSmall), color = palette.textDim)
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (canUnfreeze) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.unfreeze)) }, onClick = {
+                            menu = false
+                            unfreeze()
+                        })
+                    }
                     if (d.canMakeAdmin) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.make_admin)) }, onClick = {
                             menu = false
@@ -593,6 +611,7 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
             }
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
+        if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
         if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -608,6 +627,28 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge")))
                 }.padding(Tokens.spacingMedium),
             )
+        }
+    }
+}
+
+/** Whether Share and the selection menu ask before sending; "Always allow" turned the question off. */
+@Composable
+private fun ShareAsk(model: AppModel) {
+    val palette = LocalPalette.current
+    var asks by remember { mutableStateOf(!model.settings.alwaysAllowShare) }
+    Section(stringResource(R.string.send_share)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                    asks = !asks
+                    model.settings.alwaysAllowShare = !asks
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.share_ask_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = asks, onCheckedChange = null)
+            }
+            Text(stringResource(R.string.share_ask_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
 }

@@ -169,3 +169,59 @@ func TestComputerAdmin(t *testing.T) {
 	waitFor(t, "the deck drops the laptop", func() bool { return listed(b.devices(t)) == "deck iphone pi" })
 	waitFor(t, "the laptop is cut off", func() bool { return len(c.status(t).Peers) == 0 })
 }
+
+// TestAdminPeerNeedsARealAdminCA checks that a member counts as an admin
+// through its chain only with an admin CA that issued its certificate and
+// that a root of the group certified, not with any CA named after it.
+func TestAdminPeerNeedsARealAdminCA(t *testing.T) {
+	now := time.Now()
+	root, err := group.Create(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{id: root, records: group.NewRecords(root.GroupCA.Cert)}
+	key, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := group.NewDeviceID()
+	leaf, err := root.GroupCA.IssueMember(dev, &key.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A CA the member made itself, named as its admin CA would be.
+	own, err := group.NewGroupCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: group.AdminName(dev)},
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
+		MaxPathLenZero: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &own.Key.PublicKey, own.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.adminPeer(dev, []*x509.Certificate{leaf, fake}) {
+		t.Error("a member counted as an admin with a CA it made itself")
+	}
+	// The real thing: an admin CA from the root, which issued the leaf.
+	adminKey, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCA, err := root.GroupCA.IssueAdmin(dev, &adminKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := (&group.CA{Cert: adminCA, Key: adminKey}).IssueMember(dev, &key.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.adminPeer(dev, []*x509.Certificate{issued, adminCA}) {
+		t.Error("a member with its admin CA did not count as an admin")
+	}
+}

@@ -25,6 +25,8 @@ protocol GroupController: AnyObject {
     func remove(_ id: String) async throws
     /// Makes a computer an admin; only the root phone does.
     func makeAdmin(_ id: String) async throws
+    /// Unfreezes an admin computer that another admin froze.
+    func unfreeze(_ id: String) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -42,6 +44,7 @@ protocol GroupController: AnyObject {
 }
 
 extension GroupController {
+    func unfreeze(_ id: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
 }
@@ -72,6 +75,9 @@ final class AppModel: ObservableObject {
         /// A computer this phone, the root, can make an admin: it offers an
         /// admin key.
         var canMakeAdmin = false
+        /// An admin computer another admin froze: the root or an admin phone
+        /// unfreezes or removes it.
+        var frozen = false
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -274,6 +280,17 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         isAdmin = group.isAdmin
+    }
+
+    /// Unfreezes an admin computer that another admin froze.
+    func unfreeze(_ id: String) async {
+        do {
+            try await group.unfreeze(id)
+            message = String(localized: "It is an admin again.", bundle: .app)
+        } catch {
+            message = Self.describe(error)
+        }
+        devices = group.devices
     }
 
     /// Makes a computer an admin.

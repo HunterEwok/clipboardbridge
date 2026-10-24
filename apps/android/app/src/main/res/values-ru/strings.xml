@@ -41,6 +41,11 @@
     <string name="make_admin_title">Сделать %1$s админом?</string>
     <string name="make_admin_body">Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключ хранится в файле на компьютере, поэтому делайте так только для компьютера, который надёжно защищён.</string>
     <string name="made_admin">Теперь это админ: он добавляет и удаляет устройства командами cbb pair и cbb revoke.</string>
+    <string name="frozen">заморожен</string>
+    <string name="unfreeze">Разморозить</string>
+    <string name="unfreeze_title">Разморозить %1$s?</string>
+    <string name="unfreeze_body">Другой админ заморозил этот компьютер, как делают с украденным: он ничего не меняет, и остальные его не принимают. Размораживайте, только если он в надёжных руках, иначе удалите его.</string>
+    <string name="unfrozen">Он снова админ.</string>
     <string name="remove_title">Удалить %1$s?</string>
     <string name="remove_body">Он больше не будет синхронизироваться с вашими устройствами. Чтобы вернуть его, отсканируйте его QR-код снова.</string>
     <string name="remove_root_body">Этот телефон создал группу. Ваш телефон забирает группу себе с новым ключом, остальные устройства переходят за ним.</string>
@@ -57,6 +62,7 @@
     <string name="reason_add">Добавить компьютер в вашу группу</string>
     <string name="reason_remove">Удалить устройство из вашей группы</string>
     <string name="reason_make_admin">Сделать компьютер админом</string>
+    <string name="reason_unfreeze">Разморозить компьютер-админа</string>
     <string name="reason_take_over">Забрать группу у потерянного телефона</string>
     <string name="reason_renew">Продлить сертификат этого телефона</string>
     <string name="error_not_confirmed">Компьютер присоединился, но не подтвердил это. Проверьте cbb status на нём.</string>
@@ -79,6 +85,12 @@
     <string name="notification_text">Скопированное на них приходит на телефон. «Отправить» отправляет скопированное на телефоне.</string>
     <string name="send">Отправить</string>
     <string name="send_share">Отправить на компьютеры</string>
+    <string name="share_confirm_title">Отправить этот текст на компьютеры?</string>
+    <string name="share_confirm_body">Другое приложение передало clipboardbridge текст (символов: %1$d). Он уйдёт на все компьютеры группы.</string>
+    <string name="share_allow">Разрешить</string>
+    <string name="share_always">Разрешать всегда</string>
+    <string name="share_ask_switch">Спрашивать перед отправкой</string>
+    <string name="share_ask_body">Через «Поделиться» и меню выделения любое приложение может передать clipboardbridge текст. Пока переключатель включён, телефон спрашивает перед отправкой; «Разрешать всегда» выключает вопрос для всех приложений.</string>
     <string name="tile_label">Отправить буфер</string>
     <string name="accessibility_label">Отправлять скопированное само</string>
     <string name="accessibility_description">Замечает, когда вы копируете текст, на мгновение читает буфер обмена и отправляет текст на ваши компьютеры. Больше ничего на экране не читает.</string>
