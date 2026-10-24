@@ -94,6 +94,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: handshakes to unknown groups cost the forwarder at most a fixed number of group
+  checks a second (`Limits.ScanRate`), whatever their source addresses, so a flood of forged
+  handshakes cannot hold up the other groups.
+
 - Security: a member's certificate is checked against the issuer that actually signed it.
   Before, the revocation check and the admin check looked at the second certificate a peer
   presented, so extra certificates in a chain could get a removed admin's devices back in
