@@ -1,0 +1,44 @@
+# The bench's inventory: copy it to ~/.config/cbb-bench/inventory.toml on the
+# controller and fill in the real names. It never goes into the repository.
+# docs/testbench.md, section 13, describes each key.
+
+controller = "pi4"
+
+# ssh: the user signed in on the device's desktop, so the bench reaches the
+# desktop clipboard; its key must work without a prompt (BatchMode).
+[device.deck]
+os = "linux"
+ssh = "user@steamdeck.lan"
+clipboard = "wayland"
+roles = ["member", "hub", "away"]
+
+[device.rpi0w]
+os = "linux-lite"
+ssh = "user@rpi0w.lan"
+roles = ["member"]
+
+[device.mac]
+os = "darwin"
+ssh = "user@mac.lan"
+clipboard = "macos"
+roles = ["member"]
+
+[device.win]
+os = "windows"
+ssh = "user@win.lan"
+clipboard = "windows"
+roles = ["member"]
+vm = { host = "mac", vmx = "~/Virtual Machines.localized/Windows 11 64-bit Arm.vmwarevm", snapshot = "clean" }
+
+[device.vps]
+os = "linux"
+ssh = "user@vps.example.net"
+clipboard = "none"
+roles = ["away"]
+
+[router]
+ssh = "root@router.lan"
+kind = "openwrt"
+
+[relay]
+ssh = "user@relay.example.net"

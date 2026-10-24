@@ -141,6 +141,41 @@ the same text is on every device at the end.
 - Uninstall: no service, no firewall rule, no leftover files (except keys without
   `--purge`).
 
+### Features and platforms
+
+Every other way clipboardbridge works, so no path ships untested:
+
+| ID | Case | Expected |
+|---|---|---|
+| P1 | Password managers: a copy marked secret by the app (macOS concealed type, Windows "exclude from history and cloud", the Wayland password hint) | travels as a secret (C6 rules) or not at all, as designed; never as plain text |
+| P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
+| P3 | Clipboard history (Windows Win+V, KDE Klipper) and copy echo | a received text is not sent back; no ping-pong between two members |
+| P4 | The Mac listening mode (`r=mac`): the lite member and the emulator reach the Mac with no Linux member on | sync works; the Mac still dials Linux members |
+| P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
+| P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
+| P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the service and the agent run from Homebrew's binary; nothing is left |
+| P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
+| P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
+| P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
+| P13 | `cbb status`, `cbb devices`, `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
+| P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
+| P15 | macOS: the Local Network permission refused and granted, Gatekeeper on the downloaded binary, the application firewall, Universal Clipboard from an iPhone or iPad signed in to the same Apple account | each state is explained by `cbb status`; Universal Clipboard text syncs once, without an echo |
+| P16 | Windows: locked screen, sign-out and sign-in, SmartScreen on the installer, `get.ps1` installing the arm64 build on ARM | the service keeps syncing; the agent comes back after sign-in; the right architecture |
+| P17 | Steam Deck: sleep and wake, Game Mode, the lock screen | reconnects within 30 s of wake; Game Mode and the lock screen are recorded as they behave |
+| P18 | mDNS on the router: the avahi reflector on and off between the home network and the IoT subnet | with it off the lite member is reached by address, with it on by mDNS; both work |
+| P19 | IPv6 on the home network: AAAA records, link-local and global addresses, an IPv6-only member | members find and reach each other over IPv6 |
+| P20 | A network that blocks UDP (a hotel or an office) for an away device | as designed for the transports that exist (WireGuard over UDP fails with a clear message; the TCP transport when it exists) |
+| P21 | Invitations: the admin answers `no`; `-for 24h` and one second past it; the hub off when the invitation is used | refused with a clear message each time; nothing is left on the hub |
+| P22 | `cbb away off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
+
+Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
+(`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
+those builds are covered only by CI. It has no real Android phone and no iPhone app
+(section 3).
+
+
 ## 8. Failure cases
 
 | ID | Case | Expected |
@@ -177,6 +212,10 @@ not ship the feature.
 | S10 | Secrets | `copy -secret` never reaches any disk on any device (search of the state directories and swap-free check on Linux) and is gone after 60 s |
 | S11 | Local access | the control socket refuses a user outside the `clipboardbridge` group on Linux, macOS and Windows |
 | S12 | Installers | firewall rules open only the member port (and mDNS) to the local subnet; the tunnel port only on the hub |
+| S13 | Two groups on one network (two hubs, devices in each) | no text, record or device list crosses between the groups; neither can pair into the other without a code |
+| S14 | A stranger on the home network: a device in no group dials the member port, replays a captured connection, tries codes | refused; the code attempt counter stops guessing; nothing is learned about the group |
+| S15 | Logs | no clipboard text, code or key in any log on any device, in either error mode (`CBB_DEBUG=0` and `1`) |
+| S16 | Files at rest | the state directories hold only keys and certificates with owner-only permissions; no clipboard text is written to disk on any device |
 
 ## 10. Long run
 
@@ -191,27 +230,31 @@ the code (one language for the service and the harness, `go test`-style reports)
 an inventory file (devices, addresses, how to reach each one) that lives only on the
 controller, never in the repository.
 
-**Reaching the devices**: SSH with a dedicated key and a dedicated `cbbbench` user on each
-Linux device, the Mac and the Windows VM (OpenSSH Server). The user may run only the
-commands the bench needs with `sudo` (a sudoers file the bench installs). On Windows and
-the Deck a tiny helper started at sign-in runs inside the desktop session, to reach the
-real clipboard. The phone over `adb` (USB to the controller, or wireless debugging).
+**Reaching the devices**: SSH from the controller with keys only (`BatchMode`), as the user
+signed in on each device's desktop, so the bench reaches the real clipboard: `wl-copy` and
+`wl-paste` in the Wayland session, `pbcopy` and `pbpaste` on the Mac. On Windows an SSH
+session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` turns on the
+OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
+text between a file and the clipboard. Headless devices use `cbb copy` and `cbb paste`
+(`cbb-lite` on the lite member). The install and uninstall cases need `sudo` without a
+password for the installers only, set up by a sudoers file in step 3. The emulator over
+`adb` on the Mac.
 
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
-on. Options, in order of preference:
-
-`pi4`. It is never a device under test, so reboots and failures of
+on: `pi4`. It is never a device under test, so reboots and failures of
 the others do not stop a run. It reaches the router over SSH to switch networks, the Mac
 to start and revert the Windows VM and the emulator (`vmrun`, `emulator`, `adb`), and the
 relay over SSH.
 
 **Starting a run**:
 
-- by hand on the controller (`go run ./tools/bench -suite smoke|full|soak|security`);
+- by hand on the controller (`go run ./tools/bench check`, `go run ./tools/bench smoke`,
+  later `full`, `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`,
+  `-only a,b` limits the run to some devices);
 - from GitHub: a self-hosted runner on the controller, started **only** by
   `workflow_dispatch` and by release tags, never by pull requests (a pull request from a
   stranger must never run code on the home network). The runner gets no repository
-  secrets and runs as `cbbbench` without sudo.
+  secrets and runs as its own user without sudo.
 
 **Building what is tested**: the bench takes the binaries from a CI run or a release
 (artifacts with checksums and attestations), never builds on the devices, so it tests what
@@ -226,7 +269,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 
 | Suite | Contents | Time | When |
 |---|---|---|---|
-| smoke | install, pair, one text each way per device, uninstall | ~10 min | after each merge that touches the service, on request |
+| smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
 | full | sections 6 to 9 | ~2 h | before each release candidate |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
@@ -244,7 +287,7 @@ Exit (0.4 may be released):
   issues;
 - every row of the README's status table marked "not yet" on real devices that the bench
   covers is updated;
-- every security test (S1 to S12) passes; there are no exceptions for security.
+- every security test (S1 to S16) passes; there are no exceptions for security.
 
 Severity: 1, data leaves the device unprotected or a device that is not in the group gets
 data; 2, sync stops or data is lost; 3, a wrong message, a slow path, a cosmetic fault.
@@ -258,14 +301,14 @@ the repository: it names the home network's addresses and the keys. Its shape:
 controller = "pi4"
 
 [device.deck]
-os = "linux"           # linux, linux-lite, darwin, windows, android
-ssh = "cbbbench@deck.lan"
-clipboard = "wayland"  # wayland, x11, none, macos, windows, android
+os = "linux"           # linux, linux-lite, darwin, windows
+ssh = "user@deck.lan"     # the user signed in on the desktop
+clipboard = "wayland"  # wayland, x11, none (cbb copy and paste), macos, windows
 roles = ["member", "hub", "away"]
 
 [device.win]
 os = "windows"
-ssh = "cbbbench@win.lan"
+ssh = "user@win.lan"
 clipboard = "windows"
 vm = { host = "mac", vmx = "~/Virtual Machines.localized/win.vmwarevm", snapshot = "clean" }
 
@@ -278,9 +321,11 @@ away_network = "bench_away"   # the network the bench moves the away device to
 ssh = "root@relay.example.net"
 ```
 
-Each device gets a `cbbbench` user, the controller's SSH key, and a sudoers file that allows
-only the commands the bench runs; the setup script in `tools/bench` does this once per
-device. Devices on the bench are test devices: the bench installs and wipes clipboardbridge
+`address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
+find it; a lite member always joins at an address, which `cbb pair` prints.
+`tools/bench/inventory.example.toml` is a complete example. Each device needs the
+controller's SSH key for its desktop user; a Windows device also runs
+`tools/bench/setup-windows.ps1` once. Devices on the bench are test devices: the bench installs and wipes clipboardbridge
 on them as it needs.
 
 ## 14. Order of work
@@ -288,12 +333,14 @@ on them as it needs.
 One pull request per step, merged in order:
 
 1. This document and the inventory format.
-2. The setup script (the `cbbbench` user on each device, the Windows VM in VMware Fusion,
-   the emulator, the router's away network) and `tools/bench`: inventory, SSH runner, clipboard drivers per platform, report; the smoke
-   suite on N1.
-3. The full matrix (section 6) and the life-cycle cases (section 7).
+2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
+   report, the `check` and `smoke` suites on N1; the Windows setup script.
+3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
+   P22, section 7): installing and
+   removing with the installers, the snapshot of the Windows VM, the emulator, the
+   router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
-5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S12.
+5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S16.
 6. The relay: the VPS set up as the production relay (hardening, firewall, no logs) running
    `cbb forward`; S8 and N4.
 7. The GitHub runner, the soak suite, the release checklist in `docs/maintaining.md`.
