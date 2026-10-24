@@ -523,3 +523,150 @@ func TestSwiftComputerAdmin(t *testing.T) {
 	}
 	t.Error("Go does not list the computer")
 }
+
+type adminVectors struct {
+	GroupCA []byte       `json:"group_ca"`
+	Records []Record     `json:"records"`
+	Roots   [][]byte     `json:"roots"` // the roots after the group CA: none, since no record that hands it over counts
+	Devices []rootDevice `json:"devices"`
+	Keys    []adminKey   `json:"keys"`
+	Chains  []rootChain  `json:"chains"`
+	Digest  string       `json:"digest"`
+}
+
+type adminKey struct {
+	Name    string  `json:"name"`
+	Key     KeyHash `json:"key"`
+	Revoked bool    `json:"revoked"`
+}
+
+// TestGoAdminVectors writes (with -update) and checks
+// testdata/interop/go-admins.json: what a computer's admin CA may do in a
+// phone's group (docs/protocol.md, section 10), as TestAdminPowers tells
+// it, for the phone kits and the lite member to agree with.
+func TestGoAdminVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-admins.json")
+	if *update {
+		pg := newPhoneGroup(t)
+		g := pg.root.Cert
+		pc, phone := pg.a, pg.b
+		pcChain, phoneChain := []*x509.Certificate{pc.Cert}, []*x509.Certificate{phone.Cert}
+		pcKey, phoneKey, rootKey := KeyHashOf(pc.Cert), KeyHashOf(phone.Cert), KeyHashOf(g)
+		pcMember, phoneMember := member(t, pc), member(t, phone)
+		laptop, tv, printer := member(t, pc), member(t, pc), member(t, pc)
+		own := newRoot(t) // the root the computer admin names, and holds the key of
+		all := []Record{
+			computerAdminRecord(t, pg, pcMember, "pc", pcKey),
+			adminRecord(t, g, pg.root, nil, phoneMember, "phone", phoneKey),
+			deviceRecord(t, g, pc, pcChain, laptop, "laptop", 2),
+			deviceRecord(t, g, pc, pcChain, tv, "tv", 3),
+			deviceRecord(t, g, pc, pcChain, printer, "printer", 4),
+			// Refused powers: an admin phone, the root, a new root.
+			revokeRecord(t, g, pc, pcChain, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil),
+			revokeRecord(t, g, pc, pcChain, []KeyHash{rootKey}, nil),
+			rootRecord(t, g, pc, pcChain, own.Cert),
+			revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil),
+			revokeRecord(t, g, phone, phoneChain, []KeyHash{rootKey}, nil),
+			// A device, before it was removed.
+			revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(tv)}, nil),
+			// The admin phone removes it, keeping the laptop and the
+			// printer and naming the tv again.
+			revokeRecord(t, g, phone, phoneChain, []KeyHash{pcKey, KeyHashOf(pcMember), KeyHashOf(tv)}, []KeyHash{KeyHashOf(laptop), KeyHashOf(printer)}),
+			// After: nothing it signs counts.
+			revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(printer)}, nil),
+			deviceRecord(t, g, pc, pcChain, member(t, pc), "thief's", 9),
+		}
+		s := NewRecords(g)
+		if _, errs := s.AddAll(all); len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		v := adminVectors{GroupCA: g.Raw, Records: all, Digest: s.Digest()}
+		for _, r := range s.Roots() {
+			v.Roots = append(v.Roots, r.Raw)
+		}
+		for _, d := range s.Devices() {
+			v.Devices = append(v.Devices, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+		}
+		for _, k := range []struct {
+			name string
+			key  KeyHash
+		}{
+			{"the root", rootKey}, {"the admin phone", phoneKey}, {"the computer admin", pcKey},
+			{"the laptop", KeyHashOf(laptop)}, {"the tv", KeyHashOf(tv)}, {"the printer", KeyHashOf(printer)},
+		} {
+			v.Keys = append(v.Keys, adminKey{Name: k.name, Key: k.key, Revoked: s.Revoked(k.key)})
+		}
+		for _, c := range []struct {
+			name  string
+			chain []*x509.Certificate
+		}{
+			{"the laptop", []*x509.Certificate{laptop, pc.Cert}},
+			{"the printer", []*x509.Certificate{printer, pc.Cert}},
+			{"the tv", []*x509.Certificate{tv, pc.Cert}},
+			{"the computer admin", []*x509.Certificate{pcMember, pc.Cert}},
+			{"the admin phone", []*x509.Certificate{phoneMember, phone.Cert}},
+		} {
+			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
+			for _, cert := range c.chain {
+				rc.Chain = append(rc.Chain, cert.Raw)
+			}
+			v.Chains = append(v.Chains, rc)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v adminVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if s.Digest() != v.Digest {
+		t.Error("the digest differs")
+	}
+	if len(s.Roots()) != 0 || len(v.Roots) != 0 {
+		t.Error("a computer admin handed the group over")
+	}
+	var got []rootDevice
+	for _, d := range s.Devices() {
+		got = append(got, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+	}
+	if a, b := mustJSON(t, got), mustJSON(t, v.Devices); a != b {
+		t.Errorf("devices %s, the file has %s", a, b)
+	}
+	want := map[string]bool{"the root": false, "the admin phone": false, "the computer admin": true, "the laptop": false, "the tv": true, "the printer": false}
+	for _, k := range v.Keys {
+		if s.Revoked(k.Key) != k.Revoked || k.Revoked != want[k.Name] {
+			t.Errorf("%s: revoked %v, the file says %v", k.Name, s.Revoked(k.Key), k.Revoked)
+		}
+	}
+	wantRefused := map[string]bool{"the laptop": false, "the printer": false, "the tv": true, "the computer admin": true, "the admin phone": false}
+	for _, c := range v.Chains {
+		var chain []*x509.Certificate
+		for _, der := range c.Chain {
+			cert, err := x509.ParseCertificate(der)
+			if err != nil {
+				t.Fatal(err)
+			}
+			chain = append(chain, cert)
+		}
+		if (s.Refused(chain) != nil) != c.Refused || c.Refused != wantRefused[c.Name] {
+			t.Errorf("%s: refused %v, the file says %v", c.Name, s.Refused(chain) != nil, c.Refused)
+		}
+	}
+}

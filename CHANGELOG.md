@@ -94,6 +94,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: an admin computer, whose admin key sits in a file, can remove ordinary devices
+  but no longer the root or another admin, and cannot hand a phone's group to a new root;
+  only the root and admin phones can. Nothing an admin signs after it was removed counts,
+  and each admin signs at most 1024 records. Every member (Go, the phone apps, the lite
+  member) enforces this from the records alone (docs/protocol.md, section 10).
+
 - Security: the iPhone shortcut's token only syncs. `POST /admit` and the shortcut
   "clipboardbridge: add a computer" are gone, so a copied token can no longer add a computer
   (which on Linux got the group's keys); computers join through the phone apps or

@@ -1449,6 +1449,10 @@ func TestAdminsShareTheIPhoneCA(t *testing.T) {
 		}
 	}
 	b.stop()
+	// An admin computer does not remove another admin; the root does.
+	if _, err := a.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("an admin removed another admin: %v", err)
+	}
 	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err != nil {
 		t.Fatal(err)
 	}

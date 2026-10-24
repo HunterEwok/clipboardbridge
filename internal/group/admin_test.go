@@ -216,3 +216,139 @@ func TestAllowSeesTheVerifiedChain(t *testing.T) {
 		t.Error("the server accepted a certificate from a revoked admin CA")
 	}
 }
+
+// computerAdminRecord is the root's record of a computer whose admin CA is
+// admin: its key sits in a file, so it has less power than an admin phone.
+func computerAdminRecord(t *testing.T, pg phoneGroup, cert *x509.Certificate, name string, admin KeyHash) Record {
+	t.Helper()
+	key := KeyHashOf(cert)
+	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(pg.root.Cert), TimeMS: 1,
+		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RoleFull, OS: OSLinux, Key: &key, Admin: &admin}, pg.root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// TestAdminPowers checks what a computer's admin CA may do: admit and
+// remove devices, but neither remove the root or another admin nor hand
+// the group over; and that nothing it signs counts once it is removed.
+func TestAdminPowers(t *testing.T) {
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	pc, phone := pg.a, pg.b // a computer admin and an admin phone
+	pcChain, phoneChain := []*x509.Certificate{pc.Cert}, []*x509.Certificate{phone.Cert}
+	pcKey, phoneKey, rootKey := KeyHashOf(pc.Cert), KeyHashOf(phone.Cert), KeyHashOf(g)
+	laptop, tv := member(t, pc), member(t, pc)
+	s := NewRecords(g)
+	for _, r := range []Record{
+		computerAdminRecord(t, pg, member(t, pc), "pc", pcKey),
+		adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
+		deviceRecord(t, g, pc, pcChain, laptop, "laptop", 2),
+		deviceRecord(t, g, pc, pcChain, tv, "tv", 3),
+	} {
+		mustAdd(t, s, r)
+	}
+
+	// The computer admin removes neither the admin phone nor the root, nor
+	// hands the group over; a record that tries counts for nothing.
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil))
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{rootKey}, nil))
+	own := newRoot(t)
+	mustAdd(t, s, rootRecord(t, g, pc, pcChain, own.Cert))
+	// The root it named signs nothing that counts.
+	mustAdd(t, s, revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil))
+	// Nor does the admin phone remove the root.
+	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{rootKey}, nil))
+	if s.Revoked(phoneKey) || s.Revoked(rootKey) || s.Revoked(KeyHashOf(laptop)) {
+		t.Error("a computer admin removed an admin or the root")
+	}
+	if len(s.Roots()) != 0 {
+		t.Error("a computer admin handed the group over")
+	}
+	// It does remove an ordinary device.
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(tv)}, nil))
+	if !s.Revoked(KeyHashOf(tv)) {
+		t.Error("a computer admin cannot remove a device")
+	}
+
+	// The admin phone removes the computer admin, keeping the laptop and
+	// carrying over the tv's removal. From then on nothing the computer
+	// admin signs counts.
+	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pcKey, KeyHashOf(tv)}, []KeyHash{KeyHashOf(laptop)}))
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(laptop)}, nil))
+	if !s.Revoked(pcKey) || !s.Revoked(KeyHashOf(tv)) {
+		t.Error("the admin phone did not remove the computer admin")
+	}
+	if s.Revoked(KeyHashOf(laptop)) {
+		t.Error("a removed admin's revocation counts")
+	}
+	if err := s.Refused([]*x509.Certificate{laptop, pc.Cert}); err != nil {
+		t.Errorf("the kept laptop is refused: %v", err)
+	}
+
+	// Each admin CA signs at most MaxPerAdmin records.
+	s2 := NewRecords(g)
+	for i := range MaxPerAdmin {
+		mustAdd(t, s2, deviceRecord(t, g, pc, pcChain, laptop, "laptop", int64(i+1)))
+	}
+	if _, err := s2.Add(deviceRecord(t, g, pc, pcChain, laptop, "laptop", MaxPerAdmin+1)); err == nil {
+		t.Error("an admin CA signed more than MaxPerAdmin records")
+	}
+	mustAdd(t, s2, deviceRecord(t, g, phone, phoneChain, laptop, "laptop", 1))
+}
+
+// ownRecord is the record a root signs for the device that holds it.
+func ownRecord(t *testing.T, root *CA, cert *x509.Certificate, name, r string) Record {
+	t.Helper()
+	key, dev := KeyHashOf(cert), DeviceID(cert.Subject.CommonName)
+	rec, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: 1, By: dev,
+		Device: dev, Name: name, Role: r, Key: &key}, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+// TestComputerTakeover checks that an admin computer hands over a group
+// whose root is a computer, as cbb takeover does, that a root still there
+// undoes it by removing that admin, and that in a phone's group the same
+// records count for nothing.
+func TestComputerTakeover(t *testing.T) {
+	for _, rootRole := range []string{RoleFull, RolePhone} {
+		pg := newPhoneGroup(t)
+		g, pc := pg.root.Cert, pg.a
+		pcChain, pcKey, rootKey := []*x509.Certificate{pc.Cert}, KeyHashOf(pc.Cert), KeyHashOf(g)
+		holder, laptop, pcCert := member(t, pg.root), member(t, pg.root), member(t, pc)
+		next := newRoot(t)
+		s := NewRecords(g)
+		for _, r := range []Record{
+			ownRecord(t, pg.root, holder, "root", rootRole),
+			computerAdminRecord(t, pg, pcCert, "pc", pcKey),
+			deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
+			rootRecord(t, g, pc, pcChain, next.Cert),
+			revokeRecord(t, g, next, nil, []KeyHash{rootKey, KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pcKey}),
+		} {
+			mustAdd(t, s, r)
+		}
+		took := len(s.Roots()) == 1 && s.Revoked(rootKey) && s.Revoked(KeyHashOf(holder))
+		if rootRole == RolePhone {
+			if took || len(s.Roots()) != 0 {
+				t.Error("a computer admin took a phone's group over")
+			}
+			continue
+		}
+		if !took {
+			t.Fatal("the admin computer did not take the group over from a lost root computer")
+		}
+		if err := s.Refused([]*x509.Certificate{laptop}); err != nil {
+			t.Errorf("the kept laptop is refused: %v", err)
+		}
+		// The old root is still there and removes the admin: the takeover
+		// no longer counts.
+		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
+		if len(s.Roots()) != 0 || s.Revoked(rootKey) || !s.Revoked(pcKey) {
+			t.Error("the old root did not undo the takeover by removing the admin")
+		}
+	}
+}

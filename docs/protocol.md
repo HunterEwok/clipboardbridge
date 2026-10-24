@@ -988,7 +988,7 @@ ID; informative). Types:
 |--------|--------|---------|
 | `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
-| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
+| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (groups with a root, not legacy groups) |
 
 The record ID is SHA-256 over the envelope's `body`. A member keeps every valid record it
 has seen, in a file next to its identity, at most 4096 records.
@@ -997,31 +997,62 @@ Validity and evaluation, which depend only on the set of records, never on their
 
 1. A record is **signed by an admin** when `group` is the member's group tag and `sig`
    verifies with the group CA key (empty `chain`) or with the key of an admin CA in
-   `chain` that verifies to the group CA. Other records are dropped.
-2. The **revoked set** is the union of `keys` of every `revoke` record signed by an admin,
-   including records whose signer is itself revoked. So two admins that revoke each other
-   are both revoked.
-3. A `device` or `root` record counts only when its signer's key is not revoked, and,
-   when an admin CA signed it, that admin CA still stands under its root (rule 4); a
+   `chain` that verifies to the group CA. Other records are dropped. A member takes at
+   most 1024 records signed by one admin CA, so a stolen admin cannot fill the set.
+2. **Signers and their powers.** The **known roots** are the group CA and the new root of
+   every `root` record that a known root's own key, or an admin phone's admin CA under a
+   known root, signed, or that a computer's admin CA signed under a known root that is a
+   computer (repeated until nothing is added). A root is a **computer** when its own key
+   signed a `device` record with `by` = `device` and role `full` and none with role
+   `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
+   signed, and no `revoke` record from that root's own key may name it. In a group whose
+   root is a computer the root key sits in a file as the admin's does, so an admin computer
+   may take the group over from a lost root, and a root that is still there undoes it by
+   removing that admin. Any other root that a computer's admin CA names is not known, so
+   its key signs nothing that counts. An admin CA is an **admin
+   phone's** when a `device` record with role `phone`, signed by a known root's own key,
+   names it in `admin`, and every `revoke` record from a known root's own key that names
+   that root keeps it. Any other admin CA is a **computer's**: its key sits in a file. The
+   **admin and root keys** are the keys of every root the set knows, every `admin` in a
+   `device` record and every admin CA that signed a record.
+3. The **revoked set**, in strata that do not depend on each other in a circle:
+   - a `revoke` record signed by a known root's own key counts;
+   - an admin or root key that a `revoke` record from a known root's own key, or an admin
+     or non-root key that one from an admin phone's admin CA under a known root, names is
+     revoked and **disabled**, whether or not that signer is itself revoked, so two admin
+     phones that revoke each other are both revoked;
+   - a `revoke` record signed by an admin CA counts only when its root is known, the CA is
+     not disabled and stands under its root, and it names no known root's key; a
+     computer's admin CA must also name no admin or root key. A record that does counts
+     for nothing.
+
+   The revoked set is the disabled keys and the `keys` of every `revoke` record that
+   counts. So a computer's admin CA removes devices but neither the root nor another admin,
+   and nothing it signs after it is removed counts. Its earlier removals stop counting with
+   it, so the record that removes an admin names again the keys its counting revocations
+   named.
+4. A `device` or `root` record counts only when its signer's key is not revoked, and,
+   when an admin CA signed it, that admin CA still stands under its root (rule 5); a
    `device` record also counts when every record that revoked its signer keeps the
    device's key, so the devices a removed admin admitted stay in the list. A `device`
-   record counts only when it was signed under a root on the path (rule 5).
-4. A certificate is refused when its key is revoked, or when its issuer's key is revoked
+   record counts only when it was signed under a root on the path (rule 6). A `root` record
+   counts only when its new root is known (rule 2).
+5. A certificate is refused when its key is revoked, or when its issuer's key is revoked
    and not every record that revoked that issuer keeps the certificate's key. This holds for
    a member certificate and its issuer (a root or an admin CA), and for an admin CA and its
    root.
-5. **Roots.** The group CA is the group's first root and names the group for good: the
+6. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
    only in a group with a root (path length 1), not in a legacy group, and its `root` is a self-signed CA
    with path length 1 and a P-256 key. Records are signed under any root the set knows: the
    group CA and the new root of every valid `root` record; a member adds a batch of records
    until nothing new is added, so a record signed under a new root is taken together with
    the record that names that root. The **path** starts at the group CA; from each root,
-   of the `root` records signed under it that count (rule 3) and whose new root is not on
+   of the `root` records signed under it that count (rule 4) and whose new root is not on
    the path yet, the one whose new root certificate has the smallest SHA-256 leads to the
    next root. The last root on the path is the current root. A member trusts every root on
    the path for member certificates and admin CAs (certificates from earlier roots stay
-   valid until they expire or rule 4 refuses them), takes renewals from any of them, and
+   valid until they expire or rule 5 refuses them), takes renewals from any of them, and
    keeps the path next to its identity. A new member gets the path in the Welcome's `roots`.
 
 **Handing the group over.** When the root is lost, an admin takes over: in a phone's group
@@ -1033,7 +1064,7 @@ an admin phone, never a computer; in a group a computer created an admin compute
 2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
    lost root's member and admin keys, and whose `keep` names every other key the old root
    certified: the member keys of the listed devices it admitted and the admin CA keys of the
-   other admins, its own included. By rule 4 nothing the old root's key signs from then on
+   other admins, its own included. By rule 5 nothing the old root's key signs from then on
    counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
    In a group a computer created the lost root held the iPhone CA, so the record also names
    the iPhone CA's key and the key of every `shortcut` device, and the new root makes a new
@@ -1066,7 +1097,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
   records that were new to it to its other peers, which have sent their hello, the same way.
   Invalid records are logged and dropped; the connection stays.
 - After adding a revocation a member first queues the new records for its peers, then closes
-  every connection whose peer certificate is now refused (rule 4), after what is queued for
+  every connection whose peer certificate is now refused (rule 5), after what is queued for
   it and a `bye`, and the TLS check refuses it from then on. So a revoked member that is
   connected gets the record that revokes it. A member that learns that its own key is
   revoked logs that it was removed from the group, and its status says so (`removed`); the
@@ -1133,7 +1164,7 @@ the offer and hand them to the tunnel. The lite member does not take part yet.
   offer from the same hub replaces the old one. `away hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
-- When records revoke a device (section 10, rule 4, on the chain it presented), the hub
+- When records revoke a device (section 10, rule 5, on the chain it presented), the hub
   forgets its key at once.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met
   the hub as a member, with the key that member sent. A device that is not yet a member

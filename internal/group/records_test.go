@@ -203,6 +203,7 @@ func TestLosingAPhone(t *testing.T) {
 	aChain := []*x509.Certificate{pg.a.Cert}
 	bChain := []*x509.Certificate{pg.b.Cert}
 	phoneA := member(t, pg.a)
+	phoneB := member(t, pg.b)
 	computer := member(t, pg.a)
 	stolen := member(t, pg.a) // admitted by the thief after the loss
 	viaB := member(t, pg.b)
@@ -210,14 +211,16 @@ func TestLosingAPhone(t *testing.T) {
 	s := NewRecords(root)
 	adminA, adminB := KeyHashOf(pg.a.Cert), KeyHashOf(pg.b.Cert)
 	for _, r := range []Record{
-		adminRecord(t, root, pg.a, aChain, phoneA, "phone A", adminA),
+		// The root records its admin phones.
+		adminRecord(t, root, pg.root, nil, phoneA, "phone A", adminA),
+		adminRecord(t, root, pg.root, nil, phoneB, "phone B", adminB),
 		deviceRecord(t, root, pg.a, aChain, computer, "computer", 2),
 		deviceRecord(t, root, pg.b, bChain, viaB, "via B", 3),
 	} {
 		mustAdd(t, s, r)
 	}
-	if got := admins(s.Devices()); got != "phone A" {
-		t.Fatalf("admins %q, want phone A", got)
+	if got := admins(s.Devices()); got != "phone A phone B" {
+		t.Fatalf("admins %q, want phone A phone B", got)
 	}
 
 	removal := revokeRecord(t, root, pg.b, bChain, []KeyHash{KeyHashOf(phoneA), adminA}, []KeyHash{KeyHashOf(computer)})
@@ -241,8 +244,8 @@ func TestLosingAPhone(t *testing.T) {
 		}
 	}
 	// The thief's records no longer count, and A is gone from the list.
-	if got := names(s.Devices()); got != "computer via B" {
-		t.Errorf("devices %q, want computer via B", got)
+	if got := names(s.Devices()); got != "computer phone B via B" {
+		t.Errorf("devices %q, want computer phone B via B", got)
 	}
 	// A revocation from the revoked A still counts: two admins that revoke
 	// each other both lose their rights.
@@ -274,6 +277,9 @@ func TestRecordsOrderIndependent(t *testing.T) {
 	bChain := []*x509.Certificate{pg.b.Cert}
 	c1, c2 := member(t, pg.a), member(t, pg.b)
 	all := []Record{
+		// Two admin phones that revoke each other.
+		adminRecord(t, root, pg.root, nil, member(t, pg.a), "phone A", KeyHashOf(pg.a.Cert)),
+		adminRecord(t, root, pg.root, nil, member(t, pg.b), "phone B", KeyHashOf(pg.b.Cert)),
 		deviceRecord(t, root, pg.a, aChain, c1, "one", 1),
 		deviceRecord(t, root, pg.b, bChain, c1, "renamed", 5),
 		deviceRecord(t, root, pg.b, bChain, c2, "two", 2),

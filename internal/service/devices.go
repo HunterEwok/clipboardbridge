@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -399,6 +400,8 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
 	case d.ID == string(root):
 		return "", fmt.Errorf("this computer holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name)
+	case admin != nil && !id.IsRoot():
+		return "", fmt.Errorf("%s is an admin; only the group's root or an admin phone removes an admin, since this computer's admin key sits in a file", d.Name)
 	case replace && !id.ServesPhone():
 		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}
@@ -411,8 +414,15 @@ func (s *Service) revoke(target string) (string, error) {
 	if admin != nil {
 		body.Keys = append(body.Keys, *admin)
 		s.recMu.Lock()
+		// Its own removals stop counting with it, so this record names
+		// them again.
+		for _, k := range s.records.RevokedBy(*admin) {
+			if !slices.Contains(body.Keys, k) {
+				body.Keys = append(body.Keys, k)
+			}
+		}
 		for _, k := range s.records.Admitted(*admin) {
-			if k != key {
+			if k != key && !slices.Contains(body.Keys, k) {
 				body.Keep = append(body.Keep, k)
 			}
 		}
