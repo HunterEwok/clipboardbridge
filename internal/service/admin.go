@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -61,7 +62,7 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	if err != nil || !ok {
 		return "", fmt.Errorf("the admin key that %s offers is no ECDSA key", d.Name)
 	}
-	adminCA, err := id.GroupCA.IssueAdmin(peer.ID, pub, s.cfg.now())
+	adminCA, err := id.RootCA().IssueAdmin(peer.ID, pub, s.cfg.now())
 	if err != nil {
 		return "", err
 	}
@@ -291,4 +292,116 @@ func (s *Service) findDevice(target string) (control.Device, error) {
 		ids = append(ids, d.ID)
 	}
 	return control.Device{}, fmt.Errorf("several devices are named %q; name one by its ID: %s", target, strings.Join(ids, ", "))
+}
+
+// takeOver takes the group over from its lost root, on an admin of a group
+// whose root is a computer, as an admin phone does in a phone group
+// (docs/protocol.md, section 10): it makes a new root and names it in a
+// root record that its admin CA signs. Under the new root it then revokes
+// the old root's key and the lost root's own key, keeping every device the
+// old root admitted and every other admin, records itself as the group's
+// root, and replaces the iPhone CA, which the lost root held.
+func (s *Service) takeOver(target string) (string, error) {
+	d, err := s.findDevice(target)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	s.recMu.Lock()
+	root := s.records.RootDevice()
+	s.recMu.Unlock()
+	switch {
+	case id.Legacy():
+		return "", errors.New("this group was made before roots and admins: every Linux and Windows member holds its keys, so there is no root to take over")
+	case id.IsRoot():
+		return "", errors.New("this device is the group's root already")
+	case !id.IsAdmin():
+		return "", errors.New("only an admin takes the group over; this device is none")
+	case !s.computerRooted():
+		return "", errors.New("the group's root is a phone: an admin phone takes the group over, never a computer")
+	case d.ID != string(root):
+		return "", fmt.Errorf("%s is not the group's root; cbb status shows which device is", d.Name)
+	case !id.ServesPhone():
+		return "", errors.New("this admin does not hold the iPhone CA yet, which the new root replaces; connect it to another admin first, or take the group over on another admin")
+	}
+	lost, ok := s.keyOf(group.DeviceID(d.ID), nd)
+	if !ok {
+		return "", fmt.Errorf("the key of %s is unknown", d.ID)
+	}
+	now := s.cfg.now()
+	newRoot, err := group.NewRootCA(now)
+	if err != nil {
+		return "", err
+	}
+	phoneCA, err := group.NewPhoneCA(now)
+	if err != nil {
+		return "", err
+	}
+	oldRoot, oldPhoneCA := group.KeyHashOf(id.Root()), group.KeyHashOf(id.PhoneCA.Cert)
+	rr, err := s.signRecord(id, group.RecordBody{Type: group.RecordRoot, Root: newRoot.Cert.Raw})
+	if err != nil {
+		return "", err
+	}
+	// The root record goes into the records first: what the new root signs
+	// counts only with it.
+	s.addRecords("", []group.Record{rr})
+	s.recMu.Lock()
+	roots := s.records.Roots()
+	keep := s.records.Admitted(oldRoot)
+	devs := s.records.Devices()
+	s.recMu.Unlock()
+	s.mu.Lock()
+	next, err := s.id.TakenOver(newRoot, roots)
+	if err == nil {
+		err = s.setIdentityLocked(next)
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	nd.SendRecords([]group.Record{rr})
+
+	revoke := group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{oldRoot, lost, oldPhoneCA}}
+	var self *group.Device
+	for i, dev := range devs {
+		switch {
+		case dev.Role == group.RoleShortcut:
+			revoke.Keys = append(revoke.Keys, dev.Key)
+		case dev.ID == id.ID:
+			self = &devs[i]
+		}
+		if dev.AdminKey != nil && dev.ID != group.DeviceID(d.ID) && !slices.Contains(keep, *dev.AdminKey) {
+			keep = append(keep, *dev.AdminKey)
+		}
+	}
+	revoke.Keep = slices.DeleteFunc(keep, func(k group.KeyHash) bool { return k == lost })
+	name := s.cfg.Name
+	if self != nil {
+		name = self.Name
+	}
+	if !group.ValidName(name) {
+		name = defaultName(group.RoleFull, id.ID)
+	}
+	key := group.KeyHashOf(id.Cert)
+	var rs []group.Record
+	for _, body := range []group.RecordBody{revoke, {Type: group.RecordDevice, Device: id.ID, Name: name, Role: group.RoleFull, OS: s.cfg.OS, Key: &key}} {
+		r, err := s.signRecord(next, body)
+		if err != nil {
+			return "", err
+		}
+		rs = append(rs, r)
+	}
+	s.mu.Lock()
+	err = s.takePhoneCALocked(*phoneCA)
+	s.mu.Unlock()
+	if err != nil {
+		return "", fmt.Errorf("replacing the iPhone CA: %w", err)
+	}
+	s.publish(nd, rs...)
+	nd.SharePhoneCA()
+	s.logf("cbb: took the group over from %s (%s); this device is the group's root now", d.Name, d.ID)
+	s.logf("cbb: replaced the group's iPhone CA; the iPhones that use the shortcut must pair again (cbb pair -phone)")
+	return d.Name, nil
 }

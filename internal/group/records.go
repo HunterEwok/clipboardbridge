@@ -418,7 +418,7 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 	}
 	if body.Type == RecordRoot {
 		if s.roots[sr.anchor].MaxPathLen != 1 {
-			return nil, errors.New("group: only a group whose root is a phone is handed to a new root")
+			return nil, errors.New("group: only a group with a root is handed to a new root")
 		}
 		root, err := x509.ParseCertificate(body.Root)
 		if err != nil {
