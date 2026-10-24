@@ -17,13 +17,21 @@ import (
 )
 
 // sshArgs are the options of every connection: keys only, no prompts, and
-// a dead device fails within seconds instead of hanging the run.
+// a dead device fails within seconds instead of hanging the run. The
+// controller's locale stays home: a device that lacks it warns on every
+// command.
 var sshArgs = []string{
 	"-o", "BatchMode=yes",
 	"-o", "ConnectTimeout=10",
 	"-o", "ServerAliveInterval=5",
 	"-o", "ServerAliveCountMax=3",
+	"-o", "SendEnv=-LANG -LC_*",
 }
+
+// runTimeout bounds one command of Run, so a command that hangs (a
+// clipboard tool waiting for a window, a stuck service) fails its case
+// instead of the whole run.
+const runTimeout = 30 * time.Second
 
 // RunError is a remote command that failed, with what it printed.
 type RunError struct {
@@ -44,6 +52,8 @@ func (e *RunError) Details() string { return e.Output }
 // Run runs a shell command on a device and returns its standard output.
 // On Windows the command is PowerShell; elsewhere it is sh.
 func Run(ctx context.Context, d *Device, cmd string, stdin string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	defer cancel()
 	c := command(ctx, d, cmd)
 	if stdin != "" {
 		c.Stdin = strings.NewReader(stdin)
@@ -51,6 +61,9 @@ func Run(ctx context.Context, d *Device, cmd string, stdin string) (string, erro
 	var out, errOut bytes.Buffer
 	c.Stdout, c.Stderr = &out, &errOut
 	if err := c.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			err = fmt.Errorf("no answer within %s: %w", runTimeout, err)
+		}
 		return out.String(), &RunError{Device: d.Name, Cmd: cmd, Err: err, Output: out.String() + errOut.String()}
 	}
 	return out.String(), nil
@@ -84,11 +97,25 @@ func Stream(ctx context.Context, d *Device, cmd string, lines func(string)) erro
 func command(ctx context.Context, d *Device, cmd string) *exec.Cmd {
 	args := append(append([]string{}, sshArgs...), d.SSH, "--")
 	if d.OS == "windows" {
-		args = append(args, "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePS("$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; "+cmd))
+		args = append(args, "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePS(psScript(cmd)))
 	} else {
-		args = append(args, "sh", "-c", shellQuote(cmd))
+		args = append(args, "sh", "-c", shellQuote(shPath+cmd))
 	}
 	return exec.CommandContext(ctx, "ssh", args...)
+}
+
+// shPath puts the places installers use on the PATH: an SSH command does not
+// run a login shell, and macOS then leaves out /usr/local/bin.
+const shPath = "PATH=$PATH:/usr/local/bin:/opt/homebrew/bin; export PATH; "
+
+// psScript wraps a PowerShell command for an SSH session. PowerShell writes
+// errors to a redirected stream as CLIXML in the console's code page; this
+// prints them as plain UTF-8 text instead, and exits with the code of the
+// last program the command ran.
+func psScript(cmd string) string {
+	return "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; " +
+		"[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false; $global:LASTEXITCODE = 0; " +
+		"try { " + cmd + "\n} catch { [Console]::Error.WriteLine(($_ | Out-String).Trim()); exit 1 }; exit $LASTEXITCODE"
 }
 
 // encodePS encodes a PowerShell script for -EncodedCommand, which takes it

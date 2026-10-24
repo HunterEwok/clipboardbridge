@@ -36,6 +36,12 @@ Set-Service sshd -StartupType Automatic
 Start-Service sshd
 
 New-Item -ItemType Directory -Force $dir | Out-Null
+# The tasks run with the user's plain token and must delete in.txt, which the
+# bench writes from an elevated SSH session; by SID, as names of groups and
+# users differ between languages of Windows.
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+icacls $dir /grant "*${sid}:(OI)(CI)M" | Out-Null
+if ($LASTEXITCODE) { throw "icacls could not give $sid access to $dir" }
 Set-Content -Encoding UTF8 "$dir\copy.ps1" @'
 $f = 'C:\ProgramData\cbbbench\in.txt'
 if (Test-Path $f) {

@@ -19,7 +19,7 @@ Go members). The bench covers what CI cannot:
 
 - real hardware and real operating systems: ARMv6 Pi Zero W, Pi 4, Steam Deck, an Apple
   Silicon Mac, Windows 11 on ARM, an Android phone;
-- the real desktop clipboards in a signed-in session (KDE on the Deck, the macOS
+- the real desktop clipboards in a signed-in session (GNOME on the Deck, the macOS
   pasteboard, the Win32 clipboard), not only the service's own store;
 - a real home network: Wi-Fi, mDNS on the router, two subnets, firewalls the installers
   configure;
@@ -53,7 +53,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, KDE (Wayland), ufw | LAN, or the router's away network | the Linux member: group CA holder in layout A, the hub, real Wayland clipboard; also the away device (plugged in, sleep off) |
+| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: group CA holder in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
 | `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |
@@ -98,7 +98,7 @@ The observation is always end to end, at the user's clipboard where one exists:
 |---|---|---|
 | `vps` (headless) | `cbb copy` | `cbb paste` |
 | `rpi0w` | `cbb-lite copy` | `cbb-lite watch -0` |
-| `deck` | `wl-copy` in the KDE session | `wl-paste` in the KDE session |
+| `deck` | `xclip` on the GNOME session's XWayland | `xclip -o` on the same display |
 | `mac` | `pbcopy` as the signed-in user | `pbpaste` |
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
 | `phone` | the app's UI through UI Automator over `adb` (bench only; users never need `adb`) | the app's UI / the system clipboard as the app sees it |
@@ -149,7 +149,7 @@ Every other way clipboardbridge works, so no path ships untested:
 |---|---|---|
 | P1 | Password managers: a copy marked secret by the app (macOS concealed type, Windows "exclude from history and cloud", the Wayland password hint) | travels as a secret (C6 rules) or not at all, as designed; never as plain text |
 | P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
-| P3 | Clipboard history (Windows Win+V, KDE Klipper) and copy echo | a received text is not sent back; no ping-pong between two members |
+| P3 | Clipboard history (Windows Win+V, the GNOME clipboard) and copy echo | a received text is not sent back; no ping-pong between two members |
 | P4 | The Mac listening mode (`r=mac`): the lite member and the emulator reach the Mac with no Linux member on | sync works; the Mac still dials Linux members |
 | P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
 | P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
