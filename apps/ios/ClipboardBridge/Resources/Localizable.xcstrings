@@ -201,6 +201,16 @@
         }
       }
     },
+    "Error messages show the error underneath them, to find out what failed. Tap the version seven times to see this switch.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Под сообщением об ошибке показывается сама ошибка, чтобы понять, что не так. Этот переключатель появляется после семи нажатий на версию."
+          }
+        }
+      }
+    },
     "Fetched from the computers.": {
       "localizations": {
         "ru": {
@@ -587,6 +597,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Настройки"
+          }
+        }
+      }
+    },
+    "Show error details": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать подробности ошибок"
           }
         }
       }

@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -615,9 +616,38 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
-            Row(Modifier.fillMaxWidth().padding(Tokens.spacingMedium)) {
+            // Seven taps on the version show the error details switch, as
+            // the build number shows the developer options.
+            var taps by remember { mutableIntStateOf(0) }
+            var shown by remember { mutableStateOf(model.settings.errorDetailsSwitch) }
+            var details by remember { mutableStateOf(model.settings.showsErrorDetails) }
+            Row(
+                Modifier.fillMaxWidth().clickable {
+                    taps++
+                    if (taps >= 7 && !shown) {
+                        shown = true
+                        model.settings.errorDetailsSwitch = true
+                    }
+                }.padding(Tokens.spacingMedium),
+            ) {
                 Text(stringResource(R.string.version), modifier = Modifier.weight(1f))
                 Text(version, fontFamily = FontFamily.Monospace, color = palette.textDim)
+            }
+            if (shown) {
+                HorizontalDivider(color = palette.grid)
+                Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                            details = !details
+                            model.settings.showsErrorDetails = details
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.error_details_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        Switch(checked = details, onCheckedChange = null)
+                    }
+                    Text(stringResource(R.string.error_details_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+                }
             }
             HorizontalDivider(color = palette.grid)
             Text(

@@ -109,4 +109,6 @@
     <string name="away_connecting">Подключение к хабу через туннель…</string>
     <string name="away_connected">Подключено к хабу через туннель.</string>
     <string name="away_error">Хаб не отвечает через туннель.</string>
+    <string name="error_details_switch">Показывать подробности ошибок</string>
+    <string name="error_details_body">Под сообщением об ошибке показывается сама ошибка, чтобы понять, что не так. Этот переключатель появляется после семи нажатий на версию.</string>
 </resources>

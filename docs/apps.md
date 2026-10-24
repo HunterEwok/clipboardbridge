@@ -62,7 +62,10 @@ they look, so both apps are built to the same plan.
    `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A phone that is not an admin shows the list without
    actions and says which phones are admins.
-5. **Settings**: theme, language, about, and once there is a group, "Away from home": one
+5. **Settings**: theme, language, about (seven taps on the version show the switch "Show
+   error details", which puts the error itself under each error message; it is on in debug
+   builds, and the launch argument or extra `ShowErrorDetails` sets it too), and once there
+   is a group, "Away from home": one
    switch that turns sync away from home on for this phone (docs/design.md, "Sync away from
    home"), the words of the design on what changes, and where it stands: waiting for the
    hub's answer, which comes on the next connection at home; at home, syncing directly;

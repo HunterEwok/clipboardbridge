@@ -111,4 +111,6 @@
     <string name="away_connecting">Connecting to the hub through the tunnel…</string>
     <string name="away_connected">Connected to the hub through the tunnel.</string>
     <string name="away_error">The hub does not answer through the tunnel.</string>
+    <string name="error_details_switch">Show error details</string>
+    <string name="error_details_body">Error messages show the error underneath them, to find out what failed. Tap the version seven times to see this switch.</string>
 </resources>
