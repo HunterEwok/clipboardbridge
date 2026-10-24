@@ -63,6 +63,9 @@ struct Body {
     time_ms: i64,
     #[serde(default)]
     device: String,
+    /// The signer's device ID: a root's own device record has by = device.
+    #[serde(default)]
+    by: String,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -446,7 +449,54 @@ impl Records {
 
     fn may_hand_over(&self, r: &Signed) -> bool {
         let ev = self.ev();
-        ev.root_signed(r) || (ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor))
+        ev.root_signed(r)
+            || (ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor))
+            || (ev.roots.contains(&r.anchor) && self.computer_hand_over(r))
+    }
+
+    /// Whether r, a root record, was signed by the admin CA of a computer
+    /// under its anchor, a root that is a computer itself, and only that
+    /// root's own records stop it, as Go's group.Records.computerHandOver.
+    fn computer_hand_over(&self, r: &Signed) -> bool {
+        if r.root.is_none() || r.signer == r.anchor {
+            return false;
+        }
+        let root = r.anchor;
+        let (mut admins, mut revoked, mut thawed) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+        let mut computer = false;
+        for o in self.by_id.values() {
+            let b = &o.body;
+            if o.signer != root || o.anchor != root {
+                continue;
+            }
+            match b.kind.as_str() {
+                "revoke" => revoked.extend(b.keys.iter().copied()),
+                "thaw" => thawed.extend(b.records.iter().copied()),
+                "device" => {
+                    let own = b.device == b.by;
+                    if own && role(&b.role) == "phone" {
+                        return false;
+                    }
+                    computer |= own && role(&b.role) == "full";
+                    if let Some(a) = b.admin
+                        && role(&b.role) != "phone"
+                    {
+                        admins.insert(a);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !computer || !admins.contains(&r.signer) || revoked.contains(&r.signer) {
+            return false;
+        }
+        !self.by_id.values().any(|o| {
+            o.body.kind == "freeze"
+                && o.anchor == root
+                && o.body.keys.contains(&r.signer)
+                && !thawed.contains(&o.id)
+                && (o.signer == root || (admins.contains(&o.signer) && !revoked.contains(&o.signer)))
+        })
     }
 
     fn ev(&self) -> Ref<'_, Eval> {
@@ -577,7 +627,8 @@ impl Records {
 
     /// The roots whose own signatures may count: the group CA and the new
     /// root of every root record that a known root's own key, or an admin
-    /// phone under a known root, signed.
+    /// phone under a known root, signed, or that an admin computer signed
+    /// under a root that is a computer (computer_hand_over).
     fn known_roots(&self) -> BTreeSet<KeyHash> {
         let mut known = BTreeSet::from([self.ca_key]);
         loop {
@@ -585,7 +636,9 @@ impl Records {
             let mut grew = false;
             for r in self.by_id.values() {
                 let Some(root) = &r.root else { continue };
-                if !known.contains(&r.anchor) || (r.signer != r.anchor && !phones.contains(&r.signer)) {
+                if !known.contains(&r.anchor)
+                    || (r.signer != r.anchor && !phones.contains(&r.signer) && !self.computer_hand_over(r))
+                {
                     continue;
                 }
                 grew |= known.insert(root.key_hash());

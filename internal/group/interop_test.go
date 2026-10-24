@@ -4,6 +4,7 @@
 package group
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
@@ -804,6 +805,118 @@ func TestGoFreezeVectors(t *testing.T) {
 		}
 		if (s.Refused(chain) != nil) != c.Refused || c.Refused != wantRefused[c.Name] {
 			t.Errorf("%s: refused %v, the file says %v", c.Name, s.Refused(chain) != nil, c.Refused)
+		}
+	}
+}
+
+type takeoverVectors struct {
+	Cases []takeoverCase `json:"cases"`
+}
+
+type takeoverCase struct {
+	Name    string     `json:"name"`
+	GroupCA []byte     `json:"group_ca"`
+	Records []Record   `json:"records"`
+	Roots   [][]byte   `json:"roots"` // the roots after the group CA
+	Keys    []adminKey `json:"keys"`
+	Digest  string     `json:"digest"`
+}
+
+// TestGoTakeoverVectors writes (with -update) and checks
+// testdata/interop/go-takeover.json: an admin computer hands over a group
+// whose root is a computer, as cbb takeover does (docs/protocol.md, section
+// 10, rule 2), but not a phone's group, not while another admin computer
+// has frozen it, and not once the old root removed it.
+func TestGoTakeoverVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-takeover.json")
+	wantRoots := map[string]int{"computer root": 1}
+	if *update {
+		var v takeoverVectors
+		for _, name := range []string{"computer root", "phone root", "frozen admin", "old root removes the admin"} {
+			pg := newPhoneGroup(t)
+			g, pc, pc2 := pg.root.Cert, pg.a, pg.b
+			pcChain, pcKey, pc2Key, rootKey := []*x509.Certificate{pc.Cert}, KeyHashOf(pc.Cert), KeyHashOf(pc2.Cert), KeyHashOf(g)
+			holder, laptop := member(t, pg.root), member(t, pg.root)
+			next := newRoot(t)
+			rootRole := RoleFull
+			if name == "phone root" {
+				rootRole = RolePhone
+			}
+			all := []Record{
+				ownRecord(t, pg.root, holder, "root", rootRole),
+				computerAdminRecord(t, pg, member(t, pc), "pc", pcKey),
+				computerAdminRecord(t, pg, member(t, pc2), "pc2", pc2Key),
+				deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
+				rootRecord(t, g, pc, pcChain, next.Cert),
+				revokeRecord(t, g, next, nil, []KeyHash{rootKey, KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pcKey, pc2Key}),
+			}
+			switch name {
+			case "frozen admin":
+				all = append(all, freezeRecord(t, g, pc2, []*x509.Certificate{pc2.Cert}, []KeyHash{pcKey}, nil))
+			case "old root removes the admin":
+				all = append(all, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
+			}
+			s := NewRecords(g)
+			if _, errs := s.AddAll(all); len(errs) > 0 {
+				t.Fatal(errs)
+			}
+			c := takeoverCase{Name: name, GroupCA: g.Raw, Records: all, Digest: s.Digest()}
+			for _, r := range s.Roots() {
+				c.Roots = append(c.Roots, r.Raw)
+			}
+			for _, k := range []struct {
+				name string
+				key  KeyHash
+			}{{"the old root", rootKey}, {"the root's device", KeyHashOf(holder)}, {"pc", pcKey}, {"the laptop", KeyHashOf(laptop)}} {
+				c.Keys = append(c.Keys, adminKey{Name: k.name, Key: k.key, Revoked: s.Revoked(k.key)})
+			}
+			v.Cases = append(v.Cases, c)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v takeoverVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Cases) != 4 {
+		t.Fatalf("%d cases", len(v.Cases))
+	}
+	for _, c := range v.Cases {
+		ca, err := x509.ParseCertificate(c.GroupCA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := NewRecords(ca)
+		if _, errs := s.AddAll(c.Records); len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		if len(s.Roots()) != len(c.Roots) || len(c.Roots) != wantRoots[c.Name] {
+			t.Errorf("%s: %d roots, the file has %d", c.Name, len(s.Roots()), len(c.Roots))
+		}
+		for i, r := range s.Roots() {
+			if i < len(c.Roots) && !bytes.Equal(r.Raw, c.Roots[i]) {
+				t.Errorf("%s: root %d differs", c.Name, i)
+			}
+		}
+		for _, k := range c.Keys {
+			want := k.Name == "pc" && c.Name == "old root removes the admin" ||
+				c.Name == "computer root" && (k.Name == "the old root" || k.Name == "the root's device")
+			if s.Revoked(k.Key) != k.Revoked || k.Revoked != want {
+				t.Errorf("%s: %s revoked %v, the file says %v", c.Name, k.Name, s.Revoked(k.Key), k.Revoked)
+			}
+		}
+		if s.Digest() != c.Digest {
+			t.Errorf("%s: the digest differs", c.Name)
 		}
 	}
 }

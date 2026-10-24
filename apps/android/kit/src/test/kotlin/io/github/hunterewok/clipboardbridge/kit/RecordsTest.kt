@@ -139,6 +139,30 @@ class RecordsTest {
     }
 
     /**
+     * An admin computer taking over a group whose root is a computer (go-takeover.json, from Go's
+     * TestGoTakeoverVectors): it counts there, but not in a phone's group, not while another admin computer has
+     * frozen it, and not once the old root removed it.
+     */
+    @Test
+    fun goTakeover() {
+        val cases = Interop.read("go-takeover.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+        assertEquals(4, cases.size)
+        for (c in cases) {
+            val name = c.str("name")
+            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+            val set = RecordSet()
+            assertEquals(records.size, set.addAll(records, b64(c.str("group_ca"))).size, name)
+            assertEquals(c.str("digest"), set.digest, name)
+            val roots = (c["roots"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
+            assertEquals(roots, set.roots.map { b64(it) }, name)
+            for (k in c.getValue("keys").jsonArray) {
+                val o = k.jsonObject
+                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
+            }
+        }
+    }
+
+    /**
      * Writes records this kit signed for internal/group's TestSwiftRecords,
      * under the Swift kit's file name, when CBB_INTEROP_OUT names a directory.
      */

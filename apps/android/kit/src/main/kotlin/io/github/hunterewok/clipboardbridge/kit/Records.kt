@@ -292,7 +292,10 @@ class RecordSet {
         /** The admin CAs of admin phones, which a root recorded. */
         val phoneAdmin = mutableSetOf<Key>()
 
-        /** The known roots: the group CA and the new roots that a known root or an admin phone under one handed the group to. */
+        /**
+         * The known roots: the group CA and the new roots that a known root or an admin phone under one handed the
+         * group to, or an admin computer under a root that is a computer.
+         */
         var known: Set<Key> = emptySet()
 
         /** The freezes that count, for each frozen admin CA (rule 4). */
@@ -341,8 +344,46 @@ class RecordSet {
         /** Whether a known root's own key signed e. */
         fun rootSigned(e: Entry): Boolean = e.signer == e.anchor && e.anchor in known
 
-        /** Whether the signer of a root record may hand the group over: a known root's own key or an admin phone's admin CA, never a computer's. */
-        fun mayHandOver(e: Entry): Boolean = rootSigned(e) || (e.signer in phoneAdmin && e.anchor in known)
+        /**
+         * Whether the signer of a root record may hand the group over: a known root's own key, an admin phone's
+         * admin CA, or a computer's admin CA when the root it replaces is a computer too (computerHandOver).
+         */
+        fun mayHandOver(e: Entry): Boolean =
+            rootSigned(e) || (e.signer in phoneAdmin && e.anchor in known) || (e.anchor in known && computerHandOver(e))
+
+        /**
+         * Whether e, a root record, was signed by the admin CA of a computer under its anchor, a root that is a
+         * computer itself, and only that root's own records stop it: a revocation of the admin CA, or a freeze of it
+         * that the root or another admin CA it certified (and did not revoke) signed and the root did not thaw, as
+         * Go's group.Records.computerHandOver (docs/protocol.md, section 10, rule 2).
+         */
+        private fun computerHandOver(e: Entry): Boolean {
+            if (e.body.root == null || e.signer == e.anchor) return false
+            val root = e.anchor
+            val admins = mutableSetOf<Key>()
+            val revokedByRoot = mutableSetOf<Key>()
+            val thawed = mutableSetOf<Key>()
+            var computer = false
+            for (o in entries) {
+                val b = o.body
+                if (o.signer != root || o.anchor != root) continue
+                when (b.type) {
+                    "revoke" -> b.keys.orEmpty().forEach { revokedByRoot.add(Key(it)) }
+                    "thaw" -> b.records.orEmpty().forEach { thawed.add(Key(it)) }
+                    "device" -> {
+                        val own = b.device != null && b.device == b.by
+                        if (own && Records.role(b.role) == "phone") return false
+                        if (own && Records.role(b.role) == "full") computer = true
+                        if (b.admin != null && Records.role(b.role) != "phone") admins.add(Key(b.admin))
+                    }
+                }
+            }
+            if (!computer || e.signer !in admins || e.signer in revokedByRoot) return false
+            return entries.none { o ->
+                o.body.type == "freeze" && o.anchor == root && o.body.keys.orEmpty().any { Key(it) == e.signer } &&
+                    o.id !in thawed && (o.signer == root || (o.signer in admins && o.signer !in revokedByRoot))
+            }
+        }
 
         /** The admin CA key that e, a device record of a phone signed by the own key of one of roots, names; null for any other record. */
         private fun phoneAdminOf(e: Entry, roots: Set<Key>): Key? {
@@ -361,7 +402,8 @@ class RecordSet {
                 var grew = false
                 for (e in entries) {
                     val root = e.body.root ?: continue
-                    if (e.body.type != "root" || e.anchor !in k || (e.signer != e.anchor && e.signer !in phones)) continue
+                    if (e.body.type != "root" || e.anchor !in k) continue
+                    if (e.signer != e.anchor && e.signer !in phones && !computerHandOver(e)) continue
                     val rk = rootKey(root) ?: continue
                     if (k.add(rk)) grew = true
                 }

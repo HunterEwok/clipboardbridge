@@ -250,7 +250,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// The admin CAs of admin phones, which a root recorded.
         var phoneAdmin: Set<Data> = []
         /// The known roots: the group CA and the new roots that a known
-        /// root or an admin phone under one handed the group to.
+        /// root or an admin phone under one handed the group to, or an
+        /// admin computer under a root that is a computer.
         var known: Set<Data> = []
         /// The freezes that count, for each frozen admin CA (rule 4).
         var freezes: [Data: [Entry]] = [:]
@@ -289,9 +290,45 @@ public struct RecordSet: Codable, Equatable, Sendable {
         func rootSigned(_ e: Entry) -> Bool { e.signer == e.anchor && known.contains(e.anchor) }
 
         /// Whether the signer of a root record may hand the group over: a
-        /// known root's own key or an admin phone's admin CA, never a
-        /// computer's, whose key sits in a file.
-        func mayHandOver(_ e: Entry) -> Bool { rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor)) }
+        /// known root's own key, an admin phone's admin CA, or a computer's
+        /// admin CA when the root it replaces is a computer too
+        /// (computerHandOver).
+        func mayHandOver(_ e: Entry) -> Bool {
+            rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor))
+                || (known.contains(e.anchor) && Self.computerHandOver(e, entries))
+        }
+
+        /// Whether e, a root record, was signed by the admin CA of a
+        /// computer under its anchor, a root that is a computer itself, and
+        /// only that root's own records stop it: a revocation of the admin
+        /// CA, or a freeze of it that the root or another admin CA it
+        /// certified (and did not revoke) signed and the root did not thaw,
+        /// as Go's group.Records.computerHandOver (docs/protocol.md, section
+        /// 10, rule 2).
+        private static func computerHandOver(_ e: Entry, _ entries: [Entry]) -> Bool {
+            guard e.body.root != nil, e.signer != e.anchor else { return false }
+            let root = e.anchor
+            var admins: Set<Data> = [], revoked: Set<Data> = [], thawed: Set<Data> = []
+            var computer = false
+            for o in entries where o.signer == root && o.anchor == root {
+                let b = o.body
+                switch b.type {
+                case "revoke": revoked.formUnion(b.keys ?? [])
+                case "thaw": thawed.formUnion(b.records ?? [])
+                case "device":
+                    let own = b.device != nil && b.device == b.by
+                    if own && Records.role(b.role) == "phone" { return false }
+                    if own && Records.role(b.role) == "full" { computer = true }
+                    if let a = b.admin, Records.role(b.role) != "phone" { admins.insert(a) }
+                default: break
+                }
+            }
+            guard computer, admins.contains(e.signer), !revoked.contains(e.signer) else { return false }
+            return !entries.contains { o in
+                o.body.type == "freeze" && o.anchor == root && (o.body.keys ?? []).contains(e.signer) && !thawed.contains(o.id)
+                    && (o.signer == root || (admins.contains(o.signer) && !revoked.contains(o.signer)))
+            }
+        }
 
         /// The admin CA key that e, a device record of a phone signed by the
         /// own key of one of roots, names; nil for any other record.
@@ -309,7 +346,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
             while true {
                 let phones = Set(entries.compactMap { Self.phoneAdmin(of: $0, roots: k) })
                 var grew = false
-                for e in entries where e.body.type == "root" && k.contains(e.anchor) && (e.signer == e.anchor || phones.contains(e.signer)) {
+                for e in entries where e.body.type == "root" && k.contains(e.anchor)
+                    && (e.signer == e.anchor || phones.contains(e.signer) || Self.computerHandOver(e, entries)) {
                     if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { grew = true }
                 }
                 if !grew { break }

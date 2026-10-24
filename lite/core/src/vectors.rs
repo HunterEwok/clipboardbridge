@@ -264,3 +264,29 @@ fn go_freeze() {
     }
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
 }
+
+/// An admin computer taking over a group whose root is a computer
+/// (go-takeover.json): it counts there, but not in a phone's group, not
+/// while another admin computer has frozen it, and not once the old root
+/// removed it.
+#[test]
+fn go_takeover() {
+    let v = vectors("go-takeover.json");
+    let cases = v["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 4);
+    for c in cases {
+        let mut s = Records::new(&cert(&c["group_ca"]));
+        let mut rs = records(&c["records"]);
+        rs.reverse();
+        let (_, errs) = s.add_all(&rs);
+        assert!(errs.is_empty(), "{errs:?}");
+        let roots: Vec<Vec<u8>> = s.roots().into_iter().map(|c| c.der).collect();
+        let want: Vec<Vec<u8>> = c["roots"].as_array().map(|a| a.iter().map(bytes).collect()).unwrap_or_default();
+        assert_eq!(roots, want, "{}", c["name"]);
+        for k in c["keys"].as_array().unwrap() {
+            let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+            assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{}: {}", c["name"], k["name"]);
+        }
+        assert_eq!(s.digest(), c["digest"].as_str().unwrap());
+    }
+}

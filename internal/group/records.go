@@ -600,36 +600,59 @@ func (s *Records) mayHandOver(r *signedRecord) bool {
 // computerHandOver reports whether r, a root record, was signed by the
 // admin CA of a computer under its anchor, a root that is a computer
 // itself: the root's own key signed a device record that names that admin
-// CA, the root's own device record is a computer's, and no revocation the
-// root's own key signed names the admin CA. In a group whose root is a
-// computer the root key sits in a file as the admin's does, so an admin
-// computer may take the group over from a lost root; a root that is still
-// there undoes it by removing that admin (docs/protocol.md, section 10,
-// rule 3).
+// CA, and the root's own device record is a computer's. Only that root's
+// own records can stop it: a revocation from its own key that names the
+// admin CA, or a freeze of it that the root's own key or another admin CA
+// it certified (and did not revoke) signed and the root's own key did not
+// thaw. In a group whose root is a computer the root key sits in a file as
+// the admin's does, so an admin computer may take the group over from a
+// lost root; a root that is still there undoes it by removing that admin
+// (docs/protocol.md, section 10, rule 2).
 func (s *Records) computerHandOver(r *signedRecord) bool {
 	if r.root == nil || r.signer == r.anchor {
 		return false
 	}
-	certified, computer := false, false
+	R := r.anchor
+	admins, revoked, thawed := map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}
+	computer := false
 	for _, o := range s.byID {
 		b := o.body
-		if o.signer != r.anchor || o.anchor != r.anchor {
+		if o.signer != R || o.anchor != R {
 			continue
 		}
-		switch {
-		case b.Type == RecordRevoke && slices.Contains(b.Keys, r.signer):
-			return false
-		case b.Type != RecordDevice:
-		case role(b.Role) == RolePhone && b.Device == b.By:
-			return false
-		case b.Device == b.By && role(b.Role) == RoleFull:
-			computer = true
-		}
-		if b.Type == RecordDevice && b.Admin != nil && *b.Admin == r.signer && role(b.Role) != RolePhone {
-			certified = true
+		switch b.Type {
+		case RecordRevoke:
+			for _, k := range b.Keys {
+				revoked[k] = true
+			}
+		case RecordThaw:
+			for _, id := range b.Records {
+				thawed[id] = true
+			}
+		case RecordDevice:
+			switch {
+			case role(b.Role) == RolePhone && b.Device == b.By:
+				return false
+			case b.Device == b.By && role(b.Role) == RoleFull:
+				computer = true
+			}
+			if b.Admin != nil && role(b.Role) != RolePhone {
+				admins[*b.Admin] = true
+			}
 		}
 	}
-	return certified && computer
+	if !computer || !admins[r.signer] || revoked[r.signer] {
+		return false
+	}
+	for _, o := range s.byID {
+		if o.body.Type != RecordFreeze || o.anchor != R || !slices.Contains(o.body.Keys, r.signer) || thawed[o.id] {
+			continue
+		}
+		if o.signer == R || admins[o.signer] && !revoked[o.signer] {
+			return false
+		}
+	}
+	return true
 }
 
 // An evaluation is what the set says about revocations (docs/protocol.md,

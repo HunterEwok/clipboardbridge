@@ -1318,12 +1318,21 @@ fingerprint. So the question is what an admin computer may do to another admin.
 
 **The rule.** The root and the admin phones remove any admin (`cbb revoke` on the root, Remove
 in the apps). An admin computer removes ordinary devices only; it never removes the root or
-another admin, and never hands the group over. Instead, **any admin freezes another admin
+another admin, and hands the group over only from a lost root computer (below). Instead, **any admin freezes another admin
 computer** (`cbb freeze <name>`): from then on the frozen admin is no admin, nothing it signs
 counts beyond the records it signed before, its connections are refused, and it cannot
 paste. The root or an admin phone then decides: Unfreeze in the apps (`cbb unfreeze` on a
 root computer) makes it an admin again, Remove takes it out for good. Nobody freezes the
 root or an admin phone. How the records say it is in protocol section 10, rule 4.
+
+**Taking over from a lost root computer.** In a group whose root is a computer, the root key
+sits in a file just as an admin computer's key does, so a stolen admin computer is no
+weaker than the root; and if the root is lost and only admin computers are left, the group
+has no other way on. So there, and only there, an admin computer may hand the group over
+(`cbb takeover`), and the records limit it: the takeover counts only while the old root's
+own records leave that admin standing. If the old root is still there, it removes the
+admin and the takeover stops counting, so a thief cannot take a group from a root that is
+still in use. A frozen admin computer does not take over until the old root thaws it. In a phone's group an admin computer never takes over.
 
 **Why freezing, and not one of the two simpler rules.**
 

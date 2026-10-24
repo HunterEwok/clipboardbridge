@@ -345,6 +345,20 @@ func TestComputerTakeover(t *testing.T) {
 		if err := s.Refused([]*x509.Certificate{laptop}); err != nil {
 			t.Errorf("the kept laptop is refused: %v", err)
 		}
+		// Another admin computer freezes it: the takeover stops counting
+		// until the root's own key thaws the freeze.
+		pc2 := adminCA(t, pg.root)
+		pc2Key := KeyHashOf(pc2.Cert)
+		mustAdd(t, s, computerAdminRecord(t, pg, member(t, pc2), "pc2", pc2Key))
+		freeze := freezeRecord(t, g, pc2, []*x509.Certificate{pc2.Cert}, []KeyHash{pcKey}, nil)
+		mustAdd(t, s, freeze)
+		if len(s.Roots()) != 0 || s.Revoked(rootKey) {
+			t.Error("a frozen admin computer took the group over")
+		}
+		mustAdd(t, s, thawRecord(t, g, pg.root, nil, []KeyHash{freeze.ID()}))
+		if len(s.Roots()) != 1 {
+			t.Error("the takeover does not count after the root's thaw")
+		}
 		// The old root is still there and removes the admin: the takeover
 		// no longer counts.
 		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
