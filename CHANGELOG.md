@@ -118,6 +118,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The phones' one button no longer puts the computers' older text over a clipboard it could
+  not read (paste not allowed, or not text): it leaves the clipboard as it is and says so,
+  with the details in debug builds.
 - A used remote invitation no longer reaches the hub: its guest tunnel goes as soon as the new
   device's member connection through it ends after the hub answered its tunnel key (at most
   2 minutes after the admission, as before), and the hub refuses a second pairing through it.

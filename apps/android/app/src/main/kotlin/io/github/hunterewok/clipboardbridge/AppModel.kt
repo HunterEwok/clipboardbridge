@@ -148,7 +148,7 @@ class AppModel(private val app: Context) {
     suspend fun sync() {
         busy = true
         try {
-            val board = Clipboard.read(app)
+            val board = Clipboard.readForSync(app)
             val (result, fetched) = withContext(Dispatchers.IO) { group.sync(board) }
             fetched?.let { (text, kind) -> Clipboard.write(app, text, kind) }
             message = Note(
@@ -286,6 +286,7 @@ class AppModel(private val app: Context) {
                 LiveGroup.Failure.Kind.NO_COMPUTERS -> R.string.no_computers
                 LiveGroup.Failure.Kind.NO_SCREEN, LiveGroup.Failure.Kind.UNREACHABLE -> R.string.error_unreachable
             }
+            is Clipboard.Unreadable -> R.string.error_clipboard_unreadable
             is PairingMember.Failure ->
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
             is PhoneGroup.Failure -> R.string.error_generic

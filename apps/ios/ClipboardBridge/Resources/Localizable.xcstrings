@@ -181,6 +181,16 @@
         }
       }
     },
+    "Could not read the clipboard, so it was left as it is. Allow pasting for Clipboard Bridge, or copy the text again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать буфер обмена, поэтому он оставлен как есть. Разрешите Clipboard Bridge вставку или скопируйте текст ещё раз."
+          }
+        }
+      }
+    },
     "Devices": {
       "localizations": {
         "ru": {

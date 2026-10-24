@@ -69,6 +69,7 @@
     <string name="error_no_network">Подключите телефон к домашнему Wi-Fi и попробуйте снова.</string>
     <string name="error_timed_out">За пять минут код никто не отсканировал. Попробуйте снова.</string>
     <string name="error_too_many_codes">Слишком много неверных кодов. Попробуйте снова с новым кодом.</string>
+    <string name="error_clipboard_unreadable">Не удалось прочитать буфер обмена, поэтому он оставлен как есть. Скопируйте текст ещё раз и повторите.</string>
     <string name="error_not_admin">Это может только телефон-админ.</string>
     <string name="error_unreachable">Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол clipboardbridge?</string>
     <string name="error_wrong_code">Код не совпал. Запустите cbb pair на компьютере ещё раз и отсканируйте новый код.</string>
