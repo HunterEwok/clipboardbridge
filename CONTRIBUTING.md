@@ -130,6 +130,7 @@ Cross tests between Go and Swift: Swift tests write vectors that Go reads, and t
 The app (macOS with Xcode):
 
 ```sh
+mobile/cbbtun/bind.sh ios apps/ios/Cbbtun.xcframework   # the tunnel the app links; needs Go
 brew install xcodegen
 cd apps/ios && xcodegen generate   # ClipboardBridge.xcodeproj and Info.plist are not committed
 xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \
