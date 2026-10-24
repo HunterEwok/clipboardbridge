@@ -85,6 +85,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: a member's certificate is checked against the issuer that actually signed it.
+  Before, the revocation check and the admin check looked at the second certificate a peer
+  presented, so extra certificates in a chain could get a removed admin's devices back in
+  and make an ordinary member count as an admin. Fixed in Go, the phone kits and the lite
+  member; the member protocol now passes on only the chain the handshake verified.
+
 - A removed device learns that it was removed: the member that revokes it sends it the
   revocation before it closes the connection, and `cbb status` on the removed device says so.
   Until now the device never got the record and still showed its group's devices.

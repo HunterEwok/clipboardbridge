@@ -288,9 +288,15 @@ public struct RecordSet: Codable, Equatable, Sendable {
         let ev = Eval(self)
         if ev.revoked.contains(leaf) { return "the device was removed from the group" }
         var top = leafCert
-        if chain.count >= 2, let admin = try? Records.keyHash(cert: chain[1]) {
+        // The issuer is the certificate that signed the leaf, wherever it is
+        // in the chain: a peer may add certificates it does not need.
+        if !ev.path.contains(where: { GroupCertificates.signed(leafCert, by: $0) }) {
+            guard let issuer = chain.dropFirst().first(where: { GroupCertificates.signed(leafCert, by: $0) }),
+                  let admin = try? Records.keyHash(cert: issuer) else {
+                return "the certificate's issuer is not in its chain"
+            }
             if !ev.issued(admin, leaf) { return "the admin that admitted the device was removed" }
-            (top, leaf) = (chain[1], admin)
+            (top, leaf) = (issuer, admin)
         }
         if let root = ev.path.first(where: { GroupCertificates.signed(top, by: $0) }), let rk = try? Records.keyHash(cert: root),
            !ev.issued(rk, leaf) {

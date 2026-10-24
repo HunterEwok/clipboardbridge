@@ -335,13 +335,16 @@ class RecordSet {
         val ev = Eval(this)
         if (leaf in ev.revoked) return "the device was removed from the group"
         var top = leafCert
-        if (chain.size >= 2) {
-            val admin = runCatching { Key(Records.keyHashOfCert(chain[1])) }.getOrNull()
-            if (admin != null) {
-                if (!ev.issued(admin, leaf)) return "the admin that admitted the device was removed"
-                top = chain[1]
-                leaf = admin
-            }
+        // The issuer is the certificate that signed the leaf, wherever it is
+        // in the chain: a peer may add certificates it does not need.
+        if (ev.path.none { GroupCertificates.signed(leafCert, it) }) {
+            val issuer = chain.drop(1).firstOrNull { GroupCertificates.signed(leafCert, it) }
+                ?: return "the certificate's issuer is not in its chain"
+            val admin = runCatching { Key(Records.keyHashOfCert(issuer)) }.getOrNull()
+                ?: return "the certificate's issuer is not in its chain"
+            if (!ev.issued(admin, leaf)) return "the admin that admitted the device was removed"
+            top = issuer
+            leaf = admin
         }
         val root = ev.path.firstOrNull { GroupCertificates.signed(top, it) }
         if (root != null) {

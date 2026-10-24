@@ -4,6 +4,8 @@
 package group
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"testing"
 	"time"
 )
@@ -158,5 +160,59 @@ func TestRenewalFromAnotherAdmin(t *testing.T) {
 		if _, err := id.WithCertFrom(c[0], c[1]); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// TestRefusedChecksTheRealIssuer checks that a member certificate from a
+// revoked admin CA stays refused whatever other certificates come with
+// it: the issuer checked is the one that signed the leaf, not the second
+// certificate presented.
+func TestRefusedChecksTheRealIssuer(t *testing.T) {
+	pg := newPhoneGroup(t)
+	recs := NewRecords(pg.root.Cert)
+	mustAdd(t, recs, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}, nil))
+	fromA, fromB := member(t, pg.a), member(t, pg.b)
+	for _, c := range []struct {
+		name  string
+		chain []*x509.Certificate
+		ok    bool
+	}{
+		{"revoked issuer", []*x509.Certificate{fromA, pg.a.Cert}, false},
+		{"revoked issuer behind another admin CA", []*x509.Certificate{fromA, pg.b.Cert, pg.a.Cert}, false},
+		{"issuer missing", []*x509.Certificate{fromA, pg.b.Cert}, false},
+		{"standing issuer", []*x509.Certificate{fromB, pg.b.Cert}, true},
+		{"standing issuer behind another CA", []*x509.Certificate{fromB, pg.a.Cert, pg.b.Cert}, true},
+		{"from the root, with extras", []*x509.Certificate{member(t, pg.root), pg.a.Cert}, true},
+	} {
+		if err := recs.Refused(c.chain); (err == nil) != c.ok {
+			t.Errorf("%s: Refused = %v", c.name, err)
+		}
+	}
+}
+
+// TestAllowSeesTheVerifiedChain checks that Allow gets the chain crypto/tls
+// verified, without certificates the peer added that the verification did
+// not use, so a revoked admin CA cannot hide behind another one.
+func TestAllowSeesTheVerifiedChain(t *testing.T) {
+	pg := newPhoneGroup(t)
+	server := adminIdentity(t, pg, nil)
+	client := adminIdentity(t, pg, pg.a)
+	recs := NewRecords(pg.root.Cert)
+	var seen []*x509.Certificate
+	at := TLSOptions{Now: func() time.Time { return t0 }, Allow: func(_ DeviceID, c []*x509.Certificate) error {
+		seen = c
+		return recs.Refused(c)
+	}}
+	cfg := client.ClientTLS(server.ID, at)
+	cfg.Certificates = []tls.Certificate{{Certificate: [][]byte{client.Cert.Raw, pg.b.Cert.Raw, pg.a.Cert.Raw}, PrivateKey: client.Key}}
+	if _, _, cerr, serr := handshake(t, cfg, server.ServerTLS(at)); cerr != nil || serr != nil {
+		t.Fatalf("handshake: client %v, server %v", cerr, serr)
+	}
+	if len(seen) != 2 || !seen[0].Equal(client.Cert) || !seen[1].Equal(pg.a.Cert) {
+		t.Fatalf("Allow got %d certificates; want the leaf and its admin CA", len(seen))
+	}
+	mustAdd(t, recs, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}, nil))
+	if _, _, _, serr := handshake(t, cfg, server.ServerTLS(at)); serr == nil {
+		t.Error("the server accepted a certificate from a revoked admin CA")
 	}
 }

@@ -321,6 +321,12 @@ func TestGoRootVectors(t *testing.T) {
 			{"a device from the new root", []*x509.Certificate{member(t, h.newRoot)}},
 			{"a new certificate from the old root", []*x509.Certificate{member(t, h.pg.root)}},
 			{"a new admin CA under the old root", []*x509.Certificate{member(t, thiefCA), thiefCA.Cert}},
+			// Certificates the issuer is not: the issuer checked is the one
+			// that signed the leaf, wherever it comes.
+			{"the computer B admitted, another CA first", []*x509.Certificate{h.byB, thiefCA.Cert, h.pg.b.Cert}},
+			{"a new admin CA under the old root, behind B's", []*x509.Certificate{member(t, thiefCA), h.pg.b.Cert, thiefCA.Cert}},
+			{"a new certificate from the old root, with B's CA", []*x509.Certificate{member(t, h.pg.root), h.pg.b.Cert}},
+			{"the computer B admitted, without its issuer", []*x509.Certificate{h.byB, thiefCA.Cert}},
 		} {
 			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
 			for _, cert := range c.chain {
@@ -383,8 +389,8 @@ func TestGoRootVectors(t *testing.T) {
 			refused++
 		}
 	}
-	if refused != 3 {
-		t.Errorf("%d chains refused, want the lost phone and the two from the old root's key", refused)
+	if refused != 6 {
+		t.Errorf("%d chains refused, want the lost phone, the two from the old root's key, those two with another CA, and one without its issuer", refused)
 	}
 }
 

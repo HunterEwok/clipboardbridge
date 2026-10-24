@@ -378,15 +378,21 @@ impl Records {
             return Some("the device was removed from the group");
         }
         let mut top = first;
-        if chain.len() >= 2 {
-            let admin = chain[1].key_hash();
+        let path = self.path();
+        // The issuer is the certificate that signed the leaf, wherever it is
+        // in the chain: a peer may add certificates it does not need.
+        if !path.iter().any(|root| first.issued_by(root)) {
+            let Some(issuer) = chain[1..].iter().find(|c| first.issued_by(c)) else {
+                return Some("the certificate's issuer is not in its chain");
+            };
+            let admin = issuer.key_hash();
             if !self.issued(&admin, &leaf) {
                 return Some("the admin that admitted the device was removed");
             }
-            top = &chain[1];
+            top = issuer;
             leaf = admin;
         }
-        for root in self.path() {
+        for root in path {
             if top.signed_by(&root) {
                 if !self.issued(&root.key_hash(), &leaf) {
                     return Some("the certificate is from a root that handed the group over");

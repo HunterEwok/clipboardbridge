@@ -275,7 +275,11 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	if id == n.identity().ID {
 		return errors.New("node: connected to itself")
 	}
-	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: cs.PeerCertificates[0], peerChain: cs.PeerCertificates, out: make(chan outgoing, queueLen),
+	chain := group.MemberChain(cs)
+	if len(chain) == 0 {
+		return errors.New("node: the peer's certificate was not verified")
+	}
+	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: chain[0], peerChain: chain, out: make(chan outgoing, queueLen),
 		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
 	defer close(c.finished)
 
@@ -629,7 +633,8 @@ type conn struct {
 	id       group.DeviceID
 	tc       *tls.Conn
 	peerCert *x509.Certificate // from the handshake
-	// peerChain is what the peer presented, leaf first, for Recheck.
+	// peerChain is the chain the handshake verified, leaf first and without
+	// its root (group.MemberChain), for Recheck and the admin checks.
 	peerChain []*x509.Certificate
 	since     time.Duration
 	out       chan outgoing

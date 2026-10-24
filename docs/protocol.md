@@ -972,7 +972,10 @@ computer can act as an admin until another admin removes it.
   issuer when the issuer is not the group CA. Checking a peer: the chain MUST verify to the
   group CA through at most one intermediate that is a CA with path length 0, with the time
   rule of section 2; then the revocation rules below apply. A legacy group, whose CA has path
-  length 0, has no intermediates.
+  length 0, has no intermediates. The issuer those rules check, and the admin CA that makes a
+  peer count as an admin, is the certificate that signed the leaf, found wherever it is in
+  the chain; other certificates the peer sends are ignored, and a leaf whose issuer is in
+  neither the chain nor the roots is refused.
 
 ### Records
 

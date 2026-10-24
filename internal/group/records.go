@@ -564,6 +564,10 @@ func (s *Records) kept(admin, leaf KeyHash) bool {
 // refused when its key is revoked, or when its issuer's key is revoked and
 // not every record that revoked the issuer keeps it: for the leaf and, when
 // an admin CA issued it, for that admin CA under its root.
+//
+// The issuer checked is the certificate that signed the leaf, wherever it
+// is in the chain: a peer may present certificates it does not need, and
+// TLS verification ignores them, so position alone proves nothing.
 func (s *Records) Refused(chain []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("group: no certificate")
@@ -572,15 +576,26 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	if s.Revoked(leaf) {
 		return errors.New("group: the device was removed from the group")
 	}
+	path := s.path()
 	top := chain[0]
-	if len(chain) >= 2 {
-		admin := KeyHashOf(chain[1])
+	if !signedByAny(top, path) {
+		var issuer *x509.Certificate
+		for _, c := range chain[1:] {
+			if top.CheckSignatureFrom(c) == nil {
+				issuer = c
+				break
+			}
+		}
+		if issuer == nil {
+			return errors.New("group: the certificate's issuer is not in its chain")
+		}
+		admin := KeyHashOf(issuer)
 		if !s.issued(admin, leaf) {
 			return errors.New("group: the admin that admitted the device was removed")
 		}
-		top, leaf = chain[1], admin
+		top, leaf = issuer, admin
 	}
-	for _, root := range s.path() {
+	for _, root := range path {
 		if top.CheckSignatureFrom(root) == nil {
 			if !s.issued(KeyHashOf(root), leaf) {
 				return errors.New("group: the certificate is from a root that handed the group over")
@@ -757,4 +772,14 @@ func LoadRecords(dir string, groupCA *x509.Certificate) (*Records, error) {
 	}
 	s.AddAll(all) // records of another group are dropped
 	return s, nil
+}
+
+// signedByAny reports whether one of roots signed c.
+func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
+	for _, root := range roots {
+		if c.CheckSignatureFrom(root) == nil {
+			return true
+		}
+	}
+	return false
 }
