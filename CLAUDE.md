@@ -66,6 +66,11 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
   C6 (RISC-V) and the S3 (Xtensa); `lite/src` adds the files, the sockets around the
   core's TLS, mDNS and the control socket.
+- `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
+  with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
+  until a release carries its fix for Rust 1.99; `qemu-test.sh` runs its self-test in
+  Espressif's QEMU (the `qemu` feature, without esp-hal's init and with a fixed
+  pseudo-random generator, never for a real chip).
 - `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
   parses the frames of `cbb-lite next`, `link.c` drives the UART to the Next's Pi; `make test`
   runs the parser's tests on the host).

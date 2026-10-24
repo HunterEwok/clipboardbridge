@@ -59,7 +59,9 @@ The order may change.
     every other character shown as `?`; Cyrillic follows later as an encoding of its own.
     No other device takes part: a Next without a Pi is future research (below), not a
     reason to lean on a computer in the group.
-15. **Planned.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
+15. **Started: the firmware (`lite/esp32`) builds for the Nano ESP32 and passes its self-test
+    (keys, certificates, a TLS 1.3 handshake on the chip) in QEMU; Wi-Fi, storage, pairing
+    and the USB keyboard are next.** Arduino: the Arduino Nano ESP32 (an ESP32-S3) as a full lite member, on the same
     `lite/core` as the other ESP32 boards, with the member protocol and TLS 1.3 on the
     board itself. It ships as a ready firmware built from our Rust code, flashed over USB
     with one command; a library for writing one's own Arduino sketches on top of it may

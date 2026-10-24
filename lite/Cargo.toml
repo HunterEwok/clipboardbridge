@@ -12,6 +12,7 @@ publish = false
 
 [workspace]
 members = ["core"]
+exclude = ["esp32"]
 
 [[bin]]
 name = "cbb-lite"
