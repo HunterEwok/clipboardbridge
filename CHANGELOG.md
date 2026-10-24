@@ -67,6 +67,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A removed device learns that it was removed: the member that revokes it sends it the
+  revocation before it closes the connection, and `cbb status` on the removed device says so.
+  Until now the device never got the record and still showed its group's devices.
 - The desktop connectors (the Mac's and Windows's agent, `cbb desktop` on Linux) take the
   first texts soon after the device joins a group. While the service turned them down for
   being in no group, they waited up to 30 seconds between tries, and the texts that came

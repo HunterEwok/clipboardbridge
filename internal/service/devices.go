@@ -48,6 +48,8 @@ func (r recordStore) Add(from group.DeviceID, rs []group.Record) []group.Record 
 	return r.s.addRecords(from, rs)
 }
 
+func (r recordStore) Settle(fresh []group.Record) { r.s.settleRecords(fresh) }
+
 // loadRecords reads the records of the group of id; a file that cannot be
 // read leaves the set empty, since the peers give the records again.
 func (s *Service) loadRecords(id *group.Identity) *group.Records {
@@ -60,30 +62,37 @@ func (s *Service) loadRecords(id *group.Identity) *group.Records {
 }
 
 // addRecords adds the valid records among rs, saves them, and returns
-// those that were new. After a new revocation it closes the connections
-// to devices that are now refused.
+// those that were new. settleRecords carries out what they change once
+// they are on their way to the peers.
 func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Record {
 	s.recMu.Lock()
+	defer s.recMu.Unlock()
 	recs := s.records
 	if recs == nil {
-		s.recMu.Unlock()
 		return nil
 	}
 	fresh, errs := recs.AddAll(rs)
 	for _, err := range errs {
 		s.logf("cbb: dropped a device record from %s: %v", orThis(from), err)
 	}
-	revoked, rooted := false, false
-	for _, r := range fresh {
-		revoked = revoked || r.Type() == group.RecordRevoke
-		rooted = rooted || r.Type() == group.RecordRoot
-	}
 	if len(fresh) > 0 {
 		if err := recs.Save(s.cfg.StateDir); err != nil {
 			s.logf("cbb: saving the device records: %v", err)
 		}
 	}
-	s.recMu.Unlock()
+	return fresh
+}
+
+// settleRecords follows records addRecords returned: a new root is
+// trusted, and after a revocation the connections to devices that are now
+// refused close. It runs after the records were queued for the peers, so
+// that a revoked device gets the record that revokes it.
+func (s *Service) settleRecords(fresh []group.Record) {
+	revoked, rooted := false, false
+	for _, r := range fresh {
+		revoked = revoked || r.Type() == group.RecordRevoke
+		rooted = rooted || r.Type() == group.RecordRoot
+	}
 	if rooted {
 		s.mu.Lock()
 		err := s.adoptRootsLocked()
@@ -95,7 +104,6 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 	if revoked || rooted {
 		s.afterRevocation()
 	}
-	return fresh
 }
 
 // adoptRootsLocked starts trusting the roots the records lead to when they
@@ -170,9 +178,11 @@ var errNotAdmin = errors.New("only an admin can change the devices list: a Linux
 
 // publish adds records made on this member and sends them to the peers.
 func (s *Service) publish(nd *node.Node, rs ...group.Record) {
-	if fresh := s.addRecords("", rs); len(fresh) > 0 && nd != nil {
+	fresh := s.addRecords("", rs)
+	if len(fresh) > 0 && nd != nil {
 		nd.SendRecords(fresh)
 	}
+	s.settleRecords(fresh)
 }
 
 // recordDevice records a device this member admitted, if it is an admin.

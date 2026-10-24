@@ -881,12 +881,11 @@ func (r *recordStore) Add(_ group.DeviceID, rs []group.Record) []group.Record {
 		}
 	}
 	r.mu.Unlock()
-	if len(fresh) > 0 {
-		r.node().Recheck()
-	}
 	r.added <- len(fresh)
 	return fresh
 }
+
+func (r *recordStore) Settle([]group.Record) { r.node().Recheck() }
 
 func (r *recordStore) allow(_ group.DeviceID, chain []*x509.Certificate) error {
 	r.mu.Lock()
@@ -909,7 +908,8 @@ func (m *member) record(t *testing.T, body group.RecordBody) group.Record {
 }
 
 // TestRecordsSpread links a, b and c in a chain: records a holds reach c
-// through b, and a revocation of c closes b's connection to it.
+// through b, and a revocation of c reaches c before it closes b's
+// connection to it.
 func TestRecordsSpread(t *testing.T) {
 	stores := []*recordStore{newRecordStore(), newRecordStore(), newRecordStore()}
 	var ms []*member
@@ -944,6 +944,14 @@ func TestRecordsSpread(t *testing.T) {
 	stores[0].Add("", []group.Record{revoke})
 	<-stores[0].added
 	a.SendRecords([]group.Record{revoke})
+	select {
+	case n := <-stores[2].added:
+		if n != 1 {
+			t.Fatalf("c added %d records of its revocation, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("c never got the record that revokes it")
+	}
 	if err := wait(t, bcDone, "c's connection on b's side"); err != nil {
 		t.Logf("c's connection ended with %v", err)
 	}
