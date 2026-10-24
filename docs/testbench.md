@@ -33,7 +33,7 @@ In scope for 0.4:
 
 | Area | What is tested |
 |---|---|
-| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux, `install.sh` and Homebrew on macOS, `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
+| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
 | Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
@@ -53,7 +53,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb desktop` uses it on GNOME); also the away device (plugged in, sleep off) |
+| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
 | `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |

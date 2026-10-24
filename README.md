@@ -12,10 +12,10 @@ The [quick start](docs/quickstart.md) walks through installing and pairing step 
 In short, from the latest release:
 
 ```sh
-# Linux with systemd (x86-64, ARM64, ARMv7, ARMv6)
+# Linux with systemd (x86-64, ARM64, ARMv7, ARMv6) and macOS (Apple silicon, Intel)
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 
-# macOS, with Homebrew (the second line starts the service; run it again after brew upgrade)
+# or on macOS, with Homebrew (the second line starts the service; run it again after brew upgrade)
 brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
 ```

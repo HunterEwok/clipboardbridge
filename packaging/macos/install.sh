@@ -137,6 +137,11 @@ if [ -x "$fw" ]; then
 	fi
 fi
 
+# uninstall.sh stays where get.sh's download does not: beside the program,
+# as on Linux.
+install -d -m 0755 /usr/local/share/clipboardbridge
+install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
+
 # restart DOMAIN LABEL PLIST stops the job if it runs and starts it again.
 # bootout returns before launchd has let the job go, and a bootstrap in that
 # moment fails with "5: Input/output error", so wait for it to be gone.

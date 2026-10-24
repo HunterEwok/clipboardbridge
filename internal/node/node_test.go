@@ -885,6 +885,23 @@ func (r *recordStore) Add(_ group.DeviceID, rs []group.Record) []group.Record {
 	return fresh
 }
 
+// fresh waits for an Add that took records, skipping those that brought
+// only records the store had: a peer may send them again, as when b passes
+// on the device record that c already took from it.
+func (r *recordStore) fresh(timeout time.Duration) (int, bool) {
+	deadline := time.After(timeout)
+	for {
+		select {
+		case n := <-r.added:
+			if n > 0 {
+				return n, true
+			}
+		case <-deadline:
+			return 0, false
+		}
+	}
+}
+
 func (r *recordStore) Settle([]group.Record) { r.node().Recheck() }
 
 func (r *recordStore) allow(_ group.DeviceID, chain []*x509.Certificate) error {
@@ -927,13 +944,12 @@ func TestRecordsSpread(t *testing.T) {
 	_, bcDone := link(t, b, c)
 	link(t, a, b)
 	for i, st := range stores[1:] {
-		select {
-		case n := <-st.added:
-			if n != 1 {
-				t.Fatalf("store %d added %d records, want 1", i+1, n)
-			}
-		case <-time.After(5 * time.Second):
+		n, ok := st.fresh(5 * time.Second)
+		if !ok {
 			t.Fatalf("store %d got no records", i+1)
+		}
+		if n != 1 {
+			t.Fatalf("store %d added %d records, want 1", i+1, n)
 		}
 	}
 	if stores[2].Digest() != stores[0].Digest() {
@@ -944,13 +960,12 @@ func TestRecordsSpread(t *testing.T) {
 	stores[0].Add("", []group.Record{revoke})
 	<-stores[0].added
 	a.SendRecords([]group.Record{revoke})
-	select {
-	case n := <-stores[2].added:
-		if n != 1 {
-			t.Fatalf("c added %d records of its revocation, want 1", n)
-		}
-	case <-time.After(5 * time.Second):
+	n, ok := stores[2].fresh(5 * time.Second)
+	if !ok {
 		t.Fatal("c never got the record that revokes it")
+	}
+	if n != 1 {
+		t.Fatalf("c added %d records of its revocation, want 1", n)
 	}
 	if err := wait(t, bcDone, "c's connection on b's side"); err != nil {
 		t.Logf("c's connection ended with %v", err)
