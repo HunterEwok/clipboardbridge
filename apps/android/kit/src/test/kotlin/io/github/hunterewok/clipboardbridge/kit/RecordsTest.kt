@@ -115,6 +115,29 @@ class RecordsTest {
         }
     }
 
+    /** An admin computer freezing another (go-freeze.json, docs/protocol.md section 10, rule 4), as Go's TestGoFreezeVectors writes it. */
+    @Test
+    fun goFreeze() {
+        val v = Interop.read("go-freeze.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+        val set = RecordSet()
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        assertEquals(v.str("digest"), set.digest)
+        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
+        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
+        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
+        for (k in v.getValue("keys").jsonArray) {
+            val o = k.jsonObject
+            assertEquals(o.getValue("frozen").jsonPrimitive.boolean, set.isFrozen(b64(o.str("key"))), o.str("name"))
+            assertTrue(!set.isRevoked(b64(o.str("key"))), o.str("name"))
+        }
+        for (c in v.getValue("chains").jsonArray) {
+            val o = c.jsonObject
+            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
+            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
+        }
+    }
+
     /**
      * Writes records this kit signed for internal/group's TestSwiftRecords,
      * under the Swift kit's file name, when CBB_INTEROP_OUT names a directory.

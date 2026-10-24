@@ -71,6 +71,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val isRoot: Boolean = false,
         /** A computer this phone, the root, can make an admin: it offers an admin key. */
         val canMakeAdmin: Boolean = false,
+        /** An admin computer another admin froze: the root or an admin phone unfreezes or removes it. */
+        val frozen: Boolean = false,
     )
 
     enum class SyncResult { SENT, FETCHED, NOTHING_NEW }
@@ -114,7 +116,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 Device(
                     id = it.id, name = it.name, online = it.id == g.device || it.id in online, role = it.role, os = it.os, isSelf = it.id == g.device,
                     admin = it.admin || it.id == root, isRoot = it.id == root,
-                    canMakeAdmin = g.isRoot && !it.admin && it.role == "full" && offers[it.id] != null,
+                    canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
+                    frozen = it.frozen,
                 )
             }
         }
@@ -338,6 +341,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         withContext(Dispatchers.IO) { adopt(g) }
         currentNode?.sendRecords(listOf(r))
         currentNode?.close(id)
+    }
+
+    /**
+     * Unfreezes an admin computer that another admin froze
+     * (docs/protocol.md, section 10, rule 4): a thaw record signed with this
+     * phone's root or admin key, sent to every connected computer.
+     */
+    suspend fun unfreeze(id: String) {
+        val ca = caSigner(R.string.reason_unfreeze)
+        val g = copyOfState() ?: return
+        val r = withContext(Dispatchers.IO) { g.thaw(id, ca, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        currentNode?.sendRecords(listOf(r))
     }
 
     /**

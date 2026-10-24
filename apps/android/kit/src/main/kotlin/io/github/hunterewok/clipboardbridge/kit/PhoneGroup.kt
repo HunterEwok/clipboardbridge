@@ -214,6 +214,21 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * Unfreezes an admin computer that another admin froze (section 10,
+     * rule 4): a thaw record that ends every freeze of it. The root and the
+     * admin phones do it; Remove takes the computer out for good instead.
+     */
+    fun thaw(device: String, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
+        val admin = d.adminKey
+        if (!d.frozen || admin == null) throw Failure("not frozen")
+        val r = Records.thaw(records.freezesOf(admin), tag, this.device, now, caSigner, adminCA)
+        records.add(r, groupCA)
+        return r
+    }
+
+    /**
      * Makes a computer an admin (section 10, "A computer as admin"): the
      * root issues an admin CA for the admin key the computer's hello offered
      * (a SubjectPublicKeyInfo) and signs its device record again, naming that
@@ -224,6 +239,7 @@ class PhoneGroup internal constructor(
         if (!isRoot) throw Failure("only the root makes admins")
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         if (d.role != "full") throw Failure("not a computer")
+        if (d.frozen) throw Failure("frozen: unfreeze it or remove it")
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
         val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os)
         computerAdmins[device] = ca

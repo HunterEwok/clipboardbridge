@@ -34,6 +34,9 @@ object Records {
         val keep: List<ByteArray>? = null,
         // root
         val root: ByteArray? = null,
+        // freeze: the records of the frozen admins that still count; thaw:
+        // the freeze records it ends. Both are record IDs.
+        val records: List<ByteArray>? = null,
     ) {
         fun encode(): ByteArray = Wire.encode(
             Wire.obj(
@@ -51,6 +54,7 @@ object Records {
                 "keys" to Wire.list(keys),
                 "keep" to Wire.list(keep),
                 "root" to Wire.bytes(root),
+                "records" to Wire.list(records),
             ),
         )
 
@@ -74,6 +78,7 @@ object Records {
                         keys = o.optBytesList("keys"),
                         keep = o.optBytesList("keep"),
                         root = o.optBytes("root"),
+                        records = o.optBytesList("records"),
                     )
                 } catch (e: WireTypeException) {
                     null
@@ -142,6 +147,10 @@ object Records {
         adminCA: ByteArray? = null,
     ): Member.Record = sign(Body(type = "revoke", group = group, timeMS = now.toEpochMilli(), by = by, keys = keys, keep = keep), signer, adminCA)
 
+    /** A thaw record that ends the freeze records with the IDs freezes (docs/protocol.md, section 10, rule 4). */
+    fun thaw(freezes: List<ByteArray>, group: String, by: String, now: Instant, signer: CertificateSigner, adminCA: ByteArray? = null): Member.Record =
+        sign(Body(type = "thaw", group = group, timeMS = now.toEpochMilli(), by = by, records = freezes), signer, adminCA)
+
     /** A root record that hands the group to newRoot, a phone's root CA. */
     fun root(newRoot: ByteArray, group: String, by: String, now: Instant, signer: CertificateSigner, adminCA: ByteArray? = null): Member.Record =
         sign(Body(type = "root", group = group, timeMS = now.toEpochMilli(), by = by, root = newRoot), signer, adminCA)
@@ -180,10 +189,12 @@ class RecordSet {
         val adminKey: ByteArray? = null,
         /** Its operating system; null when its record does not tell. */
         val os: String? = null,
+        /** An admin computer another admin froze: no admin until the root or an admin phone unfreezes it, and refused. */
+        val frozen: Boolean = false,
     ) {
         override fun equals(other: Any?): Boolean =
             other is Device && id == other.id && name == other.name && role == other.role && os == other.os && key.contentEquals(other.key) &&
-                admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey)
+                admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey) && frozen == other.frozen
 
         override fun hashCode(): Int = id.hashCode()
     }
@@ -256,6 +267,8 @@ class RecordSet {
     private class Entry(
         val record: Member.Record,
         val body: Records.Body,
+        /** The record ID. */
+        val id: Key,
         /** The key hash of the signer: a root, or an admin CA. */
         val signer: Key,
         /** The key hash of the root it was signed under. */
@@ -282,6 +295,12 @@ class RecordSet {
         /** The known roots: the group CA and the new roots that a known root or an admin phone under one handed the group to. */
         var known: Set<Key> = emptySet()
 
+        /** The freezes that count, for each frozen admin CA (rule 4). */
+        val freezes = mutableMapOf<Key, MutableList<Entry>>()
+
+        /** The device keys of the frozen admins. */
+        val frozenKeys = mutableSetOf<Key>()
+
         /** The roots from the group CA to the current one, DER. */
         val path = mutableListOf<ByteArray>()
         val onPath = mutableSetOf<Key>()
@@ -296,7 +315,7 @@ class RecordSet {
                     val b = Records.Body.decode(r.body) ?: return@mapNotNull null
                     val a = anchor(r, roots) ?: return@mapNotNull null
                     val anchor = runCatching { Records.keyHashOfCert(a.first) }.getOrNull() ?: return@mapNotNull null
-                    Entry(r, b, Key(a.second), Key(anchor))
+                    Entry(r, b, Key(Records.id(r)), Key(a.second), Key(anchor))
                 }
                 evaluate(groupCA, roots)
                 // From each root, the root record under it that counts and
@@ -378,8 +397,35 @@ class RecordSet {
                     }
                 }
             }
+            // The device keys of each computer's admin CA, and the freezes that
+            // a root or an admin phone ended.
+            val computers = mutableMapOf<Key, MutableList<Key>>()
+            val thawed = mutableSetOf<Key>()
             for (e in entries) {
-                if (e.body.type != "revoke") continue
+                val b = e.body
+                val admin = b.admin
+                val key = b.key
+                if (b.type == "device" && admin != null && key != null && Records.role(b.role) != "phone" && rootSigned(e) && Key(admin) !in phoneAdmin) {
+                    computers.getOrPut(Key(admin)) { mutableListOf() }.add(Key(key))
+                } else if (b.type == "thaw" && (rootSigned(e) || (e.signer in phoneAdmin && e.anchor in known && e.signer !in disabled))) {
+                    b.records.orEmpty().forEach { thawed.add(Key(it)) }
+                }
+            }
+            // A frozen admin's freezes still count, so two admins that freeze
+            // each other both stay frozen until the root or an admin phone
+            // decides.
+            for (e in entries) {
+                if (e.body.type != "freeze" || e.id in thawed || e.anchor !in known) continue
+                if (e.signer != e.anchor && (e.signer in disabled || !standsForRoots(e.anchor, e.signer))) continue
+                val keys = e.body.keys.orEmpty().map { Key(it) }
+                if (keys.isEmpty() || keys.any { it !in computers }) continue
+                for (key in keys) {
+                    freezes.getOrPut(key) { mutableListOf() }.add(e)
+                    frozenKeys.addAll(computers[key].orEmpty())
+                }
+            }
+            for (e in entries) {
+                if (e.body.type != "revoke" || !kept(e)) continue
                 val keys = e.body.keys.orEmpty().map { Key(it) }
                 val counts = if (e.signer == e.anchor) {
                     e.anchor in known
@@ -397,6 +443,17 @@ class RecordSet {
                 }
             }
         }
+
+        /** Whether every freeze of e's signer names e, as for the records of an admin that is not frozen. */
+        fun kept(e: Entry): Boolean =
+            freezes[e.signer].orEmpty().all { f -> f.body.records.orEmpty().any { Key(it) == e.id } }
+
+        /** Whether a key is frozen: a frozen admin CA, or the device key of a frozen admin. */
+        fun frozen(k: Key): Boolean = k in freezes || k in frozenKeys
+
+        /** Whether a device record counts. */
+        fun counts(e: Entry): Boolean =
+            e.anchor in onPath && fromRoot(e) && issued(e.signer, Key(e.body.key ?: ByteArray(0))) && kept(e)
 
         /** Whether issuer is revoked only by records that keep the key k, as when an admin is removed and the devices it admitted stay. */
         fun kept(issuer: Key, k: Key): Boolean {
@@ -417,6 +474,13 @@ class RecordSet {
     /** Whether a key hash is revoked. */
     fun isRevoked(keyHash: ByteArray): Boolean = Key(keyHash) in Eval(this).revoked
 
+    /** Whether a key hash is frozen (docs/protocol.md, section 10, rule 4): a computer's admin CA that a freeze names, or such an admin's device key. */
+    fun isFrozen(keyHash: ByteArray): Boolean = Eval(this).frozen(Key(keyHash))
+
+    /** The IDs of the freezes of the admin CA with key hash admin that count: what a thaw of it ends. */
+    fun freezesOf(admin: ByteArray): List<ByteArray> =
+        Eval(this).freezes[Key(admin)].orEmpty().map { Records.id(it.record) }.sortedWith { a, b -> compareBytes(a, b) }
+
     /** The roots that took the group over from the group CA, in order, DER; the last is the current root. Empty when it was never handed over. */
     val roots: List<ByteArray> get() = Eval(this).path.drop(1)
 
@@ -433,6 +497,7 @@ class RecordSet {
         var leaf = runCatching { Key(Records.keyHashOfCert(leafCert)) }.getOrNull() ?: return "no certificate"
         val ev = Eval(this)
         if (leaf in ev.revoked) return "the device was removed from the group"
+        if (ev.frozen(leaf)) return "the device is a frozen admin"
         var top = leafCert
         // The issuer is the certificate that signed the leaf, wherever it is
         // in the chain: a peer may add certificates it does not need.
@@ -442,6 +507,11 @@ class RecordSet {
             val admin = runCatching { Key(Records.keyHashOfCert(issuer)) }.getOrNull()
                 ?: return "the certificate's issuer is not in its chain"
             if (!ev.issued(admin, leaf)) return "the admin that admitted the device was removed"
+            // A frozen admin's certificates hold only for devices the records
+            // already list.
+            if (ev.frozen(admin) && ev.entries.none { it.body.type == "device" && it.body.key?.let { k -> Key(k) } == leaf && ev.counts(it) }) {
+                return "the admin that certified the device is frozen"
+            }
             top = issuer
             leaf = admin
         }
@@ -468,7 +538,7 @@ class RecordSet {
                 val b = e.body
                 if (b.type != "device") continue
                 val d = b.device ?: continue
-                if (e.anchor !in ev.onPath || !ev.fromRoot(e) || !ev.issued(e.signer, Key(b.key ?: ByteArray(0)))) continue
+                if (!ev.counts(e)) continue
                 val cur = latest[d]
                 if (cur != null) {
                     val newer = if (b.timeMS != cur.body.timeMS) {
@@ -483,7 +553,11 @@ class RecordSet {
             return latest.mapNotNull { (d, e) ->
                 val key = e.body.key ?: return@mapNotNull null
                 if (Key(key) in ev.revoked) return@mapNotNull null
-                Device(d, e.body.name ?: d, Records.role(e.body.role), key, e.body.admin?.let { Key(it) !in ev.revoked } ?: false, e.body.admin, Records.os(e.body))
+                val admin = e.body.admin?.let { Key(it) }
+                Device(
+                    d, e.body.name ?: d, Records.role(e.body.role), key, admin?.let { it !in ev.revoked && !ev.frozen(it) } ?: false, e.body.admin,
+                    Records.os(e.body), ev.frozen(Key(key)) || (admin != null && ev.frozen(admin)),
+                )
             }.sortedWith(compareBy({ it.name }, { it.id }))
         }
 
@@ -512,9 +586,10 @@ class RecordSet {
      */
     fun admitted(admin: ByteArray): List<ByteArray> {
         val keys = mutableListOf<ByteArray>()
-        for (e in Eval(this).entries) {
+        val ev = Eval(this)
+        for (e in ev.entries) {
             val k = e.body.key
-            if (e.body.type == "device" && e.signer == Key(admin) && k != null && keys.none { it.contentEquals(k) }) keys.add(k)
+            if (e.body.type == "device" && e.signer == Key(admin) && k != null && ev.kept(e) && keys.none { it.contentEquals(k) }) keys.add(k)
         }
         return keys
     }

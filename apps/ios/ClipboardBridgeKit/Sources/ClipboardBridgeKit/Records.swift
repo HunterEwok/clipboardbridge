@@ -29,6 +29,9 @@ public enum Records {
         public var keep: [Data]?
         // root
         public var root: Data?
+        // freeze: the records of the frozen admins that still count; thaw:
+        // the freeze records it ends. Both are record IDs.
+        public var records: [Data]?
 
         public init(type: String, group: String, timeMS: Int64, by: String?) {
             (self.type, self.group, self.time_ms, self.by) = (type, group, timeMS, by)
@@ -93,6 +96,15 @@ public enum Records {
         return try sign(b, with: signer, adminCA: adminCA)
     }
 
+    /// A thaw record that ends the freeze records with the IDs freezes
+    /// (docs/protocol.md, section 10, rule 4).
+    public static func thaw(_ freezes: [Data], group: String, by: String, now: Date, signer: CertificateSigner,
+                            adminCA: Data? = nil) throws -> Member.Record {
+        var b = Body(type: "thaw", group: group, timeMS: ms(now), by: by)
+        b.records = freezes
+        return try sign(b, with: signer, adminCA: adminCA)
+    }
+
     /// A root record that hands the group to newRoot, a phone's root CA.
     public static func root(_ newRoot: Data, group: String, by: String, now: Date, signer: CertificateSigner,
                             adminCA: Data? = nil) throws -> Member.Record {
@@ -133,6 +145,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var admin = false
         /// The key hash of its admin CA, for an admin phone.
         public var adminKey: Data?
+        /// An admin computer another admin froze: no admin until the root
+        /// or an admin phone unfreezes it, and refused.
+        public var frozen = false
     }
 
     /// Adds a record signed under one of the group's roots, by the root's
@@ -214,6 +229,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
     private struct Entry {
         var record: Member.Record
         var body: Records.Body
+        /// The record ID.
+        var id: Data
         /// The key hash of the signer: a root, or an admin CA.
         var signer: Data
         /// The key hash of the root it was signed under.
@@ -235,6 +252,10 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// The known roots: the group CA and the new roots that a known
         /// root or an admin phone under one handed the group to.
         var known: Set<Data> = []
+        /// The freezes that count, for each frozen admin CA (rule 4).
+        var freezes: [Data: [Entry]] = [:]
+        /// The device keys of the frozen admins.
+        var frozenKeys: Set<Data> = []
         /// The roots from the group CA to the current one, DER.
         var path: [Data] = []
         var onPath: Set<Data> = []
@@ -245,7 +266,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             entries = set.records.compactMap { r in
                 guard let b = try? JSONDecoder().decode(Records.Body.self, from: r.body),
                       let a = RecordSet.anchor(r, roots: roots), let anchor = try? Records.keyHash(cert: a.root) else { return nil }
-                return Entry(record: r, body: b, signer: a.signer, anchor: anchor)
+                return Entry(record: r, body: b, id: Records.id(r), signer: a.signer, anchor: anchor)
             }
             evaluate(groupCA: groupCA, roots: roots)
             // From each root, the root record under it that counts and
@@ -318,7 +339,32 @@ public struct RecordSet: Codable, Equatable, Sendable {
                     revokers[key, default: []].append(Records.id(e.record))
                 }
             }
-            for e in entries where e.body.type == "revoke" {
+            // The device keys of each computer's admin CA, and the freezes
+            // that a root or an admin phone ended.
+            var computers: [Data: [Data]] = [:]
+            var thawed: Set<Data> = []
+            for e in entries {
+                let b = e.body
+                if b.type == "device", let a = b.admin, let key = b.key, Records.role(b.role) != "phone", rootSigned(e), !phoneAdmin.contains(a) {
+                    computers[a, default: []].append(key)
+                } else if b.type == "thaw",
+                          rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor) && !disabled.contains(e.signer)) {
+                    thawed.formUnion(b.records ?? [])
+                }
+            }
+            // A frozen admin's freezes still count, so two admins that freeze
+            // each other both stay frozen until the root or an admin phone
+            // decides.
+            for e in entries where e.body.type == "freeze" && !thawed.contains(e.id) && known.contains(e.anchor) {
+                if e.signer != e.anchor && (disabled.contains(e.signer) || !standsForRoots(e.anchor, e.signer)) { continue }
+                let keys = e.body.keys ?? []
+                guard !keys.isEmpty, keys.allSatisfy({ computers[$0] != nil }) else { continue }
+                for key in keys {
+                    freezes[key, default: []].append(e)
+                    frozenKeys.formUnion(computers[key] ?? [])
+                }
+            }
+            for e in entries where e.body.type == "revoke" && kept(e) {
                 let keys = e.body.keys ?? []
                 let counts: Bool
                 if e.signer == e.anchor {
@@ -334,6 +380,21 @@ public struct RecordSet: Codable, Equatable, Sendable {
                     revoked.insert(key)
                 }
             }
+        }
+
+        /// Whether every freeze of e's signer names e, as for the records of
+        /// an admin that is not frozen.
+        func kept(_ e: Entry) -> Bool {
+            (freezes[e.signer] ?? []).allSatisfy { ($0.body.records ?? []).contains(e.id) }
+        }
+
+        /// Whether a key is frozen: a frozen admin CA, or the device key of a
+        /// frozen admin.
+        func frozen(_ k: Data) -> Bool { freezes[k] != nil || frozenKeys.contains(k) }
+
+        /// Whether a device record counts.
+        func counts(_ e: Entry) -> Bool {
+            onPath.contains(e.anchor) && fromRoot(e) && issued(e.signer, e.body.key ?? Data()) && kept(e)
         }
 
         /// Whether issuer is revoked only by records that keep the key k, as
@@ -354,6 +415,17 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// The revoked keys (docs/protocol.md, section 10, rule 3).
     public var revoked: Set<Data> { Eval(self).revoked }
 
+    /// Whether a key hash is frozen (docs/protocol.md, section 10, rule 4): a
+    /// computer's admin CA that a freeze names, or such an admin's device
+    /// key.
+    public func isFrozen(_ keyHash: Data) -> Bool { Eval(self).frozen(keyHash) }
+
+    /// The IDs of the freezes of the admin CA with key hash admin that
+    /// count: what a thaw of it ends.
+    public func freezes(of admin: Data) -> [Data] {
+        (Eval(self).freezes[admin] ?? []).map(\.id).sorted { $0.lexicographicallyPrecedes($1) }
+    }
+
     /// The roots that took the group over from the group CA, in order, DER;
     /// the last is the current root. Empty when it was never handed over.
     public var roots: [Data] { Array(Eval(self).path.dropFirst()) }
@@ -368,6 +440,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         guard let leafCert = chain.first, var leaf = try? Records.keyHash(cert: leafCert) else { return "no certificate" }
         let ev = Eval(self)
         if ev.revoked.contains(leaf) { return "the device was removed from the group" }
+        if ev.frozen(leaf) { return "the device is a frozen admin" }
         var top = leafCert
         // The issuer is the certificate that signed the leaf, wherever it is
         // in the chain: a peer may add certificates it does not need.
@@ -377,6 +450,11 @@ public struct RecordSet: Codable, Equatable, Sendable {
                 return "the certificate's issuer is not in its chain"
             }
             if !ev.issued(admin, leaf) { return "the admin that admitted the device was removed" }
+            // A frozen admin's certificates hold only for devices the records
+            // already list.
+            if ev.frozen(admin) && !ev.entries.contains(where: { $0.body.type == "device" && $0.body.key == leaf && ev.counts($0) }) {
+                return "the admin that certified the device is frozen"
+            }
             (top, leaf) = (issuer, admin)
         }
         if let root = ev.path.first(where: { GroupCertificates.signed(top, by: $0) }), let rk = try? Records.keyHash(cert: root),
@@ -397,7 +475,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         var latest: [String: (Member.Record, Records.Body)] = [:]
         for e in ev.entries where e.body.type == "device" {
             let (r, b) = (e.record, e.body)
-            guard ev.onPath.contains(e.anchor), ev.fromRoot(e), ev.issued(e.signer, b.key ?? Data()), let d = b.device else { continue }
+            guard ev.counts(e), let d = b.device else { continue }
             if let cur = latest[d] {
                 let newer = b.time_ms != cur.1.time_ms ? b.time_ms > cur.1.time_ms
                     : Records.id(r).lexicographicallyPrecedes(Records.id(cur.0)) == false
@@ -408,7 +486,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return latest.compactMap { d, rb -> Device? in
             guard let key = rb.1.key, !ev.revoked.contains(key) else { return nil }
             return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
-                          admin: rb.1.admin.map { !ev.revoked.contains($0) } ?? false, adminKey: rb.1.admin)
+                          admin: rb.1.admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: rb.1.admin,
+                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 
@@ -431,7 +510,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// which stay when it is removed.
     public func admitted(by admin: Data) -> [Data] {
         var keys: [Data] = []
-        for e in Eval(self).entries where e.body.type == "device" && e.signer == admin {
+        let ev = Eval(self)
+        for e in ev.entries where e.body.type == "device" && e.signer == admin && ev.kept(e) {
             if let k = e.body.key, !keys.contains(k) { keys.append(k) }
         }
         return keys
