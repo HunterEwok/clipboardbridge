@@ -191,27 +191,31 @@ the code (one language for the service and the harness, `go test`-style reports)
 an inventory file (devices, addresses, how to reach each one) that lives only on the
 controller, never in the repository.
 
-**Reaching the devices**: SSH with a dedicated key and a dedicated `cbbbench` user on each
-Linux device, the Mac and the Windows VM (OpenSSH Server). The user may run only the
-commands the bench needs with `sudo` (a sudoers file the bench installs). On Windows and
-the Deck a tiny helper started at sign-in runs inside the desktop session, to reach the
-real clipboard. The phone over `adb` (USB to the controller, or wireless debugging).
+**Reaching the devices**: SSH from the controller with keys only (`BatchMode`), as the user
+signed in on each device's desktop, so the bench reaches the real clipboard: `wl-copy` and
+`wl-paste` in the Wayland session, `pbcopy` and `pbpaste` on the Mac. On Windows an SSH
+session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` turns on the
+OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
+text between a file and the clipboard. Headless devices use `cbb copy` and `cbb paste`
+(`cbb-lite` on the lite member). The install and uninstall cases need `sudo` without a
+password for the installers only, set up by a sudoers file in step 3. The emulator over
+`adb` on the Mac.
 
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
-on. Options, in order of preference:
-
-`pi4`. It is never a device under test, so reboots and failures of
+on: `pi4`. It is never a device under test, so reboots and failures of
 the others do not stop a run. It reaches the router over SSH to switch networks, the Mac
 to start and revert the Windows VM and the emulator (`vmrun`, `emulator`, `adb`), and the
 relay over SSH.
 
 **Starting a run**:
 
-- by hand on the controller (`go run ./tools/bench -suite smoke|full|soak|security`);
+- by hand on the controller (`go run ./tools/bench check`, `go run ./tools/bench smoke`,
+  later `full`, `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`,
+  `-only a,b` limits the run to some devices);
 - from GitHub: a self-hosted runner on the controller, started **only** by
   `workflow_dispatch` and by release tags, never by pull requests (a pull request from a
   stranger must never run code on the home network). The runner gets no repository
-  secrets and runs as `cbbbench` without sudo.
+  secrets and runs as its own user without sudo.
 
 **Building what is tested**: the bench takes the binaries from a CI run or a release
 (artifacts with checksums and attestations), never builds on the devices, so it tests what
@@ -226,7 +230,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 
 | Suite | Contents | Time | When |
 |---|---|---|---|
-| smoke | install, pair, one text each way per device, uninstall | ~10 min | after each merge that touches the service, on request |
+| smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
 | full | sections 6 to 9 | ~2 h | before each release candidate |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
@@ -258,14 +262,14 @@ the repository: it names the home network's addresses and the keys. Its shape:
 controller = "pi4"
 
 [device.deck]
-os = "linux"           # linux, linux-lite, darwin, windows, android
-ssh = "cbbbench@deck.lan"
-clipboard = "wayland"  # wayland, x11, none, macos, windows, android
+os = "linux"           # linux, linux-lite, darwin, windows
+ssh = "user@deck.lan"     # the user signed in on the desktop
+clipboard = "wayland"  # wayland, x11, none (cbb copy and paste), macos, windows
 roles = ["member", "hub", "away"]
 
 [device.win]
 os = "windows"
-ssh = "cbbbench@win.lan"
+ssh = "user@win.lan"
 clipboard = "windows"
 vm = { host = "mac", vmx = "~/Virtual Machines.localized/win.vmwarevm", snapshot = "clean" }
 
@@ -278,9 +282,11 @@ away_network = "bench_away"   # the network the bench moves the away device to
 ssh = "root@relay.example.net"
 ```
 
-Each device gets a `cbbbench` user, the controller's SSH key, and a sudoers file that allows
-only the commands the bench runs; the setup script in `tools/bench` does this once per
-device. Devices on the bench are test devices: the bench installs and wipes clipboardbridge
+`address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
+find it; a lite member always joins at an address, which `cbb pair` prints.
+`tools/bench/inventory.example.toml` is a complete example. Each device needs the
+controller's SSH key for its desktop user; a Windows device also runs
+`tools/bench/setup-windows.ps1` once. Devices on the bench are test devices: the bench installs and wipes clipboardbridge
 on them as it needs.
 
 ## 14. Order of work
@@ -288,10 +294,11 @@ on them as it needs.
 One pull request per step, merged in order:
 
 1. This document and the inventory format.
-2. The setup script (the `cbbbench` user on each device, the Windows VM in VMware Fusion,
-   the emulator, the router's away network) and `tools/bench`: inventory, SSH runner, clipboard drivers per platform, report; the smoke
-   suite on N1.
-3. The full matrix (section 6) and the life-cycle cases (section 7).
+2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
+   report, the `check` and `smoke` suites on N1; the Windows setup script.
+3. The full matrix (section 6) and the life-cycle cases (section 7): installing and
+   removing with the installers, the snapshot of the Windows VM, the emulator, the
+   router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
 5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S12.
 6. The relay: the VPS set up as the production relay (hardening, firewall, no logs) running
