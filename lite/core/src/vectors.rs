@@ -11,7 +11,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 
-use crate::certs::{self, Cert};
+use crate::certs::{self, Cert, KeyHash};
 use crate::clip::Event;
 use crate::hlc::Timestamp;
 use crate::identity::Identity;
@@ -195,6 +195,39 @@ fn go_root() {
         assert_eq!(got.admin, d["admin"].as_bool().unwrap(), "{}", got.name);
     }
     assert_eq!(s.devices().len(), v["devices"].as_array().unwrap().len());
+    for c in v["chains"].as_array().unwrap() {
+        let chain: Vec<Cert> = c["chain"].as_array().unwrap().iter().map(cert).collect();
+        assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);
+    }
+    assert_eq!(s.digest(), v["digest"].as_str().unwrap());
+}
+
+/// What a computer's admin CA may do in a phone's group (go-admins.json):
+/// it removes a device but neither the admin phone nor the root, nor hands
+/// the group over, and nothing it signs after the admin phone removed it
+/// counts.
+#[test]
+fn go_admins() {
+    let v = vectors("go-admins.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut rs = records(&v["records"]);
+    rs.reverse();
+    let (_, errs) = s.add_all(&rs);
+    assert!(errs.is_empty(), "{errs:?}");
+    assert!(s.roots().is_empty());
+    assert!(v["roots"].as_array().is_none_or(|r| r.is_empty()));
+    let names: Vec<String> = s.devices().into_iter().map(|d| d.name).collect();
+    let want: Vec<String> =
+        v["devices"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, want);
+    for d in v["devices"].as_array().unwrap() {
+        let got = s.devices().into_iter().find(|x| x.id == d["id"].as_str().unwrap()).expect("a listed device");
+        assert_eq!(got.admin, d["admin"].as_bool().unwrap(), "{}", got.name);
+    }
+    for k in v["keys"].as_array().unwrap() {
+        let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+        assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{}", k["name"]);
+    }
     for c in v["chains"].as_array().unwrap() {
         let chain: Vec<Cert> = c["chain"].as_array().unwrap().iter().map(cert).collect();
         assert_eq!(s.refused(&chain).is_some(), c["refused"].as_bool().unwrap(), "{}", c["name"]);

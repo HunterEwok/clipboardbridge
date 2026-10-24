@@ -6,12 +6,13 @@
 //! What the set says depends on the records alone, never on the order in
 //! which they arrived.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cell::{Ref, RefCell};
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,9 @@ use crate::certs::{self, Cert, KeyHash, b64, sha256};
 use crate::error::{Context, Error, Result};
 
 pub const MAX_RECORDS: usize = 4096;
+/// The records one admin CA signs at most, so a stolen admin cannot fill
+/// the set and shut the others out.
+pub const MAX_PER_ADMIN: usize = 1024;
 const MAX_BODY: usize = 8 << 10;
 const VERSION: i64 = 1;
 
@@ -174,6 +178,39 @@ pub struct Records {
     ca_key: KeyHash,
     by_id: BTreeMap<[u8; 32], Signed>,
     roots: BTreeMap<KeyHash, Cert>,
+    /// The records each admin CA signed (MAX_PER_ADMIN).
+    per_signer: BTreeMap<KeyHash, usize>,
+    /// What the set says about revocations, worked out on first use after a
+    /// change.
+    ev: RefCell<Option<Eval>>,
+}
+
+/// What the set says about revocations (docs/protocol.md, section 10,
+/// rules 2 and 3), as Go's group.evaluation.
+struct Eval {
+    revoked: BTreeSet<KeyHash>,
+    /// The records that revoked each key, by record ID.
+    revokers: BTreeMap<KeyHash, Vec<[u8; 32]>>,
+    phone_admin: BTreeSet<KeyHash>,
+    /// The known roots: the group CA and the new roots of the root records
+    /// that a known root or an admin phone under one signed.
+    roots: BTreeSet<KeyHash>,
+}
+
+impl Eval {
+    fn root_signed(&self, r: &Signed) -> bool {
+        r.signer == r.anchor && self.roots.contains(&r.anchor)
+    }
+}
+
+/// The admin CA key that r, a device record of a phone signed by the own
+/// key of one of roots, names; None for any other record.
+fn phone_admin_of(r: &Signed, roots: &BTreeSet<KeyHash>) -> Option<KeyHash> {
+    let b = &r.body;
+    if b.kind != "device" || role(&b.role) != "phone" || r.signer != r.anchor || !roots.contains(&r.signer) {
+        return None;
+    }
+    b.admin
 }
 
 impl core::fmt::Debug for Records {
@@ -192,6 +229,8 @@ impl Records {
             ca_key,
             by_id: BTreeMap::new(),
             roots: BTreeMap::from([(ca_key, group_ca.clone())]),
+            per_signer: BTreeMap::new(),
+            ev: RefCell::new(None),
         }
     }
 
@@ -213,10 +252,18 @@ impl Records {
             return Err(Error::msg("too many records"));
         }
         let s = self.verify(r)?;
+        if s.signer != s.anchor {
+            let n = self.per_signer.entry(s.signer).or_insert(0);
+            if *n >= MAX_PER_ADMIN {
+                return Err(Error::msg("too many records from one admin"));
+            }
+            *n += 1;
+        }
         if let Some(root) = &s.root {
             self.roots.entry(root.key_hash()).or_insert_with(|| root.clone());
         }
         self.by_id.insert(id, s);
+        *self.ev.get_mut() = None;
         Ok(true)
     }
 
@@ -312,6 +359,7 @@ impl Records {
                     || on.contains(&root.key_hash())
                     || self.revoked(&r.signer)
                     || !self.signed_by_root(r)
+                    || !self.may_hand_over(r)
                 {
                     continue;
                 }
@@ -344,24 +392,131 @@ impl Records {
         !self.revoked(issuer) || self.kept(issuer, k)
     }
 
-    /// Reports whether a key is revoked by any revocation record.
+    /// Reports whether a key is revoked: named by a revocation record that
+    /// counts, or an admin or root key named by a revocation from a root or
+    /// an admin phone (docs/protocol.md, section 10, rules 2 and 3).
     pub fn revoked(&self, k: &KeyHash) -> bool {
-        self.by_id.values().any(|r| r.body.kind == "revoke" && r.body.keys.contains(k))
+        self.ev().revoked.contains(k)
     }
 
     /// Reports whether admin is revoked only by records that keep leaf.
     fn kept(&self, admin: &KeyHash, leaf: &KeyHash) -> bool {
-        let mut revoked = false;
+        let ev = self.ev();
+        let Some(ids) = ev.revokers.get(admin) else { return false };
+        ids.iter().all(|id| self.by_id[id].body.keep.contains(leaf))
+    }
+
+    /// Whether the signer of a root record may hand the group over: a known
+    /// root's own key or an admin phone's admin CA, never a computer's.
+    fn may_hand_over(&self, r: &Signed) -> bool {
+        let ev = self.ev();
+        ev.root_signed(r) || (ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor))
+    }
+
+    fn ev(&self) -> Ref<'_, Eval> {
+        if self.ev.borrow().is_none() {
+            let ev = self.evaluate();
+            *self.ev.borrow_mut() = Some(ev);
+        }
+        Ref::map(self.ev.borrow(), |e| e.as_ref().unwrap())
+    }
+
+    /// Works out the revocations in strata that do not depend on each other
+    /// in a circle, as Go's group.Records.eval.
+    fn evaluate(&self) -> Eval {
+        let mut ev = Eval {
+            revoked: BTreeSet::new(),
+            revokers: BTreeMap::new(),
+            phone_admin: BTreeSet::new(),
+            roots: self.known_roots(),
+        };
+        let mut by_root: BTreeMap<KeyHash, Vec<&Signed>> = BTreeMap::new();
+        let mut privileged: BTreeSet<KeyHash> = self.roots.keys().copied().collect();
         for r in self.by_id.values() {
-            if r.body.kind != "revoke" || !r.body.keys.contains(admin) {
+            if r.body.kind == "revoke" && ev.root_signed(r) {
+                for k in &r.body.keys {
+                    by_root.entry(*k).or_default().push(r);
+                }
+            } else if r.body.kind == "device" {
+                if let Some(a) = r.body.admin {
+                    privileged.insert(a);
+                }
+            }
+            if r.signer != r.anchor {
+                privileged.insert(r.signer);
+            }
+        }
+        let stands_for_roots = |issuer: &KeyHash, k: &KeyHash| {
+            by_root.get(issuer).is_none_or(|rs| rs.iter().all(|r| r.body.keep.contains(k)))
+        };
+        for r in self.by_id.values() {
+            if let Some(a) = phone_admin_of(r, &ev.roots) {
+                if stands_for_roots(&r.signer, &a) {
+                    ev.phone_admin.insert(a);
+                }
+            }
+        }
+        let mut disabled = BTreeSet::new();
+        for (id, r) in &self.by_id {
+            let from_phone = ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor);
+            if r.body.kind != "revoke" || !(ev.root_signed(r) || from_phone) {
                 continue;
             }
-            if !r.body.keep.contains(leaf) {
-                return false;
+            for k in &r.body.keys {
+                if privileged.contains(k) && (ev.root_signed(r) || !ev.roots.contains(k)) {
+                    disabled.insert(*k);
+                    ev.revoked.insert(*k);
+                    ev.revokers.entry(*k).or_default().push(*id);
+                }
             }
-            revoked = true;
         }
-        revoked
+        for (id, r) in &self.by_id {
+            if r.body.kind != "revoke" {
+                continue;
+            }
+            let counts = if r.signer == r.anchor {
+                ev.roots.contains(&r.anchor)
+            } else {
+                ev.roots.contains(&r.anchor)
+                    && !disabled.contains(&r.signer)
+                    && stands_for_roots(&r.anchor, &r.signer)
+                    && !r.body.keys.iter().any(|k| {
+                        ev.roots.contains(k) || (privileged.contains(k) && !ev.phone_admin.contains(&r.signer))
+                    })
+            };
+            if !counts {
+                continue;
+            }
+            for k in &r.body.keys {
+                let ids = ev.revokers.entry(*k).or_default();
+                if !ids.contains(id) {
+                    ids.push(*id);
+                    ev.revoked.insert(*k);
+                }
+            }
+        }
+        ev
+    }
+
+    /// The roots whose own signatures may count: the group CA and the new
+    /// root of every root record that a known root's own key, or an admin
+    /// phone under a known root, signed.
+    fn known_roots(&self) -> BTreeSet<KeyHash> {
+        let mut known = BTreeSet::from([self.ca_key]);
+        loop {
+            let phones: BTreeSet<KeyHash> = self.by_id.values().filter_map(|r| phone_admin_of(r, &known)).collect();
+            let mut grew = false;
+            for r in self.by_id.values() {
+                let Some(root) = &r.root else { continue };
+                if !known.contains(&r.anchor) || (r.signer != r.anchor && !phones.contains(&r.signer)) {
+                    continue;
+                }
+                grew |= known.insert(root.key_hash());
+            }
+            if !grew {
+                return known;
+            }
+        }
     }
 
     fn counts(&self, r: &Signed, on: &[KeyHash]) -> bool {
