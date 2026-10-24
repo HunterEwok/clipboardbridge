@@ -51,6 +51,16 @@ class MemberNode(
     private val onChange: (Member.Event) -> Unit = {},
     /** Gets a renewed member certificate a peer sent for this phone. */
     private val onCert: (ByteArray) -> Unit = {},
+    /**
+     * The WireGuard public key the hellos offer the group's hub (section
+     * 11), asked for each connection; null while sync away from home is off.
+     */
+    private val tunnelKey: () -> ByteArray? = { null },
+    /**
+     * Gets a valid tunnel offer a peer sent, with the device ID the caller
+     * of serve named it by: the hub's answer to the tunnel key.
+     */
+    private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
 ) {
     private val lock = Any()
     private val conns = mutableSetOf<Conn>()
@@ -103,7 +113,7 @@ class MemberNode(
         val c = Conn(t, peer)
         synchronized(lock) {
             conns.add(c)
-            val hello = engine.hello(name).copy(records = records?.digest)
+            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey())
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()
@@ -141,6 +151,7 @@ class MemberNode(
                         if (e != null) synchronized(lock) { apply(engine.received(e), c) }
                     }
                     is Member.Message.Cert -> onCert(m.cert)
+                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid }?.let { onTunnel(c.peer, it) }
                     is Member.Message.Records -> if (m.records.isNotEmpty()) {
                         synchronized(lock) {
                             val fresh = records?.add(m.records).orEmpty()

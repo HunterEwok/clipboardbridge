@@ -79,6 +79,13 @@ final class MemberTests: XCTestCase {
         guard case let .records(rs) = decoded[9] else { return XCTFail() }
         XCTAssertEqual(rs.count, 2)
         XCTAssertEqual(rs[1].chain, [Data("admin CA".utf8)])
+        func key(_ b: UInt8) -> Data { Data((0..<32).map { b + UInt8($0) }) }
+        guard case let .hello(_, tunnelHello) = decoded[10] else { return XCTFail() }
+        XCTAssertEqual(tunnelHello.tunnelKey, key(1))
+        guard case let .tunnel(offer?) = decoded[11] else { return XCTFail("frame 11 is \(decoded[11])") }
+        XCTAssertTrue(offer.isValid)
+        XCTAssertEqual(offer, Member.TunnelOffer(hubKey: key(2), psk: key(3), endpoints: ["203.0.113.7:8764", "[2001:db8::7]:8764"]))
+        XCTAssertEqual(decoded[12], .tunnel(Member.TunnelOffer(hubKey: key(4), psk: key(5))))
     }
 
     func testTimestamps() throws {

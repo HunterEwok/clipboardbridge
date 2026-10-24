@@ -4,7 +4,10 @@ package io.github.hunterewok.clipboardbridge.kit
 
 import java.time.Instant
 import java.util.Collections
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
@@ -146,6 +149,34 @@ class EngineTest {
         phone.closeAll()
         task.join()
         assertIs<Member.Message.Hello>(got.first())
+    }
+
+    @Test
+    fun nodeOffersTheTunnelKeyAndKeepsTheOffer() {
+        val key = ByteArray(32) { 1 }
+        val offers = LinkedBlockingQueue<Pair<String?, Member.TunnelOffer>>()
+        val phone = MemberNode(
+            SyncEngine(SyncEngine.newID(), HybridClock()), "Pixel",
+            tunnelKey = { key },
+            onTunnel = { from, o -> offers.put(from to o) },
+        )
+        val hub = SyncEngine.newID()
+        val (a, b) = Pipe.pair()
+        val task = Background { phone.serve(a, hub) }
+        val hello = assertIs<Member.Message.Hello>(Member.decode(b.read(Member.length(b.read(4)))))
+        assertContentEquals(key, hello.hello.tunnelKey)
+        b.write(Member.encode(Member.Message.Hello(Member.Role.LINUX, Member.Hello(0))))
+        // A bad offer is dropped; a good one reaches onTunnel.
+        b.write(Member.encode(Member.Message.Tunnel(Member.TunnelOffer(ByteArray(31), ByteArray(32)))))
+        b.write(Member.encode(Member.Message.Tunnel(null)))
+        val good = Member.TunnelOffer(ByteArray(32) { 2 }, ByteArray(32) { 3 }, listOf("192.0.2.1:8764"))
+        b.write(Member.encode(Member.Message.Tunnel(good)))
+        val (from, got) = assertNotNull(offers.poll(10, TimeUnit.SECONDS))
+        assertEquals(hub, from)
+        assertEquals(good, got)
+        phone.closeAll()
+        task.join()
+        assertTrue(offers.isEmpty())
     }
 
     /** A RecordStore over a RecordSet. */
