@@ -397,3 +397,58 @@ func TestBoardGone(t *testing.T) {
 		t.Errorf("Run = %v, want ErrBoardGone", err)
 	}
 }
+
+// TestRefusedThenWatches: a service that turns the watch down, as one in no
+// group does, is asked again soon, so the connector watches within a few
+// seconds of the device joining, not after a grown backoff.
+func TestRefusedThenWatches(t *testing.T) {
+	socket := socketPath(t)
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var mu sync.Mutex
+	inGroup := false
+	watching := make(chan time.Time, 1)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			r := control.NewReader(c)
+			if _, err := r.Read(); err != nil {
+				c.Close()
+				continue
+			}
+			mu.Lock()
+			ok := inGroup
+			mu.Unlock()
+			if !ok {
+				control.Write(c, &control.Message{Header: control.Header{Op: control.OpReply, Error: "this device is in no group", Done: true}})
+				c.Close()
+				continue
+			}
+			control.Write(c, &control.Message{Header: control.Header{Op: control.OpReply}})
+			watching <- time.Now()
+			t.Cleanup(func() { c.Close() })
+			return
+		}
+	}()
+	run(t, socket, newBoard())
+	// A growing backoff would wait from 7 s to 15 s here.
+	time.Sleep(8 * time.Second)
+	mu.Lock()
+	inGroup = true
+	joined := time.Now()
+	mu.Unlock()
+	select {
+	case at := <-watching:
+		if d := at.Sub(joined); d > refusedWait+time.Second {
+			t.Errorf("watching %v after the join, want within %v", d, refusedWait)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the connector never watched")
+	}
+}

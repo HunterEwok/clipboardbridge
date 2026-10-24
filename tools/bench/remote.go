@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,15 +18,12 @@ import (
 )
 
 // sshArgs are the options of every connection: keys only, no prompts, and
-// a dead device fails within seconds instead of hanging the run. The
-// controller's locale stays home: a device that lacks it warns on every
-// command.
+// a dead device fails within seconds instead of hanging the run.
 var sshArgs = []string{
 	"-o", "BatchMode=yes",
 	"-o", "ConnectTimeout=10",
 	"-o", "ServerAliveInterval=5",
 	"-o", "ServerAliveCountMax=3",
-	"-o", "SendEnv=-LANG -LC_*",
 }
 
 // runTimeout bounds one command of Run, so a command that hangs (a
@@ -101,7 +99,22 @@ func command(ctx context.Context, d *Device, cmd string) *exec.Cmd {
 	} else {
 		args = append(args, "sh", "-c", shellQuote(shPath+cmd))
 	}
-	return exec.CommandContext(ctx, "ssh", args...)
+	c := exec.CommandContext(ctx, "ssh", args...)
+	c.Env = noLocale(os.Environ())
+	return c
+}
+
+// noLocale drops the locale from ssh's environment. The system's ssh_config
+// sends LANG and LC_* to the device (SendEnv, which -o cannot take back), and
+// a device without that locale warns on every command.
+func noLocale(env []string) []string {
+	var out []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "LANG=") && !strings.HasPrefix(kv, "LC_") && !strings.HasPrefix(kv, "LANGUAGE=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // shPath puts the places installers use on the PATH: an SSH command does not

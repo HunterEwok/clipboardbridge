@@ -101,3 +101,18 @@ func TestPatterns(t *testing.T) {
 		}
 	}
 }
+
+func TestNoLocale(t *testing.T) {
+	got := noLocale([]string{"HOME=/home/u", "LANG=ru_RU.UTF-8", "LC_ALL=ru_RU.UTF-8", "LC_CTYPE=C", "LANGUAGE=ru", "PATH=/bin"})
+	if strings.Join(got, " ") != "HOME=/home/u PATH=/bin" {
+		t.Errorf("noLocale = %q", got)
+	}
+}
+
+func TestDeviceRE(t *testing.T) {
+	for _, out := range []string{"Device 3f2a9c01d4 (linux), group 485666d454cba4e8\n", "device  3f2a9c01d4\ngroup   485666d454cba4e8\n"} {
+		if m := deviceRE.FindStringSubmatch(out); m == nil || m[1] != "3f2a9c01d4" {
+			t.Errorf("deviceRE on %q = %v", out, m)
+		}
+	}
+}

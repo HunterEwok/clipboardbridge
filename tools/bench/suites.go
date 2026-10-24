@@ -21,9 +21,10 @@ import (
 const maxSkew = 2 * time.Second
 
 var (
-	groupRE = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
-	codeRE  = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
-	addrRE  = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
+	groupRE  = regexp.MustCompile(`group\s+([0-9a-f]{8,})`)
+	deviceRE = regexp.MustCompile(`(?i)device\s+([0-9a-f]{8,})`)
+	codeRE   = regexp.MustCompile(`Pairing code:\s*(\d{3})\s*(\d{3})`)
+	addrRE   = regexp.MustCompile(`cbb join -code (\S+:\d+)`)
 )
 
 // Check reaches every device: SSH, the clock, the installed version and its
@@ -204,6 +205,31 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 		}
 		wg.Wait()
 	}
+
+	// The hub revokes the others, so nothing copied on them after the run
+	// (the Mac is also someone's own computer) reaches the bench's group.
+	for _, d := range members[1:] {
+		r.Do("smoke/"+d.Name+"/revoke", func() error {
+			id, err := deviceOf(ctx, d)
+			if err != nil {
+				return err
+			}
+			_, err = Run(ctx, hub, cbbCmd(hub)+" revoke "+id, "")
+			return err
+		})
+	}
+}
+
+// deviceOf returns the device's ID from its status.
+func deviceOf(ctx context.Context, d *Device) (string, error) {
+	out, err := Run(ctx, d, cbbCmd(d)+" status", "")
+	if err != nil {
+		return "", err
+	}
+	if m := deviceRE.FindStringSubmatch(out); m != nil {
+		return m[1], nil
+	}
+	return "", fmt.Errorf("%s shows no device ID in its status: %q", d.Name, firstLine(out))
 }
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and

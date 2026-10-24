@@ -10,7 +10,9 @@
 // order. A secret it wrote is given up when it expires, unless the user
 // copied something else meanwhile. A text the group does not carry, such as
 // one over 1 MiB, is not sent. When the service goes away, it connects
-// again with a growing pause.
+// again with a growing pause; while the service refuses to be watched, as
+// on a device in no group yet, it asks again every refusedWait, so the
+// first text after the device joins reaches the clipboard soon.
 package connector
 
 import (
@@ -57,9 +59,16 @@ type Config struct {
 }
 
 const (
-	minBackoff = time.Second
-	maxBackoff = 30 * time.Second
+	minBackoff  = time.Second
+	maxBackoff  = 30 * time.Second
+	refusedWait = 2 * time.Second
 )
+
+// refusedError is the service's answer to a watch request it turned down.
+type refusedError struct{ err error }
+
+func (e *refusedError) Error() string { return e.err.Error() }
+func (e *refusedError) Unwrap() error { return e.err }
 
 // Run links the clipboard to the service until ctx is done. A secret it
 // wrote is given up when it expires, also when the service connection ended
@@ -70,6 +79,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	exp := &expiry{b: cfg.Board, logf: cfg.Logf}
 	backoff := minBackoff
+	refused := "" // the last refusal logged, so a waiting connector logs it once
 	for {
 		start := time.Now()
 		err := session(ctx, cfg, exp)
@@ -84,14 +94,25 @@ func Run(ctx context.Context, cfg Config) error {
 		if time.Since(start) > maxBackoff {
 			backoff = minBackoff
 		}
-		cfg.Logf("cbb: the service connection ended: %v; trying again in %v", err, backoff)
+		wait := backoff
+		var re *refusedError
+		if errors.As(err, &re) {
+			wait, backoff = refusedWait, minBackoff
+			if err.Error() != refused {
+				refused = err.Error()
+				cfg.Logf("cbb: the service does not take the clipboard yet: %v; asking again every %v", err, wait)
+			}
+		} else {
+			refused = ""
+			cfg.Logf("cbb: the service connection ended: %v; trying again in %v", err, wait)
+			backoff = min(2*backoff, maxBackoff)
+		}
 		select {
 		case <-ctx.Done():
 			exp.now()
 			return nil
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		}
-		backoff = min(2*backoff, maxBackoff)
 	}
 }
 
@@ -149,7 +170,10 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 			watchReq.Kind, watchReq.Via, watchReq.Payload = m.Kind, m.Via, m.Payload
 		}
 	}
-	if _, err := c.Do(watchReq); err != nil {
+	if m, err := c.Do(watchReq); err != nil {
+		if m != nil {
+			return &refusedError{err}
+		}
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
