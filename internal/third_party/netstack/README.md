@@ -6,7 +6,8 @@ the module [`github.com/amnezia-vpn/amneziawg-go`](https://github.com/amnezia-vp
 v0.2.20-0.20260724121833-457d920a1a7d (module checksum
 `h1:X/D+VZITnGJCaajBdcBTYQxcR93EcVRDjXLd/ytH/b4=`), which has it from wireguard-go.
 
-Two changes: the notice at the top is in line comments, and `Close` no longer closes the channel of outgoing packets. gVisor's channel
+Three changes: the notice at the top is in line comments, `Dial` parses the port with
+`strconv.ParseUint` as 16 bits (the same check, in a form code scanning follows), and `Close` no longer closes the channel of outgoing packets. gVisor's channel
 endpoint calls `WriteNotify` outside its lock, so a TCP worker could still send a packet,
 such as a reset, after `Close`, and panic on the closed channel. A separate `closed` channel
 now ends `Read` and `WriteNotify` instead.
