@@ -120,4 +120,5 @@
     <string name="renamed">Renamed. The other devices show the new name as soon as they hear of it.</string>
     <string name="rename_invalid">A name has 1 to 64 characters.</string>
     <string name="reason_rename">Rename a device</string>
+    <string name="widget_description">One tap sends what this phone copied to your computers.</string>
 </resources>

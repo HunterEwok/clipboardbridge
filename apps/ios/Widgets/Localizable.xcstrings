@@ -1,0 +1,46 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Opens clipboardbridge and sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает clipboardbridge и отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
+    "Opens clipboardbridge and syncs the clipboard with your computers.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает clipboardbridge и синхронизирует буфер с вашими компьютерами."
+          }
+        }
+      }
+    },
+    "Sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
+    "Sync clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизировать буфер обмена"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

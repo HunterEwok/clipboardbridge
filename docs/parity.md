@@ -57,9 +57,9 @@ on every platform of the class, on the roadmap).
 | Sync away from home | yes, in the background | while the app runs | **OS**: iOS stops a background app's network |
 | Receive copies without a tap | yes (foreground service) | **OS** | iOS lets an app read and write the clipboard only in the foreground |
 | Send without a tap | yes (accessibility service) | **OS** | iOS: Back Tap or the Action button runs the app's shortcut, one gesture |
-| Send from the share sheet and the text selection menu | yes | **gap** | a Share extension (P1) |
-| One-tap control outside the app | Quick Settings tile, notification button | **gap** | a Control Center control, iOS 18 (P2) |
-| Home-screen widget | **gap** | **gap** | in the app specification; neither has it (P3) |
+| Send from the share sheet and the text selection menu | yes | yes | the iPhone's share extension; its menu's Share |
+| One-tap control outside the app | Quick Settings tile, notification button | Control Center control (iOS 18) | the control opens the app for a moment: **OS**, iOS reads the clipboard only in the foreground |
+| Home-screen widget | yes | yes | "Sync clipboard"; on the iPhone it opens the app for a moment, as the control does |
 | Rename a device | yes | yes | Devices, Rename on an admin phone; `cbb rename` on an admin computer; a signed device record |
 | Error details switch without developer tools | yes | yes | seven taps on the version in Settings show it; `adb` and the Xcode launch argument still work |
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
@@ -88,11 +88,11 @@ One pull request each, in this order; anything under 100 lines rides in the open
    `/etc/clipboardbridge/clipboardbridge.env` as on Linux.
 2. **G2**, done: `CBB_ERROR_DETAILS=1` in `install.sh`, `uninstall.sh` and `get.sh` on Linux
    and macOS shows every command as it runs; without it a failure names its exit status.
-3. **P5**: an error details switch in both apps' Settings, hidden behind a few taps on the
+3. **P5**, done: an error details switch in both apps' Settings, hidden behind a few taps on the
    version, besides the developer launch arguments.
-4. **P4**: rename a device in both apps (and `cbb rename` on computers), a signed record.
-5. **P1, P2**: the iPhone's Share extension and Control Center control.
-6. **P3**: a home-screen widget in both apps.
+4. **P4**, done: rename a device in both apps (and `cbb rename` on computers), a signed record.
+5. **P1, P2**, done: the iPhone's Share extension and Control Center control.
+6. **P3**, done: a home-screen widget in both apps.
 7. **G4, G5**: a winget manifest and Authenticode signing for Windows (signing needs a
    certificate; the manifest does not).
 8. **G6**, decided by the owner: the firewall rules only with consent, the same on every

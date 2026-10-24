@@ -41,7 +41,16 @@ they look, so both apps are built to the same plan.
    adds a device (camera). The same button is the app's "Sync clipboard" action, which
    Shortcuts and Spotlight offer as soon as the app is installed (App Intents with an
    App Shortcut): Back Tap or the Action button runs it without opening the app; it waits
-   a few seconds for a computer to connect and says what it did in one line.
+   a few seconds for a computer to connect and says what it did in one line. The same
+   action is a home-screen widget "Sync clipboard" on both phones (on the iPhone also a
+   Control Center control, iOS 18): one tap opens the app for a moment, since iOS lets an
+   app read the clipboard only in the foreground, and syncs; on Android the widget sends
+   as the tile does. On the iPhone, **Share → clipboardbridge** (from any app, and from the
+   text selection menu's Share) sends the text or the link at once: the share extension
+   dials the group's computers with the phone's member key, which it shares with the app
+   through an app group and a keychain access group (both need the Apple developer
+   account; a debug build signed ad hoc has neither, and its extension says there is no
+   group).
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
    QR code ("I already use clipboardbridge on another phone" on its Start screen) and this phone
@@ -120,7 +129,7 @@ declaration; the GitHub and F-Droid builds have it from the start.
 
 **Sending with one tap, without the service** (and always as well):
 
-- the **Quick Settings tile** "Send clipboard";
+- the **Quick Settings tile** "Send clipboard", and the **home-screen widget** of the same name;
 - the **"Send" button** in the service's notification;
 - **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**,
   which first ask "Allow" or "Always allow", since any app can hand over a text; "Always

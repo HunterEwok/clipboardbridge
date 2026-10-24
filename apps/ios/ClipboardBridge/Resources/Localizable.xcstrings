@@ -501,6 +501,16 @@
         }
       }
     },
+    "Opens clipboardbridge and sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает clipboardbridge и отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
     "Paste the text of the QR code of cbb pair.": {
       "localizations": {
         "ru": {

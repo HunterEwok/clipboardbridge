@@ -51,6 +51,8 @@ struct SettingsView: View {
                     Toggle(isOn: $errorDetails) {
                         Text("Show error details")
                     }
+                    // The share extension reads it from the app group.
+                    .onChange(of: errorDetails, initial: true) { _, on in Shared.defaults.set(on, forKey: "ShowErrorDetails") }
                 }
                 Link(destination: URL(string: "https://github.com/HunterEwok/clipboardbridge")!) {
                     Text("Source code and license (AGPL-3.0)")

@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- iPhone: Share → clipboardbridge sends a text or a link to the computers at once (a share
+  extension), and a Control Center control and a home-screen widget "Sync clipboard".
+  Android: the home-screen widget "Send clipboard".
 - Rename a device: `cbb rename NAME NEW-NAME` on an admin computer, and Rename in the Devices
   list of an admin phone (both apps). An admin signs a new device record with the name.
 - Both apps: seven taps on the version in Settings show the switch "Show error details",

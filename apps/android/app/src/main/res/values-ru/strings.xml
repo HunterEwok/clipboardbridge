@@ -118,4 +118,5 @@
     <string name="renamed">Переименовано. Остальные устройства покажут новое имя, как только узнают о нём.</string>
     <string name="rename_invalid">В имени от 1 до 64 символов.</string>
     <string name="reason_rename">Переименовать устройство</string>
+    <string name="widget_description">Одно касание отправляет скопированное на телефоне на ваши компьютеры.</string>
 </resources>

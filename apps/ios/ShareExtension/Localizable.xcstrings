@@ -1,0 +1,86 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Done": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово"
+          }
+        }
+      }
+    },
+    "No computer of your group answered. Are they on, and is this phone on the home network?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ни один компьютер группы не ответил. Они включены, и телефон в домашней сети?"
+          }
+        }
+      }
+    },
+    "Open clipboardbridge once, then share again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте clipboardbridge один раз и поделитесь снова."
+          }
+        }
+      }
+    },
+    "Sending failed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить не удалось."
+          }
+        }
+      }
+    },
+    "Sending to your computers…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправка на ваши компьютеры…"
+          }
+        }
+      }
+    },
+    "Sent to your computers.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправлено на ваши компьютеры."
+          }
+        }
+      }
+    },
+    "There is no text to send.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нечего отправлять: нет текста."
+          }
+        }
+      }
+    },
+    "This phone is in no group yet: open clipboardbridge to make one or join one.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон ещё не в группе: откройте clipboardbridge, чтобы создать группу или вступить в неё."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
