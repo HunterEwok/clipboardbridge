@@ -249,7 +249,8 @@ session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` t
 OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
 text between a file and the clipboard. Headless devices use `cbb copy` and `cbb paste`
 (`cbb-lite` on the lite member). The install and uninstall cases need `sudo` without a
-password for the installers only, set up by a sudoers file in step 3. The emulator over
+password for the installers only, set up by a sudoers file in step 3; on the Mac the file also
+allows `launchctl kill KILL` of the daemon, for F1. The emulator over
 `adb` on the Mac.
 
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
