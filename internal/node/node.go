@@ -114,6 +114,10 @@ type RecordStore interface {
 	// Add takes the records a peer sent and returns those that were new
 	// and valid, which go on to the other peers.
 	Add(from group.DeviceID, rs []group.Record) []group.Record
+	// Settle is called with the records Add returned once they are queued
+	// for the other peers, so that a device they revoke still gets them
+	// before a Recheck closes its connection.
+	Settle(fresh []group.Record)
 }
 
 // Write is a text to put into the member's own clipboard.
@@ -501,7 +505,8 @@ func (n *Node) sendRecords(rs []group.Record, from *conn) {
 }
 
 // Recheck asks Allow again about every connection and closes those it now
-// rejects, for example after a revocation.
+// rejects, for example after a revocation. They get what is queued for them
+// first, so a revoked device learns of the records that revoke it.
 func (n *Node) Recheck() {
 	if n.cfg.Allow == nil {
 		return
@@ -516,7 +521,7 @@ func (n *Node) Recheck() {
 	}
 	n.mu.Unlock()
 	for _, c := range drop {
-		c.close(false)
+		c.close(true)
 	}
 }
 
@@ -897,6 +902,7 @@ func (c *conn) reader() error {
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {
 				if fresh := st.Add(c.id, m.Records); len(fresh) > 0 {
 					c.n.sendRecords(fresh, c)
+					st.Settle(fresh)
 				}
 			}
 		case typeBye:

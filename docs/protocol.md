@@ -1021,9 +1021,12 @@ identity (mode 0600) and the path in the identity file's `roots`.
   messages of about 1 MiB each. A receiver adds the valid ones, saves them, and sends the
   records that were new to it to its other peers, which have sent their hello, the same way.
   Invalid records are logged and dropped; the connection stays.
-- After adding a revocation a member closes every connection whose peer certificate is now
-  refused (rule 4), and the TLS check refuses it from then on. A member that learns that its
-  own key is revoked logs that it was removed from the group; the others refuse it.
+- After adding a revocation a member first queues the new records for its peers, then closes
+  every connection whose peer certificate is now refused (rule 4), after what is queued for
+  it and a `bye`, and the TLS check refuses it from then on. So a revoked member that is
+  connected gets the record that revokes it. A member that learns that its own key is
+  revoked logs that it was removed from the group, and its status says so (`removed`); the
+  others refuse it.
 - A member that holds the group CA key records every device it admits (its name and `os`
   from the pairing Info, role `full` or `lite`) and every iPhone it pairs (`shortcut`, `os`
   `ios`, name `iPhone`, device = the phone ID), and, for groups made before the list

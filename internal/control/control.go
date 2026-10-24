@@ -91,9 +91,12 @@ type Header struct {
 type Status struct {
 	Device string `json:"device"`
 	Group  string `json:"group,omitempty"` // the group tag; empty when in no group
-	Role   string `json:"role"`
-	OS     string `json:"os,omitempty"`     // this device's operating system
-	Holder bool   `json:"holder,omitempty"` // answers for clipboardbridge.local
+	// Removed says that the group's records revoke this device: its
+	// members refuse it until it pairs again.
+	Removed bool   `json:"removed,omitempty"`
+	Role    string `json:"role"`
+	OS      string `json:"os,omitempty"`     // this device's operating system
+	Holder  bool   `json:"holder,omitempty"` // answers for clipboardbridge.local
 	// HoldSetting is the holder setting: auto, first, fallback or never.
 	HoldSetting string `json:"hold_setting,omitempty"`
 	// HoldPriority is the holder priority it publishes: 1 first, 2 as a
