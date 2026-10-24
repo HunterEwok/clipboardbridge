@@ -119,7 +119,7 @@ if ($service -and $service.Status -ne 'Stopped') {
 # Stopping a process takes a moment, and an agent the last install started
 # may still be starting, so each try stops what runs, waits for it to exit,
 # and copies; a file still in use means another try.
-function Stop-Running {
+$stopRunning = {
 	$running = @(Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
 		$_.Path -and $_.Path.StartsWith($programDir, [StringComparison]::OrdinalIgnoreCase)
 	})
@@ -130,7 +130,7 @@ function Stop-Running {
 $step = "copying the files to $programDir"
 New-Item -ItemType Directory -Force -Path $programDir | Out-Null
 for ($try = 1; ; $try++) {
-	Stop-Running
+	& $stopRunning
 	try {
 		Copy-Item -Force $Bin (Join-Path $programDir 'cbb.exe')
 		Copy-Item -Force $binW (Join-Path $programDir 'cbbw.exe')
