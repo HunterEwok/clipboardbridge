@@ -37,7 +37,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   last good copy (`cbb_core::store`); its `selftest` makes keys and
   certificates with the chip's true random number generator and runs a TLS 1.3 handshake
   of the protocol core on the chip. CI types on the console and runs the self-test in
-  Espressif's QEMU. Pairing and syncing come next; not yet run on a real board.
+  Espressif's QEMU. Syncing comes next; not yet run on a real board.
+- The Nano ESP32's network code on Linux: the pairing moved to the crate `lite/embassy`,
+  which the firmware and the program `esp32-on-linux` share; `esp32-on-linux` runs it on
+  embassy-net over a TAP interface instead of the chip's Wi-Fi, and CI's
+  `TestEmbassyJoiner` has a Go member admit it by the phone, as the board joins.
 - A forwarder for hubs that the computers cannot reach directly, for example behind
   carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
   `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
