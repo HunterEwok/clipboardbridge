@@ -36,8 +36,8 @@ The order may change.
     provider; the lite member on Linux uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
 12. **Partly: built between computers (`cbb global`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
-    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb global` is to be renamed `cbb global`, with
-    the same subcommands: it turns on sync over the internet, beyond the home network.
+    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). The lite member on Linux
+    takes part as a client, with plain WireGuard (`cbb global on` there).
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
 14. **Started: `cbb next` on the lite member and the `.cbb` dot command (`apps/zxnext`) are written, not yet
     run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
@@ -111,7 +111,7 @@ The order may change.
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
 21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
-    member and the natural hub, `cbb-lite` for small routers. See "OpenWrt routers" below.
+    member and the natural hub, the lite member for small routers. See "OpenWrt routers" below.
 22. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
     and notarized, that carries the service and a Network Extension (a content filter): the
     system then keeps the service on the home network until sync away from home is on, and
@@ -160,16 +160,16 @@ infrastructure, not a place to copy and paste:
 
 ### Full or lite
 
-| | `cbb` (Go, full member) | `cbb-lite` (Rust) |
+| | `cbb` (Go, full member) | the lite member's `cbb` (Rust) |
 |---|---|---|
 | Size of the binary | about 25 MB stripped (6.4 MB compressed with xz) for arm64; armv7, mips and mipsle the same order | 1.7 MB for arm64 (static musl) |
 | Routers it fits | 128 MB of flash or more, or eMMC (for example the Banana Pi BPI-R4); 256 MB of RAM or more | almost any OpenWrt router, 16 MB of flash and 64 MB of RAM |
 | Hub | yes | no: lite members are clients only |
-| Away from home | yes, as hub or client, with obfuscation and VLESS | not yet (GotaTun, item 12); never AmneziaWG |
+| Away from home | yes, as hub or client, with obfuscation and VLESS | as a client, with plain WireGuard (GotaTun); never AmneziaWG |
 | Builds | Go cross-compiles statically for every OpenWrt CPU: aarch64, armv7, mips and mipsle (softfloat), x86-64; arm64 and armv7 are in every release already | aarch64, armv7, x86-64 with stable Rust; mips and mipsle are Tier 3 in Rust (nightly and `-Zbuild-std`) |
 
 Recommendation: the full service first, aimed at routers with room for it, because the hub
-is what a router adds that nothing else does; `cbb-lite` afterwards for small routers, as
+is what a router adds that nothing else does; the lite member afterwards for small routers, as
 packaging around what exists.
 
 ### What OpenWrt needs that other Linux does not
@@ -217,7 +217,7 @@ One pull request each, smaller ones together:
    closes it; the bench gets the router as a device under test with cases for it in
    [testbench.md](testbench.md).
 4. `.apk` and `.ipk` packages from the OpenWrt SDK in CI, attached to each release.
-5. `cbb-lite` on OpenWrt: its procd script and installer path, builds for armv7 and, with
+5. The lite member on OpenWrt: its procd script and installer path, builds for armv7 and, with
    nightly Rust, mips and mipsle.
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.

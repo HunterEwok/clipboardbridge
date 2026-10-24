@@ -159,8 +159,12 @@ again:
 		return nil, 0, err
 	}
 
-	// Listen on the same port as we're using for ipv4.
-	v6conn, port, err = listenNet("udp6", port)
+	// Listen on the same port as we're using for ipv4. A failed listen
+	// returns port 0, which must not replace the port ipv4 got.
+	v6conn, v6port, err := listenNet("udp6", port)
+	if v6conn != nil {
+		port = v6port
+	}
 	if uport == 0 && errors.Is(err, syscall.EADDRINUSE) && tries < 100 {
 		v4conn.Close()
 		tries++

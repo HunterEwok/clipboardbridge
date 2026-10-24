@@ -993,7 +993,7 @@ sing-box is not used (GPL).
 | Go service (Linux, macOS, Windows) | amneziawg-go with netstack in `cbb`; Xray-core as a Go module                             | hub, forwarder, relay or client |
 | iPhone app                     | in the app process, no Network Extension, one Go framework for WireGuard and Xray             | client, while the app is open |
 | Android app                    | in the app process, in the foreground service the app already has; no `VpnService`            | client                   |
-| the lite member on Linux       | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
+| the lite member on Linux       | GotaTun's WireGuard (from Mullvad) with smoltcp's TCP, in its process; plain WireGuard only    | client                   |
 | the lite member on the ESP32   | none: the home network only, until a mature WireGuard exists for it                           | home only                |
 
 - On phones the tunnel is ordinary UDP traffic of the app. It does not take the phone's
@@ -1002,6 +1002,14 @@ sing-box is not used (GPL).
 - The Swift kit (Network.framework) and the Kotlin kit (Conscrypt) keep their TLS code: the
   app opens a port on the loopback address that leads into the tunnel, and the kit dials it.
   Another app that connects to that port reaches only the hub's member TLS.
+- The lite member does the same: GotaTun's WireGuard over a UDP socket and smoltcp's TCP run
+  in one thread of `cbb`, behind a port on the loopback address that its member TLS dials, so
+  no TUN device, no root and no capability is needed. GotaTun takes its AEAD from ring, whose
+  C and assembly would need a C cross compiler for each target; the lite member gives it a
+  stand-in with ring's API on RustCrypto's ChaCha20-Poly1305 (`lite/ring-shim`), the
+  implementation its TLS uses too, so it stays all Rust and links with rust-lld. GotaTun
+  speaks plain WireGuard, not AmneziaWG, so a lite member refuses an obfuscated hub or one
+  reached over VLESS and stays at home; its traffic is plain WireGuard to the network.
 - No push notifications: they go through Apple's and Google's servers. A phone gets the
   current text when the app opens, as at home.
 
@@ -1065,7 +1073,9 @@ only adds to it.
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
    forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb global hub -vless`)
    and on both phones.
-9. The lite member on Linux; the ESP32 when WireGuard on it is mature.
+9. The lite member on Linux (done: `cbb global on`, GotaTun and smoltcp in `cbb`, plain
+   WireGuard only, so a group whose hub hides its tunnel keeps it at home); the ESP32 when
+   WireGuard on it is mature.
 
 ## Device keys in hardware
 

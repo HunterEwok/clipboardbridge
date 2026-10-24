@@ -36,6 +36,9 @@ pub struct Header {
     pub details: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub done: bool,
+    /// cbb global on: the user agreed to what the warning says.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub consent: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +68,31 @@ pub struct Status {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<Device>,
     pub version: String,
+    /// Sync away from home; None while it is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub away: Option<Away>,
+}
+
+/// Sync away from home on a client of the group's hub, with the names of
+/// the Go service's status.
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+pub struct Away {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<String>,
+    /// The hub; empty until it offered its tunnel.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub hub_device: String,
+    /// Connected to the hub through the tunnel now.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub through: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keys_in_file: bool,
+    /// What went wrong last, for the user.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub error: String,
+    /// The underlying error, for debugging.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]

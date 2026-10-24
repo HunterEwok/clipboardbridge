@@ -427,3 +427,23 @@ func TestGuest(t *testing.T) {
 		t.Error("a guest reached the hub from a member's address")
 	}
 }
+
+// TestBindKeepsItsPort checks that the UDP socket reports the port it was
+// asked for on a host without IPv6 too. wireguard-go replaced it with 0
+// there, and the hub's next rebind, which a netstack device's own "up"
+// event can cause right after the port is set, listened on a random port.
+func TestBindKeepsItsPort(t *testing.T) {
+	port, err := freeUDPPort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := newBind()
+	_, got, err := b.Open(uint16(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if int(got) != port {
+		t.Fatalf("the bind reports port %d, asked for %d", got, port)
+	}
+}
