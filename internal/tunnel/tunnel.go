@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 
+	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
@@ -142,6 +143,7 @@ type HubConfig struct {
 // Hub is the end of every client's tunnel.
 type Hub struct {
 	dev      *device.Device
+	bind     conn.Bind
 	listener net.Listener
 	addr     netip.Addr
 	port     int
@@ -178,8 +180,9 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 			return nil, err
 		}
 	}
-	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "hub", cfg.Verbose))
-	h := &Hub{dev: dev, addr: cfg.Addr, port: port, peers: map[Key]Peer{}}
+	bind := newBind()
+	dev := device.NewDevice(tdev, bind, wgLogger(logf, "hub", cfg.Verbose))
+	h := &Hub{dev: dev, bind: bind, addr: cfg.Addr, port: port, peers: map[Key]Peer{}}
 	for _, p := range cfg.Peers {
 		h.peers[p.PublicKey] = p
 	}
@@ -207,6 +210,19 @@ func (h *Hub) Listener() net.Listener { return h.listener }
 
 // UDPPort returns the UDP port the hub listens on.
 func (h *Hub) UDPPort() int { return h.port }
+
+// Send sends a packet to to from the hub's UDP port: a hub's hello to its
+// forwarder, which learns from it where that port is reached.
+func (h *Hub) Send(to netip.AddrPort, p []byte) error {
+	ep, err := h.bind.ParseEndpoint(to.String())
+	if err != nil {
+		return fmt.Errorf("tunnel: %w", err)
+	}
+	if err := h.bind.Send([][]byte{p}, ep); err != nil {
+		return fmt.Errorf("tunnel: %w", err)
+	}
+	return nil
+}
 
 // SetPeers replaces the hub's clients. A client left out is forgotten at
 // once: its packets are dropped from then on. A client that stays keeps its

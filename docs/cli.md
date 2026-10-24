@@ -25,7 +25,8 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb away` | Shows sync away from home on this device: on or off, the hub, the tunnel, and what went wrong. |
 | `cbb away on` | Turns sync away from home on here, after a warning about where the keys are kept. |
 | `cbb away off` | Turns it off and forgets the tunnel keys. |
-| `cbb away hub [-port N] ADDRESS:PORT...` | Makes this device the group's hub, reached from the internet at these addresses; `-port` sets the UDP port the tunnel listens on. |
+| `cbb away hub [-port N] [-forwarder ADDRESS:PORT -forwarder-key KEY] [ADDRESS:PORT...]` | Makes this device the group's hub, reached from the internet at these addresses, through a forwarder, or both; `-port` sets the UDP port the tunnel listens on. With `-forwarder` the hub registers with that forwarder, whose key `-forwarder-key` pins, and its clients try it after the hub's own addresses. |
+| `cbb forward [-listen ADDRESS:PORT] [-key FILE] [-show-key]` | Runs a forwarder on a server with a public address, for hubs that clients cannot reach directly, for example behind carrier-grade NAT (default port 8764, UDP and TCP). It holds no keys of any group and writes nothing about them; its own key is made in `-key` on the first run (default `forwarder.pem` in systemd's state directory, or in the service's state directory) and printed at start, or alone with `-show-key`. |
 | `cbb version` | Prints the version and the platform. |
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
 | `cbb agent` | Links the Mac's or Windows clipboard to the service; started at sign-in (`cbbw.exe agent` on Windows). |

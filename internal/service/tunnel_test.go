@@ -4,6 +4,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -69,7 +71,9 @@ func TestTunnelKeys(t *testing.T) {
 	hubKey := st.Key.Public()
 
 	for _, s := range []*testService{deck, mac} {
-		waitFor(t, s.name+" keeps the hub's offer", func() bool {
+		// The members dial the restarted hub again with their backoff,
+		// which a loaded machine stretches past 10 s.
+		waitUpTo(t, 30*time.Second, s.name+" keeps the hub's offer", func() bool {
 			got := tunnelState(t, s).ToHub
 			return got != nil && got.Device == piID
 		})
@@ -209,6 +213,73 @@ func TestAwayFromHome(t *testing.T) {
 		t.Errorf("the tunnel state is still there: %v", err)
 	}
 	waitFor(t, "the deck is alone", func() bool { return len(deck.status(t).Peers) == 0 })
+}
+
+// TestAwayThroughForwarder makes the pi a hub that only a forwarder
+// reaches, as behind carrier-grade NAT, and checks that the deck syncs with
+// it through the forwarder.
+func TestAwayThroughForwarder(t *testing.T) {
+	t.Setenv("CBB_DEBUG", "1")
+	cert, err := forward.NewCert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := forward.Listen(forward.Config{Listen: "127.0.0.1:0", Cert: cert, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		f.Serve(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-served
+	}()
+
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	for _, s := range []*testService{pi, deck} {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Forwarder: f.Addr().String(), ForwarderKey: "sha256:nope"}, ""); err == nil {
+		t.Error("a forwarder with a bad key")
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Forwarder: f.Addr().String(), ForwarderKey: forward.Pin(cert.Leaf)}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the hub registers with the forwarder", func() bool {
+		a := pi.status(t).Away
+		return a != nil && a.Forwarder != nil && a.Forwarder.Registered && a.Forwarder.Seen != ""
+	})
+	piID := pi.status(t).Device
+	waitFor(t, "the deck keeps the hub's offer", func() bool {
+		a := deck.status(t).Away
+		return a != nil && a.HubDevice == piID && len(a.Endpoints) == 1 && a.Endpoints[0] == f.Addr().String()
+	})
+
+	deckID := deck.status(t).Device
+	deck.stop()
+	h.hide(deckID)
+	deck = restartService(t, &h, deck)
+	waitUpTo(t, 30*time.Second, "the deck reaches the hub through the forwarder", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "via the forwarder"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "via the forwarder" })
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "back home"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the deck has it", func() bool { return deck.paste(t) == "back home" })
 }
 
 func freeUDP(t *testing.T) int {

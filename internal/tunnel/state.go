@@ -67,10 +67,31 @@ type State struct {
 	ListenPort int
 	Members    []Member
 
+	// Forwarder is where the hub registers for the clients that cannot
+	// reach it directly; nil without one.
+	Forwarder *ForwarderLink
+
 	// KeysInFile records that the user agreed to sync away from home
 	// although this device keeps its keys in files, not in hardware
 	// (docs/design.md, "Turning it on, step by step").
 	KeysInFile bool
+}
+
+// ForwarderLink is a hub's forwarder: its address, for UDP and TCP, and the
+// pin of its key.
+type ForwarderLink struct {
+	Endpoint netip.AddrPort
+	Pin      string
+}
+
+// HubEndpoints returns the addresses the hub gives its clients: its own,
+// then the forwarder's, which clients try last.
+func (s *State) HubEndpoints() []netip.AddrPort {
+	eps := slices.Clone(s.Endpoints)
+	if f := s.Forwarder; f != nil && !slices.Contains(eps, f.Endpoint) {
+		eps = append(eps, f.Endpoint)
+	}
+	return eps
 }
 
 // HubLink is what a client keeps of its hub.
@@ -101,6 +122,12 @@ type stateFile struct {
 	ListenPort int              `json:"listen_port,omitempty"`
 	Members    []memberFile     `json:"members,omitempty"`
 	KeysInFile bool             `json:"keys_in_file,omitempty"`
+	Forwarder  *forwarderFile   `json:"forwarder,omitempty"`
+}
+
+type forwarderFile struct {
+	Endpoint netip.AddrPort `json:"endpoint"`
+	Pin      string         `json:"key"`
 }
 
 type hubFile struct {
@@ -154,6 +181,9 @@ func LoadState(dir string) (*State, error) {
 	for _, c := range f.Members {
 		s.Members = append(s.Members, Member(c))
 	}
+	if f.Forwarder != nil {
+		s.Forwarder = &ForwarderLink{Endpoint: f.Forwarder.Endpoint, Pin: f.Forwarder.Pin}
+	}
 	if err := s.check(); err != nil {
 		return nil, fmt.Errorf("%s: %w", StateFile, err)
 	}
@@ -169,6 +199,9 @@ func (s *State) Save(dir string) error {
 	for _, c := range s.Members {
 		f.Members = append(f.Members, memberFile(c))
 	}
+	if fw := s.Forwarder; fw != nil {
+		f.Forwarder = &forwarderFile{Endpoint: fw.Endpoint, Pin: fw.Pin}
+	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
@@ -181,8 +214,11 @@ func (s *State) check() error {
 	if s.Key.IsZero() {
 		return errors.New("no private key")
 	}
-	if len(s.Endpoints) > maxEndpoints {
+	if len(s.HubEndpoints()) > maxEndpoints {
 		return errors.New("too many endpoints")
+	}
+	if fw := s.Forwarder; fw != nil && (!fw.Endpoint.IsValid() || fw.Endpoint.Port() == 0 || fw.Pin == "") {
+		return errors.New("a bad forwarder")
 	}
 	if s.ListenPort < 0 || s.ListenPort > 65535 {
 		return fmt.Errorf("a bad listen port %d", s.ListenPort)

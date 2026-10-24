@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A forwarder for hubs that the computers cannot reach directly, for example behind
+  carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
+  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
+  member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
+  only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
+  groups apart, limits each group, and writes nothing about the groups, not even to its
+  log. `cbb away` on the hub shows the registration.
 - `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
   `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
@@ -224,6 +231,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - The release archives now carry `THIRD_PARTY_NOTICES`, the licenses of the Go modules,
   the copied CPace code and Go itself that `cbb` is built from, as their licenses require.
+- Installing again on a Mac, as after `brew upgrade`, no longer fails now and then with
+  "Bootstrap failed: 5: Input/output error": the installer waits for launchd to let the
+  old service go before starting it.
 - A `cbb away` request still running while the service stops no longer starts the hub or
   the tunnel again after the stop.
 - `cbb-lite version` and its status show the release's version, taken from the tag; it
