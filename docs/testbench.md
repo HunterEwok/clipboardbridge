@@ -141,6 +141,26 @@ the same text is on every device at the end.
 - Uninstall: no service, no firewall rule, no leftover files (except keys without
   `--purge`).
 
+### Features and platforms
+
+Every other way clipboardbridge works, so no path ships untested:
+
+| ID | Case | Expected |
+|---|---|---|
+| P1 | Password managers: a copy marked secret by the app (macOS concealed type, Windows "exclude from history and cloud", the Wayland password hint) | travels as a secret (C6 rules) or not at all, as designed; never as plain text |
+| P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
+| P3 | Clipboard history (Windows Win+V, KDE Klipper) and copy echo | a received text is not sent back; no ping-pong between two members |
+| P4 | The Mac listening mode (`r=mac`): the lite member and the emulator reach the Mac with no Linux member on | sync works; the Mac still dials Linux members |
+| P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
+| P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
+| P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the service and the agent run from Homebrew's binary; nothing is left |
+| P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
+| P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
+| P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
+| P11 | Sync away from home: `cbb invite` from the hub, `cbb join -invite`, `cbb away on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb away` explains what is missing |
+| P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
+| P13 | `cbb status`, `cbb devices`, `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
+
 ## 8. Failure cases
 
 | ID | Case | Expected |
@@ -177,6 +197,10 @@ not ship the feature.
 | S10 | Secrets | `copy -secret` never reaches any disk on any device (search of the state directories and swap-free check on Linux) and is gone after 60 s |
 | S11 | Local access | the control socket refuses a user outside the `clipboardbridge` group on Linux, macOS and Windows |
 | S12 | Installers | firewall rules open only the member port (and mDNS) to the local subnet; the tunnel port only on the hub |
+| S13 | Two groups on one network (two hubs, devices in each) | no text, record or device list crosses between the groups; neither can pair into the other without a code |
+| S14 | A stranger on the home network: a device in no group dials the member port, replays a captured connection, tries codes | refused; the code attempt counter stops guessing; nothing is learned about the group |
+| S15 | Logs | no clipboard text, code or key in any log on any device, in either error mode (`CBB_DEBUG=0` and `1`) |
+| S16 | Files at rest | the state directories hold only keys and certificates with owner-only permissions; no clipboard text is written to disk on any device |
 
 ## 10. Long run
 
@@ -248,7 +272,7 @@ Exit (0.4 may be released):
   issues;
 - every row of the README's status table marked "not yet" on real devices that the bench
   covers is updated;
-- every security test (S1 to S12) passes; there are no exceptions for security.
+- every security test (S1 to S16) passes; there are no exceptions for security.
 
 Severity: 1, data leaves the device unprotected or a device that is not in the group gets
 data; 2, sync stops or data is lost; 3, a wrong message, a slow path, a cosmetic fault.
@@ -296,11 +320,12 @@ One pull request per step, merged in order:
 1. This document and the inventory format.
 2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
    report, the `check` and `smoke` suites on N1; the Windows setup script.
-3. The full matrix (section 6) and the life-cycle cases (section 7): installing and
+3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
+   P13, section 7): installing and
    removing with the installers, the snapshot of the Windows VM, the emulator, the
    router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
-5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S12.
+5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S16.
 6. The relay: the VPS set up as the production relay (hardening, firewall, no logs) running
    `cbb forward`; S8 and N4.
 7. The GitHub runner, the soak suite, the release checklist in `docs/maintaining.md`.
