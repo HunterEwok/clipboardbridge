@@ -22,20 +22,42 @@ clipboardbridge-core = { path = "../core", features = ["tls"] }
 esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
 esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3", "panic-handler", "println"] }
 esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
-esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
+esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3", "unstable"] }
 esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["esp32s3", "critical-section"] }
+esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["esp-alloc", "esp32s3", "wifi"], optional = true }
+esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["embassy", "esp-radio", "esp32s3"], optional = true }
+embassy-executor = { version = "0.10", optional = true }
+embassy-futures = { version = "0.1", optional = true }
+embassy-net = { version = "0.9", features = ["dhcpv4", "medium-ethernet", "tcp", "udp"], optional = true }
+embassy-sync = { version = "0.8", optional = true }
+embassy-time = { version = "0.5", optional = true }
+embedded-io-async = { version = "0.7", optional = true }
 getrandom = { version = "0.4", default-features = false }
 rustls = { version = "0.23.46", default-features = false }
+static_cell = { version = "2.1", optional = true }
 
 [patch.crates-io]
 xtensa-lx-rt = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1" }
 xtensa-lx = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1" }
 
 [features]
-# The log goes to the USB port of the Nano ESP32 (the chip's USB serial),
-# or with qemu to UART0, which Espressif's QEMU shows.
-default = ["usb"]
-usb = ["esp-println/jtag-serial"]
+# board is the firmware for the Nano ESP32: the console and the log on its
+# USB port (the chip's USB serial), Wi-Fi. qemu is the test build for
+# Espressif's QEMU instead: the console on UART0, no Wi-Fi, no esp-hal init
+# and a fixed pseudo-random generator, never for a real chip.
+default = ["board"]
+board = [
+  "esp-println/jtag-serial",
+  "dep:esp-radio",
+  "dep:esp-rtos",
+  "dep:embassy-executor",
+  "dep:embassy-futures",
+  "dep:embassy-net",
+  "dep:embassy-sync",
+  "dep:embassy-time",
+  "dep:embedded-io-async",
+  "dep:static_cell",
+]
 qemu = ["esp-println/uart"]
 
 [profile.dev]
