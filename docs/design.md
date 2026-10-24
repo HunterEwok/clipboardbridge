@@ -483,6 +483,7 @@ Not built yet (roadmap item 10); the design:
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
 | Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
+| An admin orders a paste on a member (planned, 0.5)            | only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is removed like any device (see "Remote paste") |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -1017,6 +1018,92 @@ in the member protocol, refusing revoked keys, `cbb devices` and `cbb revoke`
 in groups a computer created, and members that verify certificates through an admin CA. Then
 the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
 
+## Remote paste (planned for 0.5)
+
+An admin device sends a text to one chosen member and has it pasted where that member's
+focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for
+devices without a keyboard (a Raspberry Pi on a TV, a kiosk, a console login) and, through
+the Nano ESP32's USB keyboard, for a computer that runs no clipboardbridge at all. For
+running commands on a headless Pi, SSH stays the better tool; remote paste reaches what SSH
+does not, the screen's own session.
+
+### Who may paste where
+
+A device in a group trusts its admins: they already admit it, renew its certificate and
+remove it. So **every admin may paste on every member** that can take it, with no consent
+on the target and no setting to turn it on (D-54). The admins are the root and admin
+phones, the admin computers of a phone group, and in a group a computer created the root
+computer and the admins it made. Members that are not admins never send. The only things
+the target's user sets up are the permissions the operating system demands once, at
+install time (below); without them the system refuses the input, and the sender is told
+so.
+
+### How the text gets in
+
+Two methods: **paste** (write the text to the target's clipboard, then press the paste
+keys) and **type** (send each character as a key). Paste comes first: it does not depend
+on the keyboard layout, it is fast, and a terminal with bracketed paste does not run a
+pasted newline before the user sees it. The `enter` flag presses Enter afterwards.
+
+| Target | Method | Limits |
+|---|---|---|
+| Linux, X11 | the desktop connector: clipboard and primary, then Shift+Insert through XTEST; typing through XTEST with a temporary keysym mapping | a screen locker that grabs the keyboard refuses it |
+| Linux, Wayland with `zwp_virtual_keyboard_v1` (sway, Hyprland, labwc) | the clipboard through data-control, the keys through the virtual keyboard (any Unicode through its own keymap) | the compositor must offer the protocol |
+| Linux, Wayland on GNOME and KDE | a uinput virtual keyboard, as auto-paste does, pressing Shift+Insert after the clipboard write | needs access to `/dev/uinput`, given by the installer through a udev rule for the connector's group; keys only, so typing follows the layout and paste does not |
+| Linux text console | the console helper: TIOCSTI on the active virtual console, as root with only `CAP_SYS_ADMIN` (since Linux 6.2 TIOCSTI is otherwise refused, `dev.tty.legacy_tiocsti`); bytes, so any UTF-8 the console font shows | text consoles only |
+| Linux, tmux | `tmux send-keys -l` into the active pane of the tmux session the login snippet starts | no root needed |
+| Windows | the clipboard agent in the user's session (the service in session 0 cannot inject): clipboard and Ctrl+V, or `SendInput` with `KEYEVENTF_UNICODE` | UIPI keeps it out of elevated windows unless the agent runs with `uiAccess`, which needs a signed binary in Program Files; never on the secure desktop (UAC, the lock screen) |
+| macOS | the pasteboard agent: pasteboard and Cmd+V through `CGEventPost`, or `CGEventKeyboardSetUnicodeString` | the Accessibility permission, granted once in System Settings; an ad hoc signed agent loses it on each update, so it waits for the signed `.pkg` to be practical; Secure Event Input (password fields, Terminal's Secure Keyboard Entry) and the lock screen refuse it |
+| Android | the app's accessibility service: the clipboard, then `ACTION_PASTE` on the focused input node (or `ACTION_SET_TEXT`) | views without an editable node (some terminals and games); not on the lock screen |
+| iPhone, iPad | not possible: iOS lets no app put text into another app | sender only |
+| `cbb-lite` on Linux | the console helper or tmux, as on Linux | as Linux |
+| Nano ESP32 | its USB keyboard (roadmap item 15) types into the computer it is plugged into | Latin characters only |
+| ZX Spectrum Next | none: `.cbb` runs only when started | |
+
+Senders: the iPhone and Android apps (a "Paste on…" action with the devices list) and admin
+computers (`cbb paste --on DEVICE`, from standard input or the clipboard; later the Mac
+menu bar item and a tray item on Linux and Windows).
+
+### The command
+
+A `paste` command is signed like a record (protocol section 10) and never stored. Its
+body carries `v`, `type` (`paste`), `group`, `by`, `to` (the target's device ID), `id` (128
+random bits), `time_ms`, `expires_ms` (at most 30 seconds later), `mode` (`paste` or
+`type`), `enter`, `kind` (`text` or `secret`) and `text`, inside the signed body.
+
+- The sender sends it on its connection to the target, or, without one, to the members
+  that have one; a member passes a command it has not seen (by `id`) only towards `to`,
+  unchanged. The text is not a group event and is not synced.
+- The target checks that the signature verifies to a root on the path and the signer is an
+  admin whose keys are not revoked, that `group` and `to` are its own, that `expires_ms` is
+  in the future and `time_ms` at most 60 seconds ahead of its clock, and that `id` is not
+  in its replay cache (kept until expiry). A target whose clock is not set (a Pi without a
+  clock before NTP) refuses with that reason.
+- It answers with a result that goes back the same way: `pasted`, `refused` with a reason,
+  or `failed` with the underlying error, which the sender shows in debug mode.
+
+The signature, not the connection, says who sent it, so a member that forwards a command,
+such as the hub, cannot forge or change it.
+
+### Safeguards that need no consent
+
+- Control characters other than newline and tab, escape sequences and invalid UTF-8 are
+  removed. At most 4 KiB when typing and 1 MiB when pasting.
+- A phone signs with its key in the Secure Enclave or the Android Keystore, behind Face ID
+  or the fingerprint, one prompt for a few minutes of pastes.
+- The target shows a notification ("Pasted from iPhone", with the sender's name; the ESP32 blinks its LED)
+  and keeps a log of the last 100 pastes: sender, time, length and result, never the text.
+- At most one paste a second and 30 a minute from one sender.
+- A `secret` paste is never logged, and the clipboard is cleared after it.
+- Away from home only inside the group's tunnel, under the rules of "Sync away from home".
+
+**A stolen admin device.** A phone cannot paste without its owner's face or finger. An
+admin computer keeps its admin key in a file, so a thief with it can type commands into
+every member that takes input, root consoles included, until another admin removes it;
+removal reaches every member through the records, and from then on its commands fail the
+signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
+narrow this to a thief who also has the computer running.
+
 ## Open questions
 
 These need experiments on real devices; CI cannot answer them.
@@ -1090,3 +1177,4 @@ These need experiments on real devices; CI cannot answer them.
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
 | D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
+| D-54 | Every admin may paste a text on any member, the target pressing nothing and consenting to nothing, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
