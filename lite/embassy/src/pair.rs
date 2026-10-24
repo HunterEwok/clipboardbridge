@@ -154,6 +154,10 @@ impl Pairing {
 fn home_address(a: IpAddress) -> bool {
     match a {
         IpAddress::Ipv4(a) => a.is_private() || a.is_link_local(),
+        // IPv6 is on only when another crate of the workspace turns it on
+        // in smoltcp (the lite member's tunnel); the phone dials over IPv4.
+        #[allow(unreachable_patterns)]
+        _ => false,
     }
 }
 

@@ -53,7 +53,7 @@ see the agent's log in a terminal.
 
 On a small Linux device `cbb` is the lite member, with the same paths and service as a full
 member (`/var/lib/clipboardbridge`, `clipboardbridge.service`) and the commands below; the
-commands of a full member, such as `pair` or `global`, answer that this is the lite member.
+commands of a full member, such as `pair` or `invite`, answer that this is the lite member.
 Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridge`, or
 `CBB_STATE`), `-socket PATH` (default `/run/clipboardbridge/control.sock`, or `CBB_SOCKET`),
 `-debug` (the details of errors). Install and use are in [lite/README.md](../lite/README.md).
@@ -62,7 +62,8 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 |---|---|
 | `cbb join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | Joins a group by QR code, scanned by the phone app or the shortcut. `-addr` names where the phone reaches this device, when the QR code would name the wrong addresses. |
 | `cbb join -code HOST:PORT` | Joins with the code from `cbb pair` on the group's root or an admin. |
-| `cbb run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
+| `cbb run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member on the home network to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
+| `cbb global [on\|off]` | Shows sync away from home, or turns it on (after the warning about keys in files, typing yes) or off here. Once on, the device meets the group's hub at home, keeps its offer, and away from home reaches it through the group's WireGuard tunnel; a hub that hides its tunnel (`-obfuscate`, `-vless`) keeps the lite member at home. |
 | `cbb copy [-secret]` | Sends standard input to the group. |
 | `cbb paste` | Prints this member's clipboard text. |
 | `cbb status` | This device, its group, and every device of the group with its system, role and marks. |

@@ -14,6 +14,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   show every command as it runs. Without it a failure says it failed, with its exit status.
 - [docs/parity.md](docs/parity.md): what each computer, phone and lite device can do, the
   gaps between devices of one class and the plan to close them.
+- Sync away from home on the lite member: `cbb global on` (with the warning about keys in
+  files) offers its tunnel key to the group's hub at home and keeps the hub's offer; away from
+  home, or on another subnet, it reaches the hub through the group's WireGuard tunnel, with
+  GotaTun's WireGuard and smoltcp's TCP in `cbb`, no TUN device and no root. Plain WireGuard
+  only: a hub that hides its tunnel (`-obfuscate`, `-vless`) keeps a lite member at home.
 - VLESS with REALITY for networks that block WireGuard and AmneziaWG alike: `cbb forward
   -vless-site www.example.com` also takes VLESS on TCP 443, borrowing that site's TLS, and
   `cbb global hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
@@ -83,6 +88,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The lite member and the ESP32 firmware use x25519-dalek 3 (on curve25519-dalek 5) and
   base64 0.23. Dependabot updates the firmware's lock file in the same pull request as the
   lite member's, so the firmware's locked build keeps passing.
+- The lite member dials no address outside the home network: `-peer` names a member at
+  home, and away from home the device reaches the group only through the tunnel.
 - The lite member's command is `cbb`, as on a full member, with the same paths, user and
   service (`/usr/local/bin/cbb`, `/var/lib/clipboardbridge`, `clipboardbridge.service`);
   `cbb version` says which member a device runs, and the commands of a full member answer
@@ -176,6 +183,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   presented, so extra certificates in a chain could get a removed admin's devices back in
   and make an ordinary member count as an admin. Fixed in Go, the phone kits and the lite
   member; the member protocol now passes on only the chain the handshake verified.
+
+- A hub on a host without IPv6 could listen on a random UDP port instead of its own and
+  then hear no client: wireguard-go's socket reported port 0 there, and the device's next
+  rebind, which its own "up" event can cause while it starts, took any free port.
 
 - A data race in the tunnel's WireGuard timers when a peer stops, as when a hub closes: a
   timer that fired at that moment cleared its state outside its lock. clipboardbridge now
