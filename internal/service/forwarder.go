@@ -28,6 +28,7 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 		Link:        forward.Link{Endpoint: fw.Endpoint, Pin: fw.Pin},
 		Key:         st.Key,
 		Obfuscation: st.Obfuscation,
+		VLESSID:     fw.VLESSID,
 		Cert: func() tls.Certificate {
 			s.mu.Lock()
 			defer s.mu.Unlock()
@@ -56,6 +57,9 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 				s.logf("cbb: sync away from home: registered with the forwarder at %v, which reaches this hub at %s", fw.Endpoint, f.Seen)
 			}
 			s.tunFwd = f
+			if r.VLESS != nil && s.tunnel != nil && s.tunnel.Forwarder != nil && !s.tunnel.Forwarder.VLESS.Equal(r.VLESS) {
+				s.vlessLearnedLocked(r.VLESS)
+			}
 		},
 	}
 	s.wg.Add(1)
@@ -78,4 +82,27 @@ func forwarderProblem(err error) string {
 		return "the forwarder could not be reached"
 	}
 	return "the registration with the forwarder failed"
+}
+
+// vlessLearnedLocked keeps the forwarder's VLESS settings the hub learned
+// as it registered, and has the members connect again, so that each gets
+// the offer with them.
+func (s *Service) vlessLearnedLocked(v *tunnel.VLESS) {
+	st := s.tunnel
+	old := st.Forwarder.VLESS
+	st.Forwarder.VLESS = v
+	if err := st.Save(s.cfg.StateDir); err != nil {
+		st.Forwarder.VLESS = old
+		s.logf("cbb: saving the tunnel state: %v", err)
+		return
+	}
+	s.logf("cbb: sync away from home: the hub's clients come over VLESS to the forwarder's port %d", v.Endpoint.Port())
+	go func() {
+		s.mu.Lock()
+		nd := s.nd
+		s.mu.Unlock()
+		if nd != nil {
+			nd.Reconnect()
+		}
+	}()
 }

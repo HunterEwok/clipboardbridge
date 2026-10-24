@@ -105,6 +105,9 @@ func TestMemberInteropVectors(t *testing.T) {
 			Obfuscation: json.RawMessage(`{"jc":4,"jmin":50,"jmax":300,"s1":20,"s2":40,"s3":16,"s4":24,` +
 				`"h1":"1073741840-1073807375","h2":"16-65551","h3":"3221225488-3221291023","h4":"2147483664-2147549199",` +
 				`"header_protection_key":"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg="}`)}}),
+		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(8), PSK: vecBytes(9), Endpoints: []string{"203.0.113.9:8764"},
+			VLESS: json.RawMessage(`{"endpoint":"203.0.113.9:443","public_key":"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",` +
+				`"short_id":"0123456789abcdef","server_name":"www.example.com","id":"5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"}`)}}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",

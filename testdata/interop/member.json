@@ -153,6 +153,23 @@
 					"header_protection_key": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg="
 				}
 			}
+		},
+		{
+			"t": "tunnel",
+			"tunnel": {
+				"hub_key": "CAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJic=",
+				"psk": "CQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJyg=",
+				"endpoints": [
+					"203.0.113.9:8764"
+				],
+				"vless": {
+					"endpoint": "203.0.113.9:443",
+					"public_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+					"short_id": "0123456789abcdef",
+					"server_name": "www.example.com",
+					"id": "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"
+				}
+			}
 		}
 	],
 	"timestamps": [

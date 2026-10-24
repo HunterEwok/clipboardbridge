@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- VLESS with REALITY for networks that block WireGuard and AmneziaWG alike: `cbb forward
+  -vless-site www.example.com` also takes VLESS on TCP 443, borrowing that site's TLS, and
+  `cbb away hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
+  way, inside what looks like HTTPS to the site. The group's WireGuard and member TLS go
+  inside it unchanged. Xray-core runs in `cbb` and in the phones' tunnel (`mobile/cbbtun`),
+  so both apps take the way over VLESS from the hub's offer too.
 - Obfuscation for networks that block WireGuard: `cbb away hub -obfuscate` makes the group's
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub

@@ -21,6 +21,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
 
 // Protocol is the ALPN protocol of a hub's registration.
@@ -53,12 +54,22 @@ type (
 		// Obfuscation is the group's AmneziaWG settings, without which the
 		// forwarder cannot read an obfuscated group's packets.
 		Obfuscation *tunnel.Obfuscation `json:"obfuscation,omitempty"`
+		// VLESS is the group's VLESS user ID, for a hub whose clients come
+		// over VLESS.
+		VLESS string `json:"vless,omitempty"`
 	}
 	answer struct {
-		ID    uint64 `json:"id,omitempty"`    // the registration, for the hellos
-		Mask  []byte `json:"mask,omitempty"`  // the key of the hellos' mask
-		Error string `json:"error,omitempty"` // why the forwarder refused it
-		Seen  string `json:"seen,omitempty"`  // where the hub's WireGuard port is reached
+		ID    uint64       `json:"id,omitempty"`    // the registration, for the hellos
+		Mask  []byte       `json:"mask,omitempty"`  // the key of the hellos' mask
+		VLESS *vlessAnswer `json:"vless,omitempty"` // how clients reach the forwarder over VLESS
+		Error string       `json:"error,omitempty"` // why the forwarder refused it
+		Seen  string       `json:"seen,omitempty"`  // where the hub's WireGuard port is reached
+	}
+	vlessAnswer struct {
+		Port       uint16 `json:"port"`        // the TCP port, at the forwarder's address
+		PublicKey  []byte `json:"public_key"`  // the REALITY key
+		ShortID    string `json:"short_id"`    // REALITY's short ID
+		ServerName string `json:"server_name"` // the site the handshakes name
 	}
 )
 
@@ -238,7 +249,15 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 			return refuse("the obfuscation settings are not usable")
 		}
 	}
-	r := &reg{tag: tag, obf: c.Obfuscation, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
+	if c.VLESS != "" {
+		if f.vless == nil {
+			return refuse("this forwarder has no VLESS; run cbb forward with -vless-site")
+		}
+		if err := tunnel.CheckVLESSID(c.VLESS); err != nil {
+			return refuse("the VLESS user ID is not usable")
+		}
+	}
+	r := &reg{tag: tag, obf: c.Obfuscation, vlessID: c.VLESS, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
 	copy(r.key[:], c.Key)
 	r.mac1 = mac1Key(r.key)
 	hk, err := cs.ExportKeyingMaterial(helloLabel, nil, 32)
@@ -266,16 +285,34 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		f.mu.Unlock()
 		return refuse("the forwarder is full")
 	}
+	if o := f.byVLESS[r.vlessID]; r.vlessID != "" && o != nil && o.tag != tag {
+		f.mu.Unlock()
+		return refuse("another group registered that VLESS user ID")
+	}
 	if old != nil {
 		// The group's hub registers again, or another hub took over.
 		f.dropRegLocked(old)
+	}
+	a := answer{ID: r.id, Mask: f.mask[:]}
+	if r.vlessID != "" {
+		if err := f.vless.AddUser(r.vlessID); err != nil {
+			f.mu.Unlock()
+			return refuse("the VLESS user ID is not usable")
+		}
+		f.byVLESS[r.vlessID] = r
+		pub, err := vless.PublicKey(f.vlessCfg.Key)
+		if err != nil {
+			f.mu.Unlock()
+			return nil, err
+		}
+		a.VLESS = &vlessAnswer{Port: f.vless.Port(), PublicKey: pub, ShortID: vless.ShortID(f.vlessCfg.Key), ServerName: f.vlessCfg.Site}
 	}
 	f.regs[tag], f.byID[r.id] = r, r
 	if r.obf != nil {
 		f.byInit[initSize(r.obf)] = append(f.byInit[initSize(r.obf)], r)
 	}
 	f.mu.Unlock()
-	if err := enc.Encode(answer{ID: r.id, Mask: f.mask[:]}); err != nil {
+	if err := enc.Encode(a); err != nil {
 		f.mu.Lock()
 		f.dropRegLocked(r)
 		f.mu.Unlock()

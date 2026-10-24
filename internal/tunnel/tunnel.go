@@ -37,7 +37,8 @@ import (
 
 	"github.com/amnezia-vpn/amneziawg-go/conn"
 	"github.com/amnezia-vpn/amneziawg-go/device"
-	"github.com/amnezia-vpn/amneziawg-go/tun/netstack"
+
+	"github.com/HunterEwok/clipboardbridge/internal/third_party/netstack"
 )
 
 // Port is the member protocol's port inside the tunnel, the same as on the

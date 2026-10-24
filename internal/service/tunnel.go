@@ -24,6 +24,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
 
 // The tunnel keys travel inside the member protocol (docs/protocol.md,
@@ -120,6 +121,17 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 			return nil
 		}
 	}
+	if fw := st.Forwarder; fw != nil && fw.VLESSID != "" {
+		if fw.VLESS == nil {
+			// The clients may come only over VLESS, whose settings come
+			// with the forwarder's answer; the offer waits for them.
+			return nil
+		}
+		if o.VLESS, err = json.Marshal(fw.VLESS); err != nil {
+			s.logf("cbb: the tunnel's VLESS settings: %v", err)
+			return nil
+		}
+	}
 	return o
 }
 
@@ -154,6 +166,12 @@ func (s *Service) tunnelOffered(from group.DeviceID, o node.TunnelOffer) error {
 		h.Obfuscation = new(tunnel.Obfuscation)
 		if err := json.Unmarshal(o.Obfuscation, h.Obfuscation); err != nil {
 			return fmt.Errorf("bad obfuscation settings: %w", err)
+		}
+	}
+	if len(o.VLESS) > 0 {
+		h.VLESS = new(tunnel.VLESS)
+		if err := json.Unmarshal(o.VLESS, h.VLESS); err != nil {
+			return fmt.Errorf("bad VLESS settings: %w", err)
 		}
 	}
 	old := st.ToHub
@@ -213,6 +231,7 @@ type tunRun struct {
 	cancel context.CancelFunc
 	hub    *tunnel.Hub
 	client *tunnel.Client
+	vless  *vless.Client // the client's way to the hub's forwarder over VLESS
 }
 
 // runTunnelLocked starts the tunnel the state asks for: the hub, or the
@@ -268,15 +287,28 @@ func (s *Service) runTunnelLocked() {
 			s.tunFailedLocked("the hub's offer names no device", err)
 			return
 		}
+		var vc *vless.Client
+		if link.VLESS != nil {
+			// The only way to the hub is VLESS to its forwarder.
+			if vc, err = vless.Dial(*link.VLESS); err != nil {
+				cancel()
+				s.tunFailedLocked("the way over VLESS to the hub's forwarder could not start", err)
+				return
+			}
+			link.Endpoints = []netip.AddrPort{vc.Addr()}
+		}
 		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: st.Key, PresharedKey: link.PresharedKey, Addr: self,
 			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Obfuscation: link.Obfuscation,
 			Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
+			if vc != nil {
+				vc.Close()
+			}
 			s.tunFailedLocked("the tunnel to the hub could not start", err)
 			return
 		}
-		s.tunRun = &tunRun{cancel: cancel, client: c}
+		s.tunRun = &tunRun{cancel: cancel, client: c, vless: vc}
 		s.tunFailedLocked("", nil)
 		s.wg.Add(1)
 		go func() {
@@ -302,6 +334,9 @@ func (s *Service) stopTunnelLocked() {
 	}
 	if r.client != nil {
 		r.client.Close()
+	}
+	if r.vless != nil {
+		r.vless.Close()
 	}
 }
 
@@ -548,6 +583,21 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if len(eps) == 0 && fw == nil {
 			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
 		}
+		if m.VLESS {
+			if fw == nil {
+				return false, nil, errors.New("VLESS goes to a forwarder; give one with -forwarder and -forwarder-key")
+			}
+			// The group keeps its ID, and the forwarder's settings while
+			// the forwarder stays the same.
+			if old := st.Forwarder; old != nil && old.VLESSID != "" {
+				fw.VLESSID = old.VLESSID
+				if old.Endpoint == fw.Endpoint && old.Pin == fw.Pin {
+					fw.VLESS = old.VLESS
+				}
+			} else if fw.VLESSID, err = tunnel.NewVLESSID(); err != nil {
+				return false, nil, err
+			}
+		}
 		obf := st.Obfuscation
 		switch {
 		case !m.Obfuscate:
@@ -608,8 +658,10 @@ func (s *Service) awayStatus() *control.Away {
 	a := &control.Away{Hub: st.IsHub, KeysInFile: st.KeysInFile, Error: s.tunErr, Detail: s.tunDetail}
 	if st.IsHub {
 		a.Obfuscated = st.Obfuscation != nil
+		a.VLESS = st.Forwarder != nil && st.Forwarder.VLESSID != ""
 	} else if st.ToHub != nil {
 		a.Obfuscated = st.ToHub.Obfuscation != nil
+		a.VLESS = st.ToHub.VLESS != nil
 	}
 	if st.IsHub && st.Forwarder != nil {
 		a.Forwarder = &control.Forwarder{Endpoint: st.Forwarder.Endpoint.String(), Error: "the hub is not running"}

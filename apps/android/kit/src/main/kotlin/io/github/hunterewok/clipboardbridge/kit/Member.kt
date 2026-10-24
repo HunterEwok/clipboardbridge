@@ -189,22 +189,24 @@ object Member {
     /**
      * The group's hub's answer to the tunnel key a hello carried (section
      * 11): the hub's WireGuard public key, this member's own preshared key,
-     * the hub's addresses away from home, "ip:port" or "[ipv6]:port", and the
-     * group's obfuscation settings as JSON text, which the kit keeps as they
-     * came and the tunnel reads; null for plain WireGuard.
+     * the hub's addresses away from home, "ip:port" or "[ipv6]:port", the
+     * group's obfuscation settings as JSON text, null for plain WireGuard,
+     * and the way to the hub's forwarder over VLESS as JSON text, null
+     * without it. The kit keeps both as they came and the tunnel reads them.
      */
     class TunnelOffer(
         val hubKey: ByteArray,
         val psk: ByteArray,
         val endpoints: List<String> = emptyList(),
         val obfuscation: String? = null,
+        val vless: String? = null,
     ) {
         /** Whether both keys are 32 bytes, as a tunnel needs. */
         val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
 
         override fun equals(other: Any?): Boolean =
             other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints &&
-                obfuscation == other.obfuscation
+                obfuscation == other.obfuscation && vless == other.vless
 
         override fun hashCode(): Int = hubKey.contentHashCode()
 
@@ -213,6 +215,7 @@ object Member {
             "psk" to Wire.bytes(psk),
             "endpoints" to endpoints.takeIf { it.isNotEmpty() }?.let { l -> JsonArray(l.map { Wire.str(it)!! }) },
             "obfuscation" to obfuscation?.let { Json.parseToJsonElement(it) },
+            "vless" to vless?.let { Json.parseToJsonElement(it) },
         )
 
         companion object {
@@ -223,6 +226,7 @@ object Member {
                     (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw WireTypeException("endpoints: not a string")
                 } ?: emptyList(),
                 o.optObject("obfuscation")?.toString(),
+                o.optObject("vless")?.toString(),
             )
         }
     }

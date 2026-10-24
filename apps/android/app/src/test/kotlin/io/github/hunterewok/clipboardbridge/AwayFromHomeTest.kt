@@ -39,6 +39,9 @@ class AwayFromHomeTest {
         // An obfuscated hub's settings are kept as they came.
         val hidden = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, """{"jc":4,"s1":20}""")
         assertEquals(hidden, AwayState.decode(AwayState(key).withOffer(hub, hidden).encode())!!.offer)
+        // So is the way over VLESS.
+        val tunneled = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, null, """{"endpoint":"203.0.113.9:443"}""")
+        assertEquals(tunneled, AwayState.decode(AwayState(key).withOffer(hub, tunneled).encode())!!.offer)
 
         // Another version, a cut file and a bad offer are not states.
         val b = AwayState(key).withOffer(hub, offer).encode()
@@ -47,7 +50,12 @@ class AwayFromHomeTest {
         assertNull(AwayState.decode(AwayState(key).withOffer(hub, Member.TunnelOffer(ByteArray(31), ByteArray(32))).encode()))
     }
 
-    private class FakeTunnel(override val port: Int, val endpoint: String, val obfuscation: String = "") : OpenTunnel {
+    private class FakeTunnel(
+        override val port: Int,
+        val endpoint: String,
+        val obfuscation: String = "",
+        val vless: String = "",
+    ) : OpenTunnel {
         val endpoints = CopyOnWriteArrayList(listOf(endpoint))
         @Volatile var closed = false
         override fun setEndpoint(endpoint: String) {
@@ -70,7 +78,8 @@ class AwayFromHomeTest {
             hub: String,
             endpoint: String,
             obfuscation: String,
-        ): OpenTunnel = FakeTunnel(40_000 + started.size, endpoint, obfuscation).also { started.add(it) }
+            vless: String,
+        ): OpenTunnel = FakeTunnel(40_000 + started.size, endpoint, obfuscation, vless).also { started.add(it) }
     }
 
     private object NoTransport : FrameTransport {
@@ -136,6 +145,7 @@ class AwayFromHomeTest {
             val t = tunnels.started.poll(5, TimeUnit.SECONDS)!!
             assertEquals(offer.endpoints[0], t.endpoint)
             assertEquals("", t.obfuscation)
+            assertEquals("", t.vless)
             assertEquals(t.port to hub, dialed.poll(5, TimeUnit.SECONDS))
             // No answer: the next endpoint, on the same tunnel.
             eventually("the next endpoint") { t.endpoints.contains(offer.endpoints[1]) }

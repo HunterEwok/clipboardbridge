@@ -16,8 +16,8 @@ struct GoTunnels: Tunnels {
     func publicKey(_ privateKey: Data) throws -> Data { try Self.call("PublicKey") { CbbtunPublicKey(privateKey, $0) } }
 
     func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String,
-               obfuscation: String) throws -> OpenTunnel {
-        GoTunnel(try Self.call("Start") { CbbtunStart(privateKey, psk, hubKey, device, hub, endpoint, obfuscation, $0) })
+               obfuscation: String, vless: String) throws -> OpenTunnel {
+        GoTunnel(try Self.call("Start") { CbbtunStart(privateKey, psk, hubKey, device, hub, endpoint, obfuscation, vless, $0) })
     }
 
     private static func call<T>(_ name: String, _ f: (NSErrorPointer) -> T?) throws -> T {

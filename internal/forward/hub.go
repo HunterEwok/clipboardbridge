@@ -55,6 +55,9 @@ type HubConfig struct {
 	// Obfuscation is the group's AmneziaWG settings, nil for plain
 	// WireGuard; the forwarder needs them to read the group's packets.
 	Obfuscation *tunnel.Obfuscation
+	// VLESSID is the group's VLESS user ID, for a hub whose clients come
+	// over VLESS; empty without.
+	VLESSID string
 	// Cert returns the hub's member certificate with its chain to the
 	// group's root; it is asked at each registration, so a renewed
 	// certificate is taken.
@@ -72,6 +75,7 @@ type HubConfig struct {
 type Report struct {
 	Registered bool
 	Seen       netip.AddrPort // where the forwarder reaches the hub's WireGuard port
+	VLESS      *tunnel.VLESS  // how the hub's clients reach the forwarder over VLESS
 	Err        error          // why the hub is not registered
 }
 
@@ -173,7 +177,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	if err != nil {
 		return err
 	}
-	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation}); err != nil {
+	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID}); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
 	var a answer
@@ -187,8 +191,19 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 		return errors.New("registering with the forwarder: no key for the hellos' mask")
 	}
 	mask := [32]byte(a.Mask)
+	var vl *tunnel.VLESS
+	if cfg.VLESSID != "" {
+		if a.VLESS == nil {
+			return errors.New("registering with the forwarder: it gave no VLESS settings")
+		}
+		vl = &tunnel.VLESS{Endpoint: netip.AddrPortFrom(cfg.Link.Endpoint.Addr(), a.VLESS.Port), PublicKey: a.VLESS.PublicKey,
+			ShortID: a.VLESS.ShortID, ServerName: a.VLESS.ServerName, ID: cfg.VLESSID}
+		if err := vl.Check(); err != nil {
+			return fmt.Errorf("registering with the forwarder: its VLESS settings: %w", err)
+		}
+	}
 	raw.SetDeadline(time.Time{})
-	report(Report{Registered: true})
+	report(Report{Registered: true, VLESS: vl})
 	var key [32]byte
 	hk, err := cs.ExportKeyingMaterial(helloLabel, nil, 32)
 	if err != nil {
@@ -226,7 +241,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 		case a := <-answers:
 			if ep, err := netip.ParseAddrPort(a.Seen); err == nil && ep != seen {
 				seen, every = ep, helloEvery
-				report(Report{Registered: true, Seen: seen})
+				report(Report{Registered: true, Seen: seen, VLESS: vl})
 			}
 		case <-t.C:
 			counter = max(counter+1, uint64(time.Now().UnixNano()))

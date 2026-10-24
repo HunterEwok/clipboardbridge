@@ -5,14 +5,18 @@ package cbbtun
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
+	"github.com/HunterEwok/clipboardbridge/internal/vless/vlesstest"
 )
 
 const (
@@ -22,7 +26,7 @@ const (
 
 // TestThroughTunnel connects to the loopback port and reaches the hub's
 // member port, both ways.
-func TestThroughTunnel(t *testing.T) { throughTunnel(t, nil) }
+func TestThroughTunnel(t *testing.T) { throughTunnel(t, nil, false) }
 
 // TestThroughObfuscatedTunnel does the same with a hub that speaks
 // AmneziaWG, whose settings the phone gets as JSON.
@@ -31,10 +35,55 @@ func TestThroughObfuscatedTunnel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	throughTunnel(t, obf)
+	throughTunnel(t, obf, false)
 }
 
-func throughTunnel(t *testing.T, obf *tunnel.Obfuscation) {
+// TestThroughVLESS does the same over VLESS with REALITY to a forwarder,
+// here one that passes the packets straight to the hub, plain and
+// obfuscated.
+func TestThroughVLESS(t *testing.T) {
+	t.Run("plain", func(t *testing.T) { throughTunnel(t, nil, true) })
+	t.Run("obfuscated", func(t *testing.T) {
+		obf, err := tunnel.NewObfuscation()
+		if err != nil {
+			t.Fatal(err)
+		}
+		throughTunnel(t, obf, true)
+	})
+}
+
+// overVLESS starts VLESS with REALITY in front of the hub's UDP port and
+// returns the settings a hub's offer would carry, as JSON.
+func overVLESS(t *testing.T, port uint16) string {
+	t.Helper()
+	var key [32]byte
+	rand.Read(key[:])
+	s, err := vless.Listen(vless.ServerConfig{Listen: "127.0.0.1:0", Dest: vlesstest.Decoy(t), ServerName: vlesstest.Site,
+		Key: key, To: netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), port)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	id, err := tunnel.NewVLESSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddUser(id); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := vless.PublicKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(tunnel.VLESS{Endpoint: netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), s.Port()),
+		PublicKey: pub, ShortID: vless.ShortID(key), ServerName: vlesstest.Site, ID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func throughTunnel(t *testing.T, obf *tunnel.Obfuscation, viaVLESS bool) {
 	priv, err := NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +126,11 @@ func throughTunnel(t *testing.T, obf *tunnel.Obfuscation) {
 		}
 		settings = string(b)
 	}
-	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, fmt.Sprintf("127.0.0.1:%d", hub.UDPPort()), settings)
+	endpoint, link := fmt.Sprintf("127.0.0.1:%d", hub.UDPPort()), ""
+	if viaVLESS {
+		endpoint, link = "", overVLESS(t, uint16(hub.UDPPort()))
+	}
+	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, endpoint, settings, link)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +168,7 @@ func TestCloseEndsConnections(t *testing.T) {
 	hubKey, _ := tunnel.NewPrivateKey()
 	hubPub := hubKey.Public()
 	// No hub answers: the connection waits in the dial until Close.
-	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, "127.0.0.1:9", "")
+	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, "127.0.0.1:9", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,20 +208,22 @@ func TestBadArguments(t *testing.T) {
 	k := make([]byte, 32)
 	k[0] = 1
 	cases := []struct {
-		name                         string
-		priv, psk, hub               []byte
-		device, hubID, endpoint, obf string
+		name                                string
+		priv, psk, hub                      []byte
+		device, hubID, endpoint, obf, vless string
 	}{
-		{"short key", priv[:31], k, k, phoneID, hubID, "127.0.0.1:1", ""},
-		{"short psk", priv, nil, k, phoneID, hubID, "127.0.0.1:1", ""},
-		{"bad device", priv, k, k, "phone", hubID, "127.0.0.1:1", ""},
-		{"bad hub", priv, k, k, phoneID, "HUB", "127.0.0.1:1", ""},
-		{"bad endpoint", priv, k, k, phoneID, hubID, "example.org:1", ""},
-		{"obfuscation not JSON", priv, k, k, phoneID, hubID, "127.0.0.1:1", "{"},
-		{"bad obfuscation", priv, k, k, phoneID, hubID, "127.0.0.1:1", `{"jc":1}`},
+		{"short key", priv[:31], k, k, phoneID, hubID, "127.0.0.1:1", "", ""},
+		{"short psk", priv, nil, k, phoneID, hubID, "127.0.0.1:1", "", ""},
+		{"bad device", priv, k, k, "phone", hubID, "127.0.0.1:1", "", ""},
+		{"bad hub", priv, k, k, phoneID, "HUB", "127.0.0.1:1", "", ""},
+		{"bad endpoint", priv, k, k, phoneID, hubID, "example.org:1", "", ""},
+		{"obfuscation not JSON", priv, k, k, phoneID, hubID, "127.0.0.1:1", "{", ""},
+		{"bad obfuscation", priv, k, k, phoneID, hubID, "127.0.0.1:1", `{"jc":1}`, ""},
+		{"VLESS not JSON", priv, k, k, phoneID, hubID, "", "", "{"},
+		{"bad VLESS", priv, k, k, phoneID, hubID, "", "", `{"endpoint":"127.0.0.1:443","id":"x"}`},
 	}
 	for _, tc := range cases {
-		if tun, err := Start(tc.priv, tc.psk, tc.hub, tc.device, tc.hubID, tc.endpoint, tc.obf); err == nil {
+		if tun, err := Start(tc.priv, tc.psk, tc.hub, tc.device, tc.hubID, tc.endpoint, tc.obf, tc.vless); err == nil {
 			tun.Close()
 			t.Errorf("%s: Start succeeded", tc.name)
 		}

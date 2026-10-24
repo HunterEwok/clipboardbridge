@@ -23,6 +23,8 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
+	"github.com/HunterEwok/clipboardbridge/internal/vless/vlesstest"
 )
 
 // member returns a member certificate of a new group with its chain, as a
@@ -46,12 +48,17 @@ func member(t *testing.T) (tls.Certificate, string) {
 }
 
 func startForwarder(t *testing.T, limits Limits) (*Forwarder, string) {
+	return startForwarderWith(t, Config{Limits: limits})
+}
+
+func startForwarderWith(t *testing.T, cfg Config) (*Forwarder, string) {
 	t.Helper()
 	cert, err := NewCert()
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, Limits: limits, Logf: t.Logf})
+	cfg.Listen, cfg.Cert, cfg.Logf = "127.0.0.1:0", cert, t.Logf
+	f, err := Listen(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,12 +82,19 @@ type hubSide struct {
 	key     tunnel.Key
 	addr    netip.Addr
 	obf     *tunnel.Obfuscation
+	vless   *tunnel.VLESS // how the hub's clients reach the forwarder over VLESS
 	reports chan Report
 }
 
 // startHub brings up a hub for the clients and registers it with the
 // forwarder; it returns once the forwarder saw the hub's port.
 func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, obf *tunnel.Obfuscation) *hubSide {
+	return startHubWith(t, f, pin, clients, HubConfig{Obfuscation: obf})
+}
+
+// startHubWith is startHub with more of the hub's configuration.
+func startHubWith(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, hc HubConfig) *hubSide {
+	obf := hc.Obfuscation
 	t.Helper()
 	cert, _ := member(t)
 	key, err := tunnel.NewPrivateKey()
@@ -101,8 +115,8 @@ func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, obf
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, Obfuscation: obf, Cert: func() tls.Certificate { return cert }, Send: h.Send,
-			Report: func(r Report) {
+		Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, Obfuscation: obf, VLESSID: hc.VLESSID,
+			Cert: func() tls.Certificate { return cert }, Send: h.Send, Report: func(r Report) {
 				select {
 				case hs.reports <- r:
 				default:
@@ -119,6 +133,9 @@ func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, obf
 		case r := <-hs.reports:
 			if r.Err != nil {
 				t.Fatalf("registering: %v", r.Err)
+			}
+			if r.VLESS != nil {
+				hs.vless = r.VLESS
 			}
 			if r.Seen.IsValid() {
 				if r.Seen.Port() != uint16(h.UDPPort()) {
@@ -152,8 +169,14 @@ func newClient(t *testing.T) (tunnel.Key, tunnel.Peer) {
 // roundTrip connects a client through the forwarder to the hub and back.
 func roundTrip(t *testing.T, f *Forwarder, hs *hubSide, key tunnel.Key, peer tunnel.Peer) error {
 	t.Helper()
+	return roundTripTo(t, f.Addr(), hs, key, peer)
+}
+
+// roundTripTo is roundTrip with the client sending to ep.
+func roundTripTo(t *testing.T, ep netip.AddrPort, hs *hubSide, key tunnel.Key, peer tunnel.Peer) error {
+	t.Helper()
 	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: peer.PresharedKey, Addr: peer.Addr,
-		HubPublicKey: hs.key.Public(), HubAddr: hs.addr, Endpoint: f.Addr(), Obfuscation: hs.obf, Logf: t.Logf})
+		HubPublicKey: hs.key.Public(), HubAddr: hs.addr, Endpoint: ep, Obfuscation: hs.obf, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -666,4 +689,50 @@ func TestRouteObfuscated(t *testing.T) {
 
 	expect("B's answer", hubB, obfuscate(oB, response(200, 8)), other)
 	expect("the other client's data to B", other, obfuscate(oB, data(200)), hubB)
+}
+
+func TestThroughVLESS(t *testing.T) {
+	var rk [32]byte
+	rand.Read(rk[:])
+	f, pin := startForwarderWith(t, Config{VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t), Key: rk}})
+	for _, obf := range []*tunnel.Obfuscation{nil, newObfuscation(t)} {
+		id, err := tunnel.NewVLESSID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, peer := newClient(t)
+		hs := startHubWith(t, f, pin, []tunnel.Peer{peer}, HubConfig{Obfuscation: obf, VLESSID: id})
+		if hs.vless == nil || hs.vless.ID != id || hs.vless.Endpoint.Port() != f.vless.Port() {
+			t.Fatalf("the hub learned %+v", hs.vless)
+		}
+		vc, err := vless.Dial(*hs.vless)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := roundTripTo(t, vc.Addr(), hs, key, peer); err != nil {
+			t.Fatalf("obfuscated %v: %v", obf != nil, err)
+		}
+		vc.Close()
+	}
+}
+
+func TestVLESSRefused(t *testing.T) {
+	f, pin := startForwarder(t, Limits{})
+	cert, _ := member(t)
+	key, _ := tunnel.NewPrivateKey()
+	id, _ := tunnel.NewVLESSID()
+	reports := make(chan Report, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, VLESSID: id,
+		Cert: func() tls.Certificate { return cert }, Send: func(netip.AddrPort, []byte) error { return nil },
+		Report: func(r Report) { reports <- r }})
+	select {
+	case r := <-reports:
+		if r.Err == nil || !strings.Contains(r.Err.Error(), "no VLESS") {
+			t.Fatalf("a hub asking a forwarder without VLESS: %+v", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no answer")
+	}
 }
