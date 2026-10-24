@@ -94,6 +94,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: `cbb-lite` makes its control socket in a private directory and narrows it there
+  before moving it into place, so nobody can connect in the moment before its mode is set,
+  whatever the umask. Dependabot also watches the lite member's crates and the Android
+  app's Gradle dependencies.
+
 - Security: handshakes to unknown groups cost the forwarder at most a fixed number of group
   checks a second (`Limits.ScanRate`), whatever their source addresses, so a flood of forged
   handshakes cannot hold up the other groups.
