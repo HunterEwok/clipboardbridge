@@ -778,7 +778,25 @@ decides which two connections to join. What it learns, and what the user's own h
 not let out: which devices of the group talk, when, and how much. Both devices must be
 online at once, since it stores nothing. It is built as an option for those who run it
 themselves and is never switched on in the project's own forwarder, which collects nothing
-about who talks to whom. Its details are designed when it is built.
+about who talks to whom.
+
+- `cbb relay -group TAG` runs it on the user's server, for the groups whose tags it is
+  given and no other. Each device turns it on with `cbb away relay ADDRESS -key KEY`, in
+  place of a hub; the key is the pin of the relay's own key, as with the forwarder.
+- A device registers with its member certificate and proves it holds its WireGuard key, as
+  a hub does with the forwarder. The relay then gives it a tunnel, a preshared key and a
+  tunnel address of the relay's choosing, and drops it when the registration ends.
+- Inside the tunnels the relay listens on one port. Each device keeps a connection there
+  for notes: which of its group's devices are on the relay, and calls. The device with the
+  lower ID dials the other through the relay; the relay calls the other, joins the two
+  connections once it answers, and copies the bytes. Member TLS then runs end to end
+  between the two devices, and the answering device checks that the certificate is the
+  caller's, so the relay cannot pose as a device.
+- The relay sees which devices of a group are online, which of them talk, when and how
+  much; it cannot read the clipboard or pose as a device. A device still revoked by the
+  group's records can register, since the relay does not read the records, but the other
+  devices' member TLS refuses it, so it learns only who is online.
+- The wire format is in docs/protocol.md, section 14.
 
 ### Blocked networks
 
@@ -797,7 +815,7 @@ sing-box is not used (GPL).
 
 | Member                         | Tunnel                                                                                        | Role                     |
 |--------------------------------|-----------------------------------------------------------------------------------------------|--------------------------|
-| Go service (Linux, macOS, Windows) | wireguard-go with netstack in `cbb`; AmneziaWG and Xray-core as Go modules               | hub, forwarder or client |
+| Go service (Linux, macOS, Windows) | wireguard-go with netstack in `cbb`; AmneziaWG and Xray-core as Go modules               | hub, forwarder, relay or client |
 | iPhone app                     | in the app process, no Network Extension, one Go framework for WireGuard and Xray             | client, while the app is open |
 | Android app                    | in the app process, in the foreground service the app already has; no `VpnService`            | client                   |
 | `cbb-lite` on Linux            | a Rust userspace WireGuard (GotaTun, from Mullvad) with a small TCP stack                     | client                   |
@@ -861,7 +879,7 @@ only adds to it.
    follows.
 5. The forwarder: `cbb forward` and the hub's registration, routing by `mac1` (done); the
    computed port as a fallback if AmneziaWG needs it; the project's own server.
-6. The blind relay, self-hosted only.
+6. The blind relay, self-hosted only (done for computers).
 7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,
    making and opening remote invitations.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY.

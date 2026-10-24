@@ -76,6 +76,8 @@ type Header struct {
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
 	Forwarder    string   `json:"forwarder,omitempty"`   // away hub: the forwarder's address, with its key in ForwarderKey
 	ForwarderKey string   `json:"forwarder_key,omitempty"`
+	Relay        string   `json:"relay,omitempty"` // away relay: the relay's address, with its key in RelayKey
+	RelayKey     string   `json:"relay_key,omitempty"`
 	Consent      bool     `json:"consent,omitempty"` // away on, join with an invitation: the user agreed to what the warning says; answer: yes
 	Invite       string   `json:"invite,omitempty"`  // the text of a remote invitation: made by invite, used by join
 	Joining      *Joining `json:"joining,omitempty"` // invite: a device to confirm, before it is admitted
@@ -105,6 +107,7 @@ type Away struct {
 	KeysInFile bool       `json:"keys_in_file,omitempty"`
 	Error      string     `json:"error,omitempty"`     // what went wrong last, for the user
 	Forwarder  *Forwarder `json:"forwarder,omitempty"` // on the hub: its forwarder; nil without one
+	Relay      *Relay     `json:"relay,omitempty"`     // on a device that meets the others at a relay; nil without one
 	Detail     string     `json:"detail,omitempty"`    // the underlying error, for debugging
 }
 
@@ -115,6 +118,15 @@ type Forwarder struct {
 	Seen       string `json:"seen,omitempty"`   // where the forwarder reaches the hub's port
 	Error      string `json:"error,omitempty"`  // why the hub is not registered
 	Detail     string `json:"detail,omitempty"` // the underlying error, for debugging
+}
+
+// Relay describes a device's link to its blind relay.
+type Relay struct {
+	Endpoint  string   `json:"endpoint"`
+	Connected bool     `json:"connected,omitempty"` // registered, with its tunnel
+	Online    []string `json:"online,omitempty"`    // the other devices of the group on the relay
+	Error     string   `json:"error,omitempty"`     // why it is not connected
+	Detail    string   `json:"detail,omitempty"`    // the underlying error, for debugging
 }
 
 // Joining is a device that used a remote invitation, for the admin to

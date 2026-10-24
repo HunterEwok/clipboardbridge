@@ -94,6 +94,24 @@ func TestStateRoundTrip(t *testing.T) {
 	if h := gotC.ToHub; h == nil || h.Device != hub.id || h.PublicKey != link.PublicKey || h.PresharedKey != link.PresharedKey || len(h.Endpoints) != 2 {
 		t.Errorf("loaded hub %+v, saved %+v", gotC.ToHub, link)
 	}
+
+	// A device that meets the others at a relay.
+	r, err := NewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Relay = &RelayLink{Endpoint: netip.MustParseAddrPort("198.51.100.9:8764"), Pin: "sha256:AAAA"}
+	rdir := t.TempDir()
+	if err := r.Save(rdir); err != nil {
+		t.Fatal(err)
+	}
+	gotR, err := LoadState(rdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotR.Relay == nil || *gotR.Relay != *r.Relay {
+		t.Errorf("loaded relay %+v, saved %+v", gotR.Relay, r.Relay)
+	}
 }
 
 func TestBadStateFiles(t *testing.T) {
@@ -105,6 +123,8 @@ func TestBadStateFiles(t *testing.T) {
 		"member twice":     `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
 		"member, no PSK":   `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
 		"member, no chain": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
+		"relay and hub":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
+		"relay, no key":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
 		"hub, bad device":  `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","to_hub":{"device":"x","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}}`,
 	} {
 		dir := t.TempDir()

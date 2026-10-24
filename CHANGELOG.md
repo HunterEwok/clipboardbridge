@@ -15,6 +15,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
   groups apart, limits each group, and writes nothing about the groups, not even to its
   log. `cbb away` on the hub shows the registration.
+- A blind relay for a group without a computer to be its hub: `cbb relay -group TAG` runs it
+  on a server you run, and `cbb away relay ADDRESS:PORT -key KEY` on each computer meets the
+  group's other computers there away from home. It holds none of the group's keys: each
+  computer registers with its member certificate and gets its own WireGuard tunnel to the
+  relay, which joins two computers' member connections end to end, so it sees who talks
+  and when but cannot read the clipboard or pose as a device. It serves only the groups it
+  is given and writes nothing about them. `cbb away` shows the link.
 - `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
   `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
