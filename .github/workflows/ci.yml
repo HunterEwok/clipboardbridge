@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -267,6 +267,23 @@ jobs:
           sed -i /linux-arm64/d "$sums"
           if sh packaging/homebrew/formula.sh v1.2.3 "$sums" >/dev/null; then
             echo "formula.sh wrote a formula without a checksum" >&2
+            exit 1
+          fi
+      - name: the winget manifest takes its checksums from SHA256SUMS, for both zips
+        run: |
+          sums="$RUNNER_TEMP/SHA256SUMS"
+          for n in amd64 arm64; do
+            printf '%s  clipboardbridge-windows-%s.zip\n' "$(printf %s "$n" | sha256sum | cut -d' ' -f1)" "$n"
+          done >"$sums"
+          out="$RUNNER_TEMP/winget"
+          sh packaging/winget/manifest.sh v1.2.3 "$sums" "$out"
+          for f in "$out"/*.yaml; do ruby -ryaml -e 'YAML.safe_load(File.read(ARGV[0]))' "$f"; done
+          test "$(find "$out" -type f | wc -l)" -eq 3
+          grep -qF "$(printf arm64 | sha256sum | cut -d' ' -f1 | tr a-f A-F)" "$out/HunterEwok.clipboardbridge.installer.yaml"
+          grep -qF 'releases/download/v1.2.3/clipboardbridge-windows-amd64.zip' "$out/HunterEwok.clipboardbridge.installer.yaml"
+          sed -i /arm64/d "$sums"
+          if sh packaging/winget/manifest.sh v1.2.3 "$sums" "$RUNNER_TEMP/winget2"; then
+            echo "manifest.sh wrote a manifest without a checksum" >&2
             exit 1
           fi
       - name: desktop entry
@@ -475,7 +492,8 @@ jobs:
           # Without a console nobody answers, which adds no rules and keeps no answer; the
           # answer get.ps1's express run kept goes first.
           Remove-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name FirewallAnswer -ErrorAction SilentlyContinue
-          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 9000
+          # cbb install runs the installer beside it, as after winget.
+          & "$env:RUNNER_TEMP\unpacked\clipboardbridge\cbb.exe" install -Port 9000
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Express

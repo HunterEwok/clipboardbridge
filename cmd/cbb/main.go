@@ -46,6 +46,8 @@ Commands:
 Rarely needed:
   holder [auto|first|fallback|never]
                           Show or set whether this computer holds clipboardbridge.local.
+  install [options]       Windows, after winget: install the service from this copy
+                          (the options of install.ps1, such as -Express).
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link this desktop's clipboard to the service (started at sign-in).
 
@@ -84,6 +86,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdRevoke(rest, stdout, stderr)
 	case "rename":
 		return cmdRename(rest, stdout, stderr)
+	case "install":
+		return cmdInstall(rest, stdout, stderr)
 	case "upgrade":
 		return cmdUpgrade(rest, stdout, stderr)
 	case "takeover":

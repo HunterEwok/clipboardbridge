@@ -117,6 +117,9 @@ Install on each computer first.
   `$env:CBB_PORT = "9000"` before it. Without the one-line installer: unpack
   `clipboardbridge-windows-amd64.zip` (or `-arm64`) and run
   `powershell -ExecutionPolicy Bypass -File clipboardbridge\packaging\windows\install.ps1`.
+  With winget, once the package is in its repository: `winget install
+  HunterEwok.clipboardbridge`, then `cbb install` in the administrator terminal (again after
+  each `winget upgrade`).
 
 Then, on the new computer:
 

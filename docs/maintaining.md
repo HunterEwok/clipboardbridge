@@ -178,6 +178,35 @@ Without the secret the release still succeeds and warns that the tap kept its fo
 fill the tap for a release made before, run `formula.sh` with that tag and its
 `SHA256SUMS` and commit the output to the tap by hand.
 
+## winget
+
+The package `HunterEwok.clipboardbridge` installs the release's zip for Windows as winget's
+portable command `cbb`; `cbb install` then runs the installer from the same zip. After each
+release (not a pre-release) the `winget` job of `.github/workflows/release.yml` writes its
+three manifest files with `packaging/winget/manifest.sh` from the release's `SHA256SUMS` and
+attaches them as `winget-manifest.zip`; CI's `packaging` job checks the script on every pull
+request. winget takes a package only by a pull request to
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs), which its reviewers merge:
+
+- [ ] For each release, on a Windows PC: unpack `winget-manifest.zip`, check it with
+  `winget validate --manifest <folder>` and `winget install --manifest <folder>`, then submit
+  it with `wingetcreate submit <folder>` (it asks for a GitHub token and opens the pull
+  request under `manifests/h/HunterEwok/clipboardbridge/<version>`).
+
+## Signing for Windows
+
+The release workflow signs `cbb.exe` and `cbbw.exe` with Authenticode (`osslsigncode`, SHA-256,
+a timestamp from DigiCert) when the secrets hold a code signing certificate; without it they
+stay unsigned and SmartScreen warns on the first start. Setting it up, once:
+
+- [ ] Buy a code signing certificate whose key can be exported as a PKCS#12 file (an OV
+  certificate; an EV one lives on a hardware token and needs a signing service instead).
+- [ ] In this repository's Actions secrets: `CBB_WINDOWS_CERT_BASE64`, the `.pfx` file in
+  base64 (`base64 -w0 cert.pfx`), and `CBB_WINDOWS_CERT_PASSWORD`, its password.
+
+To check it without a release, run the release workflow from a branch: its Windows builds
+sign the programs.
+
 ## Android signing key
 
 The release workflow builds `clipboardbridge-X.Y.Z.apk` from the tag (version code

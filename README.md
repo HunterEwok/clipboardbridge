@@ -23,6 +23,10 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
 ```powershell
 # Windows 10 (1809 or later) or 11, x86-64 or ARM64, in an administrator PowerShell
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+
+# or with winget, once the package is in winget's repository (the second line starts the service)
+winget install HunterEwok.clipboardbridge
+cbb install
 ```
 
 The installers check the download against the release's `SHA256SUMS`, list the firewall

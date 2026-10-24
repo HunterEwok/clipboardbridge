@@ -26,7 +26,7 @@ on every platform of the class, on the roadmap).
 | Battery detection | yes | yes | yes | |
 | Installer and uninstaller, `--purge` | yes | yes | yes | |
 | One-line installer with checksum check | yes (`get.sh`) | yes (`get.sh`) | yes (`get.ps1`) | |
-| Package manager | Homebrew | Homebrew | **gap** | Windows: winget (G4) |
+| Package manager | Homebrew | Homebrew | winget (`cbb install` after it) | each release writes the winget manifest; it reaches winget by a pull request to its repository (docs/maintaining.md) |
 | Member port other than 8764 | yes (`--port`) | yes (`--port`) | yes (`-Port`) | |
 | Inbound only from the home network, in the program | yes | yes | yes | the member port drops other addresses |
 | Inbound only from the home network, by the system | yes (ufw, firewalld) | **OS** | yes (Windows Firewall) | the macOS application firewall allows or blocks a program, not an address; a Network Extension of the Mac app (roadmap item 22) |
@@ -38,7 +38,7 @@ on every platform of the class, on the roadmap).
 | Error details switch in the installers | yes (`CBB_ERROR_DETAILS=1`) | yes (`CBB_ERROR_DETAILS=1`) | yes (`-Details`, `CBB_ERROR_DETAILS=1`) | |
 | Text-console helper (tmux) | yes (`--console`) | **OS** | **OS** | for a Linux machine without a desktop; a Mac and a Windows PC always have one |
 | Removal from the system's app list | — | **OS** | yes (Settings, Apps) | Linux has no common list; the Mac app (item 22) brings it to macOS |
-| Signed program | — | planned (`.pkg`, Developer ID) | **gap** | Windows Authenticode signing (G5) |
+| Signed program | — | planned (`.pkg`, Developer ID) | ready, needs a certificate | the release signs with Authenticode once the secrets hold a certificate (G5) |
 | Device keys in hardware | planned | planned | planned | roadmap item 13 |
 | Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
 | Opening the hub's UDP port in the firewall, with consent | yes (ufw, firewalld; commands for nftables, iptables) | **OS** | yes | `cbb global hub` asks, `-firewall yes` without asking; the macOS application firewall already allows a listed program on every port |
@@ -93,8 +93,8 @@ One pull request each, in this order; anything under 100 lines rides in the open
 4. **P4**, done: rename a device in both apps (and `cbb rename` on computers), a signed record.
 5. **P1, P2**, done: the iPhone's Share extension and Control Center control.
 6. **P3**, done: a home-screen widget in both apps.
-7. **G4, G5**: a winget manifest and Authenticode signing for Windows (signing needs a
-   certificate; the manifest does not).
+7. **G4, G5**, done: a winget manifest from every release and `cbb install` after winget;
+   Authenticode signing in the release, waiting for the owner's certificate.
 8. **G6**, decided by the owner: the firewall rules only with consent, the same on every
    computer. The installer finds the firewall itself (ufw, firewalld, nftables, iptables on
    Linux; Windows Firewall; the macOS application firewall), lists each rule it needs
