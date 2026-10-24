@@ -341,19 +341,28 @@ jobs:
           brew install local/test/clipboardbridge
           brew test local/test/clipboardbridge
           "$(brew --prefix)/bin/cbb" version | grep -q v0.0.1
-      - name: install.sh --in-place runs Homebrew's binary, and uninstall.sh removes it all
+      - name: install.sh --in-place runs a root-owned copy of Homebrew's binary, and uninstall.sh removes it all
         run: |
           opt="$(brew --prefix)/opt/clipboardbridge"
           share="$opt/share/clipboardbridge/packaging/macos"
           daemon=io.github.hunterewok.clipboardbridge
           sudo sh "$share/install.sh" --in-place "$opt/bin/cbb"
-          grep -qF "<string>$opt/bin/cbb</string>" "/Library/LaunchDaemons/$daemon.plist"
+          # The service, which holds the group's keys, runs a root-owned copy, never the
+          # binary Homebrew's user may replace; the agent runs Homebrew's.
+          service="/Library/Application Support/clipboardbridge/bin/cbb"
+          grep -qF "<string>$service</string>" "/Library/LaunchDaemons/$daemon.plist"
+          if grep -qF "<string>$opt/bin/cbb</string>" "/Library/LaunchDaemons/$daemon.plist"; then
+            echo "the service runs Homebrew's binary" >&2
+            exit 1
+          fi
+          [ "$(stat -f %Su "$service")" = root ]
+          [ "$(stat -f %Su "$(dirname "$service")")" = root ]
           grep -qF "<string>$opt/bin/cbb</string>" "/Library/LaunchAgents/$daemon.agent.plist"
           plutil -lint "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$daemon.agent.plist"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
           sudo "$opt/bin/cbb" status | grep -q 'Not in a group'
           fw=/usr/libexec/ApplicationFirewall/socketfilterfw
-          sudo "$fw" --listapps | grep -qF "$(readlink -f "$opt/bin/cbb")"
+          sudo "$fw" --listapps | grep -qF "$service"
           # Again, as after an upgrade: it restarts the service.
           sudo sh "$share/install.sh" --in-place "$opt/bin/cbb"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
@@ -369,7 +378,7 @@ jobs:
             echo "uninstall.sh left the service running" >&2
             exit 1
           fi
-          if sudo "$fw" --listapps | grep -qF "$(readlink -f "$opt/bin/cbb")"; then
+          if sudo "$fw" --listapps | grep -qF "$service"; then
             echo "uninstall.sh left the firewall entry" >&2
             exit 1
           fi

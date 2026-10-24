@@ -99,6 +99,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   question an app could send whatever it liked to the computers. Settings turns the question
   back on.
 
+- Security: on a Mac with Homebrew, the service, which holds the group's keys, no longer runs
+  the binary under Homebrew's prefix, which the user and their programs may replace.
+  `install.sh --in-place` copies it to `/Library/Application Support/clipboardbridge/bin`,
+  where only root can change it; the agent and `cbb` in PATH still run Homebrew's. Running
+  `install.sh` again after `brew upgrade` refreshes the copy, as before.
+
 - Security: an admin computer, whose admin key sits in a file, can remove ordinary devices
   but no longer the root or another admin, and cannot hand a phone's group to a new root;
   only the root and admin phones can. Nothing an admin signs after it was removed counts,
