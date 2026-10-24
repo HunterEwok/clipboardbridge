@@ -31,6 +31,14 @@ macOS) or root; `copy`, `paste` and `status` work for members of the group witho
 | `cbb forward [-listen ADDRESS:PORT] [-key FILE] [-show-key] [-vless-site NAME [-vless-listen ADDRESS:PORT]]` | Runs a forwarder on a server with a public address, for hubs that clients cannot reach directly, for example behind carrier-grade NAT (default port 8764, UDP and TCP). It holds no keys of any group and writes nothing about them; its own key is made in `-key` on the first run (default `forwarder.pem` in systemd's state directory, or in the service's state directory) and printed at start, or alone with `-show-key`. With `-vless-site`, it also takes VLESS with REALITY on TCP `-vless-listen` (default `:443`) for the clients of hubs that ask for it, borrowing the TLS of that well-known site (such as `www.example.com`), whose own answers whoever is not a client gets; its REALITY key is kept in the same key file. |
 | `cbb relay -group TAG[,TAG...] [-listen ADDRESS:PORT] [-key FILE] [-show-key]` | Runs a blind relay on a server you run, for your groups that have no computer to be the hub (default port 8764, UDP and TCP). It serves only the groups whose tags `-group` lists (`cbb status` shows a group's tag), holds none of their keys, reads nothing of the clipboard, and writes nothing about them; it sees which devices of a group talk, when and how much. Its keys are made in `-key` on the first run (default `relay.pem` in systemd's state directory, or in the service's state directory), and the key to give `cbb away relay -key` is printed at start, or alone with `-show-key`. |
 | `cbb version` | Prints the version and the platform. |
+
+### Started by the system
+
+The system starts these two; they are run by hand only to look into a problem, such as to
+see the agent's log in a terminal.
+
+| Command | What it does |
+|---|---|
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
 | `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 

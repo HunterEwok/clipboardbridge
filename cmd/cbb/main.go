@@ -35,10 +35,12 @@ Commands:
   pair -phone             Pair an iPhone or iPad with the shortcut.
   pair -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
-  service                 Run the service (started by systemd, launchd or Windows).
-  agent                   Link this desktop's clipboard to the service (started at sign-in).
   version                 Print the version and the platform.
   help                    Print this help.
+
+Started by the system, not by hand:
+  service                 Run the service (systemd, launchd or Windows).
+  agent                   Link this desktop's clipboard to the service (at sign-in).
 
 The design is in docs/design.md.
 `
