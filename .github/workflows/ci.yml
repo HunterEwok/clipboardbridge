@@ -472,7 +472,9 @@ jobs:
             $got = (ports) -join ', '
             if ($got -ne $want) { throw "firewall rules: $got, want $want" }
           }
-          # Without a console nobody answers, which adds no rules and keeps no answer.
+          # Without a console nobody answers, which adds no rules and keeps no answer; the
+          # answer get.ps1's express run kept goes first.
+          Remove-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\clipboardbridge -Name FirewallAnswer -ErrorAction SilentlyContinue
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Port 9000
           if ($LASTEXITCODE -ne 0) { exit 1 }
           check ''
