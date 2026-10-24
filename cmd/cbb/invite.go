@@ -61,7 +61,7 @@ func cmdInvite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "The invitation is in %s, valid until %s.\n\n", *out, until.Format("15:04 on Jan 2"))
 	fmt.Fprintln(stdout, "Copy it to the new device only through a channel you trust: until it is used,")
 	fmt.Fprintln(stdout, "whoever has it can ask to join. On the new device run:")
-	fmt.Fprintf(stdout, "\n  cbb join -invite %s\n\n", *out)
+	fmt.Fprintf(stdout, "\n  cbb pair -invite %s\n\n", *out)
 	fmt.Fprintln(stdout, "You confirm the device here before it is admitted. Keep this running; Ctrl+C")
 	fmt.Fprintln(stdout, "cancels the invitation, and the file is deleted when it ends.")
 	for {

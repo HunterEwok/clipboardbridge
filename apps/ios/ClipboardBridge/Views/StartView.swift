@@ -52,7 +52,7 @@ struct StartView: View {
                     adding = true
                 }
                 .buttonStyle(AccentButtonStyle())
-                Text("On a computer, run cbb join and scan the code it shows.")
+                Text("On a computer, run cbb pair and scan the code it shows.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(palette.textDim)

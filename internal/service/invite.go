@@ -81,8 +81,8 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 		fail(c, s.errNoGroup())
 		return
 	}
-	if ca, _ := id.Signer(); ca == nil {
-		fail(c, errors.New("only an admin can invite devices: a Linux member that admits devices, or a computer the root phone made an admin"))
+	if !id.IsAdmin() {
+		fail(c, s.errNotAdmitter())
 		return
 	}
 	lifetime := invite.DefaultLifetime
@@ -277,7 +277,7 @@ func (s *Service) joinInvite(ctx context.Context, c net.Conn, j *pair.Joiner, m 
 		return nil, nil, fmt.Errorf("the invitation expired at %s; ask for a new one", in.Expires.Format(time.RFC3339))
 	}
 	if keysInFile && !m.Consent {
-		return nil, nil, errors.New("a device that joins with an invitation syncs away from home, and this one keeps its keys in files, so it needs your consent; run cbb join -invite and read what it says")
+		return nil, nil, errors.New("a device that joins with an invitation syncs away from home, and this one keeps its keys in files, so it needs your consent; run cbb pair -invite and read what it says")
 	}
 	fp, err := j.Fingerprint()
 	if err != nil {

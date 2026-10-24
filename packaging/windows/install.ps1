@@ -302,5 +302,5 @@ if ($Port -ne 8764) {
 if ($NoFirewall) {
 	Write-Host "Windows Firewall was left alone: allow TCP $Port and UDP 5353 from the home network for $cbb."
 }
-Write-Host 'Next, in a new terminal: cbb join, and scan its QR code with the phone; or cbb pair on another computer and cbb join -code here.'
+Write-Host 'Next, in a new terminal: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group''s root or an admin; or start a group: cbb new.'
 Write-Host 'To remove it: Settings, Apps, clipboardbridge, Uninstall.'

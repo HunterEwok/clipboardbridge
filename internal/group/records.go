@@ -666,16 +666,20 @@ func (s *Records) Admitted(admin KeyHash) []KeyHash {
 	return out
 }
 
-// RootDevice returns the phone that holds the group's current root: the one
-// whose own device record the current root's key signed, the latest of
-// them; "" when there is none, as in a group a computer created.
+// RootDevice returns the phone or computer that holds the group's current
+// root: the one whose own device record the current root's key signed, the
+// latest of them; "" when there is none, as in a legacy group, whose key
+// every Linux member holds.
 func (s *Records) RootDevice() DeviceID {
+	if s.groupCA.MaxPathLen == 0 {
+		return ""
+	}
 	path := s.path()
 	cur := KeyHashOf(path[len(path)-1])
 	var best *signedRecord
 	for _, r := range s.byID {
 		b := r.body
-		if b.Type == RecordDevice && r.signer == cur && role(b.Role) == RolePhone && b.Device == b.By && (best == nil || newer(r, best)) {
+		if b.Type == RecordDevice && r.signer == cur && (role(b.Role) == RolePhone || role(b.Role) == RoleFull) && b.Device == b.By && (best == nil || newer(r, best)) {
 			best = r
 		}
 	}

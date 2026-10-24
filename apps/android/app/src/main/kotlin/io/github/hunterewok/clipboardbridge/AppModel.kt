@@ -256,7 +256,7 @@ class AppModel(private val app: Context) {
     companion object {
         private const val TAG = "clipboardbridge"
 
-        /** Reads what the camera saw, or what the user pasted: the text of the QR code of cbb join or of another phone. */
+        /** Reads what the camera saw, or what the user pasted: the text of the QR code of cbb pair or of another phone. */
         fun read(text: String): JoinCode? {
             val jc = JoinCode.parse(text) ?: return null
             return if (jc.codeIsValid && jc.addrs.isNotEmpty() && jc.fingerprint.isNotEmpty()) jc else null

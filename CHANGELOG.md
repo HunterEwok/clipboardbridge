@@ -63,6 +63,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A computer that creates a group is now its root, as a phone is in its own group: only it
+  and the admins it makes hold CA keys, and the computers that join get only their
+  certificates, the Mac, Linux and Windows alike. `cbb admin NAME` on the root makes a
+  connected computer an admin, which then admits and removes devices and serves the iPhone
+  shortcut with the group's iPhone CA. Any device but the root is removed with
+  `cbb revoke` and the group stays; removing an admin replaces the iPhone CA, so the
+  iPhones that use the shortcut pair again. A Mac can create a group and be an admin.
+  Groups made before keep working as they were until `cbb upgrade` comes.
+- `cbb new` creates a group on a computer, and `cbb pair` does the rest by the device's
+  state: in no group it joins one (it shows a QR code for the phone and also takes a
+  typed code, `cbb pair -code` reads one from standard input), in a group it admits a
+  device. `cbb join` is gone, and `cbb pair` no longer creates a group by itself.
+
 - The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
   wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
   it speaks plain WireGuard, the same on the wire as before.

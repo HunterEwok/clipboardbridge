@@ -30,6 +30,7 @@ const (
 	OpCopy      = "copy"       // client → service: make an event from a deliberate action
 	OpPaste     = "paste"      // client → service: ask for the member's own clipboard text
 	OpStatus    = "status"     // client → service: ask for the status
+	OpNew       = "new"        // client → service: create a group with this device as its root
 	OpPair      = "pair"       // client → service: open a pairing window; answers follow
 	OpPairPhone = "pair-phone" // client → service: open an iPhone pairing window; answers follow
 	OpJoin      = "join"       // client → service: join a group with a code
@@ -37,6 +38,7 @@ const (
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
 	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
 	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
 	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
@@ -150,7 +152,7 @@ type Joining struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	OS          string `json:"os"`
-	Fingerprint string `json:"fingerprint"` // of its key, as cbb join shows it on the device
+	Fingerprint string `json:"fingerprint"` // of its key, as cbb pair shows it on the device
 }
 
 // Device is a member as status shows it, or a device of the group as

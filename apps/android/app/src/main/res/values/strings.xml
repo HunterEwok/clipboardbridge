@@ -7,7 +7,7 @@
     <string name="welcome_title">This phone is ready</string>
     <string name="welcome_body">It made its own secret key, which never leaves it and lets your devices recognise this phone. Now connect a device: tap Connect a new device and scan the QR code it shows.</string>
     <string name="connect_device">Connect a new device</string>
-    <string name="connect_hint">On a computer, run cbb join and scan the code it shows.</string>
+    <string name="connect_hint">On a computer, run cbb pair and scan the code it shows.</string>
     <string name="join_other">I already use clipboardbridge on another phone</string>
     <string name="settings">Settings</string>
     <string name="close">Close</string>
@@ -50,9 +50,9 @@
     <string name="not_admin_note">Only an admin phone can add or remove devices.</string>
     <string name="lost_phone_note">Lost a phone? Make a second phone an admin: on it, tap I already use clipboardbridge on another phone, then scan its code here with +.</string>
     <string name="add_device">Add a device</string>
-    <string name="scan_hint">Point the camera at the QR code of cbb join, or at the one your other phone shows.</string>
-    <string name="paste_hint">Paste the text of the QR code of cbb join.</string>
-    <string name="camera_denied">The camera is not allowed. Allow it in the app\'s settings to scan, or paste the text of the QR code of cbb join.</string>
+    <string name="scan_hint">Point the camera at the QR code of cbb pair, or at the one your other phone shows.</string>
+    <string name="paste_hint">Paste the text of the QR code of cbb pair.</string>
+    <string name="camera_denied">The camera is not allowed. Allow it in the app\'s settings to scan, or paste the text of the QR code of cbb pair.</string>
     <string name="qr_text">QR code text</string>
     <string name="connecting">Connecting to the device…</string>
     <string name="not_a_code">Not a clipboardbridge QR code.</string>
@@ -67,8 +67,8 @@
     <string name="error_too_many_codes">Too many wrong codes. Try again with a new code.</string>
     <string name="error_not_admin">Only an admin phone can do this.</string>
     <string name="error_unreachable">Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipboardbridge in?</string>
-    <string name="error_wrong_code">The code did not match. Run cbb join on the computer again and scan the new code.</string>
-    <string name="error_refused">The computer refused. Run cbb join on it again.</string>
+    <string name="error_wrong_code">The code did not match. Run cbb pair on the computer again and scan the new code.</string>
+    <string name="error_refused">The computer refused. Run cbb pair on it again.</string>
     <string name="error_join">The other phone\'s group could not be joined. Try again.</string>
     <string name="error_no_screen_lock">Set a screen lock on this phone first: the group\'s keys need it.</string>
     <string name="error_not_authenticated">The fingerprint, face or screen lock was not confirmed, so nothing changed.</string>

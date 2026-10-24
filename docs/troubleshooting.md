@@ -36,7 +36,7 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 - **Guest Wi-Fi or client isolation** on the router keeps devices from talking to each
   other at all; put them on the main network.
 - **A different group.** `cbb status` shows the group; devices of two groups never
-  sync. Join the right one again with `cbb join`.
+  sync. Join the right one again with `cbb pair`.
 
 ## Pairing fails
 

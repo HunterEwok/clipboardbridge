@@ -127,7 +127,7 @@ sudo -u cbb-lite cbb-lite join -name pi
 It shows a QR code: in the clipboardbridge app (iPhone or Android) tap "Connect a new device"
 (or, on an iPhone with the shortcut, run "clipboardbridge: add a computer") and scan it. The phone reaches the device on
 TCP port 8764 (`-port` to change it), while it joins and afterwards to sync; open that port
-from the home network if a firewall drops it. In a group without a phone, run `cbb pair` on a Linux member and
+from the home network if a firewall drops it. In a group without a phone, run `cbb pair` on the group's root or an admin and
 `sudo -u cbb-lite cbb-lite join -code <that member>:8764` here, then type the code.
 
 Add yourself to the `cbb-lite` group to use the control socket without `sudo`:

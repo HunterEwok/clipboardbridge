@@ -23,19 +23,22 @@ import (
 // so a silent connection is a dead one. A member that holds the group CA key
 // sends a cert message with a renewed certificate to a peer whose
 // certificate is due for renewal. The group's signed records travel in
-// records messages to a peer whose hello names other records. The root
-// phone sends an admin message with an admin CA to a computer whose hello
-// offers an admin key. The group's hub sends a tunnel message to a member
+// records messages to a peer whose hello names other records. The group's
+// root sends an admin message with an admin CA to a member whose hello
+// offers an admin key. In a group a computer created, an admin sends a
+// phone_ca message with the iPhone CA and its key to an admin whose hello
+// names another one. The group's hub sends a tunnel message to a member
 // whose hello offers a tunnel key.
 const (
-	typeHello = "hello"
-	typeEvent = "event"
-	typePing  = "ping"
-	typeBye   = "bye"
-	typeCert  = "cert"
-	typeRecs  = "records"
-	typeAdmin = "admin"
-	typeTun   = "tunnel"
+	typeHello   = "hello"
+	typeEvent   = "event"
+	typePing    = "ping"
+	typeBye     = "bye"
+	typeCert    = "cert"
+	typeRecs    = "records"
+	typeAdmin   = "admin"
+	typePhoneCA = "phone_ca"
+	typeTun     = "tunnel"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -79,9 +82,13 @@ type message struct {
 	Issuer []byte `json:"issuer,omitempty"`
 
 	Records []group.Record `json:"records,omitempty"` // in a records message
-	// AdminCA, in an admin message from the root phone, is the receiver's
-	// admin CA for the admin key its hello offered, DER.
+	// AdminCA, in an admin message from the group's root, is the
+	// receiver's admin CA for the admin key its hello offered, DER.
 	AdminCA []byte `json:"admin_ca,omitempty"`
+	// PhoneCA and PhoneCAKey, in a phone_ca message from an admin, are
+	// the group's iPhone CA, DER, and its key, PKCS #8.
+	PhoneCA    []byte `json:"phone_ca,omitempty"`
+	PhoneCAKey []byte `json:"phone_ca_key,omitempty"`
 	// Tunnel, in a tunnel message from the group's hub, is its offer for
 	// the tunnel key the receiver's hello carried.
 	Tunnel *TunnelOffer `json:"tunnel,omitempty"`
@@ -114,6 +121,11 @@ type helloBody struct {
 	OS      string          `json:"os,omitempty"`      // the sender's operating system
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
+	// AdminKey is the admin key the sender offers, for the root.
+	AdminKey []byte `json:"admin_key,omitempty"`
+	// PhoneCA is the SHA-256 of the SubjectPublicKeyInfo of the iPhone CA
+	// whose key the sender holds.
+	PhoneCA []byte `json:"phone_ca,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -123,10 +135,14 @@ type helloOut struct {
 	Records string `json:"records,omitempty"`
 	Name    string `json:"name,omitempty"`
 	OS      string `json:"os,omitempty"`
-	// AdminKey is the SubjectPublicKeyInfo of the admin key of a computer
-	// of a phone group that is no admin yet, DER, for the root phone to
-	// certify when it makes the computer an admin.
+	// AdminKey is the SubjectPublicKeyInfo of the admin key of a member
+	// that is no admin yet, DER, for the group's root to certify when it
+	// makes the member an admin.
 	AdminKey []byte `json:"admin_key,omitempty"`
+	// PhoneCA is the SHA-256 of the SubjectPublicKeyInfo of the iPhone CA
+	// whose key this member holds, so another admin knows whether to send
+	// it a newer one.
+	PhoneCA []byte `json:"phone_ca,omitempty"`
 	// TunnelKey is this member's WireGuard public key, for the group's hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 }
