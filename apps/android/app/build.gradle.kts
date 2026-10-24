@@ -53,9 +53,10 @@ android {
 
 // The tunnel for sync away from home: mobile/cbbtun, bound by gomobile into an AAR. It
 // needs Go and the Android NDK: ANDROID_NDK_HOME, else the runner's ANDROID_NDK_LATEST_HOME,
-// else the NDK of the SDK that AGP picks.
+// else the newest NDK in the SDK's ndk directory.
 val tunnelAar = layout.buildDirectory.file("cbbtun/cbbtun.aar")
-val bindTunnel by tasks.registering(Exec::class) {
+val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orElse(providers.environmentVariable("ANDROID_NDK_LATEST_HOME"))
+val bindTunnel = tasks.register<Exec>("bindTunnel") {
     val repo = rootDir.resolve("../..")
     inputs.files(repo.resolve("go.mod"), repo.resolve("go.sum"))
     inputs.dir(repo.resolve("mobile"))
@@ -63,11 +64,13 @@ val bindTunnel by tasks.registering(Exec::class) {
     outputs.file(tunnelAar)
     workingDir = repo
     commandLine("sh", "mobile/cbbtun/bind.sh", "android", tunnelAar.get().asFile.path)
-    val ndk = androidComponents.sdkComponents.ndkDirectory
     val sdk = androidComponents.sdkComponents.sdkDirectory
+    val ndk = ndkHome
     doFirst {
-        environment("ANDROID_HOME", sdk.get().asFile.path)
-        val home = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME") ?: ndk.get().asFile.path
+        val sdkDir = sdk.get().asFile
+        environment("ANDROID_HOME", sdkDir.path)
+        val home = ndk.orNull ?: sdkDir.resolve("ndk").listFiles()?.filter { it.isDirectory }?.maxByOrNull { it.name }?.path
+            ?: throw GradleException("no Android NDK: install one with the SDK manager or set ANDROID_NDK_HOME")
         environment("ANDROID_NDK_HOME", home)
     }
 }
