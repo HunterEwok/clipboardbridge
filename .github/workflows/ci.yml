@@ -347,7 +347,7 @@ jobs:
           opt="$(brew --prefix)/opt/clipboardbridge"
           share="$opt/share/clipboardbridge/packaging/macos"
           daemon=io.github.hunterewok.clipboardbridge
-          sudo sh "$share/install.sh" --express --in-place "$opt/bin/cbb" >"$RUNNER_TEMP/install.out"
+          sudo sh "$share/install.sh" --express --in-place "$opt/bin/cbb" | tee "$RUNNER_TEMP/install.out"
           grep -q 'express installation' "$RUNNER_TEMP/install.out"
           grep -qx yes /etc/clipboardbridge/firewall.answer
           # The service, which holds the group's keys, runs a root-owned copy, never the
@@ -367,7 +367,7 @@ jobs:
           fw=/usr/libexec/ApplicationFirewall/socketfilterfw
           sudo "$fw" --listapps | grep -qF "$service"
           # Again, as after an upgrade: it restarts the service and keeps the answer.
-          sudo sh "$share/install.sh" --in-place "$opt/bin/cbb" >"$RUNNER_TEMP/install.out"
+          sudo sh "$share/install.sh" --in-place "$opt/bin/cbb" | tee "$RUNNER_TEMP/install.out"
           grep -q 'as answered before' "$RUNNER_TEMP/install.out"
           sudo "$fw" --listapps | grep -qF "$service"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
