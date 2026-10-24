@@ -5,6 +5,7 @@ package cbbtun
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -21,7 +22,19 @@ const (
 
 // TestThroughTunnel connects to the loopback port and reaches the hub's
 // member port, both ways.
-func TestThroughTunnel(t *testing.T) {
+func TestThroughTunnel(t *testing.T) { throughTunnel(t, nil) }
+
+// TestThroughObfuscatedTunnel does the same with a hub that speaks
+// AmneziaWG, whose settings the phone gets as JSON.
+func TestThroughObfuscatedTunnel(t *testing.T) {
+	obf, err := tunnel.NewObfuscation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	throughTunnel(t, obf)
+}
+
+func throughTunnel(t *testing.T, obf *tunnel.Obfuscation) {
 	priv, err := NewKey()
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +50,7 @@ func TestThroughTunnel(t *testing.T) {
 	var pk tunnel.Key
 	copy(pk[:], pub)
 	hub, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: hubKey, Addr: hubAddr,
-		Peers: []tunnel.Peer{{PublicKey: pk, PresharedKey: psk, Addr: phoneAddr}}})
+		Peers: []tunnel.Peer{{PublicKey: pk, PresharedKey: psk, Addr: phoneAddr}}, Obfuscation: obf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +69,15 @@ func TestThroughTunnel(t *testing.T) {
 	}()
 
 	hubPub := hubKey.Public()
-	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, fmt.Sprintf("127.0.0.1:%d", hub.UDPPort()))
+	settings := ""
+	if obf != nil {
+		b, err := json.Marshal(obf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings = string(b)
+	}
+	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, fmt.Sprintf("127.0.0.1:%d", hub.UDPPort()), settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +115,7 @@ func TestCloseEndsConnections(t *testing.T) {
 	hubKey, _ := tunnel.NewPrivateKey()
 	hubPub := hubKey.Public()
 	// No hub answers: the connection waits in the dial until Close.
-	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, "127.0.0.1:9")
+	tun, err := Start(priv, psk[:], hubPub[:], phoneID, hubID, "127.0.0.1:9", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,18 +155,20 @@ func TestBadArguments(t *testing.T) {
 	k := make([]byte, 32)
 	k[0] = 1
 	cases := []struct {
-		name                    string
-		priv, psk, hub          []byte
-		device, hubID, endpoint string
+		name                         string
+		priv, psk, hub               []byte
+		device, hubID, endpoint, obf string
 	}{
-		{"short key", priv[:31], k, k, phoneID, hubID, "127.0.0.1:1"},
-		{"short psk", priv, nil, k, phoneID, hubID, "127.0.0.1:1"},
-		{"bad device", priv, k, k, "phone", hubID, "127.0.0.1:1"},
-		{"bad hub", priv, k, k, phoneID, "HUB", "127.0.0.1:1"},
-		{"bad endpoint", priv, k, k, phoneID, hubID, "example.org:1"},
+		{"short key", priv[:31], k, k, phoneID, hubID, "127.0.0.1:1", ""},
+		{"short psk", priv, nil, k, phoneID, hubID, "127.0.0.1:1", ""},
+		{"bad device", priv, k, k, "phone", hubID, "127.0.0.1:1", ""},
+		{"bad hub", priv, k, k, phoneID, "HUB", "127.0.0.1:1", ""},
+		{"bad endpoint", priv, k, k, phoneID, hubID, "example.org:1", ""},
+		{"obfuscation not JSON", priv, k, k, phoneID, hubID, "127.0.0.1:1", "{"},
+		{"bad obfuscation", priv, k, k, phoneID, hubID, "127.0.0.1:1", `{"jc":1}`},
 	}
 	for _, tc := range cases {
-		if tun, err := Start(tc.priv, tc.psk, tc.hub, tc.device, tc.hubID, tc.endpoint); err == nil {
+		if tun, err := Start(tc.priv, tc.psk, tc.hub, tc.device, tc.hubID, tc.endpoint, tc.obf); err == nil {
 			tun.Close()
 			t.Errorf("%s: Start succeeded", tc.name)
 		}

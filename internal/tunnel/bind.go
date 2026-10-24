@@ -3,7 +3,7 @@
 
 package tunnel
 
-import "golang.zx2c4.com/wireguard/conn"
+import "github.com/amnezia-vpn/amneziawg-go/conn"
 
 // newBind returns the UDP socket for a hub or a client: wireguard-go's
 // default, whose receive skips the errors that only report an ICMP message

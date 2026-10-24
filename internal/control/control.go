@@ -78,9 +78,10 @@ type Header struct {
 	ForwarderKey string   `json:"forwarder_key,omitempty"`
 	Relay        string   `json:"relay,omitempty"` // away relay: the relay's address, with its key in RelayKey
 	RelayKey     string   `json:"relay_key,omitempty"`
-	Consent      bool     `json:"consent,omitempty"` // away on, join with an invitation: the user agreed to what the warning says; answer: yes
-	Invite       string   `json:"invite,omitempty"`  // the text of a remote invitation: made by invite, used by join
-	Joining      *Joining `json:"joining,omitempty"` // invite: a device to confirm, before it is admitted
+	Obfuscate    bool     `json:"obfuscate,omitempty"` // away hub: speak AmneziaWG instead of plain WireGuard
+	Consent      bool     `json:"consent,omitempty"`   // away on, join with an invitation: the user agreed to what the warning says; answer: yes
+	Invite       string   `json:"invite,omitempty"`    // the text of a remote invitation: made by invite, used by join
+	Joining      *Joining `json:"joining,omitempty"`   // invite: a device to confirm, before it is admitted
 	Status       *Status  `json:"status,omitempty"`
 	Devices      []Device `json:"devices,omitempty"`
 }
@@ -105,10 +106,11 @@ type Away struct {
 	HubDevice  string     `json:"hub_device,omitempty"` // on a client: the hub; "" until the hub offered its tunnel
 	Through    bool       `json:"through,omitempty"`    // on a client: connected to the hub through the tunnel now
 	KeysInFile bool       `json:"keys_in_file,omitempty"`
-	Error      string     `json:"error,omitempty"`     // what went wrong last, for the user
-	Forwarder  *Forwarder `json:"forwarder,omitempty"` // on the hub: its forwarder; nil without one
-	Relay      *Relay     `json:"relay,omitempty"`     // on a device that meets the others at a relay; nil without one
-	Detail     string     `json:"detail,omitempty"`    // the underlying error, for debugging
+	Obfuscated bool       `json:"obfuscated,omitempty"` // the tunnel speaks AmneziaWG
+	Error      string     `json:"error,omitempty"`      // what went wrong last, for the user
+	Forwarder  *Forwarder `json:"forwarder,omitempty"`  // on the hub: its forwarder; nil without one
+	Relay      *Relay     `json:"relay,omitempty"`      // on a device that meets the others at a relay; nil without one
+	Detail     string     `json:"detail,omitempty"`     // the underlying error, for debugging
 }
 
 // Forwarder describes a hub's registration on its forwarder.

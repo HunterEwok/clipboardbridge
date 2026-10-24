@@ -43,8 +43,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   member TLS, signed device and revocation records.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
-- `internal/tunnel`: WireGuard for sync away from home (wireguard-go with gVisor netstack in
-  the process): the hub, which opens only the member port to its clients, and the client;
+- `internal/tunnel`: WireGuard for sync away from home (amneziawg-go, a wireguard-go fork that is
+  plain WireGuard until obfuscation is set, with gVisor netstack in the process): the hub,
+  which opens only the member port to its clients, and the client;
   `state.go` and `internal/service/tunnel.go` exchange its keys in the member protocol
   (docs/protocol.md, section 11).
 - `mobile/cbbtun`: the phones' tunnel to the hub, the same WireGuard in the app's process, bound

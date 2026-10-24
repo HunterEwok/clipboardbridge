@@ -54,6 +54,11 @@ class MemberTest {
         assertContentEquals(ByteArray(32) { (it + 3).toByte() }, offer.psk)
         assertEquals(listOf("203.0.113.7:8764", "[2001:db8::7]:8764"), offer.endpoints)
         assertEquals(emptyList(), assertIs<Member.Message.Tunnel>(decoded[12]).offer!!.endpoints)
+        // An obfuscated hub's settings are kept as they came, for the tunnel.
+        val hidden = assertIs<Member.Message.Tunnel>(decoded[13]).offer!!
+        assertTrue(hidden.isValid)
+        assertNull(offer.obfuscation)
+        assertTrue(hidden.obfuscation!!.contains("\"header_protection_key\""))
     }
 
     @Test

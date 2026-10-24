@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Obfuscation for networks that block WireGuard: `cbb away hub -obfuscate` makes the group's
+  tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
+  message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub
+  makes the group's settings and gives them to its clients with its offer at home and in
+  remote invitations; both phone apps use them too. Not yet through a forwarder or on the
+  lite member.
 - Sync away from home in the iPhone app, as in the Android app: a switch in Settings, the
   key and the hub's offer in the keychain (this device only), and the same in-process
   tunnel while the app runs. Building the app now needs Go for `Cbbtun.xcframework`.
@@ -44,6 +50,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
+
+### Changed
+
+- The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
+  wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
+  it speaks plain WireGuard, the same on the wire as before.
 
 ### Fixed
 

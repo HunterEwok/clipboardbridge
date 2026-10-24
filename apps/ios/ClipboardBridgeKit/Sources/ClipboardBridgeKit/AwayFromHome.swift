@@ -38,7 +38,10 @@ public protocol OpenTunnel: AnyObject, Sendable {
 public protocol Tunnels: Sendable {
     func newKey() throws -> Data
     func publicKey(_ privateKey: Data) throws -> Data
-    func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String) throws -> OpenTunnel
+    /// Starts a tunnel; obfuscation is the offer's settings as JSON, "" for
+    /// plain WireGuard.
+    func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String,
+               obfuscation: String) throws -> OpenTunnel
 }
 
 /// Sync away from home on this phone: off until the user turns it on. Then
@@ -173,7 +176,8 @@ public actor AwayFromHome {
             } else {
                 do {
                     t = try tunnels.start(privateKey: s.key, psk: offer.psk, hubKey: offer.hubKey, device: device, hub: hub,
-                                          endpoint: offer.endpoints[endpoint % offer.endpoints.count])
+                                          endpoint: offer.endpoints[endpoint % offer.endpoints.count],
+                                          obfuscation: try offer.obfuscation?.jsonText() ?? "")
                 } catch {
                     fail("the tunnel to the hub could not start", error)
                     wait = await backoff(wait)
