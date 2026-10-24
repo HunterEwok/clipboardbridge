@@ -49,6 +49,10 @@ type Identity struct {
 	// order, as the root records say; the last is the current root. Empty
 	// in a group that was never handed over (docs/protocol.md, section 10).
 	Roots []*x509.Certificate
+	// RootKey is the key of the last of Roots on the admin that took the
+	// group over with it (TakenOver), which is the group's root from then
+	// on; nil elsewhere.
+	RootKey *ecdsa.PrivateKey
 	// PhoneCA is the iPhone CA with its key, and Phone the
 	// clipboardbridge.local certificate for Key, on a member that serves
 	// the shortcut: the root computer and its admins, or every Linux and
@@ -105,6 +109,20 @@ func (id *Identity) Trusted() []*x509.Certificate {
 	return append([]*x509.Certificate{id.GroupCA.Cert}, id.Roots...)
 }
 
+// RootCA returns the CA of the group's current root with its key, when
+// this device holds it: the group CA on the computer that created the
+// group or on a key holder of a legacy group, or the root this device took
+// the group over with. It returns nil elsewhere.
+func (id *Identity) RootCA() *CA {
+	switch {
+	case id.GroupCA.Key != nil:
+		return &id.GroupCA
+	case id.RootKey != nil:
+		return &CA{Cert: id.Root(), Key: id.RootKey}
+	}
+	return nil
+}
+
 // ServesPhone reports whether this device holds the iPhone CA key and its
 // clipboardbridge.local certificate, so it can serve the shortcut.
 func (id *Identity) ServesPhone() bool {
@@ -119,23 +137,24 @@ func (id *Identity) IsAdmin() bool {
 	return ca != nil
 }
 
-// IsRoot reports whether this device holds the key of the group's root,
-// as the computer that created a group does; in a legacy group no member
-// is the root.
-func (id *Identity) IsRoot() bool { return id.GroupCA.Key != nil && !id.Legacy() }
+// IsRoot reports whether this device holds the key of the group's current
+// root, as the computer that created a group does, or the admin that took
+// it over; in a legacy group no member is the root.
+func (id *Identity) IsRoot() bool { return id.RootCA() != nil && !id.Legacy() }
 
 // Legacy reports whether the group was made before admin CAs: its group CA
 // has path length 0, and every Linux and Windows member holds its key.
 func (id *Identity) Legacy() bool { return id.GroupCA.Cert.MaxPathLen == 0 }
 
 // Signer returns the CA this device admits devices and signs records with,
-// and the chain its records carry: the group CA on the root computer or a
-// key holder of a legacy group, the admin CA on a member that the root
-// made an admin. It returns nil when this device is no admin.
+// and the chain its records carry: the root's CA on the root computer or a
+// key holder of a legacy group (RootCA), the admin CA on a member that the
+// root made an admin. It returns nil when this device is no admin.
 func (id *Identity) Signer() (*CA, []*x509.Certificate) {
+	if ca := id.RootCA(); ca != nil {
+		return ca, nil
+	}
 	switch {
-	case id.GroupCA.Key != nil:
-		return &id.GroupCA, nil
 	case id.AdminCA != nil:
 		return &CA{Cert: id.AdminCA, Key: id.AdminKey}, []*x509.Certificate{id.AdminCA}
 	}
@@ -146,7 +165,7 @@ func (id *Identity) Signer() (*CA, []*x509.Certificate) {
 // the root to certify: it is in a group with a root, is not the root, and
 // has none yet.
 func (id *Identity) NeedsAdminKey() bool {
-	return !id.Legacy() && id.GroupCA.Key == nil && id.AdminKey == nil
+	return !id.Legacy() && !id.IsRoot() && id.AdminKey == nil
 }
 
 // WithAdminKey returns the identity with a new admin key, for a full member
@@ -183,6 +202,42 @@ func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
 		return nil, err
 	}
 	next.Issuer = c
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
+// TakenOver returns the identity of an admin that took the group over from
+// a lost root (docs/protocol.md, section 10): roots, as the records lead
+// to them after its root record, end with root, whose key this device
+// holds from now on as the group's root, and its admin key and admin CA
+// go.
+func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate) (*Identity, error) {
+	switch {
+	case id.Legacy() || id.IsRoot() || id.AdminCA == nil:
+		return nil, errors.New("group: only an admin of a group with a root takes it over")
+	case root.Key == nil || len(roots) == 0 || !roots[len(roots)-1].Equal(root.Cert):
+		return nil, errors.New("group: the records do not lead to the new root; another admin may have taken the group over first")
+	}
+	next := *id
+	next.Roots, next.RootKey = roots, root.Key
+	next.AdminKey, next.AdminCA = nil, nil
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
+// WithRoots returns the identity trusting roots, the roots the records lead
+// to after a root record. A device that held the root it replaces no longer
+// is the root, and gives up the iPhone CA with it.
+func (id *Identity) WithRoots(roots []*x509.Certificate) (*Identity, error) {
+	next := *id
+	next.Roots = roots
+	if id.RootKey != nil && (len(roots) == 0 || !id.RootKey.PublicKey.Equal(roots[len(roots)-1].PublicKey)) {
+		next.RootKey, next.PhoneCA, next.Phone = nil, nil, nil
+	}
 	if err := next.Check(); err != nil {
 		return nil, err
 	}
@@ -242,6 +297,9 @@ func (id *Identity) Check() error {
 		if err := checkRoot(r); err != nil {
 			return err
 		}
+	}
+	if id.RootKey != nil && (len(id.Roots) == 0 || !id.RootKey.PublicKey.Equal(id.Root().PublicKey)) {
+		return errors.New("group: the root key is not the key of the group's current root")
 	}
 	issuers := id.Trusted()
 	if id.Issuer != nil {
@@ -314,7 +372,7 @@ func (id *Identity) checkAdmin() error {
 		}
 		return nil
 	}
-	if id.Legacy() || id.GroupCA.Key != nil {
+	if id.Legacy() || id.IsRoot() {
 		return errors.New("group: only a member of a group with a root, not the root, has an admin key")
 	}
 	if id.AdminKey.Curve != elliptic.P256() {
@@ -400,12 +458,12 @@ func hasUsage(c *x509.Certificate, u x509.ExtKeyUsage) bool {
 func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 	next := *id
 	changed := false
-	if id.GroupCA.Key != nil && renewable(id.Cert, id.GroupCA.Cert, now, memberRenewBefore) {
-		cert, err := id.GroupCA.IssueMember(id.ID, &id.Key.PublicKey, now)
+	if ca := id.RootCA(); ca != nil && renewable(id.Cert, ca.Cert, now, memberRenewBefore) {
+		cert, err := ca.IssueMember(id.ID, &id.Key.PublicKey, now)
 		if err != nil {
 			return id, false, err
 		}
-		next.Cert, changed = cert, true
+		next.Cert, next.Issuer, changed = cert, nil, true
 	}
 	if id.AdminCA != nil && renewable(id.Cert, id.AdminCA, now, memberRenewBefore) {
 		ca, _ := id.Signer()
@@ -519,6 +577,7 @@ type identityFile struct {
 	GroupCA    []byte   `json:"group_ca"`
 	Roots      [][]byte `json:"roots,omitempty"`
 	GroupCAKey []byte   `json:"group_ca_key,omitempty"`
+	RootKey    []byte   `json:"root_key,omitempty"`
 	PhoneCA    []byte   `json:"phone_ca,omitempty"`
 	PhoneCAKey []byte   `json:"phone_ca_key,omitempty"`
 	Phone      []byte   `json:"phone,omitempty"`
@@ -553,6 +612,11 @@ func (id *Identity) Save(dir string) error {
 	}
 	if id.GroupCA.Key != nil {
 		if f.GroupCAKey, err = x509.MarshalPKCS8PrivateKey(id.GroupCA.Key); err != nil {
+			return err
+		}
+	}
+	if id.RootKey != nil {
+		if f.RootKey, err = x509.MarshalPKCS8PrivateKey(id.RootKey); err != nil {
 			return err
 		}
 	}
@@ -626,6 +690,11 @@ func parseIdentity(data []byte) (*Identity, error) {
 			return nil, err
 		}
 		id.Roots = append(id.Roots, r)
+	}
+	if f.RootKey != nil {
+		if id.RootKey, err = parseKey(f.RootKey); err != nil {
+			return nil, err
+		}
 	}
 	if f.PhoneCA != nil || f.PhoneCAKey != nil || f.Phone != nil {
 		phoneCA, err := parseCA(f.PhoneCA, f.PhoneCAKey)
