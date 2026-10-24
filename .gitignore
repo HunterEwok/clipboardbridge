@@ -32,6 +32,8 @@ go.work.sum
 
 # The Android app's build output
 /apps/android/**/build/
+# The ZX Spectrum Next's dot command
+/apps/zxnext/build/
 /apps/android/**/.gradle/
 /apps/android/**/.kotlin/
 /apps/android/local.properties

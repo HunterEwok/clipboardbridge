@@ -38,7 +38,9 @@ The order may change.
 12. **Partly: built between computers (`cbb away`, and `cbb invite` for joining from afar); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
     star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home).
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
-14. **Planned.** The ZX Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
+14. **Started: `cbb-lite next` and the `.cbb` dot command (`apps/zxnext`) are written, not yet
+    run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
+    Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
     Raspberry Pi Zero on its accelerator header, wired to the FPGA's second UART, with
     NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. `cbb-lite` runs on
     this Pi as an ordinary lite member, installed on the NextPi card itself (its user

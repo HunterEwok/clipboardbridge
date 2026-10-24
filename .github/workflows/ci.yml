@@ -674,10 +674,53 @@ jobs:
       - name: the core with TLS without an operating system, Xtensa (the ESP32-S3)
         run: cargo +esp build --locked -Zbuild-std=core,alloc -p clipboardbridge-core --features tls --release --target xtensa-esp32s3-none-elf
 
+  zxnext:
+    name: ZX Spectrum Next
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # z88dk from its release source, checked against this hash; the build
+      # (about 8 minutes, the ZX Next libraries only) is cached.
+      Z88DK: "2.3"
+      Z88DK_SHA256: e08887ef9344f8dbd9d669bb904e17c35290a316bb1fe8b02c1a45b0d291292f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the frame parser's tests on the host
+        working-directory: apps/zxnext
+        run: make test
+      - name: z88dk from the cache
+        id: z88dk
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ runner.temp }}/z88dk
+          key: z88dk-${{ env.Z88DK }}-zxn-${{ runner.os }}
+      - name: z88dk from its source
+        if: steps.z88dk.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q flex libxml2-dev libgmp-dev libboost-dev texinfo dos2unix
+          curl -fsSL --retry 3 -o z88dk.tgz "https://github.com/z88dk/z88dk/releases/download/v$Z88DK/z88dk-src-$Z88DK.tgz"
+          echo "$Z88DK_SHA256  z88dk.tgz" | sha256sum -c -
+          tar xzf z88dk.tgz
+          cd z88dk && ./build.sh -k -p zxn
+          # Keep only what zcc needs: the libraries, headers, crt sources and m4 macros.
+          find libsrc -name '*.o' -delete
+          find src -mindepth 1 -maxdepth 1 ! -name m4 -exec rm -rf {} +
+          rm -rf testsuite examples doc
+      - name: the dot command
+        working-directory: apps/zxnext
+        run: |
+          export PATH="$RUNNER_TEMP/z88dk/bin:$PATH" ZCCCFG="$RUNNER_TEMP/z88dk/lib/config"
+          make
+          test -s build/CBB
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, android, lite, esp32]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, android, lite, esp32, zxnext]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

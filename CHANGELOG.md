@@ -68,6 +68,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
+  `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
+  file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
+  run on a real Next.
 - `cbb-lite next paste|copy|join` for the ZX Spectrum Next: on the Next's own Raspberry Pi,
   `cbb-lite` answers the Next's `.cbb` dot command over the internal UART in frames its
   Z80 reads (CR lines, the Spectrum character set, length and CRC-32, a QR code as hex
