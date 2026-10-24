@@ -6,7 +6,7 @@ Pi, a router, a small board. It speaks the member protocol of
 
 - never holds CA keys, so it never admits devices;
 - dials the computers (found by mDNS, or named with `-peer`), and publishes itself in mDNS
-  and listens on the member port, TCP 8764, so that phones, Macs and other lite members
+  and listens on the member port, TCP 8764, so that phones and other lite members
   dial it: a phone syncs with it directly, with no computer on;
 - never holds `clipboardbridge.local` or serves the shortcut, the Apple Shortcuts action an
   iPhone without the app uses (a phone with the app, iPhone or Android, needs neither);

@@ -123,8 +123,18 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if m.Status != nil {
 		writeAway(stdout, m.Status.Away)
 	}
+	if args[0] == "hub" {
+		fmt.Fprint(stdout, hubNote)
+	}
 	return 0
 }
+
+// hubNote tells the user what depends on the hub being on.
+const hubNote = `
+The hub does not have to stay on. While it is off, nothing syncs away from home;
+at home the devices sync with each other without it. Keep it on all the time, turn
+it on when you need it, or sync only at home.
+`
 
 func cmdAwayStatus(stdout, stderr io.Writer) int {
 	c, err := control.Dial(control.SocketPath())

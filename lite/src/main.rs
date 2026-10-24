@@ -3,7 +3,7 @@
 
 //! cbb-lite is the lite member of clipboardbridge for small Linux devices,
 //! such as routers and small boards: a member without CA keys that only
-//! dials the Linux members, as a Mac does, joins by QR code through the
+//! dials the computers, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
 mod control;
@@ -40,7 +40,7 @@ Commands:
   join -code host:port Join with the code from cbb pair on a Linux member.
   run [-name name] [-port port] [-peer host:port]... [-no-mdns] [-no-listen]
                        Run the service (started by systemd or procd): it
-                       dials the computers, and phones, Macs and other lite
+                       dials the computers, and phones and other lite
                        members dial it on the member port (8764, CBB_PORT).
   copy [-secret]       Send standard input to the group.
   paste                Print this member's clipboard text.

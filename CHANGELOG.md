@@ -78,6 +78,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The Mac is a full member like the Linux and Windows computers (docs/design.md, D-51): it
+  no longer publishes `r=mac`, and of two computers the one with the lower device ID dials;
+  when it has not connected for 30 seconds, the other dials too, and of two connections the
+  one the lower ID dialed stays. `cbb-lite` dials the Macs as it dials every computer. A Mac
+  still does not admit devices.
+- Which computer holds `clipboardbridge.local` (D-53): one without a battery comes first and a
+  laptop only when no other is on, then the lowest device ID; the computers publish their
+  priority in the TXT key `h`. `cbb holder auto|first|fallback|never` changes the guess, and
+  `cbb status` says how this computer takes part.
+- `cbb away hub` and the quick start say that the hub need not stay on: while it is off,
+  nothing syncs away from home, and at home the devices sync without it.
 - A device's system is separate from its role (docs/design.md, D-50): device records and
   hellos carry `os` (`linux`, `windows`, `macos`, `ios`, `android`, `none`), and the roles
   are `full`, `phone`, `lite` and `shortcut`. A Windows PC now shows as Windows, not Linux;

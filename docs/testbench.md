@@ -150,7 +150,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P1 | Password managers: a copy marked secret by the app (macOS concealed type, Windows "exclude from history and cloud", the Wayland password hint) | travels as a secret (C6 rules) or not at all, as designed; never as plain text |
 | P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
 | P3 | Clipboard history (Windows Win+V, the GNOME clipboard) and copy echo | a received text is not sent back; no ping-pong between two members |
-| P4 | The Mac listening mode (`r=mac`): the lite member and the emulator reach the Mac with no Linux member on | sync works; the Mac still dials Linux members |
+| P4 | The Mac as a full member: the lite member and the emulator reach the Mac with no other computer on; the Mac and a Linux member connect whichever has the lower device ID, also with the Mac's application firewall on | sync works; one connection between each pair |
 | P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
 | P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
 | P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the service and the agent run from Homebrew's binary; nothing is left |

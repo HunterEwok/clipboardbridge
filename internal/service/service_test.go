@@ -1350,8 +1350,10 @@ func TestDevicesAndRevoke(t *testing.T) {
 	}
 }
 
-// TestMacsListen checks that a Mac publishes itself with r=mac and takes
-// connections, so two Macs keep syncing when no Linux member is on.
+// TestMacsListen checks that a Mac is a full member like the others: it
+// publishes no role and takes connections, so two Macs keep syncing when
+// no other computer is on. Without the iPhone CA key it publishes no holder
+// priority; the pi, which has it, does.
 func TestMacsListen(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
@@ -1360,13 +1362,13 @@ func TestMacsListen(t *testing.T) {
 	pairWith(t, pi, a)
 	pairWith(t, pi, b)
 	for _, s := range []*testService{a, b} {
-		if txt := h.txtOf(s.status(t).Device); !slices.Contains(txt, "r=mac") {
-			t.Errorf("%s publishes %q, want r=mac", s.name, txt)
+		if txt := h.txtOf(s.status(t).Device); len(txt) != 2 {
+			t.Errorf("%s publishes %q, want only v and g", s.name, txt)
 		}
 		waitFor(t, s.name+" meets the pi and the other Mac", func() bool { return len(s.status(t).Peers) == 2 })
 	}
-	if txt := h.txtOf(pi.status(t).Device); slices.Contains(txt, "r=mac") {
-		t.Errorf("the pi publishes %q", txt)
+	if txt := h.txtOf(pi.status(t).Device); !slices.Contains(txt, "h=1") {
+		t.Errorf("the pi publishes %q, want h=1", txt)
 	}
 
 	pi.stop()
@@ -1377,6 +1379,78 @@ func TestMacsListen(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the other Mac has it", func() bool { return b.paste(t) == "from one Mac" })
+}
+
+// TestHolderPriority checks that a machine without a battery holds
+// clipboardbridge.local before a laptop, whatever the device IDs, and that
+// the setting overrides the guess.
+func TestHolderPriority(t *testing.T) {
+	var h hub
+	laptop := startWith(t, &h, "laptop", group.OSLinux, func(c *Config) { c.battery = func() bool { return true } })
+	desktop := startService(t, &h, "desktop")
+	pairWith(t, laptop, desktop)
+	waitFor(t, "connected", func() bool { return len(laptop.status(t).Peers) == 1 })
+	waitFor(t, "the desktop holds the name", func() bool { return desktop.status(t).Holder && !laptop.status(t).Holder })
+	if st := laptop.status(t); st.HoldSetting != HolderAuto || st.HoldPriority != prioFallback || !st.Battery {
+		t.Errorf("the laptop's status: setting %q, priority %d, battery %v", st.HoldSetting, st.HoldPriority, st.Battery)
+	}
+	if txt := h.txtOf(laptop.status(t).Device); !slices.Contains(txt, "h=2") {
+		t.Errorf("the laptop publishes %q, want h=2", txt)
+	}
+
+	if _, err := desktop.do(t, control.Header{Op: control.OpHolder, Name: HolderNever}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the laptop holds the name", func() bool { return laptop.status(t).Holder && !desktop.status(t).Holder })
+	if _, err := desktop.do(t, control.Header{Op: control.OpHolder, Name: "sometimes"}, ""); err == nil {
+		t.Error("an unknown holder setting was taken")
+	}
+	// The setting stays across a restart.
+	desktop.stop()
+	desktop = restartService(t, &h, desktop)
+	if st := desktop.status(t); st.HoldSetting != HolderNever || st.HoldPriority != 0 {
+		t.Errorf("after a restart the desktop's setting is %q, priority %d", st.HoldSetting, st.HoldPriority)
+	}
+	if _, err := laptop.do(t, control.Header{Op: control.OpHolder, Name: HolderFirst}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if st := laptop.status(t); st.HoldPriority != prioFirst || !st.Holder {
+		t.Errorf("the laptop set to first: priority %d, holder %v", st.HoldPriority, st.Holder)
+	}
+}
+
+// TestFallbackDial checks that the member with the higher device ID dials
+// when the one with the lower ID cannot reach it.
+func TestFallbackDial(t *testing.T) {
+	var h hub
+	// Each finds the members with a greater device ID at a closed port, so
+	// only the fallback connects.
+	cfg := func(c *Config) {
+		c.fallbackAfter = 500 * time.Millisecond
+		c.Discover = func(dc DiscoveryConfig) (Discovery, error) {
+			if !dc.BrowseOnly {
+				on := dc.OnPeers
+				dc.OnPeers = func(peers []mdns.Peer) {
+					peers = slices.Clone(peers)
+					for i, p := range peers {
+						if p.ID > dc.ID {
+							peers[i].Port = 1
+						}
+					}
+					on(peers)
+				}
+			}
+			return h.discover(dc)
+		}
+	}
+	a := startWith(t, &h, "alpha", group.OSLinux, cfg)
+	b := startWith(t, &h, "beta", group.OSMacOS, cfg)
+	pairWith(t, a, b)
+	waitFor(t, "connected", func() bool { return len(a.status(t).Peers) == 1 && len(b.status(t).Peers) == 1 })
+	if _, err := b.do(t, control.Header{Op: control.OpCopy}, "through the fallback"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "alpha has it", func() bool { return a.paste(t) == "through the fallback" })
 }
 
 // TestRecordsTheSystem checks that an admin records a computer's system

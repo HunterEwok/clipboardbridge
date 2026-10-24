@@ -135,9 +135,7 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 		return
 	}
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
-	if st.Holder {
-		fmt.Fprintln(w, "This member answers for clipboardbridge.local.")
-	}
+	fmt.Fprintln(w, holderLine(st))
 	writeAway(w, st.Away)
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")

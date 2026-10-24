@@ -4,9 +4,8 @@
 //! Finding the members and dialing them, and taking the connections of
 //! those that dial this one (docs/protocol.md, sections 3 and 4). A lite
 //! member publishes itself with `r=lite` and listens on the member port, so
-//! that phones and Macs reach it without a computer; it dials the Linux
-//! members, and the lite members whose device ID is greater than its own,
-//! and leaves the Macs (`r=mac`) to dial it.
+//! that phones reach it without a computer; it dials the full members, and
+//! the lite members whose device ID is greater than its own.
 //! Members can also be given by address, for a network where multicast
 //! does not reach.
 
@@ -162,10 +161,9 @@ fn browse(
             mdns_sd::ServiceEvent::ServiceResolved(info) => {
                 let Some(id) = instance_id(&info.fullname) else { continue };
                 // Members of another group, or of a replaced CA, are ignored;
-                // of two lite members the one with the lower ID dials, and a
-                // Mac dials this one.
+                // of two lite members the one with the lower ID dials.
                 let r = info.get_property_val_str("r");
-                if id == me || info.get_property_val_str("g") != Some(tag) || (lite(r) && id < me) || role(r, "mac") {
+                if id == me || info.get_property_val_str("g") != Some(tag) || (lite(r) && id < me) {
                     continue;
                 }
                 let addrs = order(info.get_addresses().iter().map(|ip| match ip {
@@ -205,12 +203,7 @@ fn browse(
 /// Reports whether a TXT `r` value names a lite member; keys and values
 /// are compared without regard to case.
 fn lite(r: Option<&str>) -> bool {
-    role(r, "lite")
-}
-
-/// Reports whether a TXT `r` value is the role given.
-fn role(r: Option<&str>, want: &str) -> bool {
-    r.is_some_and(|v| v.eq_ignore_ascii_case(want))
+    r.is_some_and(|v| v.eq_ignore_ascii_case("lite"))
 }
 
 /// The device ID in an instance name, <device ID>._clipboardbridge._tcp.local.
@@ -248,7 +241,6 @@ mod tests {
     fn lite_role() {
         assert!(lite(Some("lite")) && lite(Some("LITE")));
         assert!(!lite(None) && !lite(Some("linux")) && !lite(Some("")));
-        assert!(role(Some("MAC"), "mac") && !role(Some("lite"), "mac") && !role(None, "mac"));
     }
 
     #[test]

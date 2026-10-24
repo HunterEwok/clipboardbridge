@@ -206,28 +206,38 @@ func (n *Node) tlsOptions() group.TLSOptions {
 func (n *Node) ServerTLS() *tls.Config { return n.identity().ServerTLS(n.tlsOptions()) }
 
 // Dial connects to the member peer at addr and runs the connection until it
-// ends. A Mac dials every Linux member it finds; a Linux member dials the
-// Linux members whose device ID is greater than its own.
+// ends. Of two full members the one with the lower device ID dials, and the
+// other only when that has not connected for a while (see Serve).
 func (n *Node) Dial(ctx context.Context, peer group.DeviceID, addr string) error {
 	d := net.Dialer{Timeout: handshakeTimeout, KeepAlive: -1}
 	raw, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
-	return n.Serve(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())))
+	return n.run(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())), true)
 }
 
 // DialConn runs a member connection to peer over raw, a connection that is
 // already open, such as one through the tunnel to the group's hub, until it
 // ends.
 func (n *Node) DialConn(ctx context.Context, peer group.DeviceID, raw net.Conn) error {
-	return n.Serve(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())))
+	return n.run(ctx, tls.Client(raw, n.identity().ClientTLS(peer, n.tlsOptions())), true)
 }
 
-// Serve runs a member connection until it ends: one dialed by Dial, or one
-// accepted with ServerTLS, or with a configuration from it. It closes the
-// connection.
-func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error {
+// Serve runs a member connection that was accepted with ServerTLS, or with
+// a configuration from it, until it ends. It closes the connection.
+func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error { return n.run(ctx, tc, false) }
+
+// errOtherConn ends a connection when the one the lower device ID dialed is
+// up between the same two members.
+var errOtherConn = errors.New("node: the connection the lower device ID dialed is up")
+
+// run runs a member connection until it ends; dialed says this member
+// dialed it. A new connection to a peer replaces the old one, as a
+// reconnect does, unless the old one was dialed by the member with the lower
+// device ID and the new one was not: when both members dial at once, the
+// two keep the same connection.
+func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	// Close the socket itself at the end: the goodbye was said, and TLS's
 	// own close message could wait for seconds on a peer that stopped
 	// reading.
@@ -246,7 +256,7 @@ func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error {
 	if id == n.identity().ID {
 		return errors.New("node: connected to itself")
 	}
-	c := &conn{n: n, id: id, tc: tc, peerCert: cs.PeerCertificates[0], peerChain: cs.PeerCertificates, out: make(chan outgoing, queueLen),
+	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: cs.PeerCertificates[0], peerChain: cs.PeerCertificates, out: make(chan outgoing, queueLen),
 		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
 	defer close(c.finished)
 
@@ -268,6 +278,10 @@ func (n *Node) Serve(ctx context.Context, tc *tls.Conn) error {
 		return errors.New("node: closed")
 	}
 	old := n.conns[id]
+	if old != nil && old.lowerDialed && !c.lowerDialed && !old.ending() {
+		n.mu.Unlock()
+		return errOtherConn
+	}
 	n.conns[id] = c
 	// The connection is in the forwarding set before the engine makes the
 	// hello, so no event falls between the two.
@@ -547,6 +561,8 @@ type conn struct {
 	peerChain []*x509.Certificate
 	since     time.Duration
 	out       chan outgoing
+	// lowerDialed says the member with the lower device ID dialed it.
+	lowerDialed bool
 
 	mu       sync.Mutex
 	peerRole Role   // set by the peer's hello
@@ -611,6 +627,16 @@ func (c *conn) enqueue(o outgoing) {
 // close ends the connection. With bye, the writer first sends what is
 // queued and a goodbye, within a second; without, at once. Either way a
 // read or write that is blocked fails now rather than at its deadline.
+// ending reports whether the connection is closing or closed.
+func (c *conn) ending() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *conn) close(bye bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

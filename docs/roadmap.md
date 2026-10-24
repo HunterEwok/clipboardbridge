@@ -25,8 +25,8 @@ The order may change.
 10. **Planned.** Console helper and auto-paste.
 11. **Linux done; on the ESP32 the protocol core and its TLS build for the chip, the firmware is next.** A lite member in Rust for weak devices (routers, small boards): a member without CA
     keys that joins by QR code through the phone and syncs; it never admits devices, holds
-    `clipboardbridge.local` or serves the iPhone shortcut. It dials the Linux members and
-    listens for phones and Macs, so a phone and a lite member sync with no computer on. Only once the Go version is complete and its architecture settled, so it is
+    `clipboardbridge.local` or serves the iPhone shortcut. It dials the computers and
+    listens for phones, so a phone and a lite member sync with no computer on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
     Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the

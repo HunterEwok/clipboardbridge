@@ -181,8 +181,7 @@ apps" below).
   there. A received record lives no longer than clipboardbridge's own records of its type, and
   only names in the form of device IDs count as members. Names are not probed: device IDs
   are random, and the election, not a probe, decides who holds `clipboardbridge.local`. Macs
-  publish and browse with the same code, with `r=mac` in the TXT and never holding
-  `clipboardbridge.local`; a test on macOS showed that it shares port 5353 with
+  publish and browse with the same code, as full members; a test on macOS showed that it shares port 5353 with
   mDNSResponder and that the system's `dns-sd` sees what it publishes, so no Bonjour
   binding is needed.
 - Members connect to the addresses from discovery, never by resolving a `.local` name: a
@@ -406,8 +405,8 @@ Not built yet (roadmap item 10); the design:
   `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
   Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
   only, so clipboard histories skip them and they do not travel over Universal Clipboard.
-- Finds the members with clipboardbridge's own mDNS code, publishing itself with `r=mac`, and
-  trusts only the group CA, in its own configuration; the system keychain is not changed.
+- Finds the members with clipboardbridge's own mDNS code, publishing itself as a full member,
+  and trusts only the group CA, in its own configuration; the system keychain is not changed.
 - Installing needs administrator rights once. Later: a menu bar item with pause, status and
   devices.
 
