@@ -70,8 +70,8 @@ The order may change.
     into any computer without clipboardbridge (Latin characters only: a USB keyboard
     cannot type most other scripts), and it can show texts on a display and send one with
     a button.
-19. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
-    (D-55 to D-57): the event carries a manifest with SHA-256 hashes, the bytes are fetched
+20. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
+    (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
     home, 25 MiB away from home, at most 1 GiB). See "Images and files" in
     [design.md](design.md#images-and-files-planned-for-05). One pull request each:

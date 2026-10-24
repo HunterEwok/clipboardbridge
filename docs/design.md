@@ -473,7 +473,7 @@ Not built yet (roadmap item 10); the design:
 
 Images, files and folders travel wherever the platform lets a program read and write them,
 with the same protection as text; formatted text (HTML next to the plain text) comes last
-and is optional (D-55). Today's event carries its whole text and sits in every hello and
+and is optional (D-56). Today's event carries its whole text and sits in every hello and
 queue, so large content cannot simply go inside it.
 
 ### Where
@@ -519,6 +519,9 @@ application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
   fits its limit, and writes its clipboard only when every part has arrived and matches its
   hash, so a paste never gives half a file; a newer copy stops the fetch. Progress shows in
   `cbb status` and the apps' notification.
+- Images and files follow the device's sync mode ("Sync modes", D-55) like text: a device
+  fetches only in a mode that takes the group's copies into its clipboard, and offers its
+  own only in a mode that sends them.
 - Android on the home Wi-Fi fetches images by itself; files, and anything away from home,
   wait for a tap on the notification. The iPhone fetches on its button.
 
@@ -543,7 +546,7 @@ made executable; on Mac and Windows received files carry the system's mark of a 
 | The same away from home (`max-copy-away`) | 25 MiB | 1 MiB to the home limit |
 | Text | 1 MiB | fixed |
 
-The receiver's limit decides (D-56): a sender offers any copy within its own limit, each
+The receiver's limit decides (D-57): a sender offers any copy within its own limit, each
 receiver fetches only what fits its own and says once that a copy was too large ("A 300 MB
 copy from Mac is over this device's limit of 100 MB"). The hub's away limit caps its whole
 star. The limit protects the memory and disks of small devices, mobile data, the hub and the
@@ -551,7 +554,7 @@ forwarder's 2 MiB a second per group; beyond 1 GiB clipboardbridge is the wrong 
 
 ### Security
 
-The rules of "Sync away from home" hold unchanged (D-57): at home chunks travel inside the
+The rules of "Sync away from home" hold unchanged (D-58): at home chunks travel inside the
 member connection's mutual TLS 1.3, away from home only inside the group's WireGuard tunnel
 with member TLS inside it, so the forwarder and the blind relay see neither content nor
 headers nor inner addresses. Only group members hold the plaintext, and every part is
@@ -1194,6 +1197,6 @@ These need experiments on real devices; CI cannot answer them.
 | D-47 | Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
 | D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs `cbb-lite`; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
 | D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
-| D-55 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
-| D-56 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
-| D-57 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
+| D-56 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
+| D-57 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
+| D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
