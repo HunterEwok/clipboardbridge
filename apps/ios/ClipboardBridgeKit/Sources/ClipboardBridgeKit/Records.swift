@@ -21,6 +21,7 @@ public enum Records {
         public var device: String?
         public var name: String?
         public var role: String?
+        public var os: String?
         public var key: Data?
         public var admin: Data?
         // revoke
@@ -41,6 +42,26 @@ public enum Records {
     /// The hash of the key a certificate certifies.
     public static func keyHash(cert: Data) throws -> Data { keyHash(spki: try CertificateInfo(der: cert).publicKey) }
 
+    /// The role a record names, with the roles of earlier records read as
+    /// today's.
+    static func role(_ r: String?) -> String {
+        switch r {
+        case "linux", "mac": "full"
+        case "iphone": "shortcut"
+        default: r ?? ""
+        }
+    }
+
+    /// The system a record names, or the one its earlier role implies.
+    static func os(_ b: Body) -> String? {
+        if let os = b.os { return os }
+        switch b.role {
+        case "mac": return "macos"
+        case "iphone", "shortcut": return "ios"
+        default: return nil
+        }
+    }
+
     /// A record's ID: SHA-256 over its body.
     public static func id(_ r: Member.Record) -> Data { Data(SHA256.hash(data: r.body)) }
 
@@ -55,10 +76,11 @@ public enum Records {
 
     /// A device record. admin is the key hash of the device's admin CA, for
     /// an admin phone.
-    public static func device(_ device: String, name: String, role: String, key: Data, admin: Data? = nil, group: String, by: String,
-                              now: Date, signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
+    public static func device(_ device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
+                              group: String, by: String, now: Date, signer: CertificateSigner,
+                              adminCA: Data? = nil) throws -> Member.Record {
         var b = Body(type: "device", group: group, timeMS: ms(now), by: by)
-        (b.device, b.name, b.role, b.key, b.admin) = (device, name, role, key, admin)
+        (b.device, b.name, b.role, b.os, b.key, b.admin) = (device, name, role, os, key, admin)
         return try sign(b, with: signer, adminCA: adminCA)
     }
 
@@ -98,7 +120,11 @@ public struct RecordSet: Codable, Equatable, Sendable {
     public struct Device: Equatable, Sendable, Identifiable {
         public var id: String
         public var name: String
+        /// "full", "phone", "lite" or "shortcut"; earlier records' "linux"
+        /// and "mac" read as "full", "iphone" as "shortcut".
         public var role: String
+        /// Its operating system; nil when its record does not tell.
+        public var os: String?
         public var key: Data
         /// Whether it is an admin phone whose admin CA is not revoked.
         public var admin = false
@@ -294,7 +320,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         }
         return latest.compactMap { d, rb -> Device? in
             guard let key = rb.1.key, !ev.revoked.contains(key) else { return nil }
-            return Device(id: d, name: rb.1.name ?? d, role: rb.1.role ?? "", key: key,
+            return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
                           admin: rb.1.admin.map { !ev.revoked.contains($0) } ?? false, adminKey: rb.1.admin)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }

@@ -18,8 +18,7 @@ const usage = `Usage: clipboardbridge <command> [arguments]
 Commands:
   copy [-secret]          Send standard input to the group.
   paste                   Print this member's clipboard text.
-  status                  Show the group and the connected members.
-  devices                 List the devices of the group.
+  status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
@@ -67,8 +66,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPaste(rest, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
-	case "devices":
-		return cmdDevices(rest, stdout, stderr)
 	case "away":
 		return cmdAway(rest, stdin, stdout, stderr)
 	case "revoke":

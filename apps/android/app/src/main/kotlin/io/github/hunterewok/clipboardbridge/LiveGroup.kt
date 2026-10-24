@@ -61,7 +61,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val id: String,
         val name: String,
         val online: Boolean,
-        val role: String = "linux",
+        val role: String = "full",
+        /** Its system: linux, windows, macos, ios, android or none; null if unknown. */
+        val os: String? = null,
         val isSelf: Boolean = false,
         /** An admin: it may add and remove devices. */
         val admin: Boolean = false,
@@ -110,9 +112,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val root = g.records.rootDevice
             return g.devices.map {
                 Device(
-                    id = it.id, name = it.name, online = it.id == g.device || it.id in online, role = it.role, isSelf = it.id == g.device,
+                    id = it.id, name = it.name, online = it.id == g.device || it.id in online, role = it.role, os = it.os, isSelf = it.id == g.device,
                     admin = it.admin || it.id == root, isRoot = it.id == root,
-                    canMakeAdmin = g.isRoot && !it.admin && it.role in setOf("linux", "mac") && offers[it.id] != null,
+                    canMakeAdmin = g.isRoot && !it.admin && it.role == "full" && offers[it.id] != null,
                 )
             }
         }
@@ -408,6 +410,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             SyncEngine(g.device, HybridClock()),
             deviceName,
             records = Records(),
+            os = "android",
             renew = ::renew,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a

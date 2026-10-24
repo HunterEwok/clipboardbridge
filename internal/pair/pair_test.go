@@ -144,7 +144,7 @@ func closed(w *Window) bool {
 
 func TestPairMac(t *testing.T) {
 	f := newFixture(t)
-	j := newJoiner(t, "darwin")
+	j := newJoiner(t, "macos")
 	out := f.attempt(t, j, f.code, nil)
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
@@ -168,7 +168,7 @@ func TestPairMac(t *testing.T) {
 	}
 	assertMembers(t, id, f.admin)
 	// The window admits one device only.
-	if out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil); !errors.Is(out.joinErr, ErrClosed) {
+	if out := f.attempt(t, newJoiner(t, "macos"), f.code, nil); !errors.Is(out.joinErr, ErrClosed) {
 		t.Errorf("a second device through the same window: %v", out.joinErr)
 	}
 }
@@ -255,9 +255,9 @@ func TestWrongCode(t *testing.T) {
 
 func TestWrongCodeThenRight(t *testing.T) {
 	f := newFixture(t)
-	f.attempt(t, newJoiner(t, "darwin"), f.wrongCode(), nil)
-	f.attempt(t, newJoiner(t, "darwin"), f.wrongCode(), nil)
-	if out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil); out.joinErr != nil {
+	f.attempt(t, newJoiner(t, "macos"), f.wrongCode(), nil)
+	f.attempt(t, newJoiner(t, "macos"), f.wrongCode(), nil)
+	if out := f.attempt(t, newJoiner(t, "macos"), f.code, nil); out.joinErr != nil {
 		t.Errorf("the right code after two wrong ones: %v", out.joinErr)
 	}
 }
@@ -265,7 +265,7 @@ func TestWrongCodeThenRight(t *testing.T) {
 func TestExpiry(t *testing.T) {
 	f := newFixture(t)
 	f.clock.advance(Lifetime)
-	out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil)
+	out := f.attempt(t, newJoiner(t, "macos"), f.code, nil)
 	if !errors.Is(out.joinErr, ErrExpired) || !errors.Is(out.serveErr, ErrExpired) {
 		t.Errorf("join %v, serve %v; want the window expired", out.joinErr, out.serveErr)
 	}
@@ -296,7 +296,7 @@ func TestExpiryDuringAnAttempt(t *testing.T) {
 	// An attempt that started in time finishes, even if the window's five
 	// minutes end while it runs.
 	f := newFixture(t)
-	out := f.attempt(t, newJoiner(t, "darwin"), f.code, func(*group.Identity) error {
+	out := f.attempt(t, newJoiner(t, "macos"), f.code, func(*group.Identity) error {
 		f.clock.advance(Lifetime + time.Minute)
 		f.clock.fire()
 		return nil
@@ -327,7 +327,7 @@ func TestExpiryDuringAnAttempt(t *testing.T) {
 func TestClose(t *testing.T) {
 	f := newFixture(t)
 	f.window.Close()
-	out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil)
+	out := f.attempt(t, newJoiner(t, "macos"), f.code, nil)
 	if !errors.Is(out.serveErr, ErrClosed) || !errors.Is(out.joinErr, ErrClosed) {
 		t.Errorf("join %v, serve %v; want ErrClosed", out.joinErr, out.serveErr)
 	}
@@ -374,7 +374,7 @@ func TestBusy(t *testing.T) {
 	a, b := socketPair(t)
 	served := make(chan error, 1)
 	go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
-	j := newJoiner(t, "darwin")
+	j := newJoiner(t, "macos")
 	cfg, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +396,7 @@ func TestBusy(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil)
+	out := f.attempt(t, newJoiner(t, "macos"), f.code, nil)
 	if !errors.Is(out.serveErr, ErrBusy) || !errors.Is(out.joinErr, ErrBusy) {
 		t.Errorf("join %v, serve %v; want busy", out.joinErr, out.serveErr)
 	}
@@ -410,7 +410,7 @@ func TestBusy(t *testing.T) {
 	if f.failures() != 0 {
 		t.Errorf("failures = %d", f.failures())
 	}
-	if out := f.attempt(t, newJoiner(t, "darwin"), f.code, nil); out.joinErr != nil {
+	if out := f.attempt(t, newJoiner(t, "macos"), f.code, nil); out.joinErr != nil {
 		t.Errorf("join after the stalled attempt: %v", out.joinErr)
 	}
 }
@@ -510,7 +510,7 @@ func TestBinding(t *testing.T) {
 	// session identifier is the TLS exporter.
 	f := newFixture(t)
 	a, b := socketPair(t)
-	cfg, err := newJoiner(t, "darwin").tlsConfigVerifiedByCPace()
+	cfg, err := newJoiner(t, "macos").tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -659,7 +659,7 @@ func TestWhatTheMemberSends(t *testing.T) {
 	})
 	t.Run("a Mac gets no CA keys", func(t *testing.T) {
 		f := newFixture(t)
-		r, _ := startRaw(t, f, Info{Name: "mac", OS: "darwin"}, f.code)
+		r, _ := startRaw(t, f, Info{Name: "mac", OS: "macos"}, f.code)
 		w := r.confirm().Welcome
 		if w == nil || w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil {
 			t.Errorf("welcome to a Mac: %+v", w)
@@ -705,7 +705,7 @@ func TestWhatTheMemberSends(t *testing.T) {
 
 func TestServerTLSRejects(t *testing.T) {
 	f := newFixture(t)
-	j := newJoiner(t, "darwin")
+	j := newJoiner(t, "macos")
 	good, err := j.tlsConfigVerifiedByCPace()
 	if err != nil {
 		t.Fatal(err)
@@ -861,8 +861,8 @@ func TestCodes(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
-	for _, bad := range []Info{{Name: "", OS: "linux"}, {Name: "x", OS: "windows"}, {Name: strings.Repeat("x", 65), OS: "linux"},
-		{Name: "a\nb", OS: "linux"}, {Name: "\xff", OS: "darwin"}} {
+	for _, bad := range []Info{{Name: "", OS: "linux"}, {Name: "x", OS: "darwin"}, {Name: "x", OS: "none"}, {Name: strings.Repeat("x", 65), OS: "linux"},
+		{Name: "a\nb", OS: "linux"}, {Name: "\xff", OS: "macos"}} {
 		if _, err := NewJoiner(bad); err == nil {
 			t.Errorf("NewJoiner(%+v) succeeded", bad)
 		}
@@ -905,7 +905,7 @@ func (f *fixture) dial(t *testing.T, j *Joiner, code, fp string) outcome {
 }
 
 func TestDialAListeningJoiner(t *testing.T) {
-	for _, os := range []string{"darwin", "linux"} {
+	for _, os := range []string{"macos", "linux", "windows"} {
 		t.Run(os, func(t *testing.T) {
 			f := newFixture(t)
 			j := newJoiner(t, os)
@@ -917,7 +917,7 @@ func TestDialAListeningJoiner(t *testing.T) {
 			if out.joinErr != nil || out.serveErr != nil || out.savedCalls != 1 {
 				t.Fatalf("join %v, serve %v, saved %d", out.joinErr, out.serveErr, out.savedCalls)
 			}
-			if err := out.id.Check(); err != nil || out.id.Admin() != (os == "linux") {
+			if err := out.id.Check(); err != nil || out.id.Admin() != (os != "macos") {
 				t.Errorf("the new identity: %v, admin %v", err, out.id.Admin())
 			}
 			if res, err := f.window.Result(); err != nil || res.Device != j.ID || !res.Confirmed {
@@ -929,7 +929,7 @@ func TestDialAListeningJoiner(t *testing.T) {
 
 func TestDialChecksTheFingerprint(t *testing.T) {
 	f := newFixture(t)
-	j, other := newJoiner(t, "darwin"), newJoiner(t, "darwin")
+	j, other := newJoiner(t, "macos"), newJoiner(t, "macos")
 	fp, err := other.Fingerprint()
 	if err != nil {
 		t.Fatal(err)
@@ -948,7 +948,7 @@ func TestListeningJoinerRevealsNothing(t *testing.T) {
 	// no tag: the attempt is not spent, the joiner keeps listening, and
 	// the real member admits it afterwards with the same code.
 	f := newFixture(t)
-	j := newJoiner(t, "darwin")
+	j := newJoiner(t, "macos")
 	fp, err := j.Fingerprint()
 	if err != nil {
 		t.Fatal(err)
@@ -995,7 +995,7 @@ func TestMacRefusesCAKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := newJoiner(t, "darwin")
+	j := newJoiner(t, "macos")
 	cert, err := admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
 	if err != nil {
 		t.Fatal(err)
@@ -1171,7 +1171,7 @@ func computerAdmin(t *testing.T) (*group.Identity, *group.CA) {
 // root phone made an admin: the new device's certificate comes from its
 // admin CA, which the welcome carries, with no CA keys.
 func TestComputerAdminAdmits(t *testing.T) {
-	for _, os := range []string{"linux", "darwin"} {
+	for _, os := range []string{"linux", "macos"} {
 		t.Run(os, func(t *testing.T) {
 			admin, root := computerAdmin(t)
 			clk := &clock{up: time.Hour}

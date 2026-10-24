@@ -297,6 +297,7 @@ impl Service {
                         id: p.id.to_string(),
                         name: p.name,
                         role: p.role,
+                        os: p.os,
                         ..Default::default()
                     })
                     .collect();
@@ -304,6 +305,7 @@ impl Service {
                     device: id.id.to_string(),
                     group: id.tag(),
                     role: "lite".into(),
+                    os: "linux".into(),
                     peers,
                     version: VERSION.into(),
                 };
@@ -317,6 +319,10 @@ impl Service {
                     .devices()
                     .into_iter()
                     .map(|d| Device {
+                        os: peers
+                            .iter()
+                            .find(|p| p.id.as_str() == d.id && !p.os.is_empty())
+                            .map_or(d.os.clone(), |p| p.os.clone()),
                         online: peers.iter().any(|p| p.id.as_str() == d.id),
                         this: d.id == me,
                         listed: true,
@@ -333,6 +339,7 @@ impl Service {
                             id: p.id.to_string(),
                             name: p.name,
                             role: p.role,
+                            os: p.os,
                             online: true,
                             ..Default::default()
                         });

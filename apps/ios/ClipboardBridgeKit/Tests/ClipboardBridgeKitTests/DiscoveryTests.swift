@@ -36,7 +36,7 @@ final class DiscoveryTests: XCTestCase {
         let phone = MemberNode(engine: SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock()), name: "iPhone")
         await phone.send(text: "from the phone", kind: .text)
         let peers = Peers()
-        let pi = MemberNode(engine: SyncEngine(device: dev, clock: HybridClock()), name: "pi", role: .linux)
+        let pi = MemberNode(engine: SyncEngine(device: dev, clock: HybridClock()), name: "pi", role: .full)
         let d = MemberDialer(node: phone, group: "g1", firstWait: 0.05, maxWait: 0.2) { m in
             peers.dialed(m.device)
             let (mine, theirs) = Pipe.pair()

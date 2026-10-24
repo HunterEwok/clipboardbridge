@@ -158,8 +158,8 @@ func NormalizeCode(s string) (string, error) {
 
 // Info describes the device that joins.
 type Info struct {
-	Name string `json:"name"` // shown in cbb devices
-	OS   string `json:"os"`   // "linux" or "darwin"
+	Name string `json:"name"` // shown in cbb status
+	OS   string `json:"os"`   // group.OSLinux, OSWindows or OSMacOS; a lite member also OSNone
 	// Role is RoleLite for a lite member, which never holds CA keys;
 	// empty for a full computer.
 	Role string `json:"role,omitempty"`
@@ -169,7 +169,10 @@ type Info struct {
 const RoleLite = "lite"
 
 func (i Info) check() error {
-	if i.OS != "linux" && i.OS != "darwin" {
+	switch {
+	case i.OS == group.OSLinux || i.OS == group.OSWindows || i.OS == group.OSMacOS:
+	case i.OS == group.OSNone && i.Role == RoleLite:
+	default:
 		return fmt.Errorf("pair: unknown operating system %q", i.OS)
 	}
 	if i.Role != "" && i.Role != RoleLite {
@@ -184,6 +187,12 @@ func (i Info) check() error {
 		}
 	}
 	return nil
+}
+
+// holdsKeys reports whether the device gets the CA keys in a group a
+// computer created: a Linux or Windows computer does.
+func (i Info) holdsKeys() bool {
+	return i.Role != RoleLite && (i.OS == group.OSLinux || i.OS == group.OSWindows)
 }
 
 // memberAD is the member's CPace associated data.

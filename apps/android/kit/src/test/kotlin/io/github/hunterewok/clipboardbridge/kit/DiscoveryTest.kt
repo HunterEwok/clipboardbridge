@@ -28,7 +28,7 @@ class DiscoveryTest {
     fun dialer() {
         val phone = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), "Pixel")
         phone.send("from the phone", Member.Kind.TEXT)
-        val pi = MemberNode(SyncEngine(dev, HybridClock()), "pi", Member.Role.LINUX)
+        val pi = MemberNode(SyncEngine(dev, HybridClock()), "pi", Member.Role.FULL)
         val dials = java.util.Collections.synchronizedList(mutableListOf<String>())
         val d = MemberDialer(phone, "g1", 50, 200) { m ->
             dials.add(m.device)

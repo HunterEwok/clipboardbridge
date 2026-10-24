@@ -182,7 +182,7 @@ func (h *hub) update() {
 type testService struct {
 	name     string
 	dir      string
-	role     node.Role
+	os       string // group.OSLinux, OSWindows or OSMacOS
 	socket   string
 	cancel   context.CancelFunc
 	done     chan error
@@ -203,28 +203,28 @@ func (s *testService) addrs() (phone, profile string) {
 
 func startService(t *testing.T, h *hub, name string) *testService {
 	t.Helper()
-	return startRole(t, h, name, node.Linux)
+	return startRole(t, h, name, group.OSLinux)
 }
 
-func startRole(t *testing.T, h *hub, name string, role node.Role) *testService {
+func startRole(t *testing.T, h *hub, name string, system string) *testService {
 	t.Helper()
-	return startWith(t, h, name, role, nil)
+	return startWith(t, h, name, system, nil)
 }
 
-func startWith(t *testing.T, h *hub, name string, role node.Role, cfg func(*Config)) *testService {
+func startWith(t *testing.T, h *hub, name string, system string, cfg func(*Config)) *testService {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	return startIn(t, h, &testService{name: name, dir: dir, role: role, cfg: cfg})
+	return startIn(t, h, &testService{name: name, dir: dir, os: system, cfg: cfg})
 }
 
 // restartService starts a stopped service again with its state.
 func restartService(t *testing.T, h *hub, old *testService) *testService {
 	t.Helper()
-	return startIn(t, h, &testService{name: old.name, dir: old.dir, role: old.role, cfg: old.cfg})
+	return startIn(t, h, &testService{name: old.name, dir: old.dir, os: old.os, cfg: old.cfg})
 }
 
 // countingListener counts the connections it accepts.
@@ -248,7 +248,7 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 	s.cancel = cancel
 	name := s.name
 	cfg := Config{
-		StateDir: s.dir, Socket: s.socket, Role: s.role, Name: name, Discover: h.discover,
+		StateDir: s.dir, Socket: s.socket, Role: node.Full, OS: s.os, Name: name, Discover: h.discover,
 		Logf: func(f string, a ...any) { t.Logf(name+": "+f, a...) },
 		listen: func() (net.Listener, error) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -592,7 +592,7 @@ func TestMac(t *testing.T) {
 	for i := 0; i < 16 && len(seen) < 2; i++ {
 		var h hub
 		pi := startService(t, &h, "pi")
-		mac := startRole(t, &h, "mac", node.Mac)
+		mac := startRole(t, &h, "mac", group.OSMacOS)
 		pairWith(t, pi, mac)
 		macLower := mac.status(t).Device < pi.status(t).Device
 		if seen[macLower] {
@@ -603,7 +603,7 @@ func TestMac(t *testing.T) {
 		seen[macLower] = true
 		t.Logf("the Mac's ID is lower: %v", macLower)
 		waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
-		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only a Linux member can admit devices") {
+		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "a Mac cannot admit devices yet") {
 			t.Errorf("pair on a Mac: %v", err)
 		}
 		if _, err := mac.do(t, control.Header{Op: control.OpCopy}, "from the Mac"); err != nil {
@@ -630,7 +630,7 @@ func TestRenewal(t *testing.T) {
 	// when it starts and the Mac's when the Mac connects; both keep them.
 	var h hub
 	pi := startService(t, &h, "pi")
-	mac := startRole(t, &h, "mac", node.Mac)
+	mac := startRole(t, &h, "mac", group.OSMacOS)
 	pairWith(t, pi, mac)
 	before := map[string]*group.Identity{}
 	for _, s := range []*testService{pi, mac} {
@@ -663,14 +663,14 @@ func TestRenewal(t *testing.T) {
 func TestMacInNoGroup(t *testing.T) {
 	// A Mac in no group cannot start one: it would hold no CA keys.
 	var h hub
-	mac := startRole(t, &h, "mac", node.Mac)
-	if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "only a Linux member can admit devices") {
+	mac := startRole(t, &h, "mac", group.OSMacOS)
+	if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "a Mac cannot admit devices yet") {
 		t.Errorf("pair on a Mac in no group: %v", err)
 	}
 	if st := mac.status(t); st.Group != "" {
 		t.Errorf("the Mac is in a group: %+v", st)
 	}
-	if _, err := mac.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair on a Linux member") {
+	if _, err := mac.do(t, control.Header{Op: control.OpPaste}, ""); err == nil || !strings.Contains(err.Error(), "pair on a Linux or Windows member") {
 		t.Errorf("paste on a Mac in no group: %v", err)
 	}
 }
@@ -837,7 +837,7 @@ func TestDiscoveryFails(t *testing.T) {
 	// When the group's network part cannot start, the device stays in no
 	// group, and a second try fails the same way instead of crashing.
 	var h hub
-	a := startWith(t, &h, "alpha", node.Linux, func(c *Config) {
+	a := startWith(t, &h, "alpha", group.OSLinux, func(c *Config) {
 		c.Discover = func(DiscoveryConfig) (Discovery, error) { return nil, errors.New("no network") }
 	})
 	for range 2 {
@@ -1244,7 +1244,7 @@ func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	if err := id.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	box := startIn(t, &h, &testService{name: "box", dir: dir, role: node.Linux})
+	box := startIn(t, &h, &testService{name: "box", dir: dir, os: group.OSLinux})
 	waitFor(t, "connected", func() bool { return len(box.status(t).Peers) == 1 })
 	if _, err := box.do(t, control.Header{Op: control.OpCopy}, "from the box"); err != nil {
 		t.Fatal(err)
@@ -1286,7 +1286,7 @@ func TestDevicesAndRevoke(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
 	deck := startService(t, &h, "deck")
-	mac := startRole(t, &h, "mac", node.Mac)
+	mac := startRole(t, &h, "mac", group.OSMacOS)
 	pairWith(t, pi, deck)
 	pairWith(t, pi, mac)
 	for _, s := range []*testService{pi, deck, mac} {
@@ -1294,7 +1294,7 @@ func TestDevicesAndRevoke(t *testing.T) {
 	}
 	waitFor(t, "the Mac connects to both", func() bool { return len(mac.status(t).Peers) == 2 })
 	for _, d := range mac.devices(t) {
-		if want := d.Role == "linux"; d.Admin != want || !d.Online {
+		if want := d.OS == "linux"; d.Admin != want || !d.Online || d.Role != "full" {
 			t.Errorf("on the Mac: %+v", d)
 		}
 		if d.Self != (d.Name == "mac") {
@@ -1338,8 +1338,8 @@ func TestDevicesAndRevoke(t *testing.T) {
 func TestMacsListen(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
-	a := startRole(t, &h, "mac-a", node.Mac)
-	b := startRole(t, &h, "mac-b", node.Mac)
+	a := startRole(t, &h, "mac-a", group.OSMacOS)
+	b := startRole(t, &h, "mac-b", group.OSMacOS)
 	pairWith(t, pi, a)
 	pairWith(t, pi, b)
 	for _, s := range []*testService{a, b} {
@@ -1360,4 +1360,28 @@ func TestMacsListen(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the other Mac has it", func() bool { return b.paste(t) == "from one Mac" })
+}
+
+// TestRecordsTheSystem checks that an admin records a computer's system
+// from its hello when its record names another, as for a Windows PC that
+// joined as a Linux member.
+func TestRecordsTheSystem(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	pc := startService(t, &h, "pc")
+	pairWith(t, pi, pc)
+	waitFor(t, "pc is listed", func() bool { return listed(pi.devices(t)) == "pc pi" })
+	pc.stop()
+	pc.os = group.OSWindows
+	pc = restartService(t, &h, pc)
+	waitFor(t, "pc connects again", func() bool { return len(pi.status(t).Peers) == 1 })
+	pc.stop()
+	waitFor(t, "pi records Windows", func() bool {
+		for _, d := range pi.devices(t) {
+			if d.Name == "pc" {
+				return d.OS == group.OSWindows && !d.Online && d.Admin && d.Role == group.RoleFull
+			}
+		}
+		return false
+	})
 }

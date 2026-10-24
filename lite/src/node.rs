@@ -57,6 +57,8 @@ pub struct Peer {
     pub id: DeviceId,
     pub role: String,
     pub name: String,
+    /// Its operating system, from its hello; empty when it sent none.
+    pub os: String,
 }
 
 /// The lite member's set of connections.
@@ -84,7 +86,7 @@ struct Conn {
     sock: TcpStream,
     tls: Mutex<tls::Session>,
     tx: SyncSender<Out>,
-    peer: Mutex<Option<(String, String)>>, // role and name, from the hello
+    peer: Mutex<Option<(String, String, String)>>, // role, name and system, from the hello
     chain: Vec<Cert>,
     closed: AtomicBool,
     bye: AtomicBool,
@@ -131,7 +133,9 @@ impl Node {
         let conns = self.conns.lock().unwrap();
         let mut out: Vec<Peer> = conns
             .values()
-            .filter_map(|c| c.peer.lock().unwrap().clone().map(|(role, name)| Peer { id: c.id.clone(), role, name }))
+            .filter_map(|c| {
+                c.peer.lock().unwrap().clone().map(|(role, name, os)| Peer { id: c.id.clone(), role, name, os })
+            })
             .collect();
         out.sort_by(|a, b| a.id.cmp(&b.id));
         out
@@ -351,7 +355,8 @@ impl Node {
                 }
                 let (h, body) = wire::decode_hello(m.hello.as_ref())?;
                 let name = if crate::records::valid_name(&body.name) { body.name.clone() } else { String::new() };
-                *c.peer.lock().unwrap() = Some((m.role.clone(), name));
+                let os = if crate::records::valid_os(&body.os) { body.os.clone() } else { String::new() };
+                *c.peer.lock().unwrap() = Some((m.role.clone(), name, os));
                 let out = self
                     .engine
                     .reconcile(c.id.as_str(), h)
@@ -513,7 +518,7 @@ fn writer(c: &Conn, rx: mpsc::Receiver<Out>, records: &Mutex<Records>, name: &st
                 if let Some(ev) = h.current.as_mut() {
                     ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
                 }
-                Some(wire::hello(&h, records.lock().unwrap().digest(), name))
+                Some(wire::hello(&h, records.lock().unwrap().digest(), name, "linux"))
             }
             Out::Event(mut ev, queued) => {
                 ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));

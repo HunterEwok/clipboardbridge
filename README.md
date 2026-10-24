@@ -1,7 +1,7 @@
 # clipboardbridge
 
 One clipboard for your Apple devices, Android phones and every Linux and Windows computer on
-your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb devices`.
+your home network. Its command is `cbb`: `cbb join`, `cbb pair`, `cbb status`.
 
 > **Status: early development.** What works, and what has been tried on real devices, is
 > in the [status table](#status) below.

@@ -186,11 +186,12 @@ rescanned every 10 s.
 
 ### The holder of `clipboardbridge.local`
 
-Election (`electLocked`, `internal/service/members.go`): a Linux member holds
-`clipboardbridge.local` when no connected peer that has sent its hello has role `linux` and a
-lower device ID. A member alone holds it at once. Macs never hold it, nor do Linux members
-without the CA keys. A group's Linux members either all hold the keys (its root is a Linux
-member) or none do (its root is the phone), so the rule needs to know no more about peers. The election runs
+Election (`electLocked`, `internal/service/members.go`): a Linux or Windows member holds
+`clipboardbridge.local` when no connected peer that has sent its hello has role `full`, an
+`os` other than `macos` and a lower device ID. A member alone holds it at once. Macs never
+hold it, nor do members without the CA keys. A group's Linux and Windows members either all
+hold the keys (its root is a computer) or none do (its root is the phone), so the rule needs
+to know no more about peers. The election runs
 whenever the set of connected peers changes, so a holder that leaves with a goodbye is
 replaced at once and one that falls silent after the 15-second timeout. Two holders for a
 moment are harmless.
@@ -261,7 +262,7 @@ Message object:
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
 | `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records` or `admin` |
-| `role` | string | hello | `linux`, `mac`, `phone` (a phone app) or `lite` (a lite member) |
+| `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
 | `cert` | string | cert | a renewed member certificate for the receiver, DER in base64 (section 2) |
@@ -270,7 +271,7 @@ Message object:
 | `admin_ca` | string | admin | from the root phone: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "A computer as admin") |
 
 ```json
-{"t":"hello","role":"linux","hello":{"wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
+{"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
 {"t":"event","event":{"id":"77aa...","origin":"3b1e...","via":"phone","time":"1761024001234.2","age_ms":15,"kind":"secret","text":"hunter2"}}
 {"t":"ping"}
 {"t":"bye"}
@@ -305,9 +306,12 @@ Rules for the receiver:
   event again in the next hello.
 
 Roles: a `phone` member dials every member, publishes nothing and is never dialed. A `lite`
-member publishes itself with `r=lite`, dials Linux members and accepts phones, Macs and lite
-members with a lower device ID (above, "Who dials whom"). The Linux members treat both as a
-Mac: neither holds `clipboardbridge.local`.
+member publishes itself with `r=lite`, dials Linux and Windows members and accepts phones,
+Macs and lite members with a lower device ID (above, "Who dials whom"). The Linux and Windows
+members treat it as a Mac (`os` `macos`): neither holds `clipboardbridge.local`. Until the Mac
+becomes a full member like the others (design.md, "Full members, admins and the operating
+system"), a member with role `full` and `os` `macos` publishes `r=mac`, only dials, and
+neither admits devices nor holds the name.
 
 ### Hello
 
@@ -317,6 +321,7 @@ Mac: neither holds `clipboardbridge.local`.
 | `current` | Event or absent | the sender's current event with its age as of sending; for a secret only its mark (text `""`), whatever its age; absent when there is none |
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
+| `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one |
 | `admin_key` | string or absent | from a computer of a phone group that is no admin yet: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "A computer as admin") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
 
@@ -482,13 +487,14 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | PRS (password) | the six ASCII digits of the code, or a remote invitation's secret (its raw bytes) |
 | CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
-| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"darwin"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux` and `darwin` |
+| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
 | Tags Ta, Tb | HMAC-SHA-512, 64 bytes |
 
 The AD bytes are used exactly as they travel in the `ad` field. The member checks ADa: `os`
-is `linux` or `darwin` (an admin phone also takes `ios`); `name` is 1 to 64 bytes of
+is `linux`, `windows` or `macos`, or `none` with `role` `lite` (an admin phone also takes
+`ios` and `android`); `name` is 1 to 64 bytes of
 printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key; `role`,
 when present, is `lite`. A lite member (a Linux device without CA keys) gets
 no CA keys and is recorded with role `lite`. Go members
@@ -531,7 +537,7 @@ put words in front of the user.
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
-| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux` without `role` `lite`, and not in a group whose root is the phone |
+| `group_ca_key` | bytes, PKCS #8 DER | only when ADa `os` is `linux` or `windows` without `role` `lite`, and not in a group whose root is the phone |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 | `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
@@ -540,8 +546,8 @@ The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when pres
 admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
 verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
-or all absent, and a `darwin` or lite joiner refuses them; when present, the keys are P-256 and
-match. A Linux joiner that got them then issues its own `clipboardbridge.local` certificate from
+or all absent, and a `macos` or lite joiner refuses them; when present, the keys are P-256 and
+match. A Linux or Windows joiner that got them then issues its own `clipboardbridge.local` certificate from
 the iPhone CA; one that did not is a member without CA keys, as in a group whose root is the
 phone (section 9): it publishes and listens, but admits nobody until the root phone makes it
 an admin (section 10, "A computer as admin"), serves no iPhone and never holds
@@ -607,7 +613,7 @@ the QR code dials the computer, and nothing is announced:
 Source: `internal/phone`, `internal/service/iphone.go`.
 
 These endpoints serve the iPhone shortcut, for an iPhone without the app, so their names keep
-the word: the iPhone CA, the `iphone` token role, `to_iphone` and `from_iphone`. A phone
+the word: the iPhone CA, `to_iphone` and `from_iphone`. A phone
 with the app, iPhone or Android, is a member (section 4) and uses none of them.
 
 ### iPhone endpoints on the member port
@@ -783,7 +789,7 @@ A connection carries one request: the service reads the first message and dispat
 |------|---------|---------|
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
-| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
+| `status` | none | `{status, done}`; `status` = `{device, group, role, os, holder, peers: [{id, role, os, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
@@ -938,7 +944,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`linux`, `mac`, `phone`, `lite`, `iphone` for a shortcut token), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin phone) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (phone groups only) |
 
@@ -1009,18 +1015,20 @@ identity (mode 0600) and the path in the identity file's `roots`.
 - After adding a revocation a member closes every connection whose peer certificate is now
   refused (rule 4), and the TLS check refuses it from then on. A member that learns that its
   own key is revoked logs that it was removed from the group; the others refuse it.
-- A Linux member that holds the group CA key records every device it admits (its name from
-  the pairing Info, role `linux`, `mac` or `lite`) and every iPhone it pairs (`iphone`, name
-  `iPhone`, device = the phone ID), and, for groups made before the list existed, itself and
-  every connected peer that has no record yet, with the name from the peer's hello (or the
-  role and the first 8 characters of its ID).
+- A member that holds the group CA key records every device it admits (its name and `os`
+  from the pairing Info, role `full` or `lite`) and every iPhone it pairs (`shortcut`, `os`
+  `ios`, name `iPhone`, device = the phone ID), and, for groups made before the list
+  existed, itself and every connected peer that has no record yet, with the name and `os`
+  from the peer's hello (or the role and the first 8 characters of its ID). When a computer's
+  hello states an `os` that its record does not, it signs a new record for it with that `os`
+  and the rest of the record unchanged.
 - The iPhone endpoints (section 7) treat the token of a revoked iPhone as unknown.
 
 ### Control operations
 
 | `op` | Request | Answers |
 |------|---------|---------|
-| `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
+| `devices` | none | `{devices: [{id, name, role, os, admin, root, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
 

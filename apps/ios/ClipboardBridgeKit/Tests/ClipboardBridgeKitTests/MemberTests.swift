@@ -62,7 +62,7 @@ final class MemberTests: XCTestCase {
             XCTAssertEqual(mine, goFrame.value as! NSDictionary)
         }
         guard case let .hello(role, h) = decoded[0] else { return XCTFail("frame 0 is \(decoded[0])") }
-        XCTAssertEqual(role, .linux)
+        XCTAssertEqual(role, .full)
         XCTAssertEqual(h.name, "pi")
         XCTAssertEqual(h.records, "q83vEjRWeJA=")
         XCTAssertEqual(h.current?.text, "hello <world> & \"you\" / ✓")
@@ -123,12 +123,12 @@ final class MemberTests: XCTestCase {
     func testBadMessages() {
         XCTAssertThrowsError(try Member.decode(body: Data("{".utf8)))
         XCTAssertThrowsError(try Member.decode(body: Data(#"{"t":"hello","role":"toaster","hello":{}}"#.utf8)))
-        XCTAssertThrowsError(try Member.decode(body: Data(#"{"t":"hello","role":"mac"}"#.utf8)))
+        XCTAssertThrowsError(try Member.decode(body: Data(#"{"t":"hello","role":"full"}"#.utf8)))
         // An event from a newer version is dropped, not an error.
         XCTAssertEqual(try Member.decode(body: Data(#"{"t":"event","event":{"kind":"image"}}"#.utf8)), .event(nil))
         XCTAssertEqual(try Member.decode(body: Data(#"{"t":"gift"}"#.utf8)), .unknown("gift"))
         // A hello whose current event does not decode has none.
-        guard case let .hello(_, h) = try! Member.decode(body: Data(#"{"t":"hello","role":"mac","hello":{"wall_ms":1,"current":{"kind":"image"}}}"#.utf8)) else {
+        guard case let .hello(_, h) = try! Member.decode(body: Data(#"{"t":"hello","role":"full","hello":{"wall_ms":1,"current":{"kind":"image"}}}"#.utf8)) else {
             return XCTFail()
         }
         XCTAssertNil(h.current)
@@ -224,7 +224,7 @@ final class MemberTests: XCTestCase {
         let (pa, pb) = Pipe.pair()
         let changes = Changes()
         let a = MemberNode(engine: SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock()), name: "iPhone")
-        let b = MemberNode(engine: SyncEngine(device: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", clock: HybridClock()), name: "pi", role: .linux,
+        let b = MemberNode(engine: SyncEngine(device: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", clock: HybridClock()), name: "pi", role: .full,
                            onChange: { changes.add($0.text) })
         await a.send(text: "before", kind: .text)
         let ta = Task { try await a.serve(pa) }

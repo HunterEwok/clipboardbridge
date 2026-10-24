@@ -16,7 +16,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
-	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -57,7 +57,7 @@ func TestTunnelKeys(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
 	deck := startService(t, &h, "deck")
-	mac := startRole(t, &h, "mac", node.Mac)
+	mac := startRole(t, &h, "mac", group.OSMacOS)
 	for _, s := range []*testService{pi, deck, mac} {
 		turnTunnelOn(t, s)
 	}

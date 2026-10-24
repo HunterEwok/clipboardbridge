@@ -57,20 +57,25 @@ pub struct HelloBody {
     pub records: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    /// The sender's operating system, as device records name it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub os: String,
 }
 
 /// The roles a peer may claim.
 pub fn known_role(r: &str) -> bool {
-    matches!(r, "linux" | "mac" | "phone" | "lite")
+    matches!(r, "full" | "phone" | "lite")
 }
 
-/// A hello message.
-pub fn hello(h: &Hello, records: String, name: &str) -> Message {
+/// A hello message from a lite member running on `os` (`"linux"`, or
+/// `"none"` for firmware).
+pub fn hello(h: &Hello, records: String, name: &str, os: &str) -> Message {
     let body = HelloBody {
         wall: h.wall,
         current: h.current.as_ref().map(|e| serde_json::to_value(e).unwrap()),
         records,
         name: name.to_string(),
+        os: os.to_string(),
     };
     Message {
         kind: "hello".into(),

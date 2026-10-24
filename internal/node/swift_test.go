@@ -32,7 +32,7 @@ func TestSwiftMemberTLS(t *testing.T) {
 	if tool == "" {
 		t.Skip("CBB_SWIFT_INTEROP_TLS names no clipboardbridge-interop binary")
 	}
-	server := newMember(t, Linux)
+	server := newMember(t, Full)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

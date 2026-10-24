@@ -18,9 +18,12 @@ struct DevicesView: View {
             }
             ForEach(model.devices) { d in
                 HStack(spacing: Tokens.spacingMedium) {
-                    Image(systemName: icon(d.role)).foregroundStyle(d.online ? palette.accent : palette.textDim)
+                    Image(systemName: icon(d)).foregroundStyle(d.online ? palette.accent : palette.textDim)
                     VStack(alignment: .leading) {
                         Text(d.name).font(.system(.body, design: .monospaced))
+                        if let system = Self.system(d.os) {
+                            Text(verbatim: system).font(.caption).foregroundStyle(palette.textDim)
+                        }
                         if d.isSelf {
                             (d.admin ? Text("This phone · admin") : Text("This phone")).font(.caption).foregroundStyle(palette.textDim)
                         } else if d.admin {
@@ -94,11 +97,25 @@ struct DevicesView: View {
     /// that holds the group's root hands the group to this phone.
     private func canRemove(_ d: AppModel.Computer) -> Bool { model.isAdmin && !d.isSelf }
 
-    private func icon(_ role: String) -> String {
-        switch role {
-        case "mac": "laptopcomputer"
-        case "phone", "iphone": "iphone"
+    private func icon(_ d: AppModel.Computer) -> String {
+        switch (d.role, d.os) {
+        case ("phone", _), ("shortcut", _): "iphone"
+        case ("lite", _): "cpu"
+        case (_, "macos"): "laptopcomputer"
         default: "desktopcomputer"
+        }
+    }
+
+    /// The name of a device's operating system, the same in every language;
+    /// nil when the records do not tell, or for firmware.
+    static func system(_ os: String?) -> String? {
+        switch os {
+        case "linux": "Linux"
+        case "windows": "Windows"
+        case "macos": "macOS"
+        case "ios": "iOS"
+        case "android": "Android"
+        default: nil
         }
     }
 }

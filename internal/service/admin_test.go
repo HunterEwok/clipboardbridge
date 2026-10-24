@@ -19,7 +19,6 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
-	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 // fakePhone is the root phone of a group, which dials a computer and sends
@@ -102,8 +101,8 @@ func TestComputerAdmin(t *testing.T) {
 	recs := group.NewRecords(g)
 	if _, errs := recs.AddAll([]group.Record{
 		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: phone.ID, Name: "iphone", Role: group.RolePhone, Key: &phk, By: phone.ID}, root.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleLinux, Key: &pk, By: phone.ID}, root.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: deck.ID, Name: "deck", Role: group.RoleLinux, Key: &dk, By: phone.ID}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleFull, Key: &pk, By: phone.ID}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: deck.ID, Name: "deck", Role: group.RoleFull, Key: &dk, By: phone.ID}, root.Key),
 	}); len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -114,8 +113,8 @@ func TestComputerAdmin(t *testing.T) {
 	}
 
 	var h hub
-	a := startIn(t, &h, &testService{name: "pi", dir: piDir, role: node.Linux})
-	b := startIn(t, &h, &testService{name: "deck", dir: deckDir, role: node.Linux})
+	a := startIn(t, &h, &testService{name: "pi", dir: piDir, os: group.OSLinux})
+	b := startIn(t, &h, &testService{name: "deck", dir: deckDir, os: group.OSLinux})
 	waitFor(t, "pi and deck connected", func() bool { return len(a.status(t).Peers) == 1 })
 	if _, err := a.do(t, control.Header{Op: control.OpRevoke, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
 		t.Errorf("revoke before the pi is an admin: %v", err)
@@ -132,7 +131,7 @@ func TestComputerAdmin(t *testing.T) {
 	p.dial(&h, pi)
 	p.send(map[string]any{"t": "admin", "admin_ca": ca.Raw})
 	p.send(map[string]any{"t": "records", "records": []group.Record{
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleLinux, Key: &pk, Admin: &ak, By: phone.ID}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleFull, Key: &pk, Admin: &ak, By: phone.ID}, root.Key),
 	}})
 	waitFor(t, "the pi keeps its admin CA", func() bool {
 		id, err := group.Load(piDir)

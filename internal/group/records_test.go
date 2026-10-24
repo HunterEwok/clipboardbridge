@@ -91,7 +91,7 @@ func deviceRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x50
 	key := KeyHashOf(cert)
 	r, err := SignRecord(RecordBody{
 		Type: RecordDevice, Group: Tag(root), TimeMS: ms,
-		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RoleLinux, Key: &key,
+		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RoleFull, Key: &key,
 	}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
@@ -183,11 +183,11 @@ func TestRecordsRejected(t *testing.T) {
 		t.Errorf("%d records kept, want none", s.Len())
 	}
 	for name, body := range map[string]RecordBody{
-		"bad name":      {Type: RecordDevice, Device: admin.ID, Name: "a\nb", Role: RoleMac, Key: &KeyHash{}},
+		"bad name":      {Type: RecordDevice, Device: admin.ID, Name: "a\nb", Role: RoleFull, OS: OSMacOS, Key: &KeyHash{}},
 		"unknown role":  {Type: RecordDevice, Device: admin.ID, Name: "a", Role: "toaster", Key: &KeyHash{}},
 		"no keys":       {Type: RecordRevoke},
 		"unknown type":  {Type: "gift"},
-		"no device key": {Type: RecordDevice, Device: admin.ID, Name: "a", Role: RoleMac},
+		"no device key": {Type: RecordDevice, Device: admin.ID, Name: "a", Role: RoleFull, OS: OSMacOS},
 	} {
 		if _, err := SignRecord(body, admin.GroupCA.Key); err == nil {
 			t.Errorf("%s: signed", name)
@@ -376,6 +376,49 @@ func TestPhoneRootIdentity(t *testing.T) {
 		bad := &Identity{ID: dev, Key: key, Cert: cert, GroupCA: CA{Cert: root}}
 		if bad.Check() == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestRecordRoles checks that records keep the role apart from the system
+// and read the roles of earlier records as today's.
+func TestRecordRoles(t *testing.T) {
+	admin, err := Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(admin.GroupCA.Cert)
+	for i, tc := range []struct{ role, os, wantRole, wantOS string }{
+		{"linux", "", RoleFull, ""},
+		{"linux", OSWindows, RoleFull, OSWindows},
+		{"mac", "", RoleFull, OSMacOS},
+		{"iphone", "", RoleShortcut, OSiOS},
+		{RoleFull, OSWindows, RoleFull, OSWindows},
+		{RoleLite, OSNone, RoleLite, OSNone},
+		{RolePhone, OSAndroid, RolePhone, OSAndroid},
+	} {
+		key := KeyHash{byte(i + 1)}
+		dev := NewDeviceID()
+		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(admin.GroupCA.Cert), Device: dev, Name: "d",
+			Role: tc.role, OS: tc.os, Key: &key}, admin.GroupCA.Key)
+		if err != nil {
+			t.Fatalf("%s/%s: %v", tc.role, tc.os, err)
+		}
+		s.AddAll([]Record{r})
+		for _, d := range s.Devices() {
+			if d.ID == dev && (d.Role != tc.wantRole || d.OS != tc.wantOS) {
+				t.Errorf("%s/%s reads as %s/%s", tc.role, tc.os, d.Role, d.OS)
+			}
+		}
+	}
+	key := KeyHash{99}
+	for _, bad := range []RecordBody{
+		{Type: RecordDevice, Device: admin.ID, Name: "d", Role: "computer", Key: &key},
+		{Type: RecordDevice, Device: admin.ID, Name: "d", Role: RoleFull, OS: "darwin", Key: &key},
+	} {
+		bad.Group = Tag(admin.GroupCA.Cert)
+		if _, err := SignRecord(bad, admin.GroupCA.Key); err == nil {
+			t.Errorf("signed %+v", bad)
 		}
 	}
 }

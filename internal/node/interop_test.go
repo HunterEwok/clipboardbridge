@@ -84,9 +84,9 @@ func TestMemberInteropVectors(t *testing.T) {
 		return msg(t, &message{Type: typeEvent, Event: data})
 	}
 	v := memberVectors{Frames: []json.RawMessage{
-		hello(Linux, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &text}, Records: "q83vEjRWeJA=", Name: "pi"}),
-		hello(Mac, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &mark}}),
-		hello(Phone, helloOut{Hello: clip.Hello{Wall: 0}}),
+		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &text}, Records: "q83vEjRWeJA=", Name: "pi", OS: group.OSLinux}),
+		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &mark}, OS: group.OSMacOS}),
+		hello(Phone, helloOut{Hello: clip.Hello{Wall: 0}, OS: group.OSiOS}),
 		event(text),
 		event(secret),
 		event(universal),

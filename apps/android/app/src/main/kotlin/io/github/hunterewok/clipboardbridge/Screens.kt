@@ -427,8 +427,8 @@ private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Uni
             val note = when {
                 d.isSelf && d.admin -> stringResource(R.string.this_phone_admin)
                 d.isSelf -> stringResource(R.string.this_phone)
-                d.admin -> "${roleName(d.role)} · ${stringResource(R.string.admin)}"
-                else -> roleName(d.role)
+                d.admin -> "${systemName(d)} · ${stringResource(R.string.admin)}"
+                else -> systemName(d)
             }
             Text(note, style = MaterialTheme.typography.bodySmall, color = palette.textDim)
         }
@@ -460,11 +460,21 @@ private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Uni
 }
 
 /** A device's role in a word: the protocol's names, which are the same in every language. */
-private fun roleName(role: String): String = when (role) {
-    "mac" -> "macOS"
-    "linux" -> "Linux"
-    "lite" -> "lite"
-    else -> role
+/** A device's system as the list shows it, and its role where that tells more. */
+private fun systemName(d: LiveGroup.Device): String {
+    val os = when (d.os) {
+        "linux" -> "Linux"
+        "windows" -> "Windows"
+        "macos" -> "macOS"
+        "ios" -> "iOS"
+        "android" -> "Android"
+        else -> null
+    }
+    return when {
+        d.role == "full" -> os ?: "computer"
+        os != null -> "$os · ${d.role}"
+        else -> d.role
+    }
 }
 
 @Composable

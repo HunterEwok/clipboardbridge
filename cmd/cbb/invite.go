@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/invite"
 )
 
@@ -92,15 +93,7 @@ func cmdInvite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // osName names a joining device's system for the user.
-func osName(os string) string {
-	switch os {
-	case "linux":
-		return "Linux or Windows"
-	case "darwin":
-		return "Mac"
-	}
-	return os
-}
+func osName(os string) string { return group.OSName(os) }
 
 // cmdJoinInvite joins with a remote invitation from the file at path.
 func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {

@@ -51,16 +51,15 @@ const (
 type Role string
 
 const (
-	Linux Role = "linux" // listens, can hold clipboardbridge.local
-	Mac   Role = "mac"   // only dials
+	Full  Role = "full"  // a computer with the service: Linux, Windows or macOS
 	Phone Role = "phone" // a phone app: only dials, never dialed
-	Lite  Role = "lite"  // a lite member for small devices: only dials
+	Lite  Role = "lite"  // a lite member for small devices
 )
 
 // known reports whether a peer may claim the role in its hello.
 func (r Role) known() bool {
 	switch r {
-	case Linux, Mac, Phone, Lite:
+	case Full, Phone, Lite:
 		return true
 	}
 	return false
@@ -108,6 +107,7 @@ type helloBody struct {
 	Current json.RawMessage `json:"current,omitempty"`
 	Records string          `json:"records,omitempty"` // the digest of the sender's records
 	Name    string          `json:"name,omitempty"`    // the sender's device name
+	OS      string          `json:"os,omitempty"`      // the sender's operating system
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 }
@@ -118,6 +118,7 @@ type helloOut struct {
 	clip.Hello
 	Records string `json:"records,omitempty"`
 	Name    string `json:"name,omitempty"`
+	OS      string `json:"os,omitempty"`
 	// AdminKey is the SubjectPublicKeyInfo of the admin key of a computer
 	// of a phone group that is no admin yet, DER, for the root phone to
 	// certify when it makes the computer an admin.
