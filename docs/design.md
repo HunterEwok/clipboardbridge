@@ -567,8 +567,11 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 
 ### The hub
 
-- One member of the group, a computer of the user's that is at home and usually on, is the
-  hub: a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
+- One member of the group, a computer of the user's at home, is the hub. It need not stay
+  on: while it is off, nothing syncs away from home, and the devices at home still sync
+  among themselves. The user chooses: a computer that is always on, one that is turned on
+  when sync away from home is needed (for example to copy codes from afar for an hour), or
+  no hub and sync at home only. `cbb away hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
   of work. Phones and lite members are clients: a phone is not always on
   and cannot accept connections in the background, and a lite member has no room for it.
@@ -1060,7 +1063,8 @@ firewall on all three systems, as they do today.
 **Who holds `clipboardbridge.local`.** Only a full member that can serve the shortcut, that
 is one that holds the iPhone CA key (the root and the admins of a group a computer created).
 Among those that are on, a device that does not sleep comes first and a laptop only when no
-other is on; then the lowest device ID, as today. The service guesses which it is from
+other is on; then the lowest device ID, as today. This is a preference, not a requirement:
+no device has to stay on, and whichever of them is on holds the name. The service guesses which it is from
 whether the machine has a battery, and a setting overrides the guess (always first, only as
 a fallback, or never). The TXT record tells the others the member's priority. Whether the
 Mac's own mDNS code can hold the name next to mDNSResponder is an open question until it is
@@ -1124,7 +1128,8 @@ and that member becomes the root:
    phone kits; `cbb devices` and the Devices screens show the system and the root and admin
    marks; an admin re-signs a record whose `os` is wrong.
 3. The Mac as a full member: the dialing rule above, listening like the others, holding
-   `clipboardbridge.local` by priority, with the battery guess and its setting.
+   `clipboardbridge.local` by priority, with the battery guess and its setting; `cbb away hub`
+   says that nothing syncs away from home while the hub is off.
 4. New groups made by a computer with a root of path length 1: the CA keys on the creator
    only, the admin key on every full member, `cbb admin`, the iPhone CA key for admins,
    removing any device but the root by record, and replacing the iPhone CA when an admin
