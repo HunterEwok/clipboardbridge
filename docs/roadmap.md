@@ -130,6 +130,9 @@ The order may change.
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
+26. **Planned for 0.5.** Watches: the Apple Watch, and Wear OS after it, show the group's
+    events, turn sync away from home on and off, and act at once on a stolen device with an
+    admin key of their own. The root stays on the phone. See "Watches" below.
 
 ## OpenWrt routers
 
@@ -416,7 +419,8 @@ separate permission (D-59), never on sync.
   Entware's init scripts.
 - **WSL and Termux** need nothing of their own: the Windows service and the Android app
   cover them.
-- **Not reachable**: Kindle e-readers and smart watches take neither apps nor keyboards.
+- **Not reachable**: Kindle e-readers take neither apps nor keyboards; watches have apps of
+  their own (item 26) but nothing worth typing into.
 
 ### Steps
 
@@ -429,6 +433,75 @@ One pull request each, smaller ones together:
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
    and the serial console.
 5. The iPad build of the iPhone app.
+
+## Watches
+
+Planned for 0.5. Decided on 2026-10-24: a watch is never the group's root, but it carries
+notifications, a switch for sync away from home and the emergency actions, with an admin key
+of its own.
+
+### Why not the root
+
+The Apple Watch has a Secure Enclave and CryptoKit makes P-256 keys in it, so it could hold
+the root key. But watchOS gives an ordinary app no sockets: no TCP or TLS to the members, no
+Bonjour, no listening, only `URLSession` and WatchConnectivity to its paired iPhone (Apple's
+TN3135; low-level networking is for audio streaming apps only). A watch therefore always
+works through its iPhone and cannot be a member. A root key on the watch with the iPhone as
+the carrier would keep the root safe from a compromised phone, but the root signs rarely and
+the iPhone's key already sits in the Secure Enclave behind Face ID, so the group stays as it is.
+
+### What the watch does
+
+1. **Notifications.** The phone app notifies of the group's events, and iOS and Wear OS show
+   them on the watch: a device added or removed, an admin made, frozen or unfrozen, the group
+   taken over, a certificate close to expiry that did not renew, the hub unreachable while
+   away from home, a remote paste received or refused. Each is a setting.
+2. **Sync away from home.** A switch on the watch turns the phone's own away mode on and off,
+   as the app's switch does (`AwayFromHome`, `cbbtun`).
+3. **Emergency actions** with the watch's own admin key: freeze an admin computer, remove an
+   ordinary device, turn remote paste off on a member, turn sync away from home **off** on a
+   member. The watch shows what it signs and asks for a tap; the phone only carries the
+   record into the group.
+
+### The watch's admin key
+
+A key in the watch's Secure Enclave (on Wear OS, the watch's Keystore), which the root
+certifies as an admin CA once, as it does an admin phone. The watch's device record has its
+own role, `watch`. A watch on the wrist stays unlocked without asking for Face ID or a
+fingerprint at each signature, so it signs the emergency actions above and nothing else: it
+freezes admin computers (D-60) and removes ordinary devices, but never removes an admin,
+makes one, admits devices, renews certificates or takes the group over. Any admin can freeze
+a watch like an admin computer; removing one takes the root or an admin phone.
+Every receiver checks these limits, in Go, Rust, Swift and Kotlin, with interop vectors.
+
+Turning sync away from home on stays a decision on each device (D-45); a signed command only
+turns it off, as any admin turns remote paste off (D-59).
+
+### Delivery
+
+On Android the foreground service receives the events by itself, so the watch hears of them
+at once. On the iPhone the app has no background sync and learns of events only when it
+syncs, so a notification may come late. To make it prompt, the hub could wake the phone with
+an Apple push whose content is encrypted to the phone's key and decrypted only on the phone
+(a Notification Service Extension); Apple would see that a push was sent, and when, but
+nothing in it. Whether to use Apple's push service at all is the owner's decision, made
+before step 3; without it, iPhone notifications come with the next sync.
+
+### Steps
+
+One pull request each, smaller ones together:
+
+1. Notifications for the group's events in both phone apps, with a setting each.
+2. The watch apps (watchOS, then Wear OS): the events and the away switch.
+3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
+   Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
+   that turns sync away from home off on a member.
+4. Emergency actions on the watch.
+5. If the owner agrees, prompt iPhone notifications through an encrypted Apple push.
+
+Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
+waking the phone app in the background long enough to send a record, and the delay of
+notifications.
 
 ## Device keys in hardware
 
