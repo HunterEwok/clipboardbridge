@@ -5,6 +5,9 @@ package service
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
+	"hash/crc32"
 	"net"
 	"net/netip"
 	"os"
@@ -210,6 +213,25 @@ func TestLiteMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the lite member has the laptop text", func() bool { return lite.paste(t) == "from the laptop" })
+
+	// The ZX Spectrum Next's front end: texts in the Spectrum character set,
+	// with their length and CRC-32 (lite/README.md, "ZX Spectrum Next").
+	zx := []byte("ZX \x605\rnext")
+	next := exec.Command(bin, "-socket", lite.socket, "next", "copy", strconv.Itoa(len(zx)), fmt.Sprintf("%08x", crc32.ChecksumIEEE(zx)))
+	next.Stdin = bytes.NewReader(zx)
+	if out, err := next.Output(); err != nil || string(out) != "CBBGO\rCBBOK\r" {
+		t.Fatalf("cbb-lite next copy: %v; %q", err, out)
+	}
+	waitFor(t, "the laptop has the Next's text", func() bool { return laptop.paste(t) == "ZX £5\nnext" })
+	if _, err := laptop.do(t, control.Header{Op: control.OpCopy}, "to the `Next` £\nαβγδ"); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("to the ?Next? \x60\r????")
+	waitFor(t, "the lite member has the laptop text for the Next", func() bool { return strings.HasPrefix(lite.paste(t), "to the") })
+	zxOut, err := exec.Command(bin, "-socket", lite.socket, "next", "paste").Output()
+	if wantOut := fmt.Sprintf("CBB1 %d %08x\r%s\rCBBOK\r", len(want), crc32.ChecksumIEEE(want), want); err != nil || string(zxOut) != wantOut {
+		t.Fatalf("cbb-lite next paste: %v; %q, want %q", err, zxOut, wantOut)
+	}
 
 	// Every member lists it as a lite device, not an admin.
 	for _, s := range []*testService{pi, laptop, lite} {

@@ -6,6 +6,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Added
+
+- A forwarder for hubs that the computers cannot reach directly, for example behind
+  carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
+  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
+  member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
+  only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
+  groups apart, limits each group, and writes nothing about the groups, not even to its
+  log. `cbb away` on the hub shows the registration.
+
+## [0.3.0] - 2026-10-24
+
 ### Changed
 
 - A computer that joins at an address (`cbb join -code ADDRESS`, as through an SSH
@@ -68,14 +80,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
-- A forwarder for hubs that the computers cannot reach directly, for example behind
-  carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
-  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
-  member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
-  only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
-  groups apart, limits each group, and writes nothing about the groups, not even to its
-  log. `cbb away` on the hub shows the registration.
-
+- `cbb-lite next paste|copy|join` for the ZX Spectrum Next: on the Next's own Raspberry Pi,
+  `cbb-lite` answers the Next's `.cbb` dot command over the internal UART in frames its
+  Z80 reads (CR lines, the Spectrum character set, length and CRC-32, a QR code as hex
+  rows for the phone to scan); see lite/README.md.
 - Releases carry the lite member: `cbb-lite-linux-amd64.tar.gz`, `-arm64` and `-armv6`,
   static builds, each with the systemd unit and the licenses of the crates it is built from
   (`THIRD_PARTY_NOTICES`).
@@ -224,7 +232,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   old service go before starting it.
 - A `cbb away` request still running while the service stops no longer starts the hub or
   the tunnel again after the stop.
-
+- `cbb-lite version` and its status show the release's version, taken from the tag; it
+  said 0.1.0 whatever the release.
 - Adding a device in the phone app no longer hangs when the computer does not answer: a
   connection gives up after 5 s and its TLS handshake after 10 s, the pairing after 30 s,
   IPv4 addresses come first, leaving the sheet cancels it, and the message names the
@@ -315,6 +324,7 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterEwok/clipboardbridge/releases/tag/v0.1.1

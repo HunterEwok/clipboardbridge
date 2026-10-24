@@ -49,8 +49,9 @@ The order may change.
     only carries the Pi's TLS bytes: the Z80 copies them between the Pi's UART and the
     ESP's, and the ESP never sees anything but ciphertext. A dot command on the Next,
     `.cbb`, talks to `cbb-lite` over the internal UART the way NextPi's own tools do
-    (`.pisend`): it copies a text to the group, pastes the latest one, and joins with the
-    code shown by the admin, since the Next has no camera. The UART is a trace on the
+    (`.pisend`): it copies a text to the group, pastes the latest one, and joins by
+    drawing the QR code for the phone app on the Next's screen (`cbb-lite next`,
+    lite/README.md). The UART is a trace on the
     Next's board and never leaves the case, so it carries the texts in the clear. The Pi
     converts between UTF-8 and the Spectrum character set: printable ASCII first, with
     every other character shown as `?`; Cyrillic follows later as an encoding of its own.

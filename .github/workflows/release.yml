@@ -154,7 +154,7 @@ jobs:
           rustup default stable
       - name: build (static, linked with rust-lld; see lite/.cargo/config.toml)
         working-directory: lite
-        run: cargo build --locked --release --target ${{ matrix.target }}
+        run: CBB_VERSION="${GITHUB_REF_NAME#v}" cargo build --locked --release --target ${{ matrix.target }}
       - name: archive, with the crates' licenses
         run: |
           work=$RUNNER_TEMP/work/cbb-lite

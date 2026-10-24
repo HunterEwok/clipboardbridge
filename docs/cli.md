@@ -48,6 +48,7 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 | `cbb-lite status` | The group and the connected members. |
 | `cbb-lite devices` | The devices of the group. |
 | `cbb-lite watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
+| `cbb-lite next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
 | `cbb-lite version`, `cbb-lite help` | The version; this help. |
 
 ## Installers
