@@ -137,11 +137,20 @@ if [ -x "$fw" ]; then
 	fi
 fi
 
-launchctl bootout "system/$daemon" 2>/dev/null || true
-launchctl bootstrap system "/Library/LaunchDaemons/$daemon.plist"
+# restart DOMAIN LABEL PLIST stops the job if it runs and starts it again.
+# bootout returns before launchd has let the job go, and a bootstrap in that
+# moment fails with "5: Input/output error", so wait for it to be gone.
+restart() {
+	launchctl bootout "$1/$2" 2>/dev/null || true
+	for _ in $(seq 50); do
+		launchctl print "$1/$2" >/dev/null 2>&1 || break
+		sleep 0.2
+	done
+	launchctl bootstrap "$1" "$3"
+}
+
+restart system "$daemon" "/Library/LaunchDaemons/$daemon.plist"
 if [ -n "$user" ] && [ "$user" != root ]; then
-	uid=$(id -u "$user")
-	launchctl bootout "gui/$uid/$agent" 2>/dev/null || true
-	launchctl bootstrap "gui/$uid" "/Library/LaunchAgents/$agent.plist"
+	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi
 echo "clipboardbridge is running. Join the group: cbb join, and scan its QR code with the iPhone shortcut \"clipboardbridge: add a computer\"; or cbb pair on a Linux member, then cbb join -code here."

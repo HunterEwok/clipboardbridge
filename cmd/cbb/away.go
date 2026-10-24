@@ -37,8 +37,9 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb away                       show sync away from home\n" +
 		"       cbb away on                    turn it on here\n" +
 		"       cbb away off                   turn it off here and forget its keys\n" +
-		"       cbb away hub [-port N] address:port...\n" +
-		"                                      make this device the group's hub, reached at these addresses"
+		"       cbb away hub [-port N] [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
+		"                                      make this device the group's hub, reached at these addresses\n" +
+		"                                      or through the forwarder"
 	if len(args) == 0 {
 		return cmdAwayStatus(stdout, stderr)
 	}
@@ -69,14 +70,16 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("away hub", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		port := fs.Int("port", 0, "the UDP port the hub listens on (default 8764)")
+		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
+		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
-		if fs.NArg() == 0 {
+		if fs.NArg() == 0 && *fwd == "" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
-		h.Port, h.Addrs = *port, fs.Args()
+		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey = *port, fs.Args(), *fwd, *fwdKey
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2
@@ -123,12 +126,28 @@ func writeAway(w io.Writer, a *control.Away) {
 	switch {
 	case a.Hub:
 		fmt.Fprintf(w, "Sync away from home: on; this device is the hub, on UDP port %d, for %d devices.\n", a.Port, a.Clients)
-		if len(a.Endpoints) == 0 {
-			fmt.Fprintln(w, "  The hub has no address away from home: cbb away hub address:port...")
-		} else {
+		switch {
+		case len(a.Endpoints) > 0:
 			fmt.Fprintf(w, "  Reached at %s.\n", strings.Join(a.Endpoints, ", "))
+			fmt.Fprintf(w, "  The router must forward UDP port %d to this device, and its firewall must allow it.\n", a.Port)
+		case a.Forwarder == nil:
+			fmt.Fprintln(w, "  The hub has no address away from home: cbb away hub address:port...")
 		}
-		fmt.Fprintf(w, "  The router must forward UDP port %d to this device, and its firewall must allow it.\n", a.Port)
+		if f := a.Forwarder; f != nil {
+			switch {
+			case f.Registered && f.Seen != "":
+				fmt.Fprintf(w, "  Registered with the forwarder at %s, which reaches this hub at %s.\n", f.Endpoint, f.Seen)
+			case f.Registered:
+				fmt.Fprintf(w, "  Registered with the forwarder at %s; it has not heard the hub's UDP port yet.\n", f.Endpoint)
+			case f.Error == "":
+				fmt.Fprintf(w, "  Registering with the forwarder at %s.\n", f.Endpoint)
+			default:
+				fmt.Fprintf(w, "  Not registered with the forwarder at %s: %s.\n", f.Endpoint, f.Error)
+				if f.Detail != "" && debugErrors() {
+					fmt.Fprintf(w, "  Detail: %s\n", f.Detail)
+				}
+			}
+		}
 	case a.HubDevice == "":
 		fmt.Fprintln(w, "Sync away from home: on; waiting to meet the group's hub on the home network.")
 	case a.Through:

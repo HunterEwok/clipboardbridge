@@ -22,6 +22,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
@@ -148,6 +149,7 @@ type Service struct {
 	tunThrough bool                  // connected to the hub through the tunnel now
 	tunErr     string                // what went wrong last, for status; "" if nothing
 	tunDetail  string                // the underlying error
+	tunFwd     *control.Forwarder    // on the hub: its registration with its forwarder; nil without one
 	guests     map[netip.Addr]*guest // on the hub: the guest tunnels of open remote invitations (invite.go)
 
 	groupCtx    context.Context

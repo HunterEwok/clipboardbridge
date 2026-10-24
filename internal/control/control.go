@@ -66,19 +66,21 @@ type Header struct {
 	Error string `json:"error,omitempty"`  // a failed request
 	Done  bool   `json:"done,omitempty"`   // the last answer to a request
 
-	Code        string   `json:"code,omitempty"`        // pairing code
-	Fingerprint string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
-	Address     string   `json:"address,omitempty"`     // a member's address for join
-	Addrs       []string `json:"addrs,omitempty"`       // where a listening join waits, for its QR code
-	Listen      bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
-	Name        string   `json:"name,omitempty"`        // a device name
-	Expires     int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
-	Port        int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
-	Consent     bool     `json:"consent,omitempty"`     // away on, join with an invitation: the user agreed to what the warning says; answer: yes
-	Invite      string   `json:"invite,omitempty"`      // the text of a remote invitation: made by invite, used by join
-	Joining     *Joining `json:"joining,omitempty"`     // invite: a device to confirm, before it is admitted
-	Status      *Status  `json:"status,omitempty"`
-	Devices     []Device `json:"devices,omitempty"`
+	Code         string   `json:"code,omitempty"`        // pairing code
+	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
+	Address      string   `json:"address,omitempty"`     // a member's address for join
+	Addrs        []string `json:"addrs,omitempty"`       // where a listening join waits, for its QR code
+	Listen       bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
+	Name         string   `json:"name,omitempty"`        // a device name
+	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
+	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
+	Forwarder    string   `json:"forwarder,omitempty"`   // away hub: the forwarder's address, with its key in ForwarderKey
+	ForwarderKey string   `json:"forwarder_key,omitempty"`
+	Consent      bool     `json:"consent,omitempty"` // away on, join with an invitation: the user agreed to what the warning says; answer: yes
+	Invite       string   `json:"invite,omitempty"`  // the text of a remote invitation: made by invite, used by join
+	Joining      *Joining `json:"joining,omitempty"` // invite: a device to confirm, before it is admitted
+	Status       *Status  `json:"status,omitempty"`
+	Devices      []Device `json:"devices,omitempty"`
 }
 
 // Status describes the service for cbb status.
@@ -94,15 +96,25 @@ type Status struct {
 
 // Away describes sync away from home on this device.
 type Away struct {
-	Hub        bool     `json:"hub,omitempty"`        // this device is the group's hub
-	Port       int      `json:"port,omitempty"`       // the hub's UDP port
-	Endpoints  []string `json:"endpoints,omitempty"`  // the hub's addresses away from home
-	Clients    int      `json:"clients,omitempty"`    // on the hub: the devices it admitted
-	HubDevice  string   `json:"hub_device,omitempty"` // on a client: the hub; "" until the hub offered its tunnel
-	Through    bool     `json:"through,omitempty"`    // on a client: connected to the hub through the tunnel now
-	KeysInFile bool     `json:"keys_in_file,omitempty"`
-	Error      string   `json:"error,omitempty"`  // what went wrong last, for the user
-	Detail     string   `json:"detail,omitempty"` // the underlying error, for debugging
+	Hub        bool       `json:"hub,omitempty"`        // this device is the group's hub
+	Port       int        `json:"port,omitempty"`       // the hub's UDP port
+	Endpoints  []string   `json:"endpoints,omitempty"`  // the hub's addresses away from home
+	Clients    int        `json:"clients,omitempty"`    // on the hub: the devices it admitted
+	HubDevice  string     `json:"hub_device,omitempty"` // on a client: the hub; "" until the hub offered its tunnel
+	Through    bool       `json:"through,omitempty"`    // on a client: connected to the hub through the tunnel now
+	KeysInFile bool       `json:"keys_in_file,omitempty"`
+	Error      string     `json:"error,omitempty"`     // what went wrong last, for the user
+	Forwarder  *Forwarder `json:"forwarder,omitempty"` // on the hub: its forwarder; nil without one
+	Detail     string     `json:"detail,omitempty"`    // the underlying error, for debugging
+}
+
+// Forwarder describes a hub's registration on its forwarder.
+type Forwarder struct {
+	Endpoint   string `json:"endpoint"`
+	Registered bool   `json:"registered,omitempty"`
+	Seen       string `json:"seen,omitempty"`   // where the forwarder reaches the hub's port
+	Error      string `json:"error,omitempty"`  // why the hub is not registered
+	Detail     string `json:"detail,omitempty"` // the underlying error, for debugging
 }
 
 // Joining is a device that used a remote invitation, for the admin to

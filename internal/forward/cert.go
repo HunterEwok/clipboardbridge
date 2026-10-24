@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package forward
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+)
+
+// NewCert makes a forwarder's key and its self-signed certificate. Hubs pin
+// the key, so the certificate's names and dates mean nothing; it lasts as
+// long as the key.
+func NewCert() (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "clipboardbridge forwarder"},
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.AddDate(100, 0, 0),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
+}
+
+// LoadCert reads the forwarder's key and certificate from path, a PEM file,
+// and makes them first if the file does not exist. It is the one file the
+// forwarder keeps: nothing about the groups is ever written.
+func LoadCert(path string) (tls.Certificate, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		cert, err := NewCert()
+		if err != nil {
+			return tls.Certificate{}, err
+		}
+		keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+		if err != nil {
+			return tls.Certificate{}, err
+		}
+		data = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+		data = append(data, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})...)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return tls.Certificate{}, err
+		}
+		if err := atomicfile.Write(path, data, 0o600); err != nil {
+			return tls.Certificate{}, err
+		}
+		return cert, nil
+	}
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	cert, err := tls.X509KeyPair(data, data)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return cert, nil
+}

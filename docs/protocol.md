@@ -28,6 +28,7 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | mDNS | UDP 5353, groups 224.0.0.251 and ff02::fb | `internal/mdns/mdns.go` |
 | Member ALPN | `clipboardbridge/1` | `group.MemberProtocol` |
 | Pairing ALPN | `clipboardbridge-pair/1` | `pair.Protocol` |
+| Forwarder | UDP and TCP 8764 on the forwarder's own server (`cbb forward -listen`); ALPN `clipboardbridge-forward/1` (section 13) | `internal/forward` |
 | Pairing code | six ASCII digits; users may type spaces and dashes, which are removed | `pair.NormalizeCode` |
 | Join QR text | `clipboardbridge://join?code=` followed by the six-digit code; unknown query fields are ignored | `phone.JoinQR`, `phone.ParseJoinQR` |
 
@@ -781,7 +782,7 @@ A connection carries one request: the service reads the first message and dispat
 |------|---------|---------|
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
-| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail}` (section 11) |
+| `status` | none | `{status, done}`; `status` = `{device, group, role, holder, peers: [{id, role, skew_ms}], away?, version}`; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13) |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. A Linux device in no group creates one first. Hanging up closes the window |
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on the holder of `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
@@ -1019,7 +1020,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, admin, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
-| `away` | `{name: "on", consent}`, `{name: "off"}` or `{name: "hub", addrs, port}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`, at most 8) on UDP `port`. Members connect again afterwards, so their hellos carry the change (section 11) |
+| `away` | `{name: "on", consent}`, `{name: "off"}` or `{name: "hub", addrs, port, forwarder, forwarder_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them. Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or a computer with an admin CA; a device cannot remove itself; a Linux member of a group a computer created cannot be removed yet, since it holds the CA keys (design.md, "Devices and revocation"); the root phone is removed only from another admin phone, which takes the group over |
 
 ## 11. Tunnel keys
@@ -1038,7 +1039,7 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
   away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
   only.
 - The group's hub is one member, chosen on that member (`cbb away hub`; `is_hub`,
-  `endpoints` and `listen_port` in its `tunnel.json`). When
+  `endpoints`, `listen_port` and `forwarder` in its `tunnel.json`). When
   a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
   with the certificate chain the peer presented in this connection's TLS handshake, and
   answers with `{"t":"tunnel","tunnel":{"hub_key":...,"psk":...,"endpoints":[...]}}`:
@@ -1047,7 +1048,7 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 |-------|------|---------|
 | `hub_key` | bytes | the hub's public key, 32 bytes |
 | `psk` | bytes | the member's own WireGuard preshared key, 32 random bytes |
-| `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8 |
+| `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8; its forwarder's last (section 13) |
 
 - The hub keeps one preshared key per device and makes a new one when the device offers a
   new key. It refuses a key that another device or the hub itself has, and keeps at most
@@ -1142,3 +1143,87 @@ the admin cancels it.
 4. With the offer, the device closes the guest tunnel and from then on reaches the hub
    through the tunnel with its own key, as any member.
 
+
+## 13. The forwarder
+
+A server that holds no keys and passes the encrypted WireGuard packets of a group's clients
+to that group's hub, for hubs that clients cannot reach directly ([design.md](design.md),
+"The forwarder"). Implemented in Go (`internal/forward`, `cbb forward`, and on the hub
+`internal/service/forwarder.go`). Routing is by `mac1`; the fallback by a computed port is
+not built.
+
+- The forwarder listens on one port number, UDP for packets and TCP for registrations.
+  Its key is an ECDSA P-256 key with a self-signed certificate; hubs pin it as
+  `sha256:` followed by base64url without padding of SHA-256 over the certificate's
+  SubjectPublicKeyInfo (DER).
+- The hub keeps `forwarder: {endpoint, key}` in its `tunnel.json` and gives its clients the
+  forwarder's endpoint after its own (section 11). Clients need nothing else: to them the
+  forwarder is one more address of the hub.
+
+### Registration
+
+1. The hub connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-forward/1` and no
+   server name. It accepts only the pinned key. It presents its member certificate, its
+   admin CA if it has one, and the group's roots (the group CA, then any `root` records'
+   CAs).
+2. The forwarder checks that the leaf names a device (section 1) and verifies it, for client
+   authentication, to a self-signed CA among the presented certificates. That root's tag
+   names the group (section 1). It knows no group beforehand: any group may register, but
+   only one of its members can.
+3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
+   `{"key": bytes, "proof": bytes}`: its WireGuard public key, and HMAC-SHA256 under
+   X25519(the hub's WireGuard private key, `e`) of 32 bytes exported from the TLS session
+   with the label `clipboardbridge forwarder key` and no context. So the hub proves it holds
+   the key, on this connection only.
+4. The forwarder answers `{"id": number}`, a random 64-bit registration ID, or
+   `{"error": string}` and closes: the proof is wrong, another group registered that key, or
+   the forwarder is full. A group has one registration: a new one replaces the old, whose
+   connection closes.
+5. The registration lasts while the connection does; the hub sends nothing more on it. The
+   forwarder sends `{"seen": "ip:port"}` whenever it learns a new address of the hub's
+   WireGuard port. The hub registers again whenever the connection breaks, with a backoff of
+   1 s doubling to 60 s.
+
+### Hellos
+
+From its WireGuard UDP port, the hub sends the forwarder's UDP port a hello every second
+until it hears `seen`, then every 15 s, which also keeps its NAT mapping open. A hello is 36
+bytes: `0x80 0x00 0x00 0x00`, the registration ID (8 bytes, big-endian), a counter (8 bytes,
+big-endian, growing; the hub uses Unix nanoseconds), and the first 16 bytes of HMAC-SHA256,
+under 32 bytes exported from the TLS session with the label `clipboardbridge forwarder
+hello`, of the first 20 bytes. The forwarder takes a hello only with a valid MAC and a
+counter above the last one, and the hub's port is where the last hello came from.
+
+### Forwarding
+
+The forwarder looks at WireGuard's message type (the first byte, then three zero bytes) and
+at the indices; it changes nothing in a packet.
+
+- A handshake initiation (type 1, 148 bytes) from a client goes to the hub whose `mac1` key,
+  BLAKE2s-256(`mac1----` || the hub's public key), gives the packet's `mac1` field. The
+  forwarder remembers the client's address under the initiation's sender index for 10 s.
+- A handshake response (type 2, 92 bytes) from a hub goes to the client whose sender index
+  is its receiver index. The forwarder then keeps the session for 200 s: the client's
+  address and index, and the hub's index (the response's sender index).
+- A cookie reply (type 3) from a hub goes like a response; data (type 4) from a hub goes to
+  the client of the session with that receiver index, and data from anyone goes to the hub
+  of the session whose hub index is its receiver index. When two sessions get the same hub
+  index, the newer wins.
+- Everything else is dropped: packets of other types or sizes, a handshake whose `mac1`
+  matches no hub, a hub's own handshake initiation (its `mac1` is keyed with a client's key,
+  which the forwarder does not know; clients keep their sessions fresh), and responses
+  from clients.
+- A client's new address is taken with its next handshake (within 15 s of WireGuard
+  hearing nothing), not with data, which anyone could send.
+
+### Limits
+
+Per group: 16 client addresses, 64 handshakes waiting for the hub, 1000 packets and 2 MiB a
+second (twice that in a burst); per source address, 10 handshakes a second; 100 000 groups
+and 256 registrations being set up at a time. A group that reaches a limit loses only its
+own packets.
+
+### What it keeps
+
+Only its own key file. Groups, addresses and sessions live in memory while the connections
+last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts each minute.
