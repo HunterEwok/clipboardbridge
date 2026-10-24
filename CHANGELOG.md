@@ -20,6 +20,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
 
+### Fixed
+
+- Installing again on a Mac, as after `brew upgrade`, no longer fails now and then with
+  "Bootstrap failed: 5: Input/output error": the installer waits for launchd to let the
+  old service go before starting it.
+
 ## [0.3.0] - 2026-10-24
 
 ### Changed
@@ -231,9 +237,6 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - The release archives now carry `THIRD_PARTY_NOTICES`, the licenses of the Go modules,
   the copied CPace code and Go itself that `cbb` is built from, as their licenses require.
-- Installing again on a Mac, as after `brew upgrade`, no longer fails now and then with
-  "Bootstrap failed: 5: Input/output error": the installer waits for launchd to let the
-  old service go before starting it.
 - A `cbb away` request still running while the service stops no longer starts the hub or
   the tunnel again after the stop.
 - `cbb-lite version` and its status show the release's version, taken from the tag; it
