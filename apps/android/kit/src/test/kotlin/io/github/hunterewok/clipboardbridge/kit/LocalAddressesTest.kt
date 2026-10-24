@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class LocalAddressesTest {
     @Test
     fun home() {
-        for (a in listOf("10.0.0.1", "172.16.5.4", "172.31.255.255", "192.168.0.225")) assertTrue(LocalAddresses.isHomeIPv4(a), a)
+        for (a in listOf("10.0.0.1", "172.16.5.4", "172.31.255.255", "192.168.1.20")) assertTrue(LocalAddresses.isHomeIPv4(a), a)
         for (a in listOf("172.15.0.1", "172.32.0.1", "100.64.0.1", "8.8.8.8", "127.0.0.1", "192.168.1", "192.168.1.300")) {
             assertFalse(LocalAddresses.isHomeIPv4(a), a)
         }

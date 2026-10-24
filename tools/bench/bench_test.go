@@ -19,17 +19,17 @@ controller = "pi4"
 
 [device.deck]
 os = "linux"
-ssh = "ewok@steamdeck.lan"
+ssh = "user@deck.lan"
 clipboard = "wayland"
 roles = ["member", "hub"]
 
 [device.rpi0w]
 os = "linux-lite"
-ssh = "ewok@rpi0w.lan"
+ssh = "user@pi.lan"
 
 [device.win]
 os = "windows"
-ssh = "ewok@win.lan"
+ssh = "user@win.lan"
 clipboard = "windows"
 vm = { host = "mac", vmx = "win.vmx", snapshot = "clean" }
 
@@ -89,7 +89,7 @@ func TestPatterns(t *testing.T) {
 	if m := codeRE.FindStringSubmatch("Pairing code: 123 456"); m == nil || m[1]+m[2] != "123456" {
 		t.Fatalf("code: %v", m)
 	}
-	if m := addrRE.FindStringSubmatch("If it cannot find this one: cbb join -code 192.168.0.167:8764"); m == nil || m[1] != "192.168.0.167:8764" {
+	if m := addrRE.FindStringSubmatch("If it cannot find this one: cbb join -code 192.168.1.10:8764"); m == nil || m[1] != "192.168.1.10:8764" {
 		t.Fatalf("address: %v", m)
 	}
 	for _, s := range []string{

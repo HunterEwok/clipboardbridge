@@ -12,7 +12,7 @@ import (
 )
 
 func TestWriteQR(t *testing.T) {
-	const url = "http://192.168.0.225:8766/"
+	const url = "http://192.168.1.20:8766/"
 	var b bytes.Buffer
 	if err := writeQR(&b, url); err != nil {
 		t.Fatal(err)

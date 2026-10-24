@@ -204,7 +204,7 @@ final class PhoneJoinTests: XCTestCase {
     }
 
     func testHomeAddresses() {
-        for a in ["10.0.0.2", "172.16.1.1", "172.31.255.1", "192.168.0.225"] { XCTAssertTrue(LocalAddresses.isHome(ipv4: a), a) }
+        for a in ["10.0.0.2", "172.16.1.1", "172.31.255.1", "192.168.1.20"] { XCTAssertTrue(LocalAddresses.isHome(ipv4: a), a) }
         for a in ["8.8.8.8", "172.32.0.1", "169.254.1.1", "127.0.0.1", "100.64.0.1", "1.2.3"] { XCTAssertFalse(LocalAddresses.isHome(ipv4: a), a) }
         XCTAssertTrue(LocalAddresses.isHome(ipv6: "fd12:3456::1"))
         XCTAssertFalse(LocalAddresses.isHome(ipv6: "fe80::1%en0"))
