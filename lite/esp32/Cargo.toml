@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+[package]
+name = "clipboardbridge-esp32"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "The lite member's firmware for the ESP32-S3 (the Arduino Nano ESP32)"
+publish = false
+
+# Its own workspace: it builds only for the chip, with the Xtensa toolchain.
+[workspace]
+
+[[bin]]
+name = "cbb-esp32"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+clipboardbridge-core = { path = "../core", features = ["tls"] }
+esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
+esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
+esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
+esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["esp32s3", "critical-section"] }
+getrandom = { version = "0.4", default-features = false }
+rustls = { version = "0.23.46", default-features = false }
+
+[patch.crates-io]
+xtensa-lx-rt = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1" }
+xtensa-lx = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1" }
+
+[features]
+# The log goes to the USB port of the Nano ESP32 (the chip's USB serial),
+# or with qemu to UART0, which Espressif's QEMU shows.
+default = ["usb"]
+usb = ["esp-println/jtag-serial"]
+qemu = ["esp-println/uart"]
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "s"

@@ -635,7 +635,7 @@ jobs:
   esp32:
     name: lite core on the ESP32
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: lite
@@ -645,6 +645,12 @@ jobs:
       ESP_RUST: 1.99.0.0
       ESP_RUST_SHA256: b11376cf28b43ad31bd264de6987f6f50b8008824dcb12e6a7212331da5a8ed7
       ESP_RUST_SRC_SHA256: 31cee3ac662c026437c895846cb093b5d8438c13aa6c5f8d561e22bf7f8be543
+      # Espressif's QEMU (the ESP32-S3 machine) and espflash, which writes the
+      # flash image, for the firmware's self-test.
+      ESP_QEMU: esp-develop-9.2.2-20260417
+      ESP_QEMU_SHA256: 0eecb2a34a5586c0e59110f77b9343b7b336e82fdb0e1a30e1dc1bab8a547e35
+      ESPFLASH: 4.6.0
+      ESPFLASH_SHA256: c4fcfa32ddc3155608f003a230e6f3c184eff9641ec9cfa8eb54f1b515d403e7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -673,6 +679,26 @@ jobs:
           rustup toolchain link esp "$RUNNER_TEMP/esp"
       - name: the core with TLS without an operating system, Xtensa (the ESP32-S3)
         run: cargo +esp build --locked -Zbuild-std=core,alloc -p clipboardbridge-core --features tls --release --target xtensa-esp32s3-none-elf
+      - name: the firmware for the Arduino Nano ESP32
+        working-directory: lite/esp32
+        run: |
+          cargo +esp fmt --check
+          cargo +esp clippy --locked --release -- -D warnings
+          cargo +esp clippy --locked --release --no-default-features --features qemu -- -D warnings
+          cargo +esp build --locked --release
+      - name: Espressif's QEMU and espflash
+        working-directory: ${{ runner.temp }}
+        run: |
+          sudo apt-get install -y -q libslirp0
+          curl -fsSL --retry 3 -o qemu.tar.xz "https://github.com/espressif/qemu/releases/download/$ESP_QEMU/qemu-xtensa-softmmu-${ESP_QEMU//-/_}-x86_64-linux-gnu.tar.xz"
+          echo "$ESP_QEMU_SHA256  qemu.tar.xz" | sha256sum -c -
+          tar xf qemu.tar.xz
+          curl -fsSL --retry 3 -o espflash.zip "https://github.com/esp-rs/espflash/releases/download/v$ESPFLASH/espflash-x86_64-unknown-linux-gnu.zip"
+          echo "$ESPFLASH_SHA256  espflash.zip" | sha256sum -c -
+          unzip -q espflash.zip
+      - name: the firmware's self-test in QEMU (keys, certificates, a TLS 1.3 handshake on the chip)
+        working-directory: lite/esp32
+        run: QEMU="$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" ESPFLASH="$RUNNER_TEMP/espflash" ./qemu-test.sh
 
   zxnext:
     name: ZX Spectrum Next
