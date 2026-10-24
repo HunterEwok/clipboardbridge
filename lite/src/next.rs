@@ -17,8 +17,7 @@ use cbb_core::clip;
 use crate::error::{Context, Error, Result};
 use crate::{Global, control, request};
 
-const USAGE: &str =
-    "usage: cbb next paste [-max bytes] | copy <len> <crc32> | join [-name name] [-port port] [-addr host[:port]]...";
+const USAGE: &str = "usage: cbb next paste [-max bytes] | copy [-secret] <len> <crc32> | join [-name name] [-port port] [-addr host[:port]]...";
 
 /// How long copy waits for the next byte from the Next.
 const READ_TIMEOUT_DECISECONDS: u8 = 100;
@@ -73,8 +72,12 @@ fn frame(text: &[u8]) -> Vec<u8> {
 }
 
 /// Reads len bytes in the Spectrum character set from standard input, checks
-/// their CRC-32 and sends the text to the group.
+/// their CRC-32 and sends the text to the group, as a secret with -secret.
 fn copy(g: &Global, args: &[String]) -> Result<()> {
+    let (secret, args) = match args {
+        [f, rest @ ..] if crate::flag(f) == Some("secret") => (true, rest),
+        _ => (false, args),
+    };
     let [len, crc] = args else { return Err(Error::msg(USAGE)) };
     let len: usize = len.parse().context("the length is a number")?;
     let crc = u32::from_str_radix(crc, 16).context("the CRC-32 is 8 hex digits")?;
@@ -103,7 +106,11 @@ fn copy(g: &Global, args: &[String]) -> Result<()> {
     if crc32(&data) != crc {
         return Err(Error::msg("the text arrived damaged (CRC-32 mismatch); send it again"));
     }
-    let h = control::Header { op: "copy".into(), ..Default::default() };
+    let h = control::Header {
+        op: "copy".into(),
+        kind: if secret { "secret".into() } else { String::new() },
+        ..Default::default()
+    };
     request(g, &control::Message::new(h, from_spectrum(&data).into_bytes()))?;
     Ok(())
 }

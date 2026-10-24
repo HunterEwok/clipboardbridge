@@ -73,7 +73,7 @@ on every platform of the class, on the roadmap).
 | Join by the phone's QR code or a computer's code | yes | yes (pairing; on Linux over TAP in CI) | yes, through the Pi | |
 | Sync the clipboard | yes | not yet | yes, through the Pi | the firmware's sync is the next step of roadmap item 15 |
 | Listen for phones and Macs | yes | not yet | through the Pi | |
-| Secrets (`copy -secret`) | yes | not yet | **gap** | the dot command could mark a copy secret (L1) |
+| Secrets (`copy -secret`) | yes | not yet | yes (`.cbb text -s`, `.cbb copy -s`) | |
 | Sync away from home | planned | planned | planned | |
 | Error details switch | yes (`-debug`, `CBB_DEBUG=1`) | not yet | yes (`.cbb -d`) | |
 
@@ -106,6 +106,6 @@ One pull request each, in this order; anything under 100 lines rides in the open
    `cbb global hub` and the check from home. A member at home dials
    the computer back, so `cbb status` says when an unknown firewall or a closed rule keeps
    the others out. Messages are formal English, one fact per line.
-9. **L1**: `.cbb copy -s`, a secret from the Next.
+9. **L1**, done: `.cbb copy -s` and `.cbb text -s`, a secret from the Next (`cbb next copy -secret`).
 10. Roadmap item 22, the Mac app: the system's limits on a Mac (in and out), removal
     from the system, the signed `.pkg`.

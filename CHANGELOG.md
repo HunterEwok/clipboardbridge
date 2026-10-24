@@ -11,6 +11,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - winget: each release writes the manifest of `HunterEwok.clipboardbridge`, and `cbb install`
   installs the service from the copy that winget unpacked. The release signs the Windows
   programs with Authenticode when its secrets hold a certificate.
+- ZX Spectrum Next: `.cbb text -s` and `.cbb copy -s` send a secret, through the lite
+  member's `cbb next copy -secret`.
 - iPhone: Share → clipboardbridge sends a text or a link to the computers at once (a share
   extension), and a Control Center control and a home-screen widget "Sync clipboard".
   Android: the home-screen widget "Send clipboard".
