@@ -19,11 +19,15 @@ use crate::store::{Store, Wifi, tag};
 /// The longest line the console takes; a Wi-Fi password is at most 64 bytes.
 const MAX_LINE: usize = 128;
 
-/// What the rest of the firmware has to act on after a line.
-pub enum Event {
-    /// The Wi-Fi network to join changed; None to leave it.
-    #[cfg_attr(feature = "qemu", allow(dead_code))]
-    Wifi(Option<Wifi>),
+/// What the console asks of the rest of the firmware.
+pub trait Board {
+    /// How the network is doing, in a line.
+    fn network(&self) -> String;
+    /// Joins this Wi-Fi network instead of the one before, or leaves it.
+    fn wifi(&mut self, wifi: Option<Wifi>);
+    /// Starts listening for the phone, under this name; returns the QR
+    /// code's text.
+    fn join(&mut self, name: &str) -> Result<String>;
 }
 
 enum Ask {
@@ -57,24 +61,19 @@ impl Console {
         }
     }
 
-    /// Takes one byte from the terminal. network says how the network is
-    /// doing, for status.
-    pub fn feed(&mut self, b: u8, store: &mut Result<Store>, network: &dyn Fn() -> String) -> Option<Event> {
+    /// Takes one byte from the terminal.
+    pub fn feed(&mut self, b: u8, store: &mut Result<Store>, board: &mut dyn Board) {
         let last = core::mem::replace(&mut self.last, b);
         match b {
-            b'\n' if last == b'\r' => None,
+            b'\n' if last == b'\r' => {}
             b'\r' | b'\n' => {
                 println!();
                 let line = core::mem::take(&mut self.line);
-                let event = match String::from_utf8(line) {
-                    Ok(line) => self.line_done(line.trim(), store, network),
-                    Err(_) => {
-                        println!("That line is not valid UTF-8; type it again.");
-                        None
-                    }
-                };
+                match String::from_utf8(line) {
+                    Ok(line) => self.line_done(line.trim(), store, board),
+                    Err(_) => println!("That line is not valid UTF-8; type it again."),
+                }
                 self.prompt();
-                event
             }
             // Backspace and delete.
             0x08 | 0x7f => {
@@ -85,7 +84,6 @@ impl Console {
                     }
                     print!("\x08 \x08");
                 }
-                None
             }
             // Ctrl-C drops the line and any question.
             0x03 => {
@@ -93,9 +91,8 @@ impl Console {
                 self.ask = Ask::Command;
                 println!("^C");
                 self.prompt();
-                None
             }
-            b if b < 0x20 => None,
+            b if b < 0x20 => {}
             b => {
                 if self.line.len() < MAX_LINE {
                     self.line.push(b);
@@ -107,33 +104,27 @@ impl Console {
                         print!("{}", b as char);
                     }
                 }
-                None
             }
         }
     }
 
-    fn line_done(&mut self, line: &str, store: &mut Result<Store>, network: &dyn Fn() -> String) -> Option<Event> {
+    fn line_done(&mut self, line: &str, store: &mut Result<Store>, board: &mut dyn Board) {
         match core::mem::replace(&mut self.ask, Ask::Command) {
-            Ask::Command => self.command(line, store, network),
+            Ask::Command => self.command(line, store, board),
             Ask::Ssid if line.is_empty() => {
                 println!("Nothing changed.");
-                None
             }
             Ask::Ssid if line.len() > 32 => {
                 println!("A Wi-Fi network name is at most 32 bytes.");
-                None
             }
             Ask::Ssid => {
                 self.ask = Ask::Password(line.into());
-                None
             }
             Ask::Password(_) if line.len() > 64 => {
                 println!("A Wi-Fi password is at most 64 bytes.");
-                None
             }
             Ask::Password(_) if !line.is_empty() && line.len() < 8 => {
                 println!("A Wi-Fi password has at least 8 characters.");
-                None
             }
             Ask::Password(ssid) => {
                 let wifi = Wifi { ssid, password: line.into() };
@@ -145,22 +136,23 @@ impl Console {
                     Ok(()) => println!("Saved. Joining {}.", wifi.ssid),
                     Err(e) => println!("{}\nJoining {} until the board restarts.", e.for_user(), wifi.ssid),
                 }
-                Some(Event::Wifi(Some(wifi)))
+                board.wifi(Some(wifi));
             }
         }
     }
 
-    fn command(&mut self, line: &str, store: &mut Result<Store>, network: &dyn Fn() -> String) -> Option<Event> {
+    fn command(&mut self, line: &str, store: &mut Result<Store>, board: &mut dyn Board) {
         let mut words = line.split_whitespace();
         match (words.next(), words.next(), words.next()) {
-            (None, ..) => None,
+            (None, ..) => {}
             (Some("help"), None, _) => {
                 println!("  status        what the board knows and how its network is doing");
                 println!("  wifi          set the Wi-Fi network to join (asks for its name and password)");
                 println!("  wifi forget   leave the Wi-Fi network and forget it");
+                println!("  join [NAME]   join a group: shows a code to scan with the phone (name: Nano ESP32)");
+                println!("  leave         forget the group (remove the board in the app too)");
                 println!("  debug on|off  show the details of errors, or not (debug build: on by default)");
                 println!("  selftest      run the TLS 1.3 self-test");
-                None
             }
             (Some("status"), None, _) => {
                 println!("  firmware: cbb-esp32 {}", env!("CARGO_PKG_VERSION"));
@@ -171,13 +163,18 @@ impl Console {
                     },
                     Err(e) => println!("  settings: {}", e.for_user()),
                 }
-                println!("  network: {}", network());
+                if let Ok(s) = store {
+                    match s.identity() {
+                        Some(Ok(id)) => println!("  group: {} as {}", id.tag(), id.id),
+                        Some(Err(e)) => println!("  group: {}", e.for_user()),
+                        None => println!("  group: none, type join"),
+                    }
+                }
+                println!("  network: {}", board.network());
                 println!("  error details: {}", if error::show_details() { "on" } else { "off" });
-                None
             }
             (Some("wifi"), None, _) => {
                 self.ask = Ask::Ssid;
-                None
             }
             (Some("wifi"), Some("forget"), None) => {
                 match edit(store, |f| {
@@ -187,7 +184,7 @@ impl Console {
                     Ok(()) => println!("Forgot the Wi-Fi network."),
                     Err(e) => println!("{}", e.for_user()),
                 }
-                Some(Event::Wifi(None))
+                board.wifi(None);
             }
             (Some("debug"), Some(mode @ ("on" | "off")), None) => {
                 let on = mode == "on";
@@ -196,18 +193,36 @@ impl Console {
                     println!("{}", e.for_user());
                 }
                 println!("Error details are {mode}.");
-                None
             }
-            (Some("selftest"), None, _) => {
-                match selftest::run() {
-                    Ok(()) => println!("cbb-esp32: self-test passed"),
-                    Err(e) => println!("cbb-esp32: self-test failed: {}", e.for_user()),
+            (Some("join"), ..) => {
+                if let Ok(s) = store
+                    && let Some(Ok(id)) = s.identity()
+                {
+                    println!("The board is in the group {} already; type leave first to join another.", id.tag());
+                    return;
                 }
-                None
+                let name = line["join".len()..].trim();
+                match board.join(if name.is_empty() { "Nano ESP32" } else { name }) {
+                    Ok(text) => {
+                        println!("In the clipboardbridge app, tap \"Connect a new device\" and paste this:");
+                        println!();
+                        println!("{text}");
+                        println!();
+                        println!("The board waits up to 5 minutes; type status to see how it went.");
+                    }
+                    Err(e) => println!("{}", e.for_user()),
+                }
             }
+            (Some("leave"), None, _) => match edit(store, |f| f.remove(tag::IDENTITY)) {
+                Ok(()) => println!("The board left its group. Remove it in the app too, so the group revokes it."),
+                Err(e) => println!("{}", e.for_user()),
+            },
+            (Some("selftest"), None, _) => match selftest::run() {
+                Ok(()) => println!("cbb-esp32: self-test passed"),
+                Err(e) => println!("cbb-esp32: self-test failed: {}", e.for_user()),
+            },
             _ => {
                 println!("Unknown command; type help.");
-                None
             }
         }
     }
@@ -221,4 +236,11 @@ fn edit(store: &mut Result<Store>, change: impl FnOnce(&mut Fields)) -> Result<(
     let mut fields = s.fields().clone();
     change(&mut fields);
     s.save(fields)
+}
+
+/// Saves the identity the board joined with.
+#[cfg_attr(feature = "qemu", allow(dead_code))]
+pub fn save_identity(store: &mut Result<Store>, id: &cbb_core::identity::Identity) -> Result<()> {
+    let file = id.to_file()?;
+    edit(store, |f| f.set(tag::IDENTITY, file))
 }

@@ -5,11 +5,12 @@ ESP32-S3), written in Rust on the same protocol core as `cbb-lite` (`lite/core`)
 the member TLS 1.3 on the chip itself (docs/roadmap.md, item 15).
 
 So far the board keeps its settings in flash, joins the Wi-Fi network set on its console
-and takes an address by DHCP, and runs a self-test of the protocol core: it makes two keys
+and takes an address by DHCP, joins a group by the phone, and runs a self-test of the
+protocol core: it makes two keys
 and self-signed certificates with the chip's true random number generator (fed by the
 ADC's noise), runs a pairing TLS 1.3 handshake between them in memory, passes a message
-and checks that both ends export the same key. Joining a group, syncing and typing over
-USB come next. It is not yet run on a real board.
+and checks that both ends export the same key. Syncing (which needs the time of day, from
+SNTP) and typing over USB come next. It is not yet run on a real board.
 
 ## Build and flash
 
@@ -65,11 +66,28 @@ cbb> status
 | `status` | what the board knows and how its network is doing |
 | `wifi` | sets the Wi-Fi network to join: asks for its name and password, saves them and joins it |
 | `wifi forget` | leaves the Wi-Fi network and forgets it |
+| `join [NAME]` | joins a group by the phone, under NAME (default: Nano ESP32): see below |
+| `leave` | forgets the group; remove the board in the app too, so the group revokes it |
 | `debug on`, `debug off` | shows the details of errors under their message, or not; saved in flash. Without it a debug build shows them and a release build does not |
 | `selftest` | runs the TLS 1.3 self-test |
 
 The board joins WPA2 networks (and WPA2/WPA3 mixed ones), or open ones with an empty password; it joins
 again after the connection drops.
+
+## Joining a group
+
+Once the board has an address, type `join`. It prints a `clipboardbridge://join?...` link
+with a new pairing code, its address and port 8764 and the fingerprint of its pairing
+certificate; in the app, tap "Connect a new device" and paste it. The phone dials the
+board, and the two run the pairing of docs/protocol.md over TLS 1.3 (`src/pair.rs`, the
+same exchange as `cbb-lite join`, with the core's `Joiner`). The phone proves the code
+first; three wrong codes, or five minutes without a phone, end the attempt. The board
+takes connections from private addresses only. It saves the identity the phone's Welcome
+gives it, as a lite member without CA keys, and `status` shows the group.
+
+The board announces itself as a Linux lite member: the pairing knows only Linux and macOS
+as systems so far. A QR code drawn on the console, so the phone can scan the terminal, may
+follow.
 
 ## Settings in flash
 
@@ -77,8 +95,8 @@ The partition `cbb` (64 KB) holds two slots. A save goes to the slot that does n
 newest copy, and each copy ends with its SHA-256, so a power cut while saving keeps the
 last good copy (`cbb_core::store`, with its tests on the host).
 
-The flash is not encrypted: whoever holds the board can read the Wi-Fi password, and later
-the member's key, from it. The ESP32-S3 could encrypt its flash, but that burns eFuses for
+The flash is not encrypted: whoever holds the board can read the Wi-Fi password and the
+member's key from it. The ESP32-S3 could encrypt its flash, but that burns eFuses for
 good, so it is not done yet. Removing the board from the group revokes its certificate,
 as for any lost device.
 
@@ -90,8 +108,8 @@ QEMU=path/to/qemu-system-xtensa ESPFLASH=path/to/espflash ./qemu-test.sh
 
 The script builds with the `qemu` feature, writes a flash image with the partition table,
 and `qemu-test.py` boots it in [Espressif's QEMU](https://github.com/espressif/qemu)
-(machine `esp32s3`) three times, typing on the console over UART0: it sets a Wi-Fi network
-and debug mode, runs the self-test, checks that both are still there after a restart,
+(machine `esp32s3`) three times, typing on the console over UART0: it checks that `join`
+says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, checks that both are still there after a restart,
 forgets the network and checks that it stays forgotten.
 
 That build has no Wi-Fi (QEMU does not emulate the S3's radio) and skips esp-hal's init,
