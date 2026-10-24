@@ -593,6 +593,7 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
             }
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
+        if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
         if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -608,6 +609,28 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge")))
                 }.padding(Tokens.spacingMedium),
             )
+        }
+    }
+}
+
+/** Whether Share and the selection menu ask before sending; "Always allow" turned the question off. */
+@Composable
+private fun ShareAsk(model: AppModel) {
+    val palette = LocalPalette.current
+    var asks by remember { mutableStateOf(!model.settings.alwaysAllowShare) }
+    Section(stringResource(R.string.send_share)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                    asks = !asks
+                    model.settings.alwaysAllowShare = !asks
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.share_ask_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = asks, onCheckedChange = null)
+            }
+            Text(stringResource(R.string.share_ask_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
 }

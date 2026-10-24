@@ -118,7 +118,10 @@ declaration; the GitHub and F-Droid builds have it from the start.
 
 - the **Quick Settings tile** "Send clipboard";
 - the **"Send" button** in the service's notification;
-- **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**;
+- **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**,
+  which first ask "Allow" or "Always allow", since any app can hand over a text; "Always
+  allow" holds for every app (Android does not tell reliably which one shared), and Settings
+  turns the question on again;
 - **double-tap the back**: on a Pixel, Settings → System → Gestures → Quick Tap → Open app →
   "cbb send" (a second launcher entry that sends and closes); on Samsung, Good Lock's
   RegiStar → Back-Tap action → Open app → "cbb send";

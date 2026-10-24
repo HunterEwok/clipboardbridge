@@ -81,6 +81,12 @@
     <string name="notification_text">What they copy comes to this phone. Send sends what this phone copied.</string>
     <string name="send">Send</string>
     <string name="send_share">Send to the computers</string>
+    <string name="share_confirm_title">Send this text to your computers?</string>
+    <string name="share_confirm_body">Another app handed clipboardbridge a text of %1$d characters. It goes to every computer of the group.</string>
+    <string name="share_allow">Allow</string>
+    <string name="share_always">Always allow</string>
+    <string name="share_ask_switch">Ask before sending a shared text</string>
+    <string name="share_ask_body">Share and the selection menu let any app hand clipboardbridge a text. While this is on, the phone asks before sending it; "Always allow" turns it off for every app.</string>
     <string name="tile_label">Send clipboard</string>
     <string name="accessibility_label">Send my copies by themselves</string>
     <string name="accessibility_description">Notices when you copy text, then reads the clipboard for a moment and sends the text to your computers. It reads nothing else on the screen.</string>

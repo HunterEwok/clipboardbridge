@@ -94,6 +94,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: on Android, a text from Share or the selection menu is sent only after the user
+  allows it, with "Allow" or "Always allow"; any app can hand over a text, so without a
+  question an app could send whatever it liked to the computers. Settings turns the question
+  back on.
+
 - Security: an admin computer, whose admin key sits in a file, can remove ordinary devices
   but no longer the root or another admin, and cannot hand a phone's group to a new root;
   only the root and admin phones can. Nothing an admin signs after it was removed counts,
