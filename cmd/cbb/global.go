@@ -195,11 +195,20 @@ func waitServers(c *control.Client, a *control.Away) *control.Away {
 	return a
 }
 
-// applyGrant lets the service reach g and says so.
+// applyGrant lets the service reach g and says so. When the service
+// restarted for it, it returns once the service answers again, so that the
+// next cbb command finds it running.
 func applyGrant(stdout io.Writer, g grant) error {
 	changed, restarted, err := setAwayNet(g)
 	if err != nil {
 		return err
+	}
+	if restarted {
+		c, err := waitService()
+		if err != nil {
+			return err
+		}
+		c.Close()
 	}
 	if changed {
 		msg := "This computer's service may now reach " + g.String()
