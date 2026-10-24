@@ -92,6 +92,11 @@ type State struct {
 type ForwarderLink struct {
 	Endpoint netip.AddrPort
 	Pin      string
+	// VLESSID, if set, is the group's VLESS user ID: the hub's clients
+	// reach it only over VLESS to the forwarder, as VLESS says, which the
+	// hub learns when it registers; nil until then.
+	VLESSID string
+	VLESS   *VLESS
 }
 
 // RelayLink is a device's blind relay: its address, for UDP and TCP, and
@@ -118,6 +123,7 @@ type HubLink struct {
 	PresharedKey Key
 	Endpoints    []netip.AddrPort
 	Obfuscation  *Obfuscation // nil for plain WireGuard
+	VLESS        *VLESS       // if set, the only way to the hub
 }
 
 // Member is a client as its hub keeps it: its WireGuard key, its own
@@ -149,6 +155,8 @@ type stateFile struct {
 type forwarderFile struct {
 	Endpoint netip.AddrPort `json:"endpoint"`
 	Pin      string         `json:"key"`
+	VLESSID  string         `json:"vless_id,omitempty"`
+	VLESS    *VLESS         `json:"vless,omitempty"`
 }
 
 type hubFile struct {
@@ -157,6 +165,7 @@ type hubFile struct {
 	PresharedKey Key              `json:"psk"`
 	Endpoints    []netip.AddrPort `json:"endpoints,omitempty"`
 	Obfuscation  *Obfuscation     `json:"obfuscation,omitempty"`
+	VLESS        *VLESS           `json:"vless,omitempty"`
 }
 
 type memberFile struct {
@@ -200,13 +209,13 @@ func LoadState(dir string) (*State, error) {
 		Obfuscation: f.Obfuscation}
 	if f.ToHub != nil {
 		s.ToHub = &HubLink{Device: f.ToHub.Device, PublicKey: f.ToHub.PublicKey, PresharedKey: f.ToHub.PresharedKey, Endpoints: f.ToHub.Endpoints,
-			Obfuscation: f.ToHub.Obfuscation}
+			Obfuscation: f.ToHub.Obfuscation, VLESS: f.ToHub.VLESS}
 	}
 	for _, c := range f.Members {
 		s.Members = append(s.Members, Member(c))
 	}
 	if f.Forwarder != nil {
-		s.Forwarder = &ForwarderLink{Endpoint: f.Forwarder.Endpoint, Pin: f.Forwarder.Pin}
+		s.Forwarder = &ForwarderLink{Endpoint: f.Forwarder.Endpoint, Pin: f.Forwarder.Pin, VLESSID: f.Forwarder.VLESSID, VLESS: f.Forwarder.VLESS}
 	}
 	if f.Relay != nil {
 		s.Relay = &RelayLink{Endpoint: f.Relay.Endpoint, Pin: f.Relay.Pin}
@@ -223,13 +232,13 @@ func (s *State) Save(dir string) error {
 		Obfuscation: s.Obfuscation}
 	if h := s.ToHub; h != nil {
 		f.ToHub = &hubFile{Device: h.Device, PublicKey: h.PublicKey, PresharedKey: h.PresharedKey, Endpoints: h.Endpoints,
-			Obfuscation: h.Obfuscation}
+			Obfuscation: h.Obfuscation, VLESS: h.VLESS}
 	}
 	for _, c := range s.Members {
 		f.Members = append(f.Members, memberFile(c))
 	}
 	if fw := s.Forwarder; fw != nil {
-		f.Forwarder = &forwarderFile{Endpoint: fw.Endpoint, Pin: fw.Pin}
+		f.Forwarder = &forwarderFile{Endpoint: fw.Endpoint, Pin: fw.Pin, VLESSID: fw.VLESSID, VLESS: fw.VLESS}
 	}
 	if r := s.Relay; r != nil {
 		f.Relay = &forwarderFile{Endpoint: r.Endpoint, Pin: r.Pin}
@@ -249,8 +258,23 @@ func (s *State) check() error {
 	if len(s.HubEndpoints()) > maxEndpoints {
 		return errors.New("too many endpoints")
 	}
-	if fw := s.Forwarder; fw != nil && (!fw.Endpoint.IsValid() || fw.Endpoint.Port() == 0 || fw.Pin == "") {
-		return errors.New("a bad forwarder")
+	if fw := s.Forwarder; fw != nil {
+		if !fw.Endpoint.IsValid() || fw.Endpoint.Port() == 0 || fw.Pin == "" {
+			return errors.New("a bad forwarder")
+		}
+		if fw.VLESSID != "" {
+			if err := CheckVLESSID(fw.VLESSID); err != nil {
+				return err
+			}
+		}
+		if v := fw.VLESS; v != nil {
+			if err := v.Check(); err != nil {
+				return err
+			}
+			if v.ID != fw.VLESSID {
+				return errors.New("the forwarder's VLESS settings are not the group's")
+			}
+		}
 	}
 	if r := s.Relay; r != nil {
 		if !r.Endpoint.IsValid() || r.Endpoint.Port() == 0 || r.Pin == "" {
@@ -315,6 +339,11 @@ func (h *HubLink) check() error {
 	}
 	if o := h.Obfuscation; o != nil {
 		if err := o.Check(); err != nil {
+			return err
+		}
+	}
+	if v := h.VLESS; v != nil {
+		if err := v.Check(); err != nil {
 			return err
 		}
 	}
@@ -428,7 +457,7 @@ func (s *State) SetHub(h HubLink) (changed bool, err error) {
 		return false, errors.New("tunnel: the hub offered this device's own key")
 	}
 	if o := s.ToHub; o != nil && o.Device == h.Device && o.PublicKey == h.PublicKey &&
-		o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) && o.Obfuscation.Equal(h.Obfuscation) {
+		o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) && o.Obfuscation.Equal(h.Obfuscation) && o.VLESS.Equal(h.VLESS) {
 		return false, nil
 	}
 	h.Endpoints = slices.Clone(h.Endpoints)

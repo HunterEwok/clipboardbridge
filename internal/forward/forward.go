@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
 
 // Limits bound what one group, one source and all of them may take, so
@@ -87,6 +88,9 @@ type Forwarder struct {
 	sources  map[netip.Addr]*bucket
 	setting  int      // registrations being set up
 	mask     [32]byte // the key of the hellos' mask, given to every hub
+	vless    *vless.Server
+	vlessCfg *VLESSConfig
+	byVLESS  map[string]*reg // by the group's VLESS user ID
 
 	closeOnce sync.Once
 	done      chan struct{}
@@ -99,6 +103,7 @@ type reg struct {
 	key      [32]byte            // the hub's WireGuard public key
 	mac1     [32]byte            // mac1Key(key)
 	obf      *tunnel.Obfuscation // the group's AmneziaWG settings; nil for plain WireGuard
+	vlessID  string              // the group's VLESS user ID; empty without VLESS
 	id       uint64
 	helloKey [32]byte
 	counter  uint64         // the last hello's
@@ -139,7 +144,20 @@ type Config struct {
 	Listen string          // the address to listen on, UDP and TCP, such as ":8764"
 	Cert   tls.Certificate // the forwarder's own, whose key the hubs pin
 	Limits Limits          // DefaultLimits if zero
+	VLESS  *VLESSConfig    // nil without VLESS
 	Logf   func(format string, args ...any)
+}
+
+// VLESSConfig configures the forwarder's VLESS with REALITY, for the
+// clients of hubs that ask for it (docs/design.md, "Blocked networks").
+type VLESSConfig struct {
+	Listen string // the TCP address to listen on, such as ":443"
+	// Site is the well-known site whose TLS the forwarder borrows, such as
+	// www.example.com; its port 443 answers whoever is not a client. Dest,
+	// if set, is where that site is reached instead, for tests.
+	Site string
+	Dest string
+	Key  [32]byte // the REALITY key, X25519
 }
 
 // Listen opens the forwarder's ports. Serve then runs it.
@@ -185,6 +203,23 @@ func Listen(cfg Config) (*Forwarder, error) {
 		tcp.Close()
 		return nil, fmt.Errorf("forward: %w", err)
 	}
+	if v := cfg.VLESS; v != nil {
+		dest := v.Dest
+		if dest == "" {
+			dest = net.JoinHostPort(v.Site, "443")
+		}
+		// VLESS passes the packets to the UDP port, from the loopback.
+		to := f.Addr()
+		if to.Addr().IsUnspecified() {
+			to = netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), to.Port())
+		}
+		if f.vless, err = vless.Listen(vless.ServerConfig{Listen: v.Listen, Dest: dest, ServerName: v.Site, Key: v.Key, To: to}); err != nil {
+			udp.Close()
+			tcp.Close()
+			return nil, fmt.Errorf("forward: %w", err)
+		}
+		f.vlessCfg, f.byVLESS = v, map[string]*reg{}
+	}
 	f.tlsCfg = f.serverTLS(cfg.Cert)
 	return f, nil
 }
@@ -229,6 +264,9 @@ func (f *Forwarder) Close() error {
 		close(f.done)
 		f.udp.Close()
 		f.tcp.Close()
+		if f.vless != nil {
+			f.vless.Close()
+		}
 		f.mu.Lock()
 		for _, r := range f.regs {
 			r.raw.Close()
@@ -381,7 +419,12 @@ func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initia
 
 // sourceLocked charges a handshake to the address it came from; false
 // drops it. It bounds what one address may make the forwarder look for.
+// What comes over VLESS comes from the loopback, from a client its group's
+// VLESS user ID let in, and is charged to that group alone.
 func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
+	if f.vless != nil && from.Addr().IsLoopback() {
+		return true
+	}
 	src := f.sources[from.Addr()]
 	if src == nil {
 		if len(f.sources) >= 4*f.limits.Groups {
@@ -514,6 +557,10 @@ func (f *Forwarder) dropRegLocked(r *reg) {
 		delete(f.regs, r.tag)
 	}
 	delete(f.byID, r.id)
+	if r.vlessID != "" && f.byVLESS[r.vlessID] == r {
+		delete(f.byVLESS, r.vlessID)
+		_ = f.vless.RemoveUser(r.vlessID)
+	}
 	if r.obf != nil {
 		f.byInit[initSize(r.obf)] = slices.DeleteFunc(f.byInit[initSize(r.obf)], func(o *reg) bool { return o == r })
 		if len(f.byInit[initSize(r.obf)]) == 0 {

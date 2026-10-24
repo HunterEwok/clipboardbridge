@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -20,6 +21,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/vless/vlesstest"
 )
 
 func tunnelState(t *testing.T, s *testService) *tunnel.State {
@@ -284,17 +286,23 @@ func TestAwayObfuscated(t *testing.T) {
 // reaches, as behind carrier-grade NAT, and checks that the deck syncs with
 // it through the forwarder, with plain WireGuard and obfuscated.
 func TestAwayThroughForwarder(t *testing.T) {
-	t.Run("plain", func(t *testing.T) { testAwayThroughForwarder(t, false) })
-	t.Run("obfuscated", func(t *testing.T) { testAwayThroughForwarder(t, true) })
+	t.Run("plain", func(t *testing.T) { testAwayThroughForwarder(t, false, false) })
+	t.Run("obfuscated", func(t *testing.T) { testAwayThroughForwarder(t, true, false) })
+	t.Run("vless", func(t *testing.T) { testAwayThroughForwarder(t, false, true) })
 }
 
-func testAwayThroughForwarder(t *testing.T, obfuscate bool) {
+func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 	t.Setenv("CBB_DEBUG", "1")
 	cert, err := forward.NewCert()
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := forward.Listen(forward.Config{Listen: "127.0.0.1:0", Cert: cert, Logf: t.Logf})
+	cfg := forward.Config{Listen: "127.0.0.1:0", Cert: cert, Logf: t.Logf}
+	if overVLESS {
+		cfg.VLESS = &forward.VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t)}
+		rand.Read(cfg.VLESS.Key[:])
+	}
+	f, err := forward.Listen(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +330,7 @@ func testAwayThroughForwarder(t *testing.T, obfuscate bool) {
 		t.Error("a forwarder with a bad key")
 	}
 	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Forwarder: f.Addr().String(), ForwarderKey: forward.Pin(cert.Leaf),
-		Obfuscate: obfuscate}, ""); err != nil {
+		Obfuscate: obfuscate, VLESS: overVLESS}, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the hub registers with the forwarder", func() bool {
@@ -332,7 +340,8 @@ func testAwayThroughForwarder(t *testing.T, obfuscate bool) {
 	piID := pi.status(t).Device
 	waitFor(t, "the deck keeps the hub's offer", func() bool {
 		a := deck.status(t).Away
-		return a != nil && a.HubDevice == piID && len(a.Endpoints) == 1 && a.Endpoints[0] == f.Addr().String() && a.Obfuscated == obfuscate
+		return a != nil && a.HubDevice == piID && len(a.Endpoints) == 1 && a.Endpoints[0] == f.Addr().String() && a.Obfuscated == obfuscate &&
+			a.VLESS == overVLESS
 	})
 
 	deckID := deck.status(t).Device
