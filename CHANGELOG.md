@@ -10,8 +10,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - The first firmware for the Arduino Nano ESP32 (`lite/esp32`, Rust on the ESP32-S3): a
   console on its USB port sets the Wi-Fi network up, the board joins it and takes an
-  address by DHCP, and keeps its settings in flash in two slots, so a power cut while
-  saving keeps the last good copy (`cbb_core::store`); its `selftest` makes keys and
+  address by DHCP, joins a group by the phone (`join` prints the link to paste into the
+  app, and the phone pairs with the board over TLS 1.3 as with `cbb-lite join`), and keeps
+  its settings and identity in flash in two slots, so a power cut while saving keeps the
+  last good copy (`cbb_core::store`); its `selftest` makes keys and
   certificates with the chip's true random number generator and runs a TLS 1.3 handshake
   of the protocol core on the chip. CI types on the console and runs the self-test in
   Espressif's QEMU. Pairing and syncing come next; not yet run on a real board.

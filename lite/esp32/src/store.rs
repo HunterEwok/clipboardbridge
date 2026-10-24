@@ -13,6 +13,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cbb_core::error::{Context, Error, Result};
+use cbb_core::identity::Identity;
 use cbb_core::store::{self, Fields};
 use esp_bootloader_esp_idf::partitions::{self, PartitionEntry, RawPartitionType};
 use esp_hal::Blocking;
@@ -30,6 +31,8 @@ pub mod tag {
     pub const WIFI_PASSWORD: u8 = 2;
     /// Errors show their details (1) or not (0); unset follows the build.
     pub const DEBUG: u8 = 3;
+    /// The member's identity in the group (cbb_core::identity's file form).
+    pub const IDENTITY: u8 = 4;
 }
 
 /// A Wi-Fi network to join.
@@ -77,6 +80,11 @@ impl Store {
         let ssid = String::from_utf8(self.fields.get(tag::WIFI_SSID)?.to_vec()).ok()?;
         let password = String::from_utf8(self.fields.get(tag::WIFI_PASSWORD).unwrap_or_default().to_vec()).ok()?;
         Some(Wifi { ssid, password })
+    }
+
+    /// The identity in the group, if the board joined one.
+    pub fn identity(&self) -> Option<Result<Identity>> {
+        self.fields.get(tag::IDENTITY).map(Identity::from_file)
     }
 
     /// Saves fields into the slot after the newest, then keeps them.
