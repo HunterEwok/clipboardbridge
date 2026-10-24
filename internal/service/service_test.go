@@ -1175,8 +1175,17 @@ func shortcutPhone(t *testing.T, pi *testService) (admit func(token, code string
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
-	iphone := &http.Client{Timeout: 10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}}}
+	shortcutTLS := &tls.Config{RootCAs: roots, ServerName: "clipboardbridge.local"}
+	// The shortcut's HTTPS takes the member port's connections a moment
+	// after the port opens; until then the member TLS answers them.
+	waitFor(t, "the shortcut's HTTPS", func() bool {
+		c, err := tls.Dial("tcp", phoneAddr, shortcutTLS)
+		if err == nil {
+			c.Close()
+		}
+		return err == nil
+	})
+	iphone := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: shortcutTLS}}
 	resp, err = iphone.Post("https://"+phoneAddr+"/pair", "application/json", strings.NewReader(`{"v":1,"code":"`+m.Code+`"}`))
 	if err != nil {
 		t.Fatal(err)
