@@ -45,7 +45,7 @@ if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 fi
 rm -rf /Library/Logs/clipboardbridge /usr/local/share/clipboardbridge
 support="/Library/Application Support/clipboardbridge"
-rm -rf "$support/bin"
+rm -rf "${support:?}/bin"
 fw=/usr/libexec/ApplicationFirewall/socketfilterfw
 if [ -f "$support/firewall" ]; then
 	if [ -x "$fw" ]; then
