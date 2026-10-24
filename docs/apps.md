@@ -68,7 +68,10 @@ they look, so both apps are built to the same plan.
    On Android the WireGuard key sits in the app's files, encrypted with a Keystore key that
    needs no unlock, so the foreground service syncs away from home as it does at home; the
    tunnel runs in the app's process (`mobile/cbbtun`) and opens a loopback port that the kit
-   dials with its own member TLS, checking that the peer is the hub. The iPhone app follows.
+   dials with its own member TLS, checking that the peer is the hub. On the iPhone the key
+   and the hub's offer sit in the keychain, readable after the first unlock and on this
+   device only; the same tunnel (`Cbbtun.xcframework`) runs while the app does, and the
+   kit's `AwayFromHome` drives it in both the app and its tests.
 
 The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
 Devices on your other phone and remove it." When the group has a single admin, Devices
