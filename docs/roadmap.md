@@ -121,12 +121,12 @@ The order may change.
     has as well; macOS has no per-program limit without such an app (the application firewall
     allows or blocks a program, and pf is shared by the whole system), so this is the one
     difference between the computers, and it goes away with the app.
-23. **Planned.** Docker: an image with the full service for a NAS or a home server, as an
+23. **Planned for 0.5.** Docker: an image with the full service for a NAS or a home server, as an
     always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
     `cbb relay` on a VPS. See "Docker" below.
-24. **Planned.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
+24. **Planned for 0.5.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
     pfSense gateways as the hub). See "FreeBSD" below.
-25. **Planned, after remote paste (item 18).** Devices that are hard to type into: TVs,
+25. **Planned for 0.5, after remote paste (item 18).** Devices that are hard to type into: TVs,
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
@@ -217,7 +217,7 @@ Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Docker
 
-Planned.
+Planned for 0.5.
 
 An image with the full service, for the machines that are always on but have no desktop: a
 NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
@@ -263,7 +263,7 @@ Steps, one pull request each, smaller ones together:
 
 ## FreeBSD
 
-Planned.
+Planned for 0.5.
 
 FreeBSD runs servers, some desktops, and the gateways OPNsense and pfSense. Go builds `cbb`
 for it already (`GOOS=freebsd`, amd64 and arm64, no cgo); what is missing is what the
@@ -298,7 +298,7 @@ Steps:
 
 ## Devices that are hard to type into
 
-Planned, after remote paste (item 18).
+Planned for 0.5, after remote paste (item 18).
 
 The aim: a text copied on any device of the group lands in a field of a device where typing
 it is slow or impossible with what is in the user's hands, usually a TV remote or a gamepad.
