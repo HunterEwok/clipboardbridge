@@ -116,7 +116,7 @@ that the protocol allows (20 pairs) runs the content classes:
 |---|---|
 | C1 | short ASCII |
 | C2 | Cyrillic, emoji, combining marks, right-to-left text |
-| C3 | multi-line with CRLF and LF, tabs, trailing spaces (line endings must arrive as sent) |
+| C3 | multi-line with CRLF and LF, tabs, trailing spaces (line endings must arrive as sent; a Windows clipboard holds CR LF and a Windows member sends LF, see design.md, Windows) |
 | C4 | empty text and whitespace only |
 | C5 | the size limit exactly, and one byte over it (must be refused with a clear message) |
 | C6 | `copy -secret`: arrives, is gone 60 s after the copy, never written to disk |
@@ -264,7 +264,7 @@ relay over SSH.
 **Starting a run**:
 
 - by hand on the controller (`go run ./tools/bench check`, `go run ./tools/bench smoke`,
-  later `full`, `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`,
+  `go run ./tools/bench full`, later `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`,
   `-only a,b` limits the run to some devices);
 - from GitHub: a self-hosted runner on the controller, started **only** by
   `workflow_dispatch` and by release tags, never by pull requests (a pull request from a
@@ -285,7 +285,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 | Suite | Contents | Time | When |
 |---|---|---|---|
 | smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
-| full | sections 6 to 9 | ~2 h | before each release candidate |
+| full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, and F1 (the Mac's service is skipped: killing it needs the owner's password) | ~2 h | before each release candidate |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
 

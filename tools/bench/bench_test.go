@@ -116,3 +116,35 @@ func TestDeviceRE(t *testing.T) {
 		}
 	}
 }
+
+// TestTextCases checks the matrix's texts: none is empty or ends with a
+// line ending, which the readers trim, and each sender's text differs.
+func TestTextCases(t *testing.T) {
+	for _, tc := range textCases {
+		a, b := tc.text("20261024-120000", "mac"), tc.text("20261024-120000", "win")
+		if a == "" || strings.TrimRight(a, "\r\n") != a {
+			t.Errorf("%s: %q is empty or ends with a line ending", tc.id, a)
+		}
+		if a == b {
+			t.Errorf("%s: two senders send the same text %q", tc.id, a)
+		}
+	}
+}
+
+func TestSeen(t *testing.T) {
+	lin, win := &Device{OS: "linux"}, &Device{OS: "windows"}
+	text := "L1\nL2\r\nL3\n"
+	for _, c := range []struct {
+		from, to *Device
+		want     string
+	}{
+		{lin, lin, text},
+		{lin, win, "L1\r\nL2\r\nL3\r\n"},
+		{win, lin, "L1\nL2\nL3\n"},
+		{win, win, "L1\r\nL2\r\nL3\r\n"},
+	} {
+		if got := seen(text, c.from, c.to); got != c.want {
+			t.Errorf("seen(%q, %s, %s) = %q, want %q", text, c.from.OS, c.to.OS, got, c.want)
+		}
+	}
+}
