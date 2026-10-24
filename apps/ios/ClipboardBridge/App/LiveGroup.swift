@@ -4,9 +4,13 @@ import ClipboardBridgeKit
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import Network
+import os
 import Security
 import UIKit
 import UniformTypeIdentifiers
+
+private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "away")
 
 /// The phone's own group (docs/protocol.md, section 9): its root CA key in
 /// the Secure Enclave, signing only after Face ID or the passcode (a
@@ -54,6 +58,7 @@ final class LiveGroup: GroupController {
     private var recordBox: RecordBox?
     private var renewer: Renewer?
     private var admins: AdminBox?
+    private var away: AwayFromHome?
     private var online: Set<String> = []
     /// The admin keys the connected computers offer, by device ID.
     private var offers: [String: Data] = [:]
@@ -415,25 +420,74 @@ final class LiveGroup: GroupController {
         // The root sends a computer it made an admin its admin CA again
         // when the computer still offers the key.
         let admins = AdminBox(group: g)
+        // Sync away from home: the hellos offer the tunnel key while it is
+        // on, and the hub's answer goes to AwayFromHome.
+        let awayState = AwayKeychain.load()
+        let awayRef = Ref<AwayFromHome>()
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name,
-                              records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) })
+                              records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
+                              tunnelKey: awayState.flatMap { try? GoTunnels().publicKey($0.key) },
+                              onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
         let relay = Relay()
         relay.allowed = Self.allowed(g)
+        // Through the tunnel the phone dials the hub's member port with the
+        // same TLS as at home, and only while the hub is not found here.
+        let chain = Self.chain(g), roots = g.trusted
+        let away = AwayFromHome(
+            device: g.device, tunnels: GoTunnels(), state: awayState, save: { try AwayKeychain.save($0) },
+            atHome: { relay.has($0) },
+            dial: { port, hub in
+                let t = TLSTransport(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port) ?? .any),
+                                     alpn: Member.alpn, identity: id, chain: chain) { peer in
+                    (try? GroupCertificates.verifyMember(chain: peer, roots: roots, now: Date())) == hub
+                }
+                try await t.start()
+                return t
+            },
+            serve: { t, hub in try await node.serve(t, peer: hub) },
+            log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") })
+        awayRef.value = away
+        Task { await away.start() }
         let browser = BonjourBrowser { found in relay.update(found) }
         let dialer = MemberDialer(node: node, group: g.tag, dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted))
         relay.dialer = dialer
         browser.start()
-        (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins) =
-            (node, browser, dialer, relay, box, renewer, admins)
+        (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins, self.away) =
+            (node, browser, dialer, relay, box, renewer, admins, away)
     }
 
     /// Stops syncing and starts again, with a renewed certificate.
     private func restartSync() async {
+        await away?.stop()
         await dialer?.stop()
         browser?.stop()
         await node?.closeAll()
-        (node, browser, dialer, relay, recordBox, renewer, admins) = (nil, nil, nil, nil, nil, nil, nil)
+        (node, browser, dialer, relay, recordBox, renewer, admins, away) = (nil, nil, nil, nil, nil, nil, nil, nil)
         try? startSync()
+    }
+
+    /// Sync away from home as Settings shows it; nil without a group.
+    func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? {
+        guard let away else { return nil }
+        return (await away.isOn, await away.status, await away.lastError)
+    }
+
+    /// Turns sync away from home on or off, then connects again, so the
+    /// hellos offer the new key and the hub answers it.
+    func setAwayFromHome(_ on: Bool) async throws {
+        guard let away else { return }
+        if on { try await away.turnOn() } else { try await away.turnOff() }
+        await restartSync()
+    }
+
+    /// A value set after the closures that read it are made.
+    final class Ref<T: AnyObject>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _value: T?
+        var value: T? {
+            get { lock.withLock { _value } }
+            set { lock.withLock { _value = newValue } }
+        }
     }
 
     /// Issues renewed member certificates with the root or admin key, without
@@ -523,6 +577,9 @@ final class LiveGroup: GroupController {
                 update(lock.withLock { last })
             }
         }
+        /// Whether the browser finds device on the home network now.
+        func has(_ device: String) -> Bool { lock.withLock { last.contains { $0.device == device } } }
+
         func update(_ found: Set<FoundMember>) {
             let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {
                 last = found

@@ -34,6 +34,16 @@ protocol GroupController: AnyObject {
     func sync() async throws -> AppModel.SyncResult
     /// Updates which computers are online.
     func refresh() async
+    /// Sync away from home: whether it is on, where it stands and its last
+    /// failure; nil without a group.
+    func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)?
+    /// Turns sync away from home on or off.
+    func setAwayFromHome(_ on: Bool) async throws
+}
+
+extension GroupController {
+    func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
+    func setAwayFromHome(_ on: Bool) async throws {}
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -79,6 +89,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var isAdmin = true
     /// The one-time note on the Start screen that this phone is ready.
     @Published private(set) var welcome = false
+
+    /// Sync away from home as Settings shows it: nil without a group.
+    struct Away: Equatable {
+        var on: Bool
+        var status: AwayFromHome.Status
+        /// The last failure while it is still trying, in words.
+        var error: String?
+    }
+
+    @Published private(set) var away: Away?
+    /// What turning it on or off said, when it failed.
+    @Published private(set) var awayNote: String?
 
     let group: GroupController
     private let defaults: UserDefaults
@@ -210,6 +232,32 @@ final class AppModel: ObservableObject {
         await group.refresh()
         computers = group.computers
         devices = group.devices
+        await refreshAway()
+    }
+
+    private func refreshAway() async {
+        guard let a = await group.awayStatus() else {
+            away = nil
+            return
+        }
+        // The last failure only while it is still trying; once connected or
+        // at home it is old news. AwayFromHome logs each failure itself.
+        let failing = a.status == .connecting ? a.error : nil
+        away = Away(on: a.on, status: a.status, error: failing.map {
+            Self.describe($0, summary: String(localized: "The hub does not answer through the tunnel.", bundle: .app), log: false)
+        })
+    }
+
+    /// Turns sync away from home on or off; the hub's answer comes on the
+    /// next connection at home.
+    func setAway(_ on: Bool) async {
+        do {
+            try await group.setAwayFromHome(on)
+            awayNote = nil
+        } catch {
+            awayNote = Self.describe(error)
+        }
+        await refreshAway()
     }
 
     /// Removes a device from the group.
@@ -251,9 +299,9 @@ final class AppModel: ObservableObject {
 
     /// The message for an error, with the error itself below it when
     /// details is set. The error is logged either way.
-    static func describe(_ error: Error, details: Bool = showsErrorDetails) -> String {
-        let text = summary(error), detail = String(reflecting: error)
-        log.error("\(text, privacy: .public) \(detail, privacy: .public)")
+    static func describe(_ error: Error, details: Bool = showsErrorDetails, summary given: String? = nil, log logs: Bool = true) -> String {
+        let text = given ?? summary(error), detail = String(reflecting: error)
+        if logs { log.error("\(text, privacy: .public) \(detail, privacy: .public)") }
         return details ? text + "\n\n" + detail : text
     }
 

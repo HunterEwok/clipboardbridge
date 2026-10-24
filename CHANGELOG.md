@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Sync away from home in the iPhone app, as in the Android app: a switch in Settings, the
+  key and the hub's offer in the keychain (this device only), and the same in-process
+  tunnel while the app runs. Building the app now needs Go for `Cbbtun.xcframework`.
 - Sync away from home in the Android app: a switch in Settings makes the phone's WireGuard
   key, offers it to the group's hub on the next connection at home, and keeps the hub's
   answer. While the hub is not found on the home network, the phone reaches it through the
