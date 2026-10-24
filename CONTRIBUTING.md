@@ -84,7 +84,7 @@ The lite member (Rust, the `lite` job in CI):
 ```sh
 cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS
-cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb-lite \
+cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb \
   go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members
 ```
 

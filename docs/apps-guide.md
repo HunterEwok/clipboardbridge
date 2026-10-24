@@ -15,7 +15,7 @@ TestFlight. Phones without the app use the shortcut instead (the [quick start](q
    makes the group's key (in the Secure Enclave on an iPhone, the Keystore on Android),
    admits the computer and opens Home.
 3. Add each further computer the same way, with **+** on Home. A lite member joins the same
-   way (`cbb-lite join`).
+   way (`cbb join` on the lite member).
 
 When a camera cannot be used, type the six digits the computer shows instead.
 

@@ -10,7 +10,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - VLESS with REALITY for networks that block WireGuard and AmneziaWG alike: `cbb forward
   -vless-site www.example.com` also takes VLESS on TCP 443, borrowing that site's TLS, and
-  `cbb away hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
+  `cbb global hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
   way, inside what looks like HTTPS to the site. The group's WireGuard and member TLS go
   inside it unchanged. Xray-core runs in `cbb` and in the phones' tunnel (`mobile/cbbtun`),
   so both apps take the way over VLESS from the hub's offer too.
@@ -19,7 +19,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   lost root is removed, every other device stays, and the iPhone CA is replaced, so iPhones
   that use the shortcut pair again. After admitting a device, `cbb pair` on a root without
   another admin suggests making one.
-- Obfuscation for networks that block WireGuard: `cbb away hub -obfuscate` makes the group's
+- Obfuscation for networks that block WireGuard: `cbb global hub -obfuscate` makes the group's
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub
   makes the group's settings and gives them to its clients with its offer at home and in
@@ -37,7 +37,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The first firmware for the Arduino Nano ESP32 (`lite/esp32`, Rust on the ESP32-S3): a
   console on its USB port sets the Wi-Fi network up, the board joins it and takes an
   address by DHCP, joins a group by the phone (`join` prints the link to paste into the
-  app, and the phone pairs with the board over TLS 1.3 as with `cbb-lite join`), and keeps
+  app, and the phone pairs with the board over TLS 1.3 as with the lite member's `cbb join`), and keeps
   its settings and identity in flash in two slots, so a power cut while saving keeps the
   last good copy (`cbb_core::store`); its `selftest` makes keys and
   certificates with the chip's true random number generator and runs a TLS 1.3 handshake
@@ -49,25 +49,34 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `TestEmbassyJoiner` has a Go member admit it by the phone, as the board joins.
 - A forwarder for hubs that the computers cannot reach directly, for example behind
   carrier-grade NAT: `cbb forward` runs it on a server with a public address, and
-  `cbb away hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
+  `cbb global hub -forwarder ADDRESS:PORT -forwarder-key KEY` registers the hub there with its
   member certificate and its WireGuard key. It holds no keys, passes each encrypted packet
   only to its own group's hub, routes by WireGuard's `mac1` so nothing on the wire tells
   groups apart, limits each group, and writes nothing about the groups, not even to its
-  log. `cbb away` on the hub shows the registration.
+  log. `cbb global` on the hub shows the registration.
 - A blind relay for a group without a computer to be its hub: `cbb relay -group TAG` runs it
-  on a server you run, and `cbb away relay ADDRESS:PORT -key KEY` on each computer meets the
+  on a server you run, and `cbb global relay ADDRESS:PORT -key KEY` on each computer meets the
   group's other computers there away from home. It holds none of the group's keys: each
   computer registers with its member certificate and gets its own WireGuard tunnel to the
   relay, which joins two computers' member connections end to end, so it sees who talks
   and when but cannot read the clipboard or pose as a device. It serves only the groups it
-  is given and writes nothing about them. `cbb away` shows the link.
+  is given and writes nothing about them. `cbb global` shows the link.
 - `.cbb`, a dot command for the ZX Spectrum Next (`apps/zxnext`, C for z88dk): with
-  `cbb-lite` on the Next's own Raspberry Pi it pastes the group's text to the screen or a
+  the lite member on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
 
 ### Changed
 
+- The lite member's command is `cbb`, as on a full member, with the same paths, user and
+  service (`/usr/local/bin/cbb`, `/var/lib/clipboardbridge`, `clipboardbridge.service`);
+  `cbb version` says which member a device runs, and the commands of a full member answer
+  that this is the lite member. Its archive (`cbb-lite-linux-*`) carries the same Linux
+  `install.sh` and `uninstall.sh` as a full member's, and `get.sh --lite` installs it.
+  The installer moves an install from before the rename to the new names, keeping the
+  device in its group, and refuses to put one kind of member over the other.
+- `cbb away` is now `cbb global`, with the same subcommands (`on`, `off`, `hub`, `relay`):
+  it turns on sync over the internet, beyond the home network.
 - A computer that creates a group is now its root, as a phone is in its own group: only it
   and the admins it makes hold CA keys, and the computers that join get only their
   certificates, the Mac, Linux and Windows alike. `cbb admin NAME` on the root makes a
@@ -132,7 +141,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   a hub's offer it ignores other hubs until sync away from home is turned off and on again,
   so a member cannot point the others' tunnels at itself.
 
-- Security: `cbb-lite` makes its control socket in a private directory and narrows it there
+- Security: the lite member makes its control socket in a private directory and narrows it there
   before moving it into place, so nobody can connect in the moment before its mode is set,
   whatever the umask. Dependabot also watches the lite member's crates and the Android
   app's Gradle dependencies.

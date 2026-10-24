@@ -94,7 +94,7 @@ pub fn run(cfg: Config) -> Result<()> {
         });
     }
 
-    // Wait until the device is in a group: cbb-lite join may run meanwhile.
+    // Wait until the device is in a group: cbb join may run meanwhile.
     let mut said = false;
     let ident = loop {
         if STOP.load(Ordering::SeqCst) {
@@ -105,7 +105,7 @@ pub fn run(cfg: Config) -> Result<()> {
             Some(id) => break id,
             None => {
                 if !said {
-                    log("cbb-lite: this device is in no group yet; run cbb-lite join");
+                    log("cbb: this device is in no group yet; run cbb join");
                     said = true;
                 }
                 std::thread::sleep(Duration::from_secs(2));
@@ -114,7 +114,7 @@ pub fn run(cfg: Config) -> Result<()> {
     };
     let records = Records::load(&cfg.state_dir, &ident.group_ca)?;
     let ident = with_roots(ident, &records, &cfg.state_dir, &*log);
-    log(&format!("cbb-lite: device {} in group {}, version {VERSION}", ident.id, ident.tag()));
+    log(&format!("cbb: device {} in group {}, version {VERSION}", ident.id, ident.tag()));
     let engine = Arc::new(Engine::new(
         ident.id.as_str(),
         clock(&cfg.state_dir),
@@ -138,14 +138,14 @@ pub fn run(cfg: Config) -> Result<()> {
     *svc.node.write().unwrap() = Some(node.clone());
     let port = cfg.port.and_then(|p| discovery::listen(node.clone(), p, log.clone()));
     if let Some(p) = port {
-        log(&format!("cbb-lite: listening on port {p}"));
+        log(&format!("cbb: listening on port {p}"));
     }
     discovery::start(node.clone(), tag, cfg.peers.clone(), cfg.mdns, port, log.clone());
 
     while !STOP.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(200));
     }
-    log("cbb-lite: stopping");
+    log("cbb: stopping");
     node.close();
     std::thread::sleep(Duration::from_millis(500));
     let _ = std::fs::remove_file(&cfg.socket);
@@ -163,7 +163,7 @@ fn with_roots(ident: Identity, records: &Records, dir: &Path, log: &dyn Fn(&str)
     match next.save(dir) {
         Ok(()) => next,
         Err(e) => {
-            log(&format!("cbb-lite: {}", e.for_log()));
+            log(&format!("cbb: {}", e.for_log()));
             ident
         }
     }
@@ -180,7 +180,7 @@ fn clock(dir: &Path) -> Clock {
         Some(Box::new(move |t| match files::write_atomic(&path, format!("{t}\n").as_bytes(), 0o600) {
             Ok(()) => true,
             Err(e) => {
-                log_line(&format!("cbb-lite: saving {log_path}: {}", e.for_log()));
+                log_line(&format!("cbb: saving {log_path}: {}", e.for_log()));
                 false
             }
         })),
@@ -193,7 +193,7 @@ fn listen(path: &Path) -> Result<UnixListener> {
         std::fs::create_dir_all(dir).context(format!("cannot create {}", dir.display()))?;
     }
     if UnixStream::connect(path).is_ok() {
-        return Err(Error::msg(format!("another cbb-lite service runs at {}", path.display())));
+        return Err(Error::msg(format!("another lite member service runs at {}", path.display())));
     }
     let _ = std::fs::remove_file(path);
     // The socket is made in a new directory that only the service can enter,
@@ -250,7 +250,7 @@ fn via_name(v: Via) -> &'static str {
 
 impl Service {
     fn node(&self) -> Result<Arc<Node>> {
-        self.node.read().unwrap().clone().ok_or_else(|| Error::msg("this device is in no group; run cbb-lite join"))
+        self.node.read().unwrap().clone().ok_or_else(|| Error::msg("this device is in no group; run cbb join"))
     }
 
     /// Passes a write the engine decided on to every watcher.
@@ -279,7 +279,7 @@ impl Service {
         let answer = match self.request(&m) {
             Ok(a) => a,
             Err(e) => {
-                (self.log)(&format!("cbb-lite: {}: {}", m.header.op, e.for_log()));
+                (self.log)(&format!("cbb: {}: {}", m.header.op, e.for_log()));
                 control::failure(&e)
             }
         };
@@ -364,7 +364,7 @@ impl Service {
             "pair" | "pair-phone" | "revoke" => {
                 Err(Error::msg("a lite member admits and removes no devices; use the phone app or a Linux member"))
             }
-            "join" => Err(Error::msg("run cbb-lite join on this device, with the service stopped or running")),
+            "join" => Err(Error::msg("run cbb join on this device, with the service stopped or running")),
             op => Err(Error::msg(format!("unknown operation {op:?}"))),
         }
     }
@@ -421,7 +421,7 @@ impl Service {
             let text = String::from_utf8(m.payload).unwrap_or_default();
             let (Ok(kind), Ok(via)) = (kind_of(&m.header.kind), via_of(&m.header.via)) else {
                 (self.log)(&format!(
-                    "cbb-lite: a watcher reported an unknown kind {:?} or via {:?}",
+                    "cbb: a watcher reported an unknown kind {:?} or via {:?}",
                     m.header.kind, m.header.via
                 ));
                 continue;
@@ -429,11 +429,11 @@ impl Service {
             match m.header.op.as_str() {
                 "copied" => {
                     if let Err(e) = node.copied(&text, kind, via) {
-                        (self.log)(&format!("cbb-lite: a copy from a watcher: {}", e.for_log()));
+                        (self.log)(&format!("cbb: a copy from a watcher: {}", e.for_log()));
                     }
                 }
                 "clipboard" => node.engine.clipboard_is(&text, kind),
-                op => (self.log)(&format!("cbb-lite: a watcher sent {op:?}")),
+                op => (self.log)(&format!("cbb: a watcher sent {op:?}")),
             }
         }
         done.store(true, Ordering::SeqCst);

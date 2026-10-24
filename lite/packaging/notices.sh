@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Writes the licenses of the crates that cbb-lite is built from, for one
-# target, so that a release archive carries their notices:
+# Writes the licenses of the crates that the lite member is built from, for
+# one target, so that a release archive carries their notices:
 #
 #   sh lite/packaging/notices.sh TARGET >THIRD_PARTY_NOTICES
 #
@@ -24,8 +24,9 @@ meta=$(mktemp)
 trap 'rm -f "$meta"' EXIT
 cargo metadata --locked --format-version 1 >"$meta"
 
-echo "cbb-lite is free software under the GNU Affero General Public License v3.0 only"
-echo "(LICENSE). It is built with the crates below, under their own licenses."
+echo "The lite member of clipboardbridge is free software under the GNU Affero General"
+echo "Public License v3.0 only (LICENSE). It is built with the crates below, under"
+echo "their own licenses."
 cargo tree --locked -e normal -p clipboardbridge-lite --target "$target" --prefix none \
 	-f '{p}' | sed 's/ (.*//; s/ (\*)$//' | sort -u |
 	while read -r name version; do

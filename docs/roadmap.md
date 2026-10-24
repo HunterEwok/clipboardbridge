@@ -29,21 +29,21 @@ The order may change.
     listens for phones, so a phone and a lite member sync with no computer on. Only once the Go version is complete and its architecture settled, so it is
     written once. Before it: the protocol written down in `docs/protocol.md`, a `lite` role
     that full members treat like a Mac, test vectors in `testdata/`, and an e2e test with a
-    Rust member among Go members. Done for Linux in `lite/` (`cbb-lite`, built for the
+    Rust member among Go members. Done for Linux in `lite/` (its command is `cbb` too, built for the
     Raspberry Pi, not yet run on one). The ESP32 comes next: the protocol core is its own
     crate, `lite/core`, without the standard library (no_std with alloc, RustCrypto in
     place of ring), with the member TLS in it (rustls without std and a RustCrypto
-    provider; `cbb-lite` uses the same code), which CI builds for the ESP32-C6 (RISC-V)
+    provider; the lite member on Linux uses the same code), which CI builds for the ESP32-C6 (RISC-V)
     and the ESP32-S3 (Xtensa); the firmware and the networking on the chip follow.
-12. **Partly: built between computers (`cbb away`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
-    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb away` is to be renamed `cbb global`, with
+12. **Partly: built between computers (`cbb global`, `cbb invite` for joining from afar, `cbb forward` for hubs behind carrier-grade NAT, and `cbb relay`, a blind relay of the user's own for groups without a hub); the rest is the order of work in [design.md](design.md#order-of-work).** Sync away from home and between subnets, through the group's own WireGuard tunnel in a
+    star around a hub; see "Sync away from home" in [design.md](design.md#sync-away-from-home). `cbb global` is to be renamed `cbb global`, with
     the same subcommands: it turns on sync over the internet, beyond the home network.
 13. **Planned.** Computer keys in hardware; see "Device keys in hardware" below.
-14. **Started: `cbb-lite next` and the `.cbb` dot command (`apps/zxnext`) are written, not yet
+14. **Started: `cbb next` on the lite member and the `.cbb` dot command (`apps/zxnext`) are written, not yet
     run on a real Next; the NextPi set-up and the path through the ESP8266 are next.** The ZX
     Spectrum Next through its own Raspberry Pi. The Accelerated Next carries a
     Raspberry Pi Zero on its accelerator header, wired to the FPGA's second UART, with
-    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. `cbb-lite` runs on
+    NextPi (a read-only DietPi) and a root shell (`SUP>`) on that UART. The lite member runs on
     this Pi as an ordinary lite member, installed on the NextPi card itself (its user
     partition and a start script), so NextPi's own tools keep working. It speaks the
     member protocol with TLS 1.3 like any other member and reaches the network in one of
@@ -51,9 +51,9 @@ The order may change.
     turn back on; or, on a Zero without a radio, the Next's built-in ESP8266, which then
     only carries the Pi's TLS bytes: the Z80 copies them between the Pi's UART and the
     ESP's, and the ESP never sees anything but ciphertext. A dot command on the Next,
-    `.cbb`, talks to `cbb-lite` over the internal UART the way NextPi's own tools do
+    `.cbb`, talks to the lite member over the internal UART the way NextPi's own tools do
     (`.pisend`): it copies a text to the group, pastes the latest one, and joins by
-    drawing the QR code for the phone app on the Next's screen (`cbb-lite next`,
+    drawing the QR code for the phone app on the Next's screen (`cbb next`,
     lite/README.md). The UART is a trace on the
     Next's board and never leaves the case, so it carries the texts in the clear. The Pi
     converts between UTF-8 and the Spectrum character set: printable ASCII first, with
@@ -94,7 +94,7 @@ The order may change.
        (item 10);
     3. Windows and macOS targets;
     4. sending from the iPhone and Android apps, and the Android target;
-    5. the `cbb-lite` target, then the Nano ESP32's keyboard.
+    5. the lite member's target, then the Nano ESP32's keyboard.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
     "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
