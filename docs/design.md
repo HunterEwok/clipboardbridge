@@ -1043,11 +1043,13 @@ pairing Info's `darwin`. The `os` is shown, never trusted for anything else. The
 | `full`   | a computer with the service: Linux, Windows, macOS | listens on the member port, dials the other full members and the lite members, may hold `clipboardbridge.local`, may create a group and be an admin |
 | `lite`   | `cbb-lite`                                  | dials the full members, listens for phones; never holds keys     |
 | `phone`  | a phone with the app                        | dials every member, never listens for members                   |
-| `iphone` | a shortcut's token (not a member)           | uses the endpoints of the member that holds `clipboardbridge.local` |
+| `shortcut` | an iPhone without the app: a shortcut's token, not a member (legacy, below) | uses the endpoints of the member that holds `clipboardbridge.local` |
 
 The `linux` and `mac` roles are gone: everything that set the Mac apart was a choice, not a
-limit of macOS, and the Mac is a full member like the others. Records of an earlier group
-that say `linux` or `mac` are read as `full`. `cbb devices` and the Devices screens of the
+limit of macOS, and the Mac is a full member like the others. The `iphone` role is now
+`shortcut`. Records of an earlier group that say `linux` or `mac` are read as `full`, and
+`iphone` as `shortcut`. A phone with the app, an iPhone or an Android phone, has its own
+key and member certificate and the role `phone`. `cbb devices` and the Devices screens of the
 apps show each device's system (Linux, Windows, macOS, iOS, Android, or "device" for
 firmware) and mark the root and the admins. A device's record takes its `os` from the
 pairing Info; when a device's hello states another `os` than its record, an admin that
@@ -1120,11 +1122,18 @@ and that member becomes the root:
    keys, and removing it needs a new group, as before the upgrade. Members that were off
    follow when they come back.
 
+**The shortcut is a legacy way.** An iPhone without the app joins through a shortcut and a
+token (section "The iPhone button"), never with a key of its own. It stays for now, since
+the app does not yet run on a real iPhone, but it is not developed further, and every user
+is expected to use the app. Everything it needs comes with it: the iPhone CA, its key on the
+admins, and the rule for who holds `clipboardbridge.local`. Once the app is on the phones,
+the shortcut can be removed with all of these.
+
 **Order of work**, one pull request each:
 
 1. This decision.
 2. The `os` beside the role: `os` in the pairing Info (`windows` allowed), the hello and
-   device records; the roles `full`, `lite`, `phone` and `iphone` in Go, `cbb-lite` and both
+   device records; the roles `full`, `lite`, `phone` and `shortcut` in Go, `cbb-lite` and both
    phone kits; `cbb devices` and the Devices screens show the system and the root and admin
    marks; an admin re-signs a record whose `os` is wrong.
 3. The Mac as a full member: the dialing rule above, listening like the others, holding
