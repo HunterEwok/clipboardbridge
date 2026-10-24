@@ -32,7 +32,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The first firmware for the Arduino Nano ESP32 (`lite/esp32`, Rust on the ESP32-S3): a
   console on its USB port sets the Wi-Fi network up, the board joins it and takes an
   address by DHCP, joins a group by the phone (`join` prints the link to paste into the
-  app, and the phone pairs with the board over TLS 1.3 as with `cbb-lite join`), and keeps
+  app, and the phone pairs with the board over TLS 1.3 as with the lite member's `cbb join`), and keeps
   its settings and identity in flash in two slots, so a power cut while saving keeps the
   last good copy (`cbb_core::store`); its `selftest` makes keys and
   certificates with the chip's true random number generator and runs a TLS 1.3 handshake
@@ -59,6 +59,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The lite member's command is `cbb`, as on a full member, with the same paths, user and
+  service (`/usr/local/bin/cbb`, `/var/lib/clipboardbridge`, `clipboardbridge.service`);
+  `cbb version` says which member a device runs, and the commands of a full member answer
+  that this is the lite member. Its archive (`cbb-lite-linux-*`) carries the same Linux
+  `install.sh` and `uninstall.sh` as a full member's, and `get.sh --lite` installs it.
+  The installer moves an install from before the rename to the new names, keeping the
+  device in its group, and refuses to put one kind of member over the other.
 - `cbb away` is now `cbb global`, with the same subcommands (`on`, `off`, `hub`, `relay`):
   it turns on sync over the internet, beyond the home network.
 - A computer that creates a group is now its root, as a phone is in its own group: only it

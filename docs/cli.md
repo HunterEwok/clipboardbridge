@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # Command reference
 
-Every command of `cbb` (Linux, macOS, Windows) and `cbb-lite` (the lite member), with their
-flags and environment variables. `cbb help` and `cbb-lite help` print the short form.
+Every command of `cbb`, on a full member (Linux, macOS, Windows) and on the lite member, with
+their flags and environment variables. `cbb help` prints the short form of the one installed;
+`cbb version` says which it is.
 Commands other than `service`, `agent`, `version` and `help` talk to the running
 service through its control socket, so they need the `clipboardbridge` group (Linux, Windows,
 macOS) or root; `copy`, `paste` and `status` work for members of the group without `sudo`.
@@ -43,30 +44,33 @@ see the agent's log in a terminal.
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
 | `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 
-## cbb-lite
+## The lite member
 
-Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
-`CBB_STATE`), `-socket PATH` (default `/run/cbb-lite/control.sock`, or `CBB_SOCKET`),
+On a small Linux device `cbb` is the lite member, with the same paths and service as a full
+member (`/var/lib/clipboardbridge`, `clipboardbridge.service`) and the commands below; the
+commands of a full member, such as `pair` or `global`, answer that this is the lite member.
+Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridge`, or
+`CBB_STATE`), `-socket PATH` (default `/run/clipboardbridge/control.sock`, or `CBB_SOCKET`),
 `-debug` (the details of errors). Install and use are in [lite/README.md](../lite/README.md).
 
 | Command | What it does |
 |---|---|
-| `cbb-lite join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | Joins a group by QR code, scanned by the phone app or the shortcut. `-addr` names where the phone reaches this device, when the QR code would name the wrong addresses. |
-| `cbb-lite join -code HOST:PORT` | Joins with the code from `cbb pair` on the group's root or an admin. |
-| `cbb-lite run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
-| `cbb-lite copy [-secret]` | Sends standard input to the group. |
-| `cbb-lite paste` | Prints this member's clipboard text. |
-| `cbb-lite status` | This device, its group, and every device of the group with its system, role and marks. |
-| `cbb-lite watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
-| `cbb-lite next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
-| `cbb-lite version`, `cbb-lite help` | The version; this help. |
+| `cbb join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | Joins a group by QR code, scanned by the phone app or the shortcut. `-addr` names where the phone reaches this device, when the QR code would name the wrong addresses. |
+| `cbb join -code HOST:PORT` | Joins with the code from `cbb pair` on the group's root or an admin. |
+| `cbb run [-name NAME] [-port PORT] [-peer HOST:PORT]... [-no-mdns] [-no-listen]` | Runs the service (systemd or procd). `-peer` names a full member to dial, for networks without mDNS; `-no-mdns` turns mDNS off; `-no-listen` closes the member port, so the device only dials. |
+| `cbb copy [-secret]` | Sends standard input to the group. |
+| `cbb paste` | Prints this member's clipboard text. |
+| `cbb status` | This device, its group, and every device of the group with its system, role and marks. |
+| `cbb watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
+| `cbb next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
+| `cbb version`, `cbb help` | The version and that this is the lite member; this help. |
 
 ## Installers
 
 | Installer | Options |
 |---|---|
-| `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--no-firewall` leaves the firewall alone; on Linux also `--port N` and `--console`, as for `install.sh`. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
-| Linux `install.sh` | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. |
+| `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--no-firewall` leaves the firewall alone; on Linux also `--port N` and `--console`, as for `install.sh`, and `--lite` for the lite member instead of the full one. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
+| Linux `install.sh` (the same in the full and the lite member's archive) | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--no-firewall` leaves the firewall alone (`CBB_FIREWALL=no` for `install.sh`), `--console` also starts tmux on the text console. |
 | Linux `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the program, the service and the firewall rules the installer added; `--purge` also deletes the keys in `/var/lib/clipboardbridge`. |
 | macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--in-place` runs the binary where it is (Homebrew) instead of copying it; `CBB_FIREWALL=no` leaves the application firewall alone. |
 | macOS `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
@@ -77,10 +81,10 @@ Global flags, before the command: `-state DIR` (default `/var/lib/cbb-lite`, or
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `CBB_DEBUG` | `cbb`, `cbb-lite` | `1` shows the underlying error under each message; `0` hides it in a development build, which shows it by default. The service's log always has the details. In the service's environment, also WireGuard's own messages for sync away from home. |
-| `CBB_PORT` | the service, `cbb-lite run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
-| `CBB_SOCKET` | `cbb`, `cbb-lite` | Another control socket, for tests or a second instance. |
-| `CBB_STATE` | `cbb-lite` | Another state directory. |
+| `CBB_DEBUG` | `cbb` | `1` shows the underlying error under each message; `0` hides it in a development build, which shows it by default. The service's log always has the details. In the service's environment, also WireGuard's own messages for sync away from home. |
+| `CBB_PORT` | the service, the lite member's `cbb run` | The member port, 8764 by default. The installers keep it: `/etc/clipboardbridge/clipboardbridge.env` on Linux, the service's registry key on Windows; change it by running the installer with `--port N` or `$env:CBB_PORT`. |
+| `CBB_SOCKET` | `cbb` | Another control socket, for tests or a second instance. |
+| `CBB_STATE` | the lite member | Another state directory. |
 | `CBB_FIREWALL` | Linux and macOS `install.sh`, Windows `install.ps1`/`get.ps1` | `no` leaves the firewall alone (`--no-firewall` for `get.sh`). |
 | `CBB_VERSION` | `get.sh` | A release such as `v0.2.0` instead of the latest. |
 | `CBB_ERROR_DETAILS` | Windows `install.ps1` | `1` adds the full error record to the installer's messages. |

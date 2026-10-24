@@ -24,7 +24,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
 )
 
-// publishLite puts a lite member on the fake network, as cbb-lite
+// publishLite puts a lite member on the fake network, as the real one
 // publishes itself: TXT r=lite, at 127.0.0.1 and port.
 func publishLite(h *hub, id, tag string, port int) {
 	h.mu.Lock()
@@ -68,7 +68,7 @@ func TestLiteNotDialed(t *testing.T) {
 	}
 }
 
-// startLite runs cbb-lite (the Rust lite member, lite/) with the state in
+// startLite runs the lite member (Rust, lite/) with the state in
 // dir; it is stopped at the end of the test.
 func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 	t.Helper()
@@ -97,11 +97,11 @@ func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 		}
 		select {
 		case err := <-exited:
-			t.Fatalf("cbb-lite ended at the start: %v", err)
+			t.Fatalf("the lite member ended at the start: %v", err)
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the control socket of cbb-lite never appeared")
+			t.Fatal("the control socket of the lite member never appeared")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -122,7 +122,7 @@ func (w testWriter) Write(p []byte) (int, error) {
 
 // TestLiteMember runs the lite member among Go members: it joins through
 // the phone by its QR code, gets no CA keys, is listed as a lite device and
-// syncs both ways. CBB_LITE names the cbb-lite binary (cargo build in lite/).
+// syncs both ways. CBB_LITE names the lite member's binary (cargo build in lite/).
 func TestLiteMember(t *testing.T) {
 	bin := os.Getenv("CBB_LITE")
 	if bin == "" {
@@ -134,7 +134,7 @@ func TestLiteMember(t *testing.T) {
 	laptop := startService(t, &h, "laptop")
 	pairWith(t, pi, laptop)
 
-	// cbb-lite join listens and shows its QR code; the phone scans it and
+	// cbb join on the lite member listens and shows its QR code; the phone scans it and
 	// asks pi to admit the device.
 	dir := t.TempDir()
 	join := exec.Command(bin, "-state", dir, "-debug", "join", "-name", "lite", "-port", "0", "-addr", "127.0.0.1")
@@ -157,7 +157,7 @@ func TestLiteMember(t *testing.T) {
 	if qr == "" {
 		join.Process.Kill()
 		join.Wait()
-		t.Fatal("cbb-lite join showed no QR code")
+		t.Fatal("cbb join showed no QR code")
 	}
 	if rep := admit(token, qr); rep["direction"] != "none" {
 		join.Process.Kill()
@@ -169,7 +169,7 @@ func TestLiteMember(t *testing.T) {
 		rest.WriteString(sc.Text() + "\n")
 	}
 	if err := join.Wait(); err != nil || !strings.Contains(rest.String(), "Joined the group") {
-		t.Fatalf("cbb-lite join: %v; %s", err, rest.String())
+		t.Fatalf("cbb join: %v; %s", err, rest.String())
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "identity.json"))
 	if err != nil {
@@ -219,7 +219,7 @@ func TestLiteMember(t *testing.T) {
 	next := exec.Command(bin, "-socket", lite.socket, "next", "copy", strconv.Itoa(len(zx)), fmt.Sprintf("%08x", crc32.ChecksumIEEE(zx)))
 	next.Stdin = bytes.NewReader(zx)
 	if out, err := next.Output(); err != nil || string(out) != "CBBGO\rCBBOK\r" {
-		t.Fatalf("cbb-lite next copy: %v; %q", err, out)
+		t.Fatalf("cbb next copy: %v; %q", err, out)
 	}
 	waitFor(t, "the laptop has the Next's text", func() bool { return laptop.paste(t) == "ZX £5\nnext" })
 	if _, err := laptop.do(t, control.Header{Op: control.OpCopy}, "to the `Next` £\nαβγδ"); err != nil {
@@ -229,7 +229,7 @@ func TestLiteMember(t *testing.T) {
 	waitFor(t, "the lite member has the laptop text for the Next", func() bool { return strings.HasPrefix(lite.paste(t), "to the") })
 	zxOut, err := exec.Command(bin, "-socket", lite.socket, "next", "paste").Output()
 	if wantOut := fmt.Sprintf("CBB1 %d %08x\r%s\rCBBOK\r", len(want), crc32.ChecksumIEEE(want), want); err != nil || string(zxOut) != wantOut {
-		t.Fatalf("cbb-lite next paste: %v; %q, want %q", err, zxOut, wantOut)
+		t.Fatalf("cbb next paste: %v; %q, want %q", err, zxOut, wantOut)
 	}
 
 	// Every member lists it as a lite device, not an admin.

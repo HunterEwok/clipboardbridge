@@ -64,7 +64,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   `TLSTransport`, `KeychainIdentity`, `SecKeySigner`, `AwayFromHome` (sync away from home through
   `Cbbtun.xcframework`); `clipboardbridge-interop` plays the phone
   in Go tests.
-- `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, joins by the phone's QR code,
+- `lite/`: the lite member in Rust (its command is `cbb` too): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
   `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, CPace under `src/third_party`, the
   interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
@@ -80,7 +80,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   `qemu` feature: console on UART0, no Wi-Fi, without esp-hal's init and with a fixed
   pseudo-random generator, never for a real chip).
 - `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
-  parses the frames of `cbb-lite next`, `link.c` drives the UART to the Next's Pi; `make test`
+  parses the frames of the lite member's `cbb next`, `link.c` drives the UART to the Next's Pi; `make test`
   runs the parser's tests on the host).
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
@@ -99,7 +99,7 @@ an admin phone removes a lost root phone by taking the group over with `root` re
 (`PhoneGroup.takeOver`, `RecordSet.roots`, Go's `Records.Roots` and `Identity.Roots`);
 a computer of a phone group can be an admin: the root phone's "Make it an admin" certifies
 the admin key its hello offers (`PhoneGroup.makeAdmin`, the `admin` message; Go's
-`Identity.AdminKey`/`AdminCA`); the lite member for Linux (`lite/`, `cbb-lite`), with
+`Identity.AdminKey`/`AdminCA`); the lite member for Linux (`lite/`), with
 the interop vectors and an e2e test among Go members, not yet run on a real Pi; the
 Android app (`apps/android`) does what the iPhone app does, receives copies by itself in a
 foreground service and sends them with the accessibility service or one tap, and each

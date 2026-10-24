@@ -14,7 +14,7 @@ The same bench then runs before every later release.
 
 CI already covers a lot in containers and on hosted runners (unit tests with `-race`, the
 Docker e2e of three members, Wayland and X11 under headless compositors, the Windows
-installer on windows-latest, the cross tests between Go, Swift and Kotlin, `cbb-lite` among
+installer on windows-latest, the cross tests between Go, Swift and Kotlin, the lite member among
 Go members). The bench covers what CI cannot:
 
 - real hardware and real operating systems: ARMv6 Pi Zero W, Pi 4, Steam Deck, an Apple
@@ -33,8 +33,8 @@ In scope for 0.4:
 
 | Area | What is tested |
 |---|---|
-| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `cbb-lite` from the release tarball; update from 0.3.x; firewall rules added and removed; `--purge` |
-| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb-lite join -code`, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
+| Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `get.sh --lite` for the lite member, which moves an old `cbb-lite` install to `cbb`; update from 0.3.x; firewall rules added and removed; `--purge` |
+| Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb join -code` on the lite member, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
 | Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
 | Sync away from home | `cbb global hub`, `cbb global on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
@@ -52,7 +52,7 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 | Name | Hardware / OS | Network | Role on the bench |
 |---|---|---|---|
 | `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
-| `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | `cbb-lite`; cross-subnet case; must never lose Wi-Fi from a test |
+| `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | the lite member; cross-subnet case; must never lose Wi-Fi from a test |
 | `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
 | `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
@@ -98,7 +98,7 @@ The observation is always end to end, at the user's clipboard where one exists:
 | Device | Put text in | Read text out |
 |---|---|---|
 | `vps` (headless) | `cbb copy` | `cbb paste` |
-| `rpi0w` | `cbb-lite copy` | `cbb-lite watch -0` |
+| `rpi0w` | `cbb copy` | `cbb watch -0` |
 | `deck` | `xclip` on the GNOME session's XWayland | `xclip -o` on the same display |
 | `mac` | `pbcopy` as the signed-in user | `pbpaste` |
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
@@ -240,8 +240,8 @@ signed in on each device's desktop, so the bench reaches the real clipboard: `wl
 `wl-paste` in the Wayland session, `pbcopy` and `pbpaste` on the Mac. On Windows an SSH
 session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` turns on the
 OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
-text between a file and the clipboard. Headless devices use `cbb copy` and `cbb paste`
-(`cbb-lite` on the lite member). The install and uninstall cases need `sudo` without a
+text between a file and the clipboard. Headless devices, the lite member too, use `cbb copy`
+and `cbb paste`. The install and uninstall cases need `sudo` without a
 password for the installers only, set up by a sudoers file in step 3. The emulator over
 `adb` on the Mac.
 

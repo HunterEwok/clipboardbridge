@@ -91,7 +91,8 @@ func groupOf(ctx context.Context, d *Device) (string, error) {
 	out, err := Run(ctx, d, cbbCmd(d)+" status", "")
 	if err != nil {
 		var re *RunError
-		// cbb says "Not in a group.", cbb-lite "in no group"; both exit 1.
+		// The full member says "Not in a group.", the lite member "in no
+		// group"; both exit 1.
 		if errors.As(err, &re) && (strings.Contains(re.Output, "Not in a group") || strings.Contains(re.Output, "in no group")) {
 			return "", nil
 		}
@@ -249,17 +250,17 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 }
 
 // liteDropIn is the bench's systemd drop-in for the lite member's service.
-const liteDropIn = "/etc/systemd/system/cbb-lite.service.d/cbbbench.conf"
+const liteDropIn = "/etc/systemd/system/clipboardbridge.service.d/cbbbench.conf"
 
 // litePeer restarts the lite member's service with -peer addr, or without
 // the bench's drop-in when addr is "".
 func litePeer(ctx context.Context, d *Device, addr string) error {
 	cmd := "sudo -n rm -f " + liteDropIn + " && sudo -n rmdir --ignore-fail-on-non-empty " + path.Dir(liteDropIn)
 	if addr != "" {
-		conf := "[Service]\nExecStart=\nExecStart=/usr/local/bin/cbb-lite run -peer " + addr + "\n"
+		conf := "[Service]\nExecStart=\nExecStart=/usr/local/bin/cbb run -peer " + addr + "\n"
 		cmd = "sudo -n mkdir -p " + path.Dir(liteDropIn) + " && printf '" + conf + "' | sudo -n tee " + liteDropIn + " >/dev/null"
 	}
-	_, err := Run(ctx, d, cmd+" && sudo -n systemctl daemon-reload && sudo -n systemctl restart cbb-lite", "")
+	_, err := Run(ctx, d, cmd+" && sudo -n systemctl daemon-reload && sudo -n systemctl restart clipboardbridge", "")
 	return err
 }
 
@@ -276,7 +277,8 @@ func deviceOf(ctx context.Context, d *Device) (string, error) {
 }
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and
-// cbb pair -code (cbb-lite join -code) with its code on the device.
+// cbb pair -code (cbb join -code on the lite member) with its code on the
+// device.
 func pairOne(ctx context.Context, hub, d *Device) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -319,12 +321,12 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 	if d.OS == "linux-lite" {
 		// The lite member joins as its service's user, which alone may
 		// write its keys (lite/README.md); the bench user has sudo.
-		join = "sudo -n -u cbb-lite " + join
+		join = "sudo -n -u clipboardbridge " + join
 	}
 	if d.OS == "linux-lite" || addr != "" {
 		if addr == "" {
 			cancel()
-			return fmt.Errorf("cbb-lite joins at an address; set address for %s in the inventory", hub.Name)
+			return fmt.Errorf("the lite member joins at an address; set address for %s in the inventory", hub.Name)
 		}
 		join += " " + addr
 	}

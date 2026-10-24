@@ -6,9 +6,9 @@
 | [README](../README.md) | everyone | what clipboardbridge does, installing, the status |
 | [Quick start](quickstart.md) | users | install, make a group, add devices, sync away from home, remove it |
 | [Phone apps](apps-guide.md) | users | using the iPhone and Android apps |
-| [Commands](cli.md) | users | every `cbb` and `cbb-lite` command, flag and environment variable |
+| [Commands](cli.md) | users | every `cbb` command, on a full and on the lite member, flag and environment variable |
 | [Troubleshooting](troubleshooting.md) | users | logs, firewall, pairing, other networks |
-| [Lite member](../lite/README.md) | users, developers | `cbb-lite` for small Linux devices: build, install, use |
+| [Lite member](../lite/README.md) | users, developers | the lite member for small Linux devices: build, install, use |
 | [Design](design.md) | developers | how it works and why, the security model, the decision log |
 | [Roadmap](roadmap.md) | developers | what comes next, the agreed plans not built yet, research |
 | [Protocol](protocol.md) | developers | the wire format, for anyone writing another implementation |

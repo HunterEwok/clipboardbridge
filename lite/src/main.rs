@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//! cbb-lite is the lite member of clipboardbridge for small Linux devices,
+//! cbb is the lite member of clipboardbridge for small Linux devices,
 //! such as routers and small boards: a member without CA keys that only
 //! dials the computers, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
@@ -30,7 +30,7 @@ use cbb_core::{certs, clip, hlc};
 use error::{Context, Error, Result};
 use identity::Stored as _;
 
-const USAGE: &str = "Usage: cbb-lite [-state dir] [-socket path] [-debug] <command> [arguments]
+const USAGE: &str = "Usage: cbb [-state dir] [-socket path] [-debug] <command> [arguments]
 
 Commands:
   join [-name name] [-port port] [-addr host[:port]]...
@@ -49,13 +49,19 @@ Commands:
                        (with -0, each followed by a zero byte).
   next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
                        in frames its Z80 reads (lite/README.md).
-  version              Print the version.
+  version              Print the version and that this is the lite member.
   help                 Print this help.
 
-The state directory is /var/lib/cbb-lite (CBB_STATE), the control socket
-/run/cbb-lite/control.sock (CBB_SOCKET). -debug, or CBB_DEBUG=1, shows the
-details of errors.
+This is the lite member: the commands of a full member, such as pair or
+global, are not here. The state directory is /var/lib/clipboardbridge
+(CBB_STATE), the control socket /run/clipboardbridge/control.sock
+(CBB_SOCKET). -debug, or CBB_DEBUG=1, shows the details of errors.
 ";
+
+/// The commands of a full member (cmd/cbb) that the lite member does not
+/// have, so that it says so instead of "unknown command".
+const FULL_ONLY: &[&str] =
+    &["global", "revoke", "admin", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent"];
 
 struct Global {
     state: PathBuf,
@@ -66,10 +72,12 @@ fn main() {
     error::from_env();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut g = Global {
-        state: std::env::var_os("CBB_STATE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/var/lib/cbb-lite")),
+        state: std::env::var_os("CBB_STATE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/var/lib/clipboardbridge")),
         socket: std::env::var_os("CBB_SOCKET")
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/run/cbb-lite/control.sock")),
+            .unwrap_or_else(|| PathBuf::from("/run/clipboardbridge/control.sock")),
     };
     while let Some(a) = args.first().cloned() {
         match flag(&a) {
@@ -96,19 +104,27 @@ fn main() {
                 "status" => cmd_simple(&g, "status", rest),
                 "watch" => cmd_watch(&g, rest),
                 "version" | "-version" | "--version" => {
-                    println!("cbb-lite {} ({}/{})", service::VERSION, std::env::consts::OS, std::env::consts::ARCH);
+                    println!(
+                        "cbb {} ({}/{}), the lite member",
+                        service::VERSION,
+                        std::env::consts::OS,
+                        std::env::consts::ARCH
+                    );
                     Ok(())
                 }
                 "help" | "-h" | "-help" | "--help" => {
                     print!("{USAGE}");
                     Ok(())
                 }
-                _ => Err(Error::msg(format!("unknown command {cmd:?}; see cbb-lite help"))),
+                _ if FULL_ONLY.contains(&cmd) => Err(Error::msg(format!(
+                    "cbb {cmd} is a command of a full member; this device runs the lite member (see cbb help)"
+                ))),
+                _ => Err(Error::msg(format!("unknown command {cmd:?}; see cbb help"))),
             };
             match res {
                 Ok(()) => 0,
                 Err(e) => {
-                    eprintln!("cbb-lite: {}", e.for_user());
+                    eprintln!("cbb: {}", e.for_user());
                     1
                 }
             }
@@ -167,7 +183,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
             Some("port") => port = next()?.parse().context("the port is a number")?,
             Some("addr") => addrs.push(next()?),
             Some("code") if !for_next => code_addr = Some(next()?),
-            _ => return Err(Error::msg(format!("unknown argument {:?}; see cbb-lite help", args[i]))),
+            _ => return Err(Error::msg(format!("unknown argument {:?}; see cbb help", args[i]))),
         }
         i += 2;
     }
@@ -179,7 +195,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
     }
     std::fs::create_dir_all(&g.state).context(format!(
         "cannot create {0}; make it for the service's user first: \
-         sudo install -d -o cbb-lite -g cbb-lite -m 0700 {0}",
+         sudo install -d -o clipboardbridge -g clipboardbridge -m 0700 {0}",
         g.state.display()
     ))?;
     let joiner = pair::Joiner::new(&name)?;
@@ -226,7 +242,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
                 print!("{}", qr(text));
                 println!("\nOr paste this into the app: {text}");
                 println!("\nWaiting up to 5 minutes. Press Ctrl+C to cancel.");
-                println!("Without a phone: run cbb pair on a Linux member and cbb-lite join -code <its address> here.");
+                println!("Without a phone: run cbb pair on a full member and cbb join -code <its address> here.");
                 std::io::stdout().flush().ok();
             };
             let log = |s: &str| {
@@ -300,7 +316,7 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
                 i += 1;
                 continue;
             }
-            _ => return Err(Error::msg(format!("unknown argument {:?}; see cbb-lite help", args[i]))),
+            _ => return Err(Error::msg(format!("unknown argument {:?}; see cbb help", args[i]))),
         }
         i += 2;
     }
@@ -313,7 +329,7 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
 /// Sends one request to the service and returns its answer.
 fn request(g: &Global, m: &control::Message) -> Result<control::Message> {
     let conn = UnixStream::connect(&g.socket).context(format!(
-        "cannot reach the cbb-lite service at {}; is it running (cbb-lite run)?",
+        "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
         g.socket.display()
     ))?;
     let mut w = conn.try_clone().context("cannot reach the service")?;
@@ -346,7 +362,7 @@ fn cmd_copy(g: &Global, args: &[String]) -> Result<()> {
     let secret = match args {
         [] => false,
         [a] if flag(a) == Some("secret") => true,
-        _ => return Err(Error::msg("usage: cbb-lite copy [-secret] < text")),
+        _ => return Err(Error::msg("usage: cbb copy [-secret] < text")),
     };
     let mut text = Vec::new();
     std::io::stdin().take(clip::MAX_TEXT as u64 + 1).read_to_end(&mut text).context("cannot read standard input")?;
@@ -415,10 +431,10 @@ fn cmd_watch(g: &Global, args: &[String]) -> Result<()> {
     let zero = match args {
         [] => false,
         [a] if a == "-0" => true,
-        _ => return Err(Error::msg("usage: cbb-lite watch [-0]")),
+        _ => return Err(Error::msg("usage: cbb watch [-0]")),
     };
     let conn = UnixStream::connect(&g.socket).context(format!(
-        "cannot reach the cbb-lite service at {}; is it running (cbb-lite run)?",
+        "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
         g.socket.display()
     ))?;
     let mut w = conn.try_clone().context("cannot reach the service")?;

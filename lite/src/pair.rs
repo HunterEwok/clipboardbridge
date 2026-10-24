@@ -176,7 +176,7 @@ pub fn listen(
         match accept(joiner, sock, code, save) {
             Ok(id) => return Ok(id),
             Err(e) => {
-                log(&format!("cbb-lite: a pairing attempt from {from} failed: {}", e.for_log()));
+                log(&format!("cbb: a pairing attempt from {from} failed: {}", e.for_log()));
                 if e.details().contains(Refusal::WrongCode.message()) {
                     failures += 1;
                     if failures >= MAX_FAILURES {

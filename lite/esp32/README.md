@@ -1,7 +1,7 @@
 # The lite member on the Arduino Nano ESP32
 
 Firmware for the [Arduino Nano ESP32](https://docs.arduino.cc/hardware/nano-esp32/) (an
-ESP32-S3), written in Rust on the same protocol core as `cbb-lite` (`lite/core`), with
+ESP32-S3), written in Rust on the same protocol core as the lite member on Linux (`lite/core`), with
 the member TLS 1.3 on the chip itself (docs/roadmap.md, item 15).
 
 So far the board keeps its settings in flash, joins the Wi-Fi network set on its console
@@ -80,7 +80,7 @@ Once the board has an address, type `join`. It prints a `clipboardbridge://join?
 with a new pairing code, its address and port 8764 and the fingerprint of its pairing
 certificate; in the app, tap "Connect a new device" and paste it. The phone dials the
 board, and the two run the pairing of docs/protocol.md over TLS 1.3 (`src/pair.rs`, the
-same exchange as `cbb-lite join`, with the core's `Joiner`). The phone proves the code
+same exchange as the lite member's `cbb join`, with the core's `Joiner`). The phone proves the code
 first; three wrong codes, or five minutes without a phone, end the attempt. The board
 takes connections from private addresses only. It saves the identity the phone's Welcome
 gives it, as a lite member without CA keys, and `status` shows the group.

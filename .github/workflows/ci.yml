@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -251,6 +251,7 @@ jobs:
           sudo systemd-sysusers "$PWD/packaging/linux/clipboardbridge.sysusers"
           systemd-analyze verify packaging/linux/clipboardbridge.service
           systemd-analyze security --offline=true packaging/linux/clipboardbridge.service --threshold=30 # 3.0 on the scale it prints
+          systemd-analyze verify lite/packaging/clipboardbridge.service
       - name: release notes
         run: sh packaging/release-notes.sh v0.1.1 >/dev/null
       - name: the Homebrew formula takes its checksums from SHA256SUMS, and all four
@@ -650,16 +651,66 @@ jobs:
           cache: false
       - name: the lite member joins by the phone and syncs with Go members
         working-directory: .
-        run: CBB_LITE="$PWD/lite/target/release/cbb-lite" go test -race ./internal/service -run TestLiteMember -v
+        run: CBB_LITE="$PWD/lite/target/release/cbb" go test -race ./internal/service -run TestLiteMember -v
+      - name: get.sh --lite installs the lite member, moves an old cbb-lite to it, and uninstall.sh removes it
+        working-directory: .
+        run: |
+          rel="$RUNNER_TEMP/release"
+          sh lite/packaging/archive.sh lite/target/release/cbb x86_64-unknown-linux-gnu amd64 "$rel"
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          # The lite member as it was installed before the rename, with a file
+          # in its state for the move to keep.
+          sudo useradd --system --home-dir /var/lib/cbb-lite --shell /usr/sbin/nologin cbb-lite
+          sudo install -m 0755 lite/target/release/cbb /usr/local/bin/cbb-lite
+          sudo install -d -o cbb-lite -g cbb-lite -m 0700 /var/lib/cbb-lite
+          sudo touch /var/lib/cbb-lite/kept
+          printf '[Service]\nExecStart=/usr/local/bin/cbb-lite run\n' | sudo tee /etc/systemd/system/cbb-lite.service >/dev/null
+          sudo CBB_RELEASE_DIR="$rel" sh packaging/get.sh --lite --no-firewall | tee "$RUNNER_TEMP/get.out"
+          grep -q 'Renamed cbb-lite to cbb' "$RUNNER_TEMP/get.out"
+          systemctl is-active clipboardbridge.service
+          cbb version | grep -q 'lite member'
+          test "$(sudo stat -c %U /var/lib/clipboardbridge/kept)" = clipboardbridge
+          for f in /usr/local/bin/cbb-lite /etc/systemd/system/cbb-lite.service /var/lib/cbb-lite /etc/xdg/autostart/clipboardbridge-desktop.desktop; do
+            if [ -e "$f" ]; then
+              echo "install.sh left $f" >&2
+              exit 1
+            fi
+          done
+          if getent passwd cbb-lite; then
+            echo "install.sh left the user cbb-lite" >&2
+            exit 1
+          fi
+          # Both exit 1, which pipefail would take for the grep's answer.
+          for _ in $(seq 20); do
+            out=$(sudo cbb status 2>&1) || true
+            case $out in *'in no group'*) break ;; esac
+            sleep 0.5
+          done
+          echo "$out" | grep -q 'in no group'
+          out=$(sudo cbb pair 2>&1) || true
+          echo "$out" | grep -q 'command of a full member'
+          # The full member cannot take over the lite member's keys.
+          go build -o "$RUNNER_TEMP/cbb-full" ./cmd/cbb
+          if sudo CBB_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/cbb-full"; then
+            echo "install.sh put the full member over the lite member" >&2
+            exit 1
+          fi
+          sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cbb-lite-linux-arm64
-          path: lite/target/aarch64-unknown-linux-gnu/release/cbb-lite
+          path: lite/target/aarch64-unknown-linux-gnu/release/cbb
           retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cbb-lite-linux-armv6
-          path: lite/target/arm-unknown-linux-musleabihf/release/cbb-lite
+          path: lite/target/arm-unknown-linux-musleabihf/release/cbb
           retention-days: 14
 
   esp32:

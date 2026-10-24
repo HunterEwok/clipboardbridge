@@ -22,13 +22,11 @@ const winBench = `C:\ProgramData\cbbbench`
 // XWayland, whose cookie file mutter names afresh at each login.
 const x11Env = `DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1)} `
 
-// cbbCmd is how the bench calls cbb (or cbb-lite) on a device.
+// cbbCmd is how the bench calls cbb, the full or the lite member, on a
+// device.
 func cbbCmd(d *Device) string {
-	switch d.OS {
-	case "windows":
+	if d.OS == "windows" {
 		return `& "$env:ProgramFiles\clipboardbridge\cbb.exe"`
-	case "linux-lite":
-		return "cbb-lite"
 	}
 	return "cbb"
 }
