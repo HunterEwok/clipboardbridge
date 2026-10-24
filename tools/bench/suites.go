@@ -90,7 +90,8 @@ func groupOf(ctx context.Context, d *Device) (string, error) {
 	out, err := Run(ctx, d, cbbCmd(d)+" status", "")
 	if err != nil {
 		var re *RunError
-		if errors.As(err, &re) && strings.Contains(re.Output, "Not in a group") {
+		// cbb says "Not in a group.", cbb-lite "in no group"; both exit 1.
+		if errors.As(err, &re) && (strings.Contains(re.Output, "Not in a group") || strings.Contains(re.Output, "in no group")) {
 			return "", nil
 		}
 		return "", err
@@ -208,7 +209,14 @@ func Smoke(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 
 	// The hub revokes the others, so nothing copied on them after the run
 	// (the Mac is also someone's own computer) reaches the bench's group.
+	// Linux and Windows members of a computer's group hold its CA keys and
+	// cannot be revoked without a new group (docs/design.md): they are test
+	// devices, reset before the next run.
 	for _, d := range members[1:] {
+		if d.OS == "linux" || d.OS == "windows" {
+			r.Skip("smoke/"+d.Name+"/revoke", "it holds the group's CA keys; reset it before the next run")
+			continue
+		}
 		r.Do("smoke/"+d.Name+"/revoke", func() error {
 			id, err := deviceOf(ctx, d)
 			if err != nil {
