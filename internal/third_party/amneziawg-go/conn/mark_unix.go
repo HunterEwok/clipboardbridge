@@ -6,6 +6,7 @@
 package conn
 
 import (
+	"encoding/binary"
 	"runtime"
 
 	"golang.org/x/sys/unix"
@@ -35,7 +36,7 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 			return err
 		}
 		err = fd.Control(func(fd uintptr) {
-			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
+			operr = setsockoptUint32(int(fd), unix.SOL_SOCKET, fwmarkIoctl, mark)
 		})
 		if err == nil {
 			err = operr
@@ -50,7 +51,7 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 			return err
 		}
 		err = fd.Control(func(fd uintptr) {
-			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
+			operr = setsockoptUint32(int(fd), unix.SOL_SOCKET, fwmarkIoctl, mark)
 		})
 		if err == nil {
 			err = operr
@@ -60,4 +61,13 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 		}
 	}
 	return nil
+}
+
+// setsockoptUint32 sets a socket option that the kernel reads as a 32-bit
+// value. It passes the mark's four bytes as they are, where SetsockoptInt
+// would need a conversion to int that can wrap on 32-bit systems.
+func setsockoptUint32(fd, level, opt int, value uint32) error {
+	var b [4]byte
+	binary.NativeEndian.PutUint32(b[:], value)
+	return unix.SetsockoptString(fd, level, opt, string(b[:]))
 }

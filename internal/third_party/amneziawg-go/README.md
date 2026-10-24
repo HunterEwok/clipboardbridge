@@ -8,11 +8,14 @@ v0.2.20-0.20260724121833-457d920a1a7d (module checksum
 replaces the module with this copy. Only the packages the tunnel builds on some system are
 here, without their tests; `go.mod` is the module's own.
 
-One change, in `device/timers.go`: a timer's function clears `timer.duration` before it
+Two changes. In `device/timers.go`, a timer's function clears `timer.duration` before it
 releases `modifyingLock`, not after. Upstream clears it outside the lock, so `Del`, which
 writes the same field under the lock, races with a timer that fires while a peer stops; the
 race detector caught it when a hub closed (`go test -race ./internal/forward`). wireguard-go
-clears its flag under the lock, as this copy now does.
+clears its flag under the lock, as this copy now does. In `conn/mark_unix.go`, `SetMark`
+passes the mark's four bytes to `setsockopt` instead of converting the `uint32` to `int`,
+a conversion that code scanning flags because it can wrap on 32-bit systems (clipboardbridge
+sets no mark).
 
 The code is under the MIT license in [LICENSE](LICENSE), not under the AGPL; the files keep
 their original copyright notices, moved into line comments at the top, and the files that
