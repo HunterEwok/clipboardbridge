@@ -47,6 +47,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   the process): the hub, which opens only the member port to its clients, and the client;
   `state.go` and `internal/service/tunnel.go` exchange its keys in the member protocol
   (docs/protocol.md, section 11).
+- `mobile/cbbtun`: the phones' tunnel to the hub, the same WireGuard in the app's process, bound
+  by gomobile into an AAR and an xcframework (CI's `phone tunnel` jobs); a loopback port leads
+  to the hub's member port, and the kits dial it with their own member TLS.
 - Windows: `cmd/cbb/platform_windows.go` (the Windows service, logs),
   `internal/service/control_windows.go` (the socket's access list),
   `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `packaging/windows`
