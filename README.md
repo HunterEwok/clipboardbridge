@@ -25,8 +25,9 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
 ```
 
-The installers check the download against the release's `SHA256SUMS` and allow
-clipboardbridge's one port, TCP 8764, and mDNS from the home network in the firewall; their
+The installers check the download against the release's `SHA256SUMS`, list the firewall
+rules clipboardbridge needs (its one port, TCP 8764, and mDNS from the home network) and ask
+before adding them, or add them at once with `--express`; their
 options are in the [command reference](docs/cli.md#installers). Every release file has a
 build provenance attestation: `gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
 Then make a group and add your devices, as the quick start says.

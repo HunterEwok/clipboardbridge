@@ -18,16 +18,28 @@ Any Linux with systemd: a Raspberry Pi, a laptop, a server, a Steam Deck.
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 ```
 
-The script checks the download, starts the service and opens clipboardbridge's one port, TCP
-8764, and mDNS in ufw or firewalld for the home network only; with another firewall it
-prints what to allow. Log out and in again once, so your user may use clipboardbridge.
+The script checks the download and starts the service. It finds the firewall, lists the
+rules clipboardbridge needs and asks before it adds them (see below). Log out and in again
+once, so your user may use clipboardbridge.
 
 ### Port and firewall
 
 clipboardbridge needs one TCP port, 8764, and mDNS (UDP 5353), both from the home network only.
-The installer opens them in ufw or firewalld. If you turn a firewall on later, run the
-installer again (it is also how you update). Each run first removes the rules it added
-before, and never touches anyone else's. By hand with ufw, for example from `192.168.0.0/24`:
+The installer finds the firewall itself (ufw, firewalld, nftables or iptables on Linux, the
+application firewall on a Mac, Windows Firewall), lists each rule with its protocol, port,
+source and purpose, and asks `Add these rules now? [y/N]`:
+
+- **Yes**: it adds them, keeps them current on every update and removes them on uninstall.
+  It never touches anyone else's rules.
+- **No** (the default, also when there is no terminal to answer on): it adds nothing and
+  prints the exact commands that would. clipboardbridge works while the firewall allows them.
+- **`--express`** (`-Express` or `$env:CBB_FIREWALL = "express"` on Windows): it adds them
+  without asking and reports what it added. `--no-firewall` answers No without asking.
+
+The answer is kept for updates; `--express` or `--no-firewall` changes it. nftables and
+iptables get the commands only, since rules added at run time do not survive a restart
+there. If you turn a firewall on later, run the installer again (it is also how you
+update). By hand with ufw, for example from `192.168.0.0/24`:
 
 ```sh
 sudo ufw allow proto tcp from 192.168.0.0/24 to any port 8764 comment clipboardbridge
@@ -41,8 +53,9 @@ it. If you do, pass it to the installer:
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh -s -- --port 9000
 ```
 
-The installer keeps the port for later updates and opens it instead of 8764, and the old
-rules go. Allow the new port in any other firewall on the way: the installer reminds you.
+The installer keeps the port for later updates and, when it manages the rules, opens it
+instead of 8764, and the old rules go. Allow the new port in any other firewall on the way:
+the installer reminds you.
 `--port 8764` goes back to the default. The phone app learns the port from the QR code and
 mDNS, so it needs no setting. The iPhone shortcut works only with 8764.
 

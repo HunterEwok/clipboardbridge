@@ -106,9 +106,9 @@ curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/downloa
 (`cbb-lite-linux-amd64.tar.gz`, `-arm64`, or `-armv6`, which also runs on ARMv7), checks it
 against `SHA256SUMS` and runs its `packaging/linux/install.sh`, the same installer as a full
 member's: the program as `/usr/local/bin/cbb`, the `clipboardbridge` user and group, the
-service `clipboardbridge.service`, the tmux configuration, and, when ufw or firewalld is
-active, mDNS and the member port from the home network. `--port N`, `--console` and
-`--no-firewall` work as for a full member ([docs/cli.md](../docs/cli.md#installers)).
+service `clipboardbridge.service`, the tmux configuration, and, with your consent, mDNS and
+the member port from the home network in the firewall. `--port N`, `--console`, `--express`
+and `--no-firewall` work as for a full member ([docs/cli.md](../docs/cli.md#installers)).
 Running it again updates. It refuses to replace a full member, whose keys the lite member
 cannot use, and moves an install from before the rename (`cbb-lite`, its own user and
 paths) to the new names, keeping the device in its group. Without curl, or for a binary you

@@ -7,9 +7,12 @@
 #   irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
 #
 # Options, which a piped script cannot take, come from the environment:
-# CBB_PORT=N moves the member port from 8764 to N, CBB_FIREWALL=no leaves
-# Windows Firewall alone, CBB_VERSION=v1.2.3 picks a release instead of the
-# latest, CBB_ERROR_DETAILS=1 shows the full error of a failure, and
+# CBB_PORT=N moves the member port from 8764 to N, CBB_FIREWALL=express
+# adds the firewall rules clipboardbridge needs without asking and says what
+# it added, CBB_FIREWALL=no adds none and prints the commands that would
+# (without either, install.ps1 lists the rules and asks), CBB_VERSION=v1.2.3
+# picks a release instead of the latest, CBB_ERROR_DETAILS=1 shows the full
+# error of a failure, and
 # CBB_RELEASE_DIR, for tests, takes the files from a directory instead of
 # downloading them.
 #

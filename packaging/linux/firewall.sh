@@ -4,24 +4,131 @@
 
 # Opens and closes clipboardbridge's ports in the firewall:
 #
-#   sudo sh firewall.sh open PORT...   # e.g. 8764
+#   sudo sh firewall.sh setup ask|express|no PORT   # install.sh runs it
+#   sudo sh firewall.sh open PORT...                 # e.g. 8764
 #   sudo sh firewall.sh close
+#   sh firewall.sh kind                              # the firewall it finds
+#   sh firewall.sh commands PORT...                  # what to run by hand
+#
+# setup finds the firewall, lists each rule clipboardbridge needs and asks
+# whether to add them, unless the answer is given (express: yes, no: no)
+# or kept from before in /etc/clipboardbridge/firewall.answer. Yes adds them
+# and keeps them current on every run; no prints the commands that add them,
+# and clipboardbridge works while the firewall allows them.
 #
 # open allows mDNS and the TCP ports from the home network only, when ufw or
 # firewalld is active, and remembers in /etc/clipboardbridge/firewall what it
-# added; a bare nftables or iptables setup that drops input gets the commands
-# to run. close removes exactly what open added and nothing else, so open
-# first closes, and a changed port leaves no old rule behind. install.sh and
-# uninstall.sh run it.
+# added. A bare nftables or iptables setup that drops input gets the
+# commands to run, since rules added at run time do not survive a restart
+# and each system keeps them its own way. close removes exactly what open
+# added and nothing else, so open first closes, and a changed port leaves
+# no old rule behind. install.sh and uninstall.sh run it.
 set -eu
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
 
 state=/etc/clipboardbridge/firewall
+answer=/etc/clipboardbridge/firewall.answer
 
 usage() {
-	echo "usage: sudo sh firewall.sh open PORT... | close" >&2
+	echo "usage: sudo sh firewall.sh setup ask|express|no PORT | open PORT... | close | kind | commands PORT..." >&2
 	exit 2
+}
+
+# kind prints the firewall that filters incoming connections here: ufw,
+# firewalld, nftables or iptables, or none.
+kind() {
+	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+		echo ufw
+	elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+		echo firewalld
+	elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'hook input.*policy drop'; then
+		echo nftables
+	elif command -v iptables >/dev/null 2>&1 && iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP'; then
+		echo iptables
+	else
+		echo none
+	fi
+}
+
+# nets prints the home networks: the private IPv4 networks this machine is
+# on, then link-local and unique-local IPv6.
+nets() {
+	ip -o -f inet route show scope link 2>/dev/null | awk '
+		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u
+	echo fe80::/10
+	echo fc00::/7
+}
+
+# rules prints the rules clipboardbridge needs, one numbered line each.
+rules() {
+	from=$(nets | paste -sd, - | sed 's/,/, /g')
+	n=1
+	for p in "$@"; do
+		echo "  $n. Allow incoming TCP $p from $from. Purpose: connections from the group's devices."
+		n=$((n + 1))
+	done
+	echo "  $n. Allow incoming UDP 5353 from $from. Purpose: finding the group's devices (mDNS)."
+}
+
+# commands prints the commands that add the rules by hand for the firewall
+# named first.
+commands() {
+	k=$1
+	shift
+	case $k in
+	ufw)
+		for net in $(nets); do
+			for p in "$@"; do
+				echo "  sudo ufw allow proto tcp from $net to any port $p comment clipboardbridge"
+			done
+			echo "  sudo ufw allow proto udp from $net to any port 5353 comment 'clipboardbridge mDNS'"
+		done
+		;;
+	firewalld)
+		for net in $(nets); do
+			family=ipv4
+			case $net in *:*) family=ipv6 ;; esac
+			for p in "$@"; do
+				echo "  sudo firewall-cmd --permanent --add-rich-rule='rule family=$family source address=$net port port=$p protocol=tcp accept'"
+			done
+			echo "  sudo firewall-cmd --permanent --add-rich-rule='rule family=$family source address=$net service name=mdns accept'"
+		done
+		echo "  sudo firewall-cmd --reload"
+		;;
+	nftables)
+		# The first input chain that drops, with its table and family.
+		set -- "$(nft list ruleset 2>/dev/null | awk '
+			$1 == "table" { family = $2; table = $3 }
+			$1 == "chain" { chain = $2 }
+			/hook input/ && /policy drop/ { print family, table, chain; exit }')" "$@"
+		where=$1
+		shift
+		family=${where%% *}
+		for net in $(nets); do
+			match="ip saddr"
+			case $net in *:*) match="ip6 saddr" ;; esac
+			case "$family/$match" in
+			ip/ip6*) continue ;;
+			ip6/ip\ *) continue ;;
+			esac
+			for p in "$@"; do
+				echo "  sudo nft insert rule $where $match $net tcp dport $p accept"
+			done
+			echo "  sudo nft insert rule $where $match $net udp dport 5353 accept"
+		done
+		;;
+	iptables)
+		for net in $(nets); do
+			tool=iptables
+			case $net in *:*) tool=ip6tables ;; esac
+			for p in "$@"; do
+				echo "  sudo $tool -I INPUT -s $net -p tcp --dport $p -j ACCEPT"
+			done
+			echo "  sudo $tool -I INPUT -s $net -p udp --dport 5353 -j ACCEPT"
+		done
+		;;
+	esac
 }
 
 # The firewall rules in /etc/clipboardbridge/firewall: "ufw", which tagged its
@@ -29,11 +136,11 @@ usage() {
 # followed by the rich rules it added, one "rule ..." per line. Without the
 # file it looks for tagged ufw rules, which get.sh added before the file.
 close() {
-	kind=ufw
+	added=ufw
 	if [ -f "$state" ]; then
-		kind=$(head -n 1 "$state")
+		added=$(head -n 1 "$state")
 	fi
-	case $kind in
+	case $added in
 	ufw)
 		if command -v ufw >/dev/null 2>&1; then
 			# Delete from the last number down, since a deletion renumbers
@@ -78,29 +185,25 @@ firewalld_service() {
 	chmod 0644 /etc/firewalld/services/clipboardbridge.xml
 }
 
+# open adds the rules to ufw or firewalld, and reports whether it did.
 open() {
 	close
-	nets=$(ip -o -f inet route show scope link 2>/dev/null | awk '
-		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u)
-	example=$(echo "$nets" | head -n 1)
-	example=${example:-192.168.0.0/24}
-	ports=$(echo "$*" | sed 's/ /, /g')
-	from="$(echo "$nets" | tr '\n' ' ')and local IPv6"
 	install -d -m 0755 /etc/clipboardbridge
-	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+	case $(kind) in
+	ufw)
 		echo ufw >"$state"
-		for net in $nets fe80::/10 fc00::/7; do
+		for net in $(nets); do
 			ufw allow proto udp from "$net" to any port 5353 comment 'clipboardbridge mDNS' >/dev/null
 			for p in "$@"; do
 				ufw allow proto tcp from "$net" to any port "$p" comment clipboardbridge >/dev/null
 			done
 		done
-		echo "ufw: allowed mDNS and TCP $ports from $from."
-	elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+		;;
+	firewalld)
 		echo firewalld >"$state"
 		firewalld_service "$@"
 		firewall-cmd --reload >/dev/null
-		for net in $nets fe80::/10 fc00::/7; do
+		for net in $(nets); do
 			family=ipv4
 			case $net in *:*) family=ipv6 ;; esac
 			for svc in clipboardbridge mdns; do
@@ -113,30 +216,126 @@ open() {
 			done
 		done
 		firewall-cmd --reload >/dev/null
-		echo "firewalld: allowed mDNS and TCP $ports from $from in the default zone."
-	elif { command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'hook input.*policy drop'; } ||
-		{ command -v iptables >/dev/null 2>&1 && iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP'; }; then
-		echo "A firewall drops incoming connections here, and clipboardbridge cannot change it for you."
-		echo "Allow TCP $ports and UDP 5353 from the home network, for example with iptables:"
-		for p in "$@"; do
-			echo "  sudo iptables -I INPUT -s $example -p tcp --dport $p -j ACCEPT"
-		done
-		echo "  sudo iptables -I INPUT -s $example -p udp --dport 5353 -j ACCEPT"
-		echo "and make the rules permanent the way your system keeps them."
+		;;
+	*) return 1 ;;
+	esac
+}
+
+# ask reads yes or no from the terminal, no by default and without one.
+ask() {
+	printf '%s [y/N] ' "$1"
+	reply=
+	if (: </dev/tty) 2>/dev/null; then
+		read -r reply </dev/tty || reply=
+	else
+		echo
+		echo "No terminal to answer on; taken as No."
+		return 2
+	fi
+	case $reply in
+	y | Y | yes | Yes | YES) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+# manual says what to run when clipboardbridge does not manage the rules.
+manual() {
+	k=$1
+	shift
+	echo "No firewall rules were added. clipboardbridge works only while the firewall allows the rules above."
+	echo "To add them by hand, run:"
+	commands "$k" "$@"
+	case $k in
+	nftables | iptables) echo "Then make them permanent the way this system keeps its $k rules." ;;
+	esac
+}
+
+setup() {
+	mode=$1
+	shift
+	k=$(kind)
+	if [ "$k" = none ]; then
+		close
+		echo "Firewall: no active firewall was found; no firewall rules are needed."
+		echo "If a firewall is turned on later, run the installer again."
+		return
+	fi
+	echo "Firewall: $k (active). clipboardbridge requires these rules:"
+	rules "$@"
+	case $k in
+	nftables | iptables)
+		close
+		echo "clipboardbridge does not manage $k rules: rules added at run time do not survive a restart."
+		manual "$k" "$@"
+		return
+		;;
+	esac
+	install -d -m 0755 /etc/clipboardbridge
+	kept=$(cat "$answer" 2>/dev/null || true)
+	how=
+	case $mode in
+	express) yes=yes how=" (express installation)" ;;
+	no) yes=no ;;
+	*)
+		case $kept in
+		yes | no) yes=$kept how=" (as answered before)" ;;
+		*)
+			echo "With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall."
+			if ask "Add these rules now?"; then
+				yes=yes
+			elif [ $? -eq 2 ]; then
+				# Not an answer: the next run with a terminal asks again.
+				close
+				manual "$k" "$@"
+				echo "To let clipboardbridge add and manage them, run the installer again with --express."
+				return
+			else
+				yes=no
+			fi
+			;;
+		esac
+		;;
+	esac
+	echo "$yes" >"$answer"
+	chmod 0644 "$answer"
+	if [ "$yes" = yes ]; then
+		open "$@"
+		echo "Added the rules above$how. clipboardbridge manages them from now on."
+	else
+		close
+		manual "$k" "$@"
+		echo "To let clipboardbridge add and manage them, run the installer again with --express."
 	fi
 }
 
 [ $# -ge 1 ] || usage
+cmd=$1
+shift
+case $cmd in
+kind)
+	[ $# -eq 0 ] || usage
+	kind
+	exit
+	;;
+commands)
+	[ $# -ge 1 ] || usage
+	commands "$(kind)" "$@"
+	exit
+	;;
+esac
 if [ "$(id -u)" -ne 0 ]; then
 	echo "firewall.sh: run it with sudo" >&2
 	exit 1
 fi
-cmd=$1
-shift
 case $cmd in
+setup)
+	[ $# -eq 2 ] || usage
+	case $1 in ask | express | no) ;; *) usage ;; esac
+	setup "$@"
+	;;
 open)
 	[ $# -ge 1 ] || usage
-	open "$@"
+	open "$@" || echo "firewall.sh: no ufw or firewalld is active; nothing was added." >&2
 	;;
 close)
 	[ $# -eq 0 ] || usage

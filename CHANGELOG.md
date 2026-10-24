@@ -80,6 +80,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The installers no longer open firewall ports without asking. They find the firewall
+  (ufw, firewalld, nftables or iptables on Linux, the macOS application firewall, Windows
+  Firewall), list each rule clipboardbridge needs with its protocol, port, source and
+  purpose, and ask `Add these rules now? [y/N]`. Yes adds them and keeps them current on
+  every update; No, the default and the answer when there is no terminal, adds none and
+  prints the exact commands. The answer is kept for updates. `--express` (`-Express`,
+  `CBB_FIREWALL=express`) adds them without asking and reports what it added;
+  `--no-firewall` now also works on a Mac and prints the commands too.
 - The lite member and the ESP32 firmware use x25519-dalek 3 (on curve25519-dalek 5) and
   base64 0.23. Dependabot updates the firmware's lock file in the same pull request as the
   lite member's, so the firmware's locked build keeps passing.

@@ -32,14 +32,14 @@ on every platform of the class, on the roadmap).
 | Inbound only from the home network, by the system | yes (ufw, firewalld) | **OS** | yes (Windows Firewall) | the macOS application firewall allows or blocks a program, not an address; a Network Extension of the Mac app (roadmap item 22) |
 | Outbound only to the home network until `cbb global on`, in the program | yes | yes | yes | `internal/netguard` |
 | Outbound only to the home network until `cbb global on`, by the system | yes (systemd unit) | **OS** | yes (firewall rule) | as above, roadmap item 22 |
-| Firewall left alone on request | `--no-firewall`, `CBB_FIREWALL=no` | `CBB_FIREWALL=no` | `-NoFirewall`, `CBB_FIREWALL=no` | `get.sh --no-firewall` works on both |
+| Firewall left alone on request | `--no-firewall`, `CBB_FIREWALL=no` | `--no-firewall`, `CBB_FIREWALL=no` | `-NoFirewall`, `CBB_FIREWALL=no` | |
 | Error details switch in `cbb` | `CBB_DEBUG=1`, debug builds | same | same | |
 | Error details switch in the installers | yes (`CBB_ERROR_DETAILS=1`) | yes (`CBB_ERROR_DETAILS=1`) | yes (`-Details`, `CBB_ERROR_DETAILS=1`) | |
 | Text-console helper (tmux) | yes (`--console`) | **OS** | **OS** | for a Linux machine without a desktop; a Mac and a Windows PC always have one |
 | Removal from the system's app list | — | **OS** | yes (Settings, Apps) | Linux has no common list; the Mac app (item 22) brings it to macOS |
 | Signed program | — | planned (`.pkg`, Developer ID) | **gap** | Windows Authenticode signing (G5) |
 | Device keys in hardware | planned | planned | planned | roadmap item 13 |
-| Firewall rules only with the user's consent, listed one by one; `--express` without questions | **gap** | **gap** | **gap** | today the installers add the rules without asking (G6) |
+| Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
 | Opening the hub's UDP port in the firewall | no | no | no | the same everywhere: the user opens it today (G6) |
 | Finding a firewall the installer does not know, by a check from home | **gap** | **gap** | **gap** | G6 |
 | Tested on a real device | yes | yes | not yet | the 0.4 bench |
@@ -101,7 +101,8 @@ One pull request each, in this order; anything under 100 lines rides in the open
    manages its rules from then on, the hub's UDP port at `cbb global hub` included (asked
    again, since it faces the internet), and removes them on uninstall. No: it prints the
    exact commands for that firewall and works while the rules are there. `--express` adds
-   them without a question and prints the same list as a report. A member at home dials
+   them without a question and prints the same list as a report. The installers' part is
+   done; `cbb global hub` and the check from home are next. A member at home dials
    the computer back, so `cbb status` says when an unknown firewall or a closed rule keeps
    the others out. Messages are formal English, one fact per line.
 9. **L1**: `.cbb copy -s`, a secret from the Next.
