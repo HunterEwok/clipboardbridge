@@ -186,15 +186,16 @@ apps" below).
   binding is needed.
 - Members connect to the addresses from discovery, never by resolving a `.local` name: a
   static Linux binary cannot resolve `.local` itself. Peers are authenticated by the group
-  CA, not by name. A home group is small: Linux members connect to each other, every Mac
-  dials every Linux and lite member (so a Mac whose firewall blocks incoming connections
-  still reaches them), two Macs connect once, the lower device ID dialing, and phones dial
-  every member. With no Linux member on, the Macs, the lite members and the phones still
-  sync among themselves.
+  CA, not by name. A home group is small: of two full members (Linux, Windows or Mac) the
+  one with the lower device ID dials, and the other dials as well when no connection has
+  come up within 30 seconds, so a firewall that keeps the first out does not keep them
+  apart; full members dial the lite members, and phones dial every member. With no Linux
+  member on, the Macs, the lite members and the phones still sync among themselves.
 - The iPhone uses one address for the whole group: **`clipboardbridge.local`**, with a record
-  lifetime of 10 seconds. The live Linux member with the lowest device ID holds it. Macs
-  never hold it: they sleep and roam, and when no Linux member is up the iPhone and the Mac
-  share through Universal Clipboard anyway.
+  lifetime of 10 seconds. Among the live full members, a machine that does not sleep holds
+  it first and a laptop only when no other is on, then the lowest device ID; the service
+  guesses which it is from a battery, `cbb holder` overrides the guess, and the TXT key `h`
+  tells the others (D-53, "Full members, admins and the operating system").
 - **Handover**: a holder that leaves sends goodbye packets for the name first and then closes
   its member connections with a goodbye; the member that is now the lowest sees that at
   once and announces the name. After a power cut the others notice the missing member when
@@ -390,9 +391,10 @@ Not built yet (roadmap item 10); the design:
 
 - **Service**: the same service as on Linux, as a LaunchDaemon under a hidden service account.
   macOS grants local network access to daemons without a prompt. It listens on UDP 5353
-  for mDNS (D-32), dials out to the Linux and lite members, and takes connections on the
-  member port from phones and the other Macs, from the home network only, like a Linux
-  member; it never admits devices or holds `clipboardbridge.local`. `install.sh` lists the
+  for mDNS (D-32), and dials and takes connections like the other full members, from the
+  home network only. It may hold `clipboardbridge.local`, a laptop only as a fallback
+  (D-53); it does not admit devices yet (step 4 of "Full members, admins and the operating
+  system"). `install.sh` lists the
   service in the application firewall (`socketfilterfw --add` and `--unblockapp`), and
   `uninstall.sh` takes it away; `CBB_FIREWALL=no` leaves the firewall alone.
 - **Pasteboard agent**: a LaunchAgent in the user's session, linked to the service over a
@@ -1415,26 +1417,38 @@ narrow this to a thief who also has the computer running.
 
 ## Open questions
 
-These need experiments on real devices; CI cannot answer them.
+These need experiments on real devices; CI cannot answer them. Each says what is known and
+which case of the test bench ([testbench.md](testbench.md)) answers it.
 
 - Does the Mac see a Universal Clipboard item from the iPhone (the change counter moves)
-  without a paste on the Mac, and which types does the item carry?
+  without a paste on the Mac, and which types does the item carry? The agent relies on
+  both. Needs an iPhone signed in to the Mac's Apple account, not the app (bench case P15).
 - Does reading the pasteboard types trigger the macOS pasteboard privacy alert, and is the
-  alert enforced by default on macOS 27.2 and later?
-- On iOS 18, 26 and 27: does Shortcuts trust the name-constrained iPhone CA and reach
-  `clipboardbridge.local` (Local Network prompt, first-run prompts, behaviour from the Lock
-  Screen), and how fast does it notice a handover of the name?
+  alert enforced by default on macOS 27.2 and later? The bench's Mac runs 27.0, where the
+  alert can be turned on by hand; the default waits for 27.2 (P23).
 - On GNOME with on-demand XWayland: do copies in native Wayland apps reach the connector
-  promptly, and do its writes become the Wayland selection without focus?
-- Console injection at an agetty login prompt, in `sudo` and in vim on Ubuntu and Raspberry Pi
-  OS; latency and CPU of the double-tap trigger on a Pi Zero W.
-- Does the macOS application firewall, set to block incoming connections, filter the mDNS
-  answers that reach the service's own socket on UDP 5353 (it is not mDNSResponder)? If so,
-  the installer must add an exception for the service.
-- Can the Mac's own mDNS code hold `clipboardbridge.local` next to mDNSResponder, and does the
-  shortcut reach a Mac that holds it (D-53)?
-- Which applications on each system paste images and file lists that another program wrote
-  (Android keyboards and apps, Windows Explorer with `CF_HDROP` from the agent, iOS apps)?
+  promptly, and do its writes become the Wayland selection without focus? The bench's
+  GNOME session on the Steam Deck syncs through XWayland, but its own clipboard tool is an
+  X11 client too, so native Wayland apps and a session where XWayland has not started yet
+  remain to be tried (P24).
+- Does the macOS application firewall filter the mDNS answers that reach the service's own
+  socket on UDP 5353 (it is not mDNSResponder)? The installer already lists the service in
+  the firewall; what remains is the mode "Block all incoming connections", which lets only
+  the system's services through and ignores that list (P26).
+- Can the Mac's own mDNS code hold `clipboardbridge.local` next to mDNSResponder (D-53)? The
+  code lets a Mac hold the name since step 3 of "Full members, admins and the operating
+  system"; whether the others resolve it is untried (P25).
+- When the console helper is built (roadmap item 10): console injection at an agetty login
+  prompt, in `sudo` and in vim on Ubuntu and Raspberry Pi OS; latency and CPU of the
+  double-tap trigger on a Pi Zero W.
+- When images and files are built (roadmap item 20): which applications on each system
+  paste images and file lists that another program wrote (Android keyboards and apps,
+  Windows Explorer with `CF_HDROP` from the agent, iOS apps)?
+- Only while the shortcut lasts (it goes after TestFlight, roadmap item 17): on iOS 18, 26
+  and 27, does Shortcuts trust the name-constrained iPhone CA and reach
+  `clipboardbridge.local` (Local Network prompt, first-run prompts, behaviour from the Lock
+  Screen), how fast does it notice a handover of the name, and does it reach a Mac that
+  holds the name?
 
 ## Decision log
 
