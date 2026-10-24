@@ -20,36 +20,38 @@ import (
 	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
-	"strings"
+	"strconv"
 
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/xtls/xray-core/app/dispatcher"
+	xlog "github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common/geodata"
+	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/proxy"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
 	xvless "github.com/xtls/xray-core/proxy/vless"
-
-	confserial "github.com/xtls/xray-core/infra/conf/serial"
+	vlessin "github.com/xtls/xray-core/proxy/vless/inbound"
+	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"google.golang.org/protobuf/proto"
 
 	// What the two sides use of Xray, registered by their init functions.
-	_ "github.com/xtls/xray-core/app/dispatcher"
+	// The configs are built here rather than from Xray's JSON, whose
+	// package pulls in much more, some of which gomobile cannot link.
 	_ "github.com/xtls/xray-core/app/proxyman/inbound"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
-	_ "github.com/xtls/xray-core/app/router"
-	_ "github.com/xtls/xray-core/proxy/blackhole"
-	_ "github.com/xtls/xray-core/proxy/dokodemo"
-	_ "github.com/xtls/xray-core/proxy/freedom"
-	_ "github.com/xtls/xray-core/proxy/vless/inbound"
-	_ "github.com/xtls/xray-core/proxy/vless/outbound"
-	_ "github.com/xtls/xray-core/transport/internet/reality"
 	_ "github.com/xtls/xray-core/transport/internet/tcp"
 	_ "github.com/xtls/xray-core/transport/internet/udp"
 )
@@ -114,48 +116,46 @@ func Listen(cfg ServerConfig) (*Server, error) {
 	if host == "" {
 		host = "0.0.0.0"
 	}
-	js, err := json.Marshal(map[string]any{
-		"log": map[string]any{"loglevel": "none", "access": "none", "error": "none"},
-		"inbounds": []any{map[string]any{
-			"tag": inboundTag, "listen": host, "port": port, "protocol": "vless",
-			"settings": map[string]any{"clients": []any{}, "decryption": "none"},
-			"streamSettings": map[string]any{
-				"network": "tcp", "security": "reality",
-				"realitySettings": map[string]any{
-					"dest":        cfg.Dest,
-					"serverNames": []string{cfg.ServerName},
-					"privateKey":  base64.RawURLEncoding.EncodeToString(cfg.Key[:]),
-					"shortIds":    []string{ShortID(cfg.Key)},
-				},
-			},
-		}},
-		"outbounds": []any{
-			map[string]any{
-				"protocol": "freedom",
-				// Whatever a client asks for, its packets go to the forwarder,
-				// which Xray lets through only by name since it is a private
-				// address; nothing else.
-				"settings": map[string]any{"redirect": cfg.To.String(), "finalRules": []any{
-					map[string]any{"action": "allow", "network": "udp", "ip": []string{cfg.To.Addr().String()}, "port": int(cfg.To.Port())},
-					map[string]any{"action": "block"},
-				}},
-			},
-			map[string]any{"tag": "block", "protocol": "blackhole"},
-		},
-		// Only UDP: a TCP stream would reach the forwarder's registrations.
-		"routing": map[string]any{"rules": []any{
-			map[string]any{"type": "field", "network": "tcp", "outboundTag": "block"},
-		}},
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return nil, fmt.Errorf("vless: %w", err)
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return nil, fmt.Errorf("vless: %w", err)
+	}
+	listen := netip.AddrPortFrom(ip, uint16(p))
+	sid, _ := hex.DecodeString(ShortID(cfg.Key))
+	stream := realityStream(&reality.Config{
+		Dest:        cfg.Dest,
+		Type:        "tcp",
+		ServerNames: []string{cfg.ServerName},
+		PrivateKey:  cfg.Key[:],
+		ShortIds:    [][]byte{sid},
+		// No limits, as Xray's JSON has it.
+		LimitFallbackUpload:   &reality.LimitFallback{},
+		LimitFallbackDownload: &reality.LimitFallback{},
 	})
+	// Whatever a client asks for, its packets go to the forwarder's UDP
+	// port, which Xray lets through only by name since it is a private
+	// address; nothing else, and no TCP stream, which would reach the
+	// forwarder's registrations.
+	to, err := geodata.ParseIPRules([]string{cfg.To.Addr().String()})
+	if err != nil {
+		return nil, fmt.Errorf("vless: %w", err)
+	}
+	out := &freedom.Config{
+		DestinationOverride: &freedom.DestinationOverride{Server: endpoint(cfg.To)},
+		FinalRules: []*freedom.FinalRuleConfig{
+			{Action: freedom.RuleAction_Allow, Networks: []xnet.Network{xnet.Network_UDP}, PortList: ports(cfg.To.Port()), Ip: to},
+			{Action: freedom.RuleAction_Block},
+		},
+	}
+	inst, err := start(inboundHandler(inboundTag, listen, stream, &vlessin.Config{Decryption: "none"}), out)
 	if err != nil {
 		return nil, err
 	}
-	inst, err := start(js)
-	if err != nil {
-		return nil, err
-	}
-	s := &Server{inst: inst}
-	fmt.Sscan(port, &s.port)
+	s := &Server{inst: inst, port: listen.Port()}
 	m, _ := inst.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	if m == nil {
 		inst.Close()
@@ -221,35 +221,28 @@ func Dial(l tunnel.VLESS) (*Client, error) {
 	}
 	addr := pc.LocalAddr().(*net.UDPAddr).AddrPort()
 	pc.Close()
-	js, err := json.Marshal(map[string]any{
-		"log": map[string]any{"loglevel": "none", "access": "none", "error": "none"},
-		"inbounds": []any{map[string]any{
-			"listen": addr.Addr().String(), "port": addr.Port(), "protocol": "dokodemo-door",
-			// The address means nothing: the forwarder sends every packet
-			// to its own port.
-			"settings": map[string]any{"address": "127.0.0.1", "port": 9, "network": "udp"},
-		}},
-		"outbounds": []any{map[string]any{
-			"protocol": "vless",
-			"settings": map[string]any{"vnext": []any{map[string]any{
-				"address": l.Endpoint.Addr().String(), "port": l.Endpoint.Port(),
-				"users": []any{map[string]any{"id": l.ID, "encryption": "none"}},
-			}}},
-			"streamSettings": map[string]any{
-				"network": "tcp", "security": "reality",
-				"realitySettings": map[string]any{
-					"serverName":  l.ServerName,
-					"publicKey":   base64.RawURLEncoding.EncodeToString(l.PublicKey),
-					"shortId":     l.ShortID,
-					"fingerprint": "chrome",
-				},
-			},
-		}},
-	})
+	sid, err := hex.DecodeString(l.ShortID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("vless: %w", err)
 	}
-	inst, err := start(js)
+	stream := realityStream(&reality.Config{
+		Fingerprint: "chrome",
+		ServerName:  l.ServerName,
+		PublicKey:   l.PublicKey,
+		ShortId:     sid,
+		SpiderX:     "/",
+		SpiderY:     make([]int64, 10),
+	})
+	// The address means nothing: the forwarder sends every packet to its
+	// own port.
+	in := &dokodemo.Config{
+		RewriteAddress:  xnet.NewIPOrDomain(xnet.LocalHostIP),
+		RewritePort:     9,
+		AllowedNetworks: []xnet.Network{xnet.Network_UDP},
+	}
+	server := endpoint(l.Endpoint)
+	server.User = &protocol.User{Account: serial.ToTypedMessage(&xvless.Account{Id: l.ID, Encryption: "none"})}
+	inst, err := start(inboundHandler("", addr, nil, in), &vlessout.Config{Vnext: server}, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -262,16 +255,48 @@ func (c *Client) Addr() netip.AddrPort { return c.addr }
 // Close stops the client's side.
 func (c *Client) Close() error { return c.inst.Close() }
 
-func start(js []byte) (*core.Instance, error) {
-	c, err := confserial.DecodeJSONConfig(strings.NewReader(string(js)))
-	if err != nil {
-		return nil, fmt.Errorf("vless: %w", err)
+func realityStream(c *reality.Config) *internet.StreamConfig {
+	tm := serial.ToTypedMessage(c)
+	return &internet.StreamConfig{ProtocolName: "tcp", SecurityType: tm.Type, SecuritySettings: []*serial.TypedMessage{tm}}
+}
+
+func endpoint(a netip.AddrPort) *protocol.ServerEndpoint {
+	return &protocol.ServerEndpoint{Address: xnet.NewIPOrDomain(xnet.IPAddress(a.Addr().AsSlice())), Port: uint32(a.Port())}
+}
+
+func ports(p uint16) *xnet.PortList {
+	return &xnet.PortList{Range: []*xnet.PortRange{xnet.SinglePortRange(xnet.Port(p))}}
+}
+
+func inboundHandler(tag string, listen netip.AddrPort, stream *internet.StreamConfig, settings proto.Message) *core.InboundHandlerConfig {
+	return &core.InboundHandlerConfig{
+		Tag: tag,
+		ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+			PortList:       ports(listen.Port()),
+			Listen:         xnet.NewIPOrDomain(xnet.IPAddress(listen.Addr().AsSlice())),
+			StreamSettings: stream,
+		}),
+		ProxySettings: serial.ToTypedMessage(settings),
 	}
-	pb, err := c.Build()
-	if err != nil {
-		return nil, fmt.Errorf("vless: %w", err)
+}
+
+// start runs Xray with one inbound and one outbound, logging nothing.
+func start(in *core.InboundHandlerConfig, out proto.Message, outStream ...*internet.StreamConfig) (*core.Instance, error) {
+	sender := &proxyman.SenderConfig{}
+	if len(outStream) > 0 {
+		sender.StreamSettings = outStream[0]
 	}
-	inst, err := core.New(pb)
+	cfg := &core.Config{
+		App: []*serial.TypedMessage{
+			serial.ToTypedMessage(&xlog.Config{ErrorLogType: xlog.LogType_None, AccessLogType: xlog.LogType_None}),
+			serial.ToTypedMessage(&dispatcher.Config{}),
+			serial.ToTypedMessage(&proxyman.InboundConfig{}),
+			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
+		},
+		Inbound:  []*core.InboundHandlerConfig{in},
+		Outbound: []*core.OutboundHandlerConfig{{SenderSettings: serial.ToTypedMessage(sender), ProxySettings: serial.ToTypedMessage(out)}},
+	}
+	inst, err := core.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("vless: %w", err)
 	}
