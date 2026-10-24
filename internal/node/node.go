@@ -150,7 +150,10 @@ type Peer struct {
 	// AdminKey is the admin key its hello offers, a SubjectPublicKeyInfo
 	// in DER; nil when it offers none.
 	AdminKey []byte
-	Since    time.Duration // uptime when the connection started
+	// OldKeys tells that its hello says it holds the group CA key of a
+	// legacy group.
+	OldKeys bool
+	Since   time.Duration // uptime when the connection started
 }
 
 // A Node is a member's set of connections.
@@ -426,9 +429,10 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey := c.peerAdminKey
+			adminKey, oldKeys := c.peerAdminKey, c.peerOldKeys
 			c.mu.Unlock()
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey, Since: c.since})
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
+				OldKeys: oldKeys, Since: c.since})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -649,6 +653,7 @@ type conn struct {
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
 	peerPhoneCA  []byte
+	peerOldKeys  bool // the peer's hello says it holds a legacy group CA key
 	certSent     bool // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
@@ -803,6 +808,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h := group.KeyHashOf(id.PhoneCA.Cert)
 			out.PhoneCA = h[:]
 		}
+		out.OldKeys = id.Legacy() && id.GroupCA.Key != nil
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
@@ -943,7 +949,7 @@ func (c *conn) reader() error {
 			if group.ValidOS(extra.OS) {
 				c.peerOS = extra.OS
 			}
-			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
+			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
 			c.mu.Unlock()
 			c.n.peersChanged()
 			res, err := e.Reconcile(string(c.id), h)

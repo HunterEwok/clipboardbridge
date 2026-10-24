@@ -342,6 +342,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one |
 | `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
+| `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
 
 ### Event
@@ -988,7 +989,7 @@ ID; informative). Types:
 |--------|--------|---------|
 | `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name` |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
-| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root (groups with a root, not legacy groups) |
+| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root: a takeover in a group with a root, or `cbb upgrade` in a legacy group |
 | `freeze` | `keys` (the SHA-256 of admin CAs' SubjectPublicKeyInfos), `records` (array of record IDs: the records of those admins that stay) | stops admin computers until the root or an admin phone decides (rule 4) |
 | `thaw` | `records` (array of the IDs of `freeze` records) | ends those freezes (rule 4) |
 
@@ -1066,8 +1067,12 @@ Validity and evaluation, which depend only on the set of records, never on their
    root.
 7. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
-   only in a group with a root (path length 1), not in a legacy group, and its `root` is a self-signed CA
-   with path length 1 and a P-256 key. Records are signed under any root the set knows: the
+   only when it was signed under a root with path length 1, or, in a legacy group, by the
+   group CA's own key (empty `chain`; `cbb upgrade`), and its `root` is a self-signed CA
+   with path length 1 and a P-256 key. Such an upgrade record also counts while the group
+   CA's key is revoked, as long as every record that revokes that key was signed under the
+   root it names: a leftover copy of the old key can then break the group, by revoking
+   itself or signing a rival handover, but never take it over. Records are signed under any root the set knows: the
    group CA and the new root of every valid `root` record; a member adds a batch of records
    until nothing new is added, so a record signed under a new root is taken together with
    the record that names that root. The **path** starts at the group CA; from each root,
@@ -1101,6 +1106,24 @@ an admin phone, never a computer; in a group a computer created an admin compute
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its
 iPhone CA.
+
+**Upgrading a legacy group.** `cbb upgrade` on a member that holds the legacy group's keys,
+after every member runs this version:
+
+1. It creates a new root and signs a `root` record naming it with the group CA's own key.
+   The group keeps its tag, so no device pairs again.
+2. As the new root, it signs a `revoke` record whose `keys` are the group CA's key, the
+   iPhone CA's key and the key of every `shortcut` device, and whose `keep` names the key of
+   every other listed device, and a `device` record for every listed device (role and `os`
+   as listed), its own among them. It keeps the new root's key as `root_key`, deletes the
+   old CA keys and serves the shortcut with a new iPhone CA.
+3. Every other member that gets the records deletes its copies of the group CA and iPhone
+   CA keys and its `clipboardbridge.local` certificate, makes an admin key, and connects
+   again. While a member holds the group CA key of a legacy group its hello carries
+   `"old_keys": true`. The upgrading member keeps a list of the computers that held the keys
+   (`oldkeys.json`) and drops each from it when it connects with a hello without
+   `old_keys`; until then `cbb status` marks it (`old_keys` in the `devices` answer) and
+   `cbb revoke` refuses to remove it.
 
 The devices list is, for each device, the `device` record that counts with the largest
 `time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
@@ -1139,10 +1162,11 @@ identity (mode 0600) and the path in the identity file's `roots`.
 
 | `op` | Request | Answers |
 |------|---------|---------|
-| `devices` | none | `{devices: [{id, name, role, os, admin, root, frozen, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
+| `devices` | none | `{devices: [{id, name, role, os, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
+| `upgrade` | none | `{done}` or an error. Only on a member that holds the keys of a legacy group: gives the group a root, this member ("Upgrading a legacy group") |
 | `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: takes the group over from the root that name names and removes it ("Handing the group over") |
 | `freeze` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin that is not frozen: freezes another admin computer, never the root or an admin phone (rule 4) |
 | `thaw` | `{name}` | `{name, done}` or an error. Only on the root computer: ends every freeze of that admin computer (rule 4) |

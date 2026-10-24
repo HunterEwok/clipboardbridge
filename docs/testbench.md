@@ -145,7 +145,10 @@ the same text is on every device at the end.
   group stays, nobody pairs again.
 - The holder of `clipboardbridge.local` goes away; another member takes it over.
 - Upgrade: every device on 0.3.x, then updated one by one to the 0.4 candidate; mixed
-  versions keep syncing during the upgrade; state and keys survive.
+  versions keep syncing during the upgrade; state and keys survive. Then `cbb upgrade` on
+  `deck` with `win` off: `deck` is the root, the others delete the old keys, `cbb status`
+  marks `win` until it is back, `cbb revoke win` is refused until then, and nobody pairs
+  again except the shortcut iPhones.
 - Uninstall: no service, no firewall rule, no leftover files (except keys without
   `--purge`).
 

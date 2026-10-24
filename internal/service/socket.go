@@ -116,6 +116,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpUpgrade:
+		if err := s.upgrade(); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpTakeover:
 		name, err := s.takeOver(m.Name)
 		if err != nil {

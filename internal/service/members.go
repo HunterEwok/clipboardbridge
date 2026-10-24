@@ -370,7 +370,9 @@ func (s *Service) peersChanged() {
 	if nd == nil {
 		return
 	}
-	s.trackSeen(nd.Peers())
+	peers := nd.Peers()
+	s.trackSeen(peers)
+	s.noteOldKeys(peers)
 	s.ensureListed()
 }
 
