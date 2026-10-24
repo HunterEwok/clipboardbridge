@@ -116,3 +116,17 @@ func TestDeviceRE(t *testing.T) {
 		}
 	}
 }
+
+// TestTextCases checks the matrix's texts: none is empty or ends with a
+// line ending, which the readers trim, and each sender's text differs.
+func TestTextCases(t *testing.T) {
+	for _, tc := range textCases {
+		a, b := tc.text("20261024-120000", "mac"), tc.text("20261024-120000", "win")
+		if a == "" || strings.TrimRight(a, "\r\n") != a {
+			t.Errorf("%s: %q is empty or ends with a line ending", tc.id, a)
+		}
+		if a == b {
+			t.Errorf("%s: two senders send the same text %q", tc.id, a)
+		}
+	}
+}
