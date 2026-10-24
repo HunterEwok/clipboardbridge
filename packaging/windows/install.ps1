@@ -116,15 +116,32 @@ if ($service -and $service.Status -ne 'Stopped') {
 	Stop-Service -Name $name -Force
 }
 # The agents of every session and any cbb still running keep the files open.
-Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
-	$_.Path -and $_.Path.StartsWith($programDir, [StringComparison]::OrdinalIgnoreCase)
-} | Stop-Process -Force
-Start-Sleep -Milliseconds 500
+# Stopping a process takes a moment, and an agent the last install started
+# may still be starting, so each try stops what runs, waits for it to exit,
+# and copies; a file still in use means another try.
+$stopRunning = {
+	$running = @(Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
+		$_.Path -and $_.Path.StartsWith($programDir, [StringComparison]::OrdinalIgnoreCase)
+	})
+	$running | Stop-Process -Force -ErrorAction SilentlyContinue
+	$running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+}
 
 $step = "copying the files to $programDir"
 New-Item -ItemType Directory -Force -Path $programDir | Out-Null
-Copy-Item -Force $Bin (Join-Path $programDir 'cbb.exe')
-Copy-Item -Force $binW (Join-Path $programDir 'cbbw.exe')
+for ($try = 1; ; $try++) {
+	& $stopRunning
+	try {
+		Copy-Item -Force $Bin (Join-Path $programDir 'cbb.exe')
+		Copy-Item -Force $binW (Join-Path $programDir 'cbbw.exe')
+		break
+	} catch {
+		if ($try -ge 10 -or $_.Exception -isnot [System.IO.IOException]) {
+			throw
+		}
+		Start-Sleep -Milliseconds 500
+	}
+}
 Copy-Item -Force (Join-Path $PSScriptRoot 'uninstall.ps1') (Join-Path $programDir 'uninstall.ps1')
 $cbb = Join-Path $programDir 'cbb.exe'
 $cbbw = Join-Path $programDir 'cbbw.exe'
