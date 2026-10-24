@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/linux/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -753,7 +753,7 @@ jobs:
           - target: android
             os: ubuntu-latest
             out: cbbtun.aar
-          - target: ios,iossimulator
+          - target: ios
             os: macos-latest
             out: Cbbtun.xcframework
     runs-on: ${{ matrix.os }}
@@ -768,19 +768,13 @@ jobs:
           cache: false
       - name: bind the tunnel with gomobile
         # gomobile and gobind come from go.mod's tools; the runner images have
-        # the Android NDK and Xcode.
+        # the Android NDK and Xcode. The Android app's build binds it too.
         env:
           TARGET: ${{ matrix.target }}
           OUT: ${{ matrix.out }}
         run: |
-          go build -o "$RUNNER_TEMP/bin/" golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
-          export PATH="$RUNNER_TEMP/bin:$PATH"
-          if [ "$TARGET" = android ]; then
-            export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-            gomobile bind -target=android -androidapi 29 -o "$OUT" ./mobile/cbbtun
-          else
-            gomobile bind -target="$TARGET" -iosversion 17.0 -o "$OUT" ./mobile/cbbtun
-          fi
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-}"
+          mobile/cbbtun/bind.sh "$TARGET" "$OUT"
           ls -la "$OUT"
 
   ci-ok:

@@ -42,6 +42,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -558,7 +559,7 @@ private fun AddDeviceScreen(model: AppModel, close: () -> Unit) {
 
 // Settings
 
-/** Theme, language, about. Nothing else. */
+/** Theme, language, sending copies by themselves, sync away from home, about. */
 @Composable
 private fun SettingsScreen(model: AppModel, back: () -> Unit) {
     val palette = LocalPalette.current
@@ -582,6 +583,7 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
             }
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
+        if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
             Row(Modifier.fillMaxWidth().padding(Tokens.spacingMedium)) {
@@ -629,6 +631,42 @@ private fun AutoSend() {
                     }) { Text(stringResource(R.string.app_info), color = palette.accent) }
                 }
             }
+        }
+    }
+}
+
+/** Sync away from home: what it does, the switch, and where it stands. */
+@Composable
+private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    Section(stringResource(R.string.away_title)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) {
+                    busy = true
+                    scope.launch {
+                        model.setAway(!away.on)
+                        busy = false
+                    }
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.away_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = away.on, onCheckedChange = null, enabled = !busy)
+            }
+            val status = when {
+                !away.on -> R.string.away_off
+                away.status == AwayFromHome.Status.AT_HOME -> R.string.away_at_home
+                away.status == AwayFromHome.Status.CONNECTING -> R.string.away_connecting
+                away.status == AwayFromHome.Status.CONNECTED -> R.string.away_connected
+                else -> R.string.away_waiting
+            }
+            Text(stringResource(status), color = if (away.status == AwayFromHome.Status.CONNECTED) palette.accent else palette.textDim)
+            away.error?.let { NoteText(it) }
+            model.awayNote?.let { NoteText(it) }
+            Text(stringResource(R.string.away_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
 }

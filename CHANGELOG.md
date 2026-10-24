@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Sync away from home in the Android app: a switch in Settings makes the phone's WireGuard
+  key, offers it to the group's hub on the next connection at home, and keeps the hub's
+  answer. While the hub is not found on the home network, the phone reaches it through the
+  tunnel in the app's own process, with the same member TLS as at home, trying the hub's
+  addresses in turn; without the tunnel there is no connection. Off by default; turning it
+  off forgets the key. Building the app now needs Go for the tunnel.
 - The first firmware for the Arduino Nano ESP32 (`lite/esp32`, Rust on the ESP32-S3): a
   self-test that makes keys and certificates with the chip's true random number generator
   and runs a TLS 1.3 handshake of the protocol core on the chip. CI runs it in Espressif's

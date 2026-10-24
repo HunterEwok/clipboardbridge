@@ -88,4 +88,13 @@
     <string name="open_accessibility">Открыть спец. возможности</string>
     <string name="restricted_hint">Если Android пишет, что настройка ограничена: откройте «О приложении», нажмите ⋮, выберите «Разрешить ограниченные настройки» и попробуйте снова.</string>
     <string name="app_info">О приложении</string>
+    <string name="away_title">Вне дома</string>
+    <string name="away_body">Когда телефон не в домашней сети, он синхронизируется через туннель WireGuard вашего собственного хаба: компьютера группы, настроенного командой cbb away hub. Его порт доступен из интернета, но только через WireGuard с ключами группы. Хаб ответит этому телефону, когда тот в следующий раз подключится дома. Больше никуда ничего не уходит, а без туннеля нет и соединения. При выключении телефон забывает свой ключ туннеля.</string>
+    <string name="away_switch">Синхронизировать вне дома</string>
+    <string name="away_off">Выключено</string>
+    <string name="away_waiting">Ждём хаб: один раз откройте приложение дома, рядом с компьютером группы.</string>
+    <string name="away_at_home">Дома: синхронизация напрямую.</string>
+    <string name="away_connecting">Подключение к хабу через туннель…</string>
+    <string name="away_connected">Подключено к хабу через туннель.</string>
+    <string name="away_error">Хаб не отвечает через туннель.</string>
 </resources>
