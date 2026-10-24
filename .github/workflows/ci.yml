@@ -355,8 +355,8 @@ jobs:
             echo "the service runs Homebrew's binary" >&2
             exit 1
           fi
-          [ "$(stat -f %Su "$service")" = root ]
-          [ "$(stat -f %Su "$(dirname "$service")")" = root ]
+          [ "$(sudo stat -f %Su "$service")" = root ]
+          [ "$(sudo stat -f %Su "$(dirname "$service")")" = root ]
           grep -qF "<string>$opt/bin/cbb</string>" "/Library/LaunchAgents/$daemon.agent.plist"
           plutil -lint "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$daemon.agent.plist"
           for _ in $(seq 20); do sudo "$opt/bin/cbb" status && break; sleep 0.5; done
