@@ -25,8 +25,9 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 	}
 	s.tunFwd = &control.Forwarder{Endpoint: fw.Endpoint.String()}
 	cfg := forward.HubConfig{
-		Link: forward.Link{Endpoint: fw.Endpoint, Pin: fw.Pin},
-		Key:  st.Key,
+		Link:        forward.Link{Endpoint: fw.Endpoint, Pin: fw.Pin},
+		Key:         st.Key,
+		Obfuscation: st.Obfuscation,
 		Cert: func() tls.Certificate {
 			s.mu.Lock()
 			defer s.mu.Unlock()

@@ -1088,8 +1088,8 @@ with AmneziaWG's own names; every client sets them on its end before the hub as 
 - The hub makes the settings once, at random (docs/design.md, "Blocked networks"), and
   keeps them while it stays obfuscated. Switching obfuscation on or off changes them; each
   client gets the new ones the next time it meets the hub at home.
-- An obfuscated hub has no forwarder (section 13), whose routing needs WireGuard's own
-  headers.
+- An obfuscated hub with a forwarder gives it the settings when it registers (section 13),
+  since the forwarder's routing needs WireGuard's own headers.
 
 ### Through the tunnel
 
@@ -1197,13 +1197,15 @@ not built.
    names the group (section 1). It knows no group beforehand: any group may register, but
    only one of its members can.
 3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
-   `{"key": bytes, "proof": bytes}`: its WireGuard public key, and HMAC-SHA256 under
-   X25519(the hub's WireGuard private key, `e`) of 32 bytes exported from the TLS session
-   with the label `clipboardbridge forwarder key` and no context. So the hub proves it holds
-   the key, on this connection only.
-4. The forwarder answers `{"id": number}`, a random 64-bit registration ID, or
-   `{"error": string}` and closes: the proof is wrong, another group registered that key, or
-   the forwarder is full. A group has one registration: a new one replaces the old, whose
+   `{"key": bytes, "proof": bytes, "obfuscation": object}`: its WireGuard public key, and
+   HMAC-SHA256 under X25519(the hub's WireGuard private key, `e`) of 32 bytes exported from
+   the TLS session with the label `clipboardbridge forwarder key` and no context. So the hub
+   proves it holds the key, on this connection only. An obfuscated hub adds its group's
+   `obfuscation` settings (section 11, "Obfuscation"); a plain hub leaves it out.
+4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
+   and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
+   and closes: the proof is wrong, the obfuscation settings are outside their bounds,
+   another group registered that key, or the forwarder is full. A group has one registration: a new one replaces the old, whose
    connection closes.
 5. The registration lasts while the connection does; the hub sends nothing more on it. The
    forwarder sends `{"seen": "ip:port"}` whenever it learns a new address of the hub's
@@ -1213,17 +1215,23 @@ not built.
 ### Hellos
 
 From its WireGuard UDP port, the hub sends the forwarder's UDP port a hello every second
-until it hears `seen`, then every 15 s, which also keeps its NAT mapping open. A hello is 36
-bytes: `0x80 0x00 0x00 0x00`, the registration ID (8 bytes, big-endian), a counter (8 bytes,
-big-endian, growing; the hub uses Unix nanoseconds), and the first 16 bytes of HMAC-SHA256,
-under 32 bytes exported from the TLS session with the label `clipboardbridge forwarder
-hello`, of the first 20 bytes. The forwarder takes a hello only with a valid MAC and a
-counter above the last one, and the hub's port is where the last hello came from.
+until it hears `seen`, then every 15 s, which also keeps its NAT mapping open. A hello's
+content is 36 bytes: `0x80 0x00 0x00 0x00`, the registration ID (8 bytes, big-endian), a
+counter (8 bytes, big-endian, growing; the hub uses Unix nanoseconds), and the first 16
+bytes of HMAC-SHA256, under 32 bytes exported from the TLS session with the label
+`clipboardbridge forwarder hello`, of the first 20 bytes. On the wire it is masked: a random
+12-byte nonce, then the content XORed with the ChaCha20 key stream under the `mask` key and
+that nonce, then 0 to 31 random bytes, so a hello is 48 to 79 bytes of random-looking data.
+The forwarder takes a hello only with a valid MAC and a counter above the last one, and the
+hub's port is where the last hello came from.
 
 ### Forwarding
 
 The forwarder looks at WireGuard's message type (the first byte, then three zero bytes) and
-at the indices; it changes nothing in a packet.
+at the indices; it changes nothing in a packet. In an obfuscated group it reads them as the
+hub does: it skips the padding of the message's size (`s1` to `s4`), takes the header
+protection off a copy, and checks that the type field is in the message's range (`h1` to
+`h4`); `mac1` is then computed over the message with that type field.
 
 - A handshake initiation (type 1, 148 bytes) from a client goes to the hub whose `mac1` key,
   BLAKE2s-256(`mac1----` || the hub's public key), gives the packet's `mac1` field. The
@@ -1241,6 +1249,11 @@ at the indices; it changes nothing in a packet.
   from clients.
 - A client's new address is taken with its next handshake (within 15 s of WireGuard
   hearing nothing), not with data, which anyone could send.
+- An obfuscated group's packets are read with its settings only where they can be the
+  group's: a handshake initiation of the size of that group's, and anything from an address
+  that has a handshake or session with that group. The data of an obfuscated session then
+  passes only from the client's address, and goes to the hub whose index it names only if
+  the session is that group's.
 
 ### Limits
 

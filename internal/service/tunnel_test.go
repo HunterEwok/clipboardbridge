@@ -237,14 +237,6 @@ func TestAwayObfuscated(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cert, err := forward.NewCert()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Obfuscate: true,
-		Forwarder: "127.0.0.1:9", ForwarderKey: forward.Pin(cert.Leaf)}, ""); err == nil || !strings.Contains(err.Error(), "cannot pass obfuscated") {
-		t.Errorf("an obfuscated hub behind a forwarder: %v", err)
-	}
 	port := freeUDP(t)
 	hubAt := control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}, Obfuscate: true}
 	m, err := pi.do(t, hubAt, "")
@@ -289,8 +281,13 @@ func TestAwayObfuscated(t *testing.T) {
 
 // TestAwayThroughForwarder makes the pi a hub that only a forwarder
 // reaches, as behind carrier-grade NAT, and checks that the deck syncs with
-// it through the forwarder.
+// it through the forwarder, with plain WireGuard and obfuscated.
 func TestAwayThroughForwarder(t *testing.T) {
+	t.Run("plain", func(t *testing.T) { testAwayThroughForwarder(t, false) })
+	t.Run("obfuscated", func(t *testing.T) { testAwayThroughForwarder(t, true) })
+}
+
+func testAwayThroughForwarder(t *testing.T, obfuscate bool) {
 	t.Setenv("CBB_DEBUG", "1")
 	cert, err := forward.NewCert()
 	if err != nil {
@@ -323,7 +320,8 @@ func TestAwayThroughForwarder(t *testing.T) {
 	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Forwarder: f.Addr().String(), ForwarderKey: "sha256:nope"}, ""); err == nil {
 		t.Error("a forwarder with a bad key")
 	}
-	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Forwarder: f.Addr().String(), ForwarderKey: forward.Pin(cert.Leaf)}, ""); err != nil {
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Forwarder: f.Addr().String(), ForwarderKey: forward.Pin(cert.Leaf),
+		Obfuscate: obfuscate}, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the hub registers with the forwarder", func() bool {
@@ -333,7 +331,7 @@ func TestAwayThroughForwarder(t *testing.T) {
 	piID := pi.status(t).Device
 	waitFor(t, "the deck keeps the hub's offer", func() bool {
 		a := deck.status(t).Away
-		return a != nil && a.HubDevice == piID && len(a.Endpoints) == 1 && a.Endpoints[0] == f.Addr().String()
+		return a != nil && a.HubDevice == piID && len(a.Endpoints) == 1 && a.Endpoints[0] == f.Addr().String() && a.Obfuscated == obfuscate
 	})
 
 	deckID := deck.status(t).Device

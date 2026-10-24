@@ -121,19 +121,18 @@ func TestStateRoundTrip(t *testing.T) {
 
 func TestBadStateFiles(t *testing.T) {
 	for name, body := range map[string]string{
-		"not JSON":               "{",
-		"unknown version":        `{"v":2,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}`,
-		"no key":                 `{"v":1}`,
-		"short key":              `{"v":1,"key":"AQEB"}`,
-		"member twice":           `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
-		"member, no PSK":         `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
-		"member, no chain":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
-		"relay and hub":          `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
-		"relay, no key":          `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
-		"obfuscation, no hub":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
-		"obfuscation, forwarder": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"forwarder":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"},"obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
-		"obfuscation, bad":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"150-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
-		"hub, bad device":        `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","to_hub":{"device":"x","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}}`,
+		"not JSON":            "{",
+		"unknown version":     `{"v":2,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}`,
+		"no key":              `{"v":1}`,
+		"short key":           `{"v":1,"key":"AQEB"}`,
+		"member twice":        `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
+		"member, no PSK":      `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
+		"member, no chain":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
+		"relay and hub":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
+		"relay, no key":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
+		"obfuscation, no hub": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
+		"obfuscation, bad":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"150-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
+		"hub, bad device":     `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","to_hub":{"device":"x","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}}`,
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(body), 0o600); err != nil {

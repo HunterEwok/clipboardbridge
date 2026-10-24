@@ -753,9 +753,11 @@ user can run `cbb forward` on a server of their own.
   in the handshake, which the forwarder maps to the group together with the client's address.
   The check costs one BLAKE2s per registered group per handshake (a client's handshake comes
   every two minutes while it is active), tens of milliseconds for 100 000 groups; beyond that,
-  groups are spread over several servers. AmneziaWG's header protection hides `mac1` from a
-  forwarder that does not have the group's settings ("Blocked networks"); in VLESS mode the
-  group is known from its VLESS user ID inside REALITY's TLS.
+  groups are spread over several servers. AmneziaWG's header protection hides `mac1`, so an
+  obfuscated hub gives the forwarder its group's settings when it registers ("Blocked
+  networks"); the forwarder then tries them only on handshakes of the size that group's
+  have, and on the packets of addresses that already have a session with it. In VLESS mode
+  the group is known from its VLESS user ID inside REALITY's TLS.
 - **Fallback: a port computed by the group.** If `mac1` routing does not hold up, the hub and
   its clients compute the group's port themselves, from a secret of the group and the current
   hour, as an authenticator app computes its codes; there is no request that names the group.
@@ -931,9 +933,12 @@ about who talks to whom.
      the hub since obfuscation was switched on or off cannot reach it away from home until
      it has.
    - The forwarder routes by WireGuard's own headers and `mac1`, which the header
-     protection hides, so an obfuscated hub cannot use a forwarder yet: `cbb away hub`
-     refuses the two together. Giving the forwarder the group's settings, which it would
-     need to find `mac1`, is the next step.
+     protection hides, so an obfuscated hub gives the forwarder the group's settings when it
+     registers, over the registration's TLS. The forwarder takes the protection off a copy
+     of each packet to read the type, the indices and `mac1`, and passes the packet on as
+     it came. The settings give it nothing it did not have with plain WireGuard: the same
+     headers, never a key that decrypts anything. The hub's hellos to the forwarder are
+     masked with a key the forwarder gives every hub, so they show no constant either.
    - The phones keep the settings with the hub's offer and start their tunnel with them
      (`mobile/cbbtun` takes them as JSON). `cbb-lite`'s Rust WireGuard does not speak
      AmneziaWG, so in an obfuscated group it reaches the hub at home only.
@@ -1021,8 +1026,8 @@ only adds to it.
    found at home. The invitations follow.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
    run on amneziawg-go; obfuscation per group between computers (`cbb away hub
-   -obfuscate`), in the hub's offer and in invitations, and on both phones. Next: the
-   forwarder for obfuscated hubs, then VLESS.
+   -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
+   forwarder. Next: VLESS.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Device keys in hardware
