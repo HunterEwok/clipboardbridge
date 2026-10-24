@@ -60,7 +60,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   in Go tests.
 - `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
-  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, CPace under `src/third_party`, the
+  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, CPace under `src/third_party`, the
   interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
@@ -68,8 +68,10 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   core's TLS, mDNS and the control socket.
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
-  until a release carries its fix for Rust 1.99; `qemu-test.sh` runs its self-test in
-  Espressif's QEMU (the `qemu` feature, without esp-hal's init and with a fixed
+  until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`
+  (settings in the flash partition `cbb` of `partitions.csv`), `net.rs` (Wi-Fi, embassy-net);
+  `qemu-test.sh` types on the console and runs the self-test in Espressif's QEMU (the
+  `qemu` feature: console on UART0, no Wi-Fi, without esp-hal's init and with a fixed
   pseudo-random generator, never for a real chip).
 - `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
   parses the frames of `cbb-lite next`, `link.c` drives the UART to the Next's Pi; `make test`

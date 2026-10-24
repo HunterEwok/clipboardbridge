@@ -4,7 +4,8 @@
 //! The protocol core of the clipboardbridge lite member (docs/protocol.md):
 //! certificates and their checks, the signed records, the hybrid clock, the
 //! sync engine, the frames of the member protocol and the joiner's side of
-//! the pairing. It does no I/O and needs no operating system, only an
+//! the pairing, and the format of the saved state for a board without a file
+//! system. It does no I/O and needs no operating system, only an
 //! allocator and a source of randomness, so the same code runs in cbb-lite
 //! on Linux and on a microcontroller such as the ESP32.
 //!
@@ -26,6 +27,7 @@ pub mod hlc;
 pub mod identity;
 pub mod pair;
 pub mod records;
+pub mod store;
 pub mod sync;
 pub mod third_party {
     pub mod cpace;

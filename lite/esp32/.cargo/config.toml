@@ -2,12 +2,12 @@
 # Copyright (C) 2026 HunterEwok
 
 # The Arduino Nano ESP32 (ESP32-S3), with the Xtensa Rust toolchain
-# (`cargo +esp`) and Espressif's GCC as the linker.
+# (`cargo +esp`) and rust-lld as the linker.
 [build]
 target = "xtensa-esp32s3-none-elf"
 
 [target.xtensa-esp32s3-none-elf]
-runner = "espflash flash --monitor --chip esp32s3"
+runner = "espflash flash --monitor --chip esp32s3 --partition-table partitions.csv"
 linker = "rust-lld"
 rustflags = [
   "--cfg", 'getrandom_backend="custom"',
