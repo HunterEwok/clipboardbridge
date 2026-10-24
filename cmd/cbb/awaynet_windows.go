@@ -35,3 +35,6 @@ const adminName = "an administrator"
 
 // closeHint closes the hub's port that cbb opened.
 const closeHint = "run Remove-NetFirewallRule -Name clipboardbridge-hub in a PowerShell opened as administrator"
+
+// expressHint is how the installer adds the firewall rules without asking.
+const expressHint = "-Express"

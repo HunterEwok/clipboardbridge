@@ -115,8 +115,13 @@ type Status struct {
 	HoldPriority int      `json:"hold_priority,omitempty"`
 	Battery      bool     `json:"battery,omitempty"` // the machine has a battery, as the service guesses
 	Peers        []Device `json:"peers,omitempty"`
-	Away         *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
-	Version      string   `json:"version"`
+	// Unreached lists the members at home that could not connect to this
+	// device's member port and sync with it only because it dials them:
+	// a firewall here likely drops the port.
+	Unreached []string `json:"unreached,omitempty"`
+	Port      int      `json:"port,omitempty"` // the member port
+	Away      *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
+	Version   string   `json:"version"`
 }
 
 // Away describes sync away from home on this device.

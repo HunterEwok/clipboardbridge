@@ -62,3 +62,16 @@ func TestSyncHubPort(t *testing.T) {
 		t.Fatalf("without root: %d\n%s", opened, out)
 	}
 }
+
+// cbb status says when members at home could not connect to this device.
+func TestWriteUnreached(t *testing.T) {
+	var out strings.Builder
+	writeUnreached(&out, &control.Status{Port: 9000}, nil)
+	if out.Len() != 0 {
+		t.Fatalf("nothing unreached, yet: %s", out.String())
+	}
+	writeUnreached(&out, &control.Status{Port: 9000, Unreached: []string{"id1", "id2"}}, []control.Device{{ID: "id1", Name: "deck"}})
+	if s := out.String(); !strings.Contains(s, "deck, id2 could not connect") || !strings.Contains(s, "TCP 9000") {
+		t.Fatalf("unreached: %s", s)
+	}
+}

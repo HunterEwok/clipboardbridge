@@ -23,3 +23,6 @@ const adminName = "root (sudo)"
 
 // closeHint closes the hub's port that cbb opened.
 const closeHint = "run sudo sh /usr/local/share/clipboardbridge/firewall.sh hub-close"
+
+// expressHint is how the installer adds the firewall rules without asking.
+const expressHint = "--express"

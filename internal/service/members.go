@@ -123,6 +123,9 @@ type dialer struct {
 	// later says the member has the lower device ID, so it dials this one:
 	// this one dials only when no connection has been up for a while.
 	later bool
+	// fallback says this one is dialing because the member did not reach
+	// it: a connection that comes up now is this one's (see unreached).
+	fallback bool
 }
 
 // found handles the members that discovery found. Of two full members the
@@ -227,6 +230,7 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 		var addrs []string
 		if d := s.dialers[id]; d != nil {
 			addrs = d.addrs
+			d.fallback = later
 		}
 		nd := s.nd
 		s.mu.Unlock()
@@ -241,6 +245,11 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 			}
 			logConn(s.logf, id, "at "+addr, err)
 		}
+		s.mu.Lock()
+		if d := s.dialers[id]; d != nil {
+			d.fallback = false
+		}
+		s.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
@@ -260,7 +269,11 @@ func (s *Service) waitUnconnected(ctx context.Context, id group.DeviceID) bool {
 		nd := s.nd
 		s.mu.Unlock()
 		if nd != nil && slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id }) {
+			// The member dialed this one: its connections come through.
 			since = uptime.Now()
+			s.mu.Lock()
+			delete(s.unreached, id)
+			s.mu.Unlock()
 		} else if uptime.Now()-since >= s.cfg.fallbackAfter {
 			return true
 		}

@@ -29,7 +29,10 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
   network. The installers add both to ufw, firewalld, the macOS application firewall and
   Windows Firewall when you answer Yes or pass `--express`; after a No they print the
   commands. With another firewall, or one turned on later, run the installer again or allow
-  them by hand (see "Port and firewall" in the [quick start](quickstart.md)).
+  them by hand (see "Port and firewall" in the [quick start](quickstart.md)). When the
+  other computers at home could not connect to this one and sync only because it dials them
+  back, `cbb status` says so with a warning: a firewall here drops the member port, one
+  the installer does not know or a rule that is missing.
 - **Another subnet or VLAN.** mDNS does not cross routers, so devices on, say,
   192.168.0.x and 192.168.20.x do not find each other. Turn on sync away from home with a
   hub on one side (the [quick start](quickstart.md), "Sync away from home"), or, for a lite

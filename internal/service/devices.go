@@ -333,6 +333,12 @@ func (s *Service) trackSeen(peers []node.Peer) {
 	for _, p := range peers {
 		online[p.ID] = true
 		s.seen[p.ID] = now
+		// A member with the lower device ID dials this one; when the
+		// connection came up only once this one dialed back, the member
+		// could not reach it, as a firewall here would do.
+		if d := s.dialers[p.ID]; d != nil && d.fallback && !s.online[p.ID] {
+			s.unreached[p.ID] = true
+		}
 	}
 	for id := range s.online {
 		if !online[id] {

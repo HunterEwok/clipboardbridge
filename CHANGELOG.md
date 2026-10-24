@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb status` warns when members at home could not connect to this computer and sync only
+  because it dials them back: a firewall here drops the member port.
 - `cbb global hub` at the hub's own address lists the firewall rule for its UDP port and asks
   before it opens it (ufw, firewalld, Windows Firewall; the commands for the others);
   `-firewall yes` opens it without asking, `-firewall no` prints the commands. The port

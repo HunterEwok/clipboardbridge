@@ -155,6 +155,9 @@ type Service struct {
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
 	online         map[group.DeviceID]bool
+	// unreached holds the members at home that could not connect to this
+	// one and synced only because it dialed them back (cbb status).
+	unreached map[group.DeviceID]bool
 
 	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
 	recMu   sync.Mutex     // guards records; taken after mu, never before
@@ -225,7 +228,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.fallbackAfter = fallbackDial
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
-		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, battery: cfg.battery()}
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
 	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the holder setting: %v; using auto", err)
 	}
