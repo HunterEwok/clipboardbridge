@@ -4,11 +4,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
@@ -54,6 +59,9 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
+		if err := checkAwayNet(true); err != nil {
+			return fail(stderr, err)
+		}
 		fmt.Fprint(stdout, keysWarning)
 		fmt.Fprint(stdout, "Type yes to turn sync away from home on: ")
 		line, err := readLine(stdin)
@@ -70,6 +78,9 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
+		if err := checkAwayNet(false); err != nil {
+			return fail(stderr, err)
+		}
 	case "hub":
 		fs := flag.NewFlagSet("global hub", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -84,6 +95,12 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if fs.NArg() == 0 && *fwd == "" {
 			fmt.Fprintln(stderr, usage)
 			return 2
+		}
+		if *fwd != "" {
+			var err error
+			if *fwd, err = resolveAddrPort(*fwd, stdout); err != nil {
+				return fail(stderr, err)
+			}
 		}
 		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate, h.VLESS = *port, fs.Args(), *fwd, *fwdKey, *obfuscate, *vlessOnly
 	case "relay":
@@ -108,6 +125,10 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
+		addr, err := resolveAddrPort(addr, stdout)
+		if err != nil {
+			return fail(stderr, err)
+		}
 		h.Relay, h.RelayKey = addr, *key
 	default:
 		fmt.Fprintln(stderr, usage)
@@ -121,6 +142,22 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	m, err := c.Do(&control.Message{Header: h})
 	if err != nil {
 		return fail(stderr, err)
+	}
+	if args[0] == "on" || args[0] == "off" {
+		changed, restarted, err := setAwayNet(args[0] == "on")
+		if err != nil {
+			return fail(stderr, fmt.Errorf("sync away from home is %s, but the service's network did not change: %w", args[0], err))
+		}
+		if changed {
+			msg := "The service may again reach only the home network"
+			if args[0] == "on" {
+				msg = "The service may now reach the internet"
+			}
+			if restarted {
+				msg += "; it restarted for that"
+			}
+			fmt.Fprintln(stdout, msg+".")
+		}
 	}
 	if m.Status != nil {
 		writeAway(stdout, m.Status.Away)
@@ -161,6 +198,9 @@ func writeAway(w io.Writer, a *control.Away) {
 	if a == nil {
 		fmt.Fprintln(w, "Sync away from home: off (cbb global on turns it on).")
 		return
+	}
+	if confined() && !awayNetOpen() {
+		fmt.Fprintln(w, "This computer's service may reach only the home network: "+awayOnHint+" lets it reach the internet.")
 	}
 	switch {
 	case a.Hub:
@@ -244,4 +284,36 @@ func debugErrors() bool {
 		return false
 	}
 	return version.Version == "dev"
+}
+
+// resolveAddrPort turns a server's name and port, such as cbb.tools:8764,
+// into an address with the port; the service keeps the address, so a
+// server that moves needs the command again.
+func resolveAddrPort(s string, stdout io.Writer) (string, error) {
+	if _, err := netip.ParseAddrPort(s); err == nil {
+		return s, nil
+	}
+	host, port, err := net.SplitHostPort(s)
+	if err != nil || host == "" || port == "" {
+		return "", fmt.Errorf("%q is not an address or a name with a port, such as 203.0.113.9:8764", s)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return "", fmt.Errorf("could not find the address of %s: %w", host, err)
+	}
+	// IPv4 first: a home network without IPv6 is the more common case.
+	slices.SortStableFunc(ips, func(a, b netip.Addr) int {
+		switch {
+		case a.Unmap().Is4() == b.Unmap().Is4():
+			return 0
+		case a.Unmap().Is4():
+			return -1
+		}
+		return 1
+	})
+	ep := net.JoinHostPort(ips[0].Unmap().String(), port)
+	fmt.Fprintf(stdout, "%s is at %s.\n", host, ep)
+	return ep, nil
 }

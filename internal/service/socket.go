@@ -17,6 +17,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
@@ -47,6 +48,10 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 	r := control.NewReader(c)
 	m, err := r.Read()
 	if err != nil {
+		return
+	}
+	if s.broken != nil {
+		reply(c, control.Header{Error: s.broken.Msg, Detail: s.broken.Detail, Done: true}, nil)
 		return
 	}
 	switch m.Op {
@@ -522,7 +527,7 @@ func (s *Service) dialMember(ctx context.Context, j *pair.Joiner, code, address 
 		if i == pair.MaxFailures {
 			break
 		}
-		d := net.Dialer{Timeout: handshakeTimeout}
+		d := net.Dialer{Timeout: handshakeTimeout, Control: netguard.Control}
 		raw, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			lastErr = err

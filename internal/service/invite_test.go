@@ -101,15 +101,17 @@ func TestInvite(t *testing.T) {
 		t.Errorf("the deck is in group %q", st.Group)
 	}
 
-	// The invitation is used up.
+	// The invitation is used up: its guest tunnel went once the deck had
+	// its own, so a copy of it does not even reach the hub.
 	other := startService(t, &h, "other")
 	o := other.dial(t)
 	defer o.Close()
+	o.SetDeadline(time.Now().Add(60 * time.Second))
 	if _, err := o.Do(&control.Message{Header: control.Header{Op: control.OpJoin, Invite: text, Consent: true}}); err != nil {
 		t.Fatal(err) // the fingerprint, before it tries
 	}
-	if _, err := o.Receive(); err == nil {
-		t.Error("a used invitation let another device join")
+	if _, err := o.Receive(); err == nil || !strings.Contains(err.Error(), "did not answer") {
+		t.Errorf("a used invitation: %v, want the hub not answering", err)
 	}
 	if st := other.status(t); st.Group != "" {
 		t.Errorf("another device joined with a used invitation: %+v", st)

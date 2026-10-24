@@ -108,6 +108,9 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if time.Now().After(in.Expires) {
 		return fail(stderr, errors.New("the invitation has expired; ask for a new one"))
 	}
+	if err := checkAwayNet(true); err != nil {
+		return fail(stderr, err)
+	}
 	fmt.Fprintln(stdout, "A device that joins with an invitation syncs away from home through the")
 	fmt.Fprint(stdout, "group's hub, so sync away from home is turned on here.\n\n")
 	fmt.Fprint(stdout, keysWarning)
@@ -120,7 +123,23 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "Nothing changed.")
 		return 1
 	}
-	c, err := control.Dial(control.SocketPath())
+	// The join reaches the hub on the internet, so the service must be
+	// allowed to before it starts; a failed join closes that again.
+	opened, _, err := setAwayNet(true)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	joined := false
+	if opened {
+		defer func() {
+			if !joined {
+				if _, _, err := setAwayNet(false); err != nil {
+					fmt.Fprintf(stderr, "cbb: the service may still reach the internet: %v\n", err)
+				}
+			}
+		}()
+	}
+	c, err := waitService()
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -135,6 +154,7 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if _, err := c.Receive(); err != nil {
 		return fail(stderr, err)
 	}
+	joined = true
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
 	fmt.Fprintln(stdout, "Joined the group. It syncs through the group's hub wherever this device is;")

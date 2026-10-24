@@ -238,6 +238,10 @@ func killCmd(d *Device) string {
 		return "sudo -n systemctl kill -s KILL clipboardbridge"
 	case "windows":
 		return `Get-CimInstance Win32_Service -Filter "Name='clipboardbridge'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
+	case "darwin":
+		// launchd starts the daemon again (KeepAlive). The bench's
+		// sudoers rule allows exactly this command (docs/testbench.md).
+		return "sudo -n /bin/launchctl kill KILL system/io.github.hunterewok.clipboardbridge"
 	}
-	return "" // the Mac's service runs as _clipboardbridge
+	return ""
 }
