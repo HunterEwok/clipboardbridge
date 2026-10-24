@@ -363,7 +363,7 @@ private fun BackgroundSync() {
 
 /**
  * The whole group: every device with its role, whether it is online, the
- * admins marked; on an admin phone a device can be removed, and on the root
+ * admins marked; on an admin phone a device can be renamed and removed, and on the root
  * phone a computer that offers an admin key made an admin (docs/apps.md,
  * Devices).
  */
@@ -374,6 +374,7 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
     var removing by remember { mutableStateOf<LiveGroup.Device?>(null) }
     var promoting by remember { mutableStateOf<LiveGroup.Device?>(null) }
     var thawing by remember { mutableStateOf<LiveGroup.Device?>(null) }
+    var renaming by remember { mutableStateOf<LiveGroup.Device?>(null) }
     Page(stringResource(R.string.devices), back) {
         if (model.devices.isEmpty()) Text(stringResource(R.string.no_computers), color = palette.textDim)
         Column(Modifier.fillMaxWidth().card()) {
@@ -386,6 +387,8 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
                     promote = { promoting = d },
                     canUnfreeze = model.isAdmin && d.frozen,
                     unfreeze = { thawing = d },
+                    canRename = model.isAdmin,
+                    rename = { renaming = d },
                 )
             }
         }
@@ -412,6 +415,7 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
             dismiss = { promoting = null },
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
+    renaming?.let { d -> Rename(d, dismiss = { renaming = null }) { name -> scope.launch { model.rename(d.id, name) } } }
     thawing?.let { d ->
         Confirm(
             title = stringResource(R.string.unfreeze_title, d.name),
@@ -423,10 +427,19 @@ private fun DevicesScreen(model: AppModel, back: () -> Unit) {
 }
 
 @Composable
-private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Unit, promote: () -> Unit, canUnfreeze: Boolean, unfreeze: () -> Unit) {
+private fun DeviceRow(
+    d: LiveGroup.Device,
+    canRemove: Boolean,
+    remove: () -> Unit,
+    promote: () -> Unit,
+    canUnfreeze: Boolean,
+    unfreeze: () -> Unit,
+    canRename: Boolean,
+    rename: () -> Unit,
+) {
     val palette = LocalPalette.current
     var menu by remember { mutableStateOf(false) }
-    val hasMenu = canRemove || d.canMakeAdmin || canUnfreeze
+    val hasMenu = canRemove || d.canMakeAdmin || canUnfreeze || canRename
     Row(
         Modifier.fillMaxWidth().then(if (hasMenu) Modifier.clickable { menu = true } else Modifier)
             .padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall + 4.dp)
@@ -454,6 +467,12 @@ private fun DeviceRow(d: LiveGroup.Device, canRemove: Boolean, remove: () -> Uni
             Box {
                 Text("⋮", modifier = Modifier.padding(start = Tokens.spacingSmall), color = palette.textDim)
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (canRename) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, onClick = {
+                            menu = false
+                            rename()
+                        })
+                    }
                     if (canUnfreeze) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.unfreeze)) }, onClick = {
                             menu = false
@@ -494,6 +513,33 @@ private fun systemName(d: LiveGroup.Device): String {
         os != null -> "$os · ${d.role}"
         else -> d.role
     }
+}
+
+/** Asks for a device's new name, starting from its name. */
+@Composable
+private fun Rename(d: LiveGroup.Device, dismiss: () -> Unit, rename: (String) -> Unit) {
+    val palette = LocalPalette.current
+    var name by rememberSaveable { mutableStateOf(d.name) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.rename_title, d.name)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+                Text(stringResource(R.string.rename_body))
+                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(stringResource(R.string.name)) })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = {
+                dismiss()
+                rename(name)
+            }) { Text(stringResource(R.string.rename), color = palette.accent) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+        containerColor = palette.surface,
+        titleContentColor = palette.text,
+        textContentColor = palette.textDim,
+    )
 }
 
 @Composable

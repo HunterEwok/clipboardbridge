@@ -25,11 +25,11 @@ import (
 // through firewall.sh; Windows: the rule clipboardbridge-hub); the Mac's
 // application firewall allows a listed program on every port already.
 type hubFirewall struct {
-	name     string                   // the firewall, for the messages
-	active   func() bool              // a firewall filters incoming packets here
-	opened   func() int               // the port cbb opened, or 0
-	open     func(port int) error     // opens it
-	close    func() error             // closes what cbb opened
+	name     string                  // the firewall, for the messages
+	active   func() bool             // a firewall filters incoming packets here
+	opened   func() int              // the port cbb opened, or 0
+	open     func(port int) error    // opens it
+	close    func() error            // closes what cbb opened
 	commands func(port int) []string // what opens it by hand
 }
 

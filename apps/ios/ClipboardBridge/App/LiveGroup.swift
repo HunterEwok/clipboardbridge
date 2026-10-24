@@ -353,6 +353,20 @@ final class LiveGroup: GroupController {
         await node?.sendRecords([r])
     }
 
+    /// Gives a device another name (docs/protocol.md, section 10): a device
+    /// record like its newest one with that name, signed with this phone's
+    /// root or admin key after Face ID, sent to every connected computer.
+    func rename(_ id: String, to name: String) async throws {
+        guard state?.isAdmin == true else { throw PhoneGroup.Failure.notAdmin }
+        let ca = try await caSigner(reason: String(localized: "Rename a device", bundle: .app))
+        guard var g = state else { return }
+        let r = try g.rename(device: id, to: name, caSigner: ca, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+    }
+
     /// Makes a computer an admin (docs/protocol.md, section 10, "A computer
     /// as admin"): the root key, after Face ID, certifies the admin key the
     /// computer offers; the computer gets its admin CA and every member the

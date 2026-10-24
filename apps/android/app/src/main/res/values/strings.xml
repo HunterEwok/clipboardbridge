@@ -113,4 +113,11 @@
     <string name="away_error">The hub does not answer through the tunnel.</string>
     <string name="error_details_switch">Show error details</string>
     <string name="error_details_body">Error messages show the error underneath them, to find out what failed. Tap the version seven times to see this switch.</string>
+    <string name="rename">Rename</string>
+    <string name="rename_title">Rename %1$s</string>
+    <string name="rename_body">Every device of the group shows the new name.</string>
+    <string name="name">Name</string>
+    <string name="renamed">Renamed. The other devices show the new name as soon as they hear of it.</string>
+    <string name="rename_invalid">A name has 1 to 64 characters.</string>
+    <string name="reason_rename">Rename a device</string>
 </resources>

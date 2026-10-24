@@ -234,6 +234,21 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /** Gives a device another name. */
+    suspend fun rename(id: String, name: String) {
+        message = try {
+            group.rename(id, name)
+            Note(R.string.renamed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: PhoneGroup.Failure) {
+            if (e.message == PhoneGroup.INVALID_NAME) Note(R.string.rename_invalid, error = true) else describe(e)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
     /** Unfreezes an admin computer that another admin froze. */
     suspend fun unfreeze(id: String) {
         message = try {

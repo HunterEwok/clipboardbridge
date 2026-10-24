@@ -38,6 +38,29 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertNil(h.adminKey)
     }
 
+    func testRename() throws {
+        let t = try group()
+        var g = t.g
+        let (ca, _) = try g.makeAdmin(device: t.pi, adminKey: SoftwareSigner().publicKeyDER, rootSigner: t.root, now: t1)
+        let r = try g.rename(device: t.pi, to: "  living room pi ", caSigner: t.root, now: t1.addingTimeInterval(1))
+        XCTAssertTrue(g.records.records.contains(r))
+        let d = try XCTUnwrap(g.devices.first { $0.id == t.pi })
+        XCTAssertEqual(d.name, "living room pi")
+        XCTAssertTrue(d.admin)
+        XCTAssertEqual(d.adminKey, try Records.keyHash(cert: ca))
+        XCTAssertEqual(d.key, t.piKey)
+        XCTAssertEqual(d.role, "full")
+        XCTAssertThrowsError(try g.rename(device: t.pi, to: " ", caSigner: t.root, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .invalidName)
+        }
+        XCTAssertThrowsError(try g.rename(device: t.pi, to: String(repeating: "x", count: 65), caSigner: t.root, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .invalidName)
+        }
+        XCTAssertThrowsError(try g.rename(device: SyncEngine.newID(), to: "x", caSigner: t.root, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .unknownDevice)
+        }
+    }
+
     func testMakeAdmin() throws {
         let t = try group()
         var g = t.g

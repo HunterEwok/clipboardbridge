@@ -111,4 +111,11 @@
     <string name="away_error">Хаб не отвечает через туннель.</string>
     <string name="error_details_switch">Показывать подробности ошибок</string>
     <string name="error_details_body">Под сообщением об ошибке показывается сама ошибка, чтобы понять, что не так. Этот переключатель появляется после семи нажатий на версию.</string>
+    <string name="rename">Переименовать</string>
+    <string name="rename_title">Переименовать %1$s</string>
+    <string name="rename_body">Все устройства группы покажут новое имя.</string>
+    <string name="name">Имя</string>
+    <string name="renamed">Переименовано. Остальные устройства покажут новое имя, как только узнают о нём.</string>
+    <string name="rename_invalid">В имени от 1 до 64 символов.</string>
+    <string name="reason_rename">Переименовать устройство</string>
 </resources>

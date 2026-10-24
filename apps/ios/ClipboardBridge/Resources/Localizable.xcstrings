@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "A name has 1 to 64 characters.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В имени от 1 до 64 символов."
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "ru": {
@@ -211,6 +221,16 @@
         }
       }
     },
+    "Every device of the group shows the new name.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все устройства группы покажут новое имя."
+          }
+        }
+      }
+    },
     "Fetched from the computers.": {
       "localizations": {
         "ru": {
@@ -367,6 +387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Полночь"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя"
           }
         }
       }
@@ -547,6 +577,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Удалено. Остальные устройства больше его не принимают."
+          }
+        }
+      }
+    },
+    "Rename": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать"
+          }
+        }
+      }
+    },
+    "Rename %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать %@"
+          }
+        }
+      }
+    },
+    "Rename a device": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать устройство"
+          }
+        }
+      }
+    },
+    "Renamed. The other devices show the new name as soon as they hear of it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовано. Остальные устройства покажут новое имя, как только узнают о нём."
           }
         }
       }

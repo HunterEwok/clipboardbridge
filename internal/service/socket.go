@@ -142,6 +142,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpRename:
+		name, err := s.rename(m.Name, m.NewName)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: name, Done: true}, nil)
 	case control.OpFreeze, control.OpThaw:
 		name, err := s.freeze(m.Name, m.Op == control.OpFreeze)
 		if err != nil {

@@ -210,6 +210,28 @@ class PhoneGroupTest {
     }
 
     @Test
+    fun rename() {
+        val root = SoftwareSigner()
+        val g = PhoneGroup.create(root, SoftwareSigner().publicKeyDER, t0)
+        val pi = SyncEngine.newID()
+        val piKey = Records.keyHashOfCert(GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, root, t0))
+        g.record(pi, "pi", "full", piKey, root, t0, os = "linux")
+        val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, root, t0.plusSeconds(1))
+        val r = g.rename(pi, "  living room pi ", root, t0.plusSeconds(2))
+        assertTrue(r in g.records.records)
+        val d = assertNotNull(g.devices.firstOrNull { it.id == pi })
+        assertEquals("living room pi", d.name)
+        assertTrue(d.admin)
+        assertContentEquals(Records.keyHashOfCert(ca), d.adminKey)
+        assertContentEquals(piKey, d.key)
+        assertEquals("full", d.role)
+        assertEquals("linux", d.os)
+        assertFailsWith<PhoneGroup.Failure> { g.rename(pi, " ", root, t0) }
+        assertFailsWith<PhoneGroup.Failure> { g.rename(pi, "x".repeat(65), root, t0) }
+        assertFailsWith<PhoneGroup.Failure> { g.rename(SyncEngine.newID(), "x", root, t0) }
+    }
+
+    @Test
     fun makeAdmin() {
         val root = SoftwareSigner()
         val g = PhoneGroup.create(root, SoftwareSigner().publicKeyDER, t0)

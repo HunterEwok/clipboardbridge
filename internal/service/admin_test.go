@@ -225,3 +225,38 @@ func TestAdminPeerNeedsARealAdminCA(t *testing.T) {
 		t.Error("a member with its admin CA did not count as an admin")
 	}
 }
+
+// An admin renames any device with a newer device record, which every
+// member takes; the device keeps its role and whether it is an admin.
+func TestRename(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	mac := startRole(t, &h, "mac", group.OSMacOS)
+	pairWith(t, pi, deck)
+	pairWith(t, pi, mac)
+	waitFor(t, "the Mac lists every device", func() bool { return listed(mac.devices(t)) == "deck mac pi" })
+	makeAdmin(t, pi, deck)
+	if _, err := mac.do(t, control.Header{Op: control.OpRename, Name: "deck", NewName: "steam deck"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+		t.Errorf("rename on the Mac: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRename, Name: "deck", NewName: " "}, ""); err == nil || !strings.Contains(err.Error(), "1 to 64") {
+		t.Errorf("an empty name: %v", err)
+	}
+	m, err := pi.do(t, control.Header{Op: control.OpRename, Name: "deck", NewName: "steam deck"}, "")
+	if err != nil || m.Name != "deck" {
+		t.Fatalf("rename: %+v %v", m, err)
+	}
+	// The admin renames the root, too.
+	if _, err := deck.do(t, control.Header{Op: control.OpRename, Name: "pi", NewName: "pi4"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*testService{pi, deck, mac} {
+		waitFor(t, s.name+" takes the new names", func() bool { return listed(s.devices(t)) == "mac pi4 steam deck" })
+	}
+	for _, d := range mac.devices(t) {
+		if d.Name == "steam deck" && (!d.Admin || d.Role != group.RoleFull) || d.Name == "pi4" && !d.Root {
+			t.Errorf("after the rename: %+v", d)
+		}
+	}
+}

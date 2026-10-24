@@ -36,6 +36,7 @@ const (
 	OpJoin      = "join"       // client → service: join a group with a code
 	OpDevices   = "devices"    // client → service: list the group's devices
 	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
+	OpRename    = "rename"     // client → service: give the device Name names the name NewName
 	OpFreeze    = "freeze"     // client → service: freeze the admin computer Name names
 	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
@@ -83,6 +84,7 @@ type Header struct {
 	Listen       bool     `json:"listen,omitempty"`      // join: wait for a member to dial this device
 	NewToken     bool     `json:"new_token,omitempty"`   // pair-phone: revoke every shortcut's token first
 	Name         string   `json:"name,omitempty"`        // a device name
+	NewName      string   `json:"new_name,omitempty"`    // rename: the device's new name
 	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
 	Forwarder    string   `json:"forwarder,omitempty"`   // away hub: the forwarder's address, with its key in ForwarderKey

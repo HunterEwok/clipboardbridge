@@ -60,7 +60,7 @@ on every platform of the class, on the roadmap).
 | Send from the share sheet and the text selection menu | yes | **gap** | a Share extension (P1) |
 | One-tap control outside the app | Quick Settings tile, notification button | **gap** | a Control Center control, iOS 18 (P2) |
 | Home-screen widget | **gap** | **gap** | in the app specification; neither has it (P3) |
-| Rename a device | **gap** | **gap** | in the app specification; neither has it (P4) |
+| Rename a device | yes | yes | Devices, Rename on an admin phone; `cbb rename` on an admin computer; a signed device record |
 | Error details switch without developer tools | yes | yes | seven taps on the version in Settings show it; `adb` and the Xcode launch argument still work |
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
 | Remote invitations, remote paste, images and files | planned | planned | roadmap items 12, 18, 20 |

@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Rename a device: `cbb rename NAME NEW-NAME` on an admin computer, and Rename in the Devices
+  list of an admin phone (both apps). An admin signs a new device record with the name.
 - Both apps: seven taps on the version in Settings show the switch "Show error details",
   without `adb` or Xcode.
 - `cbb status` warns when members at home could not connect to this computer and sync only
