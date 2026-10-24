@@ -643,8 +643,9 @@ user can run `cbb forward` on a server of their own.
   in the handshake, which the forwarder maps to the group together with the client's address.
   The check costs one BLAKE2s per registered group per handshake (a client's handshake comes
   every two minutes while it is active), tens of milliseconds for 100 000 groups; beyond that,
-  groups are spread over several servers. Whether AmneziaWG keeps `mac1` usable for this is to
-  be checked; in VLESS mode the group is known from its VLESS user ID inside REALITY's TLS.
+  groups are spread over several servers. AmneziaWG's header protection hides `mac1` from a
+  forwarder that does not have the group's settings ("Blocked networks"); in VLESS mode the
+  group is known from its VLESS user ID inside REALITY's TLS.
 - **Fallback: a port computed by the group.** If `mac1` routing does not hold up, the hub and
   its clients compute the group's port themselves, from a secret of the group and the current
   hour, as an authenticator app computes its codes; there is no request that names the group.
@@ -803,7 +804,28 @@ about who talks to whom.
 
 1. **AmneziaWG**, a fork of wireguard-go that randomises message headers, adds junk and
    imitation packets before the handshake and pads messages. Same keys and code; the user
-   switches it on per group.
+   switches it on per group, on the hub (`cbb away hub -obfuscate`). `cbb` and the phones'
+   tunnel run on amneziawg-go always; without settings it is plain WireGuard on the wire.
+   - The hub makes the group's settings once, at random, and keeps them while obfuscation
+     stays on: 3 to 8 junk packets of 40 to 600 bytes before each handshake, 16 to 64 random
+     bytes in front of each handshake message and 16 to 32 in front of each data message,
+     each message type drawn from its own random range instead of WireGuard's 1 to 4, and a
+     header protection key that encrypts the rest of each header (the session indices
+     among it) with the padding in front as its nonce. Nothing on the wire then starts or
+     sizes like WireGuard, and no field stays the same from packet to packet, so no
+     constant of the group fingerprints it either.
+   - The settings travel like the rest of the hub's offer: inside member TLS at home
+     (docs/protocol.md, section 11), and in a remote invitation. They hide what the packets
+     are, not what they carry; the security is WireGuard's and the member TLS's with or
+     without them, so they are not a secret the design relies on. A client that has not met
+     the hub since obfuscation was switched on or off cannot reach it away from home until
+     it has.
+   - The forwarder routes by WireGuard's own headers and `mac1`, which the header
+     protection hides, so an obfuscated hub cannot use a forwarder yet: `cbb away hub`
+     refuses the two together. Giving the forwarder the group's settings, which it would
+     need to find `mac1`, is the next step.
+   - The phones' kits do not carry the settings yet, and `cbb-lite`'s Rust WireGuard does
+     not speak AmneziaWG, so in an obfuscated group they reach the hub at home only.
 2. **WireGuard inside VLESS with REALITY**, between a client and the forwarder, with
    Xray-core (MPL-2.0) in `cbb` and libXray (MIT) in the apps; VLESS carries the UDP packets
    itself. The forwarder then has one path for everything, the hub does not change, and
@@ -886,7 +908,10 @@ only adds to it.
    gomobile into an AAR and an xcframework; the tunnel offer in both kits; both apps'
    switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
    found at home. The invitations follow.
-8. Blocked networks: AmneziaWG, then VLESS with REALITY.
+8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
+   run on amneziawg-go; obfuscation per group between computers (`cbb away hub
+   -obfuscate`), in the hub's offer and in invitations. Next: the settings in both kits,
+   the forwarder for obfuscated hubs, then VLESS.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Device keys in hardware

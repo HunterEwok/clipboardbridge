@@ -67,6 +67,10 @@ type State struct {
 	ListenPort int
 	Members    []Member
 
+	// Obfuscation, on the hub, is the group's AmneziaWG settings, which
+	// it gives its clients; nil for plain WireGuard.
+	Obfuscation *Obfuscation
+
 	// Forwarder is where the hub registers for the clients that cannot
 	// reach it directly; nil without one.
 	Forwarder *ForwarderLink
@@ -113,6 +117,7 @@ type HubLink struct {
 	PublicKey    Key
 	PresharedKey Key
 	Endpoints    []netip.AddrPort
+	Obfuscation  *Obfuscation // nil for plain WireGuard
 }
 
 // Member is a client as its hub keeps it: its WireGuard key, its own
@@ -137,6 +142,8 @@ type stateFile struct {
 	KeysInFile bool             `json:"keys_in_file,omitempty"`
 	Forwarder  *forwarderFile   `json:"forwarder,omitempty"`
 	Relay      *forwarderFile   `json:"relay,omitempty"`
+	// Obfuscation is the hub's AmneziaWG settings.
+	Obfuscation *Obfuscation `json:"obfuscation,omitempty"`
 }
 
 type forwarderFile struct {
@@ -149,6 +156,7 @@ type hubFile struct {
 	PublicKey    Key              `json:"key"`
 	PresharedKey Key              `json:"psk"`
 	Endpoints    []netip.AddrPort `json:"endpoints,omitempty"`
+	Obfuscation  *Obfuscation     `json:"obfuscation,omitempty"`
 }
 
 type memberFile struct {
@@ -188,9 +196,11 @@ func LoadState(dir string) (*State, error) {
 	if f.Version != 1 {
 		return nil, fmt.Errorf("%s: unknown version %d", StateFile, f.Version)
 	}
-	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile}
+	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile,
+		Obfuscation: f.Obfuscation}
 	if f.ToHub != nil {
-		s.ToHub = &HubLink{Device: f.ToHub.Device, PublicKey: f.ToHub.PublicKey, PresharedKey: f.ToHub.PresharedKey, Endpoints: f.ToHub.Endpoints}
+		s.ToHub = &HubLink{Device: f.ToHub.Device, PublicKey: f.ToHub.PublicKey, PresharedKey: f.ToHub.PresharedKey, Endpoints: f.ToHub.Endpoints,
+			Obfuscation: f.ToHub.Obfuscation}
 	}
 	for _, c := range f.Members {
 		s.Members = append(s.Members, Member(c))
@@ -209,9 +219,11 @@ func LoadState(dir string) (*State, error) {
 
 // Save writes the state to dir, readable only by its owner.
 func (s *State) Save(dir string) error {
-	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile}
+	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
+		Obfuscation: s.Obfuscation}
 	if h := s.ToHub; h != nil {
-		f.ToHub = &hubFile{Device: h.Device, PublicKey: h.PublicKey, PresharedKey: h.PresharedKey, Endpoints: h.Endpoints}
+		f.ToHub = &hubFile{Device: h.Device, PublicKey: h.PublicKey, PresharedKey: h.PresharedKey, Endpoints: h.Endpoints,
+			Obfuscation: h.Obfuscation}
 	}
 	for _, c := range s.Members {
 		f.Members = append(f.Members, memberFile(c))
@@ -246,6 +258,19 @@ func (s *State) check() error {
 		}
 		if s.IsHub || s.ToHub != nil {
 			return errors.New("a device with a relay is neither a hub nor a hub's client")
+		}
+	}
+	if o := s.Obfuscation; o != nil {
+		if !s.IsHub {
+			return errors.New("obfuscation settings on a device that is not the hub")
+		}
+		if s.Forwarder != nil {
+			// The forwarder routes by WireGuard's own headers, which
+			// obfuscation hides (docs/design.md, "Blocked networks").
+			return errors.New("obfuscation and a forwarder together")
+		}
+		if err := o.Check(); err != nil {
+			return err
 		}
 	}
 	if s.ListenPort < 0 || s.ListenPort > 65535 {
@@ -291,6 +316,11 @@ func (h *HubLink) check() error {
 	for _, ep := range h.Endpoints {
 		if !ep.IsValid() || ep.Port() == 0 {
 			return fmt.Errorf("the hub gave a bad endpoint %v", ep)
+		}
+	}
+	if o := h.Obfuscation; o != nil {
+		if err := o.Check(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -403,7 +433,7 @@ func (s *State) SetHub(h HubLink) (changed bool, err error) {
 		return false, errors.New("tunnel: the hub offered this device's own key")
 	}
 	if o := s.ToHub; o != nil && o.Device == h.Device && o.PublicKey == h.PublicKey &&
-		o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) {
+		o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) && o.Obfuscation.Equal(h.Obfuscation) {
 		return false, nil
 	}
 	h.Endpoints = slices.Clone(h.Endpoints)

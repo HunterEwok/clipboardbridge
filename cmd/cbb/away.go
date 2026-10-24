@@ -37,9 +37,9 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb away                       show sync away from home\n" +
 		"       cbb away on                    turn it on here\n" +
 		"       cbb away off                   turn it off here and forget its keys\n" +
-		"       cbb away hub [-port N] [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
+		"       cbb away hub [-port N] [-obfuscate] [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
-		"                                      or through the forwarder\n" +
+		"                                      or through the forwarder; -obfuscate for networks that block WireGuard\n" +
 		"       cbb away relay address:port -key KEY\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
 		"                                      without a hub"
@@ -75,6 +75,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		port := fs.Int("port", 0, "the UDP port the hub listens on (default 8764)")
 		fwd := fs.String("forwarder", "", "the forwarder's address, for clients that cannot reach the hub directly")
 		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
+		obfuscate := fs.Bool("obfuscate", false, "speak AmneziaWG, which hides that the packets are WireGuard, for networks that block it")
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
@@ -82,7 +83,7 @@ func cmdAway(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
-		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey = *port, fs.Args(), *fwd, *fwdKey
+		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate = *port, fs.Args(), *fwd, *fwdKey, *obfuscate
 	case "relay":
 		fs := flag.NewFlagSet("away relay", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -152,6 +153,9 @@ func writeAway(w io.Writer, a *control.Away) {
 	switch {
 	case a.Hub:
 		fmt.Fprintf(w, "Sync away from home: on; this device is the hub, on UDP port %d, for %d devices.\n", a.Port, a.Clients)
+		if a.Obfuscated {
+			fmt.Fprintln(w, "  Obfuscated: the tunnel speaks AmneziaWG, so it does not look like WireGuard.")
+		}
 		switch {
 		case len(a.Endpoints) > 0:
 			fmt.Fprintf(w, "  Reached at %s.\n", strings.Join(a.Endpoints, ", "))

@@ -137,8 +137,11 @@ type HubConfig struct {
 	Addr       netip.Addr // the hub's tunnel address
 	ListenPort int        // the UDP port; 0 picks a free one
 	Peers      []Peer
-	Logf       func(format string, args ...any)
-	Verbose    bool // also log WireGuard's own messages, such as each handshake
+	// Obfuscation, when set, makes the hub speak AmneziaWG with these
+	// settings instead of plain WireGuard; every client needs the same.
+	Obfuscation *Obfuscation
+	Logf        func(format string, args ...any)
+	Verbose     bool // also log WireGuard's own messages, such as each handshake
 }
 
 // Hub is the end of every client's tunnel.
@@ -165,6 +168,11 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 	if err := checkPeers(cfg.Peers, cfg.Addr); err != nil {
 		return nil, err
 	}
+	if o := cfg.Obfuscation; o != nil {
+		if err := o.Check(); err != nil {
+			return nil, err
+		}
+	}
 	logf := cfg.Logf
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -187,7 +195,7 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 	for _, p := range cfg.Peers {
 		h.peers[p.PublicKey] = p
 	}
-	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", cfg.PrivateKey.hex(), port)
+	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", cfg.PrivateKey.hex(), port) + cfg.Obfuscation.ipc()
 	if err := dev.IpcSet(ipc + peersConfig(cfg.Peers)); err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("tunnel: configuring the hub: %w", err)
@@ -279,6 +287,7 @@ type ClientConfig struct {
 	HubPublicKey Key
 	HubAddr      netip.Addr     // the hub's tunnel address
 	Endpoint     netip.AddrPort // where the hub's UDP port is reached
+	Obfuscation  *Obfuscation   // the hub's AmneziaWG settings; nil for plain WireGuard
 	Logf         func(format string, args ...any)
 	Verbose      bool // also log WireGuard's own messages, such as each handshake
 }
@@ -305,6 +314,11 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 	case !cfg.Endpoint.IsValid():
 		return nil, errors.New("tunnel: the hub's endpoint is missing")
 	}
+	if o := cfg.Obfuscation; o != nil {
+		if err := o.Check(); err != nil {
+			return nil, err
+		}
+	}
 	logf := cfg.Logf
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -314,8 +328,8 @@ func StartClient(cfg ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("tunnel: %w", err)
 	}
 	dev := device.NewDevice(tdev, newBind(), wgLogger(logf, "client", cfg.Verbose))
-	ipc := fmt.Sprintf("private_key=%s\npublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=%d\n",
-		cfg.PrivateKey.hex(), cfg.HubPublicKey.hex(), cfg.PresharedKey.hex(),
+	ipc := fmt.Sprintf("private_key=%s\n%spublic_key=%s\npreshared_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=%d\n",
+		cfg.PrivateKey.hex(), cfg.Obfuscation.ipc(), cfg.HubPublicKey.hex(), cfg.PresharedKey.hex(),
 		cfg.Endpoint, netip.PrefixFrom(cfg.HubAddr, 128), Keepalive)
 	if err := dev.IpcSet(ipc); err != nil {
 		dev.Close()

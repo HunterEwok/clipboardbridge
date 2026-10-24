@@ -90,11 +90,15 @@ type message struct {
 
 // TunnelOffer is the group's hub's answer to a member's tunnel key
 // (docs/protocol.md, section 11): the hub's WireGuard public key, the
-// member's own preshared key and the hub's addresses away from home.
+// member's own preshared key, the hub's addresses away from home, and the
+// group's obfuscation settings when it has them.
 type TunnelOffer struct {
 	HubKey    []byte   `json:"hub_key"`
 	PSK       []byte   `json:"psk"`
 	Endpoints []string `json:"endpoints,omitempty"`
+	// Obfuscation is the group's AmneziaWG settings, a JSON object that
+	// internal/tunnel reads; absent for plain WireGuard.
+	Obfuscation json.RawMessage `json:"obfuscation,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to

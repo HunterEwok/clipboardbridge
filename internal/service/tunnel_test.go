@@ -216,6 +216,70 @@ func TestAwayFromHome(t *testing.T) {
 	waitFor(t, "the deck is alone", func() bool { return len(deck.status(t).Peers) == 0 })
 }
 
+// TestAwayObfuscated makes the pi an obfuscated hub: the deck gets its
+// AmneziaWG settings with the offer at home and syncs with it away, and
+// setting the hub again keeps the settings.
+func TestAwayObfuscated(t *testing.T) {
+	t.Setenv("CBB_DEBUG", "1")
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	for _, s := range []*testService{pi, deck} {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cert, err := forward.NewCert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Obfuscate: true,
+		Forwarder: "127.0.0.1:9", ForwarderKey: forward.Pin(cert.Leaf)}, ""); err == nil || !strings.Contains(err.Error(), "cannot pass obfuscated") {
+		t.Errorf("an obfuscated hub behind a forwarder: %v", err)
+	}
+	port := freeUDP(t)
+	hubAt := control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}, Obfuscate: true}
+	m, err := pi.do(t, hubAt, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := m.Status.Away; a == nil || !a.Hub || !a.Obfuscated {
+		t.Fatalf("the hub's status: %+v", a)
+	}
+	obf := tunnelState(t, pi).Obfuscation
+	if obf == nil {
+		t.Fatal("the hub keeps no obfuscation settings")
+	}
+	if _, err := pi.do(t, hubAt, ""); err != nil {
+		t.Fatal(err)
+	}
+	if again := tunnelState(t, pi).Obfuscation; !again.Equal(obf) {
+		t.Error("setting the hub again made new obfuscation settings")
+	}
+	piID := pi.status(t).Device
+	waitFor(t, "the deck keeps the hub's offer with its settings", func() bool {
+		a := deck.status(t).Away
+		return a != nil && a.HubDevice == piID && a.Obfuscated
+	})
+	if got := tunnelState(t, deck).ToHub.Obfuscation; !got.Equal(obf) {
+		t.Fatalf("the deck keeps %+v, the hub has %+v", got, obf)
+	}
+
+	deckID := deck.status(t).Device
+	deck.stop()
+	h.hide(deckID)
+	deck = restartService(t, &h, deck)
+	waitUpTo(t, 30*time.Second, "the deck reaches the hub through the obfuscated tunnel", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "hidden on the way"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "hidden on the way" })
+}
+
 // TestAwayThroughForwarder makes the pi a hub that only a forwarder
 // reaches, as behind carrier-grade NAT, and checks that the deck syncs with
 // it through the forwarder.
