@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -692,27 +693,35 @@ func TestRouteObfuscated(t *testing.T) {
 }
 
 func TestThroughVLESS(t *testing.T) {
-	var rk [32]byte
-	rand.Read(rk[:])
-	f, pin := startForwarderWith(t, Config{VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t), Key: rk}})
-	for _, obf := range []*tunnel.Obfuscation{nil, newObfuscation(t)} {
-		id, err := tunnel.NewVLESSID()
-		if err != nil {
-			t.Fatal(err)
-		}
-		key, peer := newClient(t)
-		hs := startHubWith(t, f, pin, []tunnel.Peer{peer}, HubConfig{Obfuscation: obf, VLESSID: id})
-		if hs.vless == nil || hs.vless.ID != id || hs.vless.Endpoint.Port() != f.vless.Port() {
-			t.Fatalf("the hub learned %+v", hs.vless)
-		}
-		vc, err := vless.Dial(*hs.vless)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := roundTripTo(t, vc.Addr(), hs, key, peer); err != nil {
-			t.Fatalf("obfuscated %v: %v", obf != nil, err)
-		}
-		vc.Close()
+	for _, obfuscated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("obfuscated=%v", obfuscated), func(t *testing.T) {
+			// A forwarder of its own, so that the first case's hub and
+			// Xray are gone before the second.
+			var rk [32]byte
+			rand.Read(rk[:])
+			f, pin := startForwarderWith(t, Config{VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t), Key: rk}})
+			var obf *tunnel.Obfuscation
+			if obfuscated {
+				obf = newObfuscation(t)
+			}
+			id, err := tunnel.NewVLESSID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, peer := newClient(t)
+			hs := startHubWith(t, f, pin, []tunnel.Peer{peer}, HubConfig{Obfuscation: obf, VLESSID: id})
+			if hs.vless == nil || hs.vless.ID != id || hs.vless.Endpoint.Port() != f.vless.Port() {
+				t.Fatalf("the hub learned %+v", hs.vless)
+			}
+			vc, err := vless.Dial(*hs.vless)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer vc.Close()
+			if err := roundTripTo(t, vc.Addr(), hs, key, peer); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
