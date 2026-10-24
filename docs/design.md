@@ -1031,9 +1031,9 @@ an earlier version needs to keep working with the new one: every device is updat
 named a system (`linux`, `mac`), and a Windows PC took part as `linux`, so the group could
 not tell the two apart, and it got the CA keys because the pairing gave them to every
 `linux` joiner. From now on each device states its operating system in `os`, in the pairing
-Info, in its hello and in its device record: `linux`, `windows`, `darwin`, `ios`,
-`android`, or `none` for firmware without one (the ESP32). The `os` is shown, never trusted
-for anything else. The **role** says only what a device does in the group:
+Info, in its hello and in its device record: `linux`, `windows`, `macos`, `ios`,
+`android`, or `none` for firmware without one (the ESP32); `macos` takes the place of the
+pairing Info's `darwin`. The `os` is shown, never trusted for anything else. The **role** says only what a device does in the group:
 
 | Role     | Devices                                     | What it does                                                    |
 |----------|---------------------------------------------|-----------------------------------------------------------------|
