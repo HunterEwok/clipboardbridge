@@ -126,6 +126,30 @@
 				"hub_key": "BAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiM=",
 				"psk": "BQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQ="
 			}
+		},
+		{
+			"t": "tunnel",
+			"tunnel": {
+				"hub_key": "BgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCU=",
+				"psk": "BwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSY=",
+				"endpoints": [
+					"203.0.113.7:8764"
+				],
+				"obfuscation": {
+					"jc": 4,
+					"jmin": 50,
+					"jmax": 300,
+					"s1": 20,
+					"s2": 40,
+					"s3": 16,
+					"s4": 24,
+					"h1": "1073741840-1073807375",
+					"h2": "16-65551",
+					"h3": "3221225488-3221291023",
+					"h4": "2147483664-2147549199",
+					"header_protection_key": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg="
+				}
+			}
 		}
 	],
 	"timestamps": [

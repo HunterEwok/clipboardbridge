@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
+	"github.com/amnezia-vpn/amneziawg-go/device"
+	"github.com/amnezia-vpn/amneziawg-go/tun/netstack"
 )
 
 // A negative dial waits this long: several handshake attempts would be made
@@ -63,8 +63,14 @@ type testHub struct {
 // receives, prefixed with the client's tunnel address.
 func startHub(t *testing.T, peers ...Peer) testHub {
 	t.Helper()
+	return startObfuscatedHub(t, nil, peers...)
+}
+
+// startObfuscatedHub is startHub with obfuscation settings, nil for none.
+func startObfuscatedHub(t *testing.T, obf *Obfuscation, peers ...Peer) testHub {
+	t.Helper()
 	d := newDevice(t)
-	h, err := StartHub(HubConfig{PrivateKey: d.priv, Addr: d.addr, Peers: peers, Logf: t.Logf})
+	h, err := StartHub(HubConfig{PrivateKey: d.priv, Addr: d.addr, Peers: peers, Obfuscation: obf, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
 	}

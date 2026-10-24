@@ -1031,8 +1031,8 @@ The keys of the group's WireGuard tunnel for sync away from home ([design.md](de
 `internal/service/tunnel.go`); the tunnel carries the member protocol between Go members
 ("Through the tunnel" below). The phone kits speak the hello's `tunnel_key` and the
 `tunnel` message (Swift `MemberNode`, Kotlin `MemberNode`) and bind the tunnel itself from
-Go (`mobile/cbbtun`), but the apps do not turn it on yet; the lite member does not take part
-yet.
+Go (`mobile/cbbtun`), and both apps turn it on in their settings; the kits keep the obfuscation settings with
+the offer and hand them to the tunnel. The lite member does not take part yet.
 
 - Sync away from home is off by default; nothing in this section happens on a device until
   the user turns it on there (`cbb away on`, the control operation `away`). Go turns it on
@@ -1053,6 +1053,7 @@ yet.
 | `hub_key` | bytes | the hub's public key, 32 bytes |
 | `psk` | bytes | the member's own WireGuard preshared key, 32 random bytes |
 | `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8; its forwarder's last (section 13) |
+| `obfuscation` | object or absent | the group's AmneziaWG settings ("Obfuscation" below); absent for plain WireGuard |
 
 - The hub keeps one preshared key per device and makes a new one when the device offers a
   new key. It refuses a key that another device or the hub itself has, and keeps at most
@@ -1069,6 +1070,26 @@ yet.
   No signed record binds the key: the member certificate already does.
 - A member that moves to another group turns sync away from home off: it deletes
   `tunnel.json` (whose `group` names the old group), and the user turns it on again.
+
+### Obfuscation
+
+A hub where the user asked for it (`cbb away hub -obfuscate`; `obfuscation` in its
+`tunnel.json`) speaks AmneziaWG instead of plain WireGuard. Its offer carries the settings,
+with AmneziaWG's own names; every client sets them on its end before the hub as its peer:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `jc`, `jmin`, `jmax` | numbers | junk packets of random bytes before each handshake: `jc` (0 to 16) of them, `jmin` to `jmax` bytes (at most 1000) |
+| `s1`, `s2`, `s3`, `s4` | numbers | random bytes in front of the handshake initiation, the response, the cookie reply and each data message: 16 to 64; the three padded handshake messages differ in size |
+| `h1`, `h2`, `h3`, `h4` | strings | `"min-max"`: the range each of those messages' type field is drawn from, in the same order; above 4, not overlapping |
+| `header_protection_key` | base64 | 32 bytes: the key of the header protection, which encrypts the rest of each message's header with the first 12 bytes of its padding as the ChaCha20 nonce |
+
+- A receiver refuses settings outside these bounds and does not start the tunnel.
+- The hub makes the settings once, at random (docs/design.md, "Blocked networks"), and
+  keeps them while it stays obfuscated. Switching obfuscation on or off changes them; each
+  client gets the new ones the next time it meets the hub at home.
+- An obfuscated hub has no forwarder (section 13), whose routing needs WireGuard's own
+  headers.
 
 ### Through the tunnel
 
@@ -1110,6 +1131,7 @@ in it as in the rest of this document):
 | `psk` | bytes | the guest's preshared key, 32 bytes |
 | `s` | bytes | the pairing secret, 16 random bytes (128 bits) |
 | `exp` | number | when it expires, Unix seconds |
+| `o` | object or absent | the hub's obfuscation settings, as in its offer (section 11, "Obfuscation") |
 
 It travels as a file of one line (`.cbbinvite`, mode 0600, which `cbb invite` deletes when
 the invitation ends and `cbb join -invite` deletes once it joined) or, later, a QR code; it

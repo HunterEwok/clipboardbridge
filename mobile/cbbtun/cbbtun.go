@@ -16,6 +16,7 @@ package cbbtun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -66,9 +67,10 @@ type Tunnel struct {
 // Start brings the tunnel up with the hub's offer (docs/protocol.md,
 // section 11): the device's private key, the offer's preshared key and hub
 // key, the device IDs of this device and of the hub, and one of the offer's
-// endpoints ("ip:port" or "[ipv6]:port"). Nothing goes to the hub before a
-// connection to Port.
-func Start(private, psk, hubKey []byte, device, hub, endpoint string) (*Tunnel, error) {
+// endpoints ("ip:port" or "[ipv6]:port"), and the offer's obfuscation
+// settings as JSON, or "" for plain WireGuard. Nothing goes to the hub
+// before a connection to Port.
+func Start(private, psk, hubKey []byte, device, hub, endpoint, obfuscation string) (*Tunnel, error) {
 	priv, err := key(private, "private key")
 	if err != nil {
 		return nil, err
@@ -93,8 +95,15 @@ func Start(private, psk, hubKey []byte, device, hub, endpoint string) (*Tunnel, 
 	if err != nil {
 		return nil, fmt.Errorf("cbbtun: %q is not an endpoint: %w", endpoint, err)
 	}
+	var obf *tunnel.Obfuscation
+	if obfuscation != "" {
+		obf = new(tunnel.Obfuscation)
+		if err := json.Unmarshal([]byte(obfuscation), obf); err != nil {
+			return nil, fmt.Errorf("cbbtun: the obfuscation settings: %w", err)
+		}
+	}
 	client, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: priv, PresharedKey: pre, Addr: self,
-		HubPublicKey: hk, HubAddr: hubAddr, Endpoint: ep})
+		HubPublicKey: hk, HubAddr: hubAddr, Endpoint: ep, Obfuscation: obf})
 	if err != nil {
 		return nil, err
 	}

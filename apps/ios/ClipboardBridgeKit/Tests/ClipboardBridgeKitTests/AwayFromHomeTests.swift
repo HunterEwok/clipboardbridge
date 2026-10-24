@@ -17,6 +17,13 @@ final class AwayFromHomeTests: XCTestCase {
         XCTAssertEqual(AwayState.decode(try AwayState(key: key).encoded()), AwayState(key: key))
         let on = AwayState(key: key, hub: hub, offer: offer)
         XCTAssertEqual(AwayState.decode(try on.encoded()), on)
+        // An obfuscated hub's settings are kept with its offer.
+        var hidden = offer
+        hidden.obfuscation = Member.Obfuscation(jc: 4, jmin: 50, jmax: 300, s1: 20, s2: 40, s3: 16, s4: 24,
+                                                h1: "100-200", h2: "300-400", h3: "500-600", h4: "700-800",
+                                                headerProtectionKey: Data(repeating: 8, count: 32))
+        let kept = AwayState(key: key, hub: hub, offer: hidden)
+        XCTAssertEqual(AwayState.decode(try kept.encoded()), kept)
         // A short key, a bad offer and an offer without its hub are not states.
         XCTAssertNil(AwayState.decode(try AwayState(key: Data(count: 31)).encoded()))
         XCTAssertNil(AwayState.decode(try AwayState(key: key, hub: hub,
@@ -28,10 +35,13 @@ final class AwayFromHomeTests: XCTestCase {
     final class FakeTunnel: OpenTunnel, @unchecked Sendable {
         let port: UInt16
         let first: String
+        let obfuscation: String
         private let lock = NSLock()
         private var _endpoints: [String]
         private var _closed = false
-        init(port: UInt16, endpoint: String) { (self.port, self.first, self._endpoints) = (port, endpoint, [endpoint]) }
+        init(port: UInt16, endpoint: String, obfuscation: String = "") {
+            (self.port, self.first, self.obfuscation, self._endpoints) = (port, endpoint, obfuscation, [endpoint])
+        }
         var endpoints: [String] { lock.withLock { _endpoints } }
         var closed: Bool { lock.withLock { _closed } }
         func setEndpoint(_ endpoint: String) throws { lock.withLock { _endpoints.append(endpoint) } }
@@ -44,9 +54,10 @@ final class AwayFromHomeTests: XCTestCase {
         var started: [FakeTunnel] { lock.withLock { _started } }
         func newKey() throws -> Data { Data(repeating: 7, count: 32) }
         func publicKey(_ privateKey: Data) throws -> Data { Data(privateKey.map { $0 &+ 1 }) }
-        func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String) throws -> OpenTunnel {
+        func start(privateKey: Data, psk: Data, hubKey: Data, device: String, hub: String, endpoint: String,
+                   obfuscation: String) throws -> OpenTunnel {
             lock.withLock {
-                let t = FakeTunnel(port: UInt16(40_000 + _started.count), endpoint: endpoint)
+                let t = FakeTunnel(port: UInt16(40_000 + _started.count), endpoint: endpoint, obfuscation: obfuscation)
                 _started.append(t)
                 return t
             }
@@ -122,6 +133,7 @@ final class AwayFromHomeTests: XCTestCase {
         try await eventually("a tunnel") { tunnels.started.count == 1 }
         let t = tunnels.started[0]
         XCTAssertEqual(t.first, offer.endpoints[0])
+        XCTAssertEqual(t.obfuscation, "")
         // No answer: the next endpoint, on the same tunnel.
         let second = offer.endpoints[1]
         try await eventually("the next endpoint") { t.endpoints.contains(second) }

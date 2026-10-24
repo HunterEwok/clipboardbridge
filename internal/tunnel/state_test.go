@@ -51,9 +51,12 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Group = "0a1b2c3d4e5f6a7b"
+	s.Group = "0f1e2d3c4b5a6978"
 	s.IsHub = true
 	s.Endpoints = []netip.AddrPort{netip.MustParseAddrPort("[2001:db8::1]:8764"), netip.MustParseAddrPort("192.0.2.1:8764")}
+	if s.Obfuscation, err = NewObfuscation(); err != nil {
+		t.Fatal(err)
+	}
 	a := newDevice(t)
 	if _, _, err := s.Admit(a.id, pubKey(t), [][]byte{[]byte("cert")}); err != nil {
 		t.Fatal(err)
@@ -65,7 +68,8 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Key != s.Key || got.Group != s.Group || !got.IsHub || len(got.Endpoints) != 2 || got.Endpoints[0] != s.Endpoints[0] {
+	if got.Key != s.Key || got.Group != s.Group || !got.IsHub || len(got.Endpoints) != 2 || got.Endpoints[0] != s.Endpoints[0] ||
+		!got.Obfuscation.Equal(s.Obfuscation) {
 		t.Errorf("loaded %+v, saved %+v", got, s)
 	}
 	if len(got.Members) != 1 || got.Members[0].PublicKey != s.Members[0].PublicKey ||
@@ -79,7 +83,7 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	hub := newDevice(t)
-	link := HubLink{Device: hub.id, PublicKey: hub.priv.Public(), PresharedKey: a.psk, Endpoints: s.Endpoints}
+	link := HubLink{Device: hub.id, PublicKey: hub.priv.Public(), PresharedKey: a.psk, Endpoints: s.Endpoints, Obfuscation: s.Obfuscation}
 	if _, err := c.SetHub(link); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +95,8 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h := gotC.ToHub; h == nil || h.Device != hub.id || h.PublicKey != link.PublicKey || h.PresharedKey != link.PresharedKey || len(h.Endpoints) != 2 {
+	if h := gotC.ToHub; h == nil || h.Device != hub.id || h.PublicKey != link.PublicKey || h.PresharedKey != link.PresharedKey || len(h.Endpoints) != 2 ||
+		!h.Obfuscation.Equal(link.Obfuscation) {
 		t.Errorf("loaded hub %+v, saved %+v", gotC.ToHub, link)
 	}
 
@@ -116,16 +121,19 @@ func TestStateRoundTrip(t *testing.T) {
 
 func TestBadStateFiles(t *testing.T) {
 	for name, body := range map[string]string{
-		"not JSON":         "{",
-		"unknown version":  `{"v":2,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}`,
-		"no key":           `{"v":1}`,
-		"short key":        `{"v":1,"key":"AQEB"}`,
-		"member twice":     `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
-		"member, no PSK":   `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
-		"member, no chain": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
-		"relay and hub":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
-		"relay, no key":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
-		"hub, bad device":  `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","to_hub":{"device":"x","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}}`,
+		"not JSON":               "{",
+		"unknown version":        `{"v":2,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}`,
+		"no key":                 `{"v":1}`,
+		"short key":              `{"v":1,"key":"AQEB"}`,
+		"member twice":           `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
+		"member, no PSK":         `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
+		"member, no chain":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
+		"relay and hub":          `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
+		"relay, no key":          `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
+		"obfuscation, no hub":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
+		"obfuscation, forwarder": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"forwarder":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"},"obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
+		"obfuscation, bad":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"150-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
+		"hub, bad device":        `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","to_hub":{"device":"x","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}}`,
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(body), 0o600); err != nil {
@@ -239,6 +247,15 @@ func TestSetHub(t *testing.T) {
 	if changed, err := s.SetHub(moved); err != nil || !changed || s.ToHub.Endpoints[0] != moved.Endpoints[0] {
 		t.Errorf("SetHub with a new address = %v, %v", changed, err)
 	}
+	obf, err := NewObfuscation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := moved
+	hidden.Obfuscation = obf
+	if changed, err := s.SetHub(hidden); err != nil || !changed || !s.ToHub.Obfuscation.Equal(obf) {
+		t.Errorf("SetHub with obfuscation = %v, %v", changed, err)
+	}
 
 	bad := func(f func(*HubLink)) HubLink {
 		l := link
@@ -253,6 +270,7 @@ func TestSetHub(t *testing.T) {
 		"port 0":          bad(func(l *HubLink) { l.Endpoints = []netip.AddrPort{netip.MustParseAddrPort("192.0.2.1:0")} }),
 		"invalid address": bad(func(l *HubLink) { l.Endpoints = []netip.AddrPort{{}} }),
 		"many endpoints":  bad(func(l *HubLink) { l.Endpoints = make([]netip.AddrPort, maxEndpoints+1) }),
+		"bad obfuscation": bad(func(l *HubLink) { l.Obfuscation = &Obfuscation{JC: 1} }),
 	} {
 		if _, err := s.SetHub(l); err == nil {
 			t.Errorf("%s: accepted", name)

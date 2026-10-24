@@ -101,6 +101,10 @@ func TestMemberInteropVectors(t *testing.T) {
 		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(2), PSK: vecBytes(3),
 			Endpoints: []string{"203.0.113.7:8764", "[2001:db8::7]:8764"}}}),
 		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(4), PSK: vecBytes(5)}}),
+		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(6), PSK: vecBytes(7), Endpoints: []string{"203.0.113.7:8764"},
+			Obfuscation: json.RawMessage(`{"jc":4,"jmin":50,"jmax":300,"s1":20,"s2":40,"s3":16,"s4":24,` +
+				`"h1":"1073741840-1073807375","h2":"16-65551","h3":"3221225488-3221291023","h4":"2147483664-2147549199",` +
+				`"header_protection_key":"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg="}`)}}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",

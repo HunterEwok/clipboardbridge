@@ -46,6 +46,9 @@ type Invitation struct {
 	GuestPSK  tunnel.Key       // its preshared key
 	Secret    []byte           // the pairing secret, in place of a code
 	Expires   time.Time
+	// Obfuscation is the hub's AmneziaWG settings; nil for plain
+	// WireGuard.
+	Obfuscation *tunnel.Obfuscation
 }
 
 // wire is the JSON of an invitation, with short names for a small QR code.
@@ -59,12 +62,14 @@ type wire struct {
 	GuestPSK  []byte   `json:"psk"`
 	Secret    []byte   `json:"s"`
 	Expires   int64    `json:"exp"` // Unix seconds
+
+	Obfuscation *tunnel.Obfuscation `json:"o,omitempty"`
 }
 
 // String returns the invitation's text.
 func (in *Invitation) String() string {
 	w := wire{V: 1, Group: in.Group, Hub: in.Hub, HubKey: in.HubKey[:], GuestKey: in.GuestKey[:],
-		GuestPSK: in.GuestPSK[:], Secret: in.Secret, Expires: in.Expires.Unix()}
+		GuestPSK: in.GuestPSK[:], Secret: in.Secret, Expires: in.Expires.Unix(), Obfuscation: in.Obfuscation}
 	for _, ep := range in.Endpoints {
 		w.Endpoints = append(w.Endpoints, ep.String())
 	}
@@ -94,7 +99,7 @@ func Parse(text string) (*Invitation, error) {
 	if w.V != 1 {
 		return nil, fmt.Errorf("invite: an invitation of version %d; update clipboardbridge", w.V)
 	}
-	in := &Invitation{Group: w.Group, Hub: w.Hub, Secret: w.Secret, Expires: time.Unix(w.Expires, 0)}
+	in := &Invitation{Group: w.Group, Hub: w.Hub, Secret: w.Secret, Expires: time.Unix(w.Expires, 0), Obfuscation: w.Obfuscation}
 	for _, k := range []struct {
 		dst *tunnel.Key
 		src []byte
@@ -130,6 +135,11 @@ func (in *Invitation) check() error {
 		return errors.New("invite: the invitation's secret is too short")
 	case in.HubKey.IsZero() || in.GuestKey.IsZero() || in.GuestPSK.IsZero():
 		return errors.New("invite: the invitation lacks a key")
+	}
+	if o := in.Obfuscation; o != nil {
+		if err := o.Check(); err != nil {
+			return errors.New("invite: the invitation's obfuscation settings are damaged")
+		}
 	}
 	return nil
 }

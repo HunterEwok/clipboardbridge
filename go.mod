@@ -14,11 +14,11 @@ tool (
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+	github.com/amnezia-vpn/amneziawg-go v0.2.20-0.20260724121833-457d920a1a7d
 	github.com/jezek/xgb v1.3.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
 	golang.org/x/sys v0.49.0
-	golang.zx2c4.com/wireguard v0.0.0-20261006164505-2631ce99a06f
 	rsc.io/qr v0.2.0
 )
 
@@ -26,7 +26,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/google/btree v1.1.2 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
@@ -39,7 +39,7 @@ require (
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/telemetry v0.0.0-20261010193011-f71dc92da45e // indirect
-	golang.org/x/time v0.7.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	golang.org/x/vuln v1.9.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect

@@ -24,7 +24,7 @@ func sample(t *testing.T) *Invitation {
 		return k
 	}
 	return &Invitation{
-		Group: "0a1b2c3d4e5f6a7b", Hub: "0123456789abcdef0123456789abcdef", HubKey: k().Public(),
+		Group: "0f1e2d3c4b5a6978", Hub: "0123456789abcdef0123456789abcdef", HubKey: k().Public(),
 		Endpoints: []netip.AddrPort{netip.MustParseAddrPort("203.0.113.7:8764"), netip.MustParseAddrPort("[2001:db8::7]:8764")},
 		GuestKey:  k(), GuestPSK: k(), Secret: bytes.Repeat([]byte{7}, 16),
 		Expires: time.Unix(1_800_000_000, 0),
@@ -43,6 +43,31 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, in) {
 		t.Errorf("got %+v, want %+v", got, in)
+	}
+}
+
+// TestRoundTripObfuscated checks an invitation from an obfuscated hub,
+// which carries the hub's AmneziaWG settings.
+func TestRoundTripObfuscated(t *testing.T) {
+	in := sample(t)
+	var err error
+	if in.Obfuscation, err = tunnel.NewObfuscation(); err != nil {
+		t.Fatal(err)
+	}
+	text := in.String()
+	if len(text) > 1000 {
+		t.Errorf("text of %d bytes", len(text))
+	}
+	got, err := Parse(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, in) {
+		t.Errorf("got %+v, want %+v", got, in)
+	}
+	in.Obfuscation.JC = 100
+	if _, err := Parse(in.String()); err == nil {
+		t.Error("bad obfuscation settings were read")
 	}
 }
 

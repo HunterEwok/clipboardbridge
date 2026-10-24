@@ -86,6 +86,16 @@ final class MemberTests: XCTestCase {
         XCTAssertTrue(offer.isValid)
         XCTAssertEqual(offer, Member.TunnelOffer(hubKey: key(2), psk: key(3), endpoints: ["203.0.113.7:8764", "[2001:db8::7]:8764"]))
         XCTAssertEqual(decoded[12], .tunnel(Member.TunnelOffer(hubKey: key(4), psk: key(5))))
+        // An obfuscated hub's settings, for the tunnel.
+        guard case let .tunnel(hidden?) = decoded[13], let obf = hidden.obfuscation else {
+            return XCTFail("frame 13 is \(decoded[13])")
+        }
+        XCTAssertNil(offer.obfuscation)
+        XCTAssertEqual(obf.jc, 4)
+        XCTAssertEqual(obf.h2, "16-65551")
+        XCTAssertEqual(obf.headerProtectionKey, Data(repeating: 8, count: 32))
+        let text = try obf.jsonText()
+        XCTAssertEqual(try JSONDecoder().decode(Member.Obfuscation.self, from: Data(text.utf8)), obf)
     }
 
     func testTimestamps() throws {

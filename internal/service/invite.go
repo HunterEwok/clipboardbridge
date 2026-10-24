@@ -163,7 +163,7 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 	case run == nil || run.hub == nil:
 		err = fmt.Errorf("the hub's tunnel is not running: %s", s.tunErr)
 	default:
-		in.HubKey, in.Endpoints = st.Key.Public(), st.HubEndpoints()
+		in.HubKey, in.Endpoints, in.Obfuscation = st.Key.Public(), st.HubEndpoints(), st.Obfuscation
 		if s.guests == nil {
 			s.guests = map[netip.Addr]*guest{}
 		}
@@ -292,7 +292,8 @@ func (s *Service) joinInvite(ctx context.Context, c net.Conn, j *pair.Joiner, m 
 		return nil, nil, err
 	}
 	gc, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: in.GuestKey, PresharedKey: in.GuestPSK, Addr: tunnel.GuestAddr(in.GuestKey.Public()),
-		HubPublicKey: in.HubKey, HubAddr: hubAddr, Endpoint: in.Endpoints[0], Logf: s.logf, Verbose: tunnelVerbose()})
+		HubPublicKey: in.HubKey, HubAddr: hubAddr, Endpoint: in.Endpoints[0], Obfuscation: in.Obfuscation,
+		Logf: s.logf, Verbose: tunnelVerbose()})
 	if err != nil {
 		return nil, nil, fmt.Errorf("the tunnel to the hub could not start: %w", err)
 	}

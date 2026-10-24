@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -113,6 +114,12 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 	for _, ep := range st.HubEndpoints() {
 		o.Endpoints = append(o.Endpoints, ep.String())
 	}
+	if st.Obfuscation != nil {
+		if o.Obfuscation, err = json.Marshal(st.Obfuscation); err != nil {
+			s.logf("cbb: the tunnel's obfuscation settings: %v", err)
+			return nil
+		}
+	}
 	return o
 }
 
@@ -142,6 +149,12 @@ func (s *Service) tunnelOffered(from group.DeviceID, o node.TunnelOffer) error {
 			return fmt.Errorf("a bad endpoint: %w", err)
 		}
 		h.Endpoints = append(h.Endpoints, ep)
+	}
+	if len(o.Obfuscation) > 0 {
+		h.Obfuscation = new(tunnel.Obfuscation)
+		if err := json.Unmarshal(o.Obfuscation, h.Obfuscation); err != nil {
+			return fmt.Errorf("bad obfuscation settings: %w", err)
+		}
 	}
 	old := st.ToHub
 	changed, err := st.SetHub(h)
@@ -222,7 +235,8 @@ func (s *Service) runTunnelLocked() {
 		if port == 0 {
 			port = tunnel.Port
 		}
-		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: s.hubPeerListLocked(), Logf: s.logf, Verbose: tunnelVerbose()})
+		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: s.hubPeerListLocked(),
+			Obfuscation: st.Obfuscation, Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			s.tunFailedLocked(fmt.Sprintf("the hub could not listen on UDP port %d", port), err)
@@ -255,7 +269,8 @@ func (s *Service) runTunnelLocked() {
 			return
 		}
 		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: st.Key, PresharedKey: link.PresharedKey, Addr: self,
-			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Logf: s.logf, Verbose: tunnelVerbose()})
+			HubPublicKey: link.PublicKey, HubAddr: hubAddr, Endpoint: link.Endpoints[0], Obfuscation: link.Obfuscation,
+			Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()
 			s.tunFailedLocked("the tunnel to the hub could not start", err)
@@ -533,8 +548,22 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if len(eps) == 0 && fw == nil {
 			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
 		}
+		if m.Obfuscate && fw != nil {
+			return false, nil, errors.New("a forwarder cannot pass obfuscated traffic yet; give the hub's own addresses instead")
+		}
+		obf := st.Obfuscation
+		switch {
+		case !m.Obfuscate:
+			obf = nil
+		case obf == nil:
+			// Kept as they are when the hub is set again, so its clients'
+			// offers stay good.
+			if obf, err = tunnel.NewObfuscation(); err != nil {
+				return false, nil, err
+			}
+		}
 		old := *st
-		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort, st.Forwarder, st.Relay = true, nil, eps, m.Port, fw, nil
+		st.IsHub, st.ToHub, st.Endpoints, st.ListenPort, st.Forwarder, st.Relay, st.Obfuscation = true, nil, eps, m.Port, fw, nil, obf
 		if err := st.Save(s.cfg.StateDir); err != nil {
 			*st = old
 			return false, nil, fmt.Errorf("saving the tunnel state: %w", err)
@@ -580,6 +609,11 @@ func (s *Service) awayStatus() *control.Away {
 		return nil
 	}
 	a := &control.Away{Hub: st.IsHub, KeysInFile: st.KeysInFile, Error: s.tunErr, Detail: s.tunDetail}
+	if st.IsHub {
+		a.Obfuscated = st.Obfuscation != nil
+	} else if st.ToHub != nil {
+		a.Obfuscated = st.ToHub.Obfuscation != nil
+	}
 	if st.IsHub && st.Forwarder != nil {
 		a.Forwarder = &control.Forwarder{Endpoint: st.Forwarder.Endpoint.String(), Error: "the hub is not running"}
 		if f := s.tunFwd; f != nil {

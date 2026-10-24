@@ -176,27 +176,30 @@ public enum Member {
     }
 
     /// The group's hub's answer to the tunnel key a hello carried (section
-    /// 11): the hub's WireGuard public key, this member's own preshared key
-    /// and the hub's addresses away from home, "ip:port" or "[ipv6]:port".
+    /// 11): the hub's WireGuard public key, this member's own preshared key,
+    /// the hub's addresses away from home, "ip:port" or "[ipv6]:port", and
+    /// the group's obfuscation settings; nil for plain WireGuard.
     public struct TunnelOffer: Codable, Equatable, Sendable {
         public var hubKey: Data
         public var psk: Data
         public var endpoints: [String]
+        public var obfuscation: Obfuscation?
 
-        public init(hubKey: Data, psk: Data, endpoints: [String] = []) {
-            (self.hubKey, self.psk, self.endpoints) = (hubKey, psk, endpoints)
+        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil) {
+            (self.hubKey, self.psk, self.endpoints, self.obfuscation) = (hubKey, psk, endpoints, obfuscation)
         }
 
         /// Whether both keys are 32 bytes, as a tunnel needs.
         public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
 
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints }
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             hubKey = try c.decodeIfPresent(Data.self, forKey: .hub_key) ?? Data()
             psk = try c.decodeIfPresent(Data.self, forKey: .psk) ?? Data()
             endpoints = try c.decodeIfPresent([String].self, forKey: .endpoints) ?? []
+            obfuscation = try c.decodeIfPresent(Obfuscation.self, forKey: .obfuscation)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -204,6 +207,27 @@ public enum Member {
             try c.encode(hubKey, forKey: .hub_key)
             try c.encode(psk, forKey: .psk)
             if !endpoints.isEmpty { try c.encode(endpoints, forKey: .endpoints) }
+            try c.encodeIfPresent(obfuscation, forKey: .obfuscation)
+        }
+    }
+
+    /// A group's AmneziaWG settings (section 11, "Obfuscation"), with
+    /// AmneziaWG's own names. The kit only carries them: the tunnel in
+    /// mobile/cbbtun checks and uses them.
+    public struct Obfuscation: Codable, Equatable, Sendable {
+        public var jc, jmin, jmax: Int
+        public var s1, s2, s3, s4: Int
+        public var h1, h2, h3, h4: String
+        public var headerProtectionKey: Data
+
+        enum CodingKeys: String, CodingKey {
+            case jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4
+            case headerProtectionKey = "header_protection_key"
+        }
+
+        /// The settings as JSON, for mobile/cbbtun.
+        public func jsonText() throws -> String {
+            String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
         }
     }
 
