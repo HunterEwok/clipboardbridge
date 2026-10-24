@@ -1042,8 +1042,8 @@ only adds to it.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
    run on amneziawg-go; obfuscation per group between computers (`cbb away hub
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
-   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb away hub -vless`).
-   Next: VLESS on the phones.
+   forwarder; VLESS between computers (`cbb forward -vless-site`, `cbb away hub -vless`)
+   and on both phones.
 9. `cbb-lite` on Linux; the ESP32 when WireGuard on it is mature.
 
 ## Device keys in hardware

@@ -59,6 +59,12 @@ class MemberTest {
         assertTrue(hidden.isValid)
         assertNull(offer.obfuscation)
         assertTrue(hidden.obfuscation!!.contains("\"header_protection_key\""))
+        // So is the way to the hub's forwarder over VLESS.
+        val tunneled = assertIs<Member.Message.Tunnel>(decoded[14]).offer!!
+        assertTrue(tunneled.isValid)
+        assertNull(offer.vless)
+        assertNull(hidden.vless)
+        assertTrue(tunneled.vless!!.contains("\"short_id\":\"0123456789abcdef\""))
     }
 
     @Test

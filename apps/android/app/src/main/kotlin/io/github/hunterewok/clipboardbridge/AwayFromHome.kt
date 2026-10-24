@@ -43,19 +43,20 @@ class AwayState(val key: ByteArray, val hub: String? = null, val offer: Member.T
                 writeByte(o.endpoints.size)
                 o.endpoints.forEach { writeUTF(it) }
                 writeUTF(o.obfuscation ?: "")
+                writeUTF(o.vless ?: "")
             }
         }
         return out.toByteArray()
     }
 
     companion object {
-        private const val VERSION = 2
+        private const val VERSION = 3
 
         /** The state in b, or null when it is not one this version wrote. */
         fun decode(b: ByteArray): AwayState? = try {
             DataInputStream(ByteArrayInputStream(b)).run {
                 val version = readByte().toInt()
-                if (version != VERSION && version != 1) return null
+                if (version !in 1..VERSION) return null
                 val key = ByteArray(32).also { readFully(it) }
                 if (!readBoolean()) return AwayState(key)
                 val hub = readUTF()
@@ -64,7 +65,9 @@ class AwayState(val key: ByteArray, val hub: String? = null, val offer: Member.T
                 val endpoints = List(readUnsignedByte()) { readUTF() }
                 // Version 1 had no obfuscation settings.
                 val obfuscation = if (version == 1) "" else readUTF()
-                val o = Member.TunnelOffer(hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() })
+                // Nor had version 2 the way over VLESS.
+                val vless = if (version <= 2) "" else readUTF()
+                val o = Member.TunnelOffer(hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() }, vless.takeIf { it.isNotEmpty() })
                 if (!o.isValid) return null
                 AwayState(key, hub, o)
             }
@@ -85,16 +88,25 @@ interface OpenTunnel {
 interface Tunnels {
     fun newKey(): ByteArray
     fun publicKey(private: ByteArray): ByteArray
-    /** Starts a tunnel; obfuscation is the offer's settings as JSON, "" for plain WireGuard. */
-    fun start(private: ByteArray, psk: ByteArray, hubKey: ByteArray, device: String, hub: String, endpoint: String, obfuscation: String): OpenTunnel
+    /**
+     * Starts a tunnel; obfuscation is the offer's settings as JSON, "" for plain WireGuard, and vless its
+     * way over VLESS as JSON, "" without it.
+     */
+    fun start(
+        private: ByteArray, psk: ByteArray, hubKey: ByteArray, device: String, hub: String, endpoint: String,
+        obfuscation: String, vless: String,
+    ): OpenTunnel
 }
 
 /** The tunnel of mobile/cbbtun, WireGuard in the app's process. */
 object GoTunnels : Tunnels {
     override fun newKey(): ByteArray = cbbtun.Cbbtun.newKey()
     override fun publicKey(private: ByteArray): ByteArray = cbbtun.Cbbtun.publicKey(private)
-    override fun start(private: ByteArray, psk: ByteArray, hubKey: ByteArray, device: String, hub: String, endpoint: String, obfuscation: String): OpenTunnel {
-        val t = cbbtun.Cbbtun.start(private, psk, hubKey, device, hub, endpoint, obfuscation)
+    override fun start(
+        private: ByteArray, psk: ByteArray, hubKey: ByteArray, device: String, hub: String, endpoint: String,
+        obfuscation: String, vless: String,
+    ): OpenTunnel {
+        val t = cbbtun.Cbbtun.start(private, psk, hubKey, device, hub, endpoint, obfuscation, vless)
         return object : OpenTunnel {
             override val port: Int = t.port().toInt()
             override fun setEndpoint(endpoint: String) = t.setEndpoint(endpoint)
@@ -296,7 +308,7 @@ class AwayFromHome(
                 val t = open ?: try {
                     tunnels.start(
                         s.key, offer.psk, offer.hubKey, device, hub, offer.endpoints[endpoint % offer.endpoints.size],
-                        offer.obfuscation ?: "",
+                        offer.obfuscation ?: "", offer.vless ?: "",
                     )
                 } catch (e: Exception) {
                     fail("the tunnel to the hub could not start", e)
