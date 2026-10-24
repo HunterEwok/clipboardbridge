@@ -22,6 +22,8 @@ Commands:
   revoke <name or ID>     Remove a device from the group.
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
   takeover <name or ID>   Take the group over from its lost root computer (on an admin).
+  freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
+  unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
   away relay address:port Meet the group's other devices away from home at a relay.
@@ -78,6 +80,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdRevoke(rest, stdout, stderr)
 	case "takeover":
 		return cmdTakeover(rest, stdout, stderr)
+	case "freeze", "unfreeze":
+		return cmdFreeze(rest, cmd == "freeze", stdout, stderr)
 	case "admin":
 		return cmdAdmin(rest, stdout, stderr)
 	case "new":

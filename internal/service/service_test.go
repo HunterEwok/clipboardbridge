@@ -1539,6 +1539,53 @@ func TestTakeover(t *testing.T) {
 	}
 }
 
+// TestFreezeAnAdmin checks that an admin computer freezes another one,
+// which then changes nothing and is refused, and that only the root
+// unfreezes it.
+func TestFreezeAnAdmin(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	makeAdmin(t, pi, b)
+	frozen := func(s *testService) bool {
+		for _, d := range s.devices(t) {
+			if d.Name == "b" {
+				return d.Frozen && !d.Admin
+			}
+		}
+		return false
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpFreeze, Name: "pi"}, ""); err == nil {
+		t.Error("an admin froze the root")
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpFreeze, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the root and b hear of the freeze", func() bool { return frozen(pi) && frozen(b) })
+	waitFor(t, "b is refused", func() bool { return len(pi.status(t).Peers) == 1 })
+	if _, err := b.do(t, control.Header{Op: control.OpRevoke, Name: "a"}, ""); err == nil {
+		t.Error("a frozen admin signed a record")
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpThaw, Name: "b"}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("an admin computer unfroze another: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpThaw, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "b is an admin again", func() bool {
+		for _, d := range pi.devices(t) {
+			if d.Name == "b" {
+				return d.Admin && !d.Frozen
+			}
+		}
+		return false
+	})
+}
+
 // TestMacsListen checks that a Mac is a full member like the others: it
 // publishes no role and takes connections, so two Macs keep syncing when
 // no other computer is on. Without the iPhone CA key it publishes no holder

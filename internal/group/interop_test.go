@@ -670,3 +670,140 @@ func TestGoAdminVectors(t *testing.T) {
 		}
 	}
 }
+
+type freezeVectors struct {
+	GroupCA []byte       `json:"group_ca"`
+	Records []Record     `json:"records"`
+	Devices []rootDevice `json:"devices"`
+	Keys    []freezeKey  `json:"keys"`
+	Chains  []rootChain  `json:"chains"`
+	Digest  string       `json:"digest"`
+}
+
+type freezeKey struct {
+	Name   string  `json:"name"`
+	Key    KeyHash `json:"key"`
+	Frozen bool    `json:"frozen"`
+}
+
+// TestGoFreezeVectors writes (with -update) and checks
+// testdata/interop/go-freeze.json: an admin computer freezing another
+// (docs/protocol.md, section 10, rule 4), as TestFreeze tells it, for the
+// phone kits and the lite member to agree with.
+func TestGoFreezeVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-freeze.json")
+	if *update {
+		pg := newPhoneGroup(t)
+		g := pg.root.Cert
+		pc1, phone, pc2 := pg.a, pg.b, adminCA(t, pg.root)
+		pc1Chain, pc2Chain, phoneChain := []*x509.Certificate{pc1.Cert}, []*x509.Certificate{pc2.Cert}, []*x509.Certificate{phone.Cert}
+		pc1Key, pc2Key, phoneKey, rootKey := KeyHashOf(pc1.Cert), KeyHashOf(pc2.Cert), KeyHashOf(phone.Cert), KeyHashOf(g)
+		m1, m2, laptop, tv := member(t, pc1), member(t, pc2), member(t, pc1), member(t, pc1)
+		before := deviceRecord(t, g, pc1, pc1Chain, laptop, "laptop", 2)
+		back := freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}, nil)
+		all := []Record{
+			computerAdminRecord(t, pg, m1, "pc1", pc1Key),
+			computerAdminRecord(t, pg, m2, "pc2", pc2Key),
+			adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
+			before,
+			// pc2 freezes pc1, keeping the laptop's record.
+			freezeRecord(t, g, pc2, pc2Chain, []KeyHash{pc1Key}, []KeyHash{before.ID()}),
+			// After: neither the tv nor removing the laptop counts.
+			deviceRecord(t, g, pc1, pc1Chain, tv, "tv", 3),
+			revokeRecord(t, g, pc1, pc1Chain, []KeyHash{KeyHashOf(laptop)}, nil),
+			// Nobody freezes the root or an admin phone.
+			freezeRecord(t, g, pc1, pc1Chain, []KeyHash{phoneKey}, nil),
+			freezeRecord(t, g, pc1, pc1Chain, []KeyHash{rootKey}, nil),
+			// pc1 freezes back; an admin computer's thaw does not end it,
+			// the admin phone's does.
+			back,
+			thawRecord(t, g, pc2, pc2Chain, []KeyHash{back.ID()}),
+			thawRecord(t, g, phone, phoneChain, []KeyHash{back.ID()}),
+		}
+		s := NewRecords(g)
+		if _, errs := s.AddAll(all); len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		v := freezeVectors{GroupCA: g.Raw, Records: all, Digest: s.Digest()}
+		for _, d := range s.Devices() {
+			v.Devices = append(v.Devices, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+		}
+		for _, k := range []struct {
+			name string
+			key  KeyHash
+		}{
+			{"the root", rootKey}, {"the admin phone", phoneKey}, {"pc1", pc1Key}, {"pc1's device", KeyHashOf(m1)},
+			{"pc2", pc2Key}, {"pc2's device", KeyHashOf(m2)}, {"the laptop", KeyHashOf(laptop)},
+		} {
+			v.Keys = append(v.Keys, freezeKey{Name: k.name, Key: k.key, Frozen: s.Frozen(k.key)})
+		}
+		for _, c := range []struct {
+			name  string
+			chain []*x509.Certificate
+		}{
+			{"the laptop", []*x509.Certificate{laptop, pc1.Cert}},
+			{"the tv", []*x509.Certificate{tv, pc1.Cert}},
+			{"pc1's device", []*x509.Certificate{m1, pc1.Cert}},
+			{"pc2's device", []*x509.Certificate{m2, pc2.Cert}},
+		} {
+			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
+			for _, cert := range c.chain {
+				rc.Chain = append(rc.Chain, cert.Raw)
+			}
+			v.Chains = append(v.Chains, rc)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v freezeVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if s.Digest() != v.Digest {
+		t.Error("the digest differs")
+	}
+	var got []rootDevice
+	for _, d := range s.Devices() {
+		got = append(got, rootDevice{ID: d.ID, Name: d.Name, Admin: d.Admin})
+	}
+	if a, b := mustJSON(t, got), mustJSON(t, v.Devices); a != b || !strings.Contains(a, `"laptop"`) || strings.Contains(a, `"tv"`) {
+		t.Errorf("devices %s, the file has %s", a, b)
+	}
+	want := map[string]bool{"pc1": true, "pc1's device": true}
+	for _, k := range v.Keys {
+		if s.Frozen(k.Key) != k.Frozen || k.Frozen != want[k.Name] || s.Revoked(k.Key) {
+			t.Errorf("%s: frozen %v, the file says %v", k.Name, s.Frozen(k.Key), k.Frozen)
+		}
+	}
+	wantRefused := map[string]bool{"the tv": true, "pc1's device": true}
+	for _, c := range v.Chains {
+		var chain []*x509.Certificate
+		for _, der := range c.Chain {
+			cert, err := x509.ParseCertificate(der)
+			if err != nil {
+				t.Fatal(err)
+			}
+			chain = append(chain, cert)
+		}
+		if (s.Refused(chain) != nil) != c.Refused || c.Refused != wantRefused[c.Name] {
+			t.Errorf("%s: refused %v, the file says %v", c.Name, s.Refused(chain) != nil, c.Refused)
+		}
+	}
+}

@@ -102,7 +102,7 @@ func (s *Service) adminPeer(dev group.DeviceID, chain []*x509.Certificate) bool 
 		// CA is checked here too: it must have issued the leaf and stand
 		// under one of the group's roots, or it proves nothing.
 		return chain[0].CheckSignatureFrom(chain[1]) == nil && underRoot(id, chain[1]) &&
-			!s.records.Revoked(group.KeyHashOf(chain[1]))
+			!s.records.Revoked(group.KeyHashOf(chain[1])) && !s.records.Frozen(group.KeyHashOf(chain[1]))
 	}
 	if s.records.RootDevice() == dev {
 		return true

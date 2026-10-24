@@ -6,6 +6,7 @@ package group
 import (
 	"crypto/tls"
 	"crypto/x509"
+	mrand "math/rand/v2"
 	"testing"
 	"time"
 )
@@ -350,5 +351,131 @@ func TestComputerTakeover(t *testing.T) {
 		if len(s.Roots()) != 0 || s.Revoked(rootKey) || !s.Revoked(pcKey) {
 			t.Error("the old root did not undo the takeover by removing the admin")
 		}
+	}
+}
+
+// recordTime gives each freeze and thaw record of a test its own time, so
+// two signers' records with the same content still differ.
+var recordTime = t0.UnixMilli()
+
+func freezeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys, records []KeyHash) Record {
+	t.Helper()
+	r, err := SignRecord(RecordBody{Type: RecordFreeze, Group: Tag(root), TimeMS: nextTime(), Keys: keys, Records: records}, signer.Key, chain...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func thawRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, freezes []KeyHash) Record {
+	t.Helper()
+	r, err := SignRecord(RecordBody{Type: RecordThaw, Group: Tag(root), TimeMS: nextTime(), Records: freezes}, signer.Key, chain...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func nextTime() int64 {
+	recordTime++
+	return recordTime
+}
+
+// TestFreeze checks that an admin computer freezes another one: what the
+// frozen admin signed before keeps counting and nothing later does, its own
+// device is refused, it cannot freeze the root or an admin phone, two
+// admins that freeze each other both stay frozen, and the root or an admin
+// phone ends a freeze. The result does not depend on the order of the
+// records.
+func TestFreeze(t *testing.T) {
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	pc1, phone, pc2 := pg.a, pg.b, adminCA(t, pg.root)
+	pc1Chain, pc2Chain, phoneChain := []*x509.Certificate{pc1.Cert}, []*x509.Certificate{pc2.Cert}, []*x509.Certificate{phone.Cert}
+	pc1Key, pc2Key, phoneKey, rootKey := KeyHashOf(pc1.Cert), KeyHashOf(pc2.Cert), KeyHashOf(phone.Cert), KeyHashOf(g)
+	m1, m2, laptop, tv := member(t, pc1), member(t, pc2), member(t, pc1), member(t, pc1)
+	before := deviceRecord(t, g, pc1, pc1Chain, laptop, "laptop", 2)
+	freeze1 := freezeRecord(t, g, pc2, pc2Chain, []KeyHash{pc1Key}, []KeyHash{before.ID()})
+	freeze2 := freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}, nil)
+	all := []Record{
+		computerAdminRecord(t, pg, m1, "pc1", pc1Key),
+		computerAdminRecord(t, pg, m2, "pc2", pc2Key),
+		adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
+		before,
+		freeze1,
+		// After the freeze: neither the tv nor removing the laptop counts.
+		deviceRecord(t, g, pc1, pc1Chain, tv, "tv", 3),
+		revokeRecord(t, g, pc1, pc1Chain, []KeyHash{KeyHashOf(laptop)}, nil),
+		// Nobody freezes the root or an admin phone.
+		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{phoneKey}, nil),
+		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{rootKey}, nil),
+		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key, phoneKey}, nil),
+	}
+	check := func(s *Records, pc2Frozen bool) {
+		t.Helper()
+		if !s.Frozen(pc1Key) || !s.Frozen(KeyHashOf(m1)) {
+			t.Fatal("the freeze does not count")
+		}
+		if s.Frozen(phoneKey) || s.Frozen(rootKey) {
+			t.Error("an admin computer froze the root or an admin phone")
+		}
+		if s.Frozen(pc2Key) != pc2Frozen || s.Frozen(KeyHashOf(m2)) != pc2Frozen {
+			t.Errorf("pc2 frozen %v, want %v", s.Frozen(pc2Key), pc2Frozen)
+		}
+		if got := names(s.Devices()); got != "laptop pc1 pc2 phone" {
+			t.Errorf("devices %q, want laptop pc1 pc2 phone", got)
+		}
+		for _, d := range s.Devices() {
+			if d.Name == "pc1" && (!d.Frozen || d.Admin) {
+				t.Errorf("pc1 is listed as frozen %v, admin %v", d.Frozen, d.Admin)
+			}
+		}
+		if err := s.Refused([]*x509.Certificate{laptop, pc1.Cert}); err != nil {
+			t.Errorf("the laptop it admitted before is refused: %v", err)
+		}
+		if s.Refused([]*x509.Certificate{tv, pc1.Cert}) == nil {
+			t.Error("a device a frozen admin certified later is taken")
+		}
+		if s.Refused([]*x509.Certificate{m1, pc1.Cert}) == nil {
+			t.Error("the frozen admin's own device is taken")
+		}
+	}
+	for range 5 {
+		s := NewRecords(g)
+		for _, i := range mrand.Perm(len(all)) {
+			mustAdd(t, s, all[i])
+		}
+		check(s, false)
+		// The frozen admin freezes back: both stay frozen.
+		mustAdd(t, s, freeze2)
+		check(s, true)
+		// An admin computer does not end a freeze; the admin phone does.
+		mustAdd(t, s, thawRecord(t, g, pc2, pc2Chain, []KeyHash{freeze2.ID()}))
+		check(s, true)
+		mustAdd(t, s, thawRecord(t, g, phone, phoneChain, s.FreezesOf(pc2Key)))
+		check(s, false)
+		// Removing the frozen admin carries what it signed before, and its
+		// freezes stop counting with it.
+		mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pc1Key, KeyHashOf(m1)}, s.Admitted(pc1Key)))
+		mustAdd(t, s, freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}, []KeyHash{freeze2.ID()}))
+		if s.Frozen(pc2Key) || !s.Revoked(pc1Key) {
+			t.Error("a removed admin's freeze counts")
+		}
+		if err := s.Refused([]*x509.Certificate{laptop, pc1.Cert}); err != nil {
+			t.Errorf("the laptop is refused after its admin's removal: %v", err)
+		}
+	}
+	// The root's own thaw ends a freeze too.
+	s := NewRecords(g)
+	for _, r := range all {
+		mustAdd(t, s, r)
+	}
+	mustAdd(t, s, thawRecord(t, g, pg.root, nil, []KeyHash{freeze1.ID()}))
+	if s.Frozen(pc1Key) {
+		t.Error("the root's thaw does not count")
+	}
+	// Its records count again, removing the laptop among them.
+	if got := names(s.Devices()); got != "pc1 pc2 phone tv" {
+		t.Errorf("devices after the thaw %q, want pc1 pc2 phone tv", got)
 	}
 }
