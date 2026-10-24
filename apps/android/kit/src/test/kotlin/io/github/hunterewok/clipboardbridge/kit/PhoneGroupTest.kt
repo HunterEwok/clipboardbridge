@@ -41,9 +41,10 @@ class PhoneGroupTest {
         code: String = "123456",
         joinerCode: String? = null,
         makeAdmin: Boolean = true,
+        addrs: List<String> = emptyList(),
     ): Pair<Result<PairingMember.Admitted>, Result<PairingJoiner.Joined>> {
         val (m, j) = Pipe.pair()
-        val member = Background { admitter.admit(m, code, l.cert, sid, signer, t0, makeAdmin) }
+        val member = Background { admitter.admit(m, code, l.cert, sid, signer, t0, makeAdmin, addrs) }
         val joined = runCatching {
             PairingJoiner.accept(j, joinerCode ?: code, info, admitter.memberCert, l.cert, sid, t0) {}
         }
@@ -146,7 +147,10 @@ class PhoneGroupTest {
         val rootKey = SoftwareSigner()
         val root = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, t0)
         val l = Listener()
-        val (_, j) = pair(root, rootKey, l, Pairing.Info("router", "linux", role = Pairing.Info.LITE))
+        val addrs = listOf("192.168.20.5:8764", "203.0.113.7:8764", "[fd00::5]:8764", "[2001:db8::5]:8764")
+        val (_, j) = pair(root, rootKey, l, Pairing.Info("router", "linux", role = Pairing.Info.LITE), addrs = addrs)
+        // Only the home network addresses are kept, to dial it when mDNS does not reach its subnet.
+        assertEquals(mapOf(l.device to listOf("192.168.20.5:8764", "[fd00::5]:8764")), root.addresses)
         val welcome = j.getOrThrow().welcome
         assertNull(welcome.groupCAKey)
         assertNull(welcome.adminCA)
@@ -189,7 +193,7 @@ class PhoneGroupTest {
         val pi = SyncEngine.newID()
         val cert = GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, rootKey, t0)
         g.record(pi, "pi", "linux", Records.keyHashOfCert(cert), rootKey, t0)
-        g.computers.add(PhoneGroup.Computer(pi, "pi", "linux", cert, Instant.ofEpochMilli(t0.toEpochMilli())))
+        g.computers.add(PhoneGroup.Computer(pi, "pi", "linux", cert, Instant.ofEpochMilli(t0.toEpochMilli()), listOf("10.0.0.5:8764")))
         val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, rootKey, t0.plusSeconds(1))
         val f = File.createTempFile("group", ".json")
         try {

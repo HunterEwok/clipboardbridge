@@ -63,10 +63,16 @@ class PhoneGroup internal constructor(
         val os: String,
         val cert: ByteArray,
         val admitted: Instant,
+        /**
+         * Its addresses on the home network from the QR code, the one that
+         * answered first: dialed when mDNS does not find it, as in another
+         * subnet (docs/protocol.md, section 9).
+         */
+        val addrs: List<String> = emptyList(),
     ) {
         override fun equals(other: Any?): Boolean =
             other is Computer && device == other.device && name == other.name && os == other.os && cert.contentEquals(other.cert) &&
-                admitted == other.admitted
+                admitted == other.admitted && addrs == other.addrs
 
         override fun hashCode(): Int = device.hashCode()
     }
@@ -87,6 +93,9 @@ class PhoneGroup internal constructor(
 
     /** The CA whose key signs for this phone: the current root, or its admin CA. */
     internal val signingCA: ByteArray get() = adminCA ?: currentRoot
+
+    /** The home network addresses of the computers this phone admitted, by device ID, best first. */
+    val addresses: Map<String, List<String>> get() = computers.filter { it.addrs.isNotEmpty() }.associate { it.device to it.addrs }
 
     /** The group tag the computers publish. */
     val tag: String get() = GroupCertificates.tag(groupCA)
@@ -263,7 +272,8 @@ class PhoneGroup internal constructor(
      * key. A phone that sent an admin key becomes an admin when this phone is
      * the root and makeAdmin is set: it gets an admin CA for that key. On
      * success a computer is in computers, where one admitted again replaces
-     * its entry, and every device has its record.
+     * its entry, and every device has its record. A computer keeps those of
+     * addrs that are on a home network, where the phone dialed it.
      */
     fun admit(
         t: FrameTransport,
@@ -273,6 +283,7 @@ class PhoneGroup internal constructor(
         caSigner: CertificateSigner,
         now: Instant,
         makeAdmin: Boolean = true,
+        addrs: List<String> = emptyList(),
     ): PairingMember.Admitted {
         if (!isAdmin) throw Failure("this phone is no admin")
         val first = groupCA
@@ -300,7 +311,7 @@ class PhoneGroup internal constructor(
             return admitted
         }
         computers.removeAll { it.device == admitted.device }
-        computers.add(Computer(admitted.device, admitted.info.name, admitted.info.os, admitted.cert, now))
+        computers.add(Computer(admitted.device, admitted.info.name, admitted.info.os, admitted.cert, now, addrs.filter(JoinCode::isHome)))
         val role = if (admitted.info.role == Pairing.Info.LITE) "lite" else "full"
         record(admitted.device, name, role, key, caSigner, now, os = admitted.info.os)
         return admitted
@@ -324,6 +335,7 @@ class PhoneGroup internal constructor(
                         "os" to Wire.str(it.os),
                         "cert" to Wire.bytes(it.cert),
                         "admitted_ms" to Wire.num(it.admitted.toEpochMilli()),
+                        "addrs" to JsonArray(it.addrs.map { a -> JsonPrimitive(a) }),
                     )
                 },
             ),
@@ -409,6 +421,7 @@ class PhoneGroup internal constructor(
                             co.optString("os") ?: "linux",
                             co.optBytes("cert") ?: continue,
                             Instant.ofEpochMilli(co.optLong("admitted_ms") ?: 0),
+                            co.optArray("addrs").orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.filter(JoinCode::isHome),
                         ),
                     )
                 }

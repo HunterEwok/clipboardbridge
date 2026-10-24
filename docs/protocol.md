@@ -865,6 +865,10 @@ iPhone CA as well (section 10, "Admins").
   6, "The joiner listens") and sends a Welcome with a member certificate signed by its CA.
 - **No profile, no token.** The app trusts its own CA, so it needs no configuration
   profile, no iPhone CA and no token; it finds members through mDNS browsing as a Mac does.
+  It keeps the home network addresses (private IPv4, unique local IPv6) of the QR code of
+  each computer it admitted, the one that answered first, and dials a computer of the
+  group's list at them while browsing does not find it, as one in another subnet that
+  mDNS does not reach. TLS checks the peer as for a found member.
   The shortcut endpoints of section 7 stay for phones without the app.
 - **Renewal and revocation.** The admin phones renew certificates with `cert` messages, as
   a Linux member does in a group it created (ClipboardBridgeKit's
