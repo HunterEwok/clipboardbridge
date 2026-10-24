@@ -104,9 +104,9 @@ type Config struct {
 	OnTunnelKey func(peer group.DeviceID, chain []*x509.Certificate, key []byte) *TunnelOffer
 
 	// OnTunnel, if set, is called with the offer a peer, the group's hub,
-	// sent for this member's tunnel key; it checks it and keeps it. An
-	// error is logged.
-	OnTunnel func(from group.DeviceID, o TunnelOffer) error
+	// sent for this member's tunnel key, and the peer's verified chain; it
+	// checks it and keeps it. An error is logged.
+	OnTunnel func(from group.DeviceID, chain []*x509.Certificate, o TunnelOffer) error
 
 	PingEvery time.Duration        // defaultPingEvery if zero
 	Timeout   time.Duration        // defaultTimeout if zero
@@ -995,7 +995,7 @@ func (c *conn) reader() error {
 			if c.n.cfg.OnTunnel == nil || m.Tunnel == nil {
 				continue
 			}
-			if err := c.n.cfg.OnTunnel(c.id, *m.Tunnel); err != nil {
+			if err := c.n.cfg.OnTunnel(c.id, c.peerChain, *m.Tunnel); err != nil {
 				c.n.cfg.Logf("node: a tunnel offer from %s: %v", c.id, err)
 			}
 		case typeRecs:

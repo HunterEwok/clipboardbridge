@@ -1027,7 +1027,7 @@ func TestTunnelKeyAndOffer(t *testing.T) {
 	mac := newMember(t, Full, func(_ *clip.Config, nc *Config) {
 		nc.TunnelKey = bytes.Repeat([]byte{4}, 32)
 		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte) *TunnelOffer { return nil }
-		nc.OnTunnel = func(id group.DeviceID, o TunnelOffer) error {
+		nc.OnTunnel = func(id group.DeviceID, _ []*x509.Certificate, o TunnelOffer) error {
 			from <- id
 			offers <- o
 			return nil

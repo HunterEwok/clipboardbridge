@@ -136,12 +136,22 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 }
 
 // tunnelOffered keeps the offer of the group's hub for this member's key.
-func (s *Service) tunnelOffered(from group.DeviceID, o node.TunnelOffer) error {
+// Only the group's root or an admin can be the hub, and once this member
+// keeps a hub's offer it takes offers from that hub only: another hub
+// takes over when the user turns sync away from home off and on again
+// here (cbb away off, cbb away on).
+func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, o node.TunnelOffer) error {
+	if !s.adminPeer(from, chain) {
+		return errors.New("only the group's root or an admin can be its hub; the offer is ignored")
+	}
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
 	st := s.tunnel
 	if st == nil {
 		return errors.New("the tunnel is off on this device")
+	}
+	if st.ToHub != nil && st.ToHub.Device != string(from) {
+		return fmt.Errorf("this device keeps the offer of the hub %s; to use %s instead, run cbb away off and cbb away on here", st.ToHub.Device, from)
 	}
 	if st.IsHub {
 		return errors.New("this device is the hub itself; the group has two hubs")
@@ -498,6 +508,9 @@ func (s *Service) away(m *control.Message) error {
 	s.mu.Unlock()
 	if id == nil {
 		return s.errNoGroup()
+	}
+	if m.Name == "hub" && !id.IsAdmin() {
+		return errors.New("only the group's root or an admin can be its hub, since the members take the hub's offer from them only; make this device an admin first (cbb admin on the root)")
 	}
 	reconnect, key, err := s.awayLocked(m, group.Tag(id.GroupCA.Cert))
 	if err != nil {
