@@ -12,22 +12,11 @@ use alloc::vec::Vec;
 use cbb_core::certs::{DeviceId, self_signed};
 use cbb_core::error::{Error, Result};
 use cbb_core::identity::{new_key, signing_key};
-use cbb_core::tls::{Clock, Session, pair_client, pair_server, server_name};
+use cbb_core::tls::{Session, pair_client, pair_server, server_name};
 use esp_hal::time::Instant;
 use esp_println::println;
-use rustls::pki_types::UnixTime;
-use rustls::time_provider::TimeProvider;
 
-/// The chip has no clock of the day yet; pairing certificates do not
-/// expire, so any time after 1970 serves.
-#[derive(Debug)]
-struct FixedClock;
-
-impl TimeProvider for FixedClock {
-    fn current_time(&self) -> Option<UnixTime> {
-        Some(UnixTime::since_unix_epoch(core::time::Duration::from_secs(1_790_000_000)))
-    }
-}
+use crate::clock;
 
 fn step(name: &str, start: Instant) {
     println!("cbb-esp32:   {name}: {} ms", start.elapsed().as_millis());
@@ -52,7 +41,7 @@ fn shuttle(a: &mut Session, b: &mut Session) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
-    let clock: Clock = Arc::new(FixedClock);
+    let clock = clock::fixed();
     let t = Instant::now();
     let ((jc, jk), (mc, mk)) = (device()?, device()?);
     step("two keys and certificates", t);
