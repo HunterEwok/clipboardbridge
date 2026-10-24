@@ -99,6 +99,17 @@ The phone kit (Swift package, runs on Linux too):
 cd apps/ios/ClipboardBridgeKit && swift test
 ```
 
+The phones' tunnel (`mobile/cbbtun`, WireGuard for sync away from home) is a Go package that
+gomobile binds for both apps; the `phone tunnel` jobs build it (the Android NDK for the AAR,
+Xcode for the framework):
+
+```sh
+go test -race ./mobile/...
+go build -o bin/ golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind && PATH=$PWD/bin:$PATH
+ANDROID_NDK_HOME=<ndk> gomobile bind -target=android -androidapi 29 -o cbbtun.aar ./mobile/cbbtun
+gomobile bind -target=ios,iossimulator -iosversion 17.0 -o Cbbtun.xcframework ./mobile/cbbtun
+```
+
 Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
 
 - `CBB_INTEROP_OUT=<dir> swift test` writes fresh `swift-records.json`,
