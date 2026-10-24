@@ -12,8 +12,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   tunnel speak AmneziaWG, with junk packets before each handshake, random padding, random
   message types and encrypted headers, so nothing on the wire looks like WireGuard. The hub
   makes the group's settings and gives them to its clients with its offer at home and in
-  remote invitations; both phone apps use them too. Not yet through a forwarder or on the
-  lite member.
+  remote invitations; both phone apps use them too. An obfuscated hub can use a forwarder:
+  it gives the forwarder the group's settings when it registers. Not yet on the lite member.
 - Sync away from home in the iPhone app, as in the Android app: a switch in Settings, the
   key and the hub's offer in the keychain (this device only), and the same in-process
   tunnel while the app runs. Building the app now needs Go for `Cbbtun.xcframework`.
@@ -56,6 +56,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
   wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
   it speaks plain WireGuard, the same on the wire as before.
+- A hub's hellos to its forwarder are masked, so that they look like random bytes of a
+  random length; a forwarder and a hub of this version are needed together.
 
 ### Fixed
 

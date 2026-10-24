@@ -548,9 +548,6 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if len(eps) == 0 && fw == nil {
 			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
 		}
-		if m.Obfuscate && fw != nil {
-			return false, nil, errors.New("a forwarder cannot pass obfuscated traffic yet; give the hub's own addresses instead")
-		}
 		obf := st.Obfuscation
 		switch {
 		case !m.Obfuscate:

@@ -18,6 +18,8 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
 // Link is a hub's forwarder: its address, the same for UDP and TCP, and the
@@ -50,6 +52,9 @@ func CheckPin(s string) error {
 type HubConfig struct {
 	Link Link
 	Key  [32]byte // the hub's WireGuard private key
+	// Obfuscation is the group's AmneziaWG settings, nil for plain
+	// WireGuard; the forwarder needs them to read the group's packets.
+	Obfuscation *tunnel.Obfuscation
 	// Cert returns the hub's member certificate with its chain to the
 	// group's root; it is asked at each registration, so a renewed
 	// certificate is taken.
@@ -168,7 +173,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	if err != nil {
 		return err
 	}
-	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p}); err != nil {
+	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation}); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
 	var a answer
@@ -178,6 +183,10 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	if a.Error != "" {
 		return fmt.Errorf("the forwarder refused the registration: %s", a.Error)
 	}
+	if len(a.Mask) != 32 {
+		return errors.New("registering with the forwarder: no key for the hellos' mask")
+	}
+	mask := [32]byte(a.Mask)
 	raw.SetDeadline(time.Time{})
 	report(Report{Registered: true})
 	var key [32]byte
@@ -222,7 +231,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 		case <-t.C:
 			counter = max(counter+1, uint64(time.Now().UnixNano()))
 			// A hello that cannot go out now goes with the next one.
-			_ = cfg.Send(cfg.Link.Endpoint, hello(&key, a.ID, counter))
+			_ = cfg.Send(cfg.Link.Endpoint, hello(&mask, &key, a.ID, counter))
 			t.Reset(every)
 		}
 	}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
 // Protocol is the ALPN protocol of a hub's registration.
@@ -49,9 +50,13 @@ type (
 	claim struct {
 		Key   []byte `json:"key"`   // the hub's WireGuard public key
 		Proof []byte `json:"proof"` // HMAC-SHA256(X25519(hub key, e), the TLS proof key)
+		// Obfuscation is the group's AmneziaWG settings, without which the
+		// forwarder cannot read an obfuscated group's packets.
+		Obfuscation *tunnel.Obfuscation `json:"obfuscation,omitempty"`
 	}
 	answer struct {
 		ID    uint64 `json:"id,omitempty"`    // the registration, for the hellos
+		Mask  []byte `json:"mask,omitempty"`  // the key of the hellos' mask
 		Error string `json:"error,omitempty"` // why the forwarder refused it
 		Seen  string `json:"seen,omitempty"`  // where the hub's WireGuard port is reached
 	}
@@ -228,7 +233,12 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	if !hmac.Equal(want, c.Proof) {
 		return refuse("the hub does not hold that WireGuard key")
 	}
-	r := &reg{tag: tag, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
+	if c.Obfuscation != nil {
+		if err := c.Obfuscation.Check(); err != nil {
+			return refuse("the obfuscation settings are not usable")
+		}
+	}
+	r := &reg{tag: tag, obf: c.Obfuscation, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
 	copy(r.key[:], c.Key)
 	r.mac1 = mac1Key(r.key)
 	hk, err := cs.ExportKeyingMaterial(helloLabel, nil, 32)
@@ -261,8 +271,11 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		f.dropRegLocked(old)
 	}
 	f.regs[tag], f.byID[r.id] = r, r
+	if r.obf != nil {
+		f.byInit[initSize(r.obf)] = append(f.byInit[initSize(r.obf)], r)
+	}
 	f.mu.Unlock()
-	if err := enc.Encode(answer{ID: r.id}); err != nil {
+	if err := enc.Encode(answer{ID: r.id, Mask: f.mask[:]}); err != nil {
 		f.mu.Lock()
 		f.dropRegLocked(r)
 		f.mu.Unlock()

@@ -191,6 +191,20 @@ type testService struct {
 
 	mu         sync.Mutex
 	memberAddr string // where the member port listens
+
+	logMu   sync.Mutex
+	stopped bool // the test may have ended: the log goes nowhere
+}
+
+// logf logs to the test until the service stopped: the tunnel's
+// goroutines may still log while they wind down, and the testing package
+// does not allow logging after a test ended.
+func (s *testService) logf(t *testing.T, f string, a ...any) {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	if !s.stopped {
+		t.Logf(s.name+": "+f, a...)
+	}
 }
 
 // addrs returns where the shortcut's HTTPS and the profile are: both on the
@@ -249,7 +263,7 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 	name := s.name
 	cfg := Config{
 		StateDir: s.dir, Socket: s.socket, Role: node.Full, OS: s.os, Name: name, Discover: h.discover,
-		Logf: func(f string, a ...any) { t.Logf(name+": "+f, a...) },
+		Logf: func(f string, a ...any) { s.logf(t, f, a...) },
 		listen: func() (net.Listener, error) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -296,6 +310,9 @@ func (s *testService) stop() {
 		<-s.done
 		s.cancel = nil
 	}
+	s.logMu.Lock()
+	s.stopped = true
+	s.logMu.Unlock()
 }
 
 // dial connects to the service with a deadline, so that a missing answer

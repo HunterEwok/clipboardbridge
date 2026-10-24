@@ -67,6 +67,9 @@ func (r *Range) UnmarshalText(b []byte) error {
 
 func (r Range) overlaps(o Range) bool { return r.Min <= o.Max && o.Min <= r.Max }
 
+// Contains tells whether v is in r.
+func (r Range) Contains(v uint32) bool { return r.Min <= v && v <= r.Max }
+
 // The bounds Check holds the settings to. The junk stays well under the
 // smallest MTU on the way, so it is never fragmented, and the padding
 // leaves room for the tunnel's MTU in a 1500-byte packet.

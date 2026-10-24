@@ -21,13 +21,17 @@ package forward
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
 // Limits bound what one group, one source and all of them may take, so
@@ -78,8 +82,11 @@ type Forwarder struct {
 	pending  map[clientKey]pending
 	byHubIdx map[uint32]*session
 	byClient map[clientKey]*session
+	byAddr   map[netip.AddrPort]map[*reg]int // client addresses and the groups they have handshakes and sessions with
+	byInit   map[int][]*reg                  // obfuscated groups by the size of their handshake initiation
 	sources  map[netip.Addr]*bucket
-	setting  int // registrations being set up
+	setting  int      // registrations being set up
+	mask     [32]byte // the key of the hellos' mask, given to every hub
 
 	closeOnce sync.Once
 	done      chan struct{}
@@ -89,8 +96,9 @@ type Forwarder struct {
 // reg is a hub's registration.
 type reg struct {
 	tag      string
-	key      [32]byte // the hub's WireGuard public key
-	mac1     [32]byte // mac1Key(key)
+	key      [32]byte            // the hub's WireGuard public key
+	mac1     [32]byte            // mac1Key(key)
+	obf      *tunnel.Obfuscation // the group's AmneziaWG settings; nil for plain WireGuard
 	id       uint64
 	helloKey [32]byte
 	counter  uint64         // the last hello's
@@ -168,8 +176,14 @@ func Listen(cfg Config) (*Forwarder, error) {
 		udp: udp, tcp: tcp, limits: limits, logf: logf,
 		regs: map[string]*reg{}, byID: map[uint64]*reg{}, byHubEP: map[netip.AddrPort]*reg{},
 		pending: map[clientKey]pending{}, byHubIdx: map[uint32]*session{}, byClient: map[clientKey]*session{},
+		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
 		sources: map[netip.Addr]*bucket{},
 		done:    make(chan struct{}),
+	}
+	if _, err := rand.Read(f.mask[:]); err != nil {
+		udp.Close()
+		tcp.Close()
+		return nil, fmt.Errorf("forward: %w", err)
 	}
 	f.tlsCfg = f.serverTLS(cfg.Cert)
 	return f, nil
@@ -252,31 +266,32 @@ func (f *Forwarder) forward() error {
 // route decides where the packet p from goes: to its group's hub, to a
 // client of the hub it came from, or nowhere.
 func (f *Forwarder) route(from netip.AddrPort, p []byte, now time.Time) (netip.AddrPort, bool) {
-	t := messageType(p)
-	if t == 0 {
-		return netip.AddrPort{}, false
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if t == msgHello {
-		f.helloLocked(from, p)
+	if h, ok := openHello(&f.mask, p); ok && f.helloLocked(from, h) {
 		return netip.AddrPort{}, false
 	}
+	var buf [initiationSize]byte
 	if r := f.byHubEP[from]; r != nil {
-		return f.fromHubLocked(r, t, p, now)
+		t, m := open(r.obf, p, &buf)
+		if t == 0 {
+			return netip.AddrPort{}, false
+		}
+		return f.fromHubLocked(r, t, m, len(p), now)
 	}
-	return f.fromClientLocked(from, t, p, now)
+	return f.fromClientLocked(from, p, &buf, now)
 }
 
-// fromHubLocked passes a hub's answer or data to the client whose index it
-// names. A hub's own handshake to a client has nowhere to go: its mac1 is
-// keyed with the client's key, which the forwarder does not know; clients
-// make the handshakes and keep their sessions fresh.
-func (f *Forwarder) fromHubLocked(r *reg, t byte, p []byte, now time.Time) (netip.AddrPort, bool) {
-	if !r.take(len(p), now) {
+// fromHubLocked passes a hub's answer or data, the message m of type t in
+// a packet of n bytes, to the client whose index it names. A hub's own
+// handshake to a client has nowhere to go: its mac1 is keyed with the
+// client's key, which the forwarder does not know; clients make the
+// handshakes and keep their sessions fresh.
+func (f *Forwarder) fromHubLocked(r *reg, t byte, m []byte, n int, now time.Time) (netip.AddrPort, bool) {
+	if !r.take(n, now) {
 		return netip.AddrPort{}, false
 	}
-	ck := clientKey{r, receiverIndex(p)}
+	ck := clientKey{r, receiverIndex(t, m)}
 	switch t {
 	case msgResponse:
 		pd, ok := f.pending[ck]
@@ -284,7 +299,7 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, p []byte, now time.Time) (neti
 			return netip.AddrPort{}, false
 		}
 		f.unpendLocked(ck, pd)
-		hubIdx := senderIndex(p)
+		hubIdx := senderIndex(m)
 		if old := f.byHubIdx[hubIdx]; old != nil {
 			// Another session took the same index; the newer wins, and the
 			// older's client makes a new handshake when it hears nothing.
@@ -295,7 +310,7 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, p []byte, now time.Time) (neti
 		}
 		s := &session{reg: r, client: pd.from, clientIdx: ck.idx, hubIdx: hubIdx, at: now}
 		f.byHubIdx[hubIdx], f.byClient[ck] = s, s
-		r.clients[pd.from]++
+		f.addClientLocked(r, pd.from)
 		return pd.from, true
 	case msgCookie:
 		if pd, ok := f.pending[ck]; ok {
@@ -313,72 +328,155 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, p []byte, now time.Time) (neti
 }
 
 // fromClientLocked passes a client's handshake to the hub it is addressed
-// to, and its data to the hub of its session.
-func (f *Forwarder) fromClientLocked(from netip.AddrPort, t byte, p []byte, now time.Time) (netip.AddrPort, bool) {
-	switch t {
+// to, and its data to the hub of its session. A plain packet is read as
+// it is; an obfuscated one with the settings of each obfuscated group the
+// address already has a handshake or session with, and a handshake to a new
+// group with the settings of each obfuscated group whose handshake
+// initiation has the packet's size.
+func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initiationSize]byte, now time.Time) (netip.AddrPort, bool) {
+	switch messageType(p) {
 	case msgInitiation:
-		src := f.sources[from.Addr()]
-		if src == nil {
-			if len(f.sources) >= 4*f.limits.Groups {
-				return netip.AddrPort{}, false
-			}
-			src = newBucket(f.limits.SourceRate, now)
-			f.sources[from.Addr()] = src
-		}
-		if !src.take(1, now) {
+		if !f.sourceLocked(from, now) {
 			return netip.AddrPort{}, false
 		}
-		r := f.addressedLocked(p)
-		if r == nil || !r.hubEP.IsValid() || !r.take(len(p), now) {
-			return netip.AddrPort{}, false
+		if r := f.addressedLocked(p); r != nil {
+			return f.initiationLocked(from, r, p, len(p), now)
 		}
-		if _, known := r.clients[from]; !known && len(r.clients) >= f.limits.Clients {
-			return netip.AddrPort{}, false
-		}
-		ck := clientKey{r, senderIndex(p)}
-		if old, again := f.pending[ck]; again {
-			f.unpendLocked(ck, old)
-		} else if r.waiting >= f.limits.Pending {
-			return netip.AddrPort{}, false
-		}
-		f.pending[ck] = pending{from: from, at: now}
-		r.clients[from]++
-		r.waiting++
-		return r.hubEP, true
+		return netip.AddrPort{}, false
 	case msgData:
-		s := f.byHubIdx[receiverIndex(p)]
-		if s == nil || !s.reg.hubEP.IsValid() || !s.reg.take(len(p), now) {
-			return netip.AddrPort{}, false
+		if s := f.byHubIdx[receiverIndex(msgData, p)]; s != nil && s.reg.obf == nil {
+			return f.dataLocked(s, len(p), now)
 		}
-		return s.reg.hubEP, true
+	}
+	for r := range f.byAddr[from] {
+		if r.obf == nil {
+			continue
+		}
+		switch t, m := open(r.obf, p, buf); t {
+		case msgData:
+			if s := f.byHubIdx[receiverIndex(t, m)]; s != nil && s.reg == r {
+				return f.dataLocked(s, len(p), now)
+			}
+		case msgInitiation:
+			if hasMac1(&r.mac1, m) {
+				if !f.sourceLocked(from, now) {
+					return netip.AddrPort{}, false
+				}
+				return f.initiationLocked(from, r, m, len(p), now)
+			}
+		}
+	}
+	regs := f.byInit[len(p)]
+	if len(regs) == 0 || !f.sourceLocked(from, now) {
+		return netip.AddrPort{}, false
+	}
+	for _, r := range regs {
+		if t, m := open(r.obf, p, buf); t == msgInitiation && hasMac1(&r.mac1, m) {
+			return f.initiationLocked(from, r, m, len(p), now)
+		}
 	}
 	// A client answers no handshake: the forwarder passes none from a hub.
 	return netip.AddrPort{}, false
 }
 
-// addressedLocked returns the registration whose hub the handshake
-// initiation p is addressed to, or nil. It costs one keyed BLAKE2s per
-// group.
+// sourceLocked charges a handshake to the address it came from; false
+// drops it. It bounds what one address may make the forwarder look for.
+func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
+	src := f.sources[from.Addr()]
+	if src == nil {
+		if len(f.sources) >= 4*f.limits.Groups {
+			return false
+		}
+		src = newBucket(f.limits.SourceRate, now)
+		f.sources[from.Addr()] = src
+	}
+	return src.take(1, now)
+}
+
+// initiationLocked passes the handshake initiation m, in a packet of n
+// bytes from a client, to the hub of r, and waits for the hub's answer.
+func (f *Forwarder) initiationLocked(from netip.AddrPort, r *reg, m []byte, n int, now time.Time) (netip.AddrPort, bool) {
+	if !r.hubEP.IsValid() || !r.take(n, now) {
+		return netip.AddrPort{}, false
+	}
+	if _, known := r.clients[from]; !known && len(r.clients) >= f.limits.Clients {
+		return netip.AddrPort{}, false
+	}
+	ck := clientKey{r, senderIndex(m)}
+	if old, again := f.pending[ck]; again {
+		f.unpendLocked(ck, old)
+	} else if r.waiting >= f.limits.Pending {
+		return netip.AddrPort{}, false
+	}
+	f.pending[ck] = pending{from: from, at: now}
+	f.addClientLocked(r, from)
+	r.waiting++
+	return r.hubEP, true
+}
+
+// dataLocked passes a client's data of n bytes to the hub of its session.
+func (f *Forwarder) dataLocked(s *session, n int, now time.Time) (netip.AddrPort, bool) {
+	if !s.reg.hubEP.IsValid() || !s.reg.take(n, now) {
+		return netip.AddrPort{}, false
+	}
+	return s.reg.hubEP, true
+}
+
+// addClientLocked counts a handshake or session of the client at a with
+// the group of r.
+func (f *Forwarder) addClientLocked(r *reg, a netip.AddrPort) {
+	r.clients[a]++
+	regs := f.byAddr[a]
+	if regs == nil {
+		regs = map[*reg]int{}
+		f.byAddr[a] = regs
+	}
+	regs[r]++
+}
+
+// removeClientLocked forgets one handshake or session of the client at a
+// with the group of r.
+func (f *Forwarder) removeClientLocked(r *reg, a netip.AddrPort) {
+	r.clients[a]--
+	if r.clients[a] <= 0 {
+		delete(r.clients, a)
+	}
+	regs := f.byAddr[a]
+	regs[r]--
+	if regs[r] <= 0 {
+		delete(regs, r)
+	}
+	if len(regs) == 0 {
+		delete(f.byAddr, a)
+	}
+}
+
+// addressedLocked returns the registration of a plain group whose hub the
+// handshake initiation p is addressed to, or nil. It costs one keyed
+// BLAKE2s per plain group.
 func (f *Forwarder) addressedLocked(p []byte) *reg {
 	for _, r := range f.regs {
-		if hasMac1(&r.mac1, p) {
+		if r.obf == nil && hasMac1(&r.mac1, p) {
 			return r
 		}
 	}
 	return nil
 }
 
-// helloLocked takes a hub's hello: the hub's WireGuard port is where it
-// came from.
-func (f *Forwarder) helloLocked(from netip.AddrPort, p []byte) {
-	id, counter := readHello(p)
+// helloLocked takes a hub's hello h, without its mask: the hub's WireGuard
+// port is where it came from. It tells whether h was a hello of a hub.
+func (f *Forwarder) helloLocked(from netip.AddrPort, h []byte) bool {
+	id, counter := readHello(h)
 	r := f.byID[id]
-	if r == nil || counter <= r.counter || !checkHello(&r.helloKey, p) {
-		return
+	if r == nil || !checkHello(&r.helloKey, h) {
+		return false
+	}
+	if counter <= r.counter {
+		return true
 	}
 	r.counter = counter
 	if r.hubEP == from {
-		return
+		return true
 	}
 	if other := f.byHubEP[from]; other != nil && other != r {
 		// Two hubs cannot share a port; the newer hello wins.
@@ -391,6 +489,7 @@ func (f *Forwarder) helloLocked(from netip.AddrPort, p []byte) {
 	case r.seen <- from:
 	default:
 	}
+	return true
 }
 
 // dropSessionLocked forgets a session.
@@ -402,10 +501,7 @@ func (f *Forwarder) dropSessionLocked(s *session) {
 	if f.byClient[ck] == s {
 		delete(f.byClient, ck)
 	}
-	s.reg.clients[s.client]--
-	if s.reg.clients[s.client] <= 0 {
-		delete(s.reg.clients, s.client)
-	}
+	f.removeClientLocked(s.reg, s.client)
 }
 
 // dropRegLocked forgets a registration and everything of its group.
@@ -418,6 +514,12 @@ func (f *Forwarder) dropRegLocked(r *reg) {
 		delete(f.regs, r.tag)
 	}
 	delete(f.byID, r.id)
+	if r.obf != nil {
+		f.byInit[initSize(r.obf)] = slices.DeleteFunc(f.byInit[initSize(r.obf)], func(o *reg) bool { return o == r })
+		if len(f.byInit[initSize(r.obf)]) == 0 {
+			delete(f.byInit, initSize(r.obf))
+		}
+	}
 	if f.byHubEP[r.hubEP] == r {
 		delete(f.byHubEP, r.hubEP)
 	}
@@ -473,10 +575,7 @@ func (f *Forwarder) unpendLocked(ck clientKey, pd pending) {
 	delete(f.pending, ck)
 	r := ck.reg
 	r.waiting--
-	r.clients[pd.from]--
-	if r.clients[pd.from] <= 0 {
-		delete(r.clients, pd.from)
-	}
+	f.removeClientLocked(r, pd.from)
 }
 
 // take charges a packet of n bytes to the group; false drops it.

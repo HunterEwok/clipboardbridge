@@ -264,11 +264,6 @@ func (s *State) check() error {
 		if !s.IsHub {
 			return errors.New("obfuscation settings on a device that is not the hub")
 		}
-		if s.Forwarder != nil {
-			// The forwarder routes by WireGuard's own headers, which
-			// obfuscation hides (docs/design.md, "Blocked networks").
-			return errors.New("obfuscation and a forwarder together")
-		}
 		if err := o.Check(); err != nil {
 			return err
 		}

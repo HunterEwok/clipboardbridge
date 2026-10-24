@@ -4,6 +4,7 @@
 package forward
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/blake2s"
+	"golang.org/x/crypto/chacha20"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -72,12 +74,13 @@ type hubSide struct {
 	hub     *tunnel.Hub
 	key     tunnel.Key
 	addr    netip.Addr
+	obf     *tunnel.Obfuscation
 	reports chan Report
 }
 
 // startHub brings up a hub for the clients and registers it with the
 // forwarder; it returns once the forwarder saw the hub's port.
-func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer) *hubSide {
+func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, obf *tunnel.Obfuscation) *hubSide {
 	t.Helper()
 	cert, _ := member(t)
 	key, err := tunnel.NewPrivateKey()
@@ -88,17 +91,17 @@ func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer) *hu
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: key, Addr: addr, Peers: clients, Logf: t.Logf})
+	h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: key, Addr: addr, Peers: clients, Obfuscation: obf, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { h.Close() })
-	hs := &hubSide{hub: h, key: key, addr: addr, reports: make(chan Report, 16)}
+	hs := &hubSide{hub: h, key: key, addr: addr, obf: obf, reports: make(chan Report, 16)}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, Cert: func() tls.Certificate { return cert }, Send: h.Send,
+		Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, Obfuscation: obf, Cert: func() tls.Certificate { return cert }, Send: h.Send,
 			Report: func(r Report) {
 				select {
 				case hs.reports <- r:
@@ -150,7 +153,7 @@ func newClient(t *testing.T) (tunnel.Key, tunnel.Peer) {
 func roundTrip(t *testing.T, f *Forwarder, hs *hubSide, key tunnel.Key, peer tunnel.Peer) error {
 	t.Helper()
 	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: peer.PresharedKey, Addr: peer.Addr,
-		HubPublicKey: hs.key.Public(), HubAddr: hs.addr, Endpoint: f.Addr(), Logf: t.Logf})
+		HubPublicKey: hs.key.Public(), HubAddr: hs.addr, Endpoint: f.Addr(), Obfuscation: hs.obf, Logf: t.Logf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,26 +197,43 @@ func roundTrip(t *testing.T, f *Forwarder, hs *hubSide, key tunnel.Key, peer tun
 	return nil
 }
 
+func newObfuscation(t *testing.T) *tunnel.Obfuscation {
+	t.Helper()
+	o, err := tunnel.NewObfuscation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return o
+}
+
 func TestThroughForwarder(t *testing.T) {
 	f, pin := startForwarder(t, Limits{})
 	key, peer := newClient(t)
-	hs := startHub(t, f, pin, []tunnel.Peer{peer})
+	hs := startHub(t, f, pin, []tunnel.Peer{peer}, nil)
 	if err := roundTrip(t, f, hs, key, peer); err != nil {
 		t.Fatal(err)
 	}
 }
 
+func TestObfuscatedThroughForwarder(t *testing.T) {
+	f, pin := startForwarder(t, Limits{})
+	key, peer := newClient(t)
+	hs := startHub(t, f, pin, []tunnel.Peer{peer}, newObfuscation(t))
+	if err := roundTrip(t, f, hs, key, peer); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGroupsApart runs two plain groups and two obfuscated ones through one
+// forwarder.
 func TestGroupsApart(t *testing.T) {
 	f, pin := startForwarder(t, Limits{})
-	keyA, peerA := newClient(t)
-	keyB, peerB := newClient(t)
-	hubA := startHub(t, f, pin, []tunnel.Peer{peerA})
-	hubB := startHub(t, f, pin, []tunnel.Peer{peerB})
-	if err := roundTrip(t, f, hubA, keyA, peerA); err != nil {
-		t.Fatalf("group A: %v", err)
-	}
-	if err := roundTrip(t, f, hubB, keyB, peerB); err != nil {
-		t.Fatalf("group B: %v", err)
+	for i, obf := range []*tunnel.Obfuscation{nil, newObfuscation(t), nil, newObfuscation(t)} {
+		key, peer := newClient(t)
+		hs := startHub(t, f, pin, []tunnel.Peer{peer}, obf)
+		if err := roundTrip(t, f, hs, key, peer); err != nil {
+			t.Fatalf("group %d: %v", i, err)
+		}
 	}
 }
 
@@ -370,7 +390,13 @@ func TestHello(t *testing.T) {
 	hub := netip.MustParseAddrPort("198.51.100.1:8764")
 	r, _ := fakeReg(f, "a", hub)
 	moved := netip.MustParseAddrPort("198.51.100.1:9000")
-	h := hello(&r.helloKey, r.id, 10)
+	h := hello(&f.mask, &r.helloKey, r.id, 10)
+	if h2 := hello(&f.mask, &r.helloKey, r.id, 10); bytes.Equal(h[:helloMin], h2[:helloMin]) {
+		t.Error("two hellos look the same on the wire")
+	}
+	if messageType(h) != 0 || h[0] == msgHello && h[1] == 0 && h[2] == 0 && h[3] == 0 {
+		t.Error("a hello shows its type")
+	}
 	now := time.Now()
 	f.route(moved, h, now)
 	if r.hubEP != moved {
@@ -383,7 +409,12 @@ func TestHello(t *testing.T) {
 	}
 	// A hello under another key moves nothing.
 	var wrong [32]byte
-	f.route(netip.MustParseAddrPort("203.0.113.66:1"), hello(&wrong, r.id, 11), now)
+	f.route(netip.MustParseAddrPort("203.0.113.66:1"), hello(&f.mask, &wrong, r.id, 11), now)
+	if r.hubEP != moved {
+		t.Fatalf("a forged hello moved the hub to %v", r.hubEP)
+	}
+	// A hello under another forwarder's mask moves nothing either.
+	f.route(netip.MustParseAddrPort("203.0.113.66:1"), hello(&wrong, &r.helloKey, r.id, 12), now)
 	if r.hubEP != moved {
 		t.Fatalf("a forged hello moved the hub to %v", r.hubEP)
 	}
@@ -529,4 +560,110 @@ func TestPin(t *testing.T) {
 	if Pin(a.Leaf) != Pin(b.Leaf) {
 		t.Error("the forwarder's key changed when it was read again")
 	}
+}
+
+// obfuscate pads the plain message m and protects its header, as
+// amneziawg-go sends it in a group with the settings o; m's type field is
+// set to a value of the type's range.
+func obfuscate(o *tunnel.Obfuscation, m []byte) []byte {
+	var padding int
+	var types tunnel.Range
+	switch m[0] {
+	case msgInitiation:
+		padding, types = o.S1, o.H1
+	case msgResponse:
+		padding, types = o.S2, o.H2
+	case msgCookie:
+		padding, types = o.S3, o.H3
+	default:
+		padding, types = o.S4, o.H4
+	}
+	p := make([]byte, padding+len(m))
+	rand.Read(p[:padding])
+	copy(p[padding:], m)
+	binary.LittleEndian.PutUint32(p[padding:], types.Min+uint32(m[1]))
+	n := len(m)
+	if m[0] == msgData {
+		n = dataHeaderSize
+	}
+	c, _ := chacha20.NewUnauthenticatedCipher(o.HeaderKey[:], p[:headerNonceSize])
+	c.XORKeyStream(p[padding:padding+n], p[padding:padding+n])
+	return p
+}
+
+// obfuscatedInitiation is initiation's message to pub as an obfuscated
+// group sends it: mac1 covers the type field the group chose.
+func obfuscatedInitiation(o *tunnel.Obfuscation, pub [32]byte, idx uint32) []byte {
+	m := make([]byte, initiationSize)
+	rand.Read(m)
+	binary.LittleEndian.PutUint32(m[0:4], o.H1.Min+5)
+	binary.LittleEndian.PutUint32(m[4:8], idx)
+	k := mac1Key(pub)
+	h, _ := blake2s.New128(k[:])
+	h.Write(m[:initiationSize-32])
+	h.Sum(m[:initiationSize-32])
+	p := make([]byte, o.S1+initiationSize)
+	rand.Read(p[:o.S1])
+	copy(p[o.S1:], m)
+	c, _ := chacha20.NewUnauthenticatedCipher(o.HeaderKey[:], p[:headerNonceSize])
+	c.XORKeyStream(p[o.S1:], p[o.S1:])
+	return p
+}
+
+func TestRouteObfuscated(t *testing.T) {
+	cert, _ := NewCert()
+	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	hubA, hubB, hubP := netip.MustParseAddrPort("198.51.100.1:8764"), netip.MustParseAddrPort("198.51.100.2:8764"), netip.MustParseAddrPort("198.51.100.3:8764")
+	client := netip.MustParseAddrPort("203.0.113.5:40000")
+	other := netip.MustParseAddrPort("203.0.113.6:40000")
+	// B's handshake initiation has the size of A's, so that only the
+	// header key tells them apart.
+	oA, oB := newObfuscation(t), newObfuscation(t)
+	for oB.S1 = oA.S1; oB.Check() != nil; oB.S1 = oA.S1 {
+		oB = newObfuscation(t)
+	}
+	rA, pubA := fakeReg(f, "a", hubA)
+	rB, pubB := fakeReg(f, "b", hubB)
+	_, pubP := fakeReg(f, "p", hubP)
+	f.mu.Lock()
+	rA.obf, rB.obf = oA, oB
+	f.byInit[initSize(oA)] = append(f.byInit[initSize(oA)], rA)
+	f.byInit[initSize(oB)] = append(f.byInit[initSize(oB)], rB)
+	f.mu.Unlock()
+	now := time.Now()
+	expect := func(what string, from netip.AddrPort, p []byte, want netip.AddrPort) {
+		t.Helper()
+		got, ok := f.route(from, p, now)
+		if !want.IsValid() {
+			if ok {
+				t.Errorf("%s: went to %v, want dropped", what, got)
+			}
+			return
+		}
+		if !ok || got != want {
+			t.Errorf("%s: went to %v (%v), want %v", what, got, ok, want)
+		}
+	}
+
+	expect("a handshake to A", client, obfuscatedInitiation(oA, pubA, 7), hubA)
+	expect("a handshake to B", other, obfuscatedInitiation(oB, pubB, 8), hubB)
+	expect("a plain handshake to A", client, initiation(pubA, 9), netip.AddrPort{})
+	expect("a handshake to A with B's settings", client, obfuscatedInitiation(oB, pubA, 10), netip.AddrPort{})
+	expect("a plain handshake to the plain group", client, initiation(pubP, 11), hubP)
+
+	expect("A's answer", hubA, obfuscate(oA, response(100, 7)), client)
+	expect("a plain answer from A", hubA, response(101, 7), netip.AddrPort{})
+	expect("the client's data to A", client, obfuscate(oA, data(100)), hubA)
+	expect("the client's plain data to A", client, data(100), netip.AddrPort{})
+	expect("A's data to the client", hubA, obfuscate(oA, data(7)), client)
+	expect("data to A with B's settings", client, obfuscate(oB, data(100)), netip.AddrPort{})
+	expect("A's data from another address", other, obfuscate(oA, data(100)), netip.AddrPort{})
+	expect("junk", client, make([]byte, 200), netip.AddrPort{})
+
+	expect("B's answer", hubB, obfuscate(oB, response(200, 8)), other)
+	expect("the other client's data to B", other, obfuscate(oB, data(200)), hubB)
 }
