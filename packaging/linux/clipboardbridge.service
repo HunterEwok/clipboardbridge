@@ -50,6 +50,8 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
+# Secrets live only in memory; none of it goes to swap.
+MemorySwapMax=0
 
 # Only the home network: private IPv4, unique-local and link-local IPv6,
 # and the mDNS multicast groups. sudo cbb global on adds the drop-in

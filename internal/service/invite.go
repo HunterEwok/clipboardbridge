@@ -34,9 +34,10 @@ const (
 	// confirmWait is how long the hub waits for the admin to confirm a
 	// device that used an invitation.
 	confirmWait = 5 * time.Minute
-	// guestGrace is how long a guest tunnel stays after its device was
-	// admitted, for the device's first member connection, in which it
-	// offers its own tunnel key.
+	// guestGrace is how long a guest tunnel stays at most after its device
+	// was admitted, for the device's first member connection, in which it
+	// offers its own tunnel key. Once the hub answered that offer, the guest
+	// goes as soon as that connection ends.
 	guestGrace = 2 * time.Minute
 )
 
@@ -45,6 +46,7 @@ type guest struct {
 	peer     tunnel.Peer
 	w        *pair.Window
 	admitted group.DeviceID // the device the window admitted; "" until then
+	offered  bool           // the hub answered the admitted device's tunnel key
 }
 
 // hubPeerListLocked returns the hub's WireGuard peers: the clients the
@@ -229,6 +231,10 @@ func (s *Service) serveGuest(ctx context.Context, raw net.Conn, from netip.Addr,
 	}
 	cfg := &tls.Config{GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if slices.Contains(hello.SupportedProtos, pair.Protocol) {
+			if admitted != "" {
+				// The invitation was used: no second pairing with it.
+				return nil, errors.New("the invitation was used")
+			}
 			return pair.ServerTLS(id), nil
 		}
 		return nd.ServerTLS(), nil
@@ -256,6 +262,13 @@ func (s *Service) serveGuest(ctx context.Context, raw net.Conn, from netip.Addr,
 		}
 		if err := nd.Serve(ctx, tc); err != nil && ctx.Err() == nil {
 			s.logf("cbb: connection from %s through its guest tunnel: %v", peer, err)
+		}
+		// The device reaches the hub with its own key from now on.
+		s.tunMu.Lock()
+		offered := g.offered
+		s.tunMu.Unlock()
+		if offered {
+			s.dropGuest(from)
 		}
 	default:
 		raw.Close()
@@ -312,7 +325,7 @@ func (s *Service) joinInvite(ctx context.Context, c net.Conn, j *pair.Joiner, m 
 	}
 	if err != nil {
 		gc.Close()
-		return nil, nil, fmt.Errorf("the hub did not answer; check that the invitation is still valid and that the hub's UDP port is open: %w", err)
+		return nil, nil, fmt.Errorf("the hub did not answer; check that the invitation is still valid, that the hub is on, and that its UDP port or its forwarder can be reached: %w", err)
 	}
 	id, err = j.JoinSecret(ctx, raw, in.Secret, confirmWait, s.saveIdentity)
 	if err != nil {

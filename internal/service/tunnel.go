@@ -133,6 +133,11 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 			return nil
 		}
 	}
+	for _, g := range s.guests {
+		if g.admitted == peer {
+			g.offered = true
+		}
+	}
 	return o
 }
 
@@ -469,7 +474,7 @@ func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.Hu
 		}
 		s.tunMu.Lock()
 		if s.tunRun != nil && s.tunRun.client == c {
-			s.tunFailedLocked(fmt.Sprintf("the hub did not answer at %v", ep), err)
+			s.tunFailedLocked(fmt.Sprintf("no answer through the tunnel at %v: the hub is off or cannot be reached, or the forwarder on the way is down", ep), err)
 		}
 		s.tunMu.Unlock()
 		select {

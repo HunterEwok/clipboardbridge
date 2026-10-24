@@ -462,6 +462,10 @@ Not built yet (roadmap item 10); the design:
   paste; the shortcut may mark a text as secret. Secret events are kept only in memory and
   expire 60 seconds after the copy, judged by the event's age. When a secret that a connector
   wrote expires, the connector gives up the clipboard, so the desktop does not keep it.
+- Secrets stay out of swap where the system allows it: on Linux the service's unit sets
+  `MemorySwapMax=0`, and macOS encrypts its swap. Windows does not encrypt its page file by
+  default, so there a secret in the service's memory may reach it (not solved yet). The desktop's
+  own clipboard, which holds a received secret until it expires, is outside the service.
 - Only root and members of the `clipboardbridge` group receive secrets through the control socket.
 
 ## Limits
