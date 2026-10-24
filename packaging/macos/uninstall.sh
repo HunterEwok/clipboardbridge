@@ -4,7 +4,7 @@
 
 # Removes what install.sh installed on a Mac:
 #
-#   sudo sh uninstall.sh [--purge]
+#   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service and the pasteboard agent of every user and removes
 # their plists, the service's entry in the application firewall, the binary
@@ -43,7 +43,7 @@ rm -f "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist
 if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 	rm -f /usr/local/bin/cbb
 fi
-rm -rf /Library/Logs/clipboardbridge
+rm -rf /Library/Logs/clipboardbridge /usr/local/share/clipboardbridge
 support="/Library/Application Support/clipboardbridge"
 fw=/usr/libexec/ApplicationFirewall/socketfilterfw
 if [ -f "$support/firewall" ]; then

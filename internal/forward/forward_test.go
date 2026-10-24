@@ -189,7 +189,10 @@ func roundTripTo(t *testing.T, ep netip.AddrPort, hs *hubSide, key tunnel.Key, p
 			accepted <- conn
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// WireGuard sends a lost handshake again only after 5 s, and through
+	// VLESS the first ones can be lost while Xray connects; on a loaded
+	// runner 10 s left room for just one retry.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	conn, err := c.Dial(ctx)
 	if err != nil {

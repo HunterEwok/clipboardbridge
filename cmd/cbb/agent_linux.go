@@ -14,6 +14,9 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/desktop"
 )
 
+// runDesktop is the agent on a Linux desktop: it opens the session's
+// clipboard through Wayland or X11, and opens it again when the display
+// connection drops.
 func runDesktop(ctx context.Context, logf func(string, ...any), stderr io.Writer) int {
 	backoff := time.Second
 	failures := 0

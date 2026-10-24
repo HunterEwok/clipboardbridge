@@ -78,12 +78,10 @@ No iPhone? Run `cbb new` and then `cbb pair`, which shows a code for the next co
 Install on each computer first.
 
 - **Linux**: the same command as in step 1.
-- **Mac** (Apple silicon; `amd64` instead of `arm64` for Intel), in Terminal:
+- **Mac** (Apple silicon or Intel), in Terminal, the same command as on Linux:
 
   ```sh
-  curl -fsSLO https://github.com/HunterEwok/clipboardbridge/releases/latest/download/clipboardbridge-darwin-arm64.tar.gz
-  tar -xzf clipboardbridge-darwin-arm64.tar.gz
-  sudo sh clipboardbridge/packaging/macos/install.sh clipboardbridge/cbb
+  curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
   ```
 
   Or with Homebrew, which also updates it; run the second line again after each
@@ -248,12 +246,10 @@ rules the installer added, and only those. The device's keys stay in `/var/lib/c
 so a reinstall comes back into the group. Add `--purge` to delete them too; then remove the
 device from the group on another one (`cbb revoke NAME`, or Devices in the app).
 
-On a Mac, with the `uninstall.sh` beside the `install.sh` you ran (from Homebrew:
-`$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/uninstall.sh`,
-then `brew uninstall clipboardbridge`):
+On a Mac (with Homebrew, then also `brew uninstall clipboardbridge`):
 
 ```sh
-sudo sh clipboardbridge/packaging/macos/uninstall.sh
+sudo sh /usr/local/share/clipboardbridge/uninstall.sh
 ```
 
 It stops the service and the agent and removes them and the program. The keys stay in

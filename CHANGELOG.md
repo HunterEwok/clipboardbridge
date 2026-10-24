@@ -75,7 +75,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   state: in no group it joins one (it shows a QR code for the phone and also takes a
   typed code, `cbb pair -code` reads one from standard input), in a group it admits a
   device. `cbb join` is gone, and `cbb pair` no longer creates a group by itself.
-
+- One `get.sh` installs on Linux and on a Mac: it picks the archive for the system and the
+  architecture, checks it against `SHA256SUMS` and runs that system's `install.sh`. On a
+  Mac, `install.sh` keeps `uninstall.sh` in `/usr/local/share/clipboardbridge`, as on Linux,
+  so every platform has the same three: get, install and uninstall.
+- `cbb desktop` is gone: `cbb agent` links the clipboard on every desktop, the Mac's, the
+  Windows one and a Linux desktop's (Wayland or X11), and the Linux autostart entry runs it.
 - The tunnel for sync away from home now runs on amneziawg-go, the AmneziaWG fork of
   wireguard-go, in `cbb` and in the phones' tunnel. Until a group switches obfuscation on
   it speaks plain WireGuard, the same on the wire as before.

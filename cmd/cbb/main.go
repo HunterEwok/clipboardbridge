@@ -24,8 +24,6 @@ Commands:
   away [on|off]           Show, or turn on or off, sync away from home on this device.
   away hub address:port   Make this device the group's hub for sync away from home.
   away relay address:port Meet the group's other devices away from home at a relay.
-  holder [auto|first|fallback|never]
-                          Show or set whether this computer holds clipboardbridge.local.
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
   new                     Create a group with this computer as its root.
@@ -35,11 +33,14 @@ Commands:
   pair -phone             Pair an iPhone or iPad with the shortcut.
   pair -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
-  service                 Run the service (started by systemd, launchd or Windows).
-  agent                   Link the Mac's or Windows clipboard to the service (started at sign-in).
-  desktop                 Link a Linux desktop's clipboard to the service (started with the session).
   version                 Print the version and the platform.
   help                    Print this help.
+
+Rarely needed:
+  holder [auto|first|fallback|never]
+                          Show or set whether this computer holds clipboardbridge.local.
+  service                 Run the service (started by systemd, launchd or Windows).
+  agent                   Link this desktop's clipboard to the service (started at sign-in).
 
 The design is in docs/design.md.
 `
@@ -92,8 +93,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdService(rest, stderr)
 	case "agent":
 		return cmdAgent(rest, stderr)
-	case "desktop":
-		return cmdDesktop(rest, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
