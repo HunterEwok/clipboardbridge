@@ -47,9 +47,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
       - name: generate the iPhone app's project and fetch its packages
-        # Before CodeQL watches: Homebrew refuses to run under its tracer.
+        # Before CodeQL watches: Homebrew refuses to run under its tracer. The app
+        # links the phones' tunnel (mobile/cbbtun), bound by gomobile.
         run: |
+          mobile/cbbtun/bind.sh ios apps/ios/Cbbtun.xcframework
           brew install xcodegen
           (cd apps/ios && xcodegen generate)
           xcodebuild -resolvePackageDependencies -project apps/ios/ClipboardBridge.xcodeproj -scheme ClipboardBridge

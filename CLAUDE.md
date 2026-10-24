@@ -56,7 +56,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   (`install.ps1`, `uninstall.ps1`, `get.ps1`); CI's `windows installer` job runs them.
 - `apps/ios/ClipboardBridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
-  `TLSTransport`, `KeychainIdentity`, `SecKeySigner`; `clipboardbridge-interop` plays the phone
+  `TLSTransport`, `KeychainIdentity`, `SecKeySigner`, `AwayFromHome` (sync away from home through
+  `Cbbtun.xcframework`); `clipboardbridge-interop` plays the phone
   in Go tests.
 - `lite/`: the lite member in Rust (`cbb-lite`): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
