@@ -22,6 +22,18 @@
 # other way (docs/quickstart.md).
 set -eu
 
+# A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
+# command as it runs, so that the output shows where and why it failed.
+if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
+	set -x
+fi
+failed() {
+	rc=$1
+	if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ "${CBB_ERROR_DETAILS:-}" != 1 ]; then
+		echo "get.sh: failed (exit status $rc). For every command it ran: CBB_ERROR_DETAILS=1, and run it again." >&2
+	fi
+}
+
 repo=https://github.com/HunterEwok/clipboardbridge
 console=
 port=
@@ -69,7 +81,6 @@ Darwin)
 	os=darwin
 	[ "$lite" = no ] || fail "--lite is for Linux; a Mac runs the full member"
 	[ -z "$console" ] || fail "--console is for Linux"
-	[ -z "$port" ] || fail "--port is for Linux; a Mac keeps the member port 8764"
 	# A shell under Rosetta reports x86_64 on an Apple chip.
 	if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
 		arch=arm64
@@ -113,7 +124,7 @@ if [ "$lite" = yes ]; then
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+trap 'rc=$?; rm -rf "$tmp"; failed $rc' EXIT
 echo "Downloading $archive ($version)..."
 fetch "$base/$archive" "$tmp/$archive" || fail "could not download $base/$archive"
 fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "could not download $base/SHA256SUMS"
@@ -124,7 +135,8 @@ got=$(sha256 "$tmp/$archive")
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port is words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port "$tmp/$dir/cbb"
 else
 	# shellcheck disable=SC2086 # $console and $port are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port "$tmp/$dir/cbb"

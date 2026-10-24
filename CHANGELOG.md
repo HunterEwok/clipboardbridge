@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Mac installer takes `--port N` like the Linux one, kept in
+  `/etc/clipboardbridge/clipboardbridge.env`, and `get.sh` passes it on a Mac too.
+- `CBB_ERROR_DETAILS=1` for the Linux and macOS installers, uninstallers and `get.sh`: they
+  show every command as it runs. Without it a failure says it failed, with its exit status.
+- [docs/parity.md](docs/parity.md): what each computer, phone and lite device can do, the
+  gaps between devices of one class and the plan to close them.
 - VLESS with REALITY for networks that block WireGuard and AmneziaWG alike: `cbb forward
   -vless-site www.example.com` also takes VLESS on TCP 443, borrowing that site's TLS, and
   `cbb global hub -forwarder ... -vless` has the hub's clients reach the forwarder only that
