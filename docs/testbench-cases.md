@@ -238,7 +238,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P31)
+## 3. Features and platforms (section 7, P1 to P32)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -439,6 +439,16 @@ text.
 Pass: each action does what the same `cbb` command does; the cancelled prompt changes nothing
 and says nothing; the stopped service is explained, with the error underneath when details
 are on.
+
+**P32. The tray app.** Runs: manual (the Linux members with GNOME and KDE, the Steam Deck,
+Windows).
+1. Start `cbb-desktop`; find the tray item; open the window from it and by starting the app
+   again.
+2. Do steps 1 to 4 of P31, with pkexec on Linux and UAC on Windows (stop the service with
+   `sudo systemctl stop clipboardbridge`, or `Stop-Service clipboardbridge`).
+3. Set the system's language to Russian and start the app again.
+Pass: as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension);
+the texts are Russian.
 
 ## 4. Failure cases (section 8)
 

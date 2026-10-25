@@ -15,7 +15,7 @@ func TestTokensFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	swift, kotlin, err := generate(data)
+	swift, kotlin, js, err := generate(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +24,9 @@ func TestTokensFile(t *testing.T) {
 	}
 	if !strings.Contains(string(kotlin), "name = \"terminal\",") || !strings.Contains(string(kotlin), "accent = Color(0xFF3DFF8A),") {
 		t.Errorf("no terminal palette in\n%s", kotlin)
+	}
+	if !strings.Contains(string(js), "name: \"terminal\",") || !strings.Contains(string(js), "accent: \"#3DFF8A\",") {
+		t.Errorf("no terminal palette in\n%s", js)
 	}
 }
 
@@ -38,10 +41,10 @@ func TestContrast(t *testing.T) {
 	if err := checkContrast("low", low); err == nil || !strings.Contains(err.Error(), "text has a contrast") {
 		t.Errorf("low contrast passed: %v", err)
 	}
-	if _, _, err := generate([]byte(`{"colors":[{"name":"amber","dark":"#FFB000","light":"#8A5A00"}],"radius":{},"spacing":{}}`)); err == nil {
+	if _, _, _, err := generate([]byte(`{"colors":[{"name":"amber","dark":"#FFB000","light":"#8A5A00"}],"radius":{},"spacing":{}}`)); err == nil {
 		t.Error("a file without terminal first passed")
 	}
-	if _, _, err := generate([]byte(`{"colors":[],"extra":1}`)); err == nil {
+	if _, _, _, err := generate([]byte(`{"colors":[],"extra":1}`)); err == nil {
 		t.Error("an unknown field passed")
 	}
 }

@@ -28,7 +28,8 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: "gomod"
-    directory: "/"
+    # The tray app (apps/desktop) is a module of its own, for Wails.
+    directories: ["/", "/apps/desktop"]
     schedule:
       interval: "weekly"
       day: "monday"

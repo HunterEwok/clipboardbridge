@@ -85,12 +85,25 @@ func dial(path, denied string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.New(denied)
+			return nil, &DialError{Msg: denied, Denied: true, Err: err}
 		}
-		return nil, errors.New("the clipboardbridge service is not running (" + err.Error() + ")")
+		return nil, &DialError{Msg: "the clipboardbridge service is not running (" + err.Error() + ")", Err: err}
 	}
 	return &Client{c: c, r: NewReader(c)}, nil
 }
+
+// A DialError is a connection to the service that failed: Denied when the
+// socket's permissions keep this user out, else the service is not
+// running. Msg is for the user, and Err is the error underneath.
+type DialError struct {
+	Msg    string
+	Denied bool
+	Err    error
+}
+
+func (e *DialError) Error() string { return e.Msg }
+
+func (e *DialError) Unwrap() error { return e.Err }
 
 // Close closes the connection.
 func (c *Client) Close() error { return c.c.Close() }
