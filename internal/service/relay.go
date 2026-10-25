@@ -43,7 +43,7 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 		Want: func(peer string) bool {
 			id := group.DeviceID(peer)
 			s.mu.Lock()
-			nd, near := s.nd, s.nearby[id]
+			nd, near := s.nd, s.nearLocked(id)
 			s.mu.Unlock()
 			return nd != nil && !near && !slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id })
 		},

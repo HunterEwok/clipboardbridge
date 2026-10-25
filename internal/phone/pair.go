@@ -195,7 +195,7 @@ func ProfileHandler(ca *group.CA) http.Handler {
 		})
 	}
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		data := map[string]string{"Fingerprint": Fingerprint(ca), "Short": ShortFingerprint(ca)}
+		data := map[string]string{}
 		if Shortcut(SyncShortcut) != nil {
 			data["Shortcut"] = "yes"
 		}
@@ -314,10 +314,8 @@ var profilePage = template.Must(template.New("profile").Parse(pageHead + `
 <ol>
 <li><p><a class="btn" href="/clipboardbridge.mobileconfig">Install the profile</a></p>
 <p>Allow the download, then open Settings: the profile waits at the top, under <b>Profile Downloaded</b>. Tap <b>Install</b>.</p></li>
-<li><p>In Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipboardbridge &rsaquo; More Details, the SHA-256 fingerprint must start with what the computer shows:</p>
-<p class="fp"><b>{{.Short}}</b></p>
-<p class="small">The whole fingerprint: {{.Fingerprint}}</p>
-<p>If it does not match, stop: someone else is answering.</p></li>
+<li><p>In Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; clipboardbridge &rsaquo; More Details, compare the SHA-256 fingerprint with the one in the <b>computer's terminal</b>, where <code>cbb pair -phone</code> runs. This page cannot show it: it comes over plain HTTP, and anyone on the network could change it.</p>
+<p>If the fingerprint does not start with what the terminal shows, remove the profile and stop: someone else is answering. Do not turn on full trust for it.</p></li>
 <li><p>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings: turn on <b>clipboardbridge</b>. Without it, the shortcut reports that it cannot make a secure connection.</p></li>
 {{if .Shortcut}}<li><p><a class="btn" href="/clipboardbridge.shortcut">Add the shortcut</a></p>
 <p>Then run it once: it asks for the six-digit code that the computer shows, and remembers this iPhone.</p></li>

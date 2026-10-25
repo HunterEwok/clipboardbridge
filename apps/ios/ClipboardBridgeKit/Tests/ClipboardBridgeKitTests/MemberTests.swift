@@ -193,6 +193,16 @@ final class MemberTests: XCTestCase {
         Member.Event(id: id, origin: "0123456789abcdef0123456789abcdef", time: .init(wall: wall, logical: 0), ageMS: age, kind: kind, text: text)
     }
 
+    func testAheadRefused() throws {
+        let now: UInt64 = 1_792_886_400_000 // 2026-10-25
+        let e = SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock(wallMS: { now }), uptime: { 100 })
+        let far = event("d0000000000000000000000000000000", Member.Timestamp.maxWall)
+        XCTAssertEqual(e.received(far), .init(forward: nil, changed: false))
+        XCTAssertEqual(try e.reconcile(Member.Hello(wallMS: Int64(now), current: far)), .init(forward: nil, changed: false))
+        let near = event("e0000000000000000000000000000000", now + 6 * 24 * 3600 * 1000)
+        XCTAssertEqual(e.received(near), .init(forward: near, changed: true))
+    }
+
     func testEngine() throws {
         var up: TimeInterval = 100
         let e = SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock(wallMS: { 1000 }), uptime: { up })

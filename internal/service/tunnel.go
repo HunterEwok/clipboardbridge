@@ -456,7 +456,7 @@ func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.Hu
 	backoff := minBackoff
 	for i := 0; ctx.Err() == nil; i++ {
 		s.mu.Lock()
-		nd, near := s.nd, s.nearby[hub]
+		nd, near := s.nd, s.nearLocked(hub)
 		s.mu.Unlock()
 		if nd == nil {
 			return

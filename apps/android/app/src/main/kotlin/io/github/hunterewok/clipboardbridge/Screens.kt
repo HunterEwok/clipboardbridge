@@ -707,24 +707,26 @@ private fun SettingsScreen(model: AppModel, back: () -> Unit) {
     }
 }
 
-/** Whether Share and the selection menu ask before sending; "Always allow" turned the question off. */
+/** The apps that send without asking ("Always for this app"), and the way to ask every app again. */
 @Composable
 private fun ShareAsk(model: AppModel) {
     val palette = LocalPalette.current
-    var asks by remember { mutableStateOf(!model.settings.alwaysAllowShare) }
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(model.settings.allowedApps) }
     Section(stringResource(R.string.send_share)) {
         Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
-            Row(
-                Modifier.fillMaxWidth().clickable(role = Role.Switch) {
-                    asks = !asks
-                    model.settings.alwaysAllowShare = !asks
-                },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.share_ask_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Switch(checked = asks, onCheckedChange = null)
-            }
+            Text(stringResource(R.string.share_ask_switch), fontWeight = FontWeight.SemiBold)
+            val names = allowed.map { pkg ->
+                runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+            }.sorted()
+            Text(if (names.isEmpty()) stringResource(R.string.share_allowed_none) else names.joinToString(", "), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.share_ask_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+            if (allowed.isNotEmpty()) {
+                TextButton(onClick = {
+                    model.settings.allowedApps = emptySet()
+                    allowed = emptySet()
+                }) { Text(stringResource(R.string.share_forget)) }
+            }
         }
     }
 }

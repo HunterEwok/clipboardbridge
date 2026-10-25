@@ -163,8 +163,10 @@ func TestProfile(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	ProfileHandler(ca).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if !strings.Contains(rec.Body.String(), Fingerprint(ca)) || !strings.Contains(rec.Body.String(), ShortFingerprint(ca)) {
-		t.Error("the profile page does not show the fingerprint")
+	// The page comes over plain HTTP, so it sends the user to the terminal
+	// for the fingerprint instead of showing one.
+	if strings.Contains(rec.Body.String(), ShortFingerprint(ca)) || !strings.Contains(rec.Body.String(), "terminal") {
+		t.Error("the profile page shows the fingerprint, or does not send the user to the terminal for it")
 	}
 	if len(ShortFingerprint(ca)) != 23 || !strings.HasPrefix(Fingerprint(ca), ShortFingerprint(ca)) {
 		t.Errorf("short fingerprint %q", ShortFingerprint(ca))

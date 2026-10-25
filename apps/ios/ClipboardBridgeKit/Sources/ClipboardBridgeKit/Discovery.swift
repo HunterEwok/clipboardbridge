@@ -64,6 +64,7 @@ public actor MemberDialer {
     let maxWait: TimeInterval
     private var found: Set<String> = []
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var direct: Set<String> = []
     private var stopped = false
 
     /// dial connects to a found member and finishes the TLS handshake,
@@ -74,6 +75,10 @@ public actor MemberDialer {
 
     /// The members being dialed or connected.
     public var dialing: Set<String> { Set(tasks.keys) }
+
+    /// The members connected on the home network: their TLS handshake
+    /// passed.
+    public var connected: Set<String> { direct }
 
     /// Takes the members browsing finds now. Those of another group are
     /// ignored.
@@ -102,7 +107,9 @@ public actor MemberDialer {
         while stillWanted(m.device), !Task.isCancelled {
             let started = ProcessInfo.processInfo.systemUptime
             if let t = try? await dial(m) {
+                direct.insert(m.device)
                 try? await node.serve(t, peer: m.device)
+                direct.remove(m.device)
                 if ProcessInfo.processInfo.systemUptime - started > maxWait { wait = firstWait }
             }
             guard stillWanted(m.device), !Task.isCancelled else { break }

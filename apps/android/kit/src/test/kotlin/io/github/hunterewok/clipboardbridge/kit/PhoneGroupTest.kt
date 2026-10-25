@@ -95,6 +95,11 @@ class PhoneGroupTest {
         assertTrue(root.records.mayHost(root.device))
         assertTrue(root.records.mayHost(second.device))
         assertFalse(root.records.mayHost(pc.device))
+        // By key: the root's own chain and the admin's, not another device's under their IDs.
+        assertTrue(root.records.mayHost(root.device, root.memberChain))
+        assertTrue(root.records.mayHost(second.device, admin.memberChain))
+        assertFalse(root.records.mayHost(second.device, pcChain), "a chain whose key no admin record names")
+        assertFalse(root.records.mayHost(root.device, admin.memberChain))
 
         // Renewals: an admin renews what it issued, and what the root issued, from its admin CA; the root renews any.
         val byAdmin = assertNotNull(admin.renewal(pcChain, adminKey, later))

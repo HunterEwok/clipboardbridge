@@ -21,6 +21,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 	"github.com/HunterEwok/clipboardbridge/internal/vless/vlesstest"
 )
 
@@ -514,4 +515,22 @@ func TestJoinByAddress(t *testing.T) {
 		a := deck.status(t).Away
 		return a != nil && a.HubDevice == piID
 	})
+}
+
+// TestNearOnlyForAWhile checks that an announcement alone keeps a member
+// "on this network" only for nearGrace: anyone can announce a hub's name
+// and the group's tag on a foreign network.
+func TestNearOnlyForAWhile(t *testing.T) {
+	id := group.DeviceID(strings.Repeat("a", 32))
+	s := &Service{nearby: map[group.DeviceID]time.Duration{id: uptime.Now()}}
+	if !s.nearLocked(id) {
+		t.Error("a member just found does not count as near")
+	}
+	s.nearby[id] = uptime.Now() - nearGrace - time.Second
+	if s.nearLocked(id) {
+		t.Error("a member found long ago without a connection still counts as near")
+	}
+	if s.nearLocked(group.DeviceID(strings.Repeat("b", 32))) {
+		t.Error("a member never found counts as near")
+	}
 }

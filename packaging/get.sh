@@ -13,12 +13,15 @@
 # port from 8764 to N, --home-cgnat on counts 100.64.0.0/10 as the home
 # network too (a home network on the carrier-grade NAT range); on Linux, --lite installs the lite member for small devices instead of the full
 # member, and --console also starts tmux after a login on the text console.
-# CBB_VERSION=v1.2.3 picks a
+# CBB_ATTESTATION=require refuses to install unless GitHub's build
+# provenance attestation of the archive checks out (it needs gh, signed in);
+# CBB_ATTESTATION=skip does not check it. CBB_VERSION=v1.2.3 picks a
 # release instead of the latest; CBB_RELEASE_DIR, for tests, takes the files
 # from a directory instead of downloading them.
 #
 # It downloads the archive for this system and architecture and SHA256SUMS
-# from the release, checks the archive against it, and runs the archive's
+# from the release, checks the archive against it and, when gh is there and
+# signed in, against the release workflow's attestation, and runs the archive's
 # install.sh for this system, which finds the firewall, lists the rules
 # clipboardbridge needs and asks whether to add them. On a Mac, Homebrew is
 # the other way (docs/quickstart.md).
@@ -144,6 +147,21 @@ want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUM
 got=$(sha256 "$tmp/$archive")
 [ -n "$want" ] || fail "SHA256SUMS does not list $archive"
 [ "$want" = "$got" ] || fail "$archive does not match SHA256SUMS; not installing it"
+# SHA256SUMS comes from the same release, so it shows only that the download
+# is whole. The attestation shows that this repository's release workflow
+# built the archive.
+attestation=${CBB_ATTESTATION:-check}
+if [ -n "${CBB_RELEASE_DIR:-}" ] || [ "$attestation" = skip ]; then
+	:
+elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+	gh attestation verify "$tmp/$archive" --repo HunterEwok/clipboardbridge >/dev/null ||
+		fail "$archive does not have this repository's build attestation; not installing it"
+	echo "The archive's build attestation checks out."
+elif [ "$attestation" = require ]; then
+	fail "CBB_ATTESTATION=require needs gh, signed in (gh auth login), to check the archive's build attestation"
+else
+	echo "Not checked: the archive's build attestation (it needs gh, signed in). SHA256SUMS matched."
+fi
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then

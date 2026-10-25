@@ -60,13 +60,13 @@ class Settings(context: Context) {
         set(v) = prefs.edit().putString("language", v.key).apply()
 
     /**
-     * Whether Share and the selection menu send without asking first: the
-     * user answered "Always allow" once. Android does not tell reliably
-     * which app shared, so it holds for every app; Settings turns it off.
+     * The apps whose Share, selection menu and launcher entry go without
+     * asking first: the user answered "Always allow" for each. Settings
+     * forgets them. The old switch for every app is gone.
      */
-    var alwaysAllowShare: Boolean
-        get() = prefs.getBoolean("alwaysAllowShare", false)
-        set(v) = prefs.edit().putBoolean("alwaysAllowShare", v).apply()
+    var allowedApps: Set<String>
+        get() = prefs.getStringSet("allowedApps", null).orEmpty().toSet()
+        set(v) = prefs.edit().putStringSet("allowedApps", v).remove("alwaysAllowShare").apply()
 
     /** Whether the note that this phone is ready was closed. */
     var welcomed: Boolean

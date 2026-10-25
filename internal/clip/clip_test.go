@@ -978,3 +978,26 @@ func simulate(t *testing.T, seed uint64, crashes bool) {
 		t.Errorf("the group holds %q (%s), but the latest event made was %q (%s)", first.Text, first.ID, latest.Text, latest.ID)
 	}
 }
+
+// TestAheadRefused checks that an event far ahead of this clock is refused,
+// so that no member moves the group's clocks to the end of time.
+func TestAheadRefused(t *testing.T) {
+	now := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	clock := hlc.NewClock(func() time.Time { return now }, hlc.Timestamp{}, nil)
+	e := New(Config{Self: idA, Clock: clock, Wall: func() time.Time { return now }, Uptime: func() time.Duration { return time.Hour }})
+	far := Event{ID: NewID(), Origin: idB, Time: hlc.Timestamp{Wall: hlc.MaxWall}, Kind: Text, Text: "stuck"}
+	if _, err := e.Received(far); err == nil {
+		t.Error("an event at MaxWall was taken")
+	}
+	if got := clock.Last(); got.Wall >= hlc.MaxWall {
+		t.Errorf("the clock moved to %v", got)
+	}
+	res, err := e.Reconcile(idB, Hello{Wall: now.UnixMilli(), Current: &far})
+	if err != nil || res.Forward != nil {
+		t.Errorf("a hello with an event at MaxWall: %+v, %v", res, err)
+	}
+	near := Event{ID: NewID(), Origin: idB, Time: hlc.Timestamp{Wall: now.Add(6 * 24 * time.Hour).UnixMilli()}, Kind: Text, Text: "fine"}
+	if _, err := e.Received(near); err != nil {
+		t.Errorf("an event 6 days ahead: %v", err)
+	}
+}

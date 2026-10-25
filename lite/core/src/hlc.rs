@@ -15,6 +15,16 @@ use crate::sync::Mutex;
 /// year 9999.
 pub const MAX_WALL: i64 = 253402300799999;
 
+/// How far a received timestamp may be ahead of this clock, in
+/// milliseconds: one further ahead is refused (Clock::ahead), so that no
+/// member can move the group's clocks to MAX_WALL for good.
+pub const MAX_AHEAD: i64 = 7 * 24 * 3600 * 1000;
+
+/// A wall time before which the clock does not trust itself to refuse
+/// timestamps for being ahead: a device without a real-time clock that has
+/// not set its time yet (2026-01-01).
+const PLAUSIBLE: i64 = 1767225600000;
+
 /// How far ahead of the clock the saved mark is set, in milliseconds.
 const MARK_STEP: i64 = 10_000;
 
@@ -106,6 +116,15 @@ impl Clock {
         }
         self.keep_mark(&mut st);
         st.last
+    }
+
+    /// Whether remote is more than MAX_AHEAD ahead of this clock: of its wall
+    /// time or the latest timestamp it issued or observed, whichever is
+    /// later. A clock that reads before 2026 refuses nothing.
+    pub fn ahead(&self, remote: Timestamp) -> bool {
+        let st = self.state.lock();
+        let reference = (self.now)().max(st.last.wall);
+        reference >= PLAUSIBLE && remote.wall > reference.saturating_add(MAX_AHEAD)
     }
 
     /// Moves the clock past a timestamp from another device.
@@ -200,5 +219,15 @@ mod tests {
         );
         c.now();
         assert_eq!(saved.load(Ordering::SeqCst), 11000);
+    }
+
+    #[test]
+    fn ahead() {
+        let now = 1792886400000; // 2026-10-25
+        let c = Clock::new(Box::new(move || now), Timestamp::default(), None);
+        assert!(c.ahead(Timestamp { wall: MAX_WALL, logical: 0 }));
+        assert!(!c.ahead(Timestamp { wall: now + MAX_AHEAD, logical: 0 }));
+        let early = Clock::new(Box::new(|| 1000), Timestamp::default(), None);
+        assert!(!early.ahead(Timestamp { wall: MAX_WALL, logical: 0 }));
     }
 }

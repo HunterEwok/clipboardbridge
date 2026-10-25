@@ -148,7 +148,8 @@ func (s *Service) found(peers []mdns.Peer) {
 		later bool
 	}
 	want := map[group.DeviceID]target{}
-	s.nearby = map[group.DeviceID]bool{}
+	found := s.nearby
+	s.nearby = map[group.DeviceID]time.Duration{}
 	s.prio = map[group.DeviceID]int{}
 	for _, p := range peers {
 		id, err := group.ParseDeviceID(p.ID)
@@ -158,7 +159,11 @@ func (s *Service) found(peers []mdns.Peer) {
 		if g, _ := p.TXTValue("g"); g != tag {
 			continue // another group, or an old CA
 		}
-		s.nearby[id] = true
+		if at, ok := found[id]; ok {
+			s.nearby[id] = at
+		} else {
+			s.nearby[id] = uptime.Now()
+		}
 		if h, ok := p.TXTValue("h"); ok {
 			if n := parsePriority(h); n > 0 {
 				s.prio[id] = n
@@ -189,6 +194,20 @@ func (s *Service) found(peers []mdns.Peer) {
 		}()
 	}
 	s.electLocked()
+}
+
+// nearGrace is how long a member that discovery finds counts as on this
+// network without a connection to it: anyone on a network can announce a
+// member's name and the group's tag, so an announcement alone must not keep
+// the member's tunnel or relay path closed for long.
+const nearGrace = 30 * time.Second
+
+// nearLocked reports whether discovery found the member on this network
+// within nearGrace. Past it, only a connection to the member keeps the
+// paths away from home closed; the callers check those.
+func (s *Service) nearLocked(id group.DeviceID) bool {
+	at, ok := s.nearby[id]
+	return ok && uptime.Now()-at < nearGrace
 }
 
 // addresses returns a member's addresses with its port, best first.
@@ -346,7 +365,7 @@ func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string
 			return // the tunnel reaches the hub from here on
 		}
 		s.mu.Lock()
-		nd, near := s.nd, s.nearby[id]
+		nd, near := s.nd, s.nearLocked(id)
 		s.mu.Unlock()
 		if nd == nil {
 			return

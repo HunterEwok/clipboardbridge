@@ -19,6 +19,16 @@ interface RecordStore {
 
     /** Takes records a peer sent and returns those that were new and valid. */
     fun add(records: List<Member.Record>): List<Member.Record>
+
+    /**
+     * Why the records refuse a peer's certificate chain (leaf first), as
+     * RecordSet.refused, or null: a removed device is dropped by its key, not
+     * only by its ID.
+     */
+    fun refused(chain: List<ByteArray>): String? = null
+
+    /** Whether the peer with this verified chain may be the group's hub, as RecordSet.mayHost. */
+    fun mayHost(device: String, chain: List<ByteArray>): Boolean = true
 }
 
 /**
@@ -131,6 +141,7 @@ class MemberNode(
                 if (first) {
                     if (m !is Member.Message.Hello) throw ProtocolException("the peer's first message is no hello")
                     first = false
+                    records?.refused(t.peerChain)?.let { why -> throw ProtocolException("the peer is refused: $why") }
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
                         c.peerRole = m.role
@@ -153,11 +164,16 @@ class MemberNode(
                         if (e != null) synchronized(lock) { apply(engine.received(e), c) }
                     }
                     is Member.Message.Cert -> onCert(m.cert)
-                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid }?.let { onTunnel(c.peer, it) }
+                    // Only the root or an admin, by the records and its key.
+                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
+                        ?.let { onTunnel(c.peer, it) }
                     is Member.Message.Records -> if (m.records.isNotEmpty()) {
                         synchronized(lock) {
                             val fresh = records?.add(m.records).orEmpty()
-                            if (fresh.isNotEmpty()) sendRecords(fresh, c)
+                            if (fresh.isNotEmpty()) {
+                                sendRecords(fresh, c)
+                                dropRefusedLocked()
+                            }
                         }
                     }
                     Member.Message.Bye -> return
@@ -178,7 +194,16 @@ class MemberNode(
     fun close(peer: String) = synchronized(lock) { conns.filter { it.peer == peer }.forEach { it.goodbye() } }
 
     /** Sends records made on this phone to every connected member. */
-    fun sendRecords(rs: List<Member.Record>) = synchronized(lock) { sendRecords(rs, null) }
+    fun sendRecords(rs: List<Member.Record>) = synchronized(lock) {
+        sendRecords(rs, null)
+        dropRefusedLocked()
+    }
+
+    /** Closes the connections whose peers the records now refuse, as a device just removed. */
+    private fun dropRefusedLocked() {
+        val store = records ?: return
+        for (c in conns) if (store.refused(c.transport.peerChain) != null) c.goodbye()
+    }
 
     private fun sendRecords(rs: List<Member.Record>, except: Conn?) {
         for (c in conns) if (c !== except && c.peerRole != null) c.enqueue(Member.Message.Records(rs))
