@@ -6,6 +6,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Fixed
+
+- Releases carry `winget-manifest.zip`: the release workflow writes it before it
+  publishes the release, since an immutable release takes no files afterwards (0.4.0 went
+  out without it).
+
 ## [0.4.0] - 2026-10-25
 
 ### Added

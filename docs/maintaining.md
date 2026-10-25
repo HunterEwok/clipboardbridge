@@ -181,10 +181,11 @@ fill the tap for a release made before, run `formula.sh` with that tag and its
 ## winget
 
 The package `HunterEwok.clipboardbridge` installs the release's zip for Windows as winget's
-portable command `cbb`; `cbb install` then runs the installer from the same zip. After each
-release (not a pre-release) the `winget` job of `.github/workflows/release.yml` writes its
+portable command `cbb`; `cbb install` then runs the installer from the same zip. For each
+release (not a pre-release) the `release` job of `.github/workflows/release.yml` writes its
 three manifest files with `packaging/winget/manifest.sh` from the release's `SHA256SUMS` and
-attaches them as `winget-manifest.zip`; CI's `packaging` job checks the script on every pull
+publishes them with the release as `winget-manifest.zip` (nothing can be attached to a
+release once published, as releases are immutable); CI's `packaging` job checks the script on every pull
 request. winget takes a package only by a pull request to
 [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs), which its reviewers merge:
 
