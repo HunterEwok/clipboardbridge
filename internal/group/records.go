@@ -613,10 +613,13 @@ func (s *Records) PathRecords() []Record {
 
 // AuthorityRecords returns the records that say who governs the group: the
 // path records, every record that is no device record (revocations,
-// freezes, thaws, roots), and the device records a root signed with its
-// own key, which name the admin phones. A hub or a member sends them to its
-// forwarder or relay, which knows no records otherwise, so that it can tell
-// a removed device or admin (docs/protocol.md, section 13).
+// freezes, thaws, roots), and of the device records a root signed with its
+// own key those of a root's own device and of every device that one of them
+// ever made an admin, all of its records, so that a later one that demotes
+// it counts. A hub or a member sends them to its forwarder or relay, which
+// knows no records otherwise, so that it can tell a removed or demoted
+// device (docs/protocol.md, section 13); the other devices' records, with
+// their names, stay in the group.
 func (s *Records) AuthorityRecords() []Record {
 	seen := map[[sha256.Size]byte]bool{}
 	var out []Record
@@ -629,9 +632,15 @@ func (s *Records) AuthorityRecords() []Record {
 	for _, r := range s.PathRecords() {
 		add(r)
 	}
+	governs := map[DeviceID]bool{}
+	for _, r := range s.byID {
+		if b := r.body; b.Type == RecordDevice && r.signer == r.anchor && (b.Admin != nil || b.Device == b.By) {
+			governs[b.Device] = true
+		}
+	}
 	for _, id := range s.sortedIDs() {
 		r := s.byID[id]
-		if r.body.Type != RecordDevice || r.signer == r.anchor {
+		if r.body.Type != RecordDevice || r.signer == r.anchor && governs[r.body.Device] {
 			add(r.Record)
 		}
 	}

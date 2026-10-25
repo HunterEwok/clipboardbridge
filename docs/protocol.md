@@ -1300,6 +1300,11 @@ and then syncs at home only ("Through the tunnel" below).
   nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
+- A phone can be the hub while its app is open ([design.md](design.md), "The phone as the
+  hub", D-64): its kit listens for member connections (`MemberListener`, on the loopback
+  address, where `mobile/cbbtun`'s `Hub` leads each connection through the tunnel) and
+  admits clients and answers with the offer by the rules above (`PhoneHub`, MemberNode's
+  `hub`); `cbbtun`'s `SetClients` takes the clients it keeps.
 - When records revoke a device (section 10, rule 6, on the chain it presented), the hub
   forgets its key at once.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met
@@ -1463,9 +1468,11 @@ not built.
 Accepted by design ([design.md](design.md), "The forwarder"): the group tag and root
 certificates, the hub's member certificate (device ID, validity, admin CA) and WireGuard
 public key, the group's obfuscation settings and VLESS user ID when set, the addresses of
-the hub and its clients, and the timing and sizes of their packets. It never sees a member
-key, a text, a device name, or which client address is which device, and it keeps nothing
-on disk.
+the hub and its clients, the group's authority records (which name the root's and the
+admins' devices, with their names and systems, and the removals), and the timing and sizes of
+their packets. It never sees a member key, a text, the other devices' records or names, or
+which client address is which device. On disk it keeps only each
+group's roots, removals and freezes.
 
 ### Registration
 
@@ -1490,12 +1497,26 @@ on disk.
      forwarder takes the signature only from a root on the path of the records it knows, or
      from an admin CA that such a root certified, so a member that is no admin cannot
      register its group.
+   - A hub whose root or admin key signs only after the user, a phone hub (design.md, "The
+     phone as the hub", D-64), leaves `admin` and `admin_sig` out. The forwarder then takes
+     the hub when the records make its member certificate's device, with that
+     certificate's key, the group's root (the latest `device` record of its own that the
+     current root signed) or an admin that is not frozen (the latest counting `device`
+     record of that device names the key and an admin CA). Go hubs (`internal/forward`) and
+     the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
    - `records` are the group's authority records: the path records (section 5), every record
-     that is not a `device` record, and the `device` records a root signed with its own key.
-     The forwarder adds them to those of the group's current registration and refuses a hub
-     whose signer or member certificate the records revoke or freeze. It keeps the merged
-     records in memory while the group stays registered, so a removed admin that registers
-     next cannot leave its revocation out. The group CA for these records is the first
+     that is not a `device` record, and of the `device` records a root signed with its own key
+     those of a root's own device and every record of each device a root made an admin, so
+     that a demotion counts. The records of the other devices, with their names, are not
+     sent.
+     The forwarder adds them to those it keeps for the group and refuses a hub whose signer
+     or member certificate the records revoke or freeze. It keeps the merged authority
+     records after the registration ends, so a removed or demoted admin that registers later,
+     while the group's own hub is away, cannot leave its revocation out. Those that are no
+     `device` records (roots, removals, freezes, thaws, never a device's name) it also writes
+     to its state directory (`cbb forward -records`, one file per group tag), so a removal
+     outlives a restart; a demotion without removal lasts until a restart. Past 100,000
+     groups it forgets the one that registered least recently. The group CA for these records is the first
      self-signed certificate the hub presented.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
      a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS

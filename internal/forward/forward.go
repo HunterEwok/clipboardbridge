@@ -31,7 +31,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
@@ -96,6 +95,7 @@ type Forwarder struct {
 
 	mu       sync.Mutex
 	regs     map[string]*reg // by group tag
+	memory   *memory         // the groups' authority records
 	byID     map[uint64]*reg // by registration ID, for hellos
 	byHubEP  map[netip.AddrPort]*reg
 	pending  map[clientKey]pending
@@ -136,9 +136,8 @@ type reg struct {
 	packets  bucket
 	bytes    bucket
 	closed   bool
-	conn     net.Conn       // the registration's TLS
-	raw      net.Conn       // its TCP connection, which closes without waiting, unlike TLS
-	records  []group.Record // the group's records, from this and the earlier registrations
+	conn     net.Conn // the registration's TLS
+	raw      net.Conn // its TCP connection, which closes without waiting, unlike TLS
 }
 
 // clientKey names a client's session by the index it chose; indices are
@@ -168,7 +167,11 @@ type Config struct {
 	Cert   tls.Certificate // the forwarder's own, whose key the hubs pin
 	Limits Limits          // DefaultLimits if zero
 	VLESS  *VLESSConfig    // nil without VLESS
-	Logf   func(format string, args ...any)
+	// StateDir, if set, is where the forwarder keeps each group's
+	// authority records, so that a hub the group removed cannot register
+	// with older ones after a restart; "" keeps them in memory only.
+	StateDir string
+	Logf     func(format string, args ...any)
 }
 
 // VLESSConfig configures the forwarder's VLESS with REALITY, for the
@@ -240,7 +243,7 @@ func Listen(cfg Config) (*Forwarder, error) {
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
 		sources: map[netip.Addr]*bucket{}, netScans: map[netip.Prefix]*bucket{},
 		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		done: make(chan struct{}),
+		done: make(chan struct{}), memory: newMemory(cfg.StateDir),
 	}
 	if f.limits.ScanRate <= 0 {
 		f.limits.ScanRate = DefaultLimits.ScanRate

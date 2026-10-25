@@ -117,7 +117,7 @@ A name works in place of the address (`vpn.example.org:8764`); the hub looks it 
 each hub registers by itself with its group's certificate, and every group is kept apart
 from the others.
 
-The forwarder writes nothing about the groups, not even to its log. With `CBB_DEBUG=1` in
+The forwarder writes nothing about the groups but their roots, removals and freezes (in `groups` next to its key, so that a device a group removed cannot register as its hub again), and nothing to its log. With `CBB_DEBUG=1` in
 its environment it logs counts once a minute (hubs, sessions), never who they are.
 
 ### VLESS on the forwarder

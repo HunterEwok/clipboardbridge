@@ -75,6 +75,14 @@ class MemberNode(
      * of serve named it by: the hub's answer to the tunnel key.
      */
     private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
+    /**
+     * On the phone while it is the group's hub (docs/design.md, "The phone
+     * as the hub"): gets the device ID the caller of serve named a peer by,
+     * the tunnel key its hello offers and its certificate chain (leaf
+     * first), and returns the offer the peer then gets in a tunnel message,
+     * or null; PhoneHub.offer does it. A hub ignores the offers it gets.
+     */
+    private val hub: ((String, ByteArray, List<ByteArray>) -> Member.TunnelOffer?)? = null,
     /** This device's operating system, which the hellos state. */
     val os: String? = null,
     /** This device's form, system version and version, which the hellos state too. */
@@ -206,6 +214,9 @@ class MemberNode(
                     val key = m.hello.adminKey
                     val ca = key?.let { adminCA?.invoke(it) }
                     if (ca != null) c.enqueue(Member.Message.Admin(ca))
+                    val offered = m.hello.tunnelKey
+                    val offer = if (offered != null && c.peer != null && chain.isNotEmpty()) hub?.invoke(c.peer, offered, chain) else null
+                    if (offer != null) c.enqueue(Member.Message.Tunnel(offer))
                     continue
                 }
                 when (m) {
@@ -215,7 +226,7 @@ class MemberNode(
                     }
                     is Member.Message.Cert -> onCert(m.cert)
                     // Only the root or an admin, by the records and its key.
-                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
+                    is Member.Message.Tunnel -> m.offer?.takeIf { hub == null && it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
                         ?.let { onTunnel(c.peer, it) }
                     is Member.Message.Records -> if (m.records.isNotEmpty()) {
                         synchronized(lock) {

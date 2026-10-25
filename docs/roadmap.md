@@ -157,6 +157,11 @@ The order may change.
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See
     "Secure updates" below.
+30. **Planned for 0.5; step 1 is built.** The phone as the hub while its app is open: a
+    group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
+    afar while the app is open, through the project's forwarder; once a computer that is
+    always on joins, the app suggests moving the hub there, and the user may keep it on the
+    phone. See "The phone as the hub" below.
 
 ## OpenWrt routers
 
@@ -575,6 +580,48 @@ device and Android would need more rights than the app should hold.
 2. The buttons in the phone apps and `cbb run`.
 3. The presets on the lite member.
 4. The buttons on the watch (item 26, step 4).
+
+## The phone as the hub
+
+Planned for 0.5; steps 1 and 2 are done. The design, and the other cases of a group without a
+working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open-planned-for-05) (D-64).
+
+Everyone has a phone; not everyone has a computer. A group made on a phone gets a hub at once,
+the phone itself, which works while its app is open; a computer that is always on is the
+better hub, so the app suggests it when there is one, and the user decides.
+
+### Steps
+
+1. Done: the hub's side in `mobile/cbbtun` (`StartHub`, `Register`): the clients' tunnels,
+   the member port leading to the kit's member listener, and the registration with the
+   forwarder and its hellos by the phone's member key, which the forwarder takes when the
+   group's records make that key the root's or an admin's (docs/protocol.md, section 13);
+   tested with the Go client through a forwarder.
+2. Done: the listening member in both kits (`MemberListener`, on the loopback address for
+   the tunnel or on every address for the home network) and the hub's part of the member
+   protocol (`PhoneHub`, MemberNode's `hub`): it admits a client by the tunnel key its hello
+   offers, by the rules of a computer's hub, and answers with its offer; tested over member
+   TLS in the Kotlin kit and over a pipe in the Swift kit.
+3. The phone hub in both apps: on by default in a group made on a phone, `StartHub` with the
+   member listener's port, `Register` with the group's forwarder, its status on Home and in
+   the away screen, mDNS publishing of the member port on the home network, and on Android
+   the option to keep it running in the foreground service; tests of the whole way, a
+   computer and the lite member through the forwarder to a phone, on the bench.
+4. Clients for a hub that comes and goes: short retries in `cbb`, the lite member and both
+   kits, the interval measured for phone batteries and the forwarder's load.
+5. Remote invitations made and served on the phone (step 7 of the order of work in
+   [design.md](design.md#order-of-work)), so that a device far away, such as a parent's TV,
+   joins.
+6. Moving the hub: the suggestion when a computer that is always on joins, the old hub
+   passing its clients' keys to the new one and its offer to the clients; and the hub moving
+   with an admin phone's takeover.
+7. Several hubs with a priority (D-65, in the plan for 0.5): the hubs' list in the group,
+   the clients keeping every hub's offer, the hubs passing each other the clients' keys,
+   the lower hub yielding to the higher one, and tests of switching both ways.
+
+Not yet verified on real devices: how long iOS keeps the forwarder registration and the
+tunnel up while the app is open and the screen locks, the battery cost of the clients'
+retries, and the Android foreground service as a hub across battery savers.
 
 ## Secure updates
 

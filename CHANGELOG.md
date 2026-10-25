@@ -28,6 +28,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer's mode in Settings and, on an admin, another computer's from its details; an
   admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
   fingerprint, and says if the computer refused.
+- The phone's side of the phone as the hub (D-64), not yet in the apps: `mobile/cbbtun`
+  runs the group's hub in the app's process (`StartHub`), leads the clients' connections to
+  the kit's member listener and registers with the forwarder (`Register`). A phone hub
+  registers with its member key, without Face ID, when the group's records make that key
+  the root's or an admin's; the forwarder now takes such a registration
+  (docs/protocol.md, section 13). Both phone kits listen for member connections
+  (`MemberListener`) and, as the hub, admit a client by the tunnel key its hello offers and
+  answer with the offer (`PhoneHub`).
 
 ### Changed
 
@@ -43,6 +51,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A member that got a takeover's root record before the records that make its signer an
+  admin kept trusting the old root until it restarted; it now checks the roots after every
+  record that can change them. A member admitted by an admin computer no longer logs that
+  it was removed from the group when records arrive.
+- Security: a forwarder keeps a group's authority records after the group's registration
+  ends, and writes the roots, removals and freezes among them (never a device's name) to
+  `groups` next to its key (`cbb forward -records`), so an admin the group removed can no
+  longer register as its hub with the records from before while the group's own hub is
+  away or after the forwarder restarted.
+- Privacy: the authority records a hub shows its forwarder, and a device its relay, no
+  longer carry the records of devices the root admitted directly, with their names and
+  systems; only the root's own device and the devices it made admins (their demotions
+  included) are named.
 - Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
   arithmetic and comparisons no longer branch on secrets on some compilers and CPUs
   (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now

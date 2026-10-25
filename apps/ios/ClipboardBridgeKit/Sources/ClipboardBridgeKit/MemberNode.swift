@@ -43,7 +43,8 @@ public extension RecordStore {
 }
 
 /// The phone as a member: its sync engine and its connections to the Linux
-/// members, which it dials (it never listens; docs/protocol.md, section 9).
+/// members, which it dials (docs/protocol.md, section 9), and those that
+/// come to it while it is the group's hub (MemberListener).
 /// Each connection runs the member protocol of section 4: a hello first,
 /// then events, a ping after 5 s without a write, and a close after 15 s
 /// without a read.
@@ -66,6 +67,7 @@ public actor MemberNode {
     private let renew: (@Sendable ([Data]) -> Renewal?)?
     private let adminCA: (@Sendable (Data) -> Data?)?
     private let onTunnel: @Sendable (String?, Member.TunnelOffer) -> Void
+    private let hub: (@Sendable (String, Data, [Data]) -> Member.TunnelOffer?)?
     /// The WireGuard public key the hellos offer the group's hub (section
     /// 11); nil while sync away from home is off.
     public private(set) var tunnelKey: Data?
@@ -89,18 +91,24 @@ public actor MemberNode {
     /// an admin message, so one that missed it gets it again; tunnelKey is
     /// the key the hellos offer the hub, and onTunnel gets each valid offer
     /// a peer sends for it, with the device ID the caller of serve named
-    /// the peer by.
+    /// the peer by; hub, on the phone while it is the group's hub
+    /// (docs/design.md, "The phone as the hub"), gets the device ID a peer
+    /// was named by, the tunnel key its hello offers and its certificate
+    /// chain (leaf first), and returns the offer the peer then gets in a
+    /// tunnel message, or nil (PhoneHub.offer does it); a hub ignores the
+    /// offers it gets.
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, device: Member.DeviceInfo? = nil,
                 records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
                 adminCA: (@Sendable (Data) -> Data?)? = nil,
                 tunnelKey: Data? = nil,
+                hub: (@Sendable (String, Data, [Data]) -> Member.TunnelOffer?)? = nil,
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in },
                 onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
-        (self.tunnelKey, self.onTunnel, self.os, self.device) = (tunnelKey, onTunnel, os, device?.cleaned)
+        (self.tunnelKey, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, onTunnel, hub, os, device?.cleaned)
     }
 
     /// Replaces the tunnel key that the next connections' hellos offer;
@@ -234,6 +242,9 @@ public actor MemberNode {
                 if let key = h.adminKey, let ca = adminCA?(key) {
                     c.enqueue(.admin(ca))
                 }
+                if let hub, let p = c.peer, let key = h.tunnelKey, !t.peerChain.isEmpty, let offer = hub(p, key, t.peerChain) {
+                    c.enqueue(.tunnel(offer))
+                }
                 continue
             }
             switch m {
@@ -242,7 +253,7 @@ public actor MemberNode {
             case let .cert(der, _):
                 onCert(der)
             // Only the root or an admin, by the records and its key.
-            case let .tunnel(o?) where o.isValid:
+            case let .tunnel(o?) where o.isValid && hub == nil:
                 if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onTunnel(p, o) }
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
