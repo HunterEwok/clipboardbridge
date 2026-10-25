@@ -31,7 +31,7 @@ class NsdPublisher(context: Context, private val device: String, private val tag
         override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {}
     }
 
-    fun start() = synchronized(lock) {
+    fun start(): Unit = synchronized(lock) {
         if (published) return
         published = true
         val info = NsdServiceInfo().apply {
@@ -43,12 +43,14 @@ class NsdPublisher(context: Context, private val device: String, private val tag
             setAttribute("r", "phone")
         }
         runCatching { nsd.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener) }.onFailure { published = false }
+        Unit
     }
 
     /** Stops publishing; NsdManager sends the goodbye. */
-    fun stop() = synchronized(lock) {
+    fun stop(): Unit = synchronized(lock) {
         if (!published) return
         published = false
         runCatching { nsd.unregisterService(listener) }
+        Unit
     }
 }

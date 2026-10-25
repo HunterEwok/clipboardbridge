@@ -5,9 +5,9 @@ package io.github.hunterewok.clipboardbridge
 
 import io.github.hunterewok.clipboardbridge.kit.Member
 import io.github.hunterewok.clipboardbridge.kit.PhoneHub
-import io.github.hunterewok.clipboardbridge.kit.Wire
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -35,14 +35,14 @@ data class HubState(
     /** The forwarder: its endpoint, "ip:port", and the pin of its key, "sha256:…". */
     data class Forwarder(val endpoint: String, val pin: String)
 
-    fun encode(): ByteArray = Wire.obj(
-        "key" to Wire.bytes(key),
+    fun encode(): ByteArray = JsonObject(mapOfValues(
+        "key" to bytes(key),
         "on" to JsonPrimitive(on),
-        "forwarder" to forwarder?.let { Wire.obj("endpoint" to Wire.str(it.endpoint), "pin" to Wire.str(it.pin)) },
+        "forwarder" to forwarder?.let { JsonObject(mapOf("endpoint" to JsonPrimitive(it.endpoint), "pin" to JsonPrimitive(it.pin))) },
         "background" to JsonPrimitive(background),
         "homes" to JsonArray(homes.map { JsonPrimitive(it) }),
         "clients" to JsonArray(clients.map { it.toJson() }),
-    ).toString().toByteArray()
+    )).toString().toByteArray()
 
     override fun equals(other: Any?): Boolean = other is HubState && encode().contentEquals(other.encode())
 
@@ -246,7 +246,7 @@ class HubOnPhone(
         val fw = s.forwarder ?: return
         val t = try {
             tunnels.start(s.key, device, g.memberPort, h.clientsJson).also {
-                it.register(fw.endpoint, fw.pin, Wire.list(g.chain).toString(), g.sign, recordsJson(g.records))
+                it.register(fw.endpoint, fw.pin, JsonArray(g.chain.map { bytes(it) }).toString(), g.sign, recordsJson(g.records))
             }
         } catch (e: Exception) {
             log("the hub could not start", e)
@@ -314,5 +314,11 @@ class HubOnPhone(
         }
     }
 }
+
+private fun bytes(b: ByteArray) = JsonPrimitive(Base64.getEncoder().encodeToString(b))
+
+/** The pairs whose value is not null, as a JSON object's fields. */
+private fun mapOfValues(vararg pairs: Pair<String, JsonElement?>): Map<String, JsonElement> =
+    pairs.mapNotNull { (k, v) -> v?.let { k to it } }.toMap()
 
 private fun JsonObject.string(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
