@@ -24,7 +24,7 @@
 # signed in, against the release workflow's attestation, and runs the archive's
 # install.sh for this system, which finds the firewall, lists the rules
 # clipboardbridge needs and asks whether to add them. On a Mac, Homebrew is
-# the other way (docs/quickstart.md).
+# the other way (docs/guide/install.md).
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every

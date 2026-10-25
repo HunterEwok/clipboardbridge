@@ -79,8 +79,9 @@ curl -fsSL $repo/releases/download/$tag/get.sh | sudo CBB_VERSION=$tag sh -s -- 
 
 Its command is \`cbb\` too; \`cbb-lite/README.md\` in its archive has the rest.
 
-Then follow the [quick start]($repo/blob/$tag/docs/quickstart.md): \`cbb new\` and
-\`cbb pair -phone\` on the first computer for the iPhone, and \`cbb pair\` on each further computer.
+Then follow the [quick start]($repo/blob/$tag/docs/guide/quickstart.md): \`sudo cbb pair\` on each
+computer, and the phone app scans its QR code. Without the app, \`cbb new\` on the first computer
+makes the group ([without the app]($repo/blob/$tag/docs/guide/without-app.md)).
 
 ## Verify the downloads
 

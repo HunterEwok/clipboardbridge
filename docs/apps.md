@@ -28,7 +28,7 @@ they look, so both apps are built to the same plan.
 1. **Start** (no group yet): one sentence, the big button "Connect a new device" with a hint
    below it (on a computer, run `cbb pair` and scan the code it shows; `clipboardbridge
    pair -phone` in the mode without the app), and a second button, "I already use
-   clipboardbridge on another phone", which joins that phone's group. The camera opens at once;
+   Clipboard Bridge on another phone", which joins that phone's group. The camera opens at once;
    after the scan the app creates the group key in the Secure Enclave or StrongBox, admits
    the device and goes to Home. At the first launch the app makes this phone's own key and
    says so once, in a card: "This phone is ready", what the key is for in plain words, and
@@ -50,7 +50,7 @@ they look, so both apps are built to the same plan.
    action is a home-screen widget "Sync clipboard" on both phones (on the iPhone also a
    Control Center control, iOS 18): one tap opens the app for a moment, since iOS lets an
    app read the clipboard only in the foreground, and syncs; on Android the widget sends
-   as the tile does. On the iPhone, **Share → clipboardbridge** (from any app, and from the
+   as the tile does. On the iPhone, **Share → Clipboard Bridge** (from any app, and from the
    text selection menu's Share) sends the text or the link at once: the share extension
    dials the group's computers with the phone's member key, which it shares with the app
    through an app group and a keychain access group (both need the Apple developer
@@ -283,10 +283,10 @@ declaration; the GitHub and F-Droid builds have it from the start.
 
 - the **Quick Settings tile** "Send clipboard", and the **home-screen widget** of the same name;
 - the **"Send" button** in the service's notification;
-- **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**,
+- **text selection → Clipboard Bridge** (`ACTION_PROCESS_TEXT`) and **Share → Clipboard Bridge**,
   which first ask "Allow" or "Always for this app", naming the app, since any app can hand
   over a text. "Always" holds only for the app that Android records as the one that opened
-  clipboardbridge (never one an intent names itself), and Settings lists those apps and asks
+  Clipboard Bridge (never one an intent names itself), and Settings lists those apps and asks
   every app again;
 - **double-tap the back**: on a Pixel, Settings → System → Gestures → Quick Tap → Open app →
   "cbb send" (a second launcher entry that sends and closes); on Samsung, Good Lock's
@@ -363,7 +363,7 @@ are on Google Play.
   (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
   `_clipboardbridge._tcp` under `NSBonjourServices` and explains the use in
   `NSLocalNetworkUsageDescription`.
-- A phone joins another phone's group from its Start screen ("I already use clipboardbridge on
+- A phone joins another phone's group from its Start screen ("I already use Clipboard Bridge on
   another phone"):
   it makes its admin key, listens with `TLSListener` on a port the system picks, and shows
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans

@@ -29,6 +29,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
   fingerprint, and says if the computer refused.
 
+### Changed
+
+- The documentation for users is rewritten in plain words, under `docs/guide` and
+  `docs/reference`: the quick start begins with the phone app as the group's root and then
+  suggests making an always-on computer an admin and the hub; "How it works" draws every
+  way the devices connect (at home, through the hub, through a forwarder, a blind relay,
+  networks that block VPNs); new pages cover installing, sync away from home, AmneziaWG and
+  VLESS, the devices, ports and files, and running one's own forwarder or relay. Text for
+  readers says Clipboard Bridge; commands, paths and packages keep `clipboardbridge` and
+  `cbb`.
+
 ### Fixed
 
 - Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
@@ -696,7 +707,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
-- A quick start, [docs/quickstart.md](docs/quickstart.md): install with one command, make
+- A quick start, [docs/guide/quickstart.md](docs/guide/quickstart.md): install with one command, make
   the group, add the iPhone and the other computers.
 - The devices list: `clipbridge devices` shows every device of the group with its role, an
   admin mark and when this member last saw it; `clipbridge revoke <name or ID>` removes a
