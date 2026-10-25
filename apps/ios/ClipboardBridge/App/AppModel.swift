@@ -57,7 +57,7 @@ extension GroupController {
 final class AppModel: ObservableObject {
     /// The one model of the running app, which the Shortcuts action uses
     /// too.
-    static let shared = AppModel(group: LiveGroup())
+    static let shared = AppModel(group: LiveGroup(), notifies: true)
 
     enum Phase: Equatable { case start, joining, home }
 
@@ -118,14 +118,18 @@ final class AppModel: ObservableObject {
 
     let group: GroupController
     private let defaults: UserDefaults
+    /// The running app's model notifies of the group's events and tells the
+    /// watch; the tests' and previews' do neither.
+    private let notifies: Bool
     static let welcomedKey = "welcomed"
 
     /// nil means PendingGroup, made here because a default argument is
     /// evaluated outside the main actor.
-    init(group: GroupController? = nil, defaults: UserDefaults = .standard) {
+    init(group: GroupController? = nil, defaults: UserDefaults = .standard, notifies: Bool = false) {
         let group = group ?? PendingGroup()
         self.group = group
         self.defaults = defaults
+        self.notifies = notifies
         phase = group.hasGroup ? .home : .start
         computers = group.computers
         devices = group.devices
@@ -252,6 +256,10 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         await refreshAway()
+        if notifies {
+            Notifier.shared.observe(devices)
+            WatchLink.shared.update(self)
+        }
     }
 
     private func refreshAway() async {
@@ -269,6 +277,7 @@ final class AppModel: ObservableObject {
         // The last failure only while it is still trying; once connected or
         // at home it is old news. AwayFromHome logs each failure itself.
         let failing = a.status == .connecting ? a.error : nil
+        if notifies { Notifier.shared.away(trying: a.on && failing != nil) }
         away = Away(on: a.on, status: a.status, error: failing.map {
             Self.describe($0, summary: String(localized: "The hub does not answer through the tunnel.", bundle: .app), log: false)
         })

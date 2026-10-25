@@ -279,4 +279,28 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.ru.bundle), "\u{0422}\u{0435}\u{043C}\u{0430}")
         XCTAssertEqual(String(localized: "Theme", bundle: LanguageChoice.en.bundle), "Theme")
     }
+
+    /// The group's events between two looks at its devices.
+    func testGroupEvents() {
+        typealias S = GroupEvent.Seen
+        let old = ["a": S(name: "deck"), "b": S(name: "mac"), "c": S(name: "pi", admin: true), "d": S(name: "phone2", admin: true)]
+        let new = ["a": S(name: "deck", admin: true), "b": S(name: "mac", frozen: true), "d": S(name: "phone2", admin: true, root: true), "e": S(name: "zero")]
+        XCTAssertEqual(GroupEvent.between(old, new), [.madeAdmin("deck"), .frozen("mac"), .takenOver("phone2"), .added("zero"), .removed("pi")])
+        XCTAssertEqual(GroupEvent.between(new, new), [])
+        XCTAssertEqual(GroupEvent.between(["b": S(name: "mac", frozen: true)], ["b": S(name: "mac")]), [.unfrozen("mac")])
+        // This phone is never news to itself.
+        let me = AppModel.Computer(id: "me", name: "iphone", online: true, isSelf: true)
+        XCTAssertEqual(GroupEvent.seen([me, AppModel.Computer(id: "a", name: "deck", online: false)]), ["a": S(name: "deck")])
+    }
+
+    /// What the watch hears survives the trip.
+    func testWatchState() {
+        var s = WatchState()
+        s.hasGroup = true
+        s.devices = [.init(id: "a", name: "deck", symbol: "gamecontroller", online: true)]
+        s.away = .connected
+        s.events = ["deck joined the group."]
+        XCTAssertEqual(WatchState(s.data), s)
+        XCTAssertNil(WatchState([:]))
+    }
 }

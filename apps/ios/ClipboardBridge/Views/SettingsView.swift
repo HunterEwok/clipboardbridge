@@ -2,7 +2,8 @@
 
 import SwiftUI
 
-/// Colour and appearance, language, sync away from home, about.
+/// Colour and appearance, language, sync away from home, notifications,
+/// about.
 struct SettingsView: View {
     @AppStorage(AccentChoice.key) private var color = Tokens.colors[0].name
     @AppStorage(Appearance.key) private var appearance = Appearance.system
@@ -43,6 +44,7 @@ struct SettingsView: View {
             if let away = model.away {
                 awaySection(away)
             }
+            NotificationSettings()
             Section {
                 LabeledContent {
                     Text(version).font(.system(.body, design: .monospaced))
@@ -157,5 +159,45 @@ struct ColorSwatches: View {
             }
         }
         .padding(.vertical, Tokens.spacingSmall)
+    }
+}
+
+/// A switch for each kind of the group's events (GroupEvent.Kind).
+struct NotificationSettings: View {
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        Section {
+            ForEach(GroupEvent.Kind.allCases) { NotifyToggle(kind: $0) }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text("The app notifies of these while it runs, and a paired Apple Watch shows them too. It hears of an event when it next syncs with the group.")
+        }
+        .listRowBackground(palette.surface)
+    }
+}
+
+private struct NotifyToggle: View {
+    let kind: GroupEvent.Kind
+    @AppStorage private var on: Bool
+
+    init(kind: GroupEvent.Kind) {
+        self.kind = kind
+        _on = AppStorage(wrappedValue: true, kind.key)
+    }
+
+    var body: some View {
+        Toggle(isOn: $on) { title }
+    }
+
+    private var title: Text {
+        switch kind {
+        case .devices: Text("A device joined or was removed")
+        case .admins: Text("A device became an admin")
+        case .frozen: Text("A device was frozen or unfrozen")
+        case .takeover: Text("The group was taken over")
+        case .hub: Text("The hub does not answer away from home")
+        }
     }
 }

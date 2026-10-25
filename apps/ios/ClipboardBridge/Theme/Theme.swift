@@ -152,7 +152,7 @@ struct AccentButtonStyle: ButtonStyle {
             .foregroundStyle(palette.onAccent)
             .opacity(isEnabled ? 1 : 0.5)
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26, watchOS 26, *) {
             return AnyView(label.glassEffect(.regular.tint(palette.accent.opacity(isEnabled ? 1 : 0.4)).interactive(), in: shape))
         }
         #endif
@@ -174,7 +174,7 @@ struct GlassButtonStyle: ButtonStyle {
             .padding(.horizontal, Tokens.spacingMedium)
             .foregroundStyle(palette.accent)
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26, watchOS 26, *) {
             return AnyView(label.glassEffect(.regular.interactive(), in: shape))
         }
         #endif
@@ -191,7 +191,7 @@ struct GlassTile: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26, watchOS 26, *) {
             content.glassEffect(.regular.tint(palette.glass), in: shape)
         } else {
             content.background(palette.glass, in: shape).overlay(shape.stroke(palette.line))
@@ -212,7 +212,7 @@ extension View {
     @ViewBuilder func glassCard(cornerRadius: CGFloat = Tokens.radiusCard) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26, watchOS 26, *) {
             glassEffect(.regular, in: shape)
         } else {
             background(.ultraThinMaterial, in: shape)
@@ -226,7 +226,7 @@ extension View {
     /// iOS 26.
     @ViewBuilder func glassCircle() -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26, watchOS 26, *) {
             frame(width: 44, height: 44).glassEffect(.regular.interactive(), in: Circle())
         } else {
             frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
