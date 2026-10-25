@@ -47,7 +47,7 @@ extension AppModel.Computer {
     /// Mac is taken for a laptop, another computer for a desktop.
     var kind: DeviceKind {
         if let form = device?.form, let k = DeviceKind(rawValue: form) { return k }
-        switch (role, os) {
+        return switch (role, os) {
         case ("phone", _), ("shortcut", _): .phone
         case ("lite", _): .board
         case (_, "macos"): .laptop
