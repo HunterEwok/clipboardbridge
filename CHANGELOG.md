@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Android: notifications of the group's events, as on the iPhone, each with a switch in
+  Settings; the background service hears of them at once.
 - Android: the Glass design of the iPhone app: ten colours and a Dark, Light or System theme
   (Material You stays a choice), one page with every device as tiles or a list, a device's
   own page with its type, system and version, Clipboard Bridge version, MAC address and

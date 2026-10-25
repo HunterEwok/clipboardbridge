@@ -31,7 +31,13 @@ class AppModel(private val app: Context) {
     data class Note(@StringRes val text: Int, val detail: String? = null, val error: Boolean = false)
 
     val settings = Settings(app)
-    val group = LiveGroup(app).also { g -> g.onCopy = { text, kind -> Clipboard.write(app, text, kind) } }
+    val notifier = Notifier(app)
+    val group = LiveGroup(app).also { g ->
+        g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
+        // In the background too: the service keeps the connections that bring the records.
+        // Off the node's thread, which may hold its own lock while it hands records over.
+        g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
+    }
 
     var phase by mutableStateOf(if (group.hasGroup) Phase.HOME else Phase.START)
         private set
@@ -207,9 +213,11 @@ class AppModel(private val app: Context) {
         val (d, admin) = withContext(Dispatchers.IO) { group.devices to group.isAdmin }
         devices = d
         isAdmin = admin
+        notifier.observe(d)
         away = group.awayFromHome?.let { a ->
             // The last failure only while it is still trying; once connected or at home it is old news.
             val e = (a.lastError as? Exception)?.takeIf { a.status == AwayFromHome.Status.CONNECTING }
+            notifier.away(a.isOn && e != null)
             // AwayFromHome logs each failure itself.
             Away(a.isOn, a.status, e?.let { describe(it, R.string.away_error, log = false) })
         }

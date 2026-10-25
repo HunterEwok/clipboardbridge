@@ -160,4 +160,18 @@
     <string name="kind_watch">Часы</string>
     <string name="kind_retro">Ретрокомпьютер</string>
     <string name="kind_other">Устройство</string>
+    <string name="channel_events">События группы</string>
+    <string name="notifications">Уведомления</string>
+    <string name="notifications_body">Приложение сообщает о них, как только узнаёт, в том числе в фоне через службу. Связанные часы тоже их показывают.</string>
+    <string name="notify_devices">Устройство добавлено или удалено</string>
+    <string name="notify_admins">Устройство стало админом</string>
+    <string name="notify_frozen">Устройство заморожено или разморожено</string>
+    <string name="notify_takeover">Группу забрали себе</string>
+    <string name="notify_hub">Хаб не отвечает вне дома</string>
+    <string name="event_added">%1$s теперь в группе.</string>
+    <string name="event_removed">%1$s больше не в группе: устройство удалено.</string>
+    <string name="event_made_admin">%1$s теперь админ.</string>
+    <string name="event_frozen">%1$s заморожен: остальные его не принимают, пока админ его не разморозит.</string>
+    <string name="event_unfrozen">%1$s разморожен.</string>
+    <string name="event_taken_over">%1$s забрал группу себе: теперь он создатель группы.</string>
 </resources>

@@ -496,7 +496,7 @@ before step 3; without it, iPhone notifications come with the next sync.
 One pull request each, smaller ones together:
 
 1. Notifications for the group's events in both phone apps, with a setting each. Done on
-   the iPhone (docs/apps.md, Notifications); Android next.
+   both phones (docs/apps.md, Notifications).
 2. The watch apps (watchOS, then Wear OS): the events and the away switch. The Apple Watch
    app is done (docs/apps.md, Apple Watch); Wear OS next.
 3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
