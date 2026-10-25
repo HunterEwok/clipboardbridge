@@ -79,6 +79,11 @@ type Config struct {
 	// it and passes the new identity to SetIdentity. An error is logged.
 	OnAdmin func(der []byte) error
 
+	// OnCommand, if set, is called with a command that a peer sent; it
+	// checks it, carries it out and returns the result to send back.
+	// Without it every command is refused.
+	OnCommand func(peer group.DeviceID, c group.Record) Result
+
 	// PhoneCAFor, if set, returns the iPhone CA, with its key, to send a
 	// peer whose hello said it holds the iPhone CA with the key hash
 	// theirs (nil for none), or nil to send nothing: an admin of a group a
@@ -179,6 +184,7 @@ type Node struct {
 
 	mu        sync.Mutex
 	conns     map[group.DeviceID]*conn
+	waiting   map[string]waiter // the commands sent, by ID, until their result
 	closed    bool
 	rejoining chan struct{} // closed when a Rejoin in progress is done; nil if none
 	wg        sync.WaitGroup
@@ -204,7 +210,7 @@ func New(cfg Config) *Node {
 	if cfg.OnWrite == nil {
 		cfg.OnWrite = func(Write) {}
 	}
-	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn)}
+	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn), waiting: make(map[string]waiter)}
 	n.id.Store(cfg.Identity)
 	n.SetTunnelKey(cfg.TunnelKey)
 	return n
@@ -560,6 +566,76 @@ func (n *Node) SendAdmin(dev group.DeviceID, adminCA *x509.Certificate) bool {
 	return false
 }
 
+// errNotConnected is SendCommand's error for a member that is not connected.
+var errNotConnected = errors.New("the device is not connected to this one; it must be on and in reach")
+
+// SendCommand sends the connected member dev a command signed for it and
+// waits for its result until ctx ends.
+func (n *Node) SendCommand(ctx context.Context, dev group.DeviceID, cmd group.Record, id string) (Result, error) {
+	var c *conn
+	for _, h := range n.helloed() {
+		if h.id == dev {
+			c = h
+		}
+	}
+	if c == nil {
+		return Result{}, errNotConnected
+	}
+	got := make(chan Result, 1)
+	n.mu.Lock()
+	n.waiting[id] = waiter{dev, got}
+	n.mu.Unlock()
+	defer func() {
+		n.mu.Lock()
+		delete(n.waiting, id)
+		n.mu.Unlock()
+	}()
+	c.enqueue(outgoing{command: &cmd})
+	select {
+	case r := <-got:
+		return r, nil
+	case <-c.done:
+		return Result{}, errors.New("the connection to the device closed before it answered")
+	case <-ctx.Done():
+		return Result{}, errors.New("the device did not answer in time")
+	}
+}
+
+// command answers a command a peer sent.
+func (c *conn) command(cmd *group.Record) {
+	res := Result{Status: ResultRefused, Reason: "this device takes no commands"}
+	if c.n.cfg.OnCommand != nil {
+		res = c.n.cfg.OnCommand(c.id, *cmd)
+	}
+	if res.ID == "" {
+		var b struct {
+			ID string `json:"id"`
+		}
+		json.Unmarshal(cmd.Body, &b)
+		res.ID = b.ID
+	}
+	c.enqueue(outgoing{result: &res})
+}
+
+// waiter is a command sent to dev, waiting for its result.
+type waiter struct {
+	dev group.DeviceID
+	got chan Result
+}
+
+// result passes a peer's result to the command sent to it that waits for it.
+func (n *Node) result(from group.DeviceID, r *Result) {
+	n.mu.Lock()
+	w, ok := n.waiting[r.ID]
+	n.mu.Unlock()
+	if ok && w.dev == from {
+		select {
+		case w.got <- *r:
+		default:
+		}
+	}
+}
+
 // helloed returns the connections whose peer sent its hello.
 func (n *Node) helloed() []*conn {
 	n.mu.Lock()
@@ -689,6 +765,8 @@ type outgoing struct {
 	tunnel  *TunnelOffer
 	admin   *x509.Certificate // an admin CA for the peer
 	phoneCA *group.CA         // the iPhone CA with its key
+	command *group.Record     // a command for the peer
+	result  *Result           // the answer to the peer's command
 	queued  time.Duration
 }
 
@@ -852,6 +930,10 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeTun, Tunnel: o.tunnel}, nil
 	case o.admin != nil:
 		return &message{Type: typeAdmin, AdminCA: o.admin.Raw}, nil
+	case o.command != nil:
+		return &message{Type: typeCommand, Command: o.command}, nil
+	case o.result != nil:
+		return &message{Type: typeResult, Result: o.result}, nil
 	case o.phoneCA != nil:
 		key, err := x509.MarshalPKCS8PrivateKey(o.phoneCA.Key)
 		if err != nil {
@@ -1038,6 +1120,14 @@ func (c *conn) reader() error {
 					c.n.sendRecords(fresh, c)
 					st.Settle(fresh)
 				}
+			}
+		case typeCommand:
+			if m.Command != nil {
+				c.command(m.Command)
+			}
+		case typeResult:
+			if m.Result != nil {
+				c.n.result(c.id, m.Result)
 			}
 		case typeBye:
 			return nil

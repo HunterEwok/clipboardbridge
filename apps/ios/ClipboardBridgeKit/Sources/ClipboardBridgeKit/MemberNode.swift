@@ -57,6 +57,9 @@ public actor MemberNode {
     public let device: Member.DeviceInfo?
     let engine: SyncEngine
     private var conns: [ObjectIdentifier: Conn] = [:]
+    /// The commands sent that wait for their result, by command ID, with
+    /// the connection they went on.
+    private var waiting: [String: (conn: ObjectIdentifier, waiter: Waiter)] = [:]
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
@@ -137,6 +140,38 @@ public actor MemberNode {
         return out
     }
 
+    /// The sync modes the connected members' hellos report, by device ID
+    /// where the caller of serve named them.
+    public var modes: [String: String] {
+        var out: [String: String] = [:]
+        for c in conns.values { if let p = c.peer, let m = c.mode { out[p] = m } }
+        return out
+    }
+
+    /// Sends the connected member peer a command signed for it (section 15)
+    /// and waits for its result, at most timeout seconds. It throws when
+    /// peer is not connected, the connection ends first or no result comes
+    /// in time.
+    public func command(_ command: Member.Record, to peer: String, timeout: TimeInterval = 10) async throws -> Member.CommandResult {
+        guard let id = Commands.id(of: command) else { throw Failure.refused("the command has no ID") }
+        guard let found = conns.first(where: { $0.value.peer == peer && $0.value.peerRole != nil }) else {
+            throw Failure.notConnected
+        }
+        let (cid, c) = (found.key, found.value)
+        let w = Waiter()
+        waiting[id] = (cid, w)
+        c.enqueue(.command(command))
+        let timer = Task {
+            try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            w.resolve(.failure(Failure.timedOut))
+        }
+        defer {
+            timer.cancel()
+            if waiting[id]?.waiter === w { waiting[id] = nil }
+        }
+        return try await w.wait()
+    }
+
     /// Sends a computer the admin CA the root issued for it.
     public func send(adminCA: Data, to peer: String) {
         for c in conns.values where c.peer == peer && c.peerRole != nil { c.enqueue(.admin(adminCA)) }
@@ -167,6 +202,7 @@ public actor MemberNode {
         let watchdog = Task { await c.runWatchdog() }
         defer {
             conns[id] = nil
+            for w in waiting.values where w.conn == id { w.waiter.resolve(.failure(Failure.closed)) }
             c.finish()
             writer.cancel()
             watchdog.cancel()
@@ -186,6 +222,7 @@ public actor MemberNode {
                 if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
                 c.adminKey = h.adminKey
                 c.device = h.device?.cleaned
+                c.mode = h.mode
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
@@ -215,6 +252,12 @@ public actor MemberNode {
                         dropRefused()
                     }
                 }
+            // A phone has no sync mode yet and takes no commands.
+            case let .command(r):
+                c.enqueue(.result(Member.CommandResult(id: Commands.id(of: r) ?? "", status: "refused",
+                                                       reason: "this device takes no commands")))
+            case let .result(r):
+                if let w = waiting[r.id], w.conn == id { w.waiter.resolve(.success(r)) }
             case .bye:
                 return
             default:
@@ -257,7 +300,36 @@ public actor MemberNode {
         if r.changed, let cur = engine.currentEvent { onChange(cur) }
     }
 
-    public enum Failure: Error { case noHello, timedOut, refused(String) }
+    public enum Failure: Error { case noHello, timedOut, refused(String), notConnected, closed }
+
+    /// A command's result, which comes from the peer, a timeout or the end
+    /// of the connection, whichever is first.
+    final class Waiter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var got: Swift.Result<Member.CommandResult, Error>?
+        private var waiter: CheckedContinuation<Member.CommandResult, Error>?
+
+        func resolve(_ r: Swift.Result<Member.CommandResult, Error>) {
+            let w: CheckedContinuation<Member.CommandResult, Error>? = lock.withLock {
+                guard got == nil else { return nil }
+                got = r
+                defer { waiter = nil }
+                return waiter
+            }
+            w?.resume(with: r)
+        }
+
+        func wait() async throws -> Member.CommandResult {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Member.CommandResult, Error>) in
+                let r: Swift.Result<Member.CommandResult, Error>? = lock.withLock {
+                    if let got { return got }
+                    waiter = c
+                    return nil
+                }
+                if let r { c.resume(with: r) }
+            }
+        }
+    }
 
     /// One connection: a queue the writer drains, and the times of the
     /// last read and write for the ping and the timeout.
@@ -289,6 +361,12 @@ public actor MemberNode {
             set { lock.withLock { _device = newValue } }
         }
         private var _device: Member.DeviceInfo?
+        /// The sync mode the peer's hello reports.
+        var mode: String? {
+            get { lock.withLock { _mode } }
+            set { lock.withLock { _mode = newValue } }
+        }
+        private var _mode: String?
 
         init(transport: ClosableTransport, peer: String?) { (self.transport, self.peer) = (transport, peer) }
 

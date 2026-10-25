@@ -4,14 +4,18 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 // modeFile holds the sync mode, in the state directory. A device that made
@@ -86,4 +90,117 @@ func pasteText(e *clip.Engine) (string, clip.Kind, bool) {
 	}
 	ev, ok := e.Current()
 	return ev.Text, ev.Kind, ok
+}
+
+// maxCommandIDs bounds the replay cache of commands; a command lives at
+// most group.CommandLifetime, so this many from a sender in that time is
+// far more than any admin sends.
+const maxCommandIDs = 4096
+
+// command carries out a command a member sent (docs/protocol.md, section
+// 15): one that an admin signed for this device in its group, that has not
+// expired and was not carried out before.
+func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
+	refused := func(err error) node.Result {
+		s.logf("cbb: refused a command from %s: %v", peer, err)
+		return node.Result{Status: node.ResultRefused, Reason: err.Error()}
+	}
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	if id == nil {
+		return refused(s.errNoGroup())
+	}
+	now := s.cfg.now()
+	s.recMu.Lock()
+	if s.records == nil {
+		s.recMu.Unlock()
+		return refused(errors.New("this device has no records of its group yet"))
+	}
+	body, err := s.records.VerifyCommand(c, id.ID, now)
+	s.recMu.Unlock()
+	if err != nil {
+		return refused(err)
+	}
+	res := node.Result{ID: body.ID}
+	s.mu.Lock()
+	if s.commands == nil {
+		s.commands = map[string]time.Time{}
+	}
+	for k, exp := range s.commands {
+		if !exp.After(now) {
+			delete(s.commands, k)
+		}
+	}
+	_, again := s.commands[body.ID]
+	full := len(s.commands) >= maxCommandIDs
+	if !again && !full {
+		s.commands[body.ID] = time.UnixMilli(body.ExpiresMS)
+	}
+	s.mu.Unlock()
+	switch {
+	case again:
+		res.Status, res.Reason = node.ResultRefused, "this command was carried out already"
+		return res
+	case full:
+		res.Status, res.Reason = node.ResultRefused, "too many commands; try again in a minute"
+		return res
+	}
+	if _, err := clip.ParseMode(body.Mode); err != nil {
+		res.Status, res.Reason = node.ResultRefused, err.Error()
+		return res
+	}
+	if err := s.setMode(body.Mode); err != nil {
+		res.Status, res.Reason = node.ResultFailed, err.Error()
+		return res
+	}
+	s.logf("cbb: %s set the sync mode to %s", body.By, body.Mode)
+	res.Status = node.ResultDone
+	return res
+}
+
+// setModeOn has the member target, by name or device ID, take the sync
+// mode name, with a command this device signs as an admin.
+func (s *Service) setModeOn(ctx context.Context, target, name string) error {
+	if _, err := clip.ParseMode(name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || nd == nil {
+		return s.errNoGroup()
+	}
+	d, err := s.findDevice(target)
+	if err != nil {
+		return err
+	}
+	if d.Self {
+		return s.setMode(name)
+	}
+	ca, chain := id.Signer()
+	if ca == nil {
+		return errors.New("only an admin sets the sync mode of another device: the group's root, an admin it made (cbb admin), or an admin phone")
+	}
+	if s.frozen(id) {
+		return errFrozen
+	}
+	now := s.cfg.now()
+	body := group.CommandBody{Type: group.CommandMode, Group: group.Tag(id.GroupCA.Cert), By: id.ID, To: group.DeviceID(d.ID),
+		ID: group.NewCommandID(), TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Mode: name}
+	cmd, err := group.SignCommand(body, ca.Key, chain...)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID)
+	if err != nil {
+		return fmt.Errorf("setting the sync mode of %s: %w", d.Name, err)
+	}
+	if res.Status != node.ResultDone {
+		return fmt.Errorf("%s did not take the sync mode: %s", d.Name, res.Reason)
+	}
+	s.logf("cbb: set the sync mode of %s to %s", d.Name, name)
+	return nil
 }

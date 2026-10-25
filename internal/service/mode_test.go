@@ -4,12 +4,18 @@
 package service
 
 import (
+	"crypto/ecdsa"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
 )
 
 func TestSyncModes(t *testing.T) {
@@ -70,5 +76,83 @@ func TestSyncModes(t *testing.T) {
 	a = restartService(t, &h, a)
 	if m := a.status(t).Mode; m != "shared" {
 		t.Fatalf("without a mode file the mode is %q, want shared", m)
+	}
+}
+
+func TestAdminSetsTheMode(t *testing.T) {
+	var h hub
+	a := startService(t, &h, "alpha")
+	b := startService(t, &h, "beta")
+	pairWith(t, a, b) // alpha is the root
+	waitFor(t, "a connected to b", func() bool { return len(a.status(t).Peers) == 1 })
+
+	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "beta", Name: "send"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if m := b.status(t).Mode; m != "send" {
+		t.Fatalf("beta's mode is %q, want send", m)
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "beta", Name: "everything"}, ""); err == nil {
+		t.Error("an unknown mode was sent")
+	}
+	// A member that is no admin sets only its own mode.
+	if _, err := b.do(t, control.Header{Op: control.OpMode, Device: "alpha", Name: "own"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+		t.Errorf("a member set the root's mode: %v", err)
+	}
+	if m := a.status(t).Mode; m != "shared" {
+		t.Errorf("alpha's mode is %q", m)
+	}
+	// The root names itself: its own mode changes.
+	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "alpha", Name: "receive"}, ""); err != nil || a.status(t).Mode != "receive" {
+		t.Errorf("the root's own mode: %v, %q", err, a.status(t).Mode)
+	}
+	b.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "beta", Name: "own"}, ""); err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Errorf("a mode for a device that is off: %v", err)
+	}
+}
+
+// TestCommandRefused checks the receiving side: a command is carried out
+// once, and one for another device or signed by no admin is refused.
+func TestCommandRefused(t *testing.T) {
+	root, err := group.Create(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	srv := &Service{cfg: Config{StateDir: dir, now: time.Now}, logf: t.Logf, id: root,
+		records: group.NewRecords(root.GroupCA.Cert), eng: clip.New(clip.Config{Self: string(root.ID), Clock: hlc.NewClock(nil, hlc.Timestamp{}, nil)})}
+	ca, chain := root.Signer()
+	now := time.Now()
+	sign := func(to group.DeviceID, mode string, key *ecdsa.PrivateKey) group.Record {
+		c, err := group.SignCommand(group.CommandBody{Type: group.CommandMode, Group: group.Tag(root.GroupCA.Cert), By: root.ID, To: to,
+			ID: group.NewCommandID(), TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Mode: mode}, key, chain...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	good := sign(root.ID, "receive", ca.Key)
+	if r := srv.command(root.ID, good); r.Status != node.ResultDone || srv.eng.Mode() != clip.Receive {
+		t.Fatalf("a good command: %+v, mode %v", r, srv.eng.Mode())
+	}
+	if m, _ := loadMode(dir); m != clip.Receive {
+		t.Errorf("the mode saved is %v", m)
+	}
+	if r := srv.command(root.ID, good); r.Status != node.ResultRefused || !strings.Contains(r.Reason, "already") {
+		t.Errorf("the same command again: %+v", r)
+	}
+	if r := srv.command(root.ID, sign(group.NewDeviceID(), "own", ca.Key)); r.Status != node.ResultRefused {
+		t.Errorf("a command for another device: %+v", r)
+	}
+	other, _ := group.NewKey()
+	if r := srv.command(root.ID, sign(root.ID, "own", other)); r.Status != node.ResultRefused {
+		t.Errorf("a command nobody in the group signed: %+v", r)
+	}
+	if r := srv.command(root.ID, sign(root.ID, "everything", ca.Key)); r.Status != node.ResultRefused || r.ID == "" {
+		t.Errorf("an unknown mode: %+v", r)
+	}
+	if srv.eng.Mode() != clip.Receive {
+		t.Errorf("a refused command changed the mode to %v", srv.eng.Mode())
 	}
 }

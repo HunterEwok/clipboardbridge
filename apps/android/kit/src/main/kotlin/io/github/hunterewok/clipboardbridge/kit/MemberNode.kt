@@ -4,7 +4,11 @@
 package io.github.hunterewok.clipboardbridge.kit
 
 import java.io.IOException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * Keeps the group's signed records for a node (docs/protocol.md, section
@@ -79,6 +83,7 @@ class MemberNode(
     val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
     private val conns = mutableSetOf<Conn>()
+    private val waiting = mutableMapOf<String, Pair<String, CompletableFuture<Member.CommandResult>>>()
 
     /** A renewed member certificate for a peer, DER, and the admin CA that issued it; null when a root did. */
     class Renewal(val cert: ByteArray, val issuer: ByteArray? = null)
@@ -115,6 +120,37 @@ class MemberNode(
         get() = synchronized(lock) {
             conns.mapNotNull { c -> val p = c.peer; val d = c.device; if (p != null && d != null) p to d else null }.toMap()
         }
+
+    /** The sync modes the connected members' hellos report, by device ID where the caller of serve named them. */
+    val modes: Map<String, String>
+        get() = synchronized(lock) {
+            conns.mapNotNull { c -> val p = c.peer; val m = c.mode; if (p != null && m != null) p to m else null }.toMap()
+        }
+
+    /**
+     * Sends the connected member peer a command signed for it (section 15)
+     * and waits for its result, at most timeoutMS. It throws when peer is
+     * not connected, the connection ends first or no result comes in time.
+     */
+    fun command(peer: String, command: Member.Record, timeoutMS: Long = 10_000): Member.CommandResult {
+        val id = Commands.idOf(command) ?: throw IllegalArgumentException("the command has no ID")
+        val got = CompletableFuture<Member.CommandResult>()
+        synchronized(lock) {
+            val c = conns.firstOrNull { it.peer == peer && it.peerRole != null } ?: throw ProtocolException("the device is not connected")
+            waiting[id] = peer to got
+            c.waiters += got
+            c.enqueue(Member.Message.Command(command))
+        }
+        try {
+            return got.get(timeoutMS, TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            throw ProtocolException("the device did not answer in time")
+        } catch (e: ExecutionException) {
+            throw ProtocolException("the connection to the device closed before it answered")
+        } finally {
+            synchronized(lock) { waiting.remove(id) }
+        }
+    }
 
     /** Sends a computer the admin CA the root issued for it. */
     fun sendAdminCA(adminCA: ByteArray, peer: String) = synchronized(lock) {
@@ -157,6 +193,7 @@ class MemberNode(
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
                         c.device = m.hello.device?.cleaned
+                        c.mode = m.hello.mode
                         c.peerRole = m.role
                         apply(engine.reconcile(m.hello), c)
                         val store = records
@@ -189,12 +226,22 @@ class MemberNode(
                             }
                         }
                     }
+                    // A phone has no sync mode yet and takes no commands.
+                    is Member.Message.Command -> c.enqueue(
+                        Member.Message.Result(Member.CommandResult(Commands.idOf(m.command) ?: "", "refused", "this device takes no commands")),
+                    )
+                    is Member.Message.Result -> synchronized(lock) {
+                        waiting[m.result.id]?.takeIf { it.first == c.peer }?.second?.complete(m.result)
+                    }
                     Member.Message.Bye -> return
                     else -> {} // a ping, an event that did not decode, or a newer type
                 }
             }
         } finally {
-            synchronized(lock) { conns.remove(c) }
+            synchronized(lock) {
+                conns.remove(c)
+                c.waiters.forEach { it.completeExceptionally(ProtocolException("the connection closed")) }
+            }
             c.finish()
             t.close()
         }
@@ -236,6 +283,10 @@ class MemberNode(
         /** The admin key the peer's hello offered. */
         @Volatile var adminKey: ByteArray? = null
         @Volatile var device: Member.DeviceInfo? = null
+        @Volatile var mode: String? = null
+
+        /** The commands sent on it that wait for their result. */
+        val waiters = mutableListOf<CompletableFuture<Member.CommandResult>>()
 
         /** Whether this side ended the connection. */
         @Volatile var closing = false

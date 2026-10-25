@@ -644,7 +644,7 @@ jobs:
           # interop-out the records it signed, a certificate it renewed and
           # what an admin phone makes.
           go test ./internal/node -run TestSwiftMemberFrames -v
-          CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
+          CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin|TestSwiftCommand' -v
       - name: swift test
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipboardBridgeKit
@@ -778,7 +778,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Go reads what the Kotlin kit signed
-        run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin' -v
+        run: CBB_INTEROP_OUT="$PWD/interop-out" go test ./internal/group -run 'TestSwiftRecords|TestSwiftRenewal|TestSwiftAdmin|TestSwiftRoot|TestSwiftComputerAdmin|TestSwiftCommand' -v
       - name: Go pairs and syncs with the Kotlin kit over TLS
         # The Kotlin twin of clipboardbridge-interop plays the phone; Conscrypt
         # gives it TLS 1.3 on Linux as on Android.

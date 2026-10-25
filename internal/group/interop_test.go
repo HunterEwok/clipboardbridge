@@ -998,3 +998,52 @@ func TestGoTakeoverVectors(t *testing.T) {
 		}
 	}
 }
+
+// TestSwiftCommand checks the mode commands a phone kit signed
+// (swift-command.json, which the kits' tests write): one with the root's
+// key and one with an admin CA's are taken, for the device they name.
+func TestSwiftCommand(t *testing.T) {
+	dir := os.Getenv("CBB_INTEROP_OUT")
+	if dir == "" {
+		dir = filepath.Join("..", "..", "testdata", "interop")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "swift-command.json"))
+	if os.IsNotExist(err) && os.Getenv("CBB_INTEROP_OUT") == "" {
+		t.Skip("no swift-command.json; the phone kit's tests write it")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		GroupCA  []byte   `json:"group_ca"`
+		To       DeviceID `json:"to"`
+		Commands []Record `json:"commands"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if len(v.Commands) != 2 {
+		t.Fatalf("%d commands, want 2", len(v.Commands))
+	}
+	for i, c := range v.Commands {
+		var b CommandBody
+		if err := json.Unmarshal(c.Body, &b); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.VerifyCommand(c, v.To, time.UnixMilli(b.TimeMS))
+		if err != nil {
+			t.Fatalf("command %d: %v", i, err)
+		}
+		if got.Type != CommandMode || got.Mode != "receive" {
+			t.Errorf("command %d: %+v", i, got)
+		}
+		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
+			t.Errorf("command %d was taken by another device", i)
+		}
+	}
+}

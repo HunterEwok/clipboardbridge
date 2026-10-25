@@ -89,6 +89,14 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		}
 		reply(c, control.Header{Kind: kindName(kind), Done: true}, []byte(text))
 	case control.OpMode:
+		if m.Device != "" {
+			if err := s.setModeOn(ctx, m.Device, m.Name); err != nil {
+				fail(c, err)
+				return
+			}
+			reply(c, control.Header{Done: true}, nil)
+			return
+		}
 		if err := s.setMode(m.Name); err != nil {
 			fail(c, err)
 			return
