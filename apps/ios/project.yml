@@ -39,7 +39,7 @@ targets:
     info:
       path: ClipboardBridge/Info.plist
       properties:
-        CFBundleDisplayName: clipboardbridge
+        CFBundleDisplayName: CBB
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ru]
         UILaunchScreen: {}
@@ -47,9 +47,9 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSBonjourServices: [_clipboardbridge._tcp]
-        NSLocalNetworkUsageDescription: clipboardbridge finds your computers on the home network and keeps their clipboard in sync with this phone.
-        NSCameraUsageDescription: clipboardbridge scans the QR code a computer shows, to add it to your group.
-        NSFaceIDUsageDescription: clipboardbridge asks for Face ID before it signs with your group's key, to add or remove a device.
+        NSLocalNetworkUsageDescription: Clipboard Bridge finds your computers on the home network and keeps their clipboard in sync with this phone.
+        NSCameraUsageDescription: Clipboard Bridge scans the QR code a computer shows, to add it to your group.
+        NSFaceIDUsageDescription: Clipboard Bridge asks for Face ID before it signs with your group's key, to add or remove a device.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge
@@ -74,11 +74,11 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
-        CFBundleDisplayName: clipboardbridge
+        CFBundleDisplayName: CBB
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ru]
         NSBonjourServices: [_clipboardbridge._tcp]
-        NSLocalNetworkUsageDescription: clipboardbridge finds your computers on the home network to send them what you share.
+        NSLocalNetworkUsageDescription: Clipboard Bridge finds your computers on the home network to send them what you share.
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -104,7 +104,7 @@ targets:
     info:
       path: Widgets/Info.plist
       properties:
-        CFBundleDisplayName: clipboardbridge
+        CFBundleDisplayName: CBB
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ru]
         NSExtension:

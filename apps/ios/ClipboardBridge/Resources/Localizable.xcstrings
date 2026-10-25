@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld of %lld online": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld из %lld в сети"
+          }
+        }
+      }
+    },
     "A name has 1 to 64 characters.": {
       "localizations": {
         "ru": {
@@ -101,6 +111,16 @@
         }
       }
     },
+    "Board": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Плата"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "ru": {
@@ -110,6 +130,9 @@
           }
         }
       }
+    },
+    "Clipboard Bridge": {
+      "shouldTranslate": false
     },
     "Close": {
       "localizations": {
@@ -121,12 +144,22 @@
         }
       }
     },
-    "Computers": {
+    "Colour": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Компьютеры"
+            "value": "Цвет"
+          }
+        }
+      }
+    },
+    "Computer": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер"
           }
         }
       }
@@ -181,12 +214,22 @@
         }
       }
     },
-    "Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipboardbridge in?": {
+    "Coral": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол clipboardbridge?"
+            "value": "Коралл"
+          }
+        }
+      }
+    },
+    "Could not reach the computer. Is it on the same network as this phone, and does its firewall let Clipboard Bridge in?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол Clipboard Bridge?"
           }
         }
       }
@@ -201,12 +244,22 @@
         }
       }
     },
-    "Devices": {
+    "Dark": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Устройства"
+            "value": "Тёмная"
+          }
+        }
+      }
+    },
+    "Device": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство"
           }
         }
       }
@@ -251,12 +304,52 @@
         }
       }
     },
-    "I already use clipboardbridge on another phone": {
+    "Full member": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "У меня уже есть clipboardbridge на другом телефоне"
+            "value": "Полный участник"
+          }
+        }
+      }
+    },
+    "Game console": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Игровая приставка"
+          }
+        }
+      }
+    },
+    "Graphite": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Графит"
+          }
+        }
+      }
+    },
+    "I already use Clipboard Bridge on another phone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У меня уже есть Clipboard Bridge на другом телефоне"
+          }
+        }
+      }
+    },
+    "In the group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В группе"
           }
         }
       }
@@ -341,6 +434,16 @@
         }
       }
     },
+    "Laptop": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ноутбук"
+          }
+        }
+      }
+    },
     "Light": {
       "localizations": {
         "ru": {
@@ -351,12 +454,42 @@
         }
       }
     },
-    "Lost a phone? Make a second phone an admin: on it, tap I already use clipboardbridge on another phone, then scan its code here with +.": {
+    "Lime": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Потеряли телефон? Сделайте второй телефон админом: на нём нажмите «У меня уже есть clipboardbridge на другом телефоне» и отсканируйте его код здесь через +."
+            "value": "Лайм"
+          }
+        }
+      }
+    },
+    "List": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Список"
+          }
+        }
+      }
+    },
+    "Lite member": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лёгкий участник"
+          }
+        }
+      }
+    },
+    "Lost a phone? Make a second phone an admin: on it, tap I already use Clipboard Bridge on another phone, then scan its code here with +.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Потеряли телефон? Сделайте второй телефон админом: на нём нажмите «У меня уже есть Clipboard Bridge на другом телефоне» и отсканируйте его код здесь через +."
           }
         }
       }
@@ -387,6 +520,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сделать админом"
+          }
+        }
+      }
+    },
+    "Menu": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Меню"
           }
         }
       }
@@ -431,7 +574,7 @@
         }
       }
     },
-    "Not a clipboardbridge QR code.": {
+    "Not a Clipboard Bridge QR code.": {
       "localizations": {
         "ru": {
           "stringUnit": {
@@ -447,6 +590,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Нечего отправить или получить."
+          }
+        }
+      }
+    },
+    "Ocean": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Океан"
           }
         }
       }
@@ -511,12 +664,22 @@
         }
       }
     },
-    "Opens clipboardbridge and sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
+    "Opens Clipboard Bridge and sends what this phone copied to your computers, or fetches what a computer copied a moment ago.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Открывает clipboardbridge и отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+            "value": "Открывает Clipboard Bridge и отправляет скопированное на телефоне на ваши компьютеры или забирает то, что компьютер скопировал только что."
+          }
+        }
+      }
+    },
+    "Operating system": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Операционная система"
           }
         }
       }
@@ -527,6 +690,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Вставьте текст QR-кода cbb pair."
+          }
+        }
+      }
+    },
+    "Phone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Телефон"
+          }
+        }
+      }
+    },
+    "Phone app": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложение на телефоне"
           }
         }
       }
@@ -651,6 +834,56 @@
         }
       }
     },
+    "Retro computer": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ретрокомпьютер"
+          }
+        }
+      }
+    },
+    "Role": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Роль"
+          }
+        }
+      }
+    },
+    "Rose": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Роза"
+          }
+        }
+      }
+    },
+    "Router": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Роутер"
+          }
+        }
+      }
+    },
+    "Ruby": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рубин"
+          }
+        }
+      }
+    },
     "Send or fetch": {
       "localizations": {
         "ru": {
@@ -681,12 +914,32 @@
         }
       }
     },
+    "Server": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервер"
+          }
+        }
+      }
+    },
     "Settings": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Настройки"
+          }
+        }
+      }
+    },
+    "Shortcut": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрая команда"
           }
         }
       }
@@ -751,12 +1004,42 @@
         }
       }
     },
+    "TV": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Телевизор"
+          }
+        }
+      }
+    },
+    "Tablet": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Планшет"
+          }
+        }
+      }
+    },
     "Take the group over from the lost phone": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Забрать группу у потерянного телефона"
+          }
+        }
+      }
+    },
+    "Teal": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Бирюза"
           }
         }
       }
@@ -871,12 +1154,32 @@
         }
       }
     },
+    "Tiles": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Плитки"
+          }
+        }
+      }
+    },
     "Too many wrong codes. Try again with a new code.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Слишком много неверных кодов. Попробуйте снова с новым кодом."
+          }
+        }
+      }
+    },
+    "Type": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тип"
           }
         }
       }
@@ -921,12 +1224,32 @@
         }
       }
     },
+    "View": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вид"
+          }
+        }
+      }
+    },
     "Waiting for the hub: open the app at home once, near a computer of the group.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Ждём хаб: один раз откройте приложение дома, рядом с компьютером группы."
+          }
+        }
+      }
+    },
+    "Watch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Часы"
           }
         }
       }
@@ -950,9 +1273,6 @@
           }
         }
       }
-    },
-    "clipboardbridge": {
-      "shouldTranslate": false
     },
     "frozen": {
       "localizations": {
@@ -980,6 +1300,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "в сети"
+          }
+        }
+      }
+    },
+    "root": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "создатель группы"
           }
         }
       }

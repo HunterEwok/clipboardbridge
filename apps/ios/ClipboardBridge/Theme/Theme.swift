@@ -23,36 +23,97 @@ extension Color {
     }
 }
 
-/// The theme the user picks in Settings; System follows the system's light
-/// or dark mode with Terminal and Light.
-enum ThemeChoice: String, CaseIterable, Identifiable {
-    case system, terminal, midnight, amber, light
+extension Palette {
+    /// A card's or a tile's glass over the background.
+    var glass: Color { dark ? surface.opacity(0.78) : Color.white.opacity(0.86) }
+    /// A faint wash of the accent, behind an icon or under the glow.
+    var soft: Color { accent.opacity(dark ? 0.16 : 0.10) }
+    /// A hairline around glass.
+    var line: Color { text.opacity(dark ? 0.12 : 0.10) }
+}
+
+/// One accent colour's palettes for the dark and the light appearance.
+struct PalettePair {
+    let name: String
+    let dark: Palette
+    let light: Palette
+}
+
+/// The colour the user picks in Settings, one of Tokens.colors by its name;
+/// Terminal, the first, by default.
+enum AccentChoice {
+    static let key = "color"
+
+    static func pair(_ name: String) -> PalettePair {
+        Tokens.colors.first { $0.name == name } ?? Tokens.colors[0]
+    }
+
+    static func title(_ name: String) -> LocalizedStringKey {
+        switch name {
+        case "terminal": "Terminal"
+        case "midnight": "Midnight"
+        case "amber": "Amber"
+        case "ocean": "Ocean"
+        case "teal": "Teal"
+        case "coral": "Coral"
+        case "rose": "Rose"
+        case "lime": "Lime"
+        case "graphite": "Graphite"
+        case "ruby": "Ruby"
+        default: LocalizedStringKey(name)
+        }
+    }
+}
+
+/// Light or dark, or as the system has it.
+enum Appearance: String, CaseIterable, Identifiable {
+    static let key = "appearance"
+
+    case system, dark, light
 
     var id: String { rawValue }
 
     var title: LocalizedStringKey {
         switch self {
         case .system: "System"
-        case .terminal: "Terminal"
-        case .midnight: "Midnight"
-        case .amber: "Amber"
+        case .dark: "Dark"
         case .light: "Light"
         }
     }
 
-    func palette(for scheme: ColorScheme) -> Palette {
+    var scheme: ColorScheme? {
         switch self {
-        case .system: scheme == .dark ? Tokens.terminal : Tokens.light
-        case .terminal: Tokens.terminal
-        case .midnight: Tokens.midnight
-        case .amber: Tokens.amber
-        case .light: Tokens.light
+        case .system: nil
+        case .dark: .dark
+        case .light: .light
+        }
+    }
+
+    func palette(_ color: String, for scheme: ColorScheme) -> Palette {
+        let pair = AccentChoice.pair(color)
+        return (self.scheme ?? scheme) == .dark ? pair.dark : pair.light
+    }
+
+    /// Carries the one theme of earlier versions over to a colour and an
+    /// appearance: Terminal, Midnight and Amber were dark, Light was
+    /// Terminal's light one.
+    static func migrate(_ defaults: UserDefaults = .standard) {
+        guard let old = defaults.string(forKey: "theme") else { return }
+        defaults.removeObject(forKey: "theme")
+        switch old {
+        case "terminal", "midnight", "amber":
+            defaults.set(old, forKey: AccentChoice.key)
+            defaults.set(Appearance.dark.rawValue, forKey: key)
+        case "light":
+            defaults.set(Appearance.light.rawValue, forKey: key)
+        default:
+            break
         }
     }
 }
 
 private struct PaletteKey: EnvironmentKey {
-    static let defaultValue = Tokens.terminal
+    static let defaultValue = Tokens.colors[0].dark
 }
 
 extension EnvironmentValues {
@@ -62,31 +123,18 @@ extension EnvironmentValues {
     }
 }
 
-/// The deep background with a faint grid.
-struct GridBackground: View {
+/// The background: the deep colour with a glow of the accent from the top.
+struct AppBackground: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        Canvas { ctx, size in
-            let step: CGFloat = 28
-            var path = Path()
-            var x: CGFloat = 0
-            while x < size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                x += step
+        palette.background
+            .overlay(alignment: .top) {
+                RadialGradient(colors: [palette.soft, .clear], center: .top, startRadius: 0, endRadius: 520)
+                    .frame(height: 640)
             }
-            var y: CGFloat = 0
-            while y < size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += step
-            }
-            ctx.stroke(path, with: .color(palette.grid), lineWidth: 0.5)
-        }
-        .background(palette.background)
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 }
 
@@ -134,7 +182,31 @@ struct GlassButtonStyle: ButtonStyle {
     }
 }
 
+/// A tile, a row or a card of the device pages: Liquid Glass from iOS 26,
+/// the palette's glass with a hairline before.
+struct GlassTile: ViewModifier {
+    @Environment(\.palette) private var palette
+    var cornerRadius: CGFloat = Tokens.radiusTile
+
+    @ViewBuilder func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(palette.glass), in: shape)
+        } else {
+            content.background(palette.glass, in: shape).overlay(shape.stroke(palette.line))
+        }
+        #else
+        content.background(palette.glass, in: shape).overlay(shape.stroke(palette.line))
+        #endif
+    }
+}
+
 extension View {
+    func glassTile(cornerRadius: CGFloat = Tokens.radiusTile) -> some View {
+        modifier(GlassTile(cornerRadius: cornerRadius))
+    }
+
     /// A card or a field on glass: Liquid Glass from iOS 26, a material
     /// before.
     @ViewBuilder func glassCard(cornerRadius: CGFloat = Tokens.radiusCard) -> some View {
