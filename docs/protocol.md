@@ -483,7 +483,10 @@ the member publishes `p=1`. The window lives 5 minutes (counting sleep); an atte
 started may finish after that. One attempt at a time; another gets `busy`. The window closes
 after a success or after the third failed attempt (`too-many`). An attempt fails (counts)
 when it fails after the member sent its CPace message; errors before that (bad AD, bad
-certificate, a dropped connection) do not count. Each attempt has 30 s on both sides.
+certificate, a dropped connection) do not count. Each attempt has 30 s on both sides, and
+the joiner's first message must arrive within 5 s of the TLS handshake. After 5 attempts
+from one IP address that ended before they counted, the window answers that address `busy`,
+so that one device on the network cannot hold the window for its whole life.
 
 A window for a remote invitation (design.md, "Joining from another network") differs:
 

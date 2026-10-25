@@ -201,6 +201,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Security: the iPhone shortcut's pairing page no longer shows the profile's fingerprint,
   which comes over plain HTTP and could be changed on the way; it sends the user to the
   terminal of `cbb pair -phone`, which now spells out where to compare it.
+- Security: a device on the home network can no longer hold a pairing window busy. The
+  joiner's first message must come within 5 s, and after 5 attempts from one address that
+  ended before they counted, the window answers it `busy`.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub

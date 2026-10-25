@@ -72,9 +72,17 @@ const (
 	MinSecret = 16
 
 	attemptTimeout = 30 * time.Second
-	refuseTimeout  = 10 * time.Second
-	maxFrame       = 64 << 10
-	maxNameLen     = 64
+	// firstTimeout is how long the joiner has for its first message once
+	// it holds the window's one attempt: a device that only connects holds
+	// it no longer than that.
+	firstTimeout = 5 * time.Second
+	// maxIdle is how many attempts from one address may end before they
+	// count (without the joiner getting the member's CPace message); the
+	// window refuses that address afterwards, as busy.
+	maxIdle       = 5
+	refuseTimeout = 10 * time.Second
+	maxFrame      = 64 << 10
+	maxNameLen    = 64
 )
 
 // Errors a pairing ends with.
