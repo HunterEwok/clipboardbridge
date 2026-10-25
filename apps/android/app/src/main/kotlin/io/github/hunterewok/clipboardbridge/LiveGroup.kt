@@ -821,8 +821,15 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 null
             },
             onHubs = { from, _, share ->
-                val known = { d: String -> synchronized(lock) { state?.records?.knows(d) == true } }
-                if (isHub && h.shared(from, share, known)) self?.sendTunnels { dev -> h.offersFor(dev, hubOrder()) }
+                if (isHub) {
+                    val known = { d: String -> synchronized(lock) { state?.records?.knows(d) == true } }
+                    if (h.shared(from, share, known)) self?.sendTunnels { dev -> h.offersFor(dev, hubOrder()) }
+                } else {
+                    // A client keeps the sharing hub's offer with its own preshared key, as any hub's.
+                    val psk = a.keys?.second
+                    val o = share.offer
+                    if (psk != null && o != null) a.keep(from, o.with(psk, null))
+                }
             },
         )
         self = n

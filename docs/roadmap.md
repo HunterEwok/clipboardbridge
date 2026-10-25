@@ -635,9 +635,13 @@ better hub, so the app suggests it when there is one, and the user decides.
    to a computer" with the suggestion of a computer that is always on, and the hub moving
    with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
    Still to do on the bench: moving from a phone to the deck with the lite member far away.
-7. Several hubs with a priority (D-65, in the plan for 0.5): the hubs' list in the group,
-   the clients keeping every hub's offer, the hubs passing each other the clients' keys,
-   the lower hub yielding to the higher one, and tests of switching both ways.
+7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
+   the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
+   member), the clients keeping every hub's offer with a preshared key of their own, the
+   hubs sharing their clients and passing each other's offers on, and a computer's hub
+   yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both
+   ways. Still to do: the phone hub yielding to a hub above it, the signed table of main
+   hubs the user orders, and a bench run with two computers as hubs.
 
 Not yet verified on real devices: how long iOS keeps the forwarder registration and the
 tunnel up while the app is open and the screen locks, the battery cost of the clients'

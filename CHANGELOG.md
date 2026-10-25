@@ -27,6 +27,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   its connected clients, so devices far away follow without coming home; the old hub then
   becomes a client. An admin phone that takes the group over from a lost root phone that was
   the hub becomes the hub (docs/protocol.md, section 11).
+- Several hubs: the root and every admin with a hub set up are the group's hubs, in an order
+  every device takes from the records (phones first, then the root, then by device ID).
+  Each device keeps every hub's offer and, away from home, uses the first that answers,
+  trying the ones above again every 5 minutes. Each device offers its own preshared key, and
+  the hubs share their clients and pass each other's offers on, so any hub can serve any
+  device. A computer that is a hub serves only while no hub above it answers and is that
+  hub's client otherwise; a phone that is the hub does not yet give way (docs/protocol.md,
+  section 11, "Several hubs"). In `cbb`, the lite member and both phone apps.
 - A client away from home tries a phone hub at least every 5 s, since it is there only while
   its app is open; a computer hub is still tried up to every 30 s. In `cbb`, the lite member
   and both phone apps.

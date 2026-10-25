@@ -639,7 +639,16 @@ final class LiveGroup: GroupController {
                               tunnelKey: offered, tunnelPSK: offered == nil ? nil : awayState?.psk, hub: answer, hubShare: sharing,
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } },
                               onHubs: { from, _, share in
-                                  guard isHub, hub.shared(from: from, share, known: { box.knows($0) }) else { return }
+                                  guard isHub else {
+                                      // A client keeps the sharing hub's offer with its own preshared key, as any hub's.
+                                      guard let o = share.offer else { return }
+                                      Task {
+                                          guard let away = awayRef.value, let psk = await away.psk else { return }
+                                          await away.keep(from: from, offer: o.with(psk: psk, hub: nil))
+                                      }
+                                      return
+                                  }
+                                  guard hub.shared(from: from, share, known: { box.knows($0) }) else { return }
                                   Task { await nodeRef.value?.sendTunnels { hub.offers(for: $0, order: box.hubOrder) } }
                               })
         nodeRef.value = node

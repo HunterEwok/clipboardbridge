@@ -844,7 +844,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
 | Phones only, or phones and Android TVs or other Android devices | nothing syncs, at home or away: all of them only dial | a phone with its app open is the hub; the others sync while they run (Android in its foreground service, an iPhone with its app open) |
 | A phone and lite members | syncs at home, where lite members listen; not away from home | the same at home; from afar, the phone with its app open is the hub |
 | The whole group away together (a trip, a hotel Wi-Fi that isolates its clients, mobile data) | nothing syncs unless the hub at home is reached | the phone hub, through the forwarder |
-| A computer is the hub but is off, broken or offline | nothing syncs away from home | several hubs with a priority (below): the next hub that is on, such as the phone with its app open, serves |
+| A computer is the hub but is off, broken or offline | another hub of the group serves: the root and every admin with a hub set up, phones first (docs/protocol.md, section 11, "Several hubs") | the user's main hubs in a signed table (D-65) |
 | The hub's home has no public address and the project's forwarder is not reached | nothing syncs away from home | the same; a forwarder or relay of the user's own (`cbb forward`, `cbb relay`) |
 | A network blocks WireGuard | AmneziaWG, then VLESS | AmneziaWG for the phone hub as for any hub; VLESS for the phone hub's own registration is to be checked |
 | The root phone that is the hub is lost | | an admin phone takes over and is the hub; devices far away are invited again |
@@ -860,8 +860,12 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
   option; the clients' short retries for a phone hub (5 s); and remote invitations made
   and served on the phone (docs/protocol.md, section 12); moving the hub to an admin
-  computer, from a phone or a computer, and the hub moving with a takeover. Several hubs
-  with a priority come next (roadmap item 30).
+  computer, from a phone or a computer, and the hub moving with a takeover; several hubs
+  in the order the records give (phones first, then the root, then by device ID), every
+  client keeping each hub's offer and its own preshared key, the hubs sharing their
+  clients, and a computer's hub giving way to a hub above it and coming back when that one
+  goes (docs/protocol.md, section 11, "Several hubs"). Still to do: the phone hub giving way
+  to a hub above it, and the signed table of main hubs (D-65).
 
 ### Reaching the hub
 
