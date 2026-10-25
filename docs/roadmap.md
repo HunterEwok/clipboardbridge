@@ -499,8 +499,8 @@ One pull request each, smaller ones together:
 
 1. Notifications for the group's events in both phone apps, with a setting each. Done on
    both phones (docs/apps.md, Notifications).
-2. The watch apps (watchOS, then Wear OS): the events and the away switch. The Apple Watch
-   app is done (docs/apps.md, Apple Watch); Wear OS next.
+2. The watch apps (watchOS, then Wear OS): the events and the away switch. Done on both
+   (docs/apps.md, Apple Watch and Wear OS).
 3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
    Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
    that turns sync away from home off on a member.
@@ -508,8 +508,8 @@ One pull request each, smaller ones together:
 5. If the owner agrees, prompt iPhone notifications through an encrypted Apple push.
 
 Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
-waking the phone app in the background long enough to send a record, and the delay of
-notifications.
+waking the phone app in the background long enough to send a record, the Data Layer
+starting the Android app's listener for the Wear OS switch, and the delay of notifications.
 
 ## Quick actions
 

@@ -165,6 +165,31 @@ the phone does not answer. The notifications of the group's events reach the wat
 every iPhone notification does. The watch's own admin key and its emergency actions are
 roadmap item 26, steps 3 and 4.
 
+## Wear OS
+
+The Wear OS app (`apps/android/wear`, Wear OS 3, Compose for Wear OS) is the Apple Watch
+app's twin, and works only through its phone as well: a Wear OS watch reaches its phone
+through the Wearable Data Layer of Google Play services, the only channel there is, and the
+watch's own network would make it a member, which it is not. It shows the same page in the
+phone's colour: how many devices are online, each device with its glyph and live dot, the
+switch for sync away from home and where it stands, the latest events.
+
+- The phone (`WatchLink`) keeps the state in a data item, `/cbb/state` (`WatchState` in
+  `apps/android/shared`: devices, away, events, colour, whether errors show their details;
+  never the clipboard), and replaces it whenever it changes; the watch reads it when it
+  opens and follows each change.
+- The watch's switch sends the message `/cbb/away` (1 on, 0 off); Play services start the
+  phone app's listener (`WatchListener`), which turns the phone's own away mode on or off as
+  Settings does, and the new state comes back as the data item. Without a phone in reach the
+  watch says so and keeps the last state it got.
+- The two apps share the application id and the release key, as the Data Layer requires;
+  `apps/android/shared` holds what they share (the colours of `tokens.json`, the device
+  glyphs, `WatchState`). A phone without Play services has no watch and works as before:
+  the one Google library it carries is for the watch only.
+
+The notifications of the group's events reach the watch as every Android notification does,
+with or without the app.
+
 ## The Mac app
 
 The Mac app (`apps/macos`, SwiftUI, macOS 14) is a window and a menu bar item over the
@@ -285,8 +310,11 @@ If the overlay does not get the focus, the service starts the transparent activi
 
 ## Releasing the Android app
 
-Each release carries `clipboardbridge-X.Y.Z.apk`, signed with the project's release key; the
-key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
+Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,
+`clipboardbridge-wear-X.Y.Z.apk`, both signed with the project's release key; the key and
+its secrets are in [maintaining.md](maintaining.md#android-signing-key). The watch app is
+installed on the watch with `adb install` over the watch's wireless debugging until the apps
+are on Google Play.
 
 ## Languages
 
@@ -347,7 +375,7 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
   drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
   for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into
-  `apps/ios/ClipboardBridge/Theme/Tokens.swift` and the Android app's `Tokens.kt` and fails when a palette misses the
+  `apps/ios/ClipboardBridge/Theme/Tokens.swift` and the Android apps' `Tokens.kt` and fails when a palette misses the
   WCAG AA contrast, and CI checks that the generated files are up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
 - The protocol both apps speak is [protocol.md](protocol.md).

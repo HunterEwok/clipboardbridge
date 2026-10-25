@@ -193,6 +193,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P30 | The Dynamic Island: adding a device, the phone away from home, a sync | the timer while adding, the shield while away, the result for a moment; never the copied text |
 | P31 | The Mac app: the window and the menu bar item, send and fetch, each layout, rename, remove, freeze, unfreeze, make an admin and sync away from home after the password, the prompt cancelled, the service stopped, error details on and off | each action does what the same `cbb` command does; a cancelled prompt changes nothing and says nothing; a stopped service is explained, with the error underneath when details are on |
 | P32 | The tray app on the Linux members (GNOME, KDE, the Steam Deck) and on Windows: the tray item and the window, send and fetch, each layout, the group's changes after pkexec or UAC, the prompt dismissed, the service stopped, error details on and off, Russian | as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension) |
+| P33 | The Wear OS app with its Android phone: the devices, the away switch, the latest events; the phone out of reach; a phone without Google Play services | as P29; without Play services the phone app works as before |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
 (`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
@@ -361,7 +362,7 @@ One pull request per step, merged in order:
 2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
    report, the `check` and `smoke` suites on N1; the Windows setup script.
 3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
-   P32, section 7): installing and
+   P33, section 7): installing and
    removing with the installers, the snapshot of the Windows VM, the emulator, the
    router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
