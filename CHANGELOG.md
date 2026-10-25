@@ -16,7 +16,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   programs with Authenticode when its secrets hold a certificate.
 - ZX Spectrum Next: `.cbb text -s` and `.cbb copy -s` send a secret, through the lite
   member's `cbb next copy -secret`.
-- iPhone: Share → clipboardbridge sends a text or a link to the computers at once (a share
+- iPhone: Share → Clipboard Bridge sends a text or a link to the computers at once (a share
   extension), and a Control Center control and a home-screen widget "Sync clipboard".
   Android: the home-screen widget "Send clipboard".
 - Rename a device: `cbb rename NAME NEW-NAME` on an admin computer, and Rename in the Devices
@@ -108,6 +108,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the lite member on the Next's own Raspberry Pi it pastes the group's text to the screen or a
   file, sends a file or words, and joins by drawing the QR code for the phone app. Not yet
   run on a real Next.
+- iPhone: a new look, "Glass", in ten colours (Terminal, Midnight, Amber, Ocean, Teal,
+  Coral, Rose, Lime, Graphite, Ruby), each dark and light. Home shows every device of the
+  group as tiles or a list with its icon, system and live dot; a device opens its own page
+  with a summary and its actions. The earlier theme carries over.
 
 ### Changed
 

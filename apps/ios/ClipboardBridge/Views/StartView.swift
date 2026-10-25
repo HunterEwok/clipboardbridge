@@ -2,9 +2,9 @@
 
 import SwiftUI
 
-/// No group yet: what clipboardbridge does, the note that this phone is ready
+/// No group yet: what Clipboard Bridge does, the note that this phone is ready
 /// (once), connecting a device, and joining the group of a phone that
-/// already uses clipboardbridge. Theme and language are a tap away.
+/// already uses Clipboard Bridge. Colour and language are a tap away.
 struct StartView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
@@ -36,7 +36,7 @@ struct StartView: View {
                 .accessibilityLabel(Text("Settings"))
             }
             Spacer()
-            Text("clipboardbridge")
+            Text("Clipboard Bridge")
                 .font(.system(.largeTitle, design: .monospaced).weight(.bold))
                 .foregroundStyle(palette.accent)
             Text("One clipboard for this phone and your computers.")
@@ -57,7 +57,7 @@ struct StartView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(palette.textDim)
             }
-            Button("I already use clipboardbridge on another phone") { model.startJoining() }
+            Button("I already use Clipboard Bridge on another phone") { model.startJoining() }
                 .buttonStyle(GlassButtonStyle())
         }
         .padding(Tokens.spacingLarge)

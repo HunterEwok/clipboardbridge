@@ -5,14 +5,15 @@ import SwiftUI
 /// Picks the screen and applies the theme and the language.
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
-    @AppStorage("theme") private var theme = ThemeChoice.system
+    @AppStorage(AccentChoice.key) private var color = Tokens.colors[0].name
+    @AppStorage(Appearance.key) private var appearance = Appearance.system
     @AppStorage(LanguageChoice.key) private var language = LanguageChoice.system
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let palette = theme.palette(for: scheme)
+        let palette = appearance.palette(color, for: scheme)
         ZStack {
-            GridBackground()
+            AppBackground()
             switch model.phase {
             case .start: StartView()
             case .joining: JoinView()
@@ -23,6 +24,6 @@ struct RootView: View {
         .environment(\.locale, language.locale ?? .autoupdatingCurrent)
         .tint(palette.accent)
         .foregroundStyle(palette.text)
-        .preferredColorScheme(theme == .system ? nil : (palette.dark ? .dark : .light))
+        .preferredColorScheme(appearance.scheme)
     }
 }

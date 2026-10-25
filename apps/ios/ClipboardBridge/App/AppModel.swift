@@ -140,7 +140,7 @@ final class AppModel: ObservableObject {
     /// Admits a scanned computer; on success the app goes Home.
     func scanned(_ text: String) async -> Bool {
         guard case let .joinCode(jc) = Self.read(scanned: text) else {
-            message = String(localized: "Not a clipboardbridge QR code.", bundle: .app)
+            message = String(localized: "Not a Clipboard Bridge QR code.", bundle: .app)
             return false
         }
         busy = true
@@ -374,7 +374,7 @@ final class AppModel: ObservableObject {
             return String(localized: "The other phone's group could not be joined. Try again.", bundle: .app)
         }
         if error is LiveGroup.Failure || error is TLSTransport.Failure {
-            return String(localized: "Could not reach the computer. Is it on the same network as this phone, and does its firewall let clipboardbridge in?", bundle: .app)
+            return String(localized: "Could not reach the computer. Is it on the same network as this phone, and does its firewall let Clipboard Bridge in?", bundle: .app)
         }
         return String(localized: "Something went wrong. Try again.", bundle: .app)
     }

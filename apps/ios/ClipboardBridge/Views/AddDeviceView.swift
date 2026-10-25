@@ -42,7 +42,7 @@ struct AddDeviceView: View {
                 Spacer()
             }
             .padding(Tokens.spacingLarge)
-            .background(GridBackground())
+            .background(AppBackground())
             .navigationTitle(Text("Add a device"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

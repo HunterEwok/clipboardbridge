@@ -14,8 +14,8 @@ they look, so both apps are built to the same plan.
   Back Tap or Action button shortcut, the share sheet, the Android quick-settings tile.
   Adding a computer is "scan" and nothing more; digits are typed only when a camera cannot
   be used.
-- **Modern and a little hacker-like.** A dark, deep background with a slow, subtle animated
-  grid or noise; a monospaced face for codes, device IDs and fingerprints; one bright accent
+- **Modern and a little hacker-like.** "Glass": a deep background with a soft glow of the
+  accent from the top, tiles and cards on glass; a monospaced face for codes, device IDs and fingerprints; one bright accent
   colour (default: terminal green) for the main action and live states; rounded, generous
   buttons on Liquid Glass (from iOS 26; a material before), cards and fields on glass too;
   short, plain words. Motion is sparing and honours Reduce Motion.
@@ -38,8 +38,11 @@ they look, so both apps are built to the same plan.
 2. **Home**: the one big button (send what this phone holds or fetch the computer's recent
    copy, by the same rule as the shortcut; when the phone's clipboard holds something the
    app cannot read as text, it is left as it is and the line says so), the result in one
-   line, and the connected computers as a compact list with a live dot each; tapping the
-   list opens Devices. A "+"
+   line, and every device of the group under it, as tiles or as a list (the "…" menu
+   switches them and opens Settings). A tile shows the device's icon (laptop, computer,
+   phone, tablet, TV, board, server, router, game console, watch, retro computer or other;
+   SF Symbols on the iPhone), a live dot, its name, its system and its mark ("this phone",
+   "root", "admin", "frozen"); a tap opens the device (Devices, below). A "+"
    adds a device (camera). The same button is the app's "Sync clipboard" action, which
    Shortcuts and Spotlight offer as soon as the app is installed (App Intents with an
    App Shortcut): Back Tap or the Action button runs it without opening the app; it waits
@@ -57,7 +60,9 @@ they look, so both apps are built to the same plan.
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
    QR code ("I already use clipboardbridge on another phone" on its Start screen) and this phone
    scans it.
-4. **Devices**: the whole group, one row per device: its name, an icon and the name of its
+4. **Devices** (the tiles of Home, and a device's page): on its page a summary (type,
+   operating system, role, its place in the group, online or not) and the actions below
+   it; Back returns to Home. The whole group, one tile per device: its name, an icon and the name of its
    system (Linux, Windows, macOS, iOS, Android, or "device" for firmware; a lite member and an
    iPhone with the shortcut are marked so), a "root", "admin" or "frozen" mark, a live dot when it is online and
    "seen 5 min ago" otherwise, and "this phone" on its own row. The list is the group's
@@ -73,7 +78,7 @@ they look, so both apps are built to the same plan.
    `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A phone that is not an admin shows the list without
    actions and says which phones are admins.
-5. **Settings**: theme, language, about (seven taps on the version show the switch "Show
+5. **Settings**: the theme (System, Dark or Light) and one of ten colours, language, about (seven taps on the version show the switch "Show
    error details", which puts the error itself under each error message; it is on in debug
    builds, and the launch argument or extra `ShowErrorDetails` sets it too), and once there
    is a group, "Away from home": one
@@ -182,14 +187,16 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
 
 - Colours, type, spacing and corner radii are design tokens, defined once in
   `apps/design/tokens.json` and generated into Swift and Kotlin, so both apps match.
-- Built-in themes: **Terminal** (default: near-black background, green accent),
-  **Midnight** (blue-violet accent), **Amber** (retro amber accent), and **Light** (a light
-  background with the same accents, for bright rooms). "System" follows the system's light
-  or dark mode with the Terminal and Light themes.
-- A theme is a set of tokens, so adding one later is data, not code.
-- On Android 12 and later a fifth choice, **Wallpaper** (Material You), takes the colours
-  from the wallpaper through dynamic colour; the other themes stay as they are.
-- Contrast meets WCAG AA for text in every theme.
+- One style, **Glass**, in ten colours: Terminal (the default, green), Midnight, Amber,
+  Ocean, Teal, Coral, Rose, Lime, Graphite and Ruby. Each colour has a dark and a light
+  palette; the theme is System (the system's light or dark mode), Dark or Light.
+- `tokens.json` holds each colour's accent for dark and light and the two neutral bases; the
+  generator mixes a little of the accent into the background and the surfaces, so adding a
+  colour is one line of data.
+- On Android 12 and later a further choice, **Wallpaper** (Material You), takes the colours
+  from the wallpaper through dynamic colour. (The Android app moves to Glass and the ten
+  colours after the iPhone app.)
+- Contrast meets WCAG AA for text in every palette; the generator checks it.
 
 ## Layout of the repository
 
@@ -220,7 +227,7 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
   drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
   for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into
-  `apps/ios/ClipboardBridge/Theme/Tokens.swift` and the Android app's `Tokens.kt` and fails when a theme misses the
+  `apps/ios/ClipboardBridge/Theme/Tokens.swift` and the Android app's `Tokens.kt` and fails when a palette misses the
   WCAG AA contrast, and CI checks that the generated files are up to date; `apps/l10n/` — the shared glossary of terms, so
   both apps use the same words.
 - The protocol both apps speak is [protocol.md](protocol.md).
