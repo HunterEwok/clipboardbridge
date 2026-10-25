@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Android: the Glass design of the iPhone app: ten colours and a Dark, Light or System theme
+  (Material You stays a choice), one page with every device as tiles or a list, a device's
+  own page with its type, system and version, Clipboard Bridge version, MAC address and
+  role, and on tablets and foldables the orbits with the details beside them. The app's
+  name on the home screen is CBB.
 - iPhone: notifications of the group's events (a device joined or was removed, became an
   admin, was frozen or unfrozen, the group was taken over, the hub does not answer away from
   home), each with a switch in Settings.

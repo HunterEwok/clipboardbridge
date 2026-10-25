@@ -115,6 +115,10 @@ the group", not a status code), never a dialog that must be dismissed.
   screen is a big screen like the iPad's: the orbits, the details beside them, and in
   landscape the system moves the toolbar (sync, "+", the menu) to the strip at the right
   edge. A phone's screen stays upright; a big one turns.
+- **Android tablets and foldables** do the same from 720 dp wide: the orbits (or tiles or a
+  list, which the view button switches), and a device's details in a pane beside them.
+  Android draws the device icons itself (`DeviceGlyph`), on the same 24-unit grid as the
+  system's line icons.
 
 ## Dynamic Island
 
@@ -176,7 +180,7 @@ page of Settings:
 2. It then shows a 1-pixel accessibility overlay window that takes the focus for a moment,
    reads the clipboard, sends the text to the group and goes away. The service reads no
    screen content beyond what tells it that a copy happened, and the app says so.
-3. Android 12 and later show "clipboardbridge pasted from your clipboard" each time; that
+3. Android 12 and later show "CBB pasted from your clipboard" each time; that
    is the system's notice and cannot be turned off.
 
 On Android 13 and later, an APK installed from a browser or file manager cannot turn on an
@@ -245,8 +249,9 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
   generator mixes a little of the accent into the background and the surfaces, so adding a
   colour is one line of data.
 - On Android 12 and later a further choice, **Wallpaper** (Material You), takes the colours
-  from the wallpaper through dynamic colour. (The Android app moves to Glass and the ten
-  colours after the iPhone app.)
+  from the wallpaper through dynamic colour, in place of one of the ten.
+- Android has no Liquid Glass: its tiles and cards are the palette's glass colour with a
+  hairline, as the iPhone app draws them before iOS 26, over the same glow of the accent.
 - Contrast meets WCAG AA for text in every palette; the generator checks it.
 
 ## Layout of the repository

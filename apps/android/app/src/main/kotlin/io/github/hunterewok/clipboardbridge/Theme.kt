@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -35,11 +36,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** One theme's colours (apps/design/tokens.json; Tokens.kt is generated from it). */
@@ -61,25 +64,51 @@ data class PalettePair(val name: String, val dark: Palette, val light: Palette)
 /** The colour named [name], or the default, Terminal. */
 fun paletteNamed(name: String): PalettePair = Tokens.colors.firstOrNull { it.name == name } ?: Tokens.colors.first()
 
+/** A card's or a tile's glass over the background. */
+val Palette.glass: Color get() = if (dark) surface.copy(alpha = 0.78f) else Color.White.copy(alpha = 0.86f)
+
+/** A faint wash of the accent, behind an icon or under the glow. */
+val Palette.soft: Color get() = accent.copy(alpha = if (dark) 0.16f else 0.10f)
+
+/** A hairline around glass. */
+val Palette.line: Color get() = text.copy(alpha = if (dark) 0.12f else 0.10f)
+
 /**
- * The theme the user picks in Settings; System follows the system's light
- * or dark mode with Terminal and Light, and Material You takes the
- * wallpaper's colours (Android 12 and later; System's before).
+ * The colour the user picks in Settings: one of Tokens.colors by its name,
+ * Terminal by default, or Material You, the wallpaper's colours (Android 12
+ * and later).
  */
-enum class ThemeChoice(val key: String, @StringRes val title: Int) {
+object ColorChoice {
+    const val MATERIAL = "material"
+
+    /** The names this phone offers, Material You only where Android has the wallpaper's colours. */
+    val offered: List<String> get() = Tokens.colors.map { it.name } + if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) listOf(MATERIAL) else emptyList()
+
+    @StringRes
+    fun title(name: String): Int = when (name) {
+        "midnight" -> R.string.color_midnight
+        "amber" -> R.string.color_amber
+        "ocean" -> R.string.color_ocean
+        "teal" -> R.string.color_teal
+        "coral" -> R.string.color_coral
+        "rose" -> R.string.color_rose
+        "lime" -> R.string.color_lime
+        "graphite" -> R.string.color_graphite
+        "ruby" -> R.string.color_ruby
+        MATERIAL -> R.string.theme_material
+        else -> R.string.color_terminal
+    }
+}
+
+/** Light or dark, or as the system has it. */
+enum class Appearance(val key: String, @StringRes val title: Int) {
     SYSTEM("system", R.string.theme_system),
-    MATERIAL("material", R.string.theme_material),
-    TERMINAL("terminal", R.string.theme_terminal),
-    MIDNIGHT("midnight", R.string.theme_midnight),
-    AMBER("amber", R.string.theme_amber),
+    DARK("dark", R.string.theme_dark),
     LIGHT("light", R.string.theme_light),
     ;
 
     companion object {
-        fun of(key: String?): ThemeChoice = entries.firstOrNull { it.key == key } ?: SYSTEM
-
-        /** The choices this phone offers: Material You only where Android has the wallpaper's colours. */
-        val offered: List<ThemeChoice> get() = entries.filter { it != MATERIAL || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
+        fun of(key: String?): Appearance = entries.firstOrNull { it.key == key } ?: SYSTEM
     }
 }
 
@@ -121,22 +150,22 @@ private fun Palette.scheme(): ColorScheme {
     )
 }
 
-/** Applies the chosen theme to everything inside. */
+/** Applies the chosen colour and appearance to everything inside. */
 @Composable
-fun AppTheme(choice: ThemeChoice, content: @Composable () -> Unit) {
-    val systemDark = isSystemInDarkTheme()
+fun AppTheme(color: String, appearance: Appearance, content: @Composable () -> Unit) {
+    val dark = when (appearance) {
+        Appearance.SYSTEM -> isSystemInDarkTheme()
+        Appearance.DARK -> true
+        Appearance.LIGHT -> false
+    }
     val context = LocalContext.current
     val (palette, scheme) = when {
-        choice == ThemeChoice.MATERIAL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val s = if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            s.palette(systemDark) to s
+        color == ColorChoice.MATERIAL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val s = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            s.palette(dark) to s
         }
         else -> {
-            val p = when (choice) {
-                ThemeChoice.TERMINAL, ThemeChoice.MIDNIGHT, ThemeChoice.AMBER -> paletteNamed(choice.key).dark
-                ThemeChoice.LIGHT -> paletteNamed("terminal").light
-                else -> paletteNamed("terminal").let { if (systemDark) it.dark else it.light }
-            }
+            val p = paletteNamed(color).let { if (dark) it.dark else it.light }
             p to p.scheme()
         }
     }
@@ -145,24 +174,14 @@ fun AppTheme(choice: ThemeChoice, content: @Composable () -> Unit) {
     }
 }
 
-/** The deep background with a faint grid, behind content. */
+/** The background: the deep colour with a glow of the accent from the top. */
 @Composable
-fun GridBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun AppBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     val palette = LocalPalette.current
-    val step = with(LocalDensity.current) { 28.dp.toPx() }
-    val line = with(LocalDensity.current) { 0.5.dp.toPx() }
+    val radius = with(LocalDensity.current) { 520.dp.toPx() }
     Box(modifier.fillMaxSize().background(palette.background)) {
         Canvas(Modifier.fillMaxSize()) {
-            var x = 0f
-            while (x < size.width) {
-                drawLine(palette.grid, Offset(x, 0f), Offset(x, size.height), line)
-                x += step
-            }
-            var y = 0f
-            while (y < size.height) {
-                drawLine(palette.grid, Offset(0f, y), Offset(size.width, y), line)
-                y += step
-            }
+            drawRect(Brush.radialGradient(listOf(palette.soft, Color.Transparent), center = Offset(size.width / 2, 0f), radius = radius))
         }
         content()
     }
@@ -207,9 +226,14 @@ fun QuietButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
     }
 }
 
-/** A card on the surface colour. */
+/** A card on glass: the palette's glass with a hairline, as the iPhone app draws it before Liquid Glass. */
 @Composable
-fun Modifier.card(): Modifier {
+fun Modifier.card(radius: Dp = Tokens.radiusCard): Modifier {
     val palette = LocalPalette.current
-    return clip(RoundedCornerShape(Tokens.radiusCard)).background(palette.surface.copy(alpha = 0.92f))
+    val shape = RoundedCornerShape(radius)
+    return clip(shape).background(palette.glass).border(1.dp, palette.line, shape)
 }
+
+/** A tile of the devices: a card with the tiles' rounder corners. */
+@Composable
+fun Modifier.glassTile(): Modifier = card(Tokens.radiusTile)

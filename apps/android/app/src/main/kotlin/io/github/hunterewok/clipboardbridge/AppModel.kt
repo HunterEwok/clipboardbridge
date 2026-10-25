@@ -52,7 +52,9 @@ class AppModel(private val app: Context) {
     var welcome by mutableStateOf(false)
         private set
 
-    var theme by mutableStateOf(settings.theme)
+    var color by mutableStateOf(settings.color)
+        private set
+    var appearance by mutableStateOf(settings.appearance)
         private set
 
     /** Sync away from home as Settings shows it: null without a group. */
@@ -65,9 +67,14 @@ class AppModel(private val app: Context) {
     var awayNote by mutableStateOf<Note?>(null)
         private set
 
-    fun choose(theme: ThemeChoice) {
-        settings.theme = theme
-        this.theme = theme
+    fun choose(color: String) {
+        settings.color = color
+        this.color = color
+    }
+
+    fun choose(appearance: Appearance) {
+        settings.appearance = appearance
+        this.appearance = appearance
     }
 
     /** Admits a scanned or pasted device; on success the app goes Home. */
