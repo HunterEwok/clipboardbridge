@@ -109,6 +109,11 @@ type Result struct {
 	Status string `json:"status"` // ResultDone, ResultRefused or ResultFailed
 	// Reason says why it was refused or failed, for the sender to show.
 	Reason string `json:"reason,omitempty"`
+	// Tunnel, in the result of a hub command that was carried out, is the
+	// new hub's offer without a preshared key: its key and its addresses,
+	// which the old hub passes to each client with the client's own
+	// preshared key (docs/protocol.md, section 11, "Moving the hub").
+	Tunnel *TunnelOffer `json:"tunnel,omitempty"`
 }
 
 // The statuses of a Result.
@@ -133,6 +138,10 @@ type TunnelOffer struct {
 	// object that internal/tunnel reads; with it, it is the only way to
 	// the hub.
 	VLESS json.RawMessage `json:"vless,omitempty"`
+	// Hub, in an offer the group's hub passes on when it hands the hub
+	// over, is the device that is the hub now (section 11, "Moving the
+	// hub"); absent when the sender is the hub.
+	Hub group.DeviceID `json:"hub,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to

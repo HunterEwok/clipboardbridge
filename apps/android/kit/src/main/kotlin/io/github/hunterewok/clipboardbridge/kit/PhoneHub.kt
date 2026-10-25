@@ -107,6 +107,16 @@ class PhoneHub(val publicKey: ByteArray, clients: List<Client> = emptyList()) {
         return offer(c)
     }
 
+    /**
+     * The offer the client device gets when the hub moves to newHub, whose
+     * offer without a preshared key is offer (a hub command's result): with
+     * the client's own preshared key and newHub named (docs/protocol.md,
+     * section 11, "Moving the hub"); null for a device that is no client,
+     * or newHub itself.
+     */
+    fun movedOffer(device: String, newHub: String, offer: Member.TunnelOffer): Member.TunnelOffer? =
+        if (device == newHub) null else clients.firstOrNull { it.device == device }?.let { offer.with(it.psk, newHub) }
+
     /** Forgets the clients keep refuses, removed devices for one, and returns their devices. */
     fun prune(keep: (Client) -> Boolean): List<String> = synchronized(lock) {
         val gone = list.filterNot(keep)

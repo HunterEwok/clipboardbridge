@@ -140,6 +140,10 @@ pub struct TunnelOffer {
     /// The way to the hub's forwarder over VLESS, then the only way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vless: Option<Value>,
+    /// In an offer the hub passes on when it hands the hub over, the
+    /// device that is the hub now (section 11, "Moving the hub").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hub: Option<String>,
 }
 
 /// The roles a peer may claim.

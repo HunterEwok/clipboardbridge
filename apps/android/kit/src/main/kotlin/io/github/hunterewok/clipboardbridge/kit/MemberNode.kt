@@ -160,6 +160,19 @@ class MemberNode(
         }
     }
 
+    /**
+     * Sends each connected member the offer offerFor returns for it, the
+     * old hub passing on the new hub's offer (section 11, "Moving the
+     * hub"), and returns the members that got one.
+     */
+    fun sendTunnel(offerFor: (String) -> Member.TunnelOffer?): List<String> = synchronized(lock) {
+        conns.mapNotNull { c ->
+            val p = c.peer ?: return@mapNotNull null
+            if (c.peerRole == null) return@mapNotNull null
+            offerFor(p)?.let { c.enqueue(Member.Message.Tunnel(it)); p }
+        }
+    }
+
     /** Sends a computer the admin CA the root issued for it. */
     fun sendAdminCA(adminCA: ByteArray, peer: String) = synchronized(lock) {
         for (c in conns) if (c.peer == peer && c.peerRole != null) c.enqueue(Member.Message.Admin(adminCA))

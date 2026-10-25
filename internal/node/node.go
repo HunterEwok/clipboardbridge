@@ -530,6 +530,20 @@ func (n *Node) offerTunnel(c *conn, key []byte) {
 	}
 }
 
+// SendTunnel sends each connected member an offer that offerFor returns for
+// it, the old hub passing on the new hub's offer (docs/protocol.md, section
+// 11, "Moving the hub"), and returns the members that got one.
+func (n *Node) SendTunnel(offerFor func(dev group.DeviceID) *TunnelOffer) []group.DeviceID {
+	var sent []group.DeviceID
+	for _, c := range n.helloed() {
+		if o := offerFor(c.id); o != nil {
+			c.enqueue(outgoing{tunnel: o})
+			sent = append(sent, c.id)
+		}
+	}
+	return sent
+}
+
 // sharePhoneCA sends the peer of c the iPhone CA that PhoneCAFor returns
 // for it, if any.
 func (n *Node) sharePhoneCA(c *conn) {

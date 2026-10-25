@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -18,7 +19,6 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
-	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -111,11 +111,28 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 		s.logf("cbb: %s can reach this hub away from home", peer)
 		s.hubPeersLocked()
 	}
+	o := s.hubOfferLocked(st, m.PresharedKey[:])
+	if o == nil {
+		return nil
+	}
+	for _, g := range s.guests {
+		if g.admitted == peer {
+			g.offered = true
+		}
+	}
+	return o
+}
+
+// hubOfferLocked returns the offer of the hub whose state st is, with the
+// preshared key psk (none in a hub command's result); nil while the offers
+// wait for the forwarder's VLESS settings.
+func (s *Service) hubOfferLocked(st *tunnel.State, psk []byte) *node.TunnelOffer {
 	hub := st.Key.Public()
-	o := &node.TunnelOffer{HubKey: hub[:], PSK: m.PresharedKey[:]}
+	o := &node.TunnelOffer{HubKey: hub[:], PSK: psk}
 	for _, ep := range st.HubEndpoints() {
 		o.Endpoints = append(o.Endpoints, ep.String())
 	}
+	var err error
 	if st.Obfuscation != nil {
 		if o.Obfuscation, err = json.Marshal(st.Obfuscation); err != nil {
 			s.logf("cbb: the tunnel's obfuscation settings: %v", err)
@@ -133,22 +150,27 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 			return nil
 		}
 	}
-	for _, g := range s.guests {
-		if g.admitted == peer {
-			g.offered = true
-		}
-	}
 	return o
 }
 
 // tunnelOffered keeps the offer of the group's hub for this member's key.
 // Only the group's root or an admin can be the hub, and once this member
-// keeps a hub's offer it takes offers from that hub only: another hub
-// takes over when the user turns sync away from home off and on again
-// here (cbb away off, cbb away on).
+// keeps a hub's offer it takes offers from that hub only, until the hub
+// moves (docs/protocol.md, section 11, "Moving the hub"): the kept hub
+// passes on the new hub's offer, another hub's offer carries the preshared
+// key the kept hub gave, or the records no longer make the kept hub the
+// root or an admin. Otherwise another hub takes over when the user turns
+// sync away from home off and on again here (cbb global off, cbb global on).
 func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, o node.TunnelOffer) error {
 	if !s.adminPeer(from, chain) {
 		return errors.New("only the group's root or an admin can be its hub; the offer is ignored")
+	}
+	hub := from
+	if o.Hub != "" {
+		if !s.mayHost(o.Hub) {
+			return fmt.Errorf("%s passed on the offer of %s, which is not the group's root or an admin; the offer is ignored", from, o.Hub)
+		}
+		hub = o.Hub
 	}
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
@@ -156,8 +178,11 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 	if st == nil {
 		return errors.New("the tunnel is off on this device")
 	}
-	if st.ToHub != nil && st.ToHub.Device != string(from) {
-		return fmt.Errorf("this device keeps the offer of the hub %s; to use %s instead, run cbb away off and cbb away on here", st.ToHub.Device, from)
+	if string(hub) == s.tunSelf {
+		return errors.New("the offer names this device as the hub")
+	}
+	if k := st.ToHub; k != nil && !takesOffer(k, from, hub, o.PSK, s.mayHost(group.DeviceID(k.Device))) {
+		return fmt.Errorf("this device keeps the offer of the hub %s; to use %s instead, run cbb global off and cbb global on here", k.Device, hub)
 	}
 	if st.IsHub {
 		return errors.New("this device is the hub itself; the group has two hubs")
@@ -165,30 +190,9 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 	if st.Relay != nil {
 		return errors.New("this device meets the others at its relay, but the group has a hub too")
 	}
-	h := tunnel.HubLink{Device: string(from)}
-	if len(o.HubKey) != len(h.PublicKey) || len(o.PSK) != len(h.PresharedKey) {
-		return errors.New("the keys are not 32 bytes")
-	}
-	copy(h.PublicKey[:], o.HubKey)
-	copy(h.PresharedKey[:], o.PSK)
-	for _, e := range o.Endpoints {
-		ep, err := netip.ParseAddrPort(e)
-		if err != nil {
-			return fmt.Errorf("a bad endpoint: %w", err)
-		}
-		h.Endpoints = append(h.Endpoints, ep)
-	}
-	if len(o.Obfuscation) > 0 {
-		h.Obfuscation = new(tunnel.Obfuscation)
-		if err := json.Unmarshal(o.Obfuscation, h.Obfuscation); err != nil {
-			return fmt.Errorf("bad obfuscation settings: %w", err)
-		}
-	}
-	if len(o.VLESS) > 0 {
-		h.VLESS = new(tunnel.VLESS)
-		if err := json.Unmarshal(o.VLESS, h.VLESS); err != nil {
-			return fmt.Errorf("bad VLESS settings: %w", err)
-		}
+	h, err := hubLink(hub, o)
+	if err != nil {
+		return err
 	}
 	old := st.ToHub
 	changed, err := st.SetHub(h)
@@ -198,12 +202,68 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 	if err := st.Save(s.cfg.StateDir); err != nil {
 		return fmt.Errorf("saving the tunnel state: %w", err)
 	}
-	if old == nil || old.Device != h.Device {
-		s.logf("cbb: %s is the group's hub for sync away from home", from)
+	switch {
+	case old != nil && old.Device != h.Device:
+		s.logf("cbb: the group's hub for sync away from home moved from %s to %s", old.Device, hub)
+	case old == nil:
+		s.logf("cbb: %s is the group's hub for sync away from home", hub)
 	}
 	s.stopTunnelLocked()
 	s.runTunnelLocked()
 	return nil
+}
+
+// takesOffer reports whether a client that keeps the offer kept (nil for
+// none) takes an offer for the hub hub that from sent with the preshared
+// key psk: from the kept hub, or for another hub when the kept hub passed
+// it on (from is the kept hub), when it carries the preshared key the kept
+// hub gave (the kept hub handed its clients over), or when the kept hub is
+// no longer the root or an admin (keptAdmin false), as after a takeover.
+func takesOffer(kept *tunnel.HubLink, from, hub group.DeviceID, psk []byte, keptAdmin bool) bool {
+	if kept == nil || kept.Device == string(hub) {
+		return true
+	}
+	moved := hub != from && kept.Device == string(from)
+	handed := subtle.ConstantTimeCompare(kept.PresharedKey[:], psk) == 1
+	return moved || handed || !keptAdmin
+}
+
+// hubLink is what a client keeps of the offer o of the hub hub.
+func hubLink(hub group.DeviceID, o node.TunnelOffer) (tunnel.HubLink, error) {
+	h := tunnel.HubLink{Device: string(hub)}
+	if len(o.HubKey) != len(h.PublicKey) || len(o.PSK) != len(h.PresharedKey) {
+		return h, errors.New("the keys are not 32 bytes")
+	}
+	copy(h.PublicKey[:], o.HubKey)
+	copy(h.PresharedKey[:], o.PSK)
+	for _, e := range o.Endpoints {
+		ep, err := netip.ParseAddrPort(e)
+		if err != nil {
+			return h, fmt.Errorf("a bad endpoint: %w", err)
+		}
+		h.Endpoints = append(h.Endpoints, ep)
+	}
+	if len(o.Obfuscation) > 0 {
+		h.Obfuscation = new(tunnel.Obfuscation)
+		if err := json.Unmarshal(o.Obfuscation, h.Obfuscation); err != nil {
+			return h, fmt.Errorf("bad obfuscation settings: %w", err)
+		}
+	}
+	if len(o.VLESS) > 0 {
+		h.VLESS = new(tunnel.VLESS)
+		if err := json.Unmarshal(o.VLESS, h.VLESS); err != nil {
+			return h, fmt.Errorf("bad VLESS settings: %w", err)
+		}
+	}
+	return h, nil
+}
+
+// mayHost reports whether the records make dev the group's root or an
+// admin, which may be its hub.
+func (s *Service) mayHost(dev group.DeviceID) bool {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	return s.records != nil && s.records.MayHost(dev)
 }
 
 // pruneTunnel forgets, on the hub, the members the records now refuse.
@@ -215,6 +275,11 @@ func (s *Service) pruneTunnel() {
 		return
 	}
 	gone := st.Prune(func(m tunnel.Member) bool {
+		if len(m.Chain) == 0 {
+			// Handed over by the old hub, not met yet: kept while the
+			// records list the device.
+			return s.listed(group.DeviceID(m.Device))
+		}
 		chain := make([]*x509.Certificate, 0, len(m.Chain))
 		for _, der := range m.Chain {
 			c, err := x509.ParseCertificate(der)
@@ -542,12 +607,15 @@ const keysInFile = true
 
 // away turns sync away from home on or off on this device, or makes it the
 // group's hub (docs/design.md, "Turning it on, step by step").
-func (s *Service) away(m *control.Message) error {
+func (s *Service) away(ctx context.Context, m *control.Message) error {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
 	if id == nil {
 		return s.errNoGroup()
+	}
+	if m.Name == "move" {
+		return s.moveHub(ctx, m.Device, m.Forwarder, m.ForwarderKey, m.Addrs)
 	}
 	if m.Name == "hub" && !id.IsAdmin() {
 		return errors.New("only the group's root or an admin can be its hub, since the members take the hub's offer from them only; make this device an admin first (cbb admin on the root)")
@@ -611,32 +679,9 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if m.Port < 0 || m.Port > 65535 {
 			return false, nil, fmt.Errorf("a bad port %d", m.Port)
 		}
-		var fw *tunnel.ForwarderLink
-		if m.Forwarder != "" {
-			ep, err := netip.ParseAddrPort(m.Forwarder)
-			if err != nil || ep.Port() == 0 {
-				return false, nil, fmt.Errorf("%q is not the forwarder's address with a port, such as 203.0.113.9:8764", m.Forwarder)
-			}
-			if err := forward.CheckPin(m.ForwarderKey); err != nil {
-				return false, nil, err
-			}
-			fw = &tunnel.ForwarderLink{Endpoint: netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()), Pin: m.ForwarderKey}
-		} else if m.ForwarderKey != "" {
-			return false, nil, errors.New("a forwarder's key without its address")
-		}
-		var eps []netip.AddrPort
-		for _, a := range m.Addrs {
-			ep, err := netip.ParseAddrPort(a)
-			if err != nil || ep.Port() == 0 {
-				return false, nil, fmt.Errorf("%q is not an address with a port, such as 203.0.113.7:8764 or [2001:db8::7]:8764", a)
-			}
-			eps = append(eps, netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()))
-		}
-		if len(eps) > 7 || (fw == nil && len(eps) > 8) {
-			return false, nil, errors.New("at most 8 addresses, the forwarder's included")
-		}
-		if len(eps) == 0 && fw == nil {
-			return false, nil, errors.New("the hub needs an address away from home or a forwarder")
+		fw, eps, err := hubAddrs(m.Forwarder, m.ForwarderKey, m.Addrs)
+		if err != nil {
+			return false, nil, err
 		}
 		if m.VLESS {
 			if fw == nil {

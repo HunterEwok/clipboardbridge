@@ -1027,8 +1027,10 @@ func TestSwiftCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
-	if len(v.Commands) != 2 {
-		t.Fatalf("%d commands, want 2", len(v.Commands))
+	// Two mode commands, by the root and by an admin, then a hub command
+	// by the root with one client.
+	if len(v.Commands) != 3 {
+		t.Fatalf("%d commands, want 3", len(v.Commands))
 	}
 	for i, c := range v.Commands {
 		var b CommandBody
@@ -1039,8 +1041,12 @@ func TestSwiftCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command %d: %v", i, err)
 		}
-		if got.Type != CommandMode || got.Mode != "receive" {
+		if i < 2 && (got.Type != CommandMode || got.Mode != "receive") {
 			t.Errorf("command %d: %+v", i, got)
+		}
+		if i == 2 && (got.Type != CommandHub || got.Hub.Forwarder == nil || got.Hub.Forwarder.Endpoint != "203.0.113.9:8764" ||
+			len(got.Hub.Clients) != 1 || len(got.Hub.Clients[0].PSK) != 32) {
+			t.Errorf("the hub command: %+v", got.Hub)
 		}
 		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
 			t.Errorf("command %d was taken by another device", i)

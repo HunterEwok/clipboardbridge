@@ -258,13 +258,22 @@ object Member {
         val endpoints: List<String> = emptyList(),
         val obfuscation: String? = null,
         val vless: String? = null,
+        /**
+         * In an offer the hub passes on when it hands the hub over, the
+         * device that is the hub now (section 11, "Moving the hub"); null
+         * when the sender is the hub.
+         */
+        val hub: String? = null,
     ) {
         /** Whether both keys are 32 bytes, as a tunnel needs. */
         val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
 
+        /** The same offer with another preshared key and hub. */
+        fun with(psk: ByteArray, hub: String?): TunnelOffer = TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub)
+
         override fun equals(other: Any?): Boolean =
             other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints &&
-                obfuscation == other.obfuscation && vless == other.vless
+                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub
 
         override fun hashCode(): Int = hubKey.contentHashCode()
 
@@ -274,6 +283,7 @@ object Member {
             "endpoints" to endpoints.takeIf { it.isNotEmpty() }?.let { l -> JsonArray(l.map { Wire.str(it)!! }) },
             "obfuscation" to obfuscation?.let { Json.parseToJsonElement(it) },
             "vless" to vless?.let { Json.parseToJsonElement(it) },
+            "hub" to Wire.str(hub),
         )
 
         companion object {
@@ -285,7 +295,25 @@ object Member {
                 } ?: emptyList(),
                 o.optObject("obfuscation")?.toString(),
                 o.optObject("vless")?.toString(),
+                o.optString("hub"),
             )
+
+            /**
+             * Whether a client that keeps the offer of the hub kept, with the
+             * preshared key keptPSK, takes an offer for the hub hub that from
+             * sent with the preshared key psk, as Go's takesOffer (section
+             * 11, "Moving the hub"): from the kept hub, or for another hub
+             * when the kept hub passed it on, when it carries the preshared
+             * key the kept hub gave (the kept hub handed its clients over),
+             * or when the kept hub is no longer the root or an admin
+             * (keptAdmin false), as after a takeover.
+             */
+            fun takes(kept: String?, keptPSK: ByteArray?, from: String, hub: String, psk: ByteArray, keptAdmin: Boolean): Boolean {
+                if (kept == null || kept == hub) return true
+                val moved = hub != from && kept == from
+                val handed = keptPSK != null && java.security.MessageDigest.isEqual(keptPSK, psk)
+                return moved || handed || !keptAdmin
+            }
         }
     }
 
@@ -306,14 +334,25 @@ object Member {
     }
 
     /** The answer to a command (section 15): its ID, "done", "refused" or "failed", and why for the last two. */
-    data class CommandResult(val id: String, val status: String, val reason: String? = null) {
+    data class CommandResult(
+        val id: String,
+        val status: String,
+        val reason: String? = null,
+        /** In the result of a hub command, the new hub's offer without a preshared key (section 11, "Moving the hub"). */
+        val tunnel: TunnelOffer? = null,
+    ) {
         val done: Boolean get() = status == "done"
 
-        fun toJson(): JsonObject = Wire.obj("id" to Wire.str(id), "status" to Wire.str(status), "reason" to Wire.str(reason))
+        fun toJson(): JsonObject =
+            Wire.obj("id" to Wire.str(id), "status" to Wire.str(status), "reason" to Wire.str(reason), "tunnel" to tunnel?.toJson())
 
         companion object {
-            fun fromJson(o: JsonObject): CommandResult =
-                CommandResult(o.optString("id") ?: "", o.optString("status") ?: "", o.optString("reason"))
+            fun fromJson(o: JsonObject): CommandResult = CommandResult(
+                o.optString("id") ?: "",
+                o.optString("status") ?: "",
+                o.optString("reason"),
+                o.optObject("tunnel")?.let { runCatching { TunnelOffer.fromJson(it) }.getOrNull() },
+            )
         }
     }
 

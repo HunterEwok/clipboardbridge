@@ -146,6 +146,9 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		res.Status, res.Reason = node.ResultRefused, "too many commands; try again in a minute"
 		return res
 	}
+	if body.Type == group.CommandHub {
+		return s.takeHub(body)
+	}
 	if _, err := clip.ParseMode(body.Mode); err != nil {
 		res.Status, res.Reason = node.ResultRefused, err.Error()
 		return res

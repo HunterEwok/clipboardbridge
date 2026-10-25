@@ -128,7 +128,7 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		}
 		reply(c, control.Header{Devices: devs, Done: true}, nil)
 	case control.OpAway:
-		if err := s.away(m); err != nil {
+		if err := s.away(ctx, m); err != nil {
 			fail(c, err)
 			return
 		}

@@ -160,7 +160,10 @@ type HubLink struct {
 
 // Member is a client as its hub keeps it: its WireGuard key, its own
 // preshared key, and the certificate chain it presented when it sent the
-// key, so that the hub drops it when the group's records revoke it.
+// key, so that the hub drops it when the group's records revoke it. A
+// client that the old hub handed over has no chain until it meets this hub
+// (docs/protocol.md, section 11, "Moving the hub"); the hub then keeps it
+// by its device's records.
 type Member struct {
 	Device       string
 	PublicKey    Key
@@ -344,9 +347,6 @@ func (s *State) check() error {
 			return fmt.Errorf("the client %s is there twice", c.Device)
 		}
 		devices[c.Device] = true
-		if len(c.Chain) == 0 {
-			return fmt.Errorf("the client %s has no certificate", c.Device)
-		}
 	}
 	_, err := s.peers()
 	return err
@@ -464,6 +464,35 @@ func (s *State) Admit(device string, pub Key, chain [][]byte) (c Member, changed
 	c = Member{Device: device, PublicKey: pub, PresharedKey: psk, Chain: chain}
 	s.Members = append(s.Members, c)
 	return c, true, nil
+}
+
+// Take adds a client that the old hub handed over, with the key and the
+// preshared key it has and no chain yet (docs/protocol.md, section 11,
+// "Moving the hub"). A client this hub keeps already stays as it is.
+// changed tells whether the state must be saved.
+func (s *State) Take(device string, pub, psk Key) (changed bool, err error) {
+	if _, err := Addr(device); err != nil {
+		return false, err
+	}
+	switch {
+	case pub.IsZero() || psk.IsZero():
+		return false, errors.New("tunnel: a client without a key")
+	case pub == s.Key.Public():
+		return false, fmt.Errorf("tunnel: %s has the hub's own key", device)
+	}
+	for _, o := range s.Members {
+		if o.Device == device {
+			return false, nil
+		}
+		if o.PublicKey == pub {
+			return false, fmt.Errorf("tunnel: %s has the key of %s", device, o.Device)
+		}
+	}
+	if len(s.Members) >= maxMembers {
+		return false, errors.New("tunnel: the hub has too many clients")
+	}
+	s.Members = append(s.Members, Member{Device: device, PublicKey: pub, PresharedKey: psk})
+	return true, nil
 }
 
 // Prune forgets the clients keep refuses and returns their devices.

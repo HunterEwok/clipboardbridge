@@ -1264,6 +1264,23 @@ func (s *Records) RootMember() (DeviceID, KeyHash) {
 	return best.body.Device, *best.body.Key
 }
 
+// MayHost reports whether the device dev may be the group's hub for sync
+// away from home by the records alone: the root's own device, whose key is
+// not revoked, or a device listed as an admin (docs/protocol.md, section
+// 11). A peer's offer is also checked against the key of its certificate;
+// this is for a hub that a hub moving names (section 11, "Moving the hub").
+func (s *Records) MayHost(dev DeviceID) bool {
+	if root, key := s.RootMember(); root == dev && !s.Revoked(key) {
+		return true
+	}
+	for _, d := range s.Devices() {
+		if d.ID == dev && d.Admin {
+			return true
+		}
+	}
+	return false
+}
+
 // Known reports whether a valid device record names the device dev, with
 // any key and whether or not it counts: an ID a new device may not take
 // (docs/protocol.md, section 6).

@@ -143,7 +143,7 @@ pub fn run(cfg: Config) -> Result<()> {
     node.set_tunnel_key(away.key());
     {
         let away = away.clone();
-        node.on_tunnel(Box::new(move |from, v| away.offered(from, v)));
+        node.on_tunnel(Box::new(move |from, v, may_host| away.offered(from, v, may_host)));
     }
     *svc.node.write().unwrap() = Some(node.clone());
     *svc.away.write().unwrap() = Some(away.clone());

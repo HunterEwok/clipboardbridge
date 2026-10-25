@@ -67,7 +67,9 @@ pub struct Peer {
 }
 
 /// Called with a tunnel offer and the device that sent it.
-pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value) + Send + Sync>;
+/// Gets a tunnel offer from the group's root or an admin, and whether the
+/// records make a device the root or an admin, by its ID alone.
+pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value, &dyn Fn(&str) -> bool) + Send + Sync>;
 
 /// The lite member's set of connections.
 pub struct Node {
@@ -460,7 +462,7 @@ impl Node {
                             c.id
                         ));
                     } else if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
-                        f(&c.id, v);
+                        f(&c.id, v, &|dev| self.records.lock().unwrap().may_host(dev));
                     }
                 }
                 "bye" => return Ok(()),

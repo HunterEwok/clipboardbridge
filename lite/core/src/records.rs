@@ -916,6 +916,18 @@ impl Records {
         self.devices().iter().any(|d| d.id == dev && d.key == key && d.admin)
     }
 
+    /// Whether the device `dev` may be the group's hub by the records
+    /// alone, as Go's Records.MayHost: the root's own device, whose key is
+    /// not revoked, or a device listed as an admin. For the hub that a hub
+    /// moving names (docs/protocol.md, section 11, "Moving the hub"); a
+    /// peer's own offer is checked with [`Records::admin_peer`].
+    pub fn may_host(&self, dev: &str) -> bool {
+        if self.root_member().is_some_and(|(id, k)| id == dev && !self.revoked(&k)) {
+            return true;
+        }
+        self.devices().iter().any(|d| d.id == dev && d.admin)
+    }
+
     /// Every record, sorted by ID.
     pub fn all(&self) -> Vec<Record> {
         self.by_id.values().map(|r| r.record.clone()).collect()

@@ -128,7 +128,6 @@ func TestBadStateFiles(t *testing.T) {
 		"short key":           `{"v":1,"key":"AQEB"}`,
 		"member twice":        `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]},{"device":"0123456789abcdef0123456789abcdef","key":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":["AA=="]}]}`,
 		"member, no PSK":      `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","chain":["AA=="]}]}`,
-		"member, no chain":    `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","members":[{"device":"0123456789abcdef0123456789abcdef","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=","chain":[]}]}`,
 		"relay and hub":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","is_hub":true,"relay":{"endpoint":"198.51.100.9:8764","key":"sha256:AAAA"}}`,
 		"relay, no key":       `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","relay":{"endpoint":"198.51.100.9:8764","key":""}}`,
 		"obfuscation, no hub": `{"v":1,"key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","obfuscation":{"jc":4,"jmin":50,"jmax":200,"s1":20,"s2":30,"s3":20,"s4":20,"h1":"100-200","h2":"300-400","h3":"500-600","h4":"700-800","header_protection_key":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="}}`,
@@ -337,5 +336,43 @@ func TestDestinations(t *testing.T) {
 		if got := c.st.Destinations(); !slices.Equal(got, c.want) {
 			t.Errorf("%s: %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+// TestTake checks the clients a hub takes from the old hub: with the keys
+// they have and no chain, never twice, never with another's key or the
+// hub's own, and a chain once they meet the hub.
+func TestTake(t *testing.T) {
+	s, err := NewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, pub, psk := "0123456789abcdef0123456789abcdef", pubKey(t), pubKey(t)
+	if changed, err := s.Take(dev, pub, psk); err != nil || !changed {
+		t.Fatalf("take: %v, %v", changed, err)
+	}
+	if changed, err := s.Take(dev, pubKey(t), pubKey(t)); err != nil || changed {
+		t.Errorf("taking a client it keeps: %v, %v", changed, err)
+	}
+	for name, try := range map[string]func() error{
+		"another's key": func() error { _, err := s.Take("fedcba9876543210fedcba9876543210", pub, psk); return err },
+		"the hub's key": func() error { _, err := s.Take("fedcba9876543210fedcba9876543210", s.Key.Public(), psk); return err },
+		"no psk":        func() error { _, err := s.Take("fedcba9876543210fedcba9876543210", pubKey(t), Key{}); return err },
+		"bad device":    func() error { _, err := s.Take("nope", pubKey(t), psk); return err },
+	} {
+		if try() == nil {
+			t.Errorf("%s: taken", name)
+		}
+	}
+	dir := t.TempDir()
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadState(dir); err != nil {
+		t.Errorf("a taken client without a chain does not load: %v", err)
+	}
+	m, changed, err := s.Admit(dev, pub, [][]byte{{1}})
+	if err != nil || !changed || m.PresharedKey != psk || len(m.Chain) != 1 {
+		t.Errorf("meeting the hub: %+v, %v, %v", m, changed, err)
 	}
 }

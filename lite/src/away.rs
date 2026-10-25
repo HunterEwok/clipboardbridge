@@ -21,6 +21,20 @@ use crate::tunnel::{self, Hub, Link, State};
 use crate::uptime;
 use crate::wire::TunnelOffer;
 
+/// Whether a client that keeps the hub `kept` takes an offer for the hub
+/// `hub` that `from` sent with the preshared key `psk`, as Go's takesOffer:
+/// when the kept hub passed it on, when it carries the preshared key the
+/// kept hub gave (the kept hub handed its clients over), or when the kept
+/// hub is no longer the root or an admin (`kept_admin` false).
+fn takes_offer(kept: &Hub, from: &DeviceId, hub: &DeviceId, psk: &[u8], kept_admin: bool) -> bool {
+    if kept.device == hub.as_str() {
+        return true;
+    }
+    let moved = hub != from && kept.device == from.as_str();
+    let handed = kept.psk.len() == psk.len() && kept.psk.iter().zip(psk).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
+    moved || handed || !kept_admin
+}
+
 const MAX_WAIT: Duration = Duration::from_secs(30);
 /// The longest wait between tries of a hub that is a phone, there only
 /// while its app is open (docs/design.md, "The phone as the hub"): a try
@@ -102,13 +116,39 @@ impl Away {
 
     /// Keeps the offer the group's root or an admin sent, if sync away from
     /// home is on. The first hub's offer stays until sync away from home is
-    /// turned off and on again; another device's offer, and one that does
-    /// not decode, are ignored, so neither moves nor stops the tunnel.
-    pub fn offered(&self, from: &DeviceId, v: &serde_json::Value) {
+    /// turned off and on again, or until the hub moves (docs/protocol.md,
+    /// section 11, "Moving the hub"): the kept hub passes on the new hub's
+    /// offer, another hub's offer carries the preshared key the kept hub
+    /// gave, or `may_host` no longer takes the kept hub. Another device's
+    /// offer, and one that does not decode, are ignored, so neither moves
+    /// nor stops the tunnel.
+    pub fn offered(&self, from: &DeviceId, v: &serde_json::Value, may_host: &dyn Fn(&str) -> bool) {
         let mut st = self.st.lock().unwrap();
         let Some(cur) = st.as_mut() else { return };
+        let offer = match serde_json::from_value::<TunnelOffer>(v.clone()) {
+            Ok(o) => o,
+            Err(e) => {
+                let e = Error::with("the hub's offer does not decode", e);
+                (self.log)(&format!("cbb: ignored a tunnel offer from {from}: {}", e.for_log()));
+                *self.error.lock().unwrap() = Some((e.message().to_string(), e.details()));
+                return;
+            }
+        };
+        let hub_id = match &offer.hub {
+            None => from.clone(),
+            Some(h) => match DeviceId::parse(h) {
+                Ok(id) if may_host(id.as_str()) && id != self.me => id,
+                _ => {
+                    (self.log)(&format!(
+                        "cbb: ignored the tunnel offer from {from}: it names {h} as the hub, which is not the group's root or an admin"
+                    ));
+                    return;
+                }
+            },
+        };
         if let Some(h) = &cur.to_hub
-            && h.device != from.as_str()
+            && h.device != hub_id.as_str()
+            && !takes_offer(h, from, &hub_id, &offer.psk, may_host(&h.device))
         {
             (self.log)(&format!(
                 "cbb: ignored the tunnel offer from {from}: this device keeps the offer of the hub {}; run cbb global off and cbb global on here to take another",
@@ -116,10 +156,7 @@ impl Away {
             ));
             return;
         }
-        let hub = serde_json::from_value::<TunnelOffer>(v.clone())
-            .map_err(|e| Error::with("the hub's offer does not decode", e))
-            .and_then(|o| tunnel::hub_from_offer(from, &o));
-        let hub = match hub {
+        let hub = match tunnel::hub_from_offer(&hub_id, &offer) {
             Ok(h) => h,
             Err(e) => {
                 (self.log)(&format!("cbb: ignored a tunnel offer from {from}: {}", e.for_log()));
@@ -131,14 +168,17 @@ impl Away {
             return;
         }
         let mut next = cur.clone();
-        let first = next.to_hub.is_none();
-        next.to_hub = Some(hub);
+        let old = next.to_hub.replace(hub);
         if let Err(e) = next.save(&self.dir) {
             (self.log)(&format!("cbb: {}", e.for_log()));
             return;
         }
-        if first {
-            (self.log)(&format!("cbb: {from} is the group's hub for sync away from home"));
+        match old {
+            None => (self.log)(&format!("cbb: {hub_id} is the group's hub for sync away from home")),
+            Some(o) if o.device != hub_id.as_str() => {
+                (self.log)(&format!("cbb: the group's hub for sync away from home moved from {} to {hub_id}", o.device))
+            }
+            Some(_) => {}
         }
         *cur = next;
     }
@@ -259,5 +299,20 @@ mod tests {
         assert_eq!(hub_wait(&devices, "p"), PHONE_HUB_WAIT);
         assert_eq!(hub_wait(&devices, "c"), MAX_WAIT);
         assert_eq!(hub_wait(&[], "p"), MAX_WAIT);
+    }
+
+    /// The offers a client takes once it keeps a hub's, as Go's
+    /// TestOfferRules.
+    #[test]
+    fn offer_rules() {
+        let id = |c: char| DeviceId::parse(&c.to_string().repeat(32)).unwrap();
+        let (pi, mac, deck) = (id('a'), id('b'), id('c'));
+        let kept = Hub { device: pi.to_string(), key: vec![1; 32], psk: vec![1; 32], endpoints: vec![] };
+        assert!(takes_offer(&kept, &pi, &pi, &[3; 32], true), "the kept hub again");
+        assert!(!takes_offer(&kept, &mac, &mac, &[2; 32], true), "another hub");
+        assert!(takes_offer(&kept, &mac, &mac, &[1; 32], true), "with the kept preshared key");
+        assert!(takes_offer(&kept, &pi, &mac, &[2; 32], true), "passed on by the kept hub");
+        assert!(!takes_offer(&kept, &deck, &mac, &[2; 32], true), "passed on by another device");
+        assert!(takes_offer(&kept, &mac, &mac, &[2; 32], false), "the kept hub is no admin");
     }
 }
