@@ -124,7 +124,7 @@ public enum GroupCertificates {
     public static func checkAdminCA(_ der: Data, root: Data) throws {
         let c = try ParsedCertificate(der: der), r = try ParsedCertificate(der: root)
         guard c.isCA, c.pathLength == 0, c.canSignCertificates,
-              (try? P256.Signing.PublicKey(derRepresentation: c.info.publicKey)) != nil else { throw VerifyError.notAdminCA }
+              P256.Signing.PublicKey(spki: c.info.publicKey) != nil else { throw VerifyError.notAdminCA }
         // A root without a path length limit is refused, as in Go.
         guard (r.pathLength ?? -1) >= 1 else { throw VerifyError.notAdminCA }
         guard signed(c, by: r.info) else { throw VerifyError.notFromGroupCA }
@@ -136,7 +136,7 @@ public enum GroupCertificates {
     public static func checkRoot(_ der: Data) throws {
         let c = try ParsedCertificate(der: der)
         guard c.isCA, c.pathLength == 1, c.canSignCertificates,
-              (try? P256.Signing.PublicKey(derRepresentation: c.info.publicKey)) != nil, signed(c, by: c.info) else {
+              P256.Signing.PublicKey(spki: c.info.publicKey) != nil, signed(c, by: c.info) else {
             throw VerifyError.notRoot
         }
     }
@@ -149,7 +149,7 @@ public enum GroupCertificates {
 
     static func signed(_ cert: ParsedCertificate, by issuer: CertificateInfo) -> Bool {
         guard cert.rawIssuer == issuer.rawSubject,
-              let key = try? P256.Signing.PublicKey(derRepresentation: issuer.publicKey),
+              let key = P256.Signing.PublicKey(spki: issuer.publicKey),
               let sig = try? P256.Signing.ECDSASignature(derRepresentation: cert.signature),
               cert.signatureAlgorithm == DER.oid(oidECDSAWithSHA256) else { return false }
         return key.isValidSignature(sig, for: cert.tbs)
@@ -469,5 +469,15 @@ extension Calendar {
         var c = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "UTC")!
         return c
+    }
+}
+
+extension P256.Signing.PublicKey {
+    /// A P-256 key from a SubjectPublicKeyInfo in its one DER encoding, or nil.
+    /// swift-crypto on Linux reads the key's point without checking the
+    /// algorithm's OIDs, which Go and the Kotlin kit refuse to accept.
+    init?(spki: Data) {
+        guard let key = try? P256.Signing.PublicKey(derRepresentation: spki), key.derRepresentation == spki else { return nil }
+        self = key
     }
 }

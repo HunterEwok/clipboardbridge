@@ -25,6 +25,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Android: a certificate with a length field near 2 GiB no longer slips past the DER
   reader's bounds check and throws an unexpected error instead of being refused. Both phone
   kits now test their certificate checks with thousands of randomly damaged certificates.
+- iPhone kit: a key whose algorithm identifiers are damaged is refused, as Go and the
+  Android kit refuse it; swift-crypto on Linux read the key's point without checking them.
 
 ## [0.4.0] - 2026-10-25
 

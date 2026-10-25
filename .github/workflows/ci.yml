@@ -1067,12 +1067,19 @@ jobs:
       - name: the versions Gradle resolves
         working-directory: apps/android
         # The init script locks every configuration, so --write-locks writes each
-        # project's gradle.lockfile for the scan. A dependency Gradle could not
-        # resolve would be missing from it, so that fails the job.
+        # project's gradle.lockfile for the scan. Only the release runtime classpaths
+        # are resolved: they are what the APKs carry, while lint and the other build
+        # tools (with their own Bouncy Castle and HttpClient) never reach a phone.
+        # A dependency Gradle could not resolve would be missing from the lockfile,
+        # so that fails the job.
         run: |
           init="$GITHUB_WORKSPACE/.github/gradle/lock-all.init.gradle.kts"
-          ./gradlew --no-daemon -q --init-script "$init" --write-locks :app:dependencies :shared:dependencies :wear:dependencies > deps.txt
-          ./gradlew --no-daemon -q --init-script "$init" --write-locks -p kit dependencies >> deps.txt
+          release="--configuration releaseRuntimeClasspath"
+          # shellcheck disable=SC2086 # $release is two words on purpose
+          ./gradlew --no-daemon -q --init-script "$init" --write-locks \
+            :app:dependencies $release :shared:dependencies $release :wear:dependencies $release > deps.txt
+          ./gradlew --no-daemon -q --init-script "$init" --write-locks \
+            -p kit dependencies --configuration runtimeClasspath >> deps.txt
           if grep ' FAILED$' deps.txt; then
             echo "Gradle could not resolve these dependencies."
             exit 1

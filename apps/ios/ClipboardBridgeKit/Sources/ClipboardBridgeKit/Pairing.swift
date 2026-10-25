@@ -95,7 +95,7 @@ public enum Pairing {
                   !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
                   role == nil || role == Self.lite else { return false }
             guard let adminKey else { return true }
-            return isPhone && (try? P256.Signing.PublicKey(derRepresentation: adminKey)) != nil
+            return isPhone && P256.Signing.PublicKey(spki: adminKey) != nil
         }
     }
 

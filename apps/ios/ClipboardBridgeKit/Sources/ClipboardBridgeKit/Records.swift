@@ -299,7 +299,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     private static func anchor(_ r: Member.Record, roots: [Data]) -> (root: Data, signer: Data)? {
         guard let sig = try? P256.Signing.ECDSASignature(derRepresentation: r.sig) else { return nil }
         func verifies(_ spki: Data) -> Bool {
-            (try? P256.Signing.PublicKey(derRepresentation: spki))?.isValidSignature(sig, for: r.body) ?? false
+            P256.Signing.PublicKey(spki: spki)?.isValidSignature(sig, for: r.body) ?? false
         }
         switch r.chain ?? [] {
         case []:
