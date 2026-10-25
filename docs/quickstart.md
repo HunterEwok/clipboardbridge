@@ -70,9 +70,13 @@ app (iPhone or Android), the phone makes the group itself instead: see the app's
 On that machine:
 
 ```sh
-cbb new
-cbb pair -phone
+sudo cbb new
+sudo cbb pair -phone
 ```
+
+Commands that change the group (`new`, `pair`, `revoke` and the others) need root: `sudo`
+on Linux and macOS, a terminal opened as administrator on Windows. `copy`, `paste` and
+`status` do not.
 
 `cbb new` creates the group, with this computer as its root. `cbb pair -phone` prints a QR
 code, the start of a fingerprint and a six-digit code.
@@ -126,7 +130,7 @@ Install on each computer first.
 Then, on the new computer:
 
 ```sh
-cbb pair
+sudo cbb pair
 ```
 
 It shows a QR code for the phone app; scan it in the app (Add a device) and the computer
@@ -259,7 +263,7 @@ keys. The phones cannot sync away from home yet.
 
 ```sh
 cbb status     # this device, the group, and every device: its system, role and when it was seen
-cbb revoke NAME  # remove a lost device; on the root or an admin, or Devices in the app
+sudo cbb revoke NAME  # remove a lost device; on the root or an admin, or Devices in the app
 ```
 
 A group made before 0.4 has no root: every Linux and Windows member holds its keys, and

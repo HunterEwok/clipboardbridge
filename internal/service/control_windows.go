@@ -21,13 +21,15 @@ import (
 // access list from its directory, so the directory gets a protected list
 // first: full access for the system, administrators and the service's own
 // account, read and write for the clipboardbridge group. Nobody else can
-// connect, and the list is in place before the socket exists.
-func listenControl(path string) (net.Listener, error) {
+// connect, and the list is in place before the socket exists. The admin
+// socket's directory lets in only the system, administrators and the
+// service's account.
+func listenControl(path string, admin bool) (net.Listener, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	sddl, err := controlSDDL()
+	sddl, err := controlSDDL(admin)
 	if err != nil {
 		return nil, err
 	}
@@ -63,12 +65,15 @@ func listenControl(path string) (net.Listener, error) {
 // install.ps1 just added may connect before signing in again. Without the
 // group, as when the service runs by hand on a machine where nothing was
 // installed, only administrators and the service's account may connect.
-func controlSDDL() (string, error) {
+func controlSDDL(admin bool) (string, error) {
 	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return "", fmt.Errorf("the service's account: %w", err)
 	}
 	sddl := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + tu.User.Sid.String() + ")"
+	if admin {
+		return sddl, nil
+	}
 	sid, _, typ, err := windows.LookupSID("", control.Group)
 	if err != nil || typ != windows.SidTypeAlias {
 		return sddl, nil

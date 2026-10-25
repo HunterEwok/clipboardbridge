@@ -152,7 +152,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(h.Op)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -229,7 +229,7 @@ func applyGrant(stdout io.Writer, g grant) error {
 // cmdGlobalAllow lets the service reach the group's servers as the service
 // knows them now.
 func cmdGlobalAllow(stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -269,7 +269,7 @@ it on when you need it, or sync only at home.
 `
 
 func cmdGlobalStatus(stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return fail(stderr, err)
 	}

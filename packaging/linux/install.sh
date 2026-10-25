@@ -292,5 +292,5 @@ echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/l
 if [ "$kind" = lite ]; then
 	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."
 else
-	echo "Next: see docs/quickstart.md; in short, cbb new and cbb pair -phone on the first computer, cbb pair on the others."
+	echo "Next: see docs/quickstart.md; in short, sudo cbb new and sudo cbb pair -phone on the first computer, sudo cbb pair on the others."
 fi

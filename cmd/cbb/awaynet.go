@@ -428,7 +428,7 @@ func waitService() (*control.Client, error) {
 	var err error
 	for deadline := time.Now().Add(15 * time.Second); ; {
 		var c *control.Client
-		if c, err = control.Dial(control.SocketPath()); err == nil {
+		if c, err = control.DialFor(control.OpStatus); err == nil {
 			return c, nil
 		}
 		if time.Now().After(deadline) {

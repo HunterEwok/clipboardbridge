@@ -774,7 +774,20 @@ Source: `internal/control`, `internal/service/socket.go`, `internal/connector/co
 
 `CBB_SOCKET` overrides the path for clients. The socket is a Unix stream socket with
 mode 0660, made in a private temporary directory and renamed into place, so only root, the
-service's user and members of the group can connect; secrets travel only to them.
+service's user and members of the group can connect; secrets travel only to them. On Windows
+it is `%ProgramData%\clipboardbridge\run\control.sock`, in a directory whose protected access
+list lets in the system, administrators, the service's account and the group.
+
+Next to it the service listens on the **admin socket** `admin.sock` (on Windows
+`run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
+service's user (on Windows the system, administrators and the service's account) can
+connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
+`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied` and
+`clipboard`) and refuses every other operation with an error; the admin socket takes them
+all. So a program of a user in the group can use the clipboard but cannot admit, remove,
+rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
+the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
+with its own two sockets.
 
 ### Framing
 
@@ -1424,18 +1437,34 @@ on disk.
 2. The forwarder checks that the leaf names a device (section 1) and verifies it, for client
    authentication, to a self-signed CA among the presented certificates. That root's tag
    names the group (section 1). It knows no group beforehand: any group may register, but
-   only one of its members can.
+   only its root or an admin can (step 3).
 3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
-   `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string}`: its WireGuard public key, and
-   HMAC-SHA256 under X25519(the hub's WireGuard private key, `e`) of 32 bytes exported from
-   the TLS session with the label `clipboardbridge forwarder key` and no context. So the hub
-   proves it holds the key, on this connection only. An obfuscated hub adds its group's
-   `obfuscation` settings (section 11, "Obfuscation"); a plain hub leaves it out. A hub
-   whose clients come over VLESS adds the group's VLESS user ID as `vless` (section 11,
-   "VLESS").
+   `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string, "admin": bytes,
+   "admin_sig": bytes, "records": [record]}`, at most 1 MiB with at most 1024 records:
+   - `key` is its WireGuard public key, and `proof` is HMAC-SHA256 under X25519(the hub's
+     WireGuard private key, `e`) of 32 bytes exported from the TLS session with the label
+     `clipboardbridge forwarder key` and no context. So the hub proves it holds the key, on
+     this connection only.
+   - `admin_sig` is an ECDSA signature (ASN.1) of SHA-256 over 32 bytes exported with the label
+     `clipboardbridge forwarder admin` followed by `key`. The key of the group's root or of
+     the hub's admin CA signs it. `admin` is that admin CA (DER), left out for a root. The
+     forwarder takes the signature only from a root on the path of the records it knows, or
+     from an admin CA that such a root certified, so a member that is no admin cannot
+     register its group.
+   - `records` are the group's authority records: the path records (section 5), every record
+     that is not a `device` record, and the `device` records a root signed with its own key.
+     The forwarder adds them to those of the group's current registration and refuses a hub
+     whose signer or member certificate the records revoke or freeze. It keeps the merged
+     records in memory while the group stays registered, so a removed admin that registers
+     next cannot leave its revocation out. The group CA for these records is the first
+     self-signed certificate the hub presented.
+   - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
+     a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS
+     user ID as `vless` (section 11, "VLESS").
 4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
    and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
-   and closes: the proof is wrong, the obfuscation settings are outside their bounds,
+   and closes: the proof is wrong, no root or admin signed the registration, the records
+   remove or freeze the hub, the obfuscation settings are outside their bounds,
    another group registered that key or that VLESS user ID, the forwarder has no VLESS
    and the hub asked for it, or the forwarder is full. To a hub that asked for VLESS the
    answer adds `"vless": {"port": number, "public_key": bytes, "short_id": string,
@@ -1514,6 +1543,13 @@ second (twice that in a burst); per source address, 10 handshakes a second; 100 
 and 256 registrations being set up at a time. A group that reaches a limit loses only its
 own packets.
 
+Registrations, held or being set up, are bounded at 16 from one address and 64 from one
+network, an IPv4 /24 or an IPv6 /64; the forwarder closes a connection past either limit
+at once. A handshake to a new group is checked against each registered group, so it costs
+one check per group. These checks are bounded at 500 000 a second for all sources together,
+and one network gets a sixteenth of that. A single handshake costs a network at most its
+whole budget, so one still passes now and then on a forwarder with more groups than that.
+
 ### What it keeps
 
 Only its own key file. Groups, addresses and sessions live in memory while the connections
@@ -1548,12 +1584,16 @@ runs end to end between the two devices.
    is served under each of its tags the relay is given.
 3. The key proof is the forwarder's (section 13, step 3) with the label
    `clipboardbridge relay key`: `{"e": bytes}` from the relay, `{"key": bytes, "proof":
-   bytes}` from the device, with the device's WireGuard key.
+   bytes, "records": [record]}` from the device, with the device's WireGuard key. `records`
+   are the group's authority records, as for the forwarder. The relay keeps them for the
+   group in memory while it runs. It refuses a device whose member certificate they revoke,
+   and drops a registered device as soon as a later registration's records revoke it.
 4. The relay answers `{"key": bytes, "psk": bytes, "addr": string}`: its own WireGuard
    public key, a new preshared key for this registration, and the device's tunnel address,
    which the relay chooses at random in fd00:cbb::/32 (not from the device ID, so no group
    can take another's address). Or it answers `{"error": string}` and closes: the proof is
-   wrong, another device registered that WireGuard key, or the group has 64 devices there.
+   wrong, the records remove the device, another device registered that WireGuard key, or
+   the group has 64 devices there.
    A device has one registration: a new one replaces the old, whose connection closes.
 5. The registration lasts while the connection does; neither side sends anything more on
    it. The relay keeps the device as a WireGuard peer, with its key, the preshared key and

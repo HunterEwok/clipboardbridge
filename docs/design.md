@@ -328,7 +328,11 @@ and lifetimes. The installer enables what the device needs.
 - Local control socket `/run/clipboardbridge/control.sock`, mode 0660, group `clipboardbridge`: the
   kernel admits only root and members of that group. It is made in a private directory and
   moved into place, so it is never reachable with a wider mode. The installer adds the desktop or tmux
-  user to the group. Each message is a JSON header on one line followed by the raw text.
+  user to the group. That group is for the clipboard only: everything that changes the group
+  goes to the admin socket `admin.sock` next to it, mode 0600 (on Windows a directory that
+  only the system and administrators enter), so only root reaches it (D-62). A program that
+  runs as a user of the group, a browser exploit for example, cannot admit a device of its
+  own, remove one, or turn on sync away from home. Each message is a JSON header on one line followed by the raw text.
   Commands send one request and read the answers; a desktop connector keeps its connection
   open to receive writes and report copies. Its watch request carries what the clipboard
   holds; a write that no connector got, such as the group's text at boot, goes to the next
@@ -345,7 +349,10 @@ and lifetimes. The installer enables what the device needs.
   two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
   for the window.
 - tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
-  pastes the member's own clipboard text into any program inside tmux. A login snippet starts tmux on the
+  pastes the member's own clipboard text into any program inside tmux. The binding runs
+  `cbb paste -terminal`, so that a text from another device cannot drive the terminal or the
+  shell: no control characters (an escape could end bracketed paste and run the rest), only
+  the first line, no final line feed, and never a secret. A login snippet starts tmux on the
   text console.
 
 ### 2. Desktop connector
@@ -800,10 +807,17 @@ user can run `cbb forward` on a server of their own.
   between groups.
 - **Registration.** The hub keeps one connection out to the forwarder and registers its
   WireGuard public key by proving its membership (its member key with the chain to the group
-  CA); nobody else can take its place. The forwarder knows a group only by its tag, the hash of the CA
-  certificate, and stores nothing on disk: its state is the open connections.
+  CA) and that it is the root or an admin (a signature by the root's or its admin CA's key).
+  It also sends the group's authority records, so the forwarder refuses an admin or device that
+  the group removed or froze. A member that is no admin, or a removed one, cannot take the hub's
+  place. The forwarder knows a group only by its tag, the hash of the CA certificate, and stores
+  nothing on disk: its state is the open connections and, while a group is registered, its
+  records.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
-  memory. A group that reaches a limit is slowed down alone.
+  memory. A group that reaches a limit is slowed down alone. Limits per source: registrations
+  per address and per network (/24, /64), and a share of the budget for checking handshakes
+  against the groups per network, so a few hosts can neither fill the forwarder nor starve the
+  others.
 - **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
   the network and can at most stop forwarding.
 - It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
@@ -1626,3 +1640,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
 | D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |
 | D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
+| D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |

@@ -14,10 +14,14 @@ import (
 
 // listenControl listens on the control socket with mode 0660: only the
 // service's user, root, and members of the service's group may connect. The
-// socket is made and narrowed in a new directory that only the service can
-// enter, and then moved into place, so nobody can connect before its mode is
-// right.
-func listenControl(path string) (net.Listener, error) {
+// admin socket gets mode 0600: only the service's user and root. The socket
+// is made and narrowed in a new directory that only the service can enter,
+// and then moved into place, so nobody can connect before its mode is right.
+func listenControl(path string, admin bool) (net.Listener, error) {
+	mode := os.FileMode(0o660)
+	if admin {
+		mode = 0o600
+	}
 	tmp, err := os.MkdirTemp(filepath.Dir(path), ".c")
 	if err != nil {
 		return nil, err
@@ -30,7 +34,7 @@ func listenControl(path string) (net.Listener, error) {
 	}
 	ul := ln.(*net.UnixListener)
 	ul.SetUnlinkOnClose(false)
-	if err := os.Chmod(tmpPath, 0o660); err != nil {
+	if err := os.Chmod(tmpPath, mode); err != nil {
 		ul.Close()
 		os.Remove(tmpPath)
 		return nil, err

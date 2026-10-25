@@ -325,4 +325,4 @@ if [ "$port" != 8764 ]; then
 	echo "incoming connections, allow TCP $port from the home network. The iPhone shortcut works only"
 	echo "with 8764; the clipboardbridge app takes any port."
 fi
-echo "clipboardbridge is running on TCP port $port. Join a group: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: cbb new."
+echo "clipboardbridge is running on TCP port $port. Join a group: sudo cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: sudo cbb new."

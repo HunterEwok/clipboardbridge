@@ -5,6 +5,7 @@ package forward
 
 import (
 	"crypto/ecdh"
+	"crypto/ecdsa"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -32,6 +33,17 @@ const Protocol = "clipboardbridge-forward/1"
 const (
 	proofLabel = "clipboardbridge forwarder key"
 	helloLabel = "clipboardbridge forwarder hello"
+	// adminLabel is the key the hub's root or admin CA signs, with the
+	// hub's WireGuard key, to show the hub may register its group.
+	adminLabel = "clipboardbridge forwarder admin"
+)
+
+// maxClaim bounds a claim, which carries the group's authority records,
+// and maxClaimRecords the records in it, whose signatures the forwarder
+// checks.
+const (
+	maxClaim        = 1 << 20
+	maxClaimRecords = 1024
 )
 
 // setupTimeout bounds a registration from the TCP connection to the
@@ -57,6 +69,16 @@ type (
 		// VLESS is the group's VLESS user ID, for a hub whose clients come
 		// over VLESS.
 		VLESS string `json:"vless,omitempty"`
+		// Admin is the admin CA that signed AdminSig, or empty when a root
+		// of the group did; AdminSig signs SHA-256 of the TLS admin key and
+		// the WireGuard key (adminMessage). Only the root or an admin may
+		// register its group.
+		Admin    []byte `json:"admin,omitempty"`
+		AdminSig []byte `json:"admin_sig"`
+		// Records are the group's authority records
+		// (group.Records.AuthorityRecords), so that the forwarder refuses
+		// a removed or frozen hub.
+		Records []group.Record `json:"records,omitempty"`
 	}
 	answer struct {
 		ID    uint64       `json:"id,omitempty"`    // the registration, for the hellos
@@ -140,10 +162,17 @@ func (f *Forwarder) acceptRegistrations() {
 			f.logf("cbb forward: accepting registrations: %v", err)
 			return
 		}
+		var from netip.Addr
+		if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+			from = ta.AddrPort().Addr().Unmap()
+		}
+		nw := network(from)
 		f.mu.Lock()
-		busy := f.setting >= f.limits.Connections
+		busy := f.setting >= f.limits.Connections || f.fromAddr[from] >= f.limits.PerAddress || f.fromNet[nw] >= f.limits.PerNetwork
 		if !busy {
 			f.setting++
+			f.fromAddr[from]++
+			f.fromNet[nw]++
 		}
 		f.mu.Unlock()
 		if busy {
@@ -153,6 +182,16 @@ func (f *Forwarder) acceptRegistrations() {
 		f.wg.Add(1)
 		go func() {
 			defer f.wg.Done()
+			defer func() {
+				f.mu.Lock()
+				if f.fromAddr[from]--; f.fromAddr[from] == 0 {
+					delete(f.fromAddr, from)
+				}
+				if f.fromNet[nw]--; f.fromNet[nw] == 0 {
+					delete(f.fromNet, nw)
+				}
+				f.mu.Unlock()
+			}()
 			f.serveRegistration(conn)
 		}()
 	}
@@ -214,7 +253,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	if err != nil {
 		return nil, err
 	}
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, 4096))
+	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, maxClaim))
 	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes()}); err != nil {
 		return nil, err
 	}
@@ -225,6 +264,9 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	refuse := func(msg string) (*reg, error) {
 		enc.Encode(answer{Error: msg})
 		return nil, errors.New(msg)
+	}
+	if len(c.Records) > maxClaimRecords {
+		return refuse("too many records")
 	}
 	if len(c.Key) != 32 {
 		return refuse("the WireGuard key is not 32 bytes")
@@ -257,6 +299,10 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 			return refuse("the VLESS user ID is not usable")
 		}
 	}
+	adminMsg, err := adminMessage(cs, c.Key)
+	if err != nil {
+		return nil, err
+	}
 	r := &reg{tag: tag, obf: c.Obfuscation, vlessID: c.VLESS, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
 	copy(r.key[:], c.Key)
 	r.mac1 = mac1Key(r.key)
@@ -275,6 +321,24 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 
 	f.mu.Lock()
 	old := f.regs[tag]
+	var known []group.Record
+	if old != nil {
+		known = old.records
+	}
+	f.mu.Unlock()
+	// The records are checked outside the lock: their signatures take time.
+	records, err := authority(cs.PeerCertificates, c, adminMsg, known)
+	if err != nil {
+		return refuse(err.Error())
+	}
+	r.records = records
+	f.mu.Lock()
+	if o := f.regs[tag]; o != old {
+		// Another registration of the group came meanwhile; this one
+		// holds the records of the one it checked against only.
+		f.mu.Unlock()
+		return refuse("the group registered meanwhile; try again")
+	}
 	for _, o := range f.regs {
 		if o.key == r.key && o.tag != tag {
 			f.mu.Unlock()
@@ -320,6 +384,89 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	}
 	raw.SetDeadline(time.Time{})
 	return r, nil
+}
+
+// adminMessage is what the hub's root or admin CA signs: SHA-256 of a key
+// from this TLS session and the hub's WireGuard key, so the signature
+// proves nothing on another connection or for another key.
+func adminMessage(cs tls.ConnectionState, wgKey []byte) ([]byte, error) {
+	k, err := cs.ExportKeyingMaterial(adminLabel, nil, 32)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(append(k, wgKey...))
+	return sum[:], nil
+}
+
+// SignAdmin signs a registration's admin message with the key of the
+// group's root or of an admin CA.
+func SignAdmin(key *ecdsa.PrivateKey, cs tls.ConnectionState, wgKey []byte) ([]byte, error) {
+	msg, err := adminMessage(cs, wgKey)
+	if err != nil {
+		return nil, err
+	}
+	return ecdsa.SignASN1(rand.Reader, key, msg)
+}
+
+// authority checks that a root or an admin of the hub's group signed the
+// registration, and that neither it nor the hub was removed or frozen, by
+// the records the hub sent and those the group's last registration left
+// (known). It returns the records to keep for the group: the forwarder
+// keeps them in memory while the group stays registered, so a removed admin
+// that registers next cannot leave them out. It knows the group only by the
+// root the hub presented first, the group CA in ForwarderCertificate.
+func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Record) ([]group.Record, error) {
+	var groupCA *x509.Certificate
+	for _, cert := range certs[1:] {
+		if cert.IsCA && cert.CheckSignatureFrom(cert) == nil {
+			groupCA = cert
+			break
+		}
+	}
+	if groupCA == nil {
+		return nil, errors.New("the hub presented no root")
+	}
+	recs := group.NewRecords(groupCA)
+	recs.AddAll(known)
+	recs.AddAll(c.Records)
+	path := append([]*x509.Certificate{groupCA}, recs.Roots()...)
+	var admin *x509.Certificate
+	if len(c.Admin) != 0 {
+		ca, err := x509.ParseCertificate(c.Admin)
+		if err != nil {
+			return nil, errors.New("the admin CA cannot be read")
+		}
+		for _, root := range path {
+			if group.CheckAdminCA(ca, root) == nil {
+				admin = ca
+				break
+			}
+		}
+	}
+	var signer *x509.Certificate
+	for _, cand := range path {
+		if admin != nil {
+			cand = admin
+		}
+		if pub, ok := cand.PublicKey.(*ecdsa.PublicKey); ok && ecdsa.VerifyASN1(pub, msg, c.AdminSig) {
+			signer = cand
+			break
+		}
+		if admin != nil {
+			break
+		}
+	}
+	if signer == nil {
+		return nil, errors.New("only the group's root or an admin may register it, and this hub is neither")
+	}
+	s, leaf := group.KeyHashOf(signer), group.KeyHashOf(certs[0])
+	if recs.Revoked(s) || recs.Revoked(leaf) {
+		return nil, errors.New("the hub was removed from its group")
+	}
+	if recs.Frozen(s) || recs.Frozen(leaf) {
+		return nil, errors.New("the hub is a frozen admin of its group")
+	}
+	return recs.All(), nil
 }
 
 // proof is what a hub sends to prove it holds its WireGuard key: an HMAC,

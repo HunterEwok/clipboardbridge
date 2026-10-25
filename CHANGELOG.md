@@ -182,6 +182,25 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: only the group's root or an admin can register the group on a forwarder. The hub
+  signs the registration with its root or admin CA key, and sends the group's authority
+  records with it. The forwarder and the relay keep those records in memory and refuse a hub
+  or device that the records remove or freeze, so a removed device can no longer push the
+  real hub out or hold a relay slot.
+- Security: a forwarder takes at most 16 registrations from one address and 64 from one
+  network (/24 or /64), and gives each network a sixteenth of the budget for checking
+  handshakes against the groups, so a few hosts can no longer fill it or use up the budget.
+- Security: membership in the `clipboardbridge` group gives the clipboard only. The service
+  takes what changes the group (`new`, `pair`, `invite`, `revoke`, `rename`, `admin`,
+  `takeover`, `upgrade`, `freeze`, `unfreeze`, the holder setting, `global` on, off and hub)
+  only on a new admin socket next to the control socket, which only root reaches (on Windows
+  administrators): run those commands with `sudo`, or from a terminal opened as
+  administrator. The lite member does the same for `cbb global on|off`.
+- Security: tmux's paste key no longer types control characters, a second line or a secret
+  into the terminal. It runs the new `cbb paste -terminal` (full and lite member), which drops
+  the control characters of C0 but tab and line feed, DEL and those of C1, keeps only the
+  first line unless `-lines`, leaves out the last line feed, and refuses a secret unless
+  `-secret`.
 - An update without a terminal over an installation from before the firewall question no
   longer removes the firewall rules it had added: rules that are there without a kept answer
   count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing

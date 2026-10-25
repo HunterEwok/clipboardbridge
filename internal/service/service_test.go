@@ -314,11 +314,12 @@ func (s *testService) stop() {
 	s.logMu.Unlock()
 }
 
-// dial connects to the service with a deadline, so that a missing answer
-// fails the test instead of hanging it.
+// dial connects to the service's admin socket, which takes every operation,
+// with a deadline, so that a missing answer fails the test instead of
+// hanging it.
 func (s *testService) dial(t *testing.T) *control.Client {
 	t.Helper()
-	c, err := control.Dial(s.socket)
+	c, err := control.Dial(control.AdminSocketFor(s.socket))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -785,7 +786,7 @@ func TestConcurrentPairs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := control.Dial(a.socket)
+			c, err := control.DialAt(a.socket, control.OpPair)
 			if err != nil {
 				errs[i] = err
 				return
@@ -975,28 +976,62 @@ func TestAcceptSurvivesErrors(t *testing.T) {
 }
 
 func TestControlSocketMode(t *testing.T) {
-	// Not t.TempDir: on macOS its path is too long for a socket.
-	dir, err := os.MkdirTemp("", "cb")
+	for _, admin := range []bool{false, true} {
+		// Not t.TempDir: on macOS its path is too long for a socket.
+		dir, err := os.MkdirTemp("", "cb")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+		path := filepath.Join(dir, "c.sock")
+		if admin {
+			path = control.AdminSocketFor(path)
+		}
+		ln, err := listenControl(path, admin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkSocketAccess(t, path, fi, admin)
+		if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
+			t.Errorf("left behind: %v", entries)
+		}
+		ln.Close()
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("the socket is still there after Close: %v", err)
+		}
+	}
+}
+
+// TestAdminOpsOnlyOnTheAdminSocket checks that the control socket, which the
+// members of the service's group reach, refuses what changes the group.
+func TestAdminOpsOnlyOnTheAdminSocket(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	for _, op := range []string{control.OpNew, control.OpPair, control.OpRevoke, control.OpAway, control.OpAdmin, "unknown"} {
+		c, err := control.Dial(pi.socket)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Do(&control.Message{Header: control.Header{Op: op, Name: "x"}})
+		c.Close()
+		if err == nil || !strings.Contains(err.Error(), "admin socket") {
+			t.Errorf("%s on the control socket: %v", op, err)
+		}
+	}
+	c, err := control.Dial(pi.socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "c.sock")
-	ln, err := listenControl(path)
-	if err != nil {
-		t.Fatal(err)
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}}); err != nil {
+		t.Errorf("status on the control socket: %v", err)
 	}
-	fi, err := os.Lstat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkSocketAccess(t, path, fi)
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Errorf("left behind: %v", entries)
-	}
-	ln.Close()
-	if _, err := os.Lstat(path); !os.IsNotExist(err) {
-		t.Errorf("the socket is still there after Close: %v", err)
+	if pi.status(t).Group != "" {
+		t.Error("a refused new made a group")
 	}
 }
 

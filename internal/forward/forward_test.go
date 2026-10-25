@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -29,11 +31,11 @@ import (
 )
 
 // member returns a member certificate of a new group with its chain, as a
-// hub presents it, and the group's tag.
-func member(t *testing.T) (tls.Certificate, string) {
+// hub presents it, the group's tag, and its root.
+func member(t *testing.T) (tls.Certificate, string, *group.CA) {
 	t.Helper()
 	now := time.Now()
-	ca, err := group.NewGroupCA(now)
+	ca, err := group.NewRootCA(now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +47,12 @@ func member(t *testing.T) (tls.Certificate, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return tls.Certificate{Certificate: [][]byte{leaf.Raw, ca.Cert.Raw}, PrivateKey: key, Leaf: leaf}, group.Tag(ca.Cert)
+	return tls.Certificate{Certificate: [][]byte{leaf.Raw, ca.Cert.Raw}, PrivateKey: key, Leaf: leaf}, group.Tag(ca.Cert), ca
+}
+
+// rootAuthority is a hub's Authority on the group's root.
+func rootAuthority(ca *group.CA) func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
+	return func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) { return ca.Key, nil, nil }
 }
 
 func startForwarder(t *testing.T, limits Limits) (*Forwarder, string) {
@@ -97,7 +104,7 @@ func startHub(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, obf
 func startHubWith(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer, hc HubConfig) *hubSide {
 	obf := hc.Obfuscation
 	t.Helper()
-	cert, _ := member(t)
+	cert, _, ca := member(t)
 	key, err := tunnel.NewPrivateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +124,7 @@ func startHubWith(t *testing.T, f *Forwarder, pin string, clients []tunnel.Peer,
 	go func() {
 		defer close(done)
 		Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, Obfuscation: obf, VLESSID: hc.VLESSID,
-			Cert: func() tls.Certificate { return cert }, Send: h.Send, Report: func(r Report) {
+			Cert: func() tls.Certificate { return cert }, Authority: rootAuthority(ca), Send: h.Send, Report: func(r Report) {
 				select {
 				case hs.reports <- r:
 				default:
@@ -414,6 +421,7 @@ func TestScanLimit(t *testing.T) {
 	limits := DefaultLimits
 	limits.SourceRate = 1000
 	limits.ScanRate = 10 // a burst of 20 checks
+	limits.NetworkScanRate = 10
 	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, Limits: limits})
 	if err != nil {
 		t.Fatal(err)
@@ -478,47 +486,85 @@ func TestHello(t *testing.T) {
 	}
 }
 
+// hubAuth is what a hand-made registration shows: the key that signs it,
+// the admin CA of that key (nil for a root), and records.
+type hubAuth struct {
+	key     *ecdsa.PrivateKey
+	admin   *x509.Certificate
+	records []group.Record
+}
+
+// sign fills c's admin fields for the session cs.
+func (a hubAuth) sign(t *testing.T, c *claim, cs tls.ConnectionState) {
+	t.Helper()
+	if a.key == nil {
+		return
+	}
+	sig, err := SignAdmin(a.key, cs, c.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AdminSig, c.Records = sig, a.records
+	if a.admin != nil {
+		c.Admin = a.admin.Raw
+	}
+}
+
 // rawRegister registers by hand, claiming key with the proof made by
 // holder: a hub that holds key passes holder == key.
-func rawRegister(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, claimKey []byte, holder *ecdh.PrivateKey) answer {
+func rawRegister(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, claimKey []byte, holder *ecdh.PrivateKey, auth hubAuth) answer {
+	t.Helper()
+	tc, a := rawOpen(t, f, pin, cert, claimKey, holder, auth)
+	if tc != nil {
+		tc.Close()
+	}
+	return a
+}
+
+// rawOpen is rawRegister that keeps the registration open.
+func rawOpen(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, claimKey []byte, holder *ecdh.PrivateKey, auth hubAuth) (*tls.Conn, answer) {
 	t.Helper()
 	tc, err := tls.Dial("tcp", f.Addr().String(), &tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, NextProtos: []string{Protocol},
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		return answer{Error: err.Error()}
+		return nil, answer{Error: err.Error()}
 	}
-	defer tc.Close()
 	if Pin(tc.ConnectionState().PeerCertificates[0]) != pin {
 		t.Fatal("the forwarder's pin changed")
 	}
 	dec := json.NewDecoder(tc)
 	var ch challenge
 	if err := dec.Decode(&ch); err != nil {
-		return answer{Error: err.Error()}
+		tc.Close()
+		return nil, answer{Error: err.Error()}
 	}
 	e, _ := ecdh.X25519().NewPublicKey(ch.E)
 	shared, _ := holder.ECDH(e)
 	p, _ := proof(shared, tc.ConnectionState())
-	json.NewEncoder(tc).Encode(claim{Key: claimKey, Proof: p})
+	c := claim{Key: claimKey, Proof: p}
+	auth.sign(t, &c, tc.ConnectionState())
+	json.NewEncoder(tc).Encode(c)
 	var a answer
 	if err := dec.Decode(&a); err != nil {
-		return answer{Error: err.Error()}
+		tc.Close()
+		return nil, answer{Error: err.Error()}
 	}
-	return a
+	return tc, a
 }
 
 func TestRegistration(t *testing.T) {
 	f, pin := startForwarder(t, Limits{})
-	cert, tag := member(t)
+	cert, tag, root := member(t)
+	auth := hubAuth{key: root.Key}
 	mine, _ := ecdh.X25519().GenerateKey(rand.Reader)
 	theirs, _ := ecdh.X25519().GenerateKey(rand.Reader)
 
-	if a := rawRegister(t, f, pin, cert, theirs.PublicKey().Bytes(), mine); !strings.Contains(a.Error, "does not hold") {
+	if a := rawRegister(t, f, pin, cert, theirs.PublicKey().Bytes(), mine, auth); !strings.Contains(a.Error, "does not hold") {
 		t.Errorf("a hub that claims another's WireGuard key: %+v", a)
 	}
-	a := rawRegister(t, f, pin, cert, mine.PublicKey().Bytes(), mine)
+	a := rawRegister(t, f, pin, cert, mine.PublicKey().Bytes(), mine, auth)
 	if a.Error != "" || a.ID == 0 {
 		t.Fatalf("a hub with its own key: %+v", a)
 	}
@@ -536,7 +582,7 @@ func TestRegistration(t *testing.T) {
 	}
 
 	// Another group cannot register that key.
-	other, _ := member(t)
+	other, _, otherRoot := member(t)
 	done := make(chan answer, 1)
 	tc, err := tls.Dial("tcp", f.Addr().String(), &tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, NextProtos: []string{Protocol}, InsecureSkipVerify: true,
@@ -552,7 +598,9 @@ func TestRegistration(t *testing.T) {
 		e, _ := ecdh.X25519().NewPublicKey(ch.E)
 		shared, _ := mine.ECDH(e)
 		p, _ := proof(shared, tc.ConnectionState())
-		json.NewEncoder(tc).Encode(claim{Key: mine.PublicKey().Bytes(), Proof: p})
+		c := claim{Key: mine.PublicKey().Bytes(), Proof: p}
+		auth.sign(t, &c, tc.ConnectionState())
+		json.NewEncoder(tc).Encode(c)
 		var a answer
 		dec.Decode(&a)
 		done <- a
@@ -560,25 +608,25 @@ func TestRegistration(t *testing.T) {
 	if a := <-done; a.Error != "" {
 		t.Fatalf("registering: %+v", a)
 	}
-	if a := rawRegister(t, f, pin, other, mine.PublicKey().Bytes(), mine); !strings.Contains(a.Error, "another group") {
+	if a := rawRegister(t, f, pin, other, mine.PublicKey().Bytes(), mine, hubAuth{key: otherRoot.Key}); !strings.Contains(a.Error, "another group") {
 		t.Errorf("another group with the same WireGuard key: %+v", a)
 	}
 
 	// A certificate without a group's chain gets no registration.
 	self, _ := NewCert()
-	if a := rawRegister(t, f, pin, self, mine.PublicKey().Bytes(), mine); a.ID != 0 {
+	if a := rawRegister(t, f, pin, self, mine.PublicKey().Bytes(), mine, auth); a.ID != 0 {
 		t.Errorf("a certificate of no group registered: %+v", a)
 	}
 	leafOnly := cert
 	leafOnly.Certificate = cert.Certificate[:1]
-	if a := rawRegister(t, f, pin, leafOnly, mine.PublicKey().Bytes(), mine); a.ID != 0 {
+	if a := rawRegister(t, f, pin, leafOnly, mine.PublicKey().Bytes(), mine, auth); a.ID != 0 {
 		t.Errorf("a member certificate without its root registered: %+v", a)
 	}
 }
 
 func TestWrongPin(t *testing.T) {
 	f, _ := startForwarder(t, Limits{})
-	cert, _ := member(t)
+	cert, _, _ := member(t)
 	key, _ := tunnel.NewPrivateKey()
 	other, _ := NewCert()
 	reports := make(chan Report, 4)
@@ -761,14 +809,14 @@ func TestThroughVLESS(t *testing.T) {
 
 func TestVLESSRefused(t *testing.T) {
 	f, pin := startForwarder(t, Limits{})
-	cert, _ := member(t)
+	cert, _, ca := member(t)
 	key, _ := tunnel.NewPrivateKey()
 	id, _ := tunnel.NewVLESSID()
 	reports := make(chan Report, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go Register(ctx, HubConfig{Link: Link{Endpoint: f.Addr(), Pin: pin}, Key: key, VLESSID: id,
-		Cert: func() tls.Certificate { return cert }, Send: func(netip.AddrPort, []byte) error { return nil },
+		Cert: func() tls.Certificate { return cert }, Authority: rootAuthority(ca), Send: func(netip.AddrPort, []byte) error { return nil },
 		Report: func(r Report) { reports <- r }})
 	select {
 	case r := <-reports:
@@ -777,5 +825,131 @@ func TestVLESSRefused(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("no answer")
+	}
+}
+
+// TestRegistrationNeedsAnAdmin checks that only the group's root or an
+// admin registers it, and that the records one hub sends keep a removed
+// admin out afterwards.
+func TestRegistrationNeedsAnAdmin(t *testing.T) {
+	f, pin := startForwarder(t, Limits{})
+	cert, tag, root := member(t)
+	now := time.Now()
+	wg := func() *ecdh.PrivateKey {
+		k, _ := ecdh.X25519().GenerateKey(rand.Reader)
+		return k
+	}
+
+	// A plain member signs with its own key, or not at all.
+	memberKey := cert.PrivateKey.(*ecdsa.PrivateKey)
+	k := wg()
+	if a := rawRegister(t, f, pin, cert, k.PublicKey().Bytes(), k, hubAuth{key: memberKey}); !strings.Contains(a.Error, "neither") {
+		t.Errorf("a member that is no admin: %+v", a)
+	}
+	if a := rawRegister(t, f, pin, cert, k.PublicKey().Bytes(), k, hubAuth{}); !strings.Contains(a.Error, "neither") {
+		t.Errorf("a registration without the admin's signature: %+v", a)
+	}
+
+	// An admin computer, with its member certificate from its admin CA.
+	adminKey, _ := group.NewKey()
+	dev := group.NewDeviceID()
+	adminCA, err := root.IssueAdmin(dev, &adminKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, _ := group.NewKey()
+	leaf, err := (&group.CA{Cert: adminCA, Key: adminKey}).IssueMember(dev, &leafKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCert := tls.Certificate{Certificate: [][]byte{leaf.Raw, adminCA.Raw, root.Cert.Raw}, PrivateKey: leafKey, Leaf: leaf}
+	ak := wg()
+	tc, a := rawOpen(t, f, pin, adminCert, ak.PublicKey().Bytes(), ak, hubAuth{key: adminKey, admin: adminCA})
+	if a.Error != "" || a.ID == 0 {
+		t.Fatalf("an admin: %+v", a)
+	}
+	defer tc.Close()
+
+	// An admin CA of another group signs for nothing here.
+	_, _, otherRoot := member(t)
+	otherKey, _ := group.NewKey()
+	otherCA, _ := otherRoot.IssueAdmin(dev, &otherKey.PublicKey, now)
+	if a := rawRegister(t, f, pin, adminCert, ak.PublicKey().Bytes(), ak, hubAuth{key: otherKey, admin: otherCA}); !strings.Contains(a.Error, "neither") {
+		t.Errorf("another group's admin CA: %+v", a)
+	}
+
+	// The root removes the admin and registers with that record.
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
+		Keys: []group.KeyHash{group.KeyHashOf(adminCA), group.KeyHashOf(leaf)}}, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rk := wg()
+	rc, a := rawOpen(t, f, pin, cert, rk.PublicKey().Bytes(), rk, hubAuth{key: root.Key, records: []group.Record{revoke}})
+	if a.Error != "" {
+		t.Fatalf("the root: %+v", a)
+	}
+	defer rc.Close()
+	if a := rawRegister(t, f, pin, adminCert, ak.PublicKey().Bytes(), ak, hubAuth{key: adminKey, admin: adminCA}); !strings.Contains(a.Error, "removed") {
+		t.Errorf("the removed admin again: %+v", a)
+	}
+	f.mu.Lock()
+	r := f.regs[tag]
+	f.mu.Unlock()
+	if r == nil || r.key != [32]byte(rk.PublicKey().Bytes()) {
+		t.Error("the root's registration did not stay")
+	}
+}
+
+// TestNetworkScanLimit checks that the handshakes from one network spend
+// only that network's share of the scan budget.
+func TestNetworkScanLimit(t *testing.T) {
+	cert, _ := NewCert()
+	limits := DefaultLimits
+	limits.SourceRate = 1000
+	limits.NetworkScanRate = 4 // a burst of 8 checks per network
+	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, Limits: limits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for i := range 3 {
+		fakeReg(f, string(rune('a'+i)), netip.AddrPortFrom(netip.MustParseAddr("198.51.100.1"), uint16(8000+i)))
+	}
+	_, pub := fakeReg(f, "d", netip.MustParseAddrPort("198.51.100.2:8764"))
+	now := time.Now()
+	var stranger [32]byte
+	rand.Read(stranger[:])
+	for i := range 2 { // 2 handshakes x 4 groups spend the network's burst
+		f.route(netip.AddrPortFrom(netip.MustParseAddr("203.0.113.5"), uint16(40000+i)), initiation(stranger, uint32(i)), now)
+	}
+	if _, ok := f.route(netip.MustParseAddrPort("203.0.113.77:40000"), initiation(pub, 1), now); ok {
+		t.Error("a handshake from the same /24 passed after its budget was spent")
+	}
+	if _, ok := f.route(netip.MustParseAddrPort("192.0.2.9:40000"), initiation(pub, 2), now); !ok {
+		t.Error("a handshake from another network did not pass")
+	}
+}
+
+// TestRegistrationsPerAddress checks that one address holds at most
+// PerAddress registrations, set up or held.
+func TestRegistrationsPerAddress(t *testing.T) {
+	f, pin := startForwarder(t, Limits{Groups: 100, Connections: 100, PerAddress: 2, PerNetwork: 100})
+	var open []*tls.Conn
+	defer func() {
+		for _, c := range open {
+			c.Close()
+		}
+	}()
+	for i := range 3 {
+		cert, _, root := member(t)
+		k, _ := ecdh.X25519().GenerateKey(rand.Reader)
+		tc, a := rawOpen(t, f, pin, cert, k.PublicKey().Bytes(), k, hubAuth{key: root.Key})
+		if tc != nil {
+			open = append(open, tc)
+		}
+		if ok := a.Error == "" && a.ID != 0; ok != (i < 2) {
+			t.Errorf("registration %d from one address: %+v", i+1, a)
+		}
 	}
 }

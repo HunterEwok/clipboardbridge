@@ -108,7 +108,7 @@ func startService(t *testing.T) string {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	c, err := control.Dial(socket)
+	c, err := control.DialAt(socket, control.OpNew)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func startService(t *testing.T) string {
 
 func do(t *testing.T, socket string, h control.Header, payload string) *control.Message {
 	t.Helper()
-	c, err := control.Dial(socket)
+	c, err := control.DialAt(socket, h.Op)
 	if err != nil {
 		t.Fatal(err)
 	}

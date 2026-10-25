@@ -39,6 +39,7 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			}
 			return s.id.ForwarderCertificate()
 		},
+		Records: s.authorityRecords,
 		Want: func(peer string) bool {
 			id := group.DeviceID(peer)
 			s.mu.Lock()

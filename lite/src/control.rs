@@ -187,3 +187,18 @@ pub fn reply(header: Header, payload: Vec<u8>) -> Message {
 pub fn failure(e: &Error) -> Message {
     reply(Header { error: e.message().to_string(), details: e.details(), ..Default::default() }, Vec::new())
 }
+
+/// Whether an operation changes the group or this device's place in it, so
+/// that the service takes it only on the admin socket, which only root and
+/// the service's own user reach, as on a full member.
+pub fn is_admin(op: &str) -> bool {
+    !matches!(
+        op,
+        "copy" | "paste" | "status" | "devices" | "watch" | "copied" | "clipboard" | "answer" | "reply" | "write"
+    )
+}
+
+/// The admin socket next to the control socket at `socket`.
+pub fn admin_socket(socket: &std::path::Path) -> std::path::PathBuf {
+    socket.with_file_name("admin.sock")
+}

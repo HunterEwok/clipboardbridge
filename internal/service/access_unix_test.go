@@ -13,9 +13,13 @@ import (
 
 // checkSocketAccess checks that only the service's user and group may
 // connect.
-func checkSocketAccess(t *testing.T, _ string, fi fs.FileInfo) {
+func checkSocketAccess(t *testing.T, _ string, fi fs.FileInfo, admin bool) {
 	t.Helper()
-	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != 0o660 {
+	want := fs.FileMode(0o660)
+	if admin {
+		want = 0o600
+	}
+	if fi.Mode()&os.ModeSocket == 0 || fi.Mode().Perm() != want {
 		t.Errorf("socket mode %v", fi.Mode())
 	}
 }

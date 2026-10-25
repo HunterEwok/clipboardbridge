@@ -24,9 +24,15 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/version"
 )
 
-func (s *Service) serveControl(ctx context.Context, ln net.Listener) {
-	acceptLoop(ctx, ln, s.logf, "the control socket", func(c net.Conn) {
-		go s.handleControl(ctx, c)
+// serveControl answers on the control socket, or with admin on the admin
+// socket, which alone takes the operations that change the group.
+func (s *Service) serveControl(ctx context.Context, ln net.Listener, admin bool) {
+	what := "the control socket"
+	if admin {
+		what = "the admin socket"
+	}
+	acceptLoop(ctx, ln, s.logf, what, func(c net.Conn) {
+		go s.handleControl(ctx, c, admin)
 	})
 }
 
@@ -44,11 +50,15 @@ func (s *Service) errNoGroup() error {
 	return errors.New("this device is in no group; run cbb new here to start one, or cbb pair to join one")
 }
 
-func (s *Service) handleControl(ctx context.Context, c net.Conn) {
+func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 	defer c.Close()
 	r := control.NewReader(c)
 	m, err := r.Read()
 	if err != nil {
+		return
+	}
+	if control.IsAdmin(m.Op) && !admin {
+		fail(c, fmt.Errorf("%q changes the group, so the service takes it only on its admin socket, which only the administrator reaches", m.Op))
 		return
 	}
 	if s.broken != nil {

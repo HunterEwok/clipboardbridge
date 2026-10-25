@@ -40,7 +40,7 @@ const markFile = "hlc.mark"
 // Config configures the service.
 type Config struct {
 	StateDir string    // identity and clock mark
-	Socket   string    // the control socket
+	Socket   string    // the control socket; the admin socket is next to it (control.AdminSocketFor)
 	Role     node.Role // every role listens and publishes; a computer is node.Full
 	// OS is this device's operating system (group.OSLinux, OSWindows or
 	// OSMacOS), shown to the others; a Mac does not admit devices yet.
@@ -260,12 +260,18 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	s.clock = clock
 
-	ln, err := listenControl(cfg.Socket)
+	ln, err := listenControl(cfg.Socket, false)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
-	go s.serveControl(ctx, ln)
+	adminLn, err := listenControl(control.AdminSocketFor(cfg.Socket), true)
+	if err != nil {
+		return err
+	}
+	defer adminLn.Close()
+	go s.serveControl(ctx, ln, false)
+	go s.serveControl(ctx, adminLn, true)
 
 	if id != nil {
 		if err := s.startGroup(id); err != nil {

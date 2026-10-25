@@ -17,7 +17,9 @@ const usage = `Usage: clipboardbridge <command> [arguments]
 
 Commands:
   copy [-secret]          Send standard input to the group.
-  paste                   Print this member's clipboard text.
+  paste [-terminal [-lines] [-secret]]
+                          Print this member's clipboard text; -terminal makes it
+                          safe to paste into a terminal.
   status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
   rename <name or ID> <new name>

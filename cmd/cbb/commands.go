@@ -53,7 +53,7 @@ func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *secret {
 		kind = control.KindSecret
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpCopy)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -64,13 +64,26 @@ func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// cmdPaste writes the member's own clipboard text to standard output.
+// cmdPaste writes the member's own clipboard text to standard output. With
+// -terminal it makes the text safe to paste into a terminal: see terminalText.
 func cmdPaste(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
+	fs := flag.NewFlagSet("paste", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	terminal := fs.Bool("terminal", false, "make the text safe for a terminal: no control characters, only the first line")
+	lines := fs.Bool("lines", false, "with -terminal, keep every line instead of only the first")
+	secret := fs.Bool("secret", false, "with -terminal, paste a secret too")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "cbb: paste takes no arguments")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	if (*lines || *secret) && !*terminal {
+		fmt.Fprintln(stderr, "cbb: -lines and -secret go with -terminal")
+		return 2
+	}
+	c, err := control.DialFor(control.OpPaste)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -79,10 +92,49 @@ func cmdPaste(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if _, err := stdout.Write(m.Payload); err != nil {
+	out := m.Payload
+	if *terminal {
+		if m.Kind == control.KindSecret && !*secret {
+			return fail(stderr, errors.New("the clipboard holds a secret; add -secret to paste it"))
+		}
+		text, dropped := terminalText(string(m.Payload), *lines)
+		if dropped > 0 {
+			fmt.Fprintf(stderr, "cbb: pasted only the first line; %d more left out (add -lines to paste them)\n", dropped)
+		}
+		out = []byte(text)
+	}
+	if _, err := stdout.Write(out); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
+}
+
+// terminalText makes a text safe to paste into a terminal. It drops the
+// control characters of C0 but tab and line feed, DEL and those of C1, which
+// could move the cursor, end a bracketed paste or talk to the terminal
+// itself, and bytes that are not UTF-8. It ends with no line feed, so that a
+// shell does not run the text by itself, and unless all is set it keeps only
+// the first line, returning how many lines it left out.
+func terminalText(text string, all bool) (string, int) {
+	text = strings.ToValidUTF8(strings.ReplaceAll(text, "\r\n", "\n"), "")
+	text = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n':
+			return r
+		case r < 0x20 || r >= 0x7f && r < 0xa0:
+			return -1
+		}
+		return r
+	}, text)
+	text = strings.Trim(text, "\n")
+	if all {
+		return text, 0
+	}
+	first, rest, more := strings.Cut(text, "\n")
+	if !more {
+		return first, 0
+	}
+	return first, strings.Count(rest, "\n") + 1
 }
 
 func cmdStatus(args []string, stdout, stderr io.Writer) int {
@@ -90,7 +142,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: status takes no arguments")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -105,7 +157,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	var devs []control.Device
 	if st.Group != "" {
-		d, err := control.Dial(control.SocketPath())
+		d, err := control.DialFor(control.OpDevices)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -177,7 +229,7 @@ func cmdNew(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: new takes no arguments")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpNew)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -249,7 +301,7 @@ const pairUsage = `usage: cbb pair                  in a group: show a code for 
 
 // serviceStatus asks the service for its status.
 func serviceStatus() (*control.Status, error) {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +316,7 @@ func serviceStatus() (*control.Status, error) {
 // admit opens a pairing window and waits until a device joins, the window
 // closes, or the user presses Ctrl+C.
 func admit(stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpPair)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -292,7 +344,7 @@ func admit(stdout, stderr io.Writer) int {
 // it: the profile first, the fingerprint, and only then the code. With
 // newToken the service first revokes the token of every shortcut.
 func cmdPairPhone(newToken bool, stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpPairPhone)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -339,7 +391,7 @@ func joinWithCode(line, address string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpJoin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -357,7 +409,7 @@ func joinWithCode(line, address string, stdout, stderr io.Writer) int {
 // of the group instead.
 func joinByQR(stdin io.Reader, stdout, stderr io.Writer) int {
 	h := control.Header{Op: control.OpJoin, Code: pair.NewCode(), Expires: int(pair.Lifetime / time.Second), Listen: true}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpJoin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -530,7 +582,7 @@ func hostOS() string {
 // group whose root is lost is taken over by an admin (cbb takeover), or
 // made anew.
 func adminHint(w io.Writer) {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpDevices)
 	if err != nil {
 		return
 	}
