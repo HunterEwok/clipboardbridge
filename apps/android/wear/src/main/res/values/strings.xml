@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<resources>
+    <string name="app_name" translatable="false">CBB</string>
+    <string name="no_group">Open Clipboard Bridge on the phone to make or join a group.</string>
+    <string name="online_count">%1$d of %2$d online</string>
+    <string name="away">Away from home</string>
+    <string name="away_off">Off</string>
+    <string name="away_at_home">At home: syncing directly.</string>
+    <string name="away_connecting">Connecting to the hub…</string>
+    <string name="away_connected">Through your hub.</string>
+    <string name="away_waiting">Waiting for the hub.</string>
+    <string name="devices">Devices</string>
+    <string name="latest">Latest</string>
+    <string name="online">online</string>
+    <string name="offline">offline</string>
+    <string name="stale">As the phone last said.</string>
+    <string name="no_phone">The phone is not connected. Bring it closer, then try again.</string>
+    <string name="no_answer">The phone did not answer. Try again.</string>
+</resources>

@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Wear OS: an app that shows the group's devices and their live dots, the latest events and
+  the switch for sync away from home, through the paired Android phone (the Wearable Data
+  Layer of Google Play services); each release carries its signed APK.
 - Linux and Windows: a tray app over the cbb service (Wails), the twin of the Mac app: the
   devices as tiles, a list or orbits, a device's details, send and fetch, sync away from
   home, and the group's changes after the administrator's password (pkexec, UAC).

@@ -78,9 +78,14 @@ val bindTunnel = tasks.register<Exec>("bindTunnel") {
 dependencies {
     implementation(files(tunnelAar).builtBy(bindTunnel))
     implementation("io.github.hunterewok.clipboardbridge:kit:0")
+    implementation(project(":shared"))
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    // The Wear OS watch (../wear) through the Wearable Data Layer of Google Play services, the
+    // only way to a watch; without Play services there is no watch and the rest works as before.
+    implementation("com.google.android.gms:play-services-wearable:20.0.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
     // The QR scanner: CameraX for the frames, ZXing to read them, without Google Play services.
     implementation("androidx.camera:camera-camera2:1.6.2")
     implementation("androidx.camera:camera-lifecycle:1.6.2")
