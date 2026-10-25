@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # The hardware test bench
 
-The plan for testing clipboardbridge on real devices before each release, starting with 0.4,
+The plan for testing Clipboard Bridge on real devices before each release, starting with 0.4,
 and how the bench that runs it is built. The bench lives in `tools/bench` (being built, see
 "Order of work" at the end); this document is its specification. CI and its jobs are in
 [maintaining.md](maintaining.md#ci).
@@ -157,7 +157,7 @@ the same text is on every device at the end.
 
 ### Features and platforms
 
-Every other way clipboardbridge works, so no path ships untested:
+Every other way Clipboard Bridge works, so no path ships untested:
 
 | ID | Case | Expected |
 |---|---|---|
@@ -165,7 +165,7 @@ Every other way clipboardbridge works, so no path ships untested:
 | P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
 | P3 | Clipboard history (Windows Win+V, the GNOME clipboard) and copy echo | a received text is not sent back; no ping-pong between two members |
 | P4 | The Mac as a full member: the lite member and the emulator reach the Mac with no other computer on; the Mac and a Linux member connect whichever has the lower device ID, also with the Mac's application firewall on | sync works; one connection between each pair |
-| P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/cli.md` says |
+| P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/reference/cli.md` says |
 | P6 | Another port (`--port`, `CBB_PORT`) on every installer, and back to 8764 | members find each other; the old firewall rule is gone |
 | P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the agent runs Homebrew's binary, the service a root-owned copy of it; nothing is left |
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
@@ -352,7 +352,7 @@ ssh = "root@relay.example.net"
 find it; a lite member always joins at an address, which `cbb pair` prints.
 `tools/bench/inventory.example.toml` is a complete example. Each device needs the
 controller's SSH key for its desktop user; a Windows device also runs
-`tools/bench/setup-windows.ps1` once. Devices on the bench are test devices: the bench installs and wipes clipboardbridge
+`tools/bench/setup-windows.ps1` once. Devices on the bench are test devices: the bench installs and wipes Clipboard Bridge
 on them as it needs.
 
 ## 14. Order of work

@@ -15,8 +15,8 @@ the underlying error under it. The service's log always has the details:
 
 ## Commands
 
-**"the clipboardbridge service is not running"**: start it (`sudo systemctl start
-clipboardbridge` on Linux; `sudo launchctl kickstart -k system/io.github.hunterewok.clipboardbridge`
+**"the clipboardbridge service is not running"**: start it
+(`sudo systemctl start clipboardbridge` on Linux; `sudo launchctl kickstart -k system/io.github.hunterewok.clipboardbridge`
 on a Mac; `Start-Service clipboardbridge` on Windows) and look at its log.
 
 **"permission denied" on the control socket, right after installing**: the installer added
@@ -29,14 +29,14 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
   network. The installers add both to ufw, firewalld, the macOS application firewall and
   Windows Firewall when you answer Yes or pass `--express`; after a No they print the
   commands. With another firewall, or one turned on later, run the installer again or allow
-  them by hand (see "Port and firewall" in the [quick start](quickstart.md)). When the
+  them by hand (see [the firewall](install.md#the-firewall)). When the
   other computers at home could not connect to this one and sync only because it dials them
   back, `cbb status` says so with a warning: a firewall here drops the member port, one
   the installer does not know or a rule that is missing.
 - **Another subnet or VLAN.** mDNS does not cross routers, so devices on, say,
-  192.168.0.x and 192.168.20.x do not find each other. Turn on sync away from home with a
-  hub on one side (the [quick start](quickstart.md), "Sync away from home"), or, for a lite
-  member, name a computer with `cbb run -peer ADDRESS:8764` (lite/README.md).
+  192.168.0.x and 192.168.20.x do not find each other. Turn on [sync away from home](away-from-home.md)
+  with a hub on one side, or, for a lite member, name a computer with
+  `cbb run -peer ADDRESS:8764` ([lite member](../../lite/README.md#install)).
 - **Guest Wi-Fi or client isolation** on the router keeps devices from talking to each
   other at all; put them on the main network.
 - **A different group.** `cbb status` shows the group; devices of two groups never
@@ -51,13 +51,16 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
   iOS, allow Local Network for the app (Settings, Privacy & Security, Local Network).
 - **The shortcut cannot reach `clipboardbridge.local`**: only Linux members serve it, on
   port 8764 only; at least one must be on. Check that the profile is installed and fully
-  trusted (quick start, step 2).
+  trusted ([Without the app](without-app.md#3-add-an-iphone-with-the-shortcut)).
 
 ## Sync away from home
 
 `cbb global` on the device and on the hub says what is wrong. The usual causes: the router does
 not forward the hub's UDP port to the hub, the hub's firewall drops it, or the address given
-to `cbb global hub` is not the one the internet reaches. With `CBB_DEBUG=1` in the service's
+to `cbb global hub` is not the one the internet reaches. A device that has not met the hub
+at home since sync away from home was turned on, or since the hub changed its settings
+(`-obfuscate`, `-vless`), does not know how to reach it: bring it home once. A network that
+blocks VPNs needs [AmneziaWG or VLESS](blocked-networks.md). With `CBB_DEBUG=1` in the service's
 environment the log also shows WireGuard's handshakes. On Linux:
 
 ```sh
@@ -78,5 +81,5 @@ sudo systemctl restart clipboardbridge
 
 Open an [issue](https://github.com/HunterEwok/clipboardbridge/issues) with the output of
 `CBB_DEBUG=1 cbb status`, the relevant part of the log and the systems involved. Remove
-anything you copied that is private. Security problems go to [SECURITY.md](../SECURITY.md)
+anything you copied that is private. Security problems go to [SECURITY.md](../../SECURITY.md)
 instead.

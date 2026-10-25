@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-# clipboardbridge protocol
+# Clipboard Bridge protocol
 
-This document specifies protocol version 1 of clipboardbridge as the Go code in this repository
+This document specifies protocol version 1 of Clipboard Bridge as the Go code in this repository
 implements it, so that another implementation (an iPhone or Android app, a Rust lite member)
 can interoperate with it. The Go code is the source of truth; where [design.md](design.md)
 says something different, a "Note:" line says so. [design.md](design.md) explains why the
@@ -24,7 +24,7 @@ clock is set (`CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS; package `up
 | Member host name | `cb-<device ID>.local` (mDNS host name and the only DNS name in the member certificate) | `DeviceID.HostName` |
 | Service instance | `<device ID>._clipboardbridge._tcp.local` | `internal/mdns/zone.go` |
 | Shared iPhone name | `clipboardbridge.local` | `group.PhoneName` |
-| Member port | TCP 8764, or `CBB_PORT` (the Linux installer's `--port`), when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only. clipboardbridge's only port: it also serves pairing, the iPhone endpoints and the profile (section 7), and a listening join waits there | `internal/service/service.go`, `internal/service/demux.go` |
+| Member port | TCP 8764, or `CBB_PORT` (the Linux installer's `--port`), when free, otherwise one the OS chooses, all addresses; published in the SRV record. Linux members only. Clipboard Bridge's only port: it also serves pairing, the iPhone endpoints and the profile (section 7), and a listening join waits there | `internal/service/service.go`, `internal/service/demux.go` |
 | mDNS | UDP 5353, groups 224.0.0.251 and ff02::fb | `internal/mdns/mdns.go` |
 | Member ALPN | `clipboardbridge/1` | `group.MemberProtocol` |
 | Pairing ALPN | `clipboardbridge-pair/1` | `pair.Protocol` |
@@ -192,7 +192,7 @@ rescanned every 10 s.
   again at 80, 85, 90 and 95 percent of its lifetime, plus 0 to 2 percent at random.
 - Received records are kept only if relevant: PTR of the service, SRV/TXT of an instance
   whose first label is a device ID, A/AAAA of `cb-<device ID>.local`. Their TTL is capped at
-  what clipboardbridge itself uses (4500 s for PTR and TXT, 120 s otherwise). A goodbye expires the
+  what Clipboard Bridge itself uses (4500 s for PTR and TXT, 120 s otherwise). A goodbye expires the
   record after 1 s; a cache-flush record expires older records of its name and type after
   1 s.
 - A member is found when a live PTR names an instance that has a live SRV; its addresses

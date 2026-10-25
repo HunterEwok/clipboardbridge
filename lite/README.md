@@ -1,6 +1,6 @@
 # The lite member
 
-The lite member is a small clipboardbridge member in Rust for weak Linux devices: a
+The lite member is a small Clipboard Bridge member in Rust for weak Linux devices: a
 Raspberry Pi, a router, a small board. Its command is `cbb`, as on a full member, with the
 same paths and service (`cbb version` says which one a device runs). It speaks the member
 protocol of [docs/protocol.md](../docs/protocol.md), but unlike a full member it
@@ -112,7 +112,7 @@ against `SHA256SUMS` and runs its `packaging/linux/install.sh`, the same install
 member's: the program as `/usr/local/bin/cbb`, the `clipboardbridge` user and group, the
 service `clipboardbridge.service`, the tmux configuration, and, with your consent, mDNS and
 the member port from the home network in the firewall. `--port N`, `--console`, `--express`
-and `--no-firewall` work as for a full member ([docs/cli.md](../docs/cli.md#installers)).
+and `--no-firewall` work as for a full member ([the command reference](../docs/reference/cli.md#installers)).
 Running it again updates. It refuses to replace a full member, whose keys the lite member
 cannot use, and moves an install from before the rename (`cbb-lite`, its own user and
 paths) to the new names, keeping the device in its group. Without curl, or for a binary you
@@ -127,7 +127,7 @@ can read its keys:
 sudo -u clipboardbridge cbb join -name pi
 ```
 
-It shows a QR code: in the clipboardbridge app (iPhone or Android) tap "Connect a new device"
+It shows a QR code: in the Clipboard Bridge app (iPhone or Android) tap "Connect a new device"
 (or, on an iPhone with the shortcut, run "clipboardbridge: add a computer") and scan it. The phone reaches the device on
 TCP port 8764 (`-port` to change it), while it joins and afterwards to sync. In a group
 without a phone, run `cbb pair` on the group's root or an admin and

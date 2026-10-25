@@ -31,7 +31,7 @@ only root reaches: run it with `sudo`, on Windows from a terminal opened as admi
 | `cbb takeover NAME` | On an admin, when the root computer NAME is lost: this computer becomes the group's root and NAME is removed. The devices stay in the group; the iPhone CA is replaced, so iPhones that use the shortcut pair again. In a phone's group an admin phone takes over instead. |
 | `cbb new` | Creates a group with this computer as its root: it holds the group's root key and the iPhone CA, admits devices and makes admins. A computer in a group already keeps it. |
 | `cbb pair` | Does what this computer's place calls for. In a group, on the root or an admin: admits a new computer, showing a six-digit code to type there, and waits. In no group: joins one, showing a QR code for the phone app and taking the code of `cbb pair` on the group's root or an admin, typed meanwhile. On a member that is neither, it names the devices that admit. |
-| `cbb pair -code [ADDRESS]` | Joins with the code from `cbb pair` on the group's root or an admin, read from the terminal or standard input (never from the command line, where other users could read it). Without an address it finds that computer on the home network; with one (`host:port`) it dials it, for example through an SSH tunnel or your own VPN (see the [quick start](quickstart.md)). |
+| `cbb pair -code [ADDRESS]` | Joins with the code from `cbb pair` on the group's root or an admin, read from the terminal or standard input (never from the command line, where other users could read it). Without an address it finds that computer on the home network; with one (`host:port`) it dials it, for example through an SSH tunnel or your own VPN (see [Without the app](../guide/without-app.md#joining-from-another-network)). |
 | `cbb pair -phone` | Pairs an iPhone or iPad with the shortcut: shows a QR code, the start of the iPhone CA's fingerprint and a code. Run it on the root or an admin that answers for `clipboardbridge.local`, after `cbb new`. The shortcut's token only syncs. |
 | `cbb pair -phone -new-token` | Revokes the token of every shortcut paired so far, then pairs this iPhone as `cbb pair -phone` does, with a new token. Use it when a token may have been copied; the other iPhones pair again. |
 | `cbb pair -invite FILE` | Joins from afar with an invitation file from `cbb invite`, through the hub's guest tunnel. It runs with `sudo` on Linux and as administrator on Windows, as `cbb global on` does: the service may reach the hub's addresses from the invitation, and a failed join takes them away again. Both sides show the new device's key fingerprint; the hub admits it once its admin types `yes`. |
@@ -66,7 +66,7 @@ member (`/var/lib/clipboardbridge`, `clipboardbridge.service`) and the commands 
 commands of a full member, such as `pair` or `invite`, answer that this is the lite member.
 Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridge`, or
 `CBB_STATE`), `-socket PATH` (default `/run/clipboardbridge/control.sock`, or `CBB_SOCKET`),
-`-debug` (the details of errors). Install and use are in [lite/README.md](../lite/README.md).
+`-debug` (the details of errors). Install and use are in [lite/README.md](../../lite/README.md).
 
 | Command | What it does |
 |---|---|
@@ -78,7 +78,7 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 | `cbb paste [-terminal [-lines] [-secret]]` | Prints this member's clipboard text; `-terminal` as on a full member. |
 | `cbb status` | This device, its group, and every device of the group with its system, role and marks. |
 | `cbb watch [-0]` | Prints each text the group sends here, one per line, or followed by a zero byte with `-0`. |
-| `cbb next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../lite/README.md#zx-spectrum-next). |
+| `cbb next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../../lite/README.md#zx-spectrum-next). |
 | `cbb version`, `cbb help` | The version and that this is the lite member; this help. |
 
 ## Installers
@@ -86,11 +86,11 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 | Installer | Options |
 |---|---|
 | `get.sh` (Linux and macOS) | Downloads this system's archive, checks it against `SHA256SUMS` and runs its `install.sh`. `--express` adds the firewall rules without asking, `--no-firewall` adds none, `--port N` sets another member port, as for `install.sh`; on Linux also `--console` and `--lite` for the lite member instead of the full one. With the one-line installer, put them after `sh -s --`. `CBB_VERSION=v1.2.3` installs that release. Running it again updates. |
-| Linux `install.sh` (the same in the full and the lite member's archive) | Finds the firewall (ufw, firewalld, nftables, iptables), lists the rules clipboardbridge needs and asks `Add these rules now? [y/N]`; the answer is kept in `/etc/clipboardbridge/firewall.answer` for later runs. `--express` adds them without asking and reports them, `--no-firewall` adds none and prints the commands that would; nftables and iptables always get the commands. `--port N` another member port (kept for later runs; `--port 8764` goes back), `--console` also starts tmux on the text console. |
+| Linux `install.sh` (the same in the full and the lite member's archive) | Finds the firewall (ufw, firewalld, nftables, iptables), lists the rules Clipboard Bridge needs and asks `Add these rules now? [y/N]`; the answer is kept in `/etc/clipboardbridge/firewall.answer` for later runs. `--express` adds them without asking and reports them, `--no-firewall` adds none and prints the commands that would; nftables and iptables always get the commands. `--port N` another member port (kept for later runs; `--port 8764` goes back), `--console` also starts tmux on the text console. |
 | Linux `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the program, the service and the firewall rules the installer added; `--purge` also deletes the keys in `/var/lib/clipboardbridge`. |
 | macOS `install.sh` (in the release archive's `packaging/macos`, or under `$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge`) | `--port N` another member port (kept for later runs; `--port 8764` goes back), `--in-place` has the agent and `cbb` in PATH run the binary where it is (Homebrew) instead of copying it, while the service runs a root-owned copy under `/Library/Application Support/clipboardbridge/bin`; it asks before it lists the service in the application firewall, and `--express` and `--no-firewall` work as on Linux. |
 | macOS `uninstall.sh` (`/usr/local/share/clipboardbridge/`) | removes the service, the agent and the program; `--purge` also deletes the keys. Before `brew uninstall`. |
-| Windows `get.ps1` and `install.ps1` | Lists the Windows Firewall rules clipboardbridge needs and asks before it adds them; the answer is kept for later runs. `$env:CBB_PORT = "9000"` (or `-Port`) another port, `$env:CBB_FIREWALL = "express"` (or `-Express`) adds the rules without asking, `$env:CBB_FIREWALL = "no"` (or `-NoFirewall`) adds none and prints the commands. The outbound rule that keeps the service at home is added either way. |
+| Windows `get.ps1` and `install.ps1` | Lists the Windows Firewall rules Clipboard Bridge needs and asks before it adds them; the answer is kept for later runs. `$env:CBB_PORT = "9000"` (or `-Port`) another port, `$env:CBB_FIREWALL = "express"` (or `-Express`) adds the rules without asking, `$env:CBB_FIREWALL = "no"` (or `-NoFirewall`) adds none and prints the commands. The outbound rule that keeps the service at home is added either way. |
 | Windows `uninstall.ps1` (`$env:ProgramFiles\clipboardbridge`), or Settings, Apps | removes the service, the agent, the program and the firewall rules; `-Purge` also deletes the keys and the `clipboardbridge` group. |
 
 ## Environment variables
@@ -107,4 +107,4 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 | `CBB_ERROR_DETAILS` | the installers: Linux and macOS `install.sh`, `uninstall.sh` and `get.sh`, Windows `install.ps1` | `1` shows every command the shell scripts run, so the output shows where and why one failed, and adds the full error record to the Windows installer's messages. Without it a failed shell script names its exit status. |
 
 The test-only variables (`CBB_INTEROP_OUT`, `CBB_LITE`, `CBB_SWIFT_INTEROP`, …) are in
-[CONTRIBUTING.md](../CONTRIBUTING.md).
+[CONTRIBUTING.md](../../CONTRIBUTING.md).

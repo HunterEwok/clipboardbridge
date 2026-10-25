@@ -2,7 +2,7 @@
 # Roadmap
 
 What comes next, the designs that are agreed but not built yet, and the questions to study
-before anything is planned. How clipboardbridge works today is in [design.md](design.md),
+before anything is planned. How Clipboard Bridge works today is in [design.md](design.md),
 with the reasons in its decision log; what works on real devices is the
 [status table](../README.md#status).
 
@@ -69,7 +69,7 @@ The order may change.
     board itself. It ships as a ready firmware built from our Rust code, flashed over USB
     with one command; a library for writing one's own Arduino sketches on top of it may
     follow. Over its USB port it can act as a keyboard and type the group's latest text
-    into any computer without clipboardbridge (Latin characters only: a USB keyboard
+    into any computer without Clipboard Bridge (Latin characters only: a USB keyboard
     cannot type most other scripts), and it can show texts on a display and send one with
     a button.
 16. **Planned.** Full members, admins and the device's system: a Windows PC shown as
@@ -141,12 +141,23 @@ The order may change.
     on the watch or in `cbb` runs an action on a member, such as reboot or lock the screen,
     from a few presets and the user's own, always defined on the member itself. See "Quick
     actions" below.
+28. **Planned for 0.5.** A blind relay for every group that needs a hub and has none, or
+    does not want to run one: the project's relay at `cbb.tools`, and one of the user's own
+    that is easy to set up. This changes the principle of "Blind relay (self-hosted only)"
+    in [design.md](design.md#blind-relay-self-hosted-only); the pull request that builds it
+    rewrites that section. It needs: groups that register with the project's relay by
+    themselves, with limits per group (finding 3 of the security audit); the relay in both
+    phone apps, beside the hub; a choice the user makes, after the apps and `cbb global
+    relay` say what the relay learns (which devices talk, when and how much, and their
+    addresses; never the clipboard); and the guide to running one's own forwarder or relay,
+    with the plain, AmneziaWG and VLESS ways for networks and countries that block VPNs
+    ([running your own servers](reference/self-hosting.md)).
 
 ## OpenWrt routers
 
 Planned for 0.6.
 
-A router has no desktop and no clipboard of its own, so on a router clipboardbridge is
+A router has no desktop and no clipboard of its own, so on a router Clipboard Bridge is
 infrastructure, not a place to copy and paste:
 
 - **The hub for sync away from home.** The router is always on and is the device with the

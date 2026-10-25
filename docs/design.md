@@ -1,7 +1,7 @@
 # Design
 
 Status: agreed design; the code follows it stage by stage. This document describes how
-clipboardbridge works and why; what comes next, the plans not built yet and the research are
+Clipboard Bridge works and why; what comes next, the plans not built yet and the research are
 in [roadmap.md](roadmap.md), and the wire format is in [protocol.md](protocol.md). Decisions
 are listed in the [decision log](#decision-log) at the end; questions that still need an
 experiment are under [open questions](#open-questions).
@@ -45,7 +45,7 @@ apps" below).
 
 - **Device ID**: 128 random bits as 32 lowercase hex characters. It fits in a DNS label and
   compares the same way everywhere.
-- **Member port**: clipboardbridge's one port, TCP 8764 unless the installer was given another,
+- **Member port**: Clipboard Bridge's one port, TCP 8764 unless the installer was given another,
   advertised in the mDNS SRV record. Every computer and lite member listens there for mutual
   TLS (Macs since D-46); phones only dial. The first bytes of a connection pick what it gets (docs/protocol.md, section 3):
   - members and the phone app, with the member ALPN protocol and mutual TLS;
@@ -150,8 +150,8 @@ apps" below).
   they receive the new one. A member that was off at that moment still trusts the old CA, so
   it can still connect to the revoked member and to other members that were off, but not to
   the rest of the group. `revoke` lists those members, and the user pairs them again, or stops
-  clipboardbridge on them, before they join the network again. The user also deletes the old
-  clipboardbridge profile on every iPhone at once and pairs the iPhones again; until then the old
+  Clipboard Bridge on them, before they join the network again. The user also deletes the old
+  Clipboard Bridge profile on every iPhone at once and pairs the iPhones again; until then the old
   profile still trusts the revoked member, so the button must not be used. The records and
   the list are described in "Admin phones, the devices list and revocation" below.
 
@@ -162,7 +162,7 @@ apps" below).
   another group, or of a replaced CA, are ignored; and `p=1` while a pairing window is open)
   and A/AAAA records under their own host label `cb-<device ID>.local`, never the system
   host name. Macs only browse.
-- Linux members run clipboardbridge's own small mDNS responder, which shares UDP port 5353 with
+- Linux members run Clipboard Bridge's own small mDNS responder, which shares UDP port 5353 with
   avahi-daemon or systemd-resolved; a CI job checks that avahi browses and resolves it. It
   answers each query with the addresses of the interface the query arrived on, and with an
   NSEC record when the name has no address of the asked type, so a resolver does not wait
@@ -171,11 +171,11 @@ apps" below).
   goodbyes, without the cache-flush bit, for addresses that go away and for everything when
   it stops. A record is multicast at most once a second on an interface, and
   a legacy unicast resolver gets a few answers a second at most. Packets are read record by
-  record, so a record clipboardbridge cannot read, such as an Apple device's instance name with a
+  record, so a record Clipboard Bridge cannot read, such as an Apple device's instance name with a
   dot in it, costs only itself. It browses at growing intervals, listing the members it
   knows as known answers, and asks again for the records of the members it found at 80,
   85, 90 and 95 percent of their lifetime, so they do not expire while the members are
-  there. A received record lives no longer than clipboardbridge's own records of its type, and
+  there. A received record lives no longer than Clipboard Bridge's own records of its type, and
   only names in the form of device IDs count as members. Names are not probed: device IDs
   are random, and the election, not a probe, decides who holds `clipboardbridge.local`. Macs
   publish and browse with the same code, as full members; a test on macOS showed that it shares port 5353 with
@@ -327,7 +327,7 @@ human message; a secret never appears in `message`.
 
 ## Linux components
 
-clipboardbridge for Linux is one program that runs as up to three processes with different rights
+Clipboard Bridge for Linux is one program that runs as up to three processes with different rights
 and lifetimes. The installer enables what the device needs.
 
 ### 1. Service
@@ -430,7 +430,7 @@ Not built yet (roadmap item 10); the design:
   `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
   Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
   only, so clipboard histories skip them and they do not travel over Universal Clipboard.
-- Finds the members with clipboardbridge's own mDNS code, publishing itself as a full member,
+- Finds the members with Clipboard Bridge's own mDNS code, publishing itself as a full member,
   and trusts only the group CA, in its own configuration; the system keychain is not changed.
 - Installing needs administrator rights once. Later: a menu bar item with pause, status and
   devices.
@@ -475,7 +475,7 @@ Not built yet (roadmap item 10); the design:
 
 - Automatic sync skips items marked as secret: the macOS and Windows formats above, and on
   Linux the presence of the `x-kde-passwordManagerHint` type, whatever its value.
-- Received secrets are written with the same marks clipboardbridge reads: the
+- Received secrets are written with the same marks Clipboard Bridge reads: the
   `x-kde-passwordManagerHint` type on Linux and the macOS types above, so clipboard managers
   skip them.
 - Some desktops and clipboard managers keep a copy of the last clipboard text and offer it
@@ -578,7 +578,7 @@ The receiver's limit decides (D-57): a sender offers any copy within its own lim
 receiver fetches only what fits its own and says once that a copy was too large ("A 300 MB
 copy from Mac is over this device's limit of 100 MB"). The hub's away limit caps its whole
 star. The limit protects the memory and disks of small devices, mobile data, the hub and the
-forwarder's 2 MiB a second per group; beyond 1 GiB clipboardbridge is the wrong tool.
+forwarder's 2 MiB a second per group; beyond 1 GiB Clipboard Bridge is the wrong tool.
 
 ### Security
 
@@ -629,7 +629,7 @@ and cover traffic cannot hide a large transfer.
 - Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`,
   `darwin/amd64`, `windows/amd64` and `windows/arm64` (`cbb.exe`, and `cbbw.exe` linked with
   `-H windowsgui` for the agent).
-- The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. clipboardbridge
+- The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. Clipboard Bridge
   does not depend on distribution specifics. The systemd units use directives from systemd
   248 and later and are checked with `systemd-analyze verify`.
 - Third-party code: `golang.org/x/net`, `golang.org/x/sys`, `golang.org/x/crypto` and
@@ -711,7 +711,7 @@ These take precedence over convenience:
 4. On the internet, data exists only inside the tunnel, with the member protocol's mutual TLS
    inside it: nobody but the group's devices reads the contents, the inner headers or the
    inner addresses.
-5. The tunnel serves clipboardbridge only and cannot be used as a general VPN.
+5. The tunnel serves Clipboard Bridge only and cannot be used as a general VPN.
 6. Where WireGuard is blocked, the user can switch on VLESS.
 7. Groups are fully isolated from each other on the project's forwarder and cannot affect
    each other, even from one network.
@@ -1469,7 +1469,7 @@ so a copy on one computer replaces what was just copied on another. Each device 
 An admin device sends a text to one chosen member and has it pasted where that member's
 focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for
 devices without a keyboard (a Raspberry Pi on a TV, a kiosk, a console login) and, through
-the Nano ESP32's USB keyboard, for a computer that runs no clipboardbridge at all. For
+the Nano ESP32's USB keyboard, for a computer that runs no Clipboard Bridge at all. For
 running commands on a headless Pi, SSH stays the better tool; remote paste reaches what SSH
 does not, the screen's own session.
 
@@ -1636,7 +1636,7 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |
 | D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |
 | D-31 | The mDNS responder does not probe its names: device IDs are random, `clipboardbridge.local` is never renamed, and the group's election decides who holds it; two holders for a moment are harmless, since any Linux member can serve the iPhone. |
-| D-32 | The Mac browses with clipboardbridge's own mDNS code instead of the Bonjour API: it shares port 5353 with mDNSResponder, and the service needs no cgo. The cost is a socket of its own on UDP 5353, which the macOS firewall may treat differently (see Open questions). D-12 still holds for Linux. |
+| D-32 | The Mac browses with Clipboard Bridge's own mDNS code instead of the Bonjour API: it shares port 5353 with mDNSResponder, and the service needs no cgo. The cost is a socket of its own on UDP 5353, which the macOS firewall may treat differently (see Open questions). D-12 still holds for Linux. |
 | D-33 | Several equal admin phones: a root CA with path length 1 certifies an admin CA per phone, each key in its own Secure Enclave or StrongBox, instead of one CA key copied between phones or backed up to a cloud. Only the root makes admins; a remaining admin becomes the root with a signed root record. |
 | D-34 | The devices list and revocations are signed records in a set that only grows and spreads through the member protocol; what it says depends on the set alone, so the group converges. Two admins that revoke each other both lose admin rights. |
 | D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |

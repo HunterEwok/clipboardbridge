@@ -1,6 +1,6 @@
 # Authorized security audit (pre-0.4)
 
-This document specifies an authorized security audit of clipboardbridge, run before the 0.4
+This document specifies an authorized security audit of Clipboard Bridge, run before the 0.4
 release. It is a defensive exercise: we confirm that clipboard data cannot be read on the
 network and that an outsider with no access cannot join a group or get a useful answer from
 the servers.
@@ -56,7 +56,7 @@ To keep the result honest, the audit observes these rules:
 | `vpn.virmali.ru` | the away-client VPS | **touch only `cbb`; never change `ufw` or any other service** |
 
 Everything reachable on these targets may be probed. On the two VPSes the audit interacts
-only with clipboardbridge's own processes and ports; it does not stop, reconfigure or firewall
+only with Clipboard Bridge's own processes and ports; it does not stop, reconfigure or firewall
 anything else, and does not alter `ufw`.
 
 ### Out of scope
