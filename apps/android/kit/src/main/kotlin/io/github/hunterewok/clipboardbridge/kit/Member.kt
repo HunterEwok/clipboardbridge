@@ -180,6 +180,12 @@ object Member {
         val adminKey: ByteArray? = null,
         /** The sender's WireGuard public key, 32 bytes, for the group's hub (section 11). */
         val tunnelKey: ByteArray? = null,
+        /**
+         * With tunnelKey, the preshared key the sender chose for its
+         * tunnels, 32 bytes, so every hub of the group uses the same one
+         * (section 11, "Several hubs"); null from an older member.
+         */
+        val tunnelPSK: ByteArray? = null,
         /** What the sender says about its device, for showing. */
         val device: DeviceInfo? = null,
         /** The sender's sync mode: "own", "shared", "receive" or "send"; null from a member without one, which shares. */
@@ -188,7 +194,8 @@ object Member {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
-                tunnelKey.contentEqualsOrNull(other.tunnelKey) && device == other.device && mode == other.mode
+                tunnelKey.contentEqualsOrNull(other.tunnelKey) &&
+                tunnelPSK.contentEqualsOrNull(other.tunnelPSK) && device == other.device && mode == other.mode
 
         override fun hashCode(): Int = wallMS.hashCode()
     }
@@ -264,16 +271,22 @@ object Member {
          * when the sender is the hub.
          */
         val hub: String? = null,
+        /**
+         * Whether the sender is no hub any more and hands its clients over
+         * to hub: the client forgets the sender's own offer.
+         */
+        val moved: Boolean = false,
     ) {
         /** Whether both keys are 32 bytes, as a tunnel needs. */
         val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
 
-        /** The same offer with another preshared key and hub. */
-        fun with(psk: ByteArray, hub: String?): TunnelOffer = TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub)
+        /** The same offer with another preshared key and hub, and moved set. */
+        fun with(psk: ByteArray, hub: String?, moved: Boolean = false): TunnelOffer =
+            TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub, moved)
 
         override fun equals(other: Any?): Boolean =
             other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints &&
-                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub
+                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub && moved == other.moved
 
         override fun hashCode(): Int = hubKey.contentHashCode()
 
@@ -284,6 +297,7 @@ object Member {
             "obfuscation" to obfuscation?.let { Json.parseToJsonElement(it) },
             "vless" to vless?.let { Json.parseToJsonElement(it) },
             "hub" to Wire.str(hub),
+            "moved" to if (moved) JsonPrimitive(true) else null,
         )
 
         companion object {
@@ -296,24 +310,37 @@ object Member {
                 o.optObject("obfuscation")?.toString(),
                 o.optObject("vless")?.toString(),
                 o.optString("hub"),
+                o.optBool("moved") ?: false,
             )
+        }
+    }
 
-            /**
-             * Whether a client that keeps the offer of the hub kept, with the
-             * preshared key keptPSK, takes an offer for the hub hub that from
-             * sent with the preshared key psk, as Go's takesOffer (section
-             * 11, "Moving the hub"): from the kept hub, or for another hub
-             * when the kept hub passed it on, when it carries the preshared
-             * key the kept hub gave (the kept hub handed its clients over),
-             * or when the kept hub is no longer the root or an admin
-             * (keptAdmin false), as after a takeover.
-             */
-            fun takes(kept: String?, keptPSK: ByteArray?, from: String, hub: String, psk: ByteArray, keptAdmin: Boolean): Boolean {
-                if (kept == null || kept == hub) return true
-                val moved = hub != from && kept == from
-                val handed = keptPSK != null && java.security.MessageDigest.isEqual(keptPSK, psk)
-                return moved || handed || !keptAdmin
-            }
+    /**
+     * What a hub tells the group's other hubs (section 11, "Several hubs"):
+     * whether it serves as the hub now, its offer without a preshared key,
+     * and its clients, itself among them, with their keys.
+     */
+    class HubShare(val serving: Boolean = false, val offer: TunnelOffer? = null, val clients: List<PhoneHub.Client> = emptyList()) {
+        override fun equals(other: Any?): Boolean =
+            other is HubShare && serving == other.serving && offer == other.offer &&
+                clients.map { Triple(it.device, it.key.toList(), it.psk.toList()) } ==
+                other.clients.map { Triple(it.device, it.key.toList(), it.psk.toList()) }
+
+        override fun hashCode(): Int = clients.size
+
+        fun toJson(): JsonObject = Wire.obj(
+            "serving" to if (serving) JsonPrimitive(true) else null,
+            "offer" to offer?.toJson(),
+            "clients" to clients.takeIf { it.isNotEmpty() }?.let { l -> JsonArray(l.map { it.toJson() }) },
+        )
+
+        companion object {
+            fun fromJson(o: JsonObject): HubShare = HubShare(
+                o.optBool("serving") ?: false,
+                o.optObject("offer")?.let { TunnelOffer.fromJson(it) },
+                o.optArray("clients")?.map { PhoneHub.Client.fromJson(it as? JsonObject ?: throw WireTypeException("clients: not an object")) }
+                    ?: emptyList(),
+            )
         }
     }
 
@@ -387,6 +414,13 @@ object Member {
         /** From the group's hub: its offer for the tunnel key the receiver's hello carried; null when absent. */
         data class Tunnel(val offer: TunnelOffer?) : Message()
 
+        /**
+         * Between the group's hubs (section 11, "Several hubs"): whether the
+         * sender serves as the hub, its offer without a preshared key, and
+         * its clients with their keys, so any hub can take them.
+         */
+        data class Hubs(val share: HubShare) : Message()
+
         /** From an admin: a command signed for the receiver (section 15). */
         data class Command(val command: Record) : Message()
 
@@ -413,6 +447,7 @@ object Member {
                 "device" to m.hello.device?.toJson(),
                 "admin_key" to Wire.bytes(m.hello.adminKey),
                 "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
+                "tunnel_psk" to Wire.bytes(m.hello.tunnelPSK),
                 "mode" to Wire.str(m.hello.mode),
             ),
         )
@@ -423,6 +458,7 @@ object Member {
         is Message.Records -> Wire.obj("t" to Wire.str("records"), "records" to JsonArray(m.records.map { it.toJson() }))
         is Message.Admin -> Wire.obj("t" to Wire.str("admin"), "admin_ca" to Wire.bytes(m.adminCA))
         is Message.Tunnel -> Wire.obj("t" to Wire.str("tunnel"), "tunnel" to m.offer?.toJson())
+        is Message.Hubs -> Wire.obj("t" to Wire.str("hubs"), "hubs" to m.share.toJson())
         is Message.Command -> Wire.obj("t" to Wire.str("command"), "command" to m.command.toJson())
         is Message.Result -> Wire.obj("t" to Wire.str("result"), "result" to m.result.toJson())
         is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
@@ -470,6 +506,7 @@ object Member {
                             os = h.optString("os"),
                             adminKey = h.optBytes("admin_key"),
                             tunnelKey = h.optBytes("tunnel_key"),
+                            tunnelPSK = h.optBytes("tunnel_psk"),
                             device = DeviceInfo.fromJson(h.opt("device")),
                             mode = h.optString("mode")?.takeIf { it in MODES },
                         ),
@@ -484,6 +521,7 @@ object Member {
                 )
                 "admin" -> Message.Admin(o.optBytes("admin_ca") ?: ByteArray(0))
                 "tunnel" -> Message.Tunnel(o.optObject("tunnel")?.let { TunnelOffer.fromJson(it) })
+                "hubs" -> o.optObject("hubs")?.let { Message.Hubs(HubShare.fromJson(it)) } ?: Message.Unknown(t)
                 "command" -> o.optObject("command")?.let { Message.Command(Record.fromJson(it)) } ?: Message.Unknown(t)
                 "result" -> o.optObject("result")?.let { Message.Result(CommandResult.fromJson(it)) } ?: Message.Unknown(t)
                 else -> Message.Unknown(t)

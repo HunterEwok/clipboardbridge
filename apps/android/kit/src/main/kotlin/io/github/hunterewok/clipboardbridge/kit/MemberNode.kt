@@ -66,23 +66,34 @@ class MemberNode(
     /** Gets a renewed member certificate a peer sent for this phone. */
     private val onCert: (ByteArray) -> Unit = {},
     /**
-     * The WireGuard public key the hellos offer the group's hub (section
-     * 11), asked for each connection; null while sync away from home is off.
+     * The WireGuard public key the hellos offer the group's hubs (section
+     * 11) and the preshared key this phone chose for its tunnels, asked for
+     * each connection; null while sync away from home is off.
      */
-    private val tunnelKey: () -> ByteArray? = { null },
+    private val tunnelKey: () -> Pair<ByteArray, ByteArray>? = { null },
     /**
-     * Gets a valid tunnel offer a peer sent, with the device ID the caller
-     * of serve named it by: the hub's answer to the tunnel key.
+     * Gets a valid tunnel offer a peer that may be a hub sent, with the
+     * device ID the caller of serve named it by: a hub's answer to the
+     * tunnel key, its own or another hub's passed on.
      */
     private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
     /**
-     * On the phone while it is the group's hub (docs/design.md, "The phone
-     * as the hub"): gets the device ID the caller of serve named a peer by,
-     * the tunnel key its hello offers and its certificate chain (leaf
-     * first), and returns the offer the peer then gets in a tunnel message,
-     * or null; PhoneHub.offer does it. A hub ignores the offers it gets.
+     * On the phone while it is one of the group's hubs (docs/design.md,
+     * "The phone as the hub"): gets the device ID the caller of serve named
+     * a peer by, the tunnel key and preshared key its hello offers (the
+     * preshared key null from an older member) and its certificate chain
+     * (leaf first), and returns the offers the peer then gets in tunnel
+     * messages: this hub's own, then the other hubs' it passes on.
      */
-    private val hub: ((String, ByteArray, List<ByteArray>) -> Member.TunnelOffer?)? = null,
+    private val hub: ((String, ByteArray, ByteArray?, List<ByteArray>) -> List<Member.TunnelOffer>)? = null,
+    /**
+     * On a hub: what it shares with a peer after its hello (section 11,
+     * "Several hubs"), null for nothing; the peer's device ID, where the
+     * caller of serve named it, and its chain.
+     */
+    private val hubShare: ((String, List<ByteArray>) -> Member.HubShare?)? = null,
+    /** Gets what a peer that may be a hub shared, with its device ID and chain. */
+    private val onHubs: (String, List<ByteArray>, Member.HubShare) -> Unit = { _, _, _ -> },
     /** This device's operating system, which the hellos state. */
     val os: String? = null,
     /** This device's form, system version and version, which the hellos state too. */
@@ -165,11 +176,25 @@ class MemberNode(
      * old hub passing on the new hub's offer (section 11, "Moving the
      * hub"), and returns the members that got one.
      */
-    fun sendTunnel(offerFor: (String) -> Member.TunnelOffer?): List<String> = synchronized(lock) {
+    fun sendTunnel(offerFor: (String) -> Member.TunnelOffer?): List<String> = sendTunnels { listOfNotNull(offerFor(it)) }
+
+    /** Sends each connected member the offers offerFor returns for it, and returns the members that got any. */
+    fun sendTunnels(offerFor: (String) -> List<Member.TunnelOffer>): List<String> = synchronized(lock) {
         conns.mapNotNull { c ->
             val p = c.peer ?: return@mapNotNull null
             if (c.peerRole == null) return@mapNotNull null
-            offerFor(p)?.let { c.enqueue(Member.Message.Tunnel(it)); p }
+            val offers = offerFor(p)
+            offers.forEach { c.enqueue(Member.Message.Tunnel(it)) }
+            p.takeIf { offers.isNotEmpty() }
+        }
+    }
+
+    /** Sends each connected member what shareFor returns for it, its device ID and chain, as a hub's share. */
+    fun sendHubs(shareFor: (String, List<ByteArray>) -> Member.HubShare?) = synchronized(lock) {
+        for (c in conns) {
+            val p = c.peer ?: continue
+            if (c.peerRole == null) continue
+            shareFor(p, c.transport.peerChain)?.let { c.enqueue(Member.Message.Hubs(it)) }
         }
     }
 
@@ -194,7 +219,8 @@ class MemberNode(
         val c = Conn(t, peer)
         synchronized(lock) {
             conns.add(c)
-            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey(), os = os, device = device)
+            val keys = tunnelKey()
+            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device)
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()
@@ -228,8 +254,11 @@ class MemberNode(
                     val ca = key?.let { adminCA?.invoke(it) }
                     if (ca != null) c.enqueue(Member.Message.Admin(ca))
                     val offered = m.hello.tunnelKey
-                    val offer = if (offered != null && c.peer != null && chain.isNotEmpty()) hub?.invoke(c.peer, offered, chain) else null
-                    if (offer != null) c.enqueue(Member.Message.Tunnel(offer))
+                    if (offered != null && c.peer != null && chain.isNotEmpty()) {
+                        val psk = m.hello.tunnelPSK?.takeIf { it.size == 32 }
+                        hub?.invoke(c.peer, offered, psk, chain)?.forEach { c.enqueue(Member.Message.Tunnel(it)) }
+                    }
+                    if (c.peer != null && chain.isNotEmpty()) hubShare?.invoke(c.peer, chain)?.let { c.enqueue(Member.Message.Hubs(it)) }
                     continue
                 }
                 when (m) {
@@ -239,8 +268,9 @@ class MemberNode(
                     }
                     is Member.Message.Cert -> onCert(m.cert)
                     // Only the root or an admin, by the records and its key.
-                    is Member.Message.Tunnel -> m.offer?.takeIf { hub == null && it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
+                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
                         ?.let { onTunnel(c.peer, it) }
+                    is Member.Message.Hubs -> if (c.peer != null && records?.mayHost(c.peer, t.peerChain) != false) onHubs(c.peer, t.peerChain, m.share)
                     is Member.Message.Records -> if (m.records.isNotEmpty()) {
                         synchronized(lock) {
                             val fresh = records?.add(m.records).orEmpty()

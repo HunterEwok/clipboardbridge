@@ -47,7 +47,6 @@ import java.io.IOException
 import java.net.Inet4Address
 import java.net.SocketException
 import java.net.SocketTimeoutException
-import java.security.SecureRandom
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -668,8 +667,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         // This phone is the new hub's client from now on, with a key of its own.
         val wasOn = a.isOn
         if (!wasOn) a.turnOn()
-        val key = a.publicKey ?: throw HubOnPhone.NotRunning()
-        val psk = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val (key, psk) = a.keys ?: throw HubOnPhone.NotRunning()
         val clients = h.handover + PhoneHub.Client(g.device, key, psk)
         val r = try {
             withContext(Dispatchers.IO) { n.command(id, g.hubCommand(id, fw.endpoint to fw.pin, clients, ca, Instant.now()), MOVE_TIMEOUT_MS) }
@@ -784,6 +782,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             },
             serve = { t, hub -> currentNode?.serve(t, hub) ?: t.close() },
             mayHost = { hub -> synchronized(lock) { state?.records?.mayHost(hub) == true } },
+            order = ::hubOrder,
             log = { what, e -> Log.w(TAG, what, e) },
             isPhone = { hub -> synchronized(lock) { state?.devices?.firstOrNull { it.id == hub }?.role == "phone" } },
         )
@@ -794,8 +793,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             save = { s -> if (s == null) hubFile.delete() else hubFile.write(s.encode()) },
             log = { what, e -> Log.w(TAG, what, e) },
         )
-        // The hub answers the tunnel keys of the hellos and takes no offer itself.
+        // The hub answers the tunnel keys of the hellos, shares its clients
+        // with the group's other hubs and passes their offers on; it is no
+        // client itself (docs/protocol.md, section 11, "Several hubs").
         val isHub = g.isAdmin && h.isOn
+        var self: MemberNode? = null
         val n = MemberNode(
             SyncEngine(g.device, HybridClock()),
             deviceName,
@@ -810,10 +812,20 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             onChange = { e ->
                 if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS) onCopy?.invoke(e.text, e.kind)
             },
-            tunnelKey = { if (isHub) null else a.publicKey },
+            tunnelKey = { if (isHub) null else a.keys },
             onTunnel = a::keep,
-            hub = if (isHub) { device, key, _ -> h.offer(device, key) } else null,
+            hub = if (isHub) { device, key, psk, _ -> h.offers(device, key, psk, hubOrder()) } else null,
+            hubShare = if (isHub) {
+                { peer, chain -> if (synchronized(lock) { state?.records?.mayHost(peer, chain) } == true) h.share() else null }
+            } else {
+                null
+            },
+            onHubs = { from, _, share ->
+                val known = { d: String -> synchronized(lock) { state?.records?.knows(d) == true } }
+                if (isHub && h.shared(from, share, known)) self?.sendTunnels { dev -> h.offersFor(dev, hubOrder()) }
+            },
         )
+        self = n
         val b = NsdBrowser(context) { members ->
             synchronized(lock) {
                 found = members
@@ -830,6 +842,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         hub = h
         b
     }
+
+    /** The group's hubs, highest first (RecordSet.hubOrder). */
+    private fun hubOrder(): List<String> = synchronized(lock) { state?.records?.hubOrder }.orEmpty()
 
     /** Connects again, as after the user allowed the local network. */
     fun reconnect() = restartSync()

@@ -28,26 +28,54 @@ class AwayFromHomeTest {
         val off = AwayState.decode(AwayState(key).encode())
         assertNotNull(off)
         assertArrayEquals(key, off!!.key)
-        assertNull(off.hub)
-        assertNull(off.offer)
+        assertEquals(32, off.psk.size)
+        assertTrue(off.hubs.isEmpty())
 
-        val on = AwayState.decode(AwayState(key).withOffer(hub, offer).encode())
+        val pc = "dddddddddddddddddddddddddddddddd"
+        val both = AwayState(key).withOffer(hub, offer).withOffer(pc, offer)
+        val on = AwayState.decode(both.encode())
         assertNotNull(on)
-        assertEquals(hub, on!!.hub)
-        assertEquals(offer, on.offer)
+        assertArrayEquals(both.psk, on!!.psk)
+        assertEquals(listOf(hub, pc), on.hubs.map { it.first })
+        assertEquals(offer, on.offer(hub))
+        assertEquals(listOf(pc), on.without(hub).hubs.map { it.first })
 
         // An obfuscated hub's settings are kept as they came.
         val hidden = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, """{"jc":4,"s1":20}""")
-        assertEquals(hidden, AwayState.decode(AwayState(key).withOffer(hub, hidden).encode())!!.offer)
+        assertEquals(hidden, AwayState.decode(AwayState(key).withOffer(hub, hidden).encode())!!.offer(hub))
         // So is the way over VLESS.
         val tunneled = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, null, """{"endpoint":"203.0.113.9:443"}""")
-        assertEquals(tunneled, AwayState.decode(AwayState(key).withOffer(hub, tunneled).encode())!!.offer)
+        assertEquals(tunneled, AwayState.decode(AwayState(key).withOffer(hub, tunneled).encode())!!.offer(hub))
 
-        // Another version, a cut file and a bad offer are not states.
-        val b = AwayState(key).withOffer(hub, offer).encode()
+        // Another version, a cut file, a longer one and a bad offer are not states.
+        val b = both.encode()
         assertNull(AwayState.decode(byteArrayOf(9) + b.copyOfRange(1, b.size)))
         assertNull(AwayState.decode(b.copyOf(b.size - 3)))
+        assertNull(AwayState.decode(b + 0))
         assertNull(AwayState.decode(AwayState(key).withOffer(hub, Member.TunnelOffer(ByteArray(31), ByteArray(32))).encode()))
+    }
+
+    /** Version 3 kept one hub's offer and no preshared key of the phone's own: it gets one. */
+    @Test
+    fun readsTheOneHubOfVersion3() {
+        val out = java.io.ByteArrayOutputStream()
+        java.io.DataOutputStream(out).run {
+            writeByte(3)
+            write(ByteArray(32) { 1 })
+            writeBoolean(true)
+            writeUTF(hub)
+            write(offer.hubKey)
+            write(offer.psk)
+            writeByte(offer.endpoints.size)
+            offer.endpoints.forEach { writeUTF(it) }
+            writeUTF("")
+            writeUTF("")
+        }
+        val s = AwayState.decode(out.toByteArray())!!
+        assertEquals(listOf(hub), s.hubs.map { it.first })
+        assertEquals(offer, s.offer(hub))
+        assertEquals(32, s.psk.size)
+        assertFalse(s.psk.contentEquals(offer.psk))
     }
 
     private class FakeTunnel(
@@ -121,6 +149,7 @@ class AwayFromHomeTest {
                 release.poll(5, TimeUnit.SECONDS)
             },
             mayHost = { it == hub },
+            order = { listOf(hub) },
             firstWaitMS = 10,
             maxWaitMS = 20,
             homeCheckMS = 10,
@@ -141,11 +170,13 @@ class AwayFromHomeTest {
 
             // An offer from a device that is neither the root nor an admin is ignored.
             a.keep("cccccccccccccccccccccccccccccccc", offer)
-            assertNull(saved.get()?.hub)
+            assertTrue(saved.get()!!.hubs.isEmpty())
             // The hub's answer, from a peer the node named: away, the tunnel starts on its first endpoint.
             a.keep(null, offer)
             a.keep(hub, offer)
-            assertEquals(hub, saved.get()?.hub)
+            assertEquals(offer, saved.get()?.offer(hub))
+            assertEquals(hub, a.hub)
+            assertArrayEquals(saved.get()!!.psk, a.keys!!.second)
             val t = tunnels.started.poll(5, TimeUnit.SECONDS)!!
             assertEquals(offer.endpoints[0], t.endpoint)
             assertEquals("", t.obfuscation)
@@ -182,9 +213,13 @@ class AwayFromHomeTest {
         }
     }
 
-    /** The hub moves: the kept hub passes on the new hub's offer, or the new hub knows the kept preshared key (docs/protocol.md, section 11). */
+    /**
+     * Every hub's offer is kept, its own or passed on by another hub, and
+     * one marked moved makes the phone forget the sender's (docs/protocol.md,
+     * section 11, "Several hubs").
+     */
     @Test
-    fun followsTheHubWhenItMoves() {
+    fun keepsEveryHubsOffer() {
         val saved = AtomicReference<AwayState?>(null)
         val pc = "dddddddddddddddddddddddddddddddd"
         val admins = mutableSetOf(hub, pc)
@@ -197,26 +232,85 @@ class AwayFromHomeTest {
             dial = { _, _ -> NoTransport },
             serve = { _, _ -> },
             mayHost = { it in admins },
+            order = { listOf(hub, pc) },
         )
         val pcOffer = Member.TunnelOffer(ByteArray(32) { 5 }, ByteArray(32) { 6 }, listOf("203.0.113.5:8764"))
-        // Another admin's own offer is ignored while the hub stays.
+        // Another hub's own offer is kept beside the first's.
         a.keep(pc, pcOffer)
-        assertNull(saved.get())
-        // The hub passes on the computer's offer: the phone follows, without the hub field.
-        a.keep(hub, pcOffer.with(offer.psk, pc))
-        assertEquals(pc, saved.get()?.hub)
-        assertEquals(Member.TunnelOffer(pcOffer.hubKey, offer.psk, pcOffer.endpoints), saved.get()?.offer)
-        assertEquals(pc, a.hub)
-        // Moved back by the preshared key: the old hub knows it.
-        a.keep(hub, Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints))
-        assertEquals(hub, saved.get()?.hub)
-        // A hub that is no admin any more gives way, as after a takeover.
-        admins.remove(hub)
-        a.keep(pc, pcOffer)
-        assertEquals(pc, saved.get()?.hub)
-        // An offer naming a device that is no admin is ignored.
+        assertEquals(listOf(hub, pc), saved.get()?.hubs?.map { it.first })
+        assertEquals(hub, a.hub)
+        // Passed on by the hub, without the hub field, in place of the earlier one.
+        val passed = Member.TunnelOffer(pcOffer.hubKey, offer.psk, listOf("203.0.113.6:8764"))
+        a.keep(hub, passed.with(passed.psk, pc))
+        assertEquals(passed, saved.get()?.offer(pc))
+        // The hub moves to the computer: its own offer goes.
+        a.keep(hub, pcOffer.with(pcOffer.psk, pc, moved = true))
+        assertEquals(listOf(pc), saved.get()?.hubs?.map { it.first })
+        assertEquals(pcOffer, saved.get()?.offer(pc))
+        // An offer naming a device that is no admin, or from one, is ignored, as is this phone's own.
         a.keep(pc, pcOffer.with(pcOffer.psk, "cccccccccccccccccccccccccccccccc"))
-        assertEquals(pc, saved.get()?.hub)
+        a.keep("cccccccccccccccccccccccccccccccc", offer)
+        a.keep(pc, offer.with(offer.psk, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+        assertEquals(listOf(pc), saved.get()?.hubs?.map { it.first })
+        admins.remove(pc)
+        a.keep(pc, offer)
+        assertEquals(listOf(pc), saved.get()?.hubs?.map { it.first })
+    }
+
+    /**
+     * The first hub in the order that answers is used; on a lower one the
+     * connection ends after the up check, and the phone goes back up to
+     * the first once it answers.
+     */
+    @Test
+    fun usesTheFirstHubThatAnswers() {
+        val pc = "dddddddddddddddddddddddddddddddd"
+        val pcOffer = Member.TunnelOffer(ByteArray(32) { 5 }, ByteArray(32) { 6 }, listOf("203.0.113.5:8764"))
+        val tunnels = FakeTunnels()
+        val pcUp = AtomicBoolean(false)
+        val served = LinkedBlockingQueue<String>()
+        val a = AwayFromHome(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            tunnels,
+            load = { AwayState(ByteArray(32) { 1 }).withOffer(hub, offer).withOffer(pc, pcOffer) },
+            save = {},
+            atHome = { false },
+            dial = { _, h ->
+                if (h == pc && !pcUp.get()) throw IOException("no answer")
+                Closing()
+            },
+            serve = { t, h ->
+                served.add(h)
+                (t as Closing).closed.poll(5, TimeUnit.SECONDS)
+            },
+            mayHost = { true },
+            order = { listOf(pc, hub) },
+            firstWaitMS = 10,
+            maxWaitMS = 20,
+            upCheckMS = 100,
+        )
+        a.start()
+        try {
+            assertEquals(hub, served.poll(5, TimeUnit.SECONDS))
+            assertEquals(hub, a.hub)
+            pcUp.set(true)
+            assertEquals(pc, served.poll(5, TimeUnit.SECONDS))
+            assertEquals(pc, a.hub)
+            // On the first hub there is no up check.
+            assertNull(served.poll(300, TimeUnit.MILLISECONDS))
+        } finally {
+            a.stop()
+        }
+    }
+
+    /** A connection whose close the serve sees. */
+    private class Closing : FrameTransport {
+        val closed = LinkedBlockingQueue<Unit>()
+        override fun write(data: ByteArray) = Unit
+        override fun read(n: Int): ByteArray = throw IOException("closed")
+        override fun close() {
+            closed.add(Unit)
+        }
     }
 
     @Test
@@ -232,6 +326,7 @@ class AwayFromHomeTest {
             dial = { _, _ -> NoTransport },
             serve = { _, _ -> release.poll(5, TimeUnit.SECONDS) },
             mayHost = { true },
+            order = { listOf(hub, "dddddddddddddddddddddddddddddddd") },
             firstWaitMS = 10,
             maxWaitMS = 20,
         )

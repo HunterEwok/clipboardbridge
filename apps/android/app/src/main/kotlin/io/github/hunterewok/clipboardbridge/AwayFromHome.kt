@@ -14,6 +14,7 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -21,22 +22,32 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * What sync away from home keeps on this phone (docs/protocol.md, section
- * 11): its WireGuard private key, made on the phone, and the last offer of
- * the group's hub with the hub's device ID.
+ * 11): its WireGuard private key, made on the phone, the preshared key it
+ * chose for its tunnels, which its hellos offer every hub, and the last
+ * offer of each of the group's hubs, by the hub's device ID.
  */
-class AwayState(val key: ByteArray, val hub: String? = null, val offer: Member.TunnelOffer? = null) {
-    fun withOffer(hub: String, offer: Member.TunnelOffer) = AwayState(key, hub, offer)
+class AwayState(val key: ByteArray, val psk: ByteArray = newPSK(), val hubs: List<Pair<String, Member.TunnelOffer>> = emptyList()) {
+    /** The offer of the hub hub, or null. */
+    fun offer(hub: String): Member.TunnelOffer? = hubs.firstOrNull { it.first == hub }?.second
+
+    /** The same with offer as hub's, in place of its earlier one. */
+    fun withOffer(hub: String, offer: Member.TunnelOffer): AwayState {
+        val i = hubs.indexOfFirst { it.first == hub }
+        val next = if (i >= 0) hubs.toMutableList().also { it[i] = hub to offer } else (hubs + (hub to offer)).takeLast(MAX_HUBS)
+        return AwayState(key, psk, next)
+    }
+
+    /** The same without the offer of hub. */
+    fun without(hub: String): AwayState = AwayState(key, psk, hubs.filterNot { it.first == hub })
 
     fun encode(): ByteArray {
         val out = ByteArrayOutputStream()
         DataOutputStream(out).run {
             writeByte(VERSION)
             write(key)
-            val o = offer
-            if (hub == null || o == null) {
-                writeBoolean(false)
-            } else {
-                writeBoolean(true)
+            write(psk)
+            writeByte(hubs.size)
+            for ((hub, o) in hubs) {
                 writeUTF(hub)
                 write(o.hubKey)
                 write(o.psk)
@@ -50,26 +61,45 @@ class AwayState(val key: ByteArray, val hub: String? = null, val offer: Member.T
     }
 
     companion object {
-        private const val VERSION = 3
+        private const val VERSION = 4
 
-        /** The state in b, or null when it is not one this version wrote. */
+        /** The most hubs whose offers the phone keeps, as a byte counts them. */
+        const val MAX_HUBS = 255
+
+        private val random = SecureRandom()
+
+        fun newPSK(): ByteArray = ByteArray(32).also { random.nextBytes(it) }
+
+        /**
+         * The state in b, or null when it is not one this version wrote.
+         * Versions 1 to 3 kept one hub's offer and no preshared key of the
+         * phone's own: it gets one now.
+         */
         fun decode(b: ByteArray): AwayState? = try {
             DataInputStream(ByteArrayInputStream(b)).run {
                 val version = readByte().toInt()
                 if (version !in 1..VERSION) return null
                 val key = ByteArray(32).also { readFully(it) }
-                if (!readBoolean()) return AwayState(key)
-                val hub = readUTF()
-                val hubKey = ByteArray(32).also { readFully(it) }
+                fun offer(): Pair<String, Member.TunnelOffer>? {
+                    val hub = readUTF()
+                    val hubKey = ByteArray(32).also { readFully(it) }
+                    val psk = ByteArray(32).also { readFully(it) }
+                    val endpoints = List(readUnsignedByte()) { readUTF() }
+                    // Version 1 had no obfuscation settings.
+                    val obfuscation = if (version == 1) "" else readUTF()
+                    // Nor had version 2 the way over VLESS.
+                    val vless = if (version <= 2) "" else readUTF()
+                    val o = Member.TunnelOffer(hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() }, vless.takeIf { it.isNotEmpty() })
+                    return if (o.isValid) hub to o else null
+                }
+                if (version < 4) {
+                    if (!readBoolean()) return AwayState(key)
+                    return AwayState(key, hubs = listOf(offer() ?: return null))
+                }
                 val psk = ByteArray(32).also { readFully(it) }
-                val endpoints = List(readUnsignedByte()) { readUTF() }
-                // Version 1 had no obfuscation settings.
-                val obfuscation = if (version == 1) "" else readUTF()
-                // Nor had version 2 the way over VLESS.
-                val vless = if (version <= 2) "" else readUTF()
-                val o = Member.TunnelOffer(hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() }, vless.takeIf { it.isNotEmpty() })
-                if (!o.isValid) return null
-                AwayState(key, hub, o)
+                val hubs = List(readUnsignedByte()) { offer() ?: return null }
+                if (read() != -1) return null
+                AwayState(key, psk, hubs)
             }
         } catch (e: IOException) {
             null
@@ -182,11 +212,14 @@ class AwayFile(file: File) {
 
 /**
  * Sync away from home on this phone: off until the user turns it on. Then
- * the hellos offer the phone's WireGuard key, the hub's answer is kept, and
- * while the hub is not on the home network the phone reaches it through
- * the tunnel, in the app's own process, with the same member TLS as at
- * home (docs/design.md, "Sync away from home"). It fails closed: without a
- * tunnel there is no connection.
+ * the hellos offer the phone's WireGuard key and its preshared key, every
+ * hub's answer is kept, and while no hub is on the home network the phone
+ * reaches the first hub in the group's order that answers through the
+ * tunnel, in the app's own process, with the same member TLS as at home
+ * (docs/design.md, "Sync away from home"; docs/protocol.md, section 11,
+ * "Several hubs"). On a hub below the first it tries the ones above again
+ * every [upCheckMS]. It fails closed: without a tunnel there is no
+ * connection.
  */
 class AwayFromHome(
     private val device: String,
@@ -199,8 +232,10 @@ class AwayFromHome(
     private val dial: (port: Int, hub: String) -> FrameTransport,
     /** Runs a connection to the hub until it ends. */
     private val serve: (FrameTransport, String) -> Unit,
-    /** Whether a device may be the hub: the group's root or an admin (Records.mayHost). */
+    /** Whether a device may be a hub: the group's root or an admin (Records.mayHost). */
     private val mayHost: (String) -> Boolean,
+    /** The group's hubs, highest first (RecordSet.hubOrder); only these are tried. */
+    private val order: () -> List<String>,
     private val log: (String, Throwable?) -> Unit = { _, _ -> },
     private val firstWaitMS: Long = 1_000,
     private val maxWaitMS: Long = 30_000,
@@ -211,6 +246,8 @@ class AwayFromHome(
     private val isPhone: (String) -> Boolean = { false },
     private val phoneWaitMS: Long = 5_000,
     private val homeCheckMS: Long = 5_000,
+    /** How long the phone stays on a hub below the first that has an offer before it tries the ones above again. */
+    private val upCheckMS: Long = 5 * 60_000,
 ) {
     /** What the screens show. */
     enum class Status { OFF, WAITING_FOR_HUB, AT_HOME, CONNECTING, CONNECTED }
@@ -218,6 +255,15 @@ class AwayFromHome(
     private val lock = Object()
     private var state: AwayState? = runCatching { load() }.onFailure { log("cannot read the tunnel's state", it) }.getOrNull()
     private var tunnel: OpenTunnel? = null
+
+    /** The hub and offer the open tunnel goes to. */
+    private var tunnelTo: Pair<String, Member.TunnelOffer>? = null
+
+    /** The hub the phone reaches now, through the tunnel or at home. */
+    private var using: String? = null
+
+    /** Which of each hub's endpoints the next try takes. */
+    private val endpointOf = mutableMapOf<String, Int>()
     private var thread: Thread? = null
     private var stopped = false
 
@@ -229,14 +275,25 @@ class AwayFromHome(
 
     val isOn: Boolean get() = synchronized(lock) { state != null }
 
-    /** The hub whose offer this phone keeps; null without one. */
-    val hub: String? get() = synchronized(lock) { state?.hub }
+    /** The hub the phone reaches now, or else the first in the group's order whose offer it keeps; null without one. */
+    val hub: String?
+        get() {
+            val o = order()
+            return synchronized(lock) { using ?: state?.let { hubsToTry(o, it) }?.firstOrNull()?.first ?: state?.hubs?.firstOrNull()?.first }
+        }
 
-    /** The public key the hellos offer the hub; null while it is off. */
+    /** The public key the hellos offer the hubs; null while it is off. */
     val publicKey: ByteArray?
         get() = synchronized(lock) { state?.key }?.let { runCatching { tunnels.publicKey(it) }.getOrNull() }
 
-    /** Turns it on with a new key; the hub's offer comes at home, on the next connection to it. */
+    /** The public key and the preshared key the hellos offer the hubs; null while it is off. */
+    val keys: Pair<ByteArray, ByteArray>?
+        get() {
+            val s = synchronized(lock) { state } ?: return null
+            return runCatching { tunnels.publicKey(s.key) }.getOrNull()?.let { it to s.psk }
+        }
+
+    /** Turns it on with new keys; the hubs' offers come at home, on the next connection to them. */
     fun turnOn() {
         val s = AwayState(tunnels.newKey())
         save(s)
@@ -246,7 +303,7 @@ class AwayFromHome(
         }
     }
 
-    /** Turns it off: forgets the key and the offer and closes the tunnel. */
+    /** Turns it off: forgets the keys and the offers and closes the tunnel. */
     fun turnOff() {
         save(null)
         synchronized(lock) {
@@ -257,35 +314,38 @@ class AwayFromHome(
     }
 
     /**
-     * Keeps the offer a peer, the group's hub, sent for this phone's key.
-     * Only the group's root or an admin may be the hub, and once a hub is
-     * kept, offers for another hub are ignored until the hub moves
-     * (docs/protocol.md, section 11, "Moving the hub"): the kept hub passes
-     * on the new hub's offer, another hub's offer carries the preshared key
-     * the kept hub gave, or the kept hub is no longer the root or an admin.
-     * Otherwise the hub changes only when the user turns sync away from
-     * home off and on again.
+     * Keeps the offer a peer sent for this phone's key (docs/protocol.md,
+     * section 11, "Several hubs"): from a hub, the group's root or an
+     * admin, its own or another hub's that it passes on, for each hub in
+     * place of its earlier one. An offer marked moved makes the phone
+     * forget the sender's own. A new offer for the hub in use, or one for a
+     * hub above it, starts the tunnel again.
      */
     fun keep(from: String?, received: Member.TunnelOffer) {
         if (from == null || !received.isValid || !mayHost(from)) return
         val hub = received.hub ?: from
         if (hub == device || !mayHost(hub)) return
         val offer = received.with(received.psk, null)
+        val o = order()
         val next = synchronized(lock) {
             val s = state ?: return
-            if (!Member.TunnelOffer.takes(s.hub, s.offer?.psk, from, hub, offer.psk, s.hub?.let(mayHost) ?: true)) return
-            if (s.hub == hub && s.offer == offer) return
-            s.withOffer(hub, offer).also {
-                state = it
-                // A new preshared key or new endpoints: start again with them.
+            val forgot = received.moved && from != hub && s.offer(from) != null
+            var n = if (forgot) s.without(from) else s
+            if (n.offer(hub) != offer) n = n.withOffer(hub, offer)
+            if (n === s) return
+            state = n
+            val u = using
+            if (u == null || u == hub || rank(o, hub) < rank(o, u) || forgot && u == from) {
+                // The hub in use changed, or one above it came: try again.
                 closeTunnelLocked()
                 lock.notifyAll()
             }
+            n
         }
         runCatching { save(next) }.onFailure { log("cannot keep the hub's offer", it) }
     }
 
-    /** Starts the loop that reaches the hub through the tunnel while it is away. */
+    /** Starts the loop that reaches a hub through the tunnel while the hubs are away. */
     fun start() = synchronized(lock) {
         if (thread != null) return
         stopped = false
@@ -308,78 +368,147 @@ class AwayFromHome(
     private fun closeTunnelLocked() {
         val t = tunnel ?: return
         tunnel = null
+        tunnelTo = null
         runCatching { t.close() }
     }
 
     private fun run() {
         var wait = firstWaitMS
-        var endpoint = 0
         try {
             while (true) {
-                val (s, open) = synchronized(lock) {
+                val s = synchronized(lock) {
                     if (stopped) return
-                    state to tunnel
+                    state
                 }
                 if (s == null) {
                     status = Status.OFF
+                    synchronized(lock) { using = null }
                     idle(0)
                     continue
                 }
-                val hub = s.hub
-                val offer = s.offer
-                if (hub == null || offer == null || offer.endpoints.isEmpty()) {
+                val hubs = hubsToTry(order(), s)
+                if (hubs.isEmpty()) {
                     status = Status.WAITING_FOR_HUB
+                    synchronized(lock) {
+                        using = null
+                        closeTunnelLocked()
+                    }
                     idle(0)
                     continue
                 }
-                if (atHome(hub)) {
+                val home = hubs.firstOrNull { atHome(it.first) }
+                if (home != null) {
+                    // At home with a hub: the phone dials the members directly.
                     status = Status.AT_HOME
-                    synchronized(lock) { if (tunnel === open) closeTunnelLocked() }
+                    synchronized(lock) {
+                        using = home.first
+                        closeTunnelLocked()
+                    }
                     wait = firstWaitMS
                     idle(homeCheckMS)
                     continue
                 }
-                status = Status.CONNECTING
-                val t = open ?: try {
-                    tunnels.start(
-                        s.key, offer.psk, offer.hubKey, device, hub, offer.endpoints[endpoint % offer.endpoints.size],
-                        offer.obfuscation ?: "", offer.vless ?: "",
-                    )
-                } catch (e: Exception) {
-                    fail("the tunnel to the hub could not start", e)
-                    wait = backoff(wait, hub)
-                    continue
-                }
-                if (t !== open) {
-                    val kept = synchronized(lock) {
-                        (!stopped && state === s).also { if (it) tunnel = t }
-                    }
-                    if (!kept) {
-                        runCatching { t.close() }
-                        continue
-                    }
-                }
-                val started = System.nanoTime()
-                try {
-                    val conn = dial(t.port, hub)
-                    status = Status.CONNECTED
-                    lastError = null
-                    serve(conn, hub)
-                    if ((System.nanoTime() - started) / 1_000_000 > maxWaitMS) wait = firstWaitMS
-                } catch (e: Exception) {
-                    fail("the hub does not answer through the tunnel", e)
-                    // The next of the hub's endpoints, in turn.
-                    endpoint++
-                    runCatching { t.setEndpoint(offer.endpoints[endpoint % offer.endpoints.size]) }
+                var served: Long? = null
+                for ((i, h) in hubs.withIndex()) {
+                    served = tryHub(s, h.first, h.second, up = i > 0)
+                    if (served != null) break
+                    if (synchronized(lock) { stopped || state !== s }) break
                 }
                 if (synchronized(lock) { stopped }) return
-                wait = backoff(wait, hub)
+                if (served != null) {
+                    // A connection that lasted starts the waits again; one that ended at once waits as a failure.
+                    if (served > maxWaitMS) wait = firstWaitMS else wait = backoff(wait, hubs[0].first)
+                    continue
+                }
+                synchronized(lock) { using = null }
+                if (synchronized(lock) { state !== s }) continue
+                wait = backoff(wait, hubs[0].first)
             }
         } catch (e: InterruptedException) {
             // stopped
         } finally {
             status = Status.OFF
         }
+    }
+
+    /**
+     * Reaches hub through the tunnel at the next of its endpoints and
+     * serves the connection until it ends, or for [upCheckMS] when up is
+     * set, so the hubs above are tried again; returns how long it served
+     * the connection, in milliseconds, or null when it did not reach the hub.
+     */
+    private fun tryHub(s: AwayState, hub: String, offer: Member.TunnelOffer, up: Boolean): Long? {
+        status = Status.CONNECTING
+        val n = synchronized(lock) { endpointOf[hub] ?: 0 }
+        val endpoint = offer.endpoints[n % offer.endpoints.size]
+        val open = synchronized(lock) {
+            if (tunnelTo == (hub to offer)) {
+                tunnel
+            } else {
+                closeTunnelLocked()
+                null
+            }
+        }
+        val t = if (open != null) {
+            open
+        } else {
+            val started = try {
+                tunnels.start(s.key, offer.psk, offer.hubKey, device, hub, endpoint, offer.obfuscation ?: "", offer.vless ?: "")
+            } catch (e: Exception) {
+                fail("the tunnel to the hub could not start", e)
+                return null
+            }
+            val kept = synchronized(lock) {
+                (!stopped && state === s).also {
+                    if (it) {
+                        tunnel = started
+                        tunnelTo = hub to offer
+                    }
+                }
+            }
+            if (!kept) {
+                runCatching { started.close() }
+                return null
+            }
+            started
+        }
+        val conn = try {
+            dial(t.port, hub)
+        } catch (e: Exception) {
+            fail("the hub does not answer through the tunnel", e)
+            // The next of the hub's endpoints, in turn, on the same tunnel.
+            synchronized(lock) { endpointOf[hub] = n + 1 }
+            runCatching { t.setEndpoint(offer.endpoints[(n + 1) % offer.endpoints.size]) }
+            return null
+        }
+        synchronized(lock) { using = hub }
+        status = Status.CONNECTED
+        lastError = null
+        // On a hub below the first, the connection ends after upCheckMS.
+        val timer = if (up) {
+            Thread({
+                try {
+                    Thread.sleep(upCheckMS)
+                    conn.close()
+                } catch (e: InterruptedException) {
+                    // the connection ended first
+                }
+            }, "cbb up check").apply {
+                isDaemon = true
+                start()
+            }
+        } else {
+            null
+        }
+        val began = System.nanoTime()
+        try {
+            serve(conn, hub)
+        } catch (e: Exception) {
+            fail("the connection to the hub ended", e)
+        } finally {
+            timer?.interrupt()
+        }
+        return (System.nanoTime() - began) / 1_000_000
     }
 
     private fun fail(what: String, e: Exception) {
@@ -395,5 +524,14 @@ class AwayFromHome(
     /** Waits ms, or until something changes; 0 waits for a change only. */
     private fun idle(ms: Long) = synchronized(lock) {
         if (!stopped) lock.wait(ms)
+    }
+
+    companion object {
+        /** Where hub is in order; order.size when it is not there. */
+        fun rank(order: List<String>, hub: String): Int = order.indexOf(hub).let { if (it < 0) order.size else it }
+
+        /** The kept offers the phone tries, of the hubs in the group's order and with endpoints, highest first. */
+        fun hubsToTry(order: List<String>, s: AwayState): List<Pair<String, Member.TunnelOffer>> =
+            s.hubs.filter { (h, o) -> rank(order, h) < order.size && o.endpoints.isNotEmpty() }.sortedBy { rank(order, it.first) }
     }
 }

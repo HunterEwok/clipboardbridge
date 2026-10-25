@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CommandsTest {
     private val now = Instant.now()
@@ -61,24 +62,11 @@ class CommandsTest {
         val hub = PhoneHub(ByteArray(32) { 9 }, listOf(client))
         val moved = hub.movedOffer(client.device, pc, r.result.tunnel!!)!!
         assertEquals(pc, moved.hub)
+        assertTrue(moved.moved)
         assertEquals(client.psk.toList(), moved.psk.toList())
         assertNull(hub.movedOffer(pc, pc, r.result.tunnel!!))
         val back = Member.decode(Member.encode(Member.Message.Tunnel(moved)).let { it.copyOfRange(4, it.size) }) as Member.Message.Tunnel
         assertEquals(moved, back.offer)
-    }
-
-    /** The offers a client takes once it keeps a hub's, as Go's TestOfferRules. */
-    @Test
-    fun offerRules() {
-        val kept = ByteArray(32) { 1 }
-        val t = Member.TunnelOffer.Companion
-        assertEquals(true, t.takes(null, null, "mac", "mac", ByteArray(32) { 2 }, true))
-        assertEquals(true, t.takes("pi", kept, "pi", "pi", ByteArray(32) { 3 }, true))
-        assertEquals(false, t.takes("pi", kept, "mac", "mac", ByteArray(32) { 2 }, true))
-        assertEquals(true, t.takes("pi", kept, "mac", "mac", ByteArray(32) { 1 }, true))
-        assertEquals(true, t.takes("pi", kept, "pi", "mac", ByteArray(32) { 2 }, true))
-        assertEquals(false, t.takes("pi", kept, "deck", "mac", ByteArray(32) { 2 }, true))
-        assertEquals(true, t.takes("pi", kept, "mac", "mac", ByteArray(32) { 2 }, false))
     }
 
     /** A command and its result through the frames, as Go sends and reads them. */

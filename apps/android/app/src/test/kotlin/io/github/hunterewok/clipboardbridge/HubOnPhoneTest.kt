@@ -109,6 +109,42 @@ class HubOnPhoneTest {
         assertNull(HubOnPhone.networkKey(gw, InetAddress.getByName("192.168.0.57"), 33))
     }
 
+    /**
+     * Several hubs (docs/protocol.md, section 11): it shares its clients,
+     * takes the ones another hub shares that the records know, keeps them
+     * as it saves them, and passes that hub's offer on to its clients.
+     */
+    @Test
+    fun sharesWithTheOtherHubs() {
+        var saved: HubState? = null
+        val h = HubOnPhone(phone, FakeTunnels(), load = { saved }, save = { saved = it })
+        h.turnOn(null)
+        val share = Member.HubShare(
+            true, Member.TunnelOffer(ByteArray(32) { 5 }, ByteArray(0), listOf("198.51.100.5:8764")),
+            listOf(PhoneHub.Client(tv, ByteArray(32) { 6 }, ByteArray(32) { 7 }), PhoneHub.Client("d".repeat(32), ByteArray(32) { 9 }, ByteArray(32) { 9 })),
+        )
+        // Without a forwarder it neither shares nor takes.
+        assertNull(h.share())
+        assertFalse(h.shared(pc, share) { true })
+        h.setForwarder(HubState.Forwarder("203.0.113.9:8764", pin))
+        assertTrue(h.share()!!.serving)
+        assertTrue(h.shared(pc, share) { it != "d".repeat(32) })
+        assertFalse("the same offer again", h.shared(pc, share) { it != "d".repeat(32) })
+        assertEquals(listOf(tv), h.clients)
+        assertEquals(listOf(tv), saved!!.clients.map { it.device })
+        assertEquals(listOf(tv), h.share()!!.clients.map { it.device })
+
+        // A client gets its own offer, then the other hub's with its own preshared key.
+        val offers = h.offers(tv, ByteArray(32) { 6 }, ByteArray(32) { 8 }, listOf(phone, pc))
+        assertEquals(listOf(null, pc), offers.map { it.hub })
+        assertArrayEquals(ByteArray(32) { 8 }, offers[1].psk)
+        assertTrue(HubState.decode(saved!!.encode())!!.clients.single().met)
+        // The other hub, a client too, does not get its own offer back.
+        h.offers(pc, ByteArray(32) { 2 }, ByteArray(32) { 3 })
+        assertEquals(1, h.offersFor(pc, emptyList()).size)
+        assertEquals(2, h.offersFor(tv, emptyList()).size)
+    }
+
     /** On with a forwarder: it offers the forwarder's endpoint, keeps the clients, and hands them and the records to the tunnel. */
     @Test
     fun servesWithAForwarder() {

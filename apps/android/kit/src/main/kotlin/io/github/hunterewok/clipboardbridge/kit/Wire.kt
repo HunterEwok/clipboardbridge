@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 import java.util.Base64
 
@@ -48,6 +49,9 @@ internal fun JsonObject.optString(key: String): String? =
 
 internal fun JsonObject.optLong(key: String): Long? =
     opt(key)?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.longOrNull ?: throw WireTypeException("$key: not an integer") }
+
+internal fun JsonObject.optBool(key: String): Boolean? =
+    opt(key)?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.booleanOrNull ?: throw WireTypeException("$key: not a boolean") }
 
 internal fun JsonObject.optBytes(key: String): ByteArray? =
     optString(key)?.let {

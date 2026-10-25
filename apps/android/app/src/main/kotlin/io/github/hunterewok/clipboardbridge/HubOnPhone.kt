@@ -41,7 +41,7 @@ data class HubState(
         "forwarder" to forwarder?.let { JsonObject(mapOf("endpoint" to JsonPrimitive(it.endpoint), "pin" to JsonPrimitive(it.pin))) },
         "background" to JsonPrimitive(background),
         "homes" to JsonArray(homes.map { JsonPrimitive(it) }),
-        "clients" to JsonArray(clients.map { it.toJson() }),
+        "clients" to JsonArray(clients.map { it.toJson(keep = true) }),
     )).toString().toByteArray()
 
     override fun equals(other: Any?): Boolean = other is HubState && encode().contentEquals(other.encode())
@@ -239,14 +239,57 @@ class HubOnPhone(
     private fun withHome(homes: List<String>, home: String?): List<String> =
         if (home == null || home in homes) homes else (homes + home).takeLast(HubState.MAX_HOMES)
 
+    /** The hub while it is on and has a forwarder, as it offers and shares. */
+    private val offering: PhoneHub? get() = synchronized(lock) { if (state?.on == true && state?.forwarder != null) hub else null }
+
     /**
-     * The offer for a member whose hello offered key, for MemberNode's hub:
-     * null while the hub is off or has no forwarder, or when the key is
+     * The offers for a member whose hello offered key and psk, for
+     * MemberNode's hub: this hub's own, then the group's other hubs' it
+     * passes on, in order (docs/protocol.md, section 11, "Several hubs");
+     * none while the hub is off or has no forwarder, or when the key is
      * refused.
      */
-    fun offer(device: String, key: ByteArray): Member.TunnelOffer? {
-        val h = synchronized(lock) { if (state?.on == true && state?.forwarder != null) hub else null } ?: return null
-        return h.offer(device, key, changed = ::clientsChanged, refused = { why -> log("refused a client: $why", null) })
+    fun offers(device: String, key: ByteArray, psk: ByteArray? = null, order: List<String> = emptyList()): List<Member.TunnelOffer> {
+        val h = offering ?: return emptyList()
+        return h.offers(device, key, psk, order, changed = ::clientsChanged, refused = { why -> log("refused a client: $why", null) })
+    }
+
+    /** The offer for a member whose hello offered key, as offers gives it first; null without one. */
+    fun offer(device: String, key: ByteArray): Member.TunnelOffer? = offers(device, key).firstOrNull()
+
+    /** The offers a connected client device gets, after another hub's offer changed; empty for a device that is no client. */
+    fun offersFor(device: String, order: List<String>): List<Member.TunnelOffer> {
+        val h = offering ?: return emptyList()
+        return h.clients.firstOrNull { it.device == device }?.let { h.offers(it, order) }.orEmpty()
+    }
+
+    /**
+     * What this hub shares with another of the group's hubs: that it
+     * serves, its offer and its clients; null while it is off or has no
+     * forwarder. The phone serves whenever it is on: it does not yet give
+     * way to a hub above it.
+     */
+    fun share(): Member.HubShare? = offering?.share()
+
+    /**
+     * Takes what another hub, from, shared: the clients the records know
+     * (known), which this hub can then serve too, and the offer it passes
+     * on to its clients. It returns whether that offer changed, so the
+     * connected clients get it.
+     */
+    fun shared(from: String, share: Member.HubShare, known: (String) -> Boolean): Boolean {
+        val h = offering ?: return false
+        var changed = false
+        for (c in share.clients) {
+            if (c.device == device || !known(c.device)) continue
+            try {
+                if (h.take(c)) changed = true
+            } catch (e: PhoneHub.Refused) {
+                log("refused a client $from shared: ${e.message}", null)
+            }
+        }
+        if (changed) clientsChanged(h.clients)
+        return h.setOther(from, share.offer?.takeIf { it.hubKey.size == 32 && it.endpoints.size <= 8 })
     }
 
     private fun clientsChanged(clients: List<PhoneHub.Client>) {

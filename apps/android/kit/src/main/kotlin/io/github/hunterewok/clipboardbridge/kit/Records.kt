@@ -778,6 +778,19 @@ class RecordSet {
         return id == device && own == key && key !in Eval(this).revoked
     }
 
+    /**
+     * The devices that may be the group's hub, highest first, as Go's
+     * Records.HubOrder (docs/protocol.md, section 11, "Several hubs"):
+     * phones before computers, within each the root first, then by device ID.
+     */
+    val hubOrder: List<String>
+        get() {
+            val root = rootMember()?.takeIf { (_, key) -> key !in Eval(this).revoked }?.first
+            return devices.filter { it.id == root || it.admin }
+                .sortedWith(compareBy<Device>({ it.role != "phone" }, { it.id != root }, { it.id }))
+                .map { it.id }
+        }
+
     /** The root's own device and its key: the newest full or phone device record the current root signed for itself. */
     private fun rootMember(): Pair<String, Key>? {
         val ev = Eval(this)
