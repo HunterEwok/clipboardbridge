@@ -104,6 +104,9 @@ The observation is always end to end, at the user's clipboard where one exists:
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
 | `phone` | the app's UI through UI Automator over `adb` (bench only; users never need `adb`) | the app's UI / the system clipboard as the app sees it |
 
+Every case is written out step by step, with its preconditions and how to tell pass from
+fail, in [testbench-cases.md](testbench-cases.md).
+
 Each run writes a unique marker into every text (run ID, case ID, sender, time) so a stale
 clipboard can never pass a test.
 

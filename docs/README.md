@@ -16,6 +16,7 @@
 | [App specification](apps.md) | developers | what the apps do and how they look |
 | [Contributing](../CONTRIBUTING.md) | developers | conventions, building and testing every part |
 | [Test bench](testbench.md) | developers | testing on real devices before a release: the cases, the bench, the criteria |
+| [Test bench cases](testbench-cases.md) | developers | every bench case step by step: the rule, the devices, the steps, pass and fail |
 | [Maintaining](maintaining.md) | the maintainer | repository settings, CI, releases, signing keys, Homebrew |
 | [Security policy](../SECURITY.md) | security researchers | how to report a vulnerability |
 | [Changelog](../CHANGELOG.md) | everyone | what changed in each release |
