@@ -182,6 +182,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: membership in the `clipboardbridge` group gives the clipboard only. The service
+  takes what changes the group (`new`, `pair`, `invite`, `revoke`, `rename`, `admin`,
+  `takeover`, `upgrade`, `freeze`, `unfreeze`, the holder setting, `global` on, off and hub)
+  only on a new admin socket next to the control socket, which only root reaches (on Windows
+  administrators): run those commands with `sudo`, or from a terminal opened as
+  administrator. The lite member does the same for `cbb global on|off`.
 - Security: tmux's paste key no longer types control characters, a second line or a secret
   into the terminal. It runs the new `cbb paste -terminal` (full and lite member), which drops
   the control characters of C0 but tab and line feed, DEL and those of C1, keeps only the

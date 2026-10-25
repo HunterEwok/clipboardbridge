@@ -427,5 +427,5 @@ Write-Host "clipboardbridge $v is running on TCP port $Port; $user may use it."
 if ($Port -ne 8764) {
 	Write-Host 'The iPhone shortcut works only with port 8764; the clipboardbridge app takes any port.'
 }
-Write-Host 'Next, in a new terminal: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group''s root or an admin; or start a group: cbb new.'
+Write-Host 'Next, in a terminal opened as administrator: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group''s root or an admin; or start a group: cbb new.'
 Write-Host 'To remove it: Settings, Apps, clipboardbridge, Uninstall.'

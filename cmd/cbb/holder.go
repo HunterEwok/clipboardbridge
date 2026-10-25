@@ -22,7 +22,7 @@ func cmdHolder(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 {
 		h = control.Header{Op: control.OpHolder, Name: args[0]}
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(h.Op)
 	if err != nil {
 		return fail(stderr, err)
 	}

@@ -342,10 +342,25 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
 
 /// Sends one request to the service and returns its answer.
 fn request(g: &Global, m: &control::Message) -> Result<control::Message> {
-    let conn = UnixStream::connect(&g.socket).context(format!(
-        "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
-        g.socket.display()
-    ))?;
+    let conn = if control::is_admin(&m.header.op) {
+        let path = control::admin_socket(&g.socket);
+        match UnixStream::connect(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Err(Error::msg(
+                    "this command changes the group, so only the administrator may run it; run it with sudo",
+                ));
+            }
+            c => c.context(format!(
+                "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
+                path.display()
+            ))?,
+        }
+    } else {
+        UnixStream::connect(&g.socket).context(format!(
+            "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
+            g.socket.display()
+        ))?
+    };
     let mut w = conn.try_clone().context("cannot reach the service")?;
     control::write(&mut w, m)?;
     let answer = control::Reader::new(conn).read()?.ok_or_else(|| Error::msg("the service closed the connection"))?;
@@ -501,7 +516,8 @@ the group. To keep that from happening:
 fn cmd_global(g: &Global, args: &[String]) -> Result<()> {
     let mut h = control::Header { op: "away".into(), ..Default::default() };
     match args {
-        [] => {}
+        // Only showing it needs no root: the status carries it.
+        [] => h.op = "status".into(),
         [a] if a == "on" => {
             print!("{KEYS_WARNING}Type yes to turn sync away from home on: ");
             std::io::stdout().flush().ok();

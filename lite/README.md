@@ -151,9 +151,9 @@ turns the member port off (the device then only dials the computers).
 ### Sync away from home
 
 ```sh
-cbb global on                  # read the warning, type yes
+sudo cbb global on             # read the warning, type yes
 cbb global                     # the hub, and whether it is reached through the tunnel
-cbb global off                 # forget the tunnel's keys
+sudo cbb global off            # forget the tunnel's keys
 ```
 
 Turn it on at home: the device then meets the group's hub (a full member made the hub with

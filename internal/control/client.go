@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -19,6 +20,56 @@ func SocketPath() string {
 	return DefaultSocket
 }
 
+// AdminSocketPath returns the admin socket to use: $CBB_ADMIN_SOCKET, or
+// the admin socket next to SocketPath.
+func AdminSocketPath() string {
+	if p := os.Getenv("CBB_ADMIN_SOCKET"); p != "" {
+		return p
+	}
+	return AdminSocketFor(SocketPath())
+}
+
+// AdminSocketFor returns where the service whose control socket is at path
+// listens for the operations that change the group (IsAdmin).
+func AdminSocketFor(path string) string {
+	return filepath.Join(filepath.Dir(path), adminSocketName)
+}
+
+// IsAdmin reports whether an operation changes the group or this device's
+// place in it, so that only the administrator of the computer may ask for
+// it: on the admin socket, which only root (Administrators on Windows) and
+// the service's own account may reach. The clipboard and the status stay on
+// the control socket for the members of the service's group.
+func IsAdmin(op string) bool {
+	switch op {
+	case OpCopy, OpPaste, OpStatus, OpDevices, OpWatch, OpCopied, OpClipboard, OpAnswer, OpReply, OpWrite:
+		return false
+	}
+	return true
+}
+
+// DialFor connects to the socket that takes the operation op: the admin
+// socket for an operation that changes the group, the control socket for
+// the others.
+func DialFor(op string) (*Client, error) {
+	if IsAdmin(op) {
+		return dialAdmin(AdminSocketPath())
+	}
+	return Dial(SocketPath())
+}
+
+// DialAt is DialFor for the service whose control socket is at path.
+func DialAt(path, op string) (*Client, error) {
+	if IsAdmin(op) {
+		return dialAdmin(AdminSocketFor(path))
+	}
+	return Dial(path)
+}
+
+func dialAdmin(path string) (*Client, error) {
+	return dial(path, "this command changes the group, so only the administrator may run it; "+adminHint)
+}
+
 // A Client is a connection to the service.
 type Client struct {
 	c net.Conn
@@ -27,10 +78,14 @@ type Client struct {
 
 // Dial connects to the service.
 func Dial(path string) (*Client, error) {
+	return dial(path, "no permission to use the clipboardbridge service; "+permissionHint)
+}
+
+func dial(path, denied string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.New("no permission to use the clipboardbridge service; " + permissionHint)
+			return nil, errors.New(denied)
 		}
 		return nil, errors.New("the clipboardbridge service is not running (" + err.Error() + ")")
 	}

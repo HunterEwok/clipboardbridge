@@ -37,7 +37,7 @@ func cmdInvite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: cbb invite [-for 1h] [-o file]   (valid for up to 24h)")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpInvite)
 	if err != nil {
 		return fail(stderr, err)
 	}

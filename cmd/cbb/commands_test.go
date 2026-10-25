@@ -43,6 +43,7 @@ func fakeHandler(t *testing.T, handle func(m *control.Message, r *control.Reader
 	}
 	t.Cleanup(func() { ln.Close() })
 	t.Setenv("CBB_SOCKET", socket)
+	t.Setenv("CBB_ADMIN_SOCKET", socket)
 	got := make(chan *control.Message, 8)
 	go func() {
 		for {

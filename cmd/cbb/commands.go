@@ -53,7 +53,7 @@ func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *secret {
 		kind = control.KindSecret
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpCopy)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -83,7 +83,7 @@ func cmdPaste(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: -lines and -secret go with -terminal")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpPaste)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -142,7 +142,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: status takes no arguments")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -157,7 +157,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	var devs []control.Device
 	if st.Group != "" {
-		d, err := control.Dial(control.SocketPath())
+		d, err := control.DialFor(control.OpDevices)
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -229,7 +229,7 @@ func cmdNew(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: new takes no arguments")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpNew)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -301,7 +301,7 @@ const pairUsage = `usage: cbb pair                  in a group: show a code for 
 
 // serviceStatus asks the service for its status.
 func serviceStatus() (*control.Status, error) {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func serviceStatus() (*control.Status, error) {
 // admit opens a pairing window and waits until a device joins, the window
 // closes, or the user presses Ctrl+C.
 func admit(stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpPair)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -344,7 +344,7 @@ func admit(stdout, stderr io.Writer) int {
 // it: the profile first, the fingerprint, and only then the code. With
 // newToken the service first revokes the token of every shortcut.
 func cmdPairPhone(newToken bool, stdout, stderr io.Writer) int {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpPairPhone)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -391,7 +391,7 @@ func joinWithCode(line, address string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpJoin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -409,7 +409,7 @@ func joinWithCode(line, address string, stdout, stderr io.Writer) int {
 // of the group instead.
 func joinByQR(stdin io.Reader, stdout, stderr io.Writer) int {
 	h := control.Header{Op: control.OpJoin, Code: pair.NewCode(), Expires: int(pair.Lifetime / time.Second), Listen: true}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpJoin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -582,7 +582,7 @@ func hostOS() string {
 // group whose root is lost is taken over by an admin (cbb takeover), or
 // made anew.
 func adminHint(w io.Writer) {
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpDevices)
 	if err != nil {
 		return
 	}

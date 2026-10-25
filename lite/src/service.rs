@@ -86,13 +86,13 @@ pub fn run(cfg: Config) -> Result<()> {
         pending: Mutex::new(None),
         log: log.clone(),
     });
-    let ln = listen(&cfg.socket)?;
-    {
+    let admin_socket = control::admin_socket(&cfg.socket);
+    for (ln, admin) in [(listen(&cfg.socket, false)?, false), (listen(&admin_socket, true)?, true)] {
         let svc = svc.clone();
         std::thread::spawn(move || {
             for conn in ln.incoming().flatten() {
                 let svc = svc.clone();
-                std::thread::spawn(move || svc.serve(conn));
+                std::thread::spawn(move || svc.serve(conn, admin));
             }
         });
     }
@@ -102,6 +102,7 @@ pub fn run(cfg: Config) -> Result<()> {
     let ident = loop {
         if STOP.load(Ordering::SeqCst) {
             let _ = std::fs::remove_file(&cfg.socket);
+            let _ = std::fs::remove_file(&admin_socket);
             return Ok(());
         }
         match Identity::load(&cfg.state_dir)? {
@@ -163,6 +164,7 @@ pub fn run(cfg: Config) -> Result<()> {
     node.close();
     std::thread::sleep(Duration::from_millis(500));
     let _ = std::fs::remove_file(&cfg.socket);
+    let _ = std::fs::remove_file(&admin_socket);
     Ok(())
 }
 
@@ -203,8 +205,9 @@ fn clock(dir: &Path) -> Clock {
     )
 }
 
-/// Listens on the control socket: mode 0660, in its own directory.
-fn listen(path: &Path) -> Result<UnixListener> {
+/// Listens on the control socket: mode 0660, in its own directory; the
+/// admin socket gets mode 0600, for root and the service's user only.
+fn listen(path: &Path, admin: bool) -> Result<UnixListener> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).context(format!("cannot create {}", dir.display()))?;
     }
@@ -223,7 +226,7 @@ fn listen(path: &Path) -> Result<UnixListener> {
     let made = (|| {
         let tmp_path = tmp.join("s");
         let ln = UnixListener::bind(&tmp_path).context(format!("cannot listen at {}", path.display()))?;
-        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o660))
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(if admin { 0o600 } else { 0o660 }))
             .context("cannot set the socket's mode")?;
         std::fs::rename(&tmp_path, path).context(format!("cannot move the socket to {}", path.display()))?;
         Ok(ln)
@@ -310,7 +313,7 @@ impl Service {
         }
     }
 
-    fn serve(&self, conn: UnixStream) {
+    fn serve(&self, conn: UnixStream, admin: bool) {
         let mut out = match conn.try_clone() {
             Ok(c) => c,
             Err(_) => return,
@@ -320,6 +323,14 @@ impl Service {
             Ok(Some(m)) => m,
             _ => return,
         };
+        if control::is_admin(&m.header.op) && !admin {
+            let e = Error::msg(format!(
+                "{:?} changes the group, so the service takes it only on its admin socket, which only the administrator reaches",
+                m.header.op
+            ));
+            let _ = control::write(&mut out, &control::failure(&e));
+            return;
+        }
         if m.header.op == "watch" {
             self.watch(m, r, out);
             return;

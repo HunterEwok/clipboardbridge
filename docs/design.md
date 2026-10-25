@@ -328,7 +328,11 @@ and lifetimes. The installer enables what the device needs.
 - Local control socket `/run/clipboardbridge/control.sock`, mode 0660, group `clipboardbridge`: the
   kernel admits only root and members of that group. It is made in a private directory and
   moved into place, so it is never reachable with a wider mode. The installer adds the desktop or tmux
-  user to the group. Each message is a JSON header on one line followed by the raw text.
+  user to the group. That group is for the clipboard only: everything that changes the group
+  goes to the admin socket `admin.sock` next to it, mode 0600 (on Windows a directory that
+  only the system and administrators enter), so only root reaches it (D-62). A program that
+  runs as a user of the group, a browser exploit for example, cannot admit a device of its
+  own, remove one, or turn on sync away from home. Each message is a JSON header on one line followed by the raw text.
   Commands send one request and read the answers; a desktop connector keeps its connection
   open to receive writes and report copies. Its watch request carries what the clipboard
   holds; a write that no connector got, such as the group's text at boot, goes to the next
@@ -1629,3 +1633,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
 | D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |
 | D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
+| D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |

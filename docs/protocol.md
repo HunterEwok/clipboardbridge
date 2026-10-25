@@ -774,7 +774,20 @@ Source: `internal/control`, `internal/service/socket.go`, `internal/connector/co
 
 `CBB_SOCKET` overrides the path for clients. The socket is a Unix stream socket with
 mode 0660, made in a private temporary directory and renamed into place, so only root, the
-service's user and members of the group can connect; secrets travel only to them.
+service's user and members of the group can connect; secrets travel only to them. On Windows
+it is `%ProgramData%\clipboardbridge\run\control.sock`, in a directory whose protected access
+list lets in the system, administrators, the service's account and the group.
+
+Next to it the service listens on the **admin socket** `admin.sock` (on Windows
+`run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
+service's user (on Windows the system, administrators and the service's account) can
+connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
+`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied` and
+`clipboard`) and refuses every other operation with an error; the admin socket takes them
+all. So a program of a user in the group can use the clipboard but cannot admit, remove,
+rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
+the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
+with its own two sockets.
 
 ### Framing
 

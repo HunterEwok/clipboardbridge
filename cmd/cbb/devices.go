@@ -92,7 +92,7 @@ func cmdRevoke(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: usage: cbb revoke <name or device ID>; cbb status lists them")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpRevoke)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -111,7 +111,7 @@ func cmdRename(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: usage: cbb rename <name or device ID> <new name>; cbb status lists them")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpRename)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -134,7 +134,7 @@ func cmdFreeze(args []string, on bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cbb: usage: cbb %s <name or device ID>; cbb status lists them\n", cmd)
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(op)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -158,7 +158,7 @@ func cmdAdmin(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: usage: cbb admin <name or device ID>; cbb status lists them")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpAdmin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -178,7 +178,7 @@ func cmdTakeover(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: usage: cbb takeover <name or device ID of the lost root>; cbb status shows it")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpTakeover)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -198,7 +198,7 @@ func cmdUpgrade(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cbb: usage: cbb upgrade, on a Linux or Windows member, after every member runs this version")
 		return 2
 	}
-	c, err := control.Dial(control.SocketPath())
+	c, err := control.DialFor(control.OpUpgrade)
 	if err != nil {
 		return fail(stderr, err)
 	}

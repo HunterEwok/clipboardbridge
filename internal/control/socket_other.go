@@ -14,3 +14,9 @@ const Group = "clipboardbridge"
 
 // permissionHint tells a user without access to the socket what to do.
 const permissionHint = "add your user to the " + Group + " group and log in again"
+
+// adminSocketName is the admin socket's name next to the control socket.
+const adminSocketName = "admin.sock"
+
+// adminHint tells a user without access to the admin socket what to do.
+const adminHint = "run it with sudo"

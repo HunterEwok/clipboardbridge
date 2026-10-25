@@ -29,3 +29,11 @@ func ProgramData() string {
 
 // permissionHint tells a user without access to the socket what to do.
 const permissionHint = "add your user to the " + Group + " group (install.ps1 adds the user who runs it) and sign in again"
+
+// adminSocketName is the admin socket's place next to the control socket:
+// in a directory of its own, whose access list lets only the service and
+// administrators in.
+var adminSocketName = filepath.Join("admin", "admin.sock")
+
+// adminHint tells a user without access to the admin socket what to do.
+const adminHint = "run it from a terminal opened as administrator"

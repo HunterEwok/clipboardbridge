@@ -5,8 +5,12 @@ Every command of `cbb`, on a full member (Linux, macOS, Windows) and on the lite
 their flags and environment variables. `cbb help` prints the short form of the one installed;
 `cbb version` says which it is.
 Commands other than `service`, `agent`, `version` and `help` talk to the running
-service through its control socket, so they need the `clipboardbridge` group (Linux, Windows,
-macOS) or root; `copy`, `paste` and `status` work for members of the group without `sudo`.
+service. `copy`, `paste`, `status` and `agent` use the control socket, which members of the
+`clipboardbridge` group (`_clipboardbridge` on macOS) reach without `sudo`. Every command
+that changes the group or this device's place in it (`new`, `pair`, `invite`, `revoke`,
+`rename`, `admin`, `takeover`, `upgrade`, `freeze`, `unfreeze`, `holder` with a setting,
+`global on|off|hub|...`, and on the lite member `global on|off`) uses the admin socket, which
+only root reaches: run it with `sudo`, on Windows from a terminal opened as administrator.
 
 ## cbb
 
