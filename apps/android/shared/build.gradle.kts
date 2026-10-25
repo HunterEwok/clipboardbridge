@@ -34,5 +34,5 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     // Android's org.json is a stub in unit tests; this is the real one.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }

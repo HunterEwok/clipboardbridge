@@ -123,6 +123,9 @@ type helloBody struct {
 	Device *group.DeviceInfo `json:"device,omitempty"`
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
+	// Mode is the sender's sync mode, for showing; "" from a member that
+	// predates sync modes, or one that has none, such as a phone.
+	Mode string `json:"mode,omitempty"`
 	// AdminKey is the admin key the sender offers, for the root.
 	AdminKey []byte `json:"admin_key,omitempty"`
 	// PhoneCA is the SHA-256 of the SubjectPublicKeyInfo of the iPhone CA
@@ -157,6 +160,8 @@ type helloOut struct {
 	OldKeys bool `json:"old_keys,omitempty"`
 	// TunnelKey is this member's WireGuard public key, for the group's hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
+	// Mode is this member's sync mode (clip.Mode), for the others to show.
+	Mode string `json:"mode,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.

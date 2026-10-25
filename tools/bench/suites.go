@@ -190,6 +190,9 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 
 	if r.Do(suite+"/"+hub.Name+"/new", func() error {
 		_, err := Run(ctx, hub, "cbb new", "")
+		if err == nil {
+			err = shareClipboard(ctx, hub)
+		}
 		return err
 	}) != nil {
 		return nil
@@ -198,7 +201,13 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 		if d == hub {
 			continue
 		}
-		if r.Do(suite+"/"+d.Name+"/join", func() error { return pairOne(ctx, hub, d) }) == nil {
+		if r.Do(suite+"/"+d.Name+"/join", func() error {
+			err := pairOne(ctx, hub, d)
+			if err == nil {
+				err = shareClipboard(ctx, d)
+			}
+			return err
+		}) == nil {
 			g.members = append(g.members, d)
 		}
 	}
@@ -411,4 +420,15 @@ func runID() string {
 	b := make([]byte, 4)
 	rand.Read(b)
 	return time.Now().UTC().Format("20060102T150405") + "-" + hex.EncodeToString(b)
+}
+
+// shareClipboard puts a device that just made or joined the group in the
+// sync mode shared, as the sync cases need: a new device keeps its own
+// clipboard. The lite member always shares.
+func shareClipboard(ctx context.Context, d *Device) error {
+	if d.OS == "linux-lite" {
+		return nil
+	}
+	_, err := Run(ctx, d, cbbCmd(d)+" mode shared", "")
+	return err
 }

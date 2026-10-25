@@ -82,12 +82,18 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			fail(c, s.errNoGroup())
 			return
 		}
-		text, kind, _, ok := e.Local()
+		text, kind, ok := pasteText(e)
 		if !ok {
 			fail(c, errors.New("the clipboard is empty"))
 			return
 		}
 		reply(c, control.Header{Kind: kindName(kind), Done: true}, []byte(text))
+	case control.OpMode:
+		if err := s.setMode(m.Name); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpStatus:
 		reply(c, control.Header{Status: s.statusWithRemoved(), Done: true}, nil)
 	case control.OpNew:
@@ -234,6 +240,7 @@ func (s *Service) status() *control.Status {
 		return st
 	}
 	st.Device, st.Group = string(s.id.ID), group.Tag(s.id.GroupCA.Cert)
+	st.Mode = s.eng.Mode().String()
 	skews := s.eng.Skews()
 	for _, p := range s.nd.Peers() {
 		st.Peers = append(st.Peers, control.Device{ID: string(p.ID), Role: string(p.Role), OS: p.OS, SkewMS: skews[string(p.ID)].Milliseconds()})
@@ -405,6 +412,9 @@ func (s *Service) createGroup() (*group.Identity, error) {
 		err = id.Save(s.cfg.StateDir)
 	}
 	if err == nil {
+		err = s.newDeviceMode()
+	}
+	if err == nil {
 		s.nets.learnAll() // a group is made where it is used
 		err = s.startGroup(id)
 	}
@@ -524,6 +534,9 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		id, err = s.listenForMember(ctx, c, j, code)
 	default:
 		id, err = s.dialMember(ctx, j, code, m.Address)
+	}
+	if err == nil {
+		err = s.newDeviceMode()
 	}
 	if err == nil {
 		if m.Invite == "" {
