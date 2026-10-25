@@ -381,7 +381,15 @@ A timestamp is `(wall, logical)`: `wall` is milliseconds since the Unix epoch, 0
 253402300799999 (the last millisecond of 9999); `logical` is a uint32. Text form: the two
 numbers in decimal separated by a dot, with no sign or spaces, for example
 `1761024000000.3`. Order: by `wall`, then by `logical`. The zero timestamp sorts first and is
-invalid in an event. No timestamp is ever refused for being ahead of the local clock.
+invalid in an event.
+
+An event whose `wall` is more than 7 days (MaxAhead) ahead of the receiver's reference, the
+later of its wall clock and `last.wall`, is refused: as a message it changes nothing (Go and
+the lite member answer it with an error), and as a hello's current event it is taken as no
+current event while the connection stays. Otherwise one device with a wrong date, or a removed
+member, could hold every clock of the group at MaxWall for good. A device whose reference is
+before 2026-01-01 (1767225600000), such as a board without a real-time clock that has not set
+its time yet, refuses nothing.
 
 - `Now()` for a local event: `pt = min(wall clock in ms, MaxWall)`. If `pt > last.wall`, then
   `last = (pt, 0)`; otherwise `logical` is incremented (if it is at its maximum, `last =

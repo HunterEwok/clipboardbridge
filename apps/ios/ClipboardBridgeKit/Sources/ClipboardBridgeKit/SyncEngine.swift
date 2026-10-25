@@ -3,7 +3,8 @@
 import Foundation
 
 /// The hybrid logical clock of docs/protocol.md, section 5, as
-/// internal/hlc implements it. It never refuses a timestamp for being ahead.
+/// internal/hlc implements it. A timestamp more than `maxAheadMS` ahead of
+/// it is refused (`ahead`).
 public final class HybridClock: @unchecked Sendable {
     private let lock = NSLock()
     private var last: Member.Timestamp
@@ -47,6 +48,22 @@ public final class HybridClock: @unchecked Sendable {
             } else {
                 last = .init(wall: w, logical: 0)
             }
+        }
+    }
+
+    /// How far a received timestamp may be ahead of the clock: 7 days.
+    public static let maxAheadMS: UInt64 = 7 * 24 * 3600 * 1000
+
+    /// 2026-01-01: before it the clock is not trusted to refuse anything.
+    static let plausible: UInt64 = 1_767_225_600_000
+
+    /// Whether r is more than `maxAheadMS` ahead of this clock: of its wall
+    /// time or the latest timestamp, whichever is later. A clock that reads
+    /// before 2026 refuses nothing.
+    public func ahead(_ r: Member.Timestamp) -> Bool {
+        lock.withLock {
+            let ref = max(wallMS(), last.wall)
+            return ref >= Self.plausible && r.wall > ref + Self.maxAheadMS
         }
     }
 
@@ -119,9 +136,10 @@ public final class SyncEngine {
     }
 
     /// Takes in an event from a connection, or the current event of a
-    /// hello. An event that is not valid changes nothing.
+    /// hello. An event that is not valid, or more than 7 days ahead of the
+    /// clock, changes nothing.
     public func received(_ e: Member.Event) -> Result {
-        guard e.isValid else { return Result(forward: nil, changed: false) }
+        guard e.isValid, !clock.ahead(e.time) else { return Result(forward: nil, changed: false) }
         if seen.contains(e.id) {
             // Seen before: only a mark that gets its text matters.
             if let cur = current, cur.id == e.id, cur.isMark, !e.isMark {

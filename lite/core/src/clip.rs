@@ -31,6 +31,7 @@ const ECHO_WINDOW: Duration = Duration::from_secs(10);
 const MAX_AGE_MS: i64 = 365 * 24 * 3600 * 1000;
 const MAX_SECRETS: usize = 4096;
 const SEEN_IDS: usize = 4096;
+const AHEAD: &str = "the event's time is more than 7 days ahead of this device's clock; check the sender's date";
 
 /// Normal text or a secret, such as a password.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -320,6 +321,9 @@ impl Engine {
     /// Applies an event a peer delivered.
     pub fn received(&self, ev: Event) -> Result<Outcome> {
         ev.validate()?;
+        if self.clock.ahead(ev.time) {
+            return Err(Error::msg(AHEAD));
+        }
         let mut st = self.inner.lock();
         Ok(self.receive(&mut st, ev))
     }
@@ -369,11 +373,15 @@ impl Engine {
     }
 
     /// Applies the hello a peer sent when the connection started.
-    pub fn reconcile(&self, peer: &str, h: Hello) -> Result<Outcome> {
+    pub fn reconcile(&self, peer: &str, mut h: Hello) -> Result<Outcome> {
         if let Some(c) = &h.current {
             c.validate()?;
             if c.kind == Kind::Secret && !c.is_mark() {
                 return Err(Error::msg("a hello must not carry a secret's text"));
+            }
+            if self.clock.ahead(c.time) {
+                // Taken as no current event; the connection stays.
+                h.current = None;
             }
         }
         let mut st = self.inner.lock();
@@ -534,6 +542,30 @@ mod tests {
 
     const A: &str = "0123456789abcdef0123456789abcdef";
     const B: &str = "fedcba9876543210fedcba9876543210";
+
+    #[test]
+    fn ahead_refused() {
+        let now = 1_792_886_400_000; // 2026-10-25
+        let e = Engine::new(
+            A,
+            Clock::new(Box::new(move || now), Timestamp::default(), None),
+            Box::new(move || now),
+            Box::new(|| Duration::from_secs(3600)),
+        );
+        let event = |wall| Event {
+            id: random_id(),
+            origin: B.to_string(),
+            via: Via::Copy,
+            time: Timestamp { wall, logical: 0 },
+            age: 0,
+            kind: Kind::Text,
+            text: "x".to_string(),
+        };
+        assert!(e.received(event(crate::hlc::MAX_WALL)).is_err());
+        let out = e.reconcile(B, Hello { wall: now, current: Some(event(crate::hlc::MAX_WALL)) }).unwrap();
+        assert!(out.forward.is_none() && !out.write);
+        assert!(e.received(event(now + 6 * 24 * 3600 * 1000)).is_ok());
+    }
 
     #[test]
     fn two_members_converge() {

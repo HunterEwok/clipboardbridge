@@ -190,6 +190,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Security: the phone apps check each computer's certificate chain against the group's
   records when it connects, and close the connection as soon as new records remove it. A
   removed device is now dropped by its key, not only because its ID left the list.
+- Security: a member refuses an event more than 7 days ahead of its clock (Go, the lite
+  member and both phone kits), so a device with a wrong date or a removed member can no
+  longer hold the group's clocks at the year 9999 and keep every later copy from winning. A
+  clock that reads before 2026 refuses nothing, for boards that have not set their time.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
