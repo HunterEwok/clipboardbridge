@@ -56,6 +56,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `groups` next to its key (`cbb forward -records`), so an admin the group removed can no
   longer register as its hub with the records from before while the group's own hub is
   away or after the forwarder restarted.
+- Privacy: the authority records a hub shows its forwarder, and a device its relay, no
+  longer carry the records of devices the root admitted directly, with their names and
+  systems; only the root's own device and the devices it made admins (their demotions
+  included) are named.
 - Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
   arithmetic and comparisons no longer branch on secrets on some compilers and CPUs
   (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now

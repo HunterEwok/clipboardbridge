@@ -1468,9 +1468,10 @@ not built.
 Accepted by design ([design.md](design.md), "The forwarder"): the group tag and root
 certificates, the hub's member certificate (device ID, validity, admin CA) and WireGuard
 public key, the group's obfuscation settings and VLESS user ID when set, the addresses of
-the hub and its clients, the group's authority records (which name the root and the admin
-phones), and the timing and sizes of their packets. It never sees a member key, a text, the
-other devices' names, or which client address is which device. On disk it keeps only each
+the hub and its clients, the group's authority records (which name the root's and the
+admins' devices, with their names and systems, and the removals), and the timing and sizes of
+their packets. It never sees a member key, a text, the other devices' records or names, or
+which client address is which device. On disk it keeps only each
 group's roots, removals and freezes.
 
 ### Registration
@@ -1504,7 +1505,10 @@ group's roots, removals and freezes.
      record of that device names the key and an admin CA). Go hubs (`internal/forward`) and
      the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
    - `records` are the group's authority records: the path records (section 5), every record
-     that is not a `device` record, and the `device` records a root signed with its own key.
+     that is not a `device` record, and of the `device` records a root signed with its own key
+     those of a root's own device and every record of each device a root made an admin, so
+     that a demotion counts. The records of the other devices, with their names, are not
+     sent.
      The forwarder adds them to those it keeps for the group and refuses a hub whose signer
      or member certificate the records revoke or freeze. It keeps the merged authority
      records after the registration ends, so a removed or demoted admin that registers later,

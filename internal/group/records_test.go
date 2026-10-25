@@ -468,3 +468,40 @@ func TestDeviceWithTwoKeys(t *testing.T) {
 		t.Error("removing every key of the device left it in the group")
 	}
 }
+
+// TestAuthorityRecords checks that the records a hub shows its forwarder
+// name the root's own device and the devices it made admins, the demotion
+// of an admin included, but no other device.
+func TestAuthorityRecords(t *testing.T) {
+	pg := newPhoneGroup(t)
+	tag := Tag(pg.root.Cert)
+	root, admin, plain := NewDeviceID(), NewDeviceID(), NewDeviceID()
+	key := func() *KeyHash { k := KeyHash{byte(rand.IntN(256)), byte(rand.IntN(256)), 1}; return &k }
+	ak := KeyHashOf(pg.a.Cert)
+	sign := func(dev DeviceID, name string, ms int64, adminKey *KeyHash) Record {
+		t.Helper()
+		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: tag, TimeMS: t0.UnixMilli() + ms, By: root,
+			Device: dev, Name: name, Role: RolePhone, Key: key(), Admin: adminKey}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	s := NewRecords(pg.root.Cert)
+	own, made, demoted, other := sign(root, "root", 0, nil), sign(admin, "admin", 1, &ak), sign(admin, "admin", 2, nil), sign(plain, "plain", 3, nil)
+	if _, errs := s.AddAll([]Record{own, made, demoted, other}); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	got := map[[32]byte]bool{}
+	for _, r := range s.AuthorityRecords() {
+		got[r.ID()] = true
+	}
+	for name, r := range map[string]Record{"the root's own": own, "the admin's": made, "the demotion": demoted} {
+		if !got[r.ID()] {
+			t.Errorf("%s record is missing", name)
+		}
+	}
+	if got[other.ID()] {
+		t.Error("a plain device's record is shown")
+	}
+}
