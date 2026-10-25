@@ -1,0 +1,16 @@
+# OSV-Scanner: advisories that CI's advisories job lets pass, each with the reason
+# and a date to look again. Reference: https://google.github.io/osv-scanner/configuration/
+
+# Both come in with esp-hal, pinned to a git commit for the Nano ESP32 firmware
+# (lite/esp32), and run only at build time on the build machine: paste is a
+# proc macro, unsafe-libyaml reads esp-config's YAML in build scripts. Both are
+# unmaintained, not vulnerable; they go when esp-hal drops them.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+ignoreUntil = 2027-04-25T00:00:00Z
+reason = "paste is unmaintained; a proc macro of esp-hal, build time only"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+ignoreUntil = 2027-04-25T00:00:00Z
+reason = "unsafe-libyaml is unmaintained; esp-config's build scripts read YAML with it, build time only"

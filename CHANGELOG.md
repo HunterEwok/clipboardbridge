@@ -6,6 +6,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Fixed
+
+- Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
+  arithmetic and comparisons no longer branch on secrets on some compilers and CPUs
+  (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now
+  checks the lite member's crates, the Android apps' libraries and the tray app's Go module
+  against the OSV advisories on every change.
+
 ## [0.4.0] - 2026-10-25
 
 ### Added
