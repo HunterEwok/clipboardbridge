@@ -5,17 +5,7 @@ A group does not need the phone app. A computer can hold the group instead, and 
 without the app joins with a shortcut. This is also the way while the iPhone app waits for
 TestFlight.
 
-```mermaid
-flowchart LR
-    root["🖥️ Linux computer<br/>(root, holds the group's key)"]
-    mac["💻 Mac"]
-    win["💻 Windows"]
-    iphone["📱 iPhone<br/>with the shortcut"]
-    root -->|"six-digit code"| mac
-    root -->|"six-digit code"| win
-    root -->|"profile and shortcut"| iphone
-    mac <-.->|clipboard| win
-```
+![A Linux computer holds the group and adds the Mac and Windows by a six-digit code, the iPhone by a profile and the shortcut](../images/without-app.svg)
 
 ## 1. Make the group on a computer
 

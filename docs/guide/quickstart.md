@@ -5,19 +5,7 @@ Clipboard Bridge gives your phone and your computers one clipboard: copy on one,
 another. The devices form a **group** on your home network. The phone holds the group's key
 and lets each new device in, so nobody can join without you.
 
-```mermaid
-flowchart LR
-    phone["📱 Phone<br/>holds the group's key"]
-    linux["💻 Linux"]
-    mac["💻 Mac"]
-    win["💻 Windows"]
-    phone -->|"scans a QR code<br/>to add each one"| linux
-    phone --> mac
-    phone --> win
-    linux <-.->|"clipboard,<br/>home network"| mac
-    mac <-.-> win
-    win <-.-> linux
-```
+![The phone adds each computer by its QR code; then the devices share one clipboard](../images/group.svg)
 
 It takes four steps: install the app, install Clipboard Bridge on a computer, scan the
 computer's QR code, and turn on sharing on that computer.
