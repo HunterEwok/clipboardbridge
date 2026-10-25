@@ -398,6 +398,13 @@ func (s *Service) devices() ([]control.Device, error) {
 		if d.Self {
 			d.Admin = id.IsAdmin() && !selfFrozen
 		}
+		info := s.cfg.Device.Clean()
+		if p, ok := peers[dev]; ok {
+			info = p.Device
+		} else if !d.Self {
+			info = group.DeviceInfo{}
+		}
+		d.Form, d.OSVersion, d.Version, d.MAC = info.Form, info.OSVersion, info.Version, info.MAC
 		out = append(out, d)
 		shown[dev] = true
 	}

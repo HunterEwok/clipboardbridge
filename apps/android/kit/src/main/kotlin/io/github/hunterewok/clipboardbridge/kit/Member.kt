@@ -177,13 +177,66 @@ object Member {
         val adminKey: ByteArray? = null,
         /** The sender's WireGuard public key, 32 bytes, for the group's hub (section 11). */
         val tunnelKey: ByteArray? = null,
+        /** What the sender says about its device, for showing. */
+        val device: DeviceInfo? = null,
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
-                tunnelKey.contentEqualsOrNull(other.tunnelKey)
+                tunnelKey.contentEqualsOrNull(other.tunnelKey) && device == other.device
 
         override fun hashCode(): Int = wallMS.hashCode()
+    }
+
+    /**
+     * What a hello says about the sender's device (section 4, "Device"): its
+     * form, its system's version, its own version and its network card's MAC
+     * address. Shown, never trusted; any field may be absent.
+     */
+    data class DeviceInfo(
+        val form: String? = null,
+        val osVersion: String? = null,
+        val version: String? = null,
+        val mac: String? = null,
+    ) {
+        /**
+         * The same without its invalid fields: an unknown form, a version
+         * longer than 32 bytes or with control characters, a MAC address
+         * other than six lowercase hex bytes with colons; null when nothing
+         * is left.
+         */
+        val cleaned: DeviceInfo?
+            get() {
+                fun short(s: String?): String? =
+                    s?.takeIf { it.isNotEmpty() && it.toByteArray().size <= 32 && it.none { c -> Character.isISOControl(c) } }
+                val d = DeviceInfo(
+                    form = form?.takeIf { it in FORMS },
+                    osVersion = short(osVersion),
+                    version = short(version),
+                    mac = mac?.takeIf { MAC.matches(it) },
+                )
+                return d.takeIf { it != DeviceInfo() }
+            }
+
+        fun toJson(): JsonObject = Wire.obj(
+            "form" to Wire.str(form),
+            "os_version" to Wire.str(osVersion),
+            "version" to Wire.str(version),
+            "mac" to Wire.str(mac),
+        )
+
+        companion object {
+            /** The forms a device may name, for its icon. */
+            val FORMS = listOf("laptop", "desktop", "phone", "tablet", "tv", "board", "server", "router", "console", "watch", "retro", "other")
+            private val MAC = Regex("^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+
+            /** The device of a hello, null when it does not decode. */
+            fun fromJson(e: JsonElement?): DeviceInfo? = (e as? JsonObject)?.let {
+                runCatching {
+                    DeviceInfo(it.optString("form"), it.optString("os_version"), it.optString("version"), it.optString("mac"))
+                }.getOrNull()
+            }
+        }
     }
 
     /**
@@ -295,6 +348,7 @@ object Member {
                 "records" to Wire.str(m.hello.records),
                 "name" to Wire.str(m.hello.name),
                 "os" to Wire.str(m.hello.os),
+                "device" to m.hello.device?.toJson(),
                 "admin_key" to Wire.bytes(m.hello.adminKey),
                 "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
             ),
@@ -351,6 +405,7 @@ object Member {
                             os = h.optString("os"),
                             adminKey = h.optBytes("admin_key"),
                             tunnelKey = h.optBytes("tunnel_key"),
+                            device = DeviceInfo.fromJson(h.opt("device")),
                         ),
                     )
                 }

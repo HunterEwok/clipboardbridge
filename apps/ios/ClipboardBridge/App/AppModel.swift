@@ -81,6 +81,8 @@ final class AppModel: ObservableObject {
         /// An admin computer another admin froze: the root or an admin phone
         /// unfreezes or removes it.
         var frozen = false
+        /// What its hello says about its device, while it is connected.
+        var device: Member.DeviceInfo?
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }

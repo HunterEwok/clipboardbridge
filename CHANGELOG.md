@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A member's hello says what its device is (docs/protocol.md, section 4, "Device"): its form
+  (laptop, desktop, phone, tablet, board, console, server and others), its system's version,
+  its own version and, on computers and boards, the MAC address of its network card. The
+  iPhone app shows them on a device's page and picks its icon by the form; `cbb devices`'s
+  socket answer carries them too.
 - The Android and iPhone apps keep the home network addresses from the QR code of each
   computer they add, and dial a computer there while mDNS does not find it, so a member in
   another subnet (an IoT VLAN, for example) syncs with the phone too.

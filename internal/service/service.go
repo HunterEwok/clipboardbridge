@@ -44,9 +44,12 @@ type Config struct {
 	Role     node.Role // every role listens and publishes; a computer is node.Full
 	// OS is this device's operating system (group.OSLinux, OSWindows or
 	// OSMacOS), shown to the others; a Mac does not admit devices yet.
-	OS   string
-	Name string // this device's name, shown to the others; the host name if empty
-	Logf func(format string, args ...any)
+	OS string
+	// Device is this device's form, versions and MAC address, shown to the
+	// others in the hello.
+	Device group.DeviceInfo
+	Name   string // this device's name, shown to the others; the host name if empty
+	Logf   func(format string, args ...any)
 
 	// Discover publishes this member and finds the others; mDNS if nil.
 	// Tests replace it.
@@ -338,7 +341,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.guardLocked()
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Engine: eng,
+		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,

@@ -170,6 +170,20 @@
 					"id": "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"
 				}
 			}
+		},
+		{
+			"t": "hello",
+			"role": "full",
+			"hello": {
+				"wall_ms": 1761024000500,
+				"os": "macos",
+				"device": {
+					"form": "laptop",
+					"os_version": "15.1",
+					"version": "0.5.0",
+					"mac": "a4:83:e7:01:02:0f"
+				}
+			}
 		}
 	],
 	"timestamps": [

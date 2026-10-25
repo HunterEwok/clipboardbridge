@@ -94,9 +94,20 @@ struct DeviceDetailView: View {
     private func summary(_ d: AppModel.Computer) -> some View {
         VStack(spacing: 0) {
             row(Text("Type"), Text(d.kind.title))
-            if let system = d.system {
+            if let system = d.systemWithVersion {
                 Divider().overlay(palette.line)
                 row(Text("Operating system"), Text(verbatim: system))
+            }
+            if let version = d.device?.version {
+                Divider().overlay(palette.line)
+                row(Text("Clipboard Bridge"), Text(verbatim: version).monospaced())
+            }
+            if let mac = d.device?.mac {
+                Divider().overlay(palette.line)
+                row(Text("MAC address"), Text(verbatim: mac).monospaced())
+            } else if d.kind == .phone || d.kind == .tablet {
+                Divider().overlay(palette.line)
+                row(Text("MAC address"), Text("hidden by the system").foregroundStyle(palette.textDim))
             }
             Divider().overlay(palette.line)
             row(Text("Role"), roleText(d))

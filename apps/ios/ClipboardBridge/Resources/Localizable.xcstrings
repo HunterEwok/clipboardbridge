@@ -494,6 +494,16 @@
         }
       }
     },
+    "MAC address": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAC-адрес"
+          }
+        }
+      }
+    },
     "Make %@ an admin?": {
       "localizations": {
         "ru": {
@@ -1280,6 +1290,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "заморожен"
+          }
+        }
+      }
+    },
+    "hidden by the system": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "скрыт системой"
           }
         }
       }

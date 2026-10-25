@@ -43,9 +43,10 @@ enum DeviceKind: String, CaseIterable {
 }
 
 extension AppModel.Computer {
-    /// Its kind as its role and system tell: a Mac is taken for a laptop,
-    /// another computer for a desktop, until devices say what they are.
+    /// Its kind as its hello says, or else as its role and system tell: a
+    /// Mac is taken for a laptop, another computer for a desktop.
     var kind: DeviceKind {
+        if let form = device?.form, let k = DeviceKind(rawValue: form) { return k }
         switch (role, os) {
         case ("phone", _), ("shortcut", _): .phone
         case ("lite", _): .board
@@ -66,6 +67,14 @@ extension AppModel.Computer {
         case "android": "Android"
         default: nil
         }
+    }
+
+    /// Its system with the version its hello gives, as "macOS 15.1".
+    var systemWithVersion: String? {
+        guard let system else { return device?.osVersion }
+        guard let v = device?.osVersion else { return system }
+        // Linux names its distribution, which says more than "Linux".
+        return os == "linux" ? v : "\(system) \(v)"
     }
 
     /// Its place in the group, in a word; nil for a plain member.

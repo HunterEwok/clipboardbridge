@@ -172,11 +172,50 @@ public enum Member {
         /// The sender's WireGuard public key, 32 bytes, for the group's
         /// hub (section 11).
         public var tunnelKey: Data?
+        /// What the sender says about its device, for showing.
+        public var device: DeviceInfo?
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
-                    adminKey: Data? = nil, tunnelKey: Data? = nil) {
+                    adminKey: Data? = nil, tunnelKey: Data? = nil, device: DeviceInfo? = nil) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
+            self.device = device
+        }
+    }
+
+    /// What a hello says about the sender's device (section 4, "Device"):
+    /// its form, its system's version, its own version and its network
+    /// card's MAC address. Shown, never trusted; any field may be absent.
+    public struct DeviceInfo: Codable, Equatable, Sendable {
+        /// The forms a device may name, for its icon.
+        public static let forms = ["laptop", "desktop", "phone", "tablet", "tv", "board", "server", "router", "console", "watch", "retro", "other"]
+
+        public var form: String?
+        public var osVersion: String?
+        public var version: String?
+        public var mac: String?
+
+        enum CodingKeys: String, CodingKey { case form, osVersion = "os_version", version, mac }
+
+        public init(form: String? = nil, osVersion: String? = nil, version: String? = nil, mac: String? = nil) {
+            (self.form, self.osVersion, self.version, self.mac) = (form, osVersion, version, mac)
+        }
+
+        /// The same without its invalid fields: an unknown form, a version
+        /// longer than 32 bytes or with control characters, a MAC address
+        /// other than six lowercase hex bytes with colons; nil when nothing
+        /// is left.
+        public var cleaned: DeviceInfo? {
+            func short(_ s: String?) -> String? {
+                guard let s, !s.isEmpty, s.utf8.count <= 32, !s.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
+                return s
+            }
+            let hex = Set("0123456789abcdef")
+            let parts = mac?.split(separator: ":", omittingEmptySubsequences: false) ?? []
+            let macOK = parts.count == 6 && parts.allSatisfy { $0.count == 2 && $0.allSatisfy(hex.contains) }
+            let d = DeviceInfo(form: form.flatMap { Self.forms.contains($0) ? $0 : nil }, osVersion: short(osVersion), version: short(version),
+                               mac: macOK ? mac : nil)
+            return d == DeviceInfo() ? nil : d
         }
     }
 
@@ -331,7 +370,7 @@ public enum Member {
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
-                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key))
+                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, device: h.device?.value))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -358,6 +397,7 @@ public enum Member {
         var os: String?
         var admin_key: Data?
         var tunnel_key: Data?
+        var device: Lenient<DeviceInfo>?
     }
 
     struct WireIn: Decodable {
@@ -377,7 +417,7 @@ public enum Member {
         init(_ m: Message) { self.m = m }
 
         enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, admin_key, tunnel_key }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -391,6 +431,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.records, forKey: .records)
                 try hc.encodeIfPresent(h.name, forKey: .name)
                 try hc.encodeIfPresent(h.os, forKey: .os)
+                try hc.encodeIfPresent(h.device, forKey: .device)
                 try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
                 try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
             case let .event(e):
