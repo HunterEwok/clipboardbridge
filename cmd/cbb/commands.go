@@ -26,6 +26,8 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/pasteboard"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
 	"github.com/HunterEwok/clipboardbridge/internal/service"
+	"github.com/HunterEwok/clipboardbridge/internal/sysinfo"
+	"github.com/HunterEwok/clipboardbridge/internal/version"
 )
 
 const maxText = 1 << 20
@@ -561,7 +563,8 @@ func cmdService(args []string, stderr io.Writer) int {
 		return 2
 	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
-		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(), Logf: logf})
+		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
+			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf})
 	})
 }
 

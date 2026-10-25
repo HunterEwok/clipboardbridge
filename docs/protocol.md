@@ -351,6 +351,21 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
+| `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
+
+### Device
+
+The `device` of a hello, for the apps' device pages and icons. Every field is optional; a
+receiver drops each one that is invalid and keeps the rest, and a `device` that does not
+decode counts as absent. It is sent on every connection, so it follows updates of the system
+and of the program.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `form` | string or absent | `laptop`, `desktop`, `phone`, `tablet`, `tv`, `board`, `server`, `router`, `console`, `watch`, `retro` or `other`; an unknown one is dropped |
+| `os_version` | string or absent | the system's version as the user knows it (`15.1`, `11 (build 26100)`, `Debian GNU/Linux 13 (trixie)`), 1-32 bytes without control characters |
+| `version` | string or absent | the sender's own version (`0.5.0`), the same limits |
+| `mac` | string or absent | the MAC address of the network card on the home network, six lowercase hex bytes with colons; phones send none, as their systems hide it |
 
 ### Event
 
@@ -1222,7 +1237,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 
 | `op` | Request | Answers |
 |------|---------|---------|
-| `devices` | none | `{devices: [{id, name, role, os, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected |
+| `devices` | none | `{devices: [{id, name, role, os, form, os_version, version, mac, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected; `form`, `os_version`, `version` and `mac` are what its hello says (section 4, "Device"), for this device and the connected ones only |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |

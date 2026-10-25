@@ -185,6 +185,12 @@ type Device struct {
 	Role   string `json:"role,omitempty"`
 	OS     string `json:"os,omitempty"`      // its operating system; "" when unknown
 	SkewMS int64  `json:"skew_ms,omitempty"` // how far its clock is ahead of this one
+	// Form, OSVersion, Version and MAC are what its hello says about its
+	// device; "" when it says nothing or is not connected.
+	Form      string `json:"form,omitempty"`
+	OSVersion string `json:"os_version,omitempty"`
+	Version   string `json:"version,omitempty"`
+	MAC       string `json:"mac,omitempty"`
 
 	Admin      bool  `json:"admin,omitempty"`        // it can admit and remove devices
 	Root       bool  `json:"root,omitempty"`         // it holds the group's root

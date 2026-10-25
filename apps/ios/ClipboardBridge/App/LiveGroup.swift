@@ -75,6 +75,16 @@ final class LiveGroup: GroupController {
     private var online: Set<String> = []
     /// The admin keys the connected computers offer, by device ID.
     private var offers: [String: Data] = [:]
+    /// What the connected members' hellos say about their devices.
+    private var infos: [String: Member.DeviceInfo] = [:]
+
+    /// What this phone says about itself in its hellos: an iPhone or an
+    /// iPad, its iOS and the app's version; iOS gives apps no MAC address.
+    static var ownDevice: Member.DeviceInfo {
+        Member.DeviceInfo(form: UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone",
+                          osVersion: UIDevice.current.systemVersion,
+                          version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+    }
     /// The last authentication context the user passed for the root key.
     private var authorized: (context: LAContext, at: Date)?
 
@@ -121,12 +131,14 @@ final class LiveGroup: GroupController {
             .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, os: $0.os,
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
-                  canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen)
+                  canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen,
+                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id])
         }
     }
 
     func refresh() async {
         online = await node?.connected ?? []
+        infos = await node?.devices ?? [:]
         offers = await node?.offeredAdminKeys ?? [:]
     }
 
@@ -461,7 +473,7 @@ final class LiveGroup: GroupController {
         let awayState = AwayKeychain.load()
         let awayRef = Ref<AwayFromHome>()
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
-                              records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
+                              device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
                               tunnelKey: awayState.flatMap { try? GoTunnels().publicKey($0.key) },
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
         let relay = Relay(group: g.tag)

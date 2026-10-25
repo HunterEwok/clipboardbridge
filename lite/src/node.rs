@@ -598,7 +598,14 @@ fn writer(
                 if let Some(ev) = h.current.as_mut() {
                     ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
                 }
-                Some(wire::hello(&h, records.lock().unwrap().digest(), name, "linux", key.read().unwrap().as_deref()))
+                Some(wire::hello(
+                    &h,
+                    records.lock().unwrap().digest(),
+                    name,
+                    "linux",
+                    crate::device::own(),
+                    key.read().unwrap().as_deref(),
+                ))
             }
             Out::Event(mut ev, queued) => {
                 ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));

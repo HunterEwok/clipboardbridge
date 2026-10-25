@@ -3,9 +3,11 @@
 import SwiftUI
 
 /// One device: a summary of what it is and where it stands, then what an
-/// admin phone may do with it (docs/apps.md, Devices).
+/// admin phone may do with it (docs/apps.md, Devices). A page of its own on
+/// a phone; on a big screen a pane beside the devices, which close hides.
 struct DeviceDetailView: View {
     let id: AppModel.Computer.ID
+    var close: (() -> Void)?
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
@@ -32,11 +34,12 @@ struct DeviceDetailView: View {
             }
         }
         .background(AppBackground())
-        .navigationTitle(Text(verbatim: device?.name ?? ""))
-        .navigationBarTitleDisplayMode(.inline)
+        .modifier(PageTitle(title: close == nil ? device?.name : nil))
         .onChange(of: device == nil) { _, gone in
             // Removed here or by another admin: back to the devices.
-            if gone { dismiss() }
+            if gone {
+                if let close { close() } else { dismiss() }
+            }
         }
         .confirmationDialog(Text("Remove \(device?.name ?? "")?"), isPresented: $removing, titleVisibility: .visible) {
             Button(role: .destructive) {
@@ -75,7 +78,7 @@ struct DeviceDetailView: View {
     }
 
     private func header(_ d: AppModel.Computer) -> some View {
-        HStack(spacing: Tokens.spacingMedium) {
+        HStack(alignment: .top, spacing: Tokens.spacingMedium) {
             DeviceIcon(device: d, size: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Text(d.name).font(.system(.title2, design: .monospaced).weight(.bold)).lineLimit(2)
@@ -86,17 +89,35 @@ struct DeviceDetailView: View {
                 }
                 .font(.subheadline)
             }
+            .accessibilityElement(children: .combine)
+            Spacer()
+            if let close {
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(palette.text).glassCircle()
+                }
+                .accessibilityLabel(Text("Close"))
+            }
         }
-        .accessibilityElement(children: .combine)
     }
 
     /// What the group knows of it, a row each.
     private func summary(_ d: AppModel.Computer) -> some View {
         VStack(spacing: 0) {
             row(Text("Type"), Text(d.kind.title))
-            if let system = d.system {
+            if let system = d.systemWithVersion {
                 Divider().overlay(palette.line)
                 row(Text("Operating system"), Text(verbatim: system))
+            }
+            if let version = d.device?.version {
+                Divider().overlay(palette.line)
+                row(Text("Clipboard Bridge"), Text(verbatim: version).monospaced())
+            }
+            if let mac = d.device?.mac {
+                Divider().overlay(palette.line)
+                row(Text("MAC address"), Text(verbatim: mac).monospaced())
+            } else if d.kind == .phone || d.kind == .tablet {
+                Divider().overlay(palette.line)
+                row(Text("MAC address"), Text("hidden by the system").foregroundStyle(palette.textDim))
             }
             Divider().overlay(palette.line)
             row(Text("Role"), roleText(d))
@@ -169,5 +190,18 @@ struct DeviceDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The page's title on a phone; none in a pane, which leaves the page's.
+private struct PageTitle: ViewModifier {
+    let title: String?
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let title {
+            content.navigationTitle(Text(verbatim: title)).navigationBarTitleDisplayMode(.inline)
+        } else {
+            content
+        }
     }
 }

@@ -107,6 +107,16 @@ final class MemberTests: XCTestCase {
                                            id: "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"))
         let vlessText = try vless.jsonText()
         XCTAssertEqual(try JSONDecoder().decode(Member.VLESS.self, from: Data(vlessText.utf8)), vless)
+        // A computer's hello says what it is.
+        guard case let .hello(_, laptop) = decoded[15] else { return XCTFail("frame 15 is \(decoded[15])") }
+        XCTAssertEqual(laptop.device, Member.DeviceInfo(form: "laptop", osVersion: "15.1", version: "0.5.0", mac: "a4:83:e7:01:02:0f"))
+        XCTAssertEqual(laptop.device?.cleaned, laptop.device)
+    }
+
+    func testDeviceInfoCleaned() {
+        let bad = Member.DeviceInfo(form: "toaster", osVersion: String(repeating: "9", count: 33), version: "1\n2", mac: "A4:83:E7:01:02:0F")
+        XCTAssertNil(bad.cleaned)
+        XCTAssertEqual(Member.DeviceInfo(form: "phone", mac: "nope").cleaned, Member.DeviceInfo(form: "phone"))
     }
 
     func testTimestamps() throws {

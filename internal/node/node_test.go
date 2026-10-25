@@ -245,12 +245,20 @@ func newEvent(origin *member, text string) clip.Event {
 }
 
 func TestCopyReachesTheOtherMember(t *testing.T) {
-	mac, pi := newMember(t, Full), newMember(t, Full)
+	// The Pi's hello says what it is; the invalid version is dropped.
+	device := func(_ *clip.Config, c *Config) {
+		c.Device = group.DeviceInfo{Form: "board", OSVersion: "Debian 13", Version: "bad\x00", MAC: "dc:a6:32:00:00:01"}
+	}
+	mac, pi := newMember(t, Full), newMember(t, Full, device)
 	link(t, mac, pi)
 	waitPeers(t, mac, 1)
 	waitPeers(t, pi, 1)
-	if p := mac.Peers()[0]; p.ID != pi.id.ID || p.Role != Full {
+	if p := mac.Peers()[0]; p.ID != pi.id.ID || p.Role != Full ||
+		p.Device != (group.DeviceInfo{Form: "board", OSVersion: "Debian 13", MAC: "dc:a6:32:00:00:01"}) {
 		t.Errorf("the Mac sees %+v", p)
+	}
+	if p := pi.Peers()[0]; !p.Device.IsZero() {
+		t.Errorf("the Pi sees a device %+v from a hello without one", p.Device)
 	}
 	if ok, err := mac.Copied("hello from the Mac", clip.Text, clip.Copy); err != nil || !ok {
 		t.Fatalf("Copied = %v, %v", ok, err)

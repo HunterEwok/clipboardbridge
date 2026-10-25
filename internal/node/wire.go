@@ -119,6 +119,8 @@ type helloBody struct {
 	Records string          `json:"records,omitempty"` // the digest of the sender's records
 	Name    string          `json:"name,omitempty"`    // the sender's device name
 	OS      string          `json:"os,omitempty"`      // the sender's operating system
+	// Device is what the sender says about its device, for showing.
+	Device *group.DeviceInfo `json:"device,omitempty"`
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 	// AdminKey is the admin key the sender offers, for the root.
@@ -138,6 +140,9 @@ type helloOut struct {
 	Records string `json:"records,omitempty"`
 	Name    string `json:"name,omitempty"`
 	OS      string `json:"os,omitempty"`
+	// Device is this member's form, versions and MAC address, for the
+	// others to show.
+	Device *group.DeviceInfo `json:"device,omitempty"`
 	// AdminKey is the SubjectPublicKeyInfo of the admin key of a member
 	// that is no admin yet, DER, for the group's root to certify when it
 	// makes the member an admin.
