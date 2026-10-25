@@ -68,7 +68,9 @@ type HubConfig struct {
 	// CA, that admin CA (nil for a root), and the group's authority records
 	// (group.Records.AuthorityRecords): only the root or an admin may
 	// register its group, and the forwarder learns from the records whom
-	// the group removed.
+	// the group removed. A hub whose root or admin key cannot sign without
+	// the user, a phone's, returns a nil key: the records then show the
+	// forwarder that its member key is the root's or an admin's.
 	Authority func() (key *ecdsa.PrivateKey, admin *x509.Certificate, records []group.Record)
 	Cert      func() tls.Certificate
 
@@ -189,14 +191,13 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	c := claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID}
 	if cfg.Authority != nil {
 		key, admin, records := cfg.Authority()
-		if key == nil {
-			return errors.New("only the group's root or an admin can be its hub")
-		}
-		if c.AdminSig, err = SignAdmin(key, cs, c.Key); err != nil {
-			return err
-		}
-		if admin != nil {
-			c.Admin = admin.Raw
+		if key != nil {
+			if c.AdminSig, err = SignAdmin(key, cs, c.Key); err != nil {
+				return err
+			}
+			if admin != nil {
+				c.Admin = admin.Raw
+			}
 		}
 		if len(records) > maxClaimRecords {
 			records = records[:maxClaimRecords]

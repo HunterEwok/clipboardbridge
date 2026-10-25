@@ -456,6 +456,9 @@ func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Rec
 			break
 		}
 	}
+	if signer == nil && memberOfAuthority(recs, certs[0]) {
+		signer = certs[0]
+	}
 	if signer == nil {
 		return nil, errors.New("only the group's root or an admin may register it, and this hub is neither")
 	}
@@ -467,6 +470,27 @@ func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Rec
 		return nil, errors.New("the hub is a frozen admin of its group")
 	}
 	return recs.All(), nil
+}
+
+// memberOfAuthority reports whether the records make the device of leaf,
+// with leaf's key, the group's root or an admin: a phone hub, whose root or
+// admin key signs only after Face ID, registers with its member key alone
+// (docs/protocol.md, section 13).
+func memberOfAuthority(recs *group.Records, leaf *x509.Certificate) bool {
+	dev, err := group.DeviceOf(leaf)
+	if err != nil {
+		return false
+	}
+	k := group.KeyHashOf(leaf)
+	if root, key := recs.RootMember(); root == dev && key == k {
+		return true
+	}
+	for _, d := range recs.Devices() {
+		if d.ID == dev && d.Key == k && d.Admin && !d.Frozen {
+			return true
+		}
+	}
+	return false
 }
 
 // proof is what a hub sends to prove it holds its WireGuard key: an HMAC,

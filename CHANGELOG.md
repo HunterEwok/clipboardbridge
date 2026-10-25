@@ -28,6 +28,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer's mode in Settings and, on an admin, another computer's from its details; an
   admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
   fingerprint, and says if the computer refused.
+- The phone's side of the phone as the hub (D-64), not yet in the apps: `mobile/cbbtun`
+  runs the group's hub in the app's process (`StartHub`), leads the clients' connections to
+  the kit's member listener and registers with the forwarder (`Register`). A phone hub
+  registers with its member key, without Face ID, when the group's records make that key
+  the root's or an admin's; the forwarder now takes such a registration
+  (docs/protocol.md, section 13).
 
 ### Changed
 

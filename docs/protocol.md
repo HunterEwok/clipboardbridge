@@ -1490,6 +1490,13 @@ on disk.
      forwarder takes the signature only from a root on the path of the records it knows, or
      from an admin CA that such a root certified, so a member that is no admin cannot
      register its group.
+   - A hub whose root or admin key signs only after the user, a phone hub (design.md, "The
+     phone as the hub", D-64), leaves `admin` and `admin_sig` out. The forwarder then takes
+     the hub when the records make its member certificate's device, with that
+     certificate's key, the group's root (the latest `device` record of its own that the
+     current root signed) or an admin that is not frozen (the latest counting `device`
+     record of that device names the key and an admin CA). Go hubs (`internal/forward`) and
+     the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
    - `records` are the group's authority records: the path records (section 5), every record
      that is not a `device` record, and the `device` records a root signed with its own key.
      The forwarder adds them to those of the group's current registration and refuses a hub
