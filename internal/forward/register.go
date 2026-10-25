@@ -321,17 +321,13 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 
 	f.mu.Lock()
 	old := f.regs[tag]
-	var known []group.Record
-	if old != nil {
-		known = old.records
-	}
 	f.mu.Unlock()
+	known := f.memory.records(tag)
 	// The records are checked outside the lock: their signatures take time.
 	records, err := authority(cs.PeerCertificates, c, adminMsg, known)
 	if err != nil {
 		return refuse(err.Error())
 	}
-	r.records = records
 	f.mu.Lock()
 	if o := f.regs[tag]; o != old {
 		// Another registration of the group came meanwhile; this one
@@ -376,6 +372,9 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		f.byInit[initSize(r.obf)] = append(f.byInit[initSize(r.obf)], r)
 	}
 	f.mu.Unlock()
+	if err := f.memory.keep(tag, records); err != nil {
+		f.logf("forward: keeping the records of a group: %v", err)
+	}
 	if err := enc.Encode(a); err != nil {
 		f.mu.Lock()
 		f.dropRegLocked(r)
@@ -469,7 +468,7 @@ func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Rec
 	if recs.Frozen(s) || recs.Frozen(leaf) {
 		return nil, errors.New("the hub is a frozen admin of its group")
 	}
-	return recs.All(), nil
+	return recs.AuthorityRecords(), nil
 }
 
 // memberOfAuthority reports whether the records make the device of leaf,

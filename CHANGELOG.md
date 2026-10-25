@@ -51,6 +51,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: a forwarder keeps a group's authority records after the group's registration
+  ends, and writes the roots, removals and freezes among them (never a device's name) to
+  `groups` next to its key (`cbb forward -records`), so an admin the group removed can no
+  longer register as its hub with the records from before while the group's own hub is
+  away or after the forwarder restarted.
 - Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
   arithmetic and comparisons no longer branch on secrets on some compilers and CPUs
   (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now

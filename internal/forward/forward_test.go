@@ -17,6 +17,8 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -978,6 +980,81 @@ func TestRegistrationByMemberKey(t *testing.T) {
 	}
 	if a := rawRegister(t, f, pin, other, ok.PublicKey().Bytes(), ok, hubAuth{records: append(admins, revoke)}); a.Error == "" {
 		t.Errorf("a removed admin phone: %+v", a)
+	}
+}
+
+// TestRegistrationRemembersRemovals checks that the forwarder keeps a
+// group's authority records after its registration ends, in its state
+// directory across a restart, so that an admin phone the group removed
+// cannot register again with the records from before.
+func TestRegistrationRemembersRemovals(t *testing.T) {
+	dir := t.TempDir()
+	f, pin := startForwarderWith(t, Config{StateDir: dir})
+	cert, tag, root := member(t)
+	now := time.Now()
+	dev, _ := group.DeviceOf(cert.Leaf)
+	device := func(d group.DeviceID, leaf *x509.Certificate, admin *group.KeyHash) group.Record {
+		t.Helper()
+		k := group.KeyHashOf(leaf)
+		r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: now.UnixMilli(), By: dev,
+			Device: d, Name: "phone", Role: group.RolePhone, Key: &k, Admin: admin}, root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	adminDev := group.NewDeviceID()
+	memberKey, _ := group.NewKey()
+	leaf, err := root.IssueMember(adminDev, &memberKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone := tls.Certificate{Certificate: [][]byte{leaf.Raw, root.Cert.Raw}, PrivateKey: memberKey, Leaf: leaf}
+	adminKey, _ := group.NewKey()
+	adminCA, err := root.IssueAdmin(adminDev, &adminKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := group.KeyHashOf(adminCA)
+	before := []group.Record{device(dev, cert.Leaf, nil), device(adminDev, leaf, &ak)}
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli() + 1,
+		Keys: []group.KeyHash{ak, group.KeyHashOf(leaf)}}, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	pk, _ := ecdh.X25519().GenerateKey(rand.Reader)
+
+	// The root phone registers with the removal, then goes away.
+	rc, a := rawOpen(t, f, pin, cert, k.PublicKey().Bytes(), k, hubAuth{records: append(before, revoke)})
+	if a.Error != "" {
+		t.Fatalf("the root phone: %+v", a)
+	}
+	rc.Close()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		f.mu.Lock()
+		gone := f.regs[tag] == nil
+		f.mu.Unlock()
+		if gone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the registration stayed after its connection closed")
+		}
+	}
+	if a := rawRegister(t, f, pin, phone, pk.PublicKey().Bytes(), pk, hubAuth{records: before}); a.Error == "" {
+		t.Errorf("the removed admin phone while the group is away: %+v", a)
+	}
+
+	// A forwarder that starts again on the same directory knows it too.
+	g, gpin := startForwarderWith(t, Config{StateDir: dir})
+	if a := rawRegister(t, g, gpin, phone, pk.PublicKey().Bytes(), pk, hubAuth{records: before}); a.Error == "" {
+		t.Errorf("the removed admin phone after a restart: %+v", a)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, tag+".json"))
+	var kept []group.Record
+	if err != nil || json.Unmarshal(b, &kept) != nil || len(kept) != 1 || kept[0].Type() != group.RecordRevoke {
+		t.Errorf("the group's file keeps no device records, only the removal: %q, %v", b, err)
 	}
 }
 

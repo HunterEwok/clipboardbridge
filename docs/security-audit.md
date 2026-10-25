@@ -127,10 +127,10 @@ Against the forwarder and a hub, from outside the group:
 - confirm a revoked device's tunnel key is dropped within one record round and it cannot sync
   or rejoin;
 - confirm groups on the forwarder cannot reach each other, and that the forwarder writes
-  nothing to disk and keeps no logs (file system checked before and after a run).
+  nothing to disk but the groups' roots, removals and freezes, and keeps no logs (file system checked before and after a run).
 
 Pass when only valid peers are answered, clients are isolated, the hub's tunnel address shows
-only the member port, and the forwarder learns and stores nothing.
+only the member port, and the forwarder learns and stores nothing but the groups' roots, removals and freezes.
 
 ### 5.4 Robustness to malformed input (F-cases, S15)
 

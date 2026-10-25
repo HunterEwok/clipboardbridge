@@ -1468,9 +1468,10 @@ not built.
 Accepted by design ([design.md](design.md), "The forwarder"): the group tag and root
 certificates, the hub's member certificate (device ID, validity, admin CA) and WireGuard
 public key, the group's obfuscation settings and VLESS user ID when set, the addresses of
-the hub and its clients, and the timing and sizes of their packets. It never sees a member
-key, a text, a device name, or which client address is which device, and it keeps nothing
-on disk.
+the hub and its clients, the group's authority records (which name the root and the admin
+phones), and the timing and sizes of their packets. It never sees a member key, a text, the
+other devices' names, or which client address is which device. On disk it keeps only each
+group's roots, removals and freezes.
 
 ### Registration
 
@@ -1504,10 +1505,14 @@ on disk.
      the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
    - `records` are the group's authority records: the path records (section 5), every record
      that is not a `device` record, and the `device` records a root signed with its own key.
-     The forwarder adds them to those of the group's current registration and refuses a hub
-     whose signer or member certificate the records revoke or freeze. It keeps the merged
-     records in memory while the group stays registered, so a removed admin that registers
-     next cannot leave its revocation out. The group CA for these records is the first
+     The forwarder adds them to those it keeps for the group and refuses a hub whose signer
+     or member certificate the records revoke or freeze. It keeps the merged authority
+     records after the registration ends, so a removed or demoted admin that registers later,
+     while the group's own hub is away, cannot leave its revocation out. Those that are no
+     `device` records (roots, removals, freezes, thaws, never a device's name) it also writes
+     to its state directory (`cbb forward -records`, one file per group tag), so a removal
+     outlives a restart; a demotion without removal lasts until a restart. Past 100,000
+     groups it forgets the one that registered least recently. The group CA for these records is the first
      self-signed certificate the hub presented.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
      a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS

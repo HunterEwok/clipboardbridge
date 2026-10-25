@@ -29,6 +29,7 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 	showKey := fs.Bool("show-key", false, "print the key for cbb global hub -forwarder-key and stop")
 	vlessSite := fs.String("vless-site", "", "take VLESS with REALITY too, borrowing the TLS of this well-known site, such as www.example.com")
 	vlessListen := fs.String("vless-listen", ":443", "the TCP address to listen on for VLESS")
+	records := fs.String("records", "", "the directory that keeps the groups' authority records (default: groups next to the key; \"none\" keeps them in memory only)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -47,6 +48,18 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 	cfg := forward.Config{Listen: *listen, Cert: cert, Logf: logf}
+	switch *records {
+	case "none":
+	case "":
+		cfg.StateDir = filepath.Join(filepath.Dir(*keyFile), "groups")
+	default:
+		cfg.StateDir = *records
+	}
+	if cfg.StateDir != "" {
+		if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+			return fail(stderr, err)
+		}
+	}
 	if *vlessSite != "" {
 		key, err := forward.LoadRealityKey(*keyFile)
 		if err != nil {
