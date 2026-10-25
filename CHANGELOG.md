@@ -38,6 +38,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - iPhone kit: a key whose algorithm identifiers are damaged is refused, as Go and the
   Android kit refuse it; swift-crypto on Linux read the key's point without checking them.
 
+## [0.4.1] - 2026-10-25
+
+### Fixed
+
+- Releases carry `winget-manifest.zip`: the release workflow writes it before it
+  publishes the release, since an immutable release takes no files afterwards (0.4.0 went
+  out without it).
+- The release notes name the Wear OS app's APK, `clipboardbridge-wear-X.Y.Z.apk`, in the
+  install steps and the file table.
+
 ## [0.4.0] - 2026-10-25
 
 ### Added
@@ -758,7 +768,8 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.1.1...v0.2.0

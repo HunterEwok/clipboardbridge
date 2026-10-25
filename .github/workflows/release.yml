@@ -223,6 +223,16 @@ jobs:
           for f in *.apk; do [ -e "$f" ] && set -- "$@" "$f"; done
           sha256sum -- "$@" >SHA256SUMS
           cat SHA256SUMS
+      - name: the winget manifest, from SHA256SUMS
+        # For winget's repository, published with the release, which is
+        # immutable once published; it goes to microsoft/winget-pkgs by a pull
+        # request (docs/maintaining.md, "winget"). A pre-release stays out, as
+        # it does from the tap.
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          out="$RUNNER_TEMP/winget"
+          sh packaging/winget/manifest.sh "$GITHUB_REF_NAME" dist/SHA256SUMS "$out"
+          (cd "$out" && zip -qX "$GITHUB_WORKSPACE/dist/winget-manifest.zip" ./*.yaml)
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
@@ -370,27 +380,3 @@ jobs:
             commit -q -m "clipboardbridge $GITHUB_REF_NAME"
           # shellcheck disable=SC2086 # $dry is one word or none
           git push $dry origin HEAD:main
-
-  winget:
-    # The manifest for winget's repository, attached to the release; it goes
-    # to microsoft/winget-pkgs by a pull request (docs/maintaining.md, "winget").
-    # A pre-release stays out, as it does from the tap.
-    if: github.ref_type == 'tag' && needs.release.result == 'success' && !contains(github.ref_name, '-')
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write # attach the manifest to the release
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: the manifest, from the published SHA256SUMS
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
-          out="$RUNNER_TEMP/winget"
-          sh packaging/winget/manifest.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/SHA256SUMS" "$out"
-          (cd "$out" && zip -qX ../winget-manifest.zip ./*.yaml)
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/winget-manifest.zip" --repo "$GITHUB_REPOSITORY"
