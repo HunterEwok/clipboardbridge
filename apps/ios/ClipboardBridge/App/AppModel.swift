@@ -29,6 +29,8 @@ protocol GroupController: AnyObject {
     func unfreeze(_ id: String) async throws
     /// Gives a device another name; only an admin phone does.
     func rename(_ id: String, to name: String) async throws
+    /// Sets the sync mode of a connected computer; only an admin phone does.
+    func setMode(_ id: String, to mode: String) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -48,6 +50,7 @@ protocol GroupController: AnyObject {
 extension GroupController {
     func unfreeze(_ id: String) async throws {}
     func rename(_ id: String, to name: String) async throws {}
+    func setMode(_ id: String, to mode: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
 }
@@ -83,6 +86,8 @@ final class AppModel: ObservableObject {
         var frozen = false
         /// What its hello says about its device, while it is connected.
         var device: Member.DeviceInfo?
+        /// Its sync mode, as its hello says, while it is connected.
+        var mode: String?
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -333,6 +338,18 @@ final class AppModel: ObservableObject {
         devices = group.devices
     }
 
+    /// Sets the sync mode of a connected computer.
+    func setMode(_ id: String, to mode: String) async {
+        do {
+            try await group.setMode(id, to: mode)
+            message = String(localized: "The sync mode is set.", bundle: .app)
+        } catch {
+            message = Self.describe(error)
+        }
+        await group.refresh()
+        devices = group.devices
+    }
+
     /// Makes a computer an admin.
     func makeAdmin(_ id: String) async {
         do {
@@ -384,6 +401,16 @@ final class AppModel: ObservableObject {
             case .timedOut: return String(localized: "No phone scanned the code in five minutes. Try again.", bundle: .app)
             case .tooManyWrongCodes: return String(localized: "Too many wrong codes. Try again with a new code.", bundle: .app)
             case .notAdmin: return String(localized: "Only an admin phone can do this.", bundle: .app)
+            default: break
+            }
+        }
+        if let r = error as? LiveGroup.CommandRefused {
+            return String(localized: "The computer refused: \(r.reason)", bundle: .app)
+        }
+        if let f = error as? MemberNode.Failure {
+            switch f {
+            case .notConnected: return String(localized: "The computer is not connected to this phone. Try again when it shows online.", bundle: .app)
+            case .timedOut, .closed: return String(localized: "The computer did not answer. It may run an older version of Clipboard Bridge.", bundle: .app)
             default: break
             }
         }

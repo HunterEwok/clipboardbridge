@@ -29,6 +29,19 @@ class CommandsTest {
         assertFailsWith<IllegalArgumentException> { Commands.mode(pc, "everything", "tag", "by", now, root) }
     }
 
+    /** A phone group signs a mode command with its root key, for its own group. */
+    @Test
+    fun phoneGroupModeCommand() {
+        val rootKey = SoftwareSigner()
+        val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, now)
+        val c = g.modeCommand(pc, "receive", rootKey, now)
+        val o = Wire.parse(c.body)!!
+        assertEquals(g.tag, o.optString("group"))
+        assertEquals(g.device, o.optString("by"))
+        assertEquals("receive", o.optString("mode"))
+        assertNull(c.chain)
+    }
+
     /** A command and its result through the frames, as Go sends and reads them. */
     @Test
     fun messages() {

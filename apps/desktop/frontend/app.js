@@ -122,6 +122,17 @@ function glyph(d, size = 44) {
     `stroke-width="1.8" stroke-linecap="round">${shapes[kindOf(d)]}</svg></span>`;
 }
 
+// The sync modes (docs/design.md, "Sync modes"), in the order they show.
+const modes = ["own", "shared", "receive", "send"];
+const modeName = (m) => ({ own: t("Own clipboard"), shared: t("Shared"), receive: t("Receive only"), send: t("Send only") })[m] ?? m;
+
+// modeButtons is a row of the four modes; id names the device, "" this
+// computer.
+function modeButtons(current, id) {
+  return modes.map((m) => `<button type="button" data-mode="${m}" data-mode-for="${esc(id)}" aria-checked="${m === current}" ` +
+    `${state.busy ? "disabled" : ""}>${esc(modeName(m))}</button>`).join("");
+}
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const dot = (on) => `<span class="dot${on ? " on" : ""}"></span>`;
 
@@ -229,6 +240,7 @@ function renderDetail() {
   const standing = d.self ? (d.admin ? t("This computer · admin") : t("This computer"))
     : d.frozen ? t("frozen") : d.root ? t("root") : d.admin ? t("admin") : "";
   if (standing) lines.push([t("In the group"), standing]);
+  if (d.mode) lines.push([t("Sync mode"), modeName(d.mode)]);
   if (!d.online && d.last_seen_ms) lines.push([t("Last seen"), new Date(d.last_seen_ms).toLocaleString(lang)]);
   lines.push([t("Device ID"), d.id, true]);
 
@@ -245,6 +257,10 @@ function renderDetail() {
     `<div>${dot(d.online)} <span class="${d.online ? "" : "dim"}">${esc(d.online ? t("online") : t("offline"))}</span></div></div>` +
     `<button class="icon close" id="close" title="${esc(t("Close"))}">✕</button></div>` +
     `<div class="card">${lines.map(([k, v, mono]) => `<div class="line"><span class="dim">${esc(k)}</span><span class="value${mono ? " mono" : ""}">${esc(v)}</span></div>`).join("")}</div>` +
+    // An admin sets the mode of a computer that is online; the phones and
+    // lite members have no modes yet and refuse.
+    (me?.admin && !d.self && d.online && d.role === "full"
+      ? `<div class="card"><div class="dim small">${esc(t("Sync mode"))}</div><div class="segmented">${modeButtons(d.mode, d.id)}</div></div>` : "") +
     (me?.admin
       ? `<div class="card actions">${actions.map(([a, label, danger]) => `<button data-action="${a}"${danger ? ' class="danger"' : ""} ${state.busy ? "disabled" : ""}>${esc(label)}</button>`).join("")}</div>`
       : `<p class="dim small">${esc(t("This computer is no admin of the group: the phone or an admin computer adds and removes devices."))}</p>`);
@@ -324,6 +340,9 @@ function renderSettings() {
   }).join("");
   for (const b of document.querySelectorAll("[data-appearance]")) b.setAttribute("aria-checked", String(b.dataset.appearance === s.appearance));
   $("details").checked = s.details ?? state.show_details;
+  const mode = state.status?.group && !state.status.removed ? state.status.mode : "";
+  $("mode-settings").hidden = !mode;
+  $("modes").innerHTML = mode ? modeButtons(mode, "") : "";
   $("version").textContent = state.version;
 }
 
@@ -346,6 +365,10 @@ document.addEventListener("click", async (e) => {
   if (el.dataset.color) return saveSettings({ color: el.dataset.color });
   if (el.dataset.appearance) return saveSettings({ appearance: el.dataset.appearance });
   if (el.dataset.action) return deviceAction(el.dataset.action);
+  if (el.dataset.mode) {
+    await act("SetMode", el.dataset.modeFor, el.dataset.mode);
+    return renderSettings();
+  }
   if (el.dataset.id) {
     selected = el.dataset.id;
     return render();

@@ -242,6 +242,16 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * A command that sets a computer's sync mode (docs/protocol.md,
+     * section 15), signed with this phone's root or admin key; the caller
+     * sends it to that computer alone.
+     */
+    fun modeCommand(to: String, mode: String, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        return Commands.mode(to, mode, tag, device, now, caSigner, adminCA)
+    }
+
+    /**
      * Unfreezes an admin computer that another admin froze (section 10,
      * rule 4): a thaw record that ends every freeze of it. The root and the
      * admin phones do it; Remove takes the computer out for good instead.

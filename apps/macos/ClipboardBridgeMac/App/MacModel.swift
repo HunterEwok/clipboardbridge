@@ -92,6 +92,13 @@ final class MacModel: ObservableObject {
     func freeze(_ id: String) async { await admin(["freeze", id], done: String(localized: "Frozen.")) }
     func unfreeze(_ id: String) async { await admin(["unfreeze", id], done: String(localized: "Unfrozen.")) }
 
+    /// Sets the sync mode: this Mac's with id nil, or on an admin another
+    /// device's, which cbb sends it as a signed command.
+    func setMode(_ mode: SyncMode, on id: String? = nil) async {
+        let arguments = id.map { ["mode", "-on", $0, mode.rawValue] } ?? ["mode", mode.rawValue]
+        await admin(arguments, done: String(localized: "The sync mode is set."))
+    }
+
     /// Turns sync away from home on or off; on needs the user's yes to the
     /// warning the app showed, which cbb asks for.
     func setAway(_ on: Bool) async {

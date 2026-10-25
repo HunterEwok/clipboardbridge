@@ -53,6 +53,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class LiveGroup(private val context: Context, private val file: File = defaultFile(context)) {
     /** The failures the app says something about. */
+    /** A computer refused a command this phone sent it, for the reason it gave. */
+    class CommandRefused(val reason: String) : Exception(reason)
+
     class Failure(val kind: Kind) : Exception(kind.name) {
         enum class Kind { UNREACHABLE, NOT_CONFIRMED, NO_NETWORK, TIMED_OUT, TOO_MANY_WRONG_CODES, NOT_ADMIN, NO_COMPUTERS, NO_SCREEN }
     }
@@ -76,6 +79,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val frozen: Boolean = false,
         /** What its hello says about its device, while it is connected; this phone's own for itself. */
         val device: Member.DeviceInfo? = null,
+        /** The sync mode its hello reports, while it is connected. */
+        val mode: String? = null,
     )
 
     /**
@@ -130,6 +135,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val online = n?.connected.orEmpty()
             val offers = n?.offeredAdminKeys.orEmpty()
             val infos = n?.devices.orEmpty()
+            val modes = n?.modes.orEmpty()
             val root = g.records.rootDevice
             return g.devices.map {
                 Device(
@@ -138,6 +144,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
+                    mode = modes[it.id],
                 )
             }
         }
@@ -388,6 +395,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val r = withContext(Dispatchers.IO) { g.thaw(id, ca, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
         currentNode?.sendRecords(listOf(r))
+    }
+
+    /**
+     * Sets a connected computer's sync mode (docs/protocol.md, section 15):
+     * a command signed with this phone's root or admin key, which the
+     * computer answers.
+     */
+    suspend fun setMode(id: String, mode: String) {
+        val ca = caSigner(R.string.reason_set_mode)
+        val g = copyOfState() ?: return
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        val r = withContext(Dispatchers.IO) { n.command(id, g.modeCommand(id, mode, ca, Instant.now())) }
+        if (!r.done) throw CommandRefused(r.reason ?: r.status)
     }
 
     /**

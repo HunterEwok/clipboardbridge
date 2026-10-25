@@ -237,6 +237,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// The devices of the group, from the records.
     public var devices: [RecordSet.Device] { records.devices }
 
+    /// A command that sets the sync mode of the member device to (section
+    /// 15), signed with this phone's root or admin key; only an admin phone
+    /// signs one.
+    public func modeCommand(to device: String, mode: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+    }
+
     /// Removes a device from the group: signs a revocation of its key,
     /// which every member then refuses, and returns the record to send. For
     /// an admin phone it revokes its admin key too and keeps the devices

@@ -147,6 +147,15 @@
     <string name="hidden_by_system">hidden by the system</string>
     <string name="role">Role</string>
     <string name="in_the_group">In the group</string>
+    <string name="sync_mode">Sync mode</string>
+    <string name="mode_own">Own clipboard</string>
+    <string name="mode_shared">Shared</string>
+    <string name="mode_receive">Receive only</string>
+    <string name="mode_send">Send only</string>
+    <string name="mode_set">The sync mode is set.</string>
+    <string name="reason_set_mode">Change a computer\'s sync mode</string>
+    <string name="error_command_refused">The computer refused.</string>
+    <string name="error_no_answer">The computer did not answer. It may be offline, or run an older version of Clipboard Bridge.</string>
     <string name="role_full">Full member</string>
     <string name="role_lite">Lite member</string>
     <string name="role_phone">Phone app</string>

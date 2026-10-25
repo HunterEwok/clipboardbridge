@@ -15,7 +15,7 @@ final class ClipboardBridgeMacTests: XCTestCase {
     /// An answer is read only once all of it has come, and its devices
     /// keep what the service leaves out as false.
     func testDecode() throws {
-        let line = #"{"op":"reply","len":3,"devices":[{"id":"ab12","name":"deck","role":"full","os":"linux","online":true,"self":true,"os_version":"Ubuntu 24.04","last_seen_ms":5},{"id":"cd34"}]}"#
+        let line = #"{"op":"reply","len":3,"devices":[{"id":"ab12","name":"deck","role":"full","os":"linux","online":true,"self":true,"os_version":"Ubuntu 24.04","last_seen_ms":5,"mode":"receive"},{"id":"cd34"}]}"#
         let whole = Data((line + "\nxyz").utf8)
         XCTAssertNil(try Control.decode(whole.prefix(10)))
         XCTAssertNil(try Control.decode(whole.dropLast()))
@@ -26,6 +26,8 @@ final class ClipboardBridgeMacTests: XCTestCase {
         XCTAssertEqual(devices[0].osVersion, "Ubuntu 24.04")
         XCTAssertTrue(devices[0].online && devices[0].isSelf)
         XCTAssertEqual(devices[0].lastSeenMS, 5)
+        XCTAssertEqual(devices[0].mode.flatMap(SyncMode.init(rawValue:)), .receive)
+        XCTAssertNil(devices[1].mode)
         XCTAssertEqual(devices[1].name, "cd34")
         XCTAssertFalse(devices[1].admin || devices[1].online)
         XCTAssertEqual(devices[1].kind, .desktop)

@@ -24,6 +24,10 @@ final class LiveGroup: GroupController {
     /// The clipboard holds something the app could not read as text: the
     /// paste was not allowed, or it is not text. The button leaves it as it
     /// is rather than put an older text over it.
+    /// A device refused a command (docs/protocol.md, section 15), saying
+    /// why.
+    struct CommandRefused: Error { let reason: String }
+
     struct ClipboardUnreadable: Error {
         let items: Int
         let hasStrings: Bool
@@ -77,6 +81,8 @@ final class LiveGroup: GroupController {
     private var offers: [String: Data] = [:]
     /// What the connected members' hellos say about their devices.
     private var infos: [String: Member.DeviceInfo] = [:]
+    /// The sync modes the connected members' hellos report.
+    private var modes: [String: String] = [:]
 
     /// What this phone says about itself in its hellos: an iPhone or an
     /// iPad, its iOS and the app's version; iOS gives apps no MAC address.
@@ -132,13 +138,14 @@ final class LiveGroup: GroupController {
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
                   canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen,
-                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id])
+                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: modes[$0.id])
         }
     }
 
     func refresh() async {
         online = await node?.connected ?? []
         infos = await node?.devices ?? [:]
+        modes = await node?.modes ?? [:]
         offers = await node?.offeredAdminKeys ?? [:]
     }
 
@@ -383,6 +390,18 @@ final class LiveGroup: GroupController {
         state = g
         groupChanged()
         await node?.sendRecords([r])
+    }
+
+    /// Sets the sync mode of a connected computer (docs/protocol.md, section
+    /// 15): a command signed with this phone's root or admin key after Face
+    /// ID, which only that computer takes, within 30 s.
+    func setMode(_ id: String, to mode: String) async throws {
+        guard let node else { throw MemberNode.Failure.notConnected }
+        let ca = try await caSigner(reason: String(localized: "Change a computer's sync mode", bundle: .app))
+        guard let g = state else { return }
+        let c = try g.modeCommand(to: id, mode: mode, caSigner: ca, now: Date())
+        let r = try await node.command(c, to: id)
+        if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 
     /// Makes a computer an admin (docs/protocol.md, section 10, "A computer

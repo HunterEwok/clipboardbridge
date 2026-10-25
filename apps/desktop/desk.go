@@ -172,7 +172,7 @@ func (d *Desk) Fetch() {
 	})
 }
 
-// Rename, Remove, MakeAdmin, Freeze, Unfreeze and SetAway change the group:
+// Rename, Remove, MakeAdmin, Freeze, Unfreeze, SetAway and SetMode change the group:
 // cbb does them as the administrator (admin_*.go), after the system asks.
 func (d *Desk) Rename(id, name string) { d.admin([]string{"rename", id, name}, false, "Renamed.") }
 func (d *Desk) Remove(id string)       { d.admin([]string{"revoke", id}, false, "Removed from the group.") }
@@ -188,6 +188,16 @@ func (d *Desk) SetAway(on bool) {
 	} else {
 		d.admin([]string{"global", "off"}, false, "Sync away from home is off.")
 	}
+}
+
+// SetMode sets the sync mode: this computer's with id empty, or on an admin
+// another device's, which cbb sends it as a signed command.
+func (d *Desk) SetMode(id, mode string) {
+	args := []string{"mode", mode}
+	if id != "" {
+		args = []string{"mode", "-on", id, mode}
+	}
+	d.admin(args, false, "The sync mode is set.")
 }
 
 func (d *Desk) admin(args []string, yes bool, done string) {

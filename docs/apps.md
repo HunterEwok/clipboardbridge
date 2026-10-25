@@ -76,7 +76,9 @@ they look, so both apps are built to the same plan.
    "A computer as admin"): it asks once, warns that the key is a file on the computer, needs
    Face ID, and the computer then adds and removes devices with `cbb pair` and
    `cbb revoke`. If the removed phone held the root, this phone
-   takes it over in the same step. A phone that is not an admin shows the list without
+   takes it over in the same step. A connected computer's page shows its sync mode and, on an admin phone,
+   offers "Sync mode": the phone signs a `mode` command (docs/protocol.md, section 15) after
+   Face ID or the fingerprint and sends it to that computer, which answers done or why it refused. A phone that is not an admin shows the list without
    actions and says which phones are admins.
 5. **Settings**: the theme (System, Dark or Light) and one of ten colours, language, about (seven taps on the version show the switch "Show
    error details", which puts the error itself under each error message; it is on in debug
@@ -205,10 +207,10 @@ keep syncing without it. It speaks the service's control socket (`Control`, the 
   bottom. "+" gives the commands that add a device.
 - **The menu bar item**: how many devices are online, send, fetch, the window, Settings.
 - **Settings**: the colour and the appearance of the phones (`Theme.swift` and `Tokens.swift`
-  of the iPhone app, shared), and error details (on in debug builds, off in release ones, and
+  of the iPhone app, shared), this Mac's sync mode (`cbb mode`), and error details (on in debug builds, off in release ones, and
   the `ShowErrorDetails` default either way).
 - What changes the group (rename, remove, make an admin, freeze, unfreeze, sync away from
-  home) goes only through the admin socket, which only root reaches, so the app runs
+  home, the sync mode of this Mac or, on an admin, of another computer: `cbb mode -on`) goes only through the admin socket, which only root reaches, so the app runs
   `cbb` with administrator privileges (`Admin`, `do shell script … with administrator
   privileges`): macOS asks for the password, as `sudo cbb` does in Terminal. With error
   details on, `CBB_DEBUG=1` makes cbb name the error underneath.
@@ -231,7 +233,8 @@ service and its clipboard agent keep syncing without it.
 - **The tray item**: how many devices are online, send, fetch, the window, Quit. Closing the
   window keeps the tray item; starting the app again opens the window.
 - **Settings**: the ten colours (`frontend/tokens.js`, which `go run ./tools/tokens` writes
-  with the Swift and Kotlin tokens), the appearance, and error details (as cbb: on in a
+  with the Swift and Kotlin tokens), the appearance, this computer's sync mode (`cbb mode`),
+  and error details (as cbb: on in a
   build without a release version, `CBB_DEBUG=1` or `0`, or the switch). They are kept in
   the user's configuration folder (`clipboardbridge/desktop.json`).
 - What changes the group runs `cbb` as the administrator: through `pkexec` on Linux (the

@@ -36,6 +36,8 @@ enum Control {
         var os: String?
         var away: Away?
         var version: String
+        /// The sync mode: own, shared, receive or send; nil when in no group.
+        var mode: String?
     }
 
     /// Sync away from home on this device; nil while it is off.
@@ -70,9 +72,12 @@ enum Control {
         var online = false
         var lastSeenMS: Int64 = 0
         var isSelf = false
+        /// Its sync mode, as its hello says; nil when it says none or is
+        /// not connected.
+        var mode: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, name, role, os, form, version, mac, admin, root, frozen, online
+            case id, name, role, os, form, version, mac, admin, root, frozen, online, mode
             case osVersion = "os_version"
             case lastSeenMS = "last_seen_ms"
             case isSelf = "self"
@@ -101,6 +106,7 @@ enum Control {
             online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
             lastSeenMS = try c.decodeIfPresent(Int64.self, forKey: .lastSeenMS) ?? 0
             isSelf = try c.decodeIfPresent(Bool.self, forKey: .isSelf) ?? false
+            mode = try c.decodeIfPresent(String.self, forKey: .mode)
         }
     }
 
