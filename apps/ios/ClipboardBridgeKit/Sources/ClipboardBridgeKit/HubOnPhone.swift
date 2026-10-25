@@ -82,6 +82,21 @@ public protocol HubTunnel: AnyObject, Sendable {
     func setRecords(_ records: String) throws
     /// cbbtun's Status JSON.
     func status() -> String
+    /// Opens a remote invitation's guest tunnel (cbbtun's Hub.Invite).
+    func invite(group: String, endpoints: String, lifetime: Int, guestPort: UInt16) throws -> HubGuest
+    func close()
+}
+
+/// The guest tunnel of a remote invitation, cbbtun's Guest.
+public protocol HubGuest: AnyObject, Sendable {
+    /// The invitation's text, clipboardbridge://invite#….
+    var text: String { get }
+    var secret: Data { get }
+    /// When it expires.
+    var expires: Date { get }
+    /// The window admitted the device: its first member connection goes to
+    /// the member port.
+    func admitted()
     func close()
 }
 
@@ -106,7 +121,9 @@ public final class HubOnPhone: @unchecked Sendable {
     public enum Status: Sendable, Equatable { case off, paused, homeOnly, registering, registered, failed }
 
     /// The forwarder's address is no "ip:port", or its key no pin.
-    public enum Failure: Error, Equatable { case badForwarder }
+    /// badForwarder: not a forwarder's address and key; notRunning: an
+    /// invitation needs the hub's tunnel and its forwarder.
+    public enum Failure: Error, Equatable { case badForwarder, notRunning }
 
     /// What a running hub needs from the group: the member listener's
     /// port, the member chain, the member key's signer of SHA-256 digests,
@@ -278,6 +295,16 @@ public final class HubOnPhone: @unchecked Sendable {
             return tunnel
         }
         t?.close()
+    }
+
+    /// Opens a remote invitation's guest tunnel to the window on guestPort
+    /// (docs/protocol.md, section 12), with the forwarder as the hub's
+    /// address away from home; throws while the hub does not run.
+    public func invite(group: String, lifetime: Int, guestPort: UInt16) throws -> HubGuest {
+        let (t, fw) = lock.withLock { (tunnel, state?.forwarder) }
+        guard let t, let fw else { throw Failure.notRunning }
+        let endpoints = String(decoding: try JSONEncoder().encode([fw.endpoint]), as: UTF8.self)
+        return try t.invite(group: group, endpoints: endpoints, lifetime: lifetime, guestPort: guestPort)
     }
 
     /// Hands the forwarder new authority records at the next registration,

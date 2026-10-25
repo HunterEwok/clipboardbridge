@@ -1393,11 +1393,13 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
 A device that shares no network with the group joins through the hub's tunnel with a remote
 invitation ([design.md](design.md), "Joining from another network"). Implemented in Go
 (`internal/invite`, `internal/service/invite.go`, `cbb invite`, `cbb pair -invite`) for
-computers; the phones neither make nor use invitations yet.
+computers, and made and served on a phone that is the group's hub (mobile/cbbtun's
+`Hub.Invite`, the kits' `InvitationWindow`); the phones do not use invitations yet.
 
 ### The invitation
 
-Made on the hub, by the control operation `invite` (`cbb invite`). Its text is
+Made on the hub, by the control operation `invite` (`cbb invite`), or in the app of a phone
+that is the hub, whose endpoints are its forwarder's. Its text is
 `clipboardbridge://invite#` followed by base64url without padding of this JSON (byte strings
 in it as in the rest of this document):
 
@@ -1449,6 +1451,21 @@ the admin cancels it.
    answers with its offer.
 4. With the offer, the device closes the guest tunnel and from then on reaches the hub
    through the tunnel with its own key, as any member.
+
+### On a phone that is the hub
+
+The phone makes the invitation in its app while it is registered with its forwarder; its
+`ep` is the forwarder's endpoint. cbbtun's hub adds the guest peer and joins each
+connection through the guest tunnel to a loopback port of the kit's pairing window
+(`InvitationWindow`), and once the window admitted the device, to the member listener, for
+the device's first hello. The window runs the exchange of section 6 as the server, with the
+secret as the password: the device confirms first, the phone asks its user to confirm the
+device by its name, system and fingerprint, then unlocks its signing key (Face ID or the
+screen lock) and sends the welcome with its own tag. It gives no CA keys and makes no admin.
+It takes one attempt at a time, ends after three failures, and the guest goes at expiry,
+when the user cancels, or 2 minutes after the device was admitted. The invitation's file
+goes through the phone's share sheet. Go's `TestSwiftHubAdmitsInvitedGoJoiner` runs `cbb`'s
+joiner against the window of both kits.
 
 
 ## 13. The forwarder

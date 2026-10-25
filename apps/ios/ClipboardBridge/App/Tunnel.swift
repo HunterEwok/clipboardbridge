@@ -74,7 +74,28 @@ final class GoHub: HubTunnel, @unchecked Sendable {
 
     func status() -> String { hub.status() }
 
+    func invite(group: String, endpoints: String, lifetime: Int, guestPort: UInt16) throws -> HubGuest {
+        GoGuest(try hub.invite(group, endpoints: endpoints, lifetime: lifetime, guestPort: Int(guestPort)))
+    }
+
     func close() { try? hub.close() }
+}
+
+/// cbbtun's guest tunnel of a remote invitation.
+final class GoGuest: HubGuest, @unchecked Sendable {
+    private let guest: CbbtunGuest
+    let text: String
+    let secret: Data
+    let expires: Date
+
+    init(_ g: CbbtunGuest) {
+        guest = g
+        (text, secret, expires) = (g.text(), g.secret() ?? Data(), Date(timeIntervalSince1970: TimeInterval(g.expires())))
+    }
+
+    func admitted() { guest.admitted() }
+
+    func close() { guest.close() }
 }
 
 /// The member key as cbbtun's Signer: it signs the digests of the hub's

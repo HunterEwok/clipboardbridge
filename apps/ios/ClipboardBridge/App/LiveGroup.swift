@@ -321,6 +321,83 @@ final class LiveGroup: GroupController {
     /// host and port of "host:port" or "[IPv6]:port".
     nonisolated static func split(_ addr: String) -> (String, UInt16)? { JoinCode.split(addr) }
 
+    // MARK: Inviting from afar
+
+    /// Opens a remote invitation on this phone, the group's hub
+    /// (docs/protocol.md, section 12): a guest tunnel through the hub's
+    /// forwarder and its pairing window, for one device, for lifetime
+    /// seconds. ask asks the user whether to admit a device that proved it
+    /// knows the secret; on yes Face ID unlocks the group's key. ended gets
+    /// the admitted device's name, or why the invitation ended without one.
+    func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
+                ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation {
+        guard let g = state, g.isAdmin else { throw Failure.notAdmin }
+        guard let hub, let identity = memberIdentity else { throw HubOnPhone.Failure.notRunning }
+        let guestBox = GuestBox()
+        let window = try InvitationWindow(identity: identity, expires: Date().addingTimeInterval(TimeInterval(lifetime)), admit: { [weak self] t, joinerCert, sid in
+            guard let self, let guest = guestBox.guest else { throw HubOnPhone.Failure.notRunning }
+            return try await self.admitInvited(over: t, joinerCert: joinerCert, sessionID: sid, guest: guest, ask: ask)
+        }, onEnd: { r in
+            if case .failure = r { guestBox.guest?.close() }
+            Task { @MainActor in ended(r.map(\.info.name)) }
+        }, onError: { error in
+            hubLog.error("an attempt with the invitation failed: \(String(reflecting: error), privacy: .public)")
+        })
+        let port = try await window.start()
+        let guest: HubGuest
+        do {
+            guest = try hub.invite(group: g.tag, lifetime: lifetime, guestPort: port)
+        } catch {
+            window.close()
+            throw error
+        }
+        guestBox.guest = guest
+        return AppModel.Invitation(text: guest.text, expires: guest.expires, cancel: { window.close() })
+    }
+
+    /// The guest tunnel, which the window's attempts need once it is open.
+    private final class GuestBox: @unchecked Sendable {
+        var guest: HubGuest?
+    }
+
+    /// The group's key once Face ID unlocked it, after the user said yes.
+    private final class UnlockedSigner: CertificateSigner, @unchecked Sendable {
+        var signer: SecKeySigner?
+        var publicKeyDER: Data { signer?.publicKeyDER ?? Data() }
+        func signature(for data: Data) throws -> Data {
+            guard let signer else { throw Failure.notAdmin }
+            return try signer.signature(for: data)
+        }
+    }
+
+    /// One attempt with an invitation: the device that proves the secret
+    /// and that the user confirms is admitted.
+    private func admitInvited(over t: TLSTransport, joinerCert: Data, sessionID: [UInt8], guest: HubGuest,
+                              ask: @escaping @MainActor (PairingMember.Request) async -> Bool) async throws -> PairingMember.Admitted {
+        guard var g = state else { throw Failure.notAdmin }
+        let unlocked = UnlockedSigner()
+        let reason = String(localized: "Add a computer to your group", bundle: .app)
+        let invitation = PairingMember.Invitation(secret: guest.secret) { [weak self] req in
+            // The device waits up to 5 minutes for the answer.
+            guard await ask(req), let self else { return false }
+            do {
+                let ca = try await self.caSigner(reason: reason)
+                await MainActor.run { unlocked.signer = ca }
+                return true
+            } catch {
+                return false
+            }
+        }
+        let admitted = try await g.admit(over: t, code: "", joinerCert: joinerCert, sessionID: sessionID, caSigner: unlocked,
+                                         invitation: invitation, now: Date())
+        guest.admitted()
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords(g.records.records)
+        return admitted
+    }
+
     // MARK: Joining
 
     /// Joins another phone's group (docs/protocol.md, section 6, "The

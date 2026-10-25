@@ -26,7 +26,18 @@ final class HubOnPhoneTests: XCTestCase {
         }
         func setRecords(_ records: String) throws { shown = records }
         func status() -> String { report }
+        var invited: [String]?
+        func invite(group: String, endpoints: String, lifetime: Int, guestPort: UInt16) throws -> HubGuest {
+            invited = [group, endpoints, "\(lifetime)", "\(guestPort)"]
+            return Guest()
+        }
         func close() { closed = true }
+    }
+
+    final class Guest: HubGuest, @unchecked Sendable {
+        let text = "clipboardbridge://invite#x", secret = Data(count: 16), expires = Date()
+        func admitted() {}
+        func close() {}
     }
 
     final class FakeTunnels: HubTunnels, @unchecked Sendable {
@@ -87,6 +98,9 @@ final class HubOnPhoneTests: XCTestCase {
         XCTAssertNil(h.offer(device: pc, key: Data(repeating: 2, count: 32)))
         try h.turnOn(home: "192.168.0.1 192.168.0.0/24")
         XCTAssertTrue(h.isOn)
+        XCTAssertThrowsError(try h.invite(group: "tag", lifetime: 3600, guestPort: 5555)) {
+            XCTAssertEqual($0 as? HubOnPhone.Failure, .notRunning)
+        }
         XCTAssertTrue(h.isHome("192.168.0.1 192.168.0.0/24"))
         XCTAssertFalse(h.isHome("10.0.0.1 10.0.0.0/24"))
         XCTAssertFalse(h.isHome(nil))
@@ -119,6 +133,10 @@ final class HubOnPhoneTests: XCTestCase {
         t.report = #"{"error":"the forwarder refused it"}"#
         XCTAssertEqual(h.status(paused: false).0, .failed)
         XCTAssertEqual(h.status(paused: false).1, "the forwarder refused it")
+
+        // An invitation goes through the running tunnel, with the forwarder as the hub's address.
+        _ = try h.invite(group: "tag", lifetime: 3600, guestPort: 5555)
+        XCTAssertEqual(t.invited, ["tag", #"["203.0.113.9:8764"]"#, "3600", "5555"])
 
         // A new client reaches the running tunnel; a removed one leaves it.
         _ = h.offer(device: tv, key: Data(repeating: 4, count: 32))

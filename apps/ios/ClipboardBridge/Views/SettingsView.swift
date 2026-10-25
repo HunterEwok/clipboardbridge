@@ -45,6 +45,9 @@ struct SettingsView: View {
             .listRowBackground(palette.surface)
             if let hub = model.hub {
                 hubSection(hub)
+                if hub.on, hub.status == .registered {
+                    inviteSection
+                }
             }
             if let away = model.away, model.hub?.on != true {
                 awaySection(away)
@@ -89,6 +92,40 @@ struct SettingsView: View {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// A remote invitation for a device far away (docs/protocol.md,
+    /// section 12): the button that opens it, then its file to share, and
+    /// the question about the device that used it, with the fingerprint to
+    /// compare.
+    private var inviteSection: some View {
+        Section {
+            if let invite = model.invite {
+                Text("The invitation is open until \(invite.expires.formatted(date: .omitted, time: .shortened)). Share its file only with the person who joins: anyone who has it can ask to join.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textDim)
+                ShareLink(item: invite.file) { Text("Share the invitation") }
+                Button(role: .destructive) { model.cancelInvite() } label: { Text("Cancel the invitation") }
+            } else {
+                Button { Task { await model.openInvite() } } label: { Text("Make an invitation") }
+            }
+            if let note = model.inviteNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(palette.textDim)
+            }
+        } header: {
+            Text("Invite a device from afar")
+        } footer: {
+            Text("For a device that is not on your network, such as a parent's computer: share the invitation file with its owner, who joins with cbb pair -invite. It works once, for an hour, while this app is open.")
+        }
+        .listRowBackground(palette.surface)
+        .alert(Text("Admit \(model.invite?.request?.info.name ?? "")?"), isPresented: Binding(
+            get: { model.invite?.request != nil }, set: { if !$0 { model.answer(false) } }
+        )) {
+            Button { model.answer(true) } label: { Text("Admit") }
+            Button(role: .cancel) { model.answer(false) } label: { Text("Not this one") }
+        } message: {
+            Text("A device (\(model.invite?.request?.info.os ?? "")) used the invitation. Admit it only if the device shows the same fingerprint:\n\n\(model.invite?.request?.fingerprint ?? "")")
         }
     }
 

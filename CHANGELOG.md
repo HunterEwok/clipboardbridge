@@ -16,6 +16,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   member key, and devices away from home reach it. On Android it may keep running in the
   foreground service. The computers and the lite member do not dial a phone that publishes
   itself, since it dials them.
+- Remote invitations from a phone that is the hub: Settings makes one for an hour while the
+  hub is registered with its forwarder, shares its file, and asks whether to admit the
+  device that uses it, by its fingerprint, which `cbb pair -invite` shows too
+  (docs/protocol.md, section 12).
 - A client away from home tries a phone hub at least every 5 s, since it is there only while
   its app is open; a computer hub is still tried up to every 30 s. In `cbb`, the lite member
   and both phone apps.

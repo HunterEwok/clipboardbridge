@@ -55,6 +55,11 @@ protocol GroupController: AnyObject {
     func addHomeNetwork() async throws
     /// Tells the group whether the app is in front, where the hub works.
     func setForeground(_ on: Bool)
+    /// Opens a remote invitation on this phone, the hub, for a device far
+    /// away; ask asks the user about the device that uses it, ended gets
+    /// its name or why it ended without one.
+    func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
+                ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation
 }
 
 extension GroupController {
@@ -68,6 +73,10 @@ extension GroupController {
     func setForwarder(address: String, pin: String) async throws {}
     func addHomeNetwork() async throws {}
     func setForeground(_ on: Bool) {}
+    func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
+                ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation {
+        throw HubOnPhone.Failure.notRunning
+    }
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -152,6 +161,31 @@ final class AppModel: ObservableObject {
     @Published private(set) var hub: Hub?
     /// What the last change to the hub said, when it failed.
     @Published private(set) var hubNote: String?
+
+    /// An open remote invitation: its text, when it expires, and how to
+    /// cancel it.
+    struct Invitation {
+        var text: String
+        var expires: Date
+        var cancel: () -> Void
+    }
+
+    /// A remote invitation as Settings shows it: when it expires, the file
+    /// to share, and the device waiting for the user's answer.
+    struct Invite {
+        var expires: Date
+        var file: URL
+        var request: PairingMember.Request?
+    }
+
+    @Published private(set) var invite: Invite?
+    /// How the last invitation ended, or why it did not open.
+    @Published private(set) var inviteNote: String?
+    private var invitation: Invitation?
+    private var answer: CheckedContinuation<Bool, Never>?
+    /// How long an invitation from the phone is valid: an hour, as cbb
+    /// invite's default.
+    static let inviteLifetime = 3600
     /// The registration's last error, logged once.
     private var hubError: String?
 
@@ -359,6 +393,78 @@ final class AppModel: ObservableObject {
             hubNote = Self.describe(error)
         }
         await refreshHub()
+    }
+
+    /// Opens a remote invitation for a device far away (docs/protocol.md,
+    /// section 12), valid for an hour: Settings shares its file, and asks
+    /// the user about the device that uses it.
+    func openInvite() async {
+        guard invite == nil else { return }
+        do {
+            let inv = try await group.invite(lifetime: Self.inviteLifetime, ask: { [weak self] req in
+                await self?.ask(req) ?? false
+            }, ended: { [weak self] r in self?.inviteEnded(r) })
+            let file = try Self.inviteFile(inv.text)
+            (invitation, invite, inviteNote) = (inv, Invite(expires: inv.expires, file: file), nil)
+        } catch HubOnPhone.Failure.notRunning {
+            inviteNote = Self.describe(HubOnPhone.Failure.notRunning, summary: String(
+                localized: "An invitation needs the hub registered with its forwarder. Check the forwarder above.", bundle: .app))
+        } catch {
+            inviteNote = Self.describe(error)
+        }
+    }
+
+    /// The invitation as a file of one line, clipboardbridge.cbbinvite, as
+    /// cbb pair -invite reads it; it goes when the invitation ends.
+    private static func inviteFile(_ text: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("invites", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("clipboardbridge.cbbinvite")
+        try Data((text + "\n").utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        return url
+    }
+
+    /// Asks the user about a device that used the invitation, for up to 5
+    /// minutes (docs/protocol.md, section 12).
+    private func ask(_ req: PairingMember.Request) async -> Bool {
+        answer?.resume(returning: false)
+        invite?.request = req
+        let timeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(300))
+            if !Task.isCancelled { self?.answer(false) }
+        }
+        defer { timeout.cancel() }
+        let yes = await withCheckedContinuation { answer = $0 }
+        invite?.request = nil
+        return yes
+    }
+
+    /// The user's answer about the device that used the invitation.
+    func answer(_ yes: Bool) {
+        answer?.resume(returning: yes)
+        answer = nil
+    }
+
+    /// Cancels the open invitation.
+    func cancelInvite() { invitation?.cancel() }
+
+    private func inviteEnded(_ r: Result<String, Error>) {
+        if let f = invite?.file { try? FileManager.default.removeItem(at: f) }
+        answer(false)
+        (invite, invitation) = (nil, nil)
+        switch r {
+        case .success:
+            inviteNote = String(localized: "The device joined the group; it appears in the list once it connects.", bundle: .app)
+            Task { await refresh() }
+        case .failure(InvitationWindow.Ended.cancelled):
+            inviteNote = nil
+        case .failure(InvitationWindow.Ended.expired):
+            inviteNote = String(localized: "The invitation expired without being used.", bundle: .app)
+        case .failure(InvitationWindow.Ended.tooManyAttempts):
+            inviteNote = String(localized: "The invitation closed after three failed attempts. Make a new one.", bundle: .app)
+        case .failure(let e):
+            inviteNote = Self.describe(e)
+        }
     }
 
     /// Turns sync away from home on or off; the hub's answer comes on the

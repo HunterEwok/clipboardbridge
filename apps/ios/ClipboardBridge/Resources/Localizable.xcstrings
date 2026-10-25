@@ -1783,6 +1783,146 @@
           }
         }
       }
+    },
+    "Invite a device from afar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пригласить устройство издалека"
+          }
+        }
+      }
+    },
+    "For a device that is not on your network, such as a parent's computer: share the invitation file with its owner, who joins with cbb pair -invite. It works once, for an hour, while this app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для устройства не из вашей сети, например компьютера родителей: отправьте файл приглашения его владельцу, он подключится командой cbb pair -invite. Приглашение работает один раз, в течение часа, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "Make an invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать приглашение"
+          }
+        }
+      }
+    },
+    "The invitation is open until %@. Share its file only with the person who joins: anyone who has it can ask to join.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приглашение действует до %@. Отправьте файл только тому, кто подключается: любой, у кого он есть, может попросить доступ."
+          }
+        }
+      }
+    },
+    "Share the invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить приглашение"
+          }
+        }
+      }
+    },
+    "Cancel the invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить приглашение"
+          }
+        }
+      }
+    },
+    "Admit %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Принять %@?"
+          }
+        }
+      }
+    },
+    "Admit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Принять"
+          }
+        }
+      }
+    },
+    "Not this one": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не это"
+          }
+        }
+      }
+    },
+    "A device (%@) used the invitation. Admit it only if the device shows the same fingerprint:\n\n%@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство (%1$@) воспользовалось приглашением. Принимайте его, только если оно показывает такой же отпечаток:\n\n%2$@"
+          }
+        }
+      }
+    },
+    "The device joined the group; it appears in the list once it connects.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство вошло в группу; оно появится в списке, когда подключится."
+          }
+        }
+      }
+    },
+    "The invitation expired without being used.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок приглашения истёк, им никто не воспользовался."
+          }
+        }
+      }
+    },
+    "The invitation closed after three failed attempts. Make a new one.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приглашение закрыто после трёх неудачных попыток. Создайте новое."
+          }
+        }
+      }
+    },
+    "An invitation needs the hub registered with its forwarder. Check the forwarder above.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для приглашения хаб должен быть зарегистрирован у форвардера. Проверьте форвардер выше."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

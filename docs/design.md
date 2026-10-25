@@ -854,8 +854,9 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   in Settings, its status on Home, its member port and Bonjour service (`r=phone`) only on
   the home networks it remembers (the gateway's address and the network of the phone's
   address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
-  option. The clients' short retries, remote invitations on the phone and moving the hub
-  come next (roadmap item 30).
+  option; the clients' short retries for a phone hub (5 s); and remote invitations made
+  and served on the phone (docs/protocol.md, section 12). Moving the hub comes next
+  (roadmap item 30).
 
 ### Reaching the hub
 
@@ -1003,8 +1004,9 @@ the pairing itself; the third is planned.
   group. An admin makes it: the root or an admin phone, a Linux member that admits devices
   or an admin computer (`cbb invite`). Built so far for computers, made on the hub itself
   when the hub can admit devices: `cbb invite` there, `cbb pair -invite FILE` on the new
-  computer (docs/protocol.md, section 12). Handing an invitation made on another admin to
-  the hub, and the phones' part, are still planned. It is never typed: it comes only as a QR code or as
+  computer (docs/protocol.md, section 12), and on a phone that is the hub, from its
+  Settings. Handing an invitation made on another admin to the hub, and using one on a
+  phone, are still planned. It is never typed: it comes only as a QR code or as
   a file to open (`.cbbinvite`), and holds the group's tag, the hub's WireGuard public key
   and addresses (and the forwarder's), a one-time WireGuard key pair with its preshared key
   for a guest tunnel, a 128-bit one-time secret and the time it expires. It serves one
@@ -1201,7 +1203,8 @@ only adds to it.
    making and opening remote invitations. Done: the tunnel, `mobile/cbbtun`, bound by
    gomobile into an AAR and an xcframework; the tunnel offer in both kits; both apps'
    switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
-   found at home. The invitations follow.
+   found at home; remote invitations made and served on a phone that is the hub. Using an
+   invitation on a phone follows.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
    run on amneziawg-go; obfuscation per group between computers (`cbb global hub
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the

@@ -111,7 +111,11 @@ they look, so both apps are built to the same plan.
    away state (Android: a file sealed by a Keystore key; iPhone: the keychain). The kits'
    `PhoneHub` and `MemberListener` do the work, the Android app's `HubOnPhone` and the Swift
    kit's `HubOnPhone` drive cbbtun's hub, and the hub publishes itself on a home network
-   with `r=phone` (docs/protocol.md, section 3).
+   with `r=phone` (docs/protocol.md, section 3). While the hub is registered, "Invite a
+   device from afar" makes a remote invitation for an hour (docs/protocol.md, section 12):
+   the phone shares the file `clipboardbridge.cbbinvite`, the other side runs
+   `cbb pair -invite` with it, and the phone asks "Admit …?" with the device's fingerprint,
+   which `cbb` shows too; on yes it unlocks the group's key and admits it.
 
 The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
 Devices on your other phone and remove it." When the group has a single admin, Devices
