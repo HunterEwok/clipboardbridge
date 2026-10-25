@@ -1342,8 +1342,11 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
   so a device cannot use another device's tunnel key.
 - A member that keeps a hub's offer runs the other end, with the hub as its only peer and
   a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member TLS
-  whenever the hub is neither found by discovery nor connected on the home network, trying
-  the offer's endpoints in turn, with the dialers' backoff (1 s, doubling to 30 s).
+  whenever the hub is not connected on the home network, trying the offer's endpoints in
+  turn, with the dialers' backoff (1 s, doubling to 30 s). A hub that discovery finds holds
+  this off for 30 s only: anyone on a network can announce the hub's name and the group's
+  tag, so after that only a connection to the hub counts. The relay path (section 14) and
+  the dialers through the hub follow the same rule.
 - It fails closed: when the hub or the link cannot start, or the hub does not answer, the
   member syncs at home only, and `status` says why (`error`, with `detail` for debugging).
 - The lite member starts its end only while it dials the hub through it, so at home it sends

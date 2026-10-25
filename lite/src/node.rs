@@ -12,7 +12,7 @@
 //! the TLS state under a lock; only the reader waits on the socket without
 //! it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
@@ -32,6 +32,10 @@ use crate::records::{Record, Records};
 use crate::tls;
 use crate::uptime;
 use crate::wire::{self, Message};
+
+/// How long a device that discovery finds counts as at home without a
+/// connection to it (docs/protocol.md, section 11).
+const NEAR_GRACE: Duration = Duration::from_secs(30);
 
 const PING_EVERY: Duration = Duration::from_secs(5);
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -81,7 +85,9 @@ pub struct Node {
     tunnel_key: Arc<RwLock<Option<Vec<u8>>>>,
     on_tunnel: RwLock<Option<OnTunnel>>,
     /// The members discovery finds on the home network now.
-    home: Mutex<HashSet<DeviceId>>,
+    /// The devices discovery finds on the home network, by the uptime they
+    /// were first found.
+    home: Mutex<HashMap<DeviceId, Duration>>,
 }
 
 enum Out {
@@ -124,7 +130,7 @@ impl Node {
             closed: AtomicBool::new(false),
             tunnel_key: Arc::new(RwLock::new(None)),
             on_tunnel: RwLock::new(None),
-            home: Mutex::new(HashSet::new()),
+            home: Mutex::new(HashMap::new()),
         }
     }
 
@@ -148,15 +154,17 @@ impl Node {
     pub fn found(&self, id: &DeviceId, here: bool) {
         let mut home = self.home.lock().unwrap();
         if here {
-            home.insert(id.clone());
+            home.entry(id.clone()).or_insert_with(uptime::now);
         } else {
             home.remove(id);
         }
     }
 
-    /// Reports whether discovery finds the device on the home network now.
+    /// Reports whether discovery found the device on the home network within
+    /// NEAR_GRACE. Anyone on a network can announce a device's name and the
+    /// group's tag, so past that only a connection to it counts.
     pub fn at_home(&self, id: &DeviceId) -> bool {
-        self.home.lock().unwrap().contains(id)
+        self.home.lock().unwrap().get(id).is_some_and(|at| uptime::now().saturating_sub(*at) < NEAR_GRACE)
     }
 
     pub fn identity(&self) -> Arc<Identity> {

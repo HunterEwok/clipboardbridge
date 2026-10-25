@@ -69,10 +69,14 @@ class MemberDialer(
     private val lock = Object()
     private var found = setOf<String>()
     private val threads = mutableMapOf<String, Thread>()
+    private val direct = mutableSetOf<String>()
     private var stopped = false
 
     /** The members being dialed or connected. */
     val dialing: Set<String> get() = synchronized(lock) { threads.keys.toSet() }
+
+    /** The members connected on the home network: their TLS handshake passed. */
+    val connected: Set<String> get() = synchronized(lock) { direct.toSet() }
 
     /** Takes the members browsing finds now. Those of another group are ignored. */
     fun update(members: Set<FoundMember>) = synchronized(lock) {
@@ -105,7 +109,12 @@ class MemberDialer(
                 val started = System.nanoTime()
                 val t = runCatching { dial(m) }.getOrNull()
                 if (t != null) {
-                    runCatching { node.serve(t, m.device) }
+                    synchronized(lock) { direct.add(m.device) }
+                    try {
+                        runCatching { node.serve(t, m.device) }
+                    } finally {
+                        synchronized(lock) { direct.remove(m.device) }
+                    }
                     if ((System.nanoTime() - started) / 1_000_000 > maxWaitMS) wait = firstWaitMS
                 }
                 if (!stillWanted(m.device)) break

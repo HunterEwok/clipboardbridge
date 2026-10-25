@@ -194,6 +194,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   member and both phone kits), so a device with a wrong date or a removed member can no
   longer hold the group's clocks at the year 9999 and keep every later copy from winning. A
   clock that reads before 2026 refuses nothing, for boards that have not set their time.
+- Security: an mDNS announcement of the hub on a foreign network no longer turns off sync
+  away from home (Go, the lite member and both apps). A member found by discovery counts as
+  on this network for 30 s; after that only a connection to it keeps the tunnel and the
+  relay closed.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
