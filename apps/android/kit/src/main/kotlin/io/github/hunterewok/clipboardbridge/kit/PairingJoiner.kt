@@ -83,7 +83,8 @@ object PairingJoiner {
      * admitting phone's certificate is from one of the group's roots or from
      * the issuer and names that phone; this phone's certificate is for its
      * device and key; no CA keys; an admin CA, when present, is for the
-     * admin key this phone sent, under the current root.
+     * admin key this phone sent, under the current root; the roots are the
+     * ones the welcome's records lead to.
      */
     internal fun check(j: Joined, info: Pairing.Info, memberCert: ByteArray, joinerCert: ByteArray, now: Instant) {
         val w = j.welcome
@@ -91,6 +92,12 @@ object PairingJoiner {
         if (runCatching { ParsedCertificate(w.groupCA).pathLength }.getOrNull() != 1) throw Failure("the group CA is not a phone's root")
         val later = w.roots.orEmpty()
         if (!later.all { runCatching { GroupCertificates.checkRoot(it) }.isSuccess }) throw Failure("a later root is not a phone's root")
+        // The roots are only those the records lead to: an admin could otherwise name a root of its own, and
+        // every certificate from it would pass here for good, whatever the group's root removes.
+        val path = RecordSet().apply { addAll(w.records.orEmpty(), w.groupCA) }.roots
+        if (path.size != later.size || path.zip(later).any { (a, b) -> !a.contentEquals(b) }) {
+            throw Failure("the other phone's roots are not the ones the group's records lead to")
+        }
         val trusted = listOf(w.groupCA) + later
         val issuer = w.issuer
         if (issuer != null && trusted.none { runCatching { GroupCertificates.checkAdminCA(issuer, it) }.isSuccess }) {

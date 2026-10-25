@@ -75,7 +75,8 @@ public enum PairingJoiner {
     /// admitting phone's certificate is from one of the group's roots or
     /// from the issuer and names that phone; this phone's certificate is
     /// for its device and key; no CA keys; an admin CA, when present, is for
-    /// the admin key this phone sent, under the current root.
+    /// the admin key this phone sent, under the current root; the roots are
+    /// the ones the welcome's records lead to.
     static func check(_ j: Joined, info: Pairing.Info, memberCert: Data, joinerCert: Data, now: Date) throws {
         let w = j.welcome
         guard GroupCertificates.tag(groupCA: w.groupCA) == j.member.group else {
@@ -87,6 +88,14 @@ public enum PairingJoiner {
         let later = w.roots ?? []
         guard later.allSatisfy({ (try? GroupCertificates.checkRoot($0)) != nil }) else {
             throw Failure.badWelcome("a later root is not a phone's root")
+        }
+        // The roots are only those the records lead to: an admin could
+        // otherwise name a root of its own, and every certificate from it
+        // would pass here for good, whatever the group's root removes.
+        var path = RecordSet()
+        path.addAll(w.records ?? [], groupCA: w.groupCA)
+        guard path.roots == later else {
+            throw Failure.badWelcome("the other phone's roots are not the ones the group's records lead to")
         }
         let trusted = [w.groupCA] + later
         if let issuer = w.issuer, !trusted.contains(where: { (try? GroupCertificates.checkAdminCA(issuer, root: $0)) != nil }) {

@@ -205,7 +205,12 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
     ))?;
     let joiner = pair::Joiner::new(&name)?;
     let state = g.state.clone();
-    let save = move |id: &identity::Identity| id.save(&state);
+    let save = move |id: &identity::Identity, rs: &[records::Record]| {
+        let mut set = records::Records::new(&id.group_ca);
+        let _ = set.add_all(rs);
+        records::Stored::save(&set, &state)?;
+        id.save(&state)
+    };
     let id = match code_addr {
         Some(a) => {
             print!("Pairing code: ");

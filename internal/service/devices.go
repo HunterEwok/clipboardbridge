@@ -111,17 +111,21 @@ func (s *Service) settleRecords(fresh []group.Record) {
 	}
 }
 
-// adoptRootsLocked starts trusting the roots the records lead to when they
-// go further than the identity's, after a root record handed the group to
-// a new root (docs/protocol.md, section 10). s.mu is held.
+// adoptRootsLocked makes the identity trust the roots the records lead to
+// when they differ from its own, after a root record handed the group to a
+// new root or a takeover stopped counting (docs/protocol.md, section 10).
+// The roots are compared by content, not by number, so a root the records
+// do not name never stays trusted. s.mu is held.
 func (s *Service) adoptRootsLocked() error {
 	if s.id == nil || s.nd == nil {
 		return nil
 	}
 	s.recMu.Lock()
-	roots := s.records.Roots()
+	roots, empty := s.records.Roots(), s.records.Len() == 0
 	s.recMu.Unlock()
-	if len(roots) <= len(s.id.Roots) {
+	// A set that is empty, as after a records file that could not be read,
+	// says nothing yet: the peers give the records again.
+	if empty || slices.EqualFunc(roots, s.id.Roots, (*x509.Certificate).Equal) {
 		return nil
 	}
 	next, err := s.id.WithRoots(roots)

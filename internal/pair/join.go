@@ -4,6 +4,7 @@
 package pair
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -35,6 +36,11 @@ type Joiner struct {
 	// Member is the device ID of the member that admitted this device,
 	// once a join succeeded.
 	Member group.DeviceID
+	// Records are the records that lead to the group's roots, as the
+	// Welcome gave them, set before the identity is saved: the new device
+	// keeps them with its records, so the roots it trusts are those the
+	// records name.
+	Records []group.Record
 
 	certOnce sync.Once
 	certDER  []byte // the self-signed certificate for Key, made once
@@ -275,13 +281,21 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	if group.Tag(id.GroupCA.Cert) != member.Group {
 		return nil, errors.New("pair: the member sent another group CA than it announced")
 	}
-	for _, der := range w.Roots {
-		root, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, err
-		}
-		id.Roots = append(id.Roots, root)
+	// The roots are only those the records lead to: an admin could
+	// otherwise name a root of its own, and every certificate from it
+	// would pass here for good, whatever the group's root removes.
+	recs := group.NewRecords(id.GroupCA.Cert)
+	recs.AddAll(w.Records)
+	id.Roots = recs.Roots()
+	if len(id.Roots) != len(w.Roots) {
+		return nil, errors.New("pair: the member's roots are not the ones the group's records lead to")
 	}
+	for i, root := range id.Roots {
+		if !bytes.Equal(root.Raw, w.Roots[i]) {
+			return nil, errors.New("pair: the member's roots are not the ones the group's records lead to")
+		}
+	}
+	j.Records = recs.All()
 	// An admin phone issues with its admin CA, under one of the group's
 	// roots.
 	issuers := id.Trusted()

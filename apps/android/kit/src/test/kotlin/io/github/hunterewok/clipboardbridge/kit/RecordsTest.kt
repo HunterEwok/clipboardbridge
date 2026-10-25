@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.time.Instant
@@ -98,7 +99,10 @@ class RecordsTest {
         val v = Interop.read("go-admins.json").jsonObject
         val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
         val set = RecordSet()
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        // The record signed under the root the computer admin named is dropped: that root is never known.
+        val dropped = v["dropped"]?.jsonPrimitive?.int ?: 0
+        assertEquals(1, dropped)
+        assertEquals(records.size - dropped, set.addAll(records, b64(v.str("group_ca"))).size)
         assertEquals(v.str("digest"), set.digest)
         assertTrue(set.roots.isEmpty(), "a computer admin handed the group over")
         val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
@@ -151,7 +155,9 @@ class RecordsTest {
             val name = c.str("name")
             val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
             val set = RecordSet()
-            assertEquals(records.size, set.addAll(records, b64(c.str("group_ca"))).size, name)
+            val dropped = c["dropped"]?.jsonPrimitive?.int ?: 0
+            assertEquals(if (name == "phone root") 1 else 0, dropped, name)
+            assertEquals(records.size - dropped, set.addAll(records, b64(c.str("group_ca"))).size, name)
             assertEquals(c.str("digest"), set.digest, name)
             val roots = (c["roots"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
             assertEquals(roots, set.roots.map { b64(it) }, name)

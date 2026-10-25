@@ -560,6 +560,7 @@ put words in front of the user.
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
+| `records` | array of record envelopes (section 10) | with `roots`: the records that lead to them, the **path records**: each `root` record on the path and, for one an admin CA signed, the `device` records its root's own key signed that name that admin CA in `admin` or that are the root's own (`by` = `device`) |
 | `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
@@ -568,7 +569,10 @@ put words in front of the user.
 The joiner checks: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
 admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
-verifies to one of them, through `issuer` when present, the joiner keeps `roots`, and the joiner keeps `issuer` to send in its handshakes; the three CA fields are all present
+verifies to one of them, through `issuer` when present; `roots` are exactly the path that
+`records` lead to from `group_ca` (section 10, rule 7), so an admin cannot make a joiner trust a
+root of its own; the joiner keeps `records` in its record set before it keeps the identity, keeps
+`roots`, and keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `macos` or lite joiner refuses them; when present, the keys are P-256 and
 match, and `group_ca` has path length 0: a group with a root never hands out CA keys. A Linux
 or Windows joiner of a legacy group that got them then issues its own `clipboardbridge.local`
@@ -1000,14 +1004,18 @@ ID; informative). Types:
 | `thaw` | `records` (array of the IDs of `freeze` records) | ends those freezes (rule 4) |
 
 The record ID is SHA-256 over the envelope's `body`. A member keeps every valid record it
-has seen, in a file next to its identity, at most 4096 records.
+has seen, in a file next to its identity, at most 4096 records, plus up to 1024 more signed
+by the own key of a root on the path (rule 7), so a full set still takes the record in which
+the root removes an admin that filled it. A member checks a record's signature before these
+limits, and takes at most 1024 records from one signer, an admin CA or a root's own key.
 
 Validity and evaluation, which depend only on the set of records, never on their order:
 
 1. A record is **signed by an admin** when `group` is the member's group tag and `sig`
    verifies with the group CA key (empty `chain`) or with the key of an admin CA in
-   `chain` that verifies to the group CA. Other records are dropped. A member takes at
-   most 1024 records signed by one admin CA, so a stolen admin cannot fill the set.
+   `chain` that verifies to the group CA, or to a root records may be signed under (rule 7).
+   Other records are dropped. A member takes at most 1024 records signed by one signer, so
+   a stolen admin cannot fill the set.
 2. **Signers and their powers.** The **known roots** are the group CA and the new root of
    every `root` record that a known root's own key, or an admin phone's admin CA under a
    known root, signed, or that a computer's admin CA signed under a known root that is a
@@ -1070,7 +1078,9 @@ Validity and evaluation, which depend only on the set of records, never on their
 6. A certificate is refused when its key is revoked, or when its issuer's key is revoked
    and not every record that revoked that issuer keeps the certificate's key. This holds for
    a member certificate and its issuer (a root or an admin CA), and for an admin CA and its
-   root.
+   root. A chain whose top (the leaf, or the admin CA that issued it) no root on the path
+   (rule 7) signed is refused too: a root that only an identity or a TLS pool trusts, as one a
+   Welcome named, anchors nothing.
 7. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
    only when it was signed under a root with path length 1, or, in a legacy group, by the
@@ -1078,16 +1088,23 @@ Validity and evaluation, which depend only on the set of records, never on their
    with path length 1 and a P-256 key. Such an upgrade record also counts while the group
    CA's key is revoked, as long as every record that revokes that key was signed under the
    root it names: a leftover copy of the old key can then break the group, by revoking
-   itself or signing a rival handover, but never take it over. Records are signed under any root the set knows: the
-   group CA and the new root of every valid `root` record; a member adds a batch of records
-   until nothing new is added, so a record signed under a new root is taken together with
-   the record that names that root. The **path** starts at the group CA; from each root,
+   itself or signing a rival handover, but never take it over. Records are signed under the
+   group CA and the new root of every valid `root` record that may make it known: one its
+   root's own key signed, or an admin CA that a `device` record from that root's own key
+   names, with role `phone`, or with another role when that root is a computer (rule 2,
+   leaving out the revocations and freezes that can still stop it). A record signed under
+   any other root is dropped, so the root that a computer's admin CA names in a phone's group
+   neither signs records nor fills the set. A member adds a batch of records until nothing
+   new is added, so a record signed under a new root is taken together with the records that
+   make that root known. The **path** starts at the group CA; from each root,
    of the `root` records signed under it that count (rule 5) and whose new root is not on
    the path yet, the one whose new root certificate has the smallest SHA-256 leads to the
    next root. The last root on the path is the current root. A member trusts every root on
    the path for member certificates and admin CAs (certificates from earlier roots stay
    valid until they expire or rule 6 refuses them), takes renewals from any of them, and
-   keeps the path next to its identity. A new member gets the path in the Welcome's `roots`.
+   keeps the path next to its identity, replacing it whenever the records lead to another
+   path (compared by content, not by length; an empty set changes nothing). A new member gets
+   the path in the Welcome's `roots`, with the path records that lead to it in `records`.
 
 **Handing the group over.** When the root is lost, an admin takes over: in a phone's group
 an admin phone, never a computer; in a group a computer created an admin computer, with

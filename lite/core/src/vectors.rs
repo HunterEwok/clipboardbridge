@@ -223,8 +223,11 @@ fn go_admins() {
     let mut s = Records::new(&cert(&v["group_ca"]));
     let mut rs = records(&v["records"]);
     rs.reverse();
+    // The record signed under the root the computer admin named is dropped:
+    // that root is never known.
     let (_, errs) = s.add_all(&rs);
-    assert!(errs.is_empty(), "{errs:?}");
+    assert_eq!(v["dropped"].as_u64(), Some(1));
+    assert_eq!(errs.len(), 1, "{errs:?}");
     assert!(s.roots().is_empty());
     assert!(v["roots"].as_array().is_none_or(|r| r.is_empty()));
     let names: Vec<String> = s.devices().into_iter().map(|d| d.name).collect();
@@ -290,7 +293,9 @@ fn go_takeover() {
         let mut rs = records(&c["records"]);
         rs.reverse();
         let (_, errs) = s.add_all(&rs);
-        assert!(errs.is_empty(), "{errs:?}");
+        let dropped = c["dropped"].as_u64().unwrap_or(0) as usize;
+        assert_eq!(dropped, usize::from(c["name"] == "phone root"), "{}", c["name"]);
+        assert_eq!(errs.len(), dropped, "{}: {errs:?}", c["name"]);
         let roots: Vec<Vec<u8>> = s.roots().into_iter().map(|c| c.der).collect();
         let want: Vec<Vec<u8>> = c["roots"].as_array().map(|a| a.iter().map(bytes).collect()).unwrap_or_default();
         assert_eq!(roots, want, "{}", c["name"]);

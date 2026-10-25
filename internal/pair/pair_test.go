@@ -1191,7 +1191,11 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}}
+	handover, err := group.SignRecord(group.RecordBody{Type: group.RecordRoot, Group: group.Tag(first.Cert), TimeMS: t0.UnixMilli(), Root: newRoot.Cert.Raw}, first.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}, Records: []group.Record{handover}}
 	member := memberAD{Device: phone, Group: group.Tag(first.Cert)}
 	id, err := j.identity(w, phoneCert, member)
 	if err != nil {
@@ -1200,10 +1204,20 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if len(id.Roots) != 1 || !id.Root().Equal(newRoot.Cert) {
 		t.Error("the identity does not keep the new root")
 	}
+	if len(j.Records) != 1 {
+		t.Error("the joiner does not keep the record that leads to the new root")
+	}
 	bad := *w
 	bad.Roots = nil
 	if _, err := j.identity(&bad, phoneCert, member); err == nil {
 		t.Error("accepted certificates from a root the welcome does not name")
+	}
+	// A root that no record leads to, as one an admin made up and named
+	// in the Welcome, is refused.
+	bad = *w
+	bad.Records = nil
+	if _, err := j.identity(&bad, phoneCert, member); err == nil {
+		t.Error("accepted a root that no record leads to")
 	}
 }
 

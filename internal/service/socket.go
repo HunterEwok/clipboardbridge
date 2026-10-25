@@ -325,7 +325,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 		end()
 		return nil, nil, nil, s.errNotAdmitter()
 	}
-	opened, err := pair.Open(id, code, pair.Options{})
+	opened, err := pair.Open(id, code, pair.Options{Records: s.pathRecords})
 	if err != nil {
 		end()
 		return nil, nil, nil, err
@@ -526,7 +526,30 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 	reply(c, control.Header{Done: true}, nil)
 }
 
-func (s *Service) saveIdentity(id *group.Identity) error { return id.Save(s.cfg.StateDir) }
+// saveJoined returns what saves the identity a join of j made: first the
+// records that lead to its roots, so that it never trusts roots its records
+// do not name, then the identity.
+func (s *Service) saveJoined(j *pair.Joiner) func(*group.Identity) error {
+	return func(id *group.Identity) error {
+		recs := group.NewRecords(id.GroupCA.Cert)
+		recs.AddAll(j.Records)
+		if err := recs.Save(s.cfg.StateDir); err != nil {
+			return err
+		}
+		return id.Save(s.cfg.StateDir)
+	}
+}
+
+// pathRecords returns the records that lead to the group's roots, for a
+// Welcome.
+func (s *Service) pathRecords() []group.Record {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.PathRecords()
+}
 
 // dialMember joins at the address the user gave, or at the one member that
 // announces an open pairing window. It tries that member's addresses until
@@ -552,7 +575,7 @@ func (s *Service) dialMember(ctx context.Context, j *pair.Joiner, code, address 
 			lastErr = err
 			continue
 		}
-		id, err := j.Join(ctx, raw, code, s.saveIdentity)
+		id, err := j.Join(ctx, raw, code, s.saveJoined(j))
 		if err == nil {
 			return id, nil
 		}
@@ -601,7 +624,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 			raw.Close()
 			continue
 		}
-		id, err := j.Accept(ctx, raw, code, s.saveIdentity)
+		id, err := j.Accept(ctx, raw, code, s.saveJoined(j))
 		if err == nil {
 			return id, nil
 		}

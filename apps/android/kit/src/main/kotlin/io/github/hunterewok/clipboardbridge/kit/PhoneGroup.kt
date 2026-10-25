@@ -103,17 +103,20 @@ class PhoneGroup internal constructor(
     /** The devices of the group, from the records. */
     val devices: List<RecordSet.Device> get() = records.devices
 
-    /** Adds records from other members, then follows the roots they lead to when they go further than this phone's; returns the new records. */
+    /** Adds records from other members, then follows the roots they lead to when they differ from this phone's; returns the new records. */
     fun add(rs: List<Member.Record>): List<Member.Record> {
         val fresh = records.addAll(rs, groupCA)
         adoptRoots()
         return fresh
     }
 
-    /** Takes the roots of the records when they go further than roots. */
+    /**
+     * Takes the roots of the records when they differ from roots, compared by content, so a root the records do not
+     * name never stays trusted; an empty set says nothing yet.
+     */
     private fun adoptRoots() {
         val path = records.roots
-        if (path.size > roots.size && path.take(roots.size).zip(roots).all { (a, b) -> a.contentEquals(b) }) roots = path
+        if (records.records.isNotEmpty() && (path.size != roots.size || path.zip(roots).any { (a, b) -> !a.contentEquals(b) })) roots = path
     }
 
     /** Signs and adds a device record. */
@@ -317,7 +320,7 @@ class PhoneGroup internal constructor(
             } else {
                 null
             }
-            Pairing.Welcome(cert, first, issuer, forAdmin, later.ifEmpty { null })
+            Pairing.Welcome(cert, first, issuer, forAdmin, later.ifEmpty { null }, if (later.isEmpty()) null else records.pathRecords)
         }
         val name = validName(admitted.info.name)
         val key = Records.keyHashOfCert(admitted.cert)
@@ -413,7 +416,9 @@ class PhoneGroup internal constructor(
             g.memberIssuer = j.welcome.issuer
             g.isRoot = false
             g.adminCA = j.welcome.adminCA
-            g.roots = j.welcome.roots.orEmpty()
+            // The records that lead to the roots stay with the group, so the roots are those its records name.
+            g.records.addAll(j.welcome.records.orEmpty(), j.welcome.groupCA)
+            g.roots = g.records.roots
             return g
         }
 

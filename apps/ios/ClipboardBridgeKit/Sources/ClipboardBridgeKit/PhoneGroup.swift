@@ -60,7 +60,11 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         records = try c.decodeIfPresent(RecordSet.self, forKey: .records) ?? RecordSet()
         computerAdmins = try c.decodeIfPresent([String: Data].self, forKey: .computerAdmins) ?? [:]
         // Sets saved before root records do not name their group CA.
-        if records.groupCA == nil, !records.records.isEmpty { records.groupCA = groupCA }
+        if records.groupCA == nil, !records.records.isEmpty {
+            var set = RecordSet()
+            set.addAll(records.records, groupCA: groupCA)
+            records = set
+        }
     }
 
     /// Whether this phone may admit devices, renew certificates and remove
@@ -136,14 +140,18 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// welcome carries its admin CA. The records arrive from the computers.
     public static func joined(_ j: PairingJoiner.Joined) -> PhoneGroup {
         var g = PhoneGroup(device: j.device, groupCA: j.welcome.groupCA, memberCert: j.welcome.cert, computers: [])
-        (g.memberIssuer, g.isRoot, g.adminCA, g.roots) = (j.welcome.issuer, false, j.welcome.adminCA, j.welcome.roots ?? [])
+        (g.memberIssuer, g.isRoot, g.adminCA) = (j.welcome.issuer, false, j.welcome.adminCA)
+        // The records that lead to the roots stay with the group, so the
+        // roots are those its records name.
+        g.records.addAll(j.welcome.records ?? [], groupCA: j.welcome.groupCA)
+        g.roots = g.records.roots
         return g
     }
 
     public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName }
 
     /// Adds records from other members, then follows the roots they lead
-    /// to when they go further than this phone's; returns the new records.
+    /// to when they differ from this phone's; returns the new records.
     @discardableResult
     public mutating func add(_ rs: [Member.Record]) -> [Member.Record] {
         let fresh = records.addAll(rs, groupCA: groupCA)
@@ -151,10 +159,12 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return fresh
     }
 
-    /// Takes the roots of the records when they go further than roots.
+    /// Takes the roots of the records when they differ from roots,
+    /// compared by content, so a root the records do not name never stays
+    /// trusted; an empty set says nothing yet.
     mutating func adoptRoots() {
         let path = records.roots
-        if path.count > roots.count, Array(path.prefix(roots.count)) == roots { roots = path }
+        if !records.records.isEmpty, path != roots { roots = path }
     }
 
     /// Signs and adds a device record.
@@ -318,6 +328,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                                now: Date) async throws -> PairingMember.Admitted {
         guard isAdmin else { throw Failure.notAdmin }
         let (first, later, root, ca, issuer, canMakeAdmins) = (groupCA, roots, currentRoot, signingCA, adminCA, isRoot)
+        let pathRecords = later.isEmpty ? nil : records.pathRecords
         var adminKey: Data?
         let admitted = try await PairingMember.admit(
             over: t, code: code, memberCert: memberCert, joinerCert: joinerCert, sessionID: sessionID,
@@ -325,7 +336,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         ) { dev, publicKey, info in
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
                                     groupCA: first, issuer: issuer)
-            w.roots = later.isEmpty ? nil : later
+            (w.roots, w.records) = (later.isEmpty ? nil : later, pathRecords)
             if info.isPhone, let key = info.adminKey, makeAdmin, canMakeAdmins {
                 w.adminCA = try GroupCertificates.adminCA(device: dev, publicKey: key, root: root, rootSigner: caSigner)
                 adminKey = key

@@ -73,6 +73,8 @@ object Pairing {
         val adminCA: ByteArray? = null,
         /** The roots that took a phone group over from groupCA, in order; null when it was never handed over (section 10, "Roots"). */
         val roots: List<ByteArray>? = null,
+        /** The records that lead to roots (RecordSet.pathRecords), by which the joiner checks them; null with roots. */
+        val records: List<Member.Record>? = null,
         val groupCAKey: ByteArray? = null,
         val phoneCA: ByteArray? = null,
         val phoneCAKey: ByteArray? = null,
@@ -82,6 +84,7 @@ object Pairing {
             "issuer" to Wire.bytes(issuer),
             "group_ca" to Wire.bytes(groupCA),
             "roots" to Wire.list(roots),
+            "records" to records?.let { rs -> kotlinx.serialization.json.JsonArray(rs.map { it.toJson() }) },
             "group_ca_key" to Wire.bytes(groupCAKey),
             "phone_ca" to Wire.bytes(phoneCA),
             "phone_ca_key" to Wire.bytes(phoneCAKey),
@@ -95,6 +98,7 @@ object Pairing {
                 issuer = o.optBytes("issuer"),
                 adminCA = o.optBytes("admin_ca"),
                 roots = o.optBytesList("roots"),
+                records = o.optArray("records")?.map { Member.Record.fromJson(it as? JsonObject ?: throw WireTypeException("a record is not an object")) },
                 groupCAKey = o.optBytes("group_ca_key"),
                 phoneCA = o.optBytes("phone_ca"),
                 phoneCAKey = o.optBytes("phone_ca_key"),

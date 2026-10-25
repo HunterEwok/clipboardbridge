@@ -27,6 +27,11 @@ type Options struct {
 	// cannot admit devices: the welcome of a group whose root is the phone.
 	NoCAKeys bool
 
+	// Records, when set, returns the records that lead to the admin's
+	// roots (group.Records.PathRecords), for the Welcome; a group that was
+	// handed over needs them, or the new device refuses the Welcome.
+	Records func() []group.Record
+
 	// Secret, when set, is the password in place of a six-digit code: the
 	// secret of a remote invitation, at least MinSecret bytes.
 	Secret []byte
@@ -50,6 +55,7 @@ type Window struct {
 	admin    *group.Identity
 	code     []byte // the password: the six digits, or a secret
 	noCAKeys bool
+	records  func() []group.Record
 	confirm  func(context.Context, Request) error
 	wait     time.Duration // how long confirm may take
 	now      func() time.Time
@@ -117,7 +123,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, confirm: opt.Confirm, wait: opt.ConfirmWait,
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, confirm: opt.Confirm, wait: opt.ConfirmWait,
 		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
@@ -481,6 +487,9 @@ func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	}
 	for _, r := range w.admin.Roots {
 		wel.Roots = append(wel.Roots, r.Raw)
+	}
+	if len(wel.Roots) > 0 && w.records != nil {
+		wel.Records = w.records()
 	}
 	if !keys {
 		return wel, nil

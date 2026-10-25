@@ -169,8 +169,19 @@ class RecordSet {
     private val list = mutableListOf<Member.Record>()
     val records: List<Member.Record> get() = list
 
-    /** The records each admin CA signed ([MAX_PER_ADMIN]). */
+    /** The records each signer signed, an admin CA or a root's own key ([MAX_PER_ADMIN]). */
     private val perSigner = mutableMapOf<Key, Int>()
+
+    /**
+     * The roots records may be signed under: the group CA and the new root of every root record that may make it a
+     * known root ([mayBeKnown]); the other root records wait in [pending], as Go's group.Records.
+     */
+    private val rootList = mutableListOf<ByteArray>()
+    private val pending = mutableListOf<Triple<ByteArray, Key, Key>>() // the new root, its anchor and its signer
+
+    /** For each root, the admin CAs that device records its own key signed name ([NAMED_PHONE] or [NAMED_OTHER]), and the roles of its own device records. */
+    private val named = mutableMapOf<Key, MutableMap<Key, Int>>()
+    private val own = mutableMapOf<Key, Int>()
 
     /** The group's first root, which names it; the first add sets it. */
     var groupCA: ByteArray? = null
@@ -206,63 +217,93 @@ class RecordSet {
      * key or by an admin CA the root certified (its chain holds that CA),
      * unless it is known; reports whether it was new. Records of another
      * group are refused, and so is a record signed under a root that no
-     * root record in the set names yet.
+     * root record in the set may make known yet. The limits are checked
+     * after the signature: [MAX_PER_ADMIN] for each signer, and past [MAX]
+     * only records a path root's own key signed, up to [MAX_PER_ADMIN] more.
      */
     fun add(r: Member.Record, groupCA: ByteArray): Boolean {
         if (this.groupCA == null) this.groupCA = groupCA
-        if (!this.groupCA.contentEqualsOrNull(groupCA) || known(Records.id(r)) || list.size >= MAX) return false
+        if (!this.groupCA.contentEqualsOrNull(groupCA) || known(Records.id(r))) return false
+        if (rootList.isEmpty()) rootList.add(groupCA)
         val body = Records.Body.decode(r.body) ?: return false
         if (body.v != Records.VERSION || body.group != GroupCertificates.tag(groupCA)) return false
-        val anchor = anchor(r, knownRoots(groupCA)) ?: return false
+        val anchor = anchor(r, rootList) ?: return false
+        val anchorKey = runCatching { Key(Records.keyHashOfCert(anchor.first)) }.getOrNull() ?: return false
         if (body.type == "root") {
             val pathLength = runCatching { ParsedCertificate(anchor.first).pathLength }.getOrNull()
             val root = body.root ?: return false
             if (pathLength != 1 || runCatching { GroupCertificates.checkRoot(root) }.isFailure) return false
         }
-        if (!r.chain.isNullOrEmpty()) {
-            val signer = Key(anchor.second)
-            val n = perSigner[signer] ?: 0
-            if (n >= MAX_PER_ADMIN) return false
-            perSigner[signer] = n + 1
-        }
+        val signer = Key(anchor.second)
+        val n = perSigner[signer] ?: 0
+        if (n >= MAX_PER_ADMIN) return false
+        if (list.size >= MAX && (list.size >= MAX + MAX_PER_ADMIN || signer != anchorKey || anchorKey !in Eval(this).onPath)) return false
+        perSigner[signer] = n + 1
         list.add(r)
+        if (body.type == "device" && signer == anchorKey) {
+            val bit = if (Records.role(body.role) == "phone") NAMED_PHONE else NAMED_OTHER
+            body.admin?.let { a -> named.getOrPut(anchorKey) { mutableMapOf() }.merge(Key(a), bit) { x, y -> x or y } }
+            if (body.device != null && body.device == body.by) own.merge(anchorKey, bit) { x, y -> x or y }
+        }
+        body.root?.let { if (body.type == "root") pending.add(Triple(it, anchorKey, signer)) }
+        promote()
         return true
+    }
+
+    /** Moves the root records of [pending] that may make their new root known into [rootList], until none does. */
+    private fun promote() {
+        var grew = true
+        while (grew) {
+            grew = false
+            val iter = pending.iterator()
+            while (iter.hasNext()) {
+                val (root, anchor, signer) = iter.next()
+                if (!mayBeKnown(anchor, signer)) continue
+                iter.remove()
+                if (rootList.none { r -> r.contentEquals(root) }) {
+                    rootList.add(root)
+                    grew = true
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether a root record signed under anchor by signer may make its new root a known root, leaving out the
+     * revocations and freezes that can still stop it: the root's own key signed it, or an admin CA that a phone's
+     * device record from that root's own key names, or one a computer's names when that root is a computer. A root
+     * that a computer's admin CA names in a phone's group is never known, so nothing signed under it enters the set.
+     */
+    private fun mayBeKnown(anchor: Key, signer: Key): Boolean {
+        val n = named[anchor]?.get(signer) ?: 0
+        return signer == anchor || (n and NAMED_PHONE) != 0 || ((n and NAMED_OTHER) != 0 && own[anchor] == NAMED_OTHER)
     }
 
     /**
      * Adds every record of rs that is valid, until nothing new is added,
      * so that a record signed under a new root is taken together with the
-     * root record that names it, in any order; returns the new ones.
+     * records that make that root known, in any order; returns the new ones.
      */
     fun addAll(rs: List<Member.Record>, groupCA: ByteArray): List<Member.Record> {
         val fresh = mutableListOf<Member.Record>()
         var pending = rs
         while (true) {
             val rest = mutableListOf<Member.Record>()
-            var rooted = false
+            val roots = rootList.size
             for (r in pending) {
                 if (add(r, groupCA)) {
                     fresh.add(r)
-                    rooted = rooted || Records.Body.decode(r.body)?.type == "root"
                 } else if (!known(Records.id(r))) {
                     rest.add(r)
                 }
             }
-            if (!rooted || rest.isEmpty()) return fresh
+            if (rootList.size == roots || rest.isEmpty()) return fresh
             pending = rest
         }
     }
 
-    /** The roots records may be signed under: the group CA and the new root of every root record in the set. */
-    private fun knownRoots(groupCA: ByteArray): List<ByteArray> {
-        val roots = mutableListOf(groupCA)
-        for (r in list) {
-            val b = Records.Body.decode(r.body) ?: continue
-            val root = b.root
-            if (b.type == "root" && root != null && roots.none { it.contentEquals(root) }) roots.add(root)
-        }
-        return roots
-    }
+    /** The roots records may be signed under ([rootList]). */
+    private fun knownRoots(groupCA: ByteArray): List<ByteArray> = rootList.ifEmpty { listOf(groupCA) }
 
     private class Entry(
         val record: Member.Record,
@@ -306,6 +347,9 @@ class RecordSet {
 
         /** The roots from the group CA to the current one, DER. */
         val path = mutableListOf<ByteArray>()
+
+        /** The root records that lead along [path], one for each root after the group CA. */
+        val steps = mutableListOf<Entry>()
         val onPath = mutableSetOf<Key>()
 
         init {
@@ -331,10 +375,11 @@ class RecordSet {
                         val root = e.body.root
                         if (e.body.type != "root" || e.anchor != cur || root == null) return@mapNotNull null
                         val k = runCatching { Key(Records.keyHashOfCert(root)) }.getOrNull() ?: return@mapNotNull null
-                        if (k in onPath || e.signer in revoked || !fromRoot(e) || !mayHandOver(e)) null else root to k
+                        if (k in onPath || e.signer in revoked || !fromRoot(e) || !mayHandOver(e)) null else Triple(root, k, e)
                     }.minWithOrNull { x, y -> compareBytes(sha256(x.first), sha256(y.first)) } ?: break
                     path.add(next.first)
                     onPath.add(next.second)
+                    steps.add(next.third)
                 }
             }
         }
@@ -557,13 +602,34 @@ class RecordSet {
             top = issuer
             leaf = admin
         }
-        val root = ev.path.firstOrNull { GroupCertificates.signed(top, it) }
-        if (root != null) {
-            val rk = runCatching { Key(Records.keyHashOfCert(root)) }.getOrNull()
-            if (rk != null && !ev.issued(rk, leaf)) return "the certificate is from a root that handed the group over"
-        }
+        // The chain must end at a root on the path: a root that only the identity trusts, as one a Welcome
+        // named, is no anchor.
+        val root = ev.path.firstOrNull { GroupCertificates.signed(top, it) } ?: return "the certificate is not from a root of the group"
+        val rk = runCatching { Key(Records.keyHashOfCert(root)) }.getOrNull()
+        if (rk != null && !ev.issued(rk, leaf)) return "the certificate is from a root that handed the group over"
         return null
     }
+
+    /**
+     * The records that lead to the path: each root record on it and, for one an admin CA signed, the device records
+     * its root's own key signed that name that admin CA or the root's own device, as Go's Records.PathRecords. A new
+     * member gets them in the Welcome's records (docs/protocol.md, section 5).
+     */
+    val pathRecords: List<Member.Record>
+        get() {
+            val ev = Eval(this)
+            val out = mutableListOf<Member.Record>()
+            for (st in ev.steps) {
+                out.add(st.record)
+                if (st.signer == st.anchor) continue
+                ev.entries.filter { e ->
+                    val b = e.body
+                    b.type == "device" && e.signer == st.anchor && e.anchor == st.anchor &&
+                        ((b.device != null && b.device == b.by) || b.admin?.let { Key(it) } == st.signer)
+                }.sortedWith { a, b -> compareBytes(Records.id(a.record), Records.id(b.record)) }.forEach { out.add(it.record) }
+            }
+            return out
+        }
 
     /**
      * The devices list: the latest device record that counts for each
@@ -687,8 +753,15 @@ class RecordSet {
         /** Records beyond this many are refused. */
         const val MAX = 4096
 
-        /** Records one admin CA signs at most, so a stolen admin cannot fill the set. */
+        /**
+         * Records one signer (an admin CA, or a root's own key) signs at most, so a stolen admin cannot fill the set;
+         * past [MAX] the set still takes this many records from a path root's own key, so it takes the root's removal
+         * of an admin that filled it.
+         */
         const val MAX_PER_ADMIN = 1024
+
+        private const val NAMED_PHONE = 1
+        private const val NAMED_OTHER = 2
 
         /** A set kept with toJson; records that no longer verify are dropped. */
         fun fromJson(data: ByteArray): RecordSet {

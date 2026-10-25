@@ -257,8 +257,14 @@ func TestAdminPowers(t *testing.T) {
 	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{rootKey}, nil))
 	own := newRoot(t)
 	mustAdd(t, s, rootRecord(t, g, pc, pcChain, own.Cert))
-	// The root it named signs nothing that counts.
-	mustAdd(t, s, revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil))
+	// The root it named is never known: the set takes nothing signed under
+	// it, and refuses certificates from it.
+	if _, err := s.Add(revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil)); err == nil {
+		t.Error("the set took a record signed by a root a computer admin named")
+	}
+	if err := s.Refused([]*x509.Certificate{member(t, own)}); err == nil {
+		t.Error("a certificate from a root a computer admin named is not refused")
+	}
 	// Nor does the admin phone remove the root.
 	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{rootKey}, nil))
 	if s.Revoked(phoneKey) || s.Revoked(rootKey) || s.Revoked(KeyHashOf(laptop)) {
@@ -328,16 +334,19 @@ func TestComputerTakeover(t *testing.T) {
 			computerAdminRecord(t, pg, pcCert, "pc", pcKey),
 			deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
 			rootRecord(t, g, pc, pcChain, next.Cert),
-			revokeRecord(t, g, next, nil, []KeyHash{rootKey, KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pcKey}),
 		} {
 			mustAdd(t, s, r)
 		}
+		_, err := s.Add(revokeRecord(t, g, next, nil, []KeyHash{rootKey, KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pcKey}))
 		took := len(s.Roots()) == 1 && s.Revoked(rootKey) && s.Revoked(KeyHashOf(holder))
 		if rootRole == RolePhone {
-			if took || len(s.Roots()) != 0 {
+			if took || len(s.Roots()) != 0 || err == nil {
 				t.Error("a computer admin took a phone's group over")
 			}
 			continue
+		}
+		if err != nil {
+			t.Fatal(err)
 		}
 		if !took {
 			t.Fatal("the admin computer did not take the group over from a lost root computer")
