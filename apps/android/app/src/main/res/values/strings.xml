@@ -163,4 +163,18 @@
     <string name="kind_watch">Watch</string>
     <string name="kind_retro">Retro computer</string>
     <string name="kind_other">Device</string>
+    <string name="channel_events">The group\'s events</string>
+    <string name="notifications">Notifications</string>
+    <string name="notifications_body">The app notifies of these as soon as it hears of them; the service hears of them in the background too. A paired watch shows them as well.</string>
+    <string name="notify_devices">A device joined or was removed</string>
+    <string name="notify_admins">A device became an admin</string>
+    <string name="notify_frozen">A device was frozen or unfrozen</string>
+    <string name="notify_takeover">The group was taken over</string>
+    <string name="notify_hub">The hub does not answer away from home</string>
+    <string name="event_added">%1$s joined the group.</string>
+    <string name="event_removed">%1$s was removed from the group.</string>
+    <string name="event_made_admin">%1$s is an admin now.</string>
+    <string name="event_frozen">%1$s was frozen: the others refuse it until an admin unfreezes it.</string>
+    <string name="event_unfrozen">%1$s was unfrozen.</string>
+    <string name="event_taken_over">%1$s took the group over: it holds the group\'s root now.</string>
 </resources>

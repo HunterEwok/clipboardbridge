@@ -142,6 +142,12 @@ two minutes while away from home. The app compares the devices with what it saw 
 has no background sync, so an event that happened while it was closed comes the next time
 it opens. iOS asks for notifications once, when the phone is first in a group.
 
+The Android app (`GroupEvents.kt`, the same events and the same order) looks whenever
+records arrive and at each refresh; its foreground service keeps the connections in the
+background, so it hears of most events at once. It posts on its own channel, "The group's
+events", with the permission it asks for the service's notification. Android shows them
+on a paired watch as well.
+
 ## Apple Watch
 
 The watch app (`apps/ios/Watch`, watchOS 10) has no network of its own: watchOS gives an

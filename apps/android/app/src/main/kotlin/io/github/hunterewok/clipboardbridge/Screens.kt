@@ -394,7 +394,7 @@ internal fun AddDeviceScreen(model: AppModel, close: () -> Unit) {
 
 // Settings
 
-/** Theme and colour, language, sending copies by themselves, sync away from home, about. */
+/** Theme and colour, language, sending copies by themselves, sync away from home, notifications, about. */
 @Composable
 internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
     val palette = LocalPalette.current
@@ -421,6 +421,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) AutoSend()
         if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
         if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
             // Seven taps on the version show the error details switch, as
@@ -652,4 +653,27 @@ private fun ColorSwatches(selection: String, choose: (String) -> Unit) {
             }
         }
     }
+}
+
+/** A switch for each kind of the group's events (GroupEvent.Kind). */
+@Composable
+private fun Notifications(notifier: Notifier) {
+    val palette = LocalPalette.current
+    Section(stringResource(R.string.notifications)) {
+        GroupEvent.Kind.entries.forEachIndexed { i, kind ->
+            if (i > 0) HorizontalDivider(color = palette.line)
+            var on by remember { mutableStateOf(notifier.on(kind)) }
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                    on = !on
+                    notifier.set(kind, on)
+                }.padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(kind.title), modifier = Modifier.weight(1f))
+                Switch(checked = on, onCheckedChange = null)
+            }
+        }
+    }
+    Text(stringResource(R.string.notifications_body), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
 }

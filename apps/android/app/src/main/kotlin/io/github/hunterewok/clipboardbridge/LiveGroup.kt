@@ -560,7 +560,10 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 if (fresh.isNotEmpty()) runCatching { g.save(file) }
                 fresh to (g.roots.size != roots)
             }
-            if (fresh.isNotEmpty()) relay()
+            if (fresh.isNotEmpty()) {
+                relay()
+                onRecords?.invoke()
+            }
             if (rooted) Thread({ restartSync() }, "restart sync").start()
             return fresh
         }
@@ -653,6 +656,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * phone's clipboard; on the node's thread.
      */
     @Volatile var onCopy: ((String, Member.Kind) -> Unit)? = null
+
+    /** Called on the node's thread when records arrived that change the group, for the notifications. */
+    @Volatile var onRecords: (() -> Unit)? = null
 
     companion object {
         private const val TAG = "clipboardbridge"
