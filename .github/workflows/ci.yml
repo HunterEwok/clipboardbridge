@@ -722,6 +722,43 @@ jobs:
           xcodebuild test -project ClipboardBridgeMac.xcodeproj -scheme ClipboardBridgeMac -destination 'platform=macOS' \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
+  trayapp:
+    name: tray app (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: GTK 4 and WebKitGTK, which Wails builds on
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: go mod tidy
+        run: go mod tidy -diff
+      - name: vet and test
+        run: |
+          go vet ./...
+          go test ./...
+      - name: build
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            go build -ldflags -H=windowsgui -o cbb-desktop.exe .
+          else
+            go build -o cbb-desktop .
+          fi
+
   android:
     name: Android app
     runs-on: ubuntu-latest
@@ -1014,7 +1051,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, android, phonetunnel, lite, esp32, zxnext]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

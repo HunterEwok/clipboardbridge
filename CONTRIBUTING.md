@@ -152,6 +152,14 @@ xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \
 
 To run it on a phone, open the project in Xcode, pick your team under Signing, and run.
 
+The tray app for Linux and Windows, a Go module of its own (Linux needs GTK 4 and
+WebKitGTK: `sudo apt-get install libgtk-4-dev libwebkitgtk-6.0-dev`):
+
+```sh
+cd apps/desktop && go vet ./... && go test ./... && go build -o cbb-desktop .
+# Windows: go build -ldflags -H=windowsgui -o cbb-desktop.exe .
+```
+
 The Mac app (macOS with Xcode):
 
 ```sh

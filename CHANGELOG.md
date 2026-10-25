@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Linux and Windows: a tray app over the cbb service (Wails), the twin of the Mac app: the
+  devices as tiles, a list or orbits, a device's details, send and fetch, sync away from
+  home, and the group's changes after the administrator's password (pkexec, UAC).
 - Mac: an app (SwiftUI) over the cbb service, a window and a menu bar item in the Glass
   design: the devices as tiles, a list or orbits, a device's details beside them, send and
   fetch, sync away from home, and renaming, removing, freezing and making admins after the

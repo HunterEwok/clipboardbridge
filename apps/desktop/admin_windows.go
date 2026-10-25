@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package main
+
+import (
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf16"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+const deniedText = "No permission to use the service: add your user to the clipboardbridge group and sign in again."
+
+// runAdmin runs cbb as the administrator through the UAC prompt: an
+// elevated PowerShell, started with ShellExecuteEx's runas, calls cbb with
+// each argument as a literal and writes what it printed to a file the app
+// reads after.
+func runAdmin(args []string, yes, details bool) error {
+	out, err := os.CreateTemp("", "cbb-desktop-*.txt")
+	if err != nil {
+		return err
+	}
+	outPath := out.Name()
+	out.Close()
+	defer os.Remove(outPath)
+
+	script := psScript(cbbPath(), args, yes, details, outPath)
+	code, err := elevate("powershell.exe", "-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand "+encodePS(script))
+	if errors.Is(err, windows.ERROR_CANCELLED) {
+		return errCancelled
+	}
+	if err != nil {
+		return &adminError{msg: "Windows did not start cbb as the administrator.", detail: err.Error()}
+	}
+	if code == 0 {
+		return nil
+	}
+	printed, _ := os.ReadFile(outPath)
+	return cbbFailed(string(printed), fmt.Sprintf("cbb exited with %d", code))
+}
+
+// psScript is the PowerShell that runs cbb: every argument a single-quoted
+// literal, so no name can run anything.
+func psScript(cbb string, args []string, yes, details bool, outPath string) string {
+	var b strings.Builder
+	if details {
+		b.WriteString("$env:CBB_DEBUG = '1'\n")
+	}
+	if yes {
+		b.WriteString("'yes' | ")
+	}
+	b.WriteString("& " + psQuote(cbb))
+	for _, a := range args {
+		b.WriteString(" " + psQuote(a))
+	}
+	b.WriteString(" *> " + psQuote(outPath) + "\nexit $LASTEXITCODE\n")
+	return b.String()
+}
+
+func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+
+// encodePS is PowerShell's -EncodedCommand: base64 of UTF-16LE.
+func encodePS(script string) string {
+	u := utf16.Encode([]rune(script))
+	b := make([]byte, 2*len(u))
+	for i, c := range u {
+		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// cbbPath is where install.ps1 puts cbb.exe.
+func cbbPath() string {
+	return filepath.Join(os.Getenv("ProgramFiles"), "clipboardbridge", "cbb.exe")
+}
+
+var (
+	shell32             = windows.NewLazySystemDLL("shell32.dll")
+	procShellExecuteExW = shell32.NewProc("ShellExecuteExW")
+)
+
+// shellExecuteInfo is SHELLEXECUTEINFOW.
+type shellExecuteInfo struct {
+	cbSize       uint32
+	fMask        uint32
+	hwnd         windows.Handle
+	lpVerb       *uint16
+	lpFile       *uint16
+	lpParameters *uint16
+	lpDirectory  *uint16
+	nShow        int32
+	hInstApp     windows.Handle
+	lpIDList     uintptr
+	lpClass      *uint16
+	hkeyClass    windows.Handle
+	dwHotKey     uint32
+	hIcon        windows.Handle
+	hProcess     windows.Handle
+}
+
+const seeMaskNoCloseProcess = 0x40
+
+// elevate starts a program as the administrator, waits for it and returns
+// its exit code; ERROR_CANCELLED when the user declined the prompt.
+func elevate(file, params string) (uint32, error) {
+	info := shellExecuteInfo{
+		fMask:        seeMaskNoCloseProcess,
+		lpVerb:       windows.StringToUTF16Ptr("runas"),
+		lpFile:       windows.StringToUTF16Ptr(file),
+		lpParameters: windows.StringToUTF16Ptr(params),
+		nShow:        windows.SW_HIDE,
+	}
+	info.cbSize = uint32(unsafe.Sizeof(info))
+	if r, _, err := procShellExecuteExW.Call(uintptr(unsafe.Pointer(&info))); r == 0 {
+		return 0, err
+	}
+	defer windows.CloseHandle(info.hProcess)
+	if _, err := windows.WaitForSingleObject(info.hProcess, windows.INFINITE); err != nil {
+		return 0, err
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(info.hProcess, &code); err != nil {
+		return 0, err
+	}
+	return code, nil
+}

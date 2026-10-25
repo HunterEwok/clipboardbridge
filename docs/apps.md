@@ -192,6 +192,35 @@ keep syncing without it. It speaks the service's control socket (`Control`, the 
 
 CI's `Mac app` job builds it and runs its tests, signed ad hoc. Not yet run on a real Mac.
 
+## The tray app
+
+The tray app (`apps/desktop`, `cbb-desktop`) is the Mac app's twin for Linux and Windows: one
+program in Go with [Wails 3](https://v3.wails.io) (pinned to its beta until a release; GTK 4
+and WebKitGTK on Linux, WebView2 on Windows), a tray item and a window over the service. Like
+the Mac app it speaks the control socket, with the service's own `internal/control`, and the
+service and its clipboard agent keep syncing without it.
+
+- **The window** (`frontend/`, plain HTML, CSS and JavaScript, no build step): the group in a
+  line with the away-from-home switch, the devices as tiles, a list or orbits around this
+  computer, a device's details beside them, and "Send the clipboard" and "Fetch".
+- **The tray item**: how many devices are online, send, fetch, the window, Quit. Closing the
+  window keeps the tray item; starting the app again opens the window.
+- **Settings**: the ten colours (`frontend/tokens.js`, which `go run ./tools/tokens` writes
+  with the Swift and Kotlin tokens), the appearance, and error details (as cbb: on in a
+  build without a release version, `CBB_DEBUG=1` or `0`, or the switch). They are kept in
+  the user's configuration folder (`clipboardbridge/desktop.json`).
+- What changes the group runs `cbb` as the administrator: through `pkexec` on Linux (the
+  desktop's password dialog; each argument passed as it is, no shell), and through the UAC
+  prompt on Windows (an elevated PowerShell started with `ShellExecuteEx`'s `runas`, each
+  argument a single-quoted literal, its output read back from a file). A dismissed prompt
+  changes nothing and says nothing.
+- Languages: English and Russian (`frontend/l10n/ru.json`, keyed by the English text; the Go
+  side reads it for the tray), picked from the system's language.
+
+CI's `tray app` jobs vet, test and build it on Linux and Windows. The installers do not carry
+it yet, and it does not start at sign-in by itself; not yet run on a real desktop beyond a
+virtual X display.
+
 ## Android: the clipboard without taps
 
 Since Android 10 an app reads the clipboard only while it has the input focus, or when it is
@@ -314,6 +343,7 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
 - `apps/macos/` — the Mac app (SwiftUI): `project.yml` for XcodeGen, like the iPhone app's.
+- `apps/desktop/` — the tray app for Linux and Windows (Go, Wails 3), a Go module of its own.
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
   drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
   for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into

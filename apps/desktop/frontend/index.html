@@ -1,0 +1,88 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clipboard Bridge</title>
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="glow"></div>
+  <header>
+    <div class="headline">
+      <h1 id="headline"></h1>
+      <span id="tag" class="mono dim"></span>
+    </div>
+    <div class="tools">
+      <span id="away-badge" class="badge" hidden></span>
+      <label class="switch" id="away-switch" hidden>
+        <input type="checkbox" id="away">
+        <span data-t>Away from home</span>
+      </label>
+      <div class="segmented" id="layouts" role="radiogroup">
+        <button data-layout="tiles" data-t-title="Tiles">▦</button>
+        <button data-layout="list" data-t-title="List">☰</button>
+        <button data-layout="orbit" data-t-title="Orbit">◎</button>
+      </div>
+      <button class="icon" id="add" data-t-title="Add a device">＋</button>
+      <button class="icon" id="settings" data-t-title="Settings">⚙</button>
+    </div>
+  </header>
+  <main>
+    <section id="devices"></section>
+    <aside id="detail" hidden></aside>
+  </main>
+  <footer id="bar">
+    <div class="buttons">
+      <button class="accent" id="send" data-t>Send the clipboard</button>
+      <button class="glass" id="fetch" data-t>Fetch</button>
+    </div>
+    <p id="message" class="dim"></p>
+  </footer>
+
+  <dialog id="confirm">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text" class="dim"></p>
+      <input id="confirm-input" class="field" hidden>
+      <menu>
+        <button value="cancel" class="glass" data-t>Cancel</button>
+        <button value="ok" class="accent" id="confirm-ok"></button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="add-dialog">
+    <form method="dialog">
+      <h2 data-t>Add a device</h2>
+      <ol class="steps">
+        <li><span data-t>On the new computer, run:</span> <code>cbb pair</code></li>
+        <li><span data-t>In a group of the phone, scan the QR code it shows with the phone app. In a group of computers, run this on this computer or another admin, as the administrator, and type the code it shows on the new computer:</span> <code>cbb pair</code></li>
+      </ol>
+      <p class="dim" data-t>A phone joins from the start screen of its app.</p>
+      <menu><button value="ok" class="accent" data-t>Done</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form method="dialog">
+      <h2 data-t>Settings</h2>
+      <h3 data-t>Colour</h3>
+      <div id="swatches"></div>
+      <h3 data-t>Appearance</h3>
+      <div class="segmented" id="appearances">
+        <button type="button" data-appearance="system" data-t>System</button>
+        <button type="button" data-appearance="dark" data-t>Dark</button>
+        <button type="button" data-appearance="light" data-t>Light</button>
+      </div>
+      <h3 data-t>About</h3>
+      <label class="switch"><input type="checkbox" id="details"> <span data-t>Show error details</span></label>
+      <p class="dim small" data-t>Error messages show the error underneath them, to find out what failed.</p>
+      <p class="dim small mono" id="version"></p>
+      <menu><button value="ok" class="accent" data-t>Done</button></menu>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -5,8 +5,9 @@
 // check:
 //
 //   - every tracked text file is in English: no Cyrillic letters, except the
-//     translations of the apps (String Catalogs, *.xcstrings, and Android's
-//     res/values-<language>/strings.xml);
+//     translations of the apps (String Catalogs, *.xcstrings, Android's
+//     res/values-<language>/strings.xml and the tray app's
+//     frontend/l10n/<language>.json);
 //   - every Go and Rust file, except generated Go code, starts with the
 //     license header;
 //   - code copied from other projects lives in a directory below a
@@ -141,10 +142,14 @@ func git(args ...string) (string, error) {
 // default one in an Android project.
 var androidTranslation = regexp.MustCompile(`(^|/)res/values-[a-z]{2,3}(-r[A-Z]{2})?/strings\.xml$`)
 
+// desktopTranslation matches the texts of a language other than English
+// in the tray app.
+var desktopTranslation = regexp.MustCompile(`^apps/desktop/frontend/l10n/[a-z]{2,3}\.json$`)
+
 // isTranslation reports whether a file holds the apps' translations, which
 // are the one place for other languages.
 func isTranslation(name string) bool {
-	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name)
+	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name) || desktopTranslation.MatchString(name)
 }
 
 // check returns the rule violations in one file; listed holds the paths of

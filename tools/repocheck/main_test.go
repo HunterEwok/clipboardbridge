@@ -43,6 +43,11 @@ func TestCheck(t *testing.T) {
 			name: "the default Android strings", file: "apps/android/app/src/main/res/values/strings.xml", content: "<string>" + cyrillicWord + "</string>\n",
 			want: []string{"strings.xml:1: Cyrillic letter"},
 		},
+		{name: "a tray app translation", file: "apps/desktop/frontend/l10n/ru.json", content: `{"Fetch":"` + cyrillicWord + `"}`},
+		{
+			name: "the tray app's script", file: "apps/desktop/frontend/app.js", content: `t("` + cyrillicWord + `")`,
+			want: []string{"app.js:1: Cyrillic letter"},
+		},
 		{name: "Go file with the header", file: "x.go", content: header + "package x\n"},
 		{name: "header with a year range", file: "x.go", content: strings.Replace(header, "2026", "2026-2027", 1) + "package x\n"},
 		{name: "header with CRLF line ends", file: "x.go", content: strings.ReplaceAll(header, "\n", "\r\n") + "package x\r\n"},
