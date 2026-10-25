@@ -671,7 +671,9 @@ func TestMoveHub(t *testing.T) {
 // deck moves back to the pi (docs/protocol.md, section 11, "Several hubs").
 func TestSeveralHubs(t *testing.T) {
 	t.Setenv("CBB_DEBUG", "1")
-	upCheck, standbyGrace = 2*time.Second, 2*time.Second
+	// The deck stays on the Mac, below the pi, for upCheck, then dials the
+	// pi for up to handshakeTimeout: long enough to sync on a slow runner.
+	upCheck, standbyGrace = 20*time.Second, 2*time.Second
 	t.Cleanup(func() { upCheck, standbyGrace = 5*time.Minute, time.Minute })
 	var h hub
 	pi := startService(t, &h, "pi")
