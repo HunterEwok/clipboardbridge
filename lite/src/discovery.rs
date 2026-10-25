@@ -166,6 +166,12 @@ fn browse(
                 if id == me || info.get_property_val_str("g") != Some(tag) || (lite(r) && id < me) {
                     continue;
                 }
+                // A phone that is the hub publishes itself while its app is
+                // open; it dials this member, as every phone does.
+                if phone(r) {
+                    node.found(&id, true);
+                    continue;
+                }
                 let addrs = order(info.get_addresses().iter().map(|ip| match ip {
                     mdns_sd::ScopedIp::V6(v6) if v6.addr().is_unicast_link_local() => {
                         SocketAddr::V6(SocketAddrV6::new(*v6.addr(), info.port, 0, v6.scope_id().index))
@@ -208,6 +214,12 @@ fn lite(r: Option<&str>) -> bool {
     r.is_some_and(|v| v.eq_ignore_ascii_case("lite"))
 }
 
+/// Reports whether a TXT `r` value names a phone, the group's hub while its
+/// app is open.
+fn phone(r: Option<&str>) -> bool {
+    r.is_some_and(|v| v.eq_ignore_ascii_case("phone"))
+}
+
 /// The device ID in an instance name, <device ID>._clipboardbridge._tcp.local.
 fn instance_id(fullname: &str) -> Option<DeviceId> {
     let label = fullname.strip_suffix(SERVICE)?.strip_suffix('.')?;
@@ -242,6 +254,7 @@ mod tests {
     #[test]
     fn lite_role() {
         assert!(lite(Some("lite")) && lite(Some("LITE")));
+        assert!(phone(Some("phone")) && phone(Some("Phone")) && !phone(Some("lite")) && !phone(None));
         assert!(!lite(None) && !lite(Some("linux")) && !lite(Some("")));
     }
 

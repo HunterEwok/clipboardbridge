@@ -169,7 +169,7 @@ func (s *Service) found(peers []mdns.Peer) {
 				s.prio[id] = n
 			}
 		}
-		if r, _ := p.TXTValue("r"); strings.EqualFold(r, "lite") {
+		if r, _ := p.TXTValue("r"); strings.EqualFold(r, "lite") || strings.EqualFold(r, "phone") {
 			continue // it dials the full members
 		}
 		want[id] = target{addresses(p), id < s.id.ID}

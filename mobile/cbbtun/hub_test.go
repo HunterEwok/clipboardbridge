@@ -185,8 +185,8 @@ func TestPhoneHub(t *testing.T) {
 }
 
 // TestPhoneHubWithoutRecords checks that the forwarder refuses a phone hub
-// whose records do not make its member key the root's, and that Status
-// says why.
+// whose records do not make its member key the root's, that Status says
+// why, and that SetRecords mends it.
 func TestPhoneHubWithoutRecords(t *testing.T) {
 	f, pin := startForwarder(t)
 	phone := newRootPhone(t)
@@ -203,6 +203,14 @@ func TestPhoneHubWithoutRecords(t *testing.T) {
 	if !strings.Contains(s["error"].(string), "neither") {
 		t.Errorf("the error: %v", s["error"])
 	}
+	// With the records, the next registration is taken.
+	if err := hub.SetRecords("{"); err == nil {
+		t.Error("SetRecords took bad records")
+	}
+	if err := hub.SetRecords(phone.records); err != nil {
+		t.Fatal(err)
+	}
+	status(t, hub, func(s map[string]any) bool { return s["registered"] == true })
 }
 
 func TestHubBadArguments(t *testing.T) {

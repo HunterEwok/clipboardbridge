@@ -619,6 +619,33 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return out
     }
 
+    /// The records that say who governs the group, as Go's
+    /// Records.AuthorityRecords: the path records, every record that is no
+    /// device record (revocations, freezes, thaws, roots), and of the device
+    /// records a root signed with its own key those of a root's own device
+    /// and of every device that one of them ever made an admin, all of them,
+    /// so that a later one that demotes it counts. A phone hub sends them to
+    /// its forwarder (docs/protocol.md, section 13); the other devices'
+    /// records, with their names, stay in the group.
+    public var authorityRecords: [Member.Record] {
+        var seen = Set<Data>()
+        var out: [Member.Record] = []
+        func add(_ r: Member.Record) {
+            if seen.insert(Records.id(r)).inserted { out.append(r) }
+        }
+        pathRecords.forEach(add)
+        let ev = Eval(self)
+        let governs = Set(ev.entries.compactMap { e -> String? in
+            let b = e.body
+            guard b.type == "device", e.signer == e.anchor, b.admin != nil || (b.device != nil && b.device == b.by) else { return nil }
+            return b.device
+        })
+        for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) {
+            if e.body.type != "device" || (e.signer == e.anchor && e.body.device.map(governs.contains) == true) { add(e.record) }
+        }
+        return out
+    }
+
     /// The devices list: the latest device record that counts for each
     /// device (by time, then record ID) among those whose key is not
     /// revoked, sorted by name. A device record counts when it was signed

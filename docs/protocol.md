@@ -99,7 +99,9 @@ separated by spaces; the short form is the first 8 bytes (23 characters).
 ## 3. Discovery (mDNS)
 
 Full members (Linux, Windows and macOS computers) and lite members publish and browse;
-phones and joining devices only browse. Only a full member that holds the iPhone CA key
+phones and joining devices only browse, except a phone that is the group's hub, which
+publishes `v=1`, `g=<tag>`, `r=phone` while its app is open (design.md, "The phone as the
+hub"). Only a full member that holds the iPhone CA key
 publishes a holder priority (`h`) and may hold `clipboardbridge.local`.
 RFC 6762 and RFC 6763 apply where this section is silent. Source: `internal/mdns`; a lite
 member publishes and browses with the `mdns-sd` crate (`lite/src/discovery.rs`), which
@@ -132,7 +134,7 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
-| `r` | `lite` | present only on a lite member, which the full members do not dial (section 4) |
+| `r` | `lite` or `phone` | `lite` on a lite member, which the full members do not dial (section 4); `phone` on a phone that is the group's hub while its app is open, which no member dials: it dials them |
 | `h` | `1` or `2` | the holder priority, present only on a full member that may hold `clipboardbridge.local`: `1` first, `2` only as a fallback |
 
 The Go code publishes them in the order `v=1`, `g=<tag>`, `h=<priority>` (if any), `p=1`; a
@@ -234,7 +236,9 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   member whose device ID is greater than its own; it accepts the others and phones.
 - A phone app dials every found member with a matching `g`. Phones accept nothing and never
   connect to each other; so a phone syncs with a lite member or any one computer with
-  no other on.
+  no other on. A phone that is the group's hub is the exception: while its app is open it
+  accepts members on the home network and through the tunnel, publishes `r=phone`, and the
+  other phones dial it; the full and lite members do not, since it dials them.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
   home"); so do the phone apps and the lite member on Linux, as clients. A lite member can

@@ -48,6 +48,7 @@ type Hub struct {
 	mu         sync.Mutex
 	conns      map[net.Conn]struct{}
 	registered bool // Register was called
+	records    []group.Record
 	report     forward.Report
 }
 
@@ -158,11 +159,9 @@ func (h *Hub) Register(endpoint, pin, chain string, signer Signer, records, vles
 	if err != nil {
 		return err
 	}
-	var recs []group.Record
-	if records != "" {
-		if err := json.Unmarshal([]byte(records), &recs); err != nil {
-			return fmt.Errorf("cbbtun: the records: %w", err)
-		}
+	recs, err := parseRecords(records)
+	if err != nil {
+		return err
 	}
 	if vlessID != "" {
 		if err := tunnel.CheckVLESSID(vlessID); err != nil {
@@ -179,6 +178,7 @@ func (h *Hub) Register(endpoint, pin, chain string, signer Signer, records, vles
 		return errors.New("cbbtun: the hub is closed")
 	}
 	h.registered = true
+	h.records = recs
 	h.mu.Unlock()
 	cfg := forward.HubConfig{
 		Link:        forward.Link{Endpoint: ep, Pin: pin},
@@ -187,7 +187,9 @@ func (h *Hub) Register(endpoint, pin, chain string, signer Signer, records, vles
 		VLESSID:     vlessID,
 		Cert:        func() tls.Certificate { return cert },
 		Authority: func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
-			return nil, nil, recs
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return nil, nil, h.records
 		},
 		Send: h.hub.Send,
 		Report: func(r forward.Report) {
@@ -206,6 +208,31 @@ func (h *Hub) Register(endpoint, pin, chain string, signer Signer, records, vles
 		forward.Register(h.ctx, cfg)
 	}()
 	return nil
+}
+
+// SetRecords replaces the authority records that the next registration
+// shows the forwarder, as Register takes them: after a removal or a new
+// admin, so that the forwarder learns it the next time the hub registers.
+func (h *Hub) SetRecords(records string) error {
+	recs, err := parseRecords(records)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	h.records = recs
+	h.mu.Unlock()
+	return nil
+}
+
+func parseRecords(s string) ([]group.Record, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var recs []group.Record
+	if err := json.Unmarshal([]byte(s), &recs); err != nil {
+		return nil, fmt.Errorf("cbbtun: the records: %w", err)
+	}
+	return recs, nil
 }
 
 // memberCert is the phone's member certificate with its chain, whose key

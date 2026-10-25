@@ -50,6 +50,29 @@ final class RootTests: XCTestCase {
         }
     }
 
+    /// What a phone hub shows its forwarder: the records of the root's own
+    /// device and of the admins, and every record that is no device record,
+    /// never the records that name the computers.
+    func testAuthorityRecords() throws {
+        var g = try Group(now: t0)
+        func names(_ rs: [Member.Record]) -> Set<String> {
+            Set(rs.compactMap { try? JSONDecoder().decode(Records.Body.self, from: $0.body) }.filter { $0.type == "device" }.compactMap(\.name))
+        }
+        XCTAssertEqual(names(g.root.records.authorityRecords), ["Lost", "B"])
+        let rs = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
+        let after = g.b.records.authorityRecords
+        XCTAssertEqual(names(after), ["Lost", "B"])
+        let ids = Set(after.map(Records.id))
+        XCTAssertTrue(rs.allSatisfy { ids.contains(Records.id($0)) }, "the takeover's records")
+        XCTAssertTrue(g.b.records.pathRecords.allSatisfy { ids.contains(Records.id($0)) }, "the path")
+        XCTAssertEqual(ids.count, after.count)
+        // A forwarder that knows only these sees the same roots and the lost phone removed.
+        var forwarder = RecordSet()
+        forwarder.addAll(after.shuffled(), groupCA: g.root.groupCA)
+        XCTAssertEqual(forwarder.roots, g.b.roots)
+        XCTAssertNotNil(forwarder.refused(chain: [g.root.memberCert]))
+    }
+
     func testTakeOver() throws {
         var g = try Group(now: t0)
         let lost = g.root.device
