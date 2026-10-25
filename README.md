@@ -85,6 +85,7 @@ On Linux it works with and without a desktop:
 | Windows 10 (1809 or later) and 11; x86-64, ARM64                         | service, clipboard agent                        |
 | iOS and iPadOS                                                           | the app, or a shortcut in the Shortcuts app     |
 | Android                                                                  | the app (an APK in every release)               |
+| Apple Watch, Wear OS                                                     | a watch app, through the phone                  |
 | Small Linux devices (routers, boards)                                    | the lite member, also `cbb` ([lite/README.md](lite/README.md)) |
 
 ## Status
@@ -97,6 +98,7 @@ On Linux it works with and without a desktop:
 | iPhone shortcut (Action button, Back Tap) | works | yes |
 | iPhone app (the phone as the root, admin phones, devices list) | built, CI on a simulator | not yet |
 | Android app | built, CI; APK in every release | not yet |
+| Apple Watch and Wear OS apps (devices, events, away switch) | built, CI | not yet |
 | Lite member on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
 | Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
 | Sync away from home between computers (`cbb global`, `cbb invite`) | built | not yet |

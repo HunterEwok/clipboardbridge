@@ -66,14 +66,14 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
       - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         if: matrix.build-mode == 'autobuild'
-      - name: build the Android app and the kit
+      - name: build the Android apps and the kit
         if: matrix.language == 'java-kotlin'
         working-directory: apps/android
         # CodeQL sees only what is compiled while it watches, so no daemon, no build cache
         # and the Kotlin compiler inside Gradle's process. The runner image has the Android SDK.
         run: |
           ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
-            :app:assembleDebug :app:compileDebugUnitTestKotlin
+            :app:assembleDebug :app:compileDebugUnitTestKotlin :wear:assembleDebug
           ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
             -p kit testClasses
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4

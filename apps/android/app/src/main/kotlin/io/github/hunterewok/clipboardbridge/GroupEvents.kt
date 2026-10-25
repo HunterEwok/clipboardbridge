@@ -126,7 +126,18 @@ class Notifier(private val context: Context) {
         }
     }
 
+    /** The latest events, newest first, for the watch. */
+    @Volatile
+    var recent: List<String> = emptyList()
+        private set
+
+    /** Called after each event, for the watch. */
+    var onEvent: (() -> Unit)? = null
+
     private fun post(e: GroupEvent) {
+        val text = if (e.name.isEmpty()) context.getString(e.what.text) else context.getString(e.what.text, e.name)
+        recent = (listOf(text) + recent).take(5)
+        onEvent?.invoke()
         if (!on(e.kind)) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -141,7 +152,6 @@ class Notifier(private val context: Context) {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val text = if (e.name.isEmpty()) context.getString(e.what.text) else context.getString(e.what.text, e.name)
         val n = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.cbb_name))

@@ -238,7 +238,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P32)
+## 3. Features and platforms (section 7, P1 to P33)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -449,6 +449,14 @@ Windows).
 3. Set the system's language to Russian and start the app again.
 Pass: as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension);
 the texts are Russian.
+
+**P33. The Wear OS app.** Runs: manual (a Wear OS watch paired with the Android phone).
+1. Install both APKs of the release (the watch's with `adb install` over its wireless
+   debugging); do steps 1 and 2 of P29 with the watch and the Android phone.
+2. Close the phone app, turn sync away from home on and off on the watch again.
+3. Install the phone app on a phone without Google Play services and use it as before.
+Pass: as P29, also with the phone app closed; without Play services the phone app works and
+logs once that there is no watch.
 
 ## 4. Failure cases (section 8)
 

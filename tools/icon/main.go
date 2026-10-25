@@ -29,7 +29,7 @@ import (
 
 const (
 	appIcon     = "apps/ios/ClipboardBridge/Resources/Assets.xcassets/AppIcon.appiconset/"
-	androidIcon = "apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png"
+	androidIcon = "apps/android/shared/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png"
 )
 
 var icons = []struct {

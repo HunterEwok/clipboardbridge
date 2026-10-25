@@ -27,7 +27,7 @@ import (
 const (
 	tokensFile = "apps/design/tokens.json"
 	swiftFile  = "apps/ios/ClipboardBridge/Theme/Tokens.swift"
-	kotlinFile = "apps/android/app/src/main/kotlin/io/github/hunterewok/clipboardbridge/Tokens.kt"
+	kotlinFile = "apps/android/shared/src/main/kotlin/io/github/hunterewok/clipboardbridge/Tokens.kt"
 	jsFile     = "apps/desktop/frontend/tokens.js"
 )
 

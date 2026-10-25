@@ -4,6 +4,8 @@
 package io.github.hunterewok.clipboardbridge
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
@@ -31,7 +33,10 @@ class AppModel(private val app: Context) {
     data class Note(@StringRes val text: Int, val detail: String? = null, val error: Boolean = false)
 
     val settings = Settings(app)
-    val notifier = Notifier(app)
+    val notifier = Notifier(app).also { n ->
+        // From the thread that saw the event: the watch hears of it on the main thread.
+        n.onEvent = { Handler(Looper.getMainLooper()).post { WatchLink.update(app, this) } }
+    }
     val group = LiveGroup(app).also { g ->
         g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
         // In the background too: the service keeps the connections that bring the records.
@@ -76,6 +81,7 @@ class AppModel(private val app: Context) {
     fun choose(color: String) {
         settings.color = color
         this.color = color
+        WatchLink.update(app, this)
     }
 
     fun choose(appearance: Appearance) {
@@ -221,6 +227,7 @@ class AppModel(private val app: Context) {
             // AwayFromHome logs each failure itself.
             Away(a.isOn, a.status, e?.let { describe(it, R.string.away_error, log = false) })
         }
+        WatchLink.update(app, this)
     }
 
     /** Turns sync away from home on or off; the hub's answer comes on the next connection at home. */

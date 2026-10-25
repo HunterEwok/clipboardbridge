@@ -788,10 +788,12 @@ jobs:
           CBB_SWIFT_INTEROP="$tool" go test ./internal/pair -run 'TestSwiftMemberAdmitsGoJoiner$' -v
           CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
           CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
-      - name: build the app and run its unit tests
+      - name: build the app and the Wear OS app, and run their unit tests
         working-directory: apps/android
         # The runner image has the Android SDK; Gradle fetches a missing platform.
-        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug
+        run: |
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug \
+            :shared:testDebugUnitTest :shared:lintDebug :wear:assembleDebug :wear:assembleRelease :wear:lintDebug
 
   lite:
     name: lite member (Rust)

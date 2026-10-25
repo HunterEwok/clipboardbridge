@@ -104,6 +104,7 @@ for the tunnel (see below) and Google's Maven repository (CI, or a Mac with Andr
 ```sh
 cd apps/android && ./gradlew -p kit test
 cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+cd apps/android && ./gradlew :shared:testDebugUnitTest :wear:assembleDebug :wear:lintDebug
 ```
 
 The phone kit (Swift package, runs on Linux too):
