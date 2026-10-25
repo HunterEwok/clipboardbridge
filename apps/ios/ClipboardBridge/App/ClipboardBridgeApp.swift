@@ -5,6 +5,7 @@ import SwiftUI
 @main
 struct ClipboardBridgeApp: App {
     @StateObject private var model = AppModel.shared
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
         Appearance.migrate()

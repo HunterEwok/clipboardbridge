@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- iPad: the app runs on the iPad as a phone of the group. Its Home shows the devices on orbits
+  around it (or as tiles or a list), with a device's details in a pane beside them; the
+  same layout serves the inner screen of a foldable iPhone, whose strip at the right edge
+  takes the toolbar in landscape.
+- iPhone: a Live Activity in the Dynamic Island while a device is added and while the phone
+  syncs away from home, and the result of a sync for a moment; it never shows what was
+  copied.
 - A member's hello says what its device is (docs/protocol.md, section 4, "Device"): its form
   (laptop, desktop, phone, tablet, board, console, server and others), its system's version,
   its own version and, on computers and boards, the MAC address of its network card. The

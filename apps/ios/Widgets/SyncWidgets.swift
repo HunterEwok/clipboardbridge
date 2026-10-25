@@ -12,6 +12,7 @@ struct SyncWidgets: WidgetBundle {
     var body: some Widget {
         SyncWidget()
         SyncControl()
+        StatusActivityWidget()
     }
 }
 

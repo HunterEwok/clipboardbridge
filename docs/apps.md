@@ -104,6 +104,30 @@ suggests making a second phone an admin.
 Errors are one line in plain words with the next step ("Turn on the computer that holds
 the group", not a status code), never a dialog that must be dismissed.
 
+## Big screens
+
+- **iPad** (the same app, universal): an iPad is a phone for the group. It joins as an
+  admin, or makes its own group, and its root key lives in its Secure Enclave. Its Home
+  shows the devices on **orbits** around it, or as tiles or a list (the "…" menu switches
+  them). Its centre is the sync button, the toolbar holds the sync button too, and a device
+  opens its details in a pane beside the devices, which a cross closes.
+- **A foldable iPhone** (the iPhone duo): the outer screen is the phone's page. The inner
+  screen is a big screen like the iPad's: the orbits, the details beside them, and in
+  landscape the system moves the toolbar (sync, "+", the menu) to the strip at the right
+  edge. A phone's screen stays upright; a big one turns.
+
+## Dynamic Island
+
+A Live Activity (iPhone, iOS 17) shows what runs in the Dynamic Island and on the Lock
+Screen, in the colour chosen in Settings, and never what was copied:
+
+- **Adding a device**: from the scan until the device is in the group, with a timer; then
+  "The device is in the group." or "The device was not added." for a moment.
+- **Away from home**: while the phone syncs through the tunnel of the group's hub, a shield
+  with the time since it connected.
+- **A sync**: its result ("Sent to the computers.", "Fetched from the computers.") for a
+  few seconds.
+
 ## Android: the clipboard without taps
 
 Since Android 10 an app reads the clipboard only while it has the input focus, or when it is

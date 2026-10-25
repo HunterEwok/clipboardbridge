@@ -147,17 +147,21 @@ final class AppModel: ObservableObject {
         }
         busy = true
         defer { busy = false }
+        Island.show(.adding, String(localized: "Adding a device…", bundle: .app))
         do {
             try await group.admit(jc)
             computers = group.computers
             devices = group.devices
             phase = .home
             message = nil
+            Island.end(.adding, last: String(localized: "The device is in the group.", bundle: .app))
             return true
         } catch is CancellationError {
+            Island.end(.adding)
             return false
         } catch {
             message = Self.describe(error)
+            Island.end(.adding, last: String(localized: "The device was not added.", bundle: .app))
             return false
         }
     }
@@ -221,6 +225,7 @@ final class AppModel: ObservableObject {
             case .fetched: message = String(localized: "Fetched from the computers.", bundle: .app)
             case .nothingNew: message = String(localized: "Nothing new to send or fetch.", bundle: .app)
             }
+            if let message { Island.flash(message) }
         } catch {
             message = Self.describe(error)
         }
@@ -252,7 +257,14 @@ final class AppModel: ObservableObject {
     private func refreshAway() async {
         guard let a = await group.awayStatus() else {
             away = nil
+            Island.end(.away)
             return
+        }
+        // Through the tunnel, the island says so for as long as it lasts.
+        if a.on, a.status == .connected {
+            Island.show(.away, String(localized: "Away from home: through your hub", bundle: .app))
+        } else {
+            Island.end(.away)
         }
         // The last failure only while it is still trying; once connected or
         // at home it is old news. AwayFromHome logs each failure itself.

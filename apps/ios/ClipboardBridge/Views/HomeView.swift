@@ -2,43 +2,36 @@
 
 import SwiftUI
 
-/// Tiles or a list, as the menu sets it.
+/// Tiles or a list, as the menu sets it; on a big screen also the orbit.
 enum DeviceLayout: String {
     static let key = "deviceLayout"
+    /// The choice on a big screen, which starts with the orbit.
+    static let wideKey = "deviceLayoutWide"
 
-    case tiles, list
+    case tiles, list, orbit
 }
 
 /// The one page: the big button, the result in one line, and every device
-/// of the group as tiles or a list; a device opens its details.
+/// of the group as tiles or a list; a device opens its details. On a big
+/// screen (an iPad, a foldable iPhone's inner screen) the devices may stand
+/// on orbits around this phone, and the details open beside them.
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var palette
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage(DeviceLayout.key) private var layout = DeviceLayout.tiles
+    @AppStorage(DeviceLayout.wideKey) private var wideLayout = DeviceLayout.orbit
     @State private var adding = false
     @State private var settings = false
+    /// The device whose details stand beside the devices on a big screen.
+    @State private var selected: AppModel.Computer.ID?
+
+    private var wide: Bool { sizeClass == .regular }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Tokens.spacingLarge) {
-                    summary
-                    Button {
-                        Task { await model.sync() }
-                    } label: {
-                        Text("Send or fetch")
-                    }
-                    .buttonStyle(AccentButtonStyle())
-                    .disabled(model.busy)
-                    .sensoryFeedback(.success, trigger: model.message)
-
-                    if let message = model.message {
-                        Text(message).foregroundStyle(palette.textDim)
-                    }
-                    DeviceCollection(devices: model.devices, layout: layout)
-                    hint
-                }
-                .padding(Tokens.spacingLarge)
+            Group {
+                if wide { wideBody } else { compactBody }
             }
             .background(AppBackground())
             .navigationTitle(Text("Clipboard Bridge"))
@@ -46,7 +39,19 @@ struct HomeView: View {
             .navigationDestination(isPresented: $settings) { SettingsView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { menu }
-                ToolbarItem(placement: .topBarTrailing) {
+                // On a big screen the toolbar holds the sync button, which a
+                // foldable iPhone puts in the strip at its right edge.
+                if wide {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            Task { await model.sync() }
+                        } label: {
+                            Label { Text("Send or fetch") } icon: { Image(systemName: "arrow.up.arrow.down") }
+                        }
+                        .disabled(model.busy)
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
                     if model.isAdmin {
                         Button { adding = true } label: {
                             Image(systemName: "plus").accessibilityLabel(Text("Add a device"))
@@ -65,6 +70,62 @@ struct HomeView: View {
         }
     }
 
+    /// The phone's page.
+    private var compactBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Tokens.spacingLarge) {
+                summary
+                Button {
+                    Task { await model.sync() }
+                } label: {
+                    Text("Send or fetch")
+                }
+                .buttonStyle(AccentButtonStyle())
+                .disabled(model.busy)
+                .sensoryFeedback(.success, trigger: model.message)
+
+                if let message = model.message {
+                    Text(message).foregroundStyle(palette.textDim)
+                }
+                DeviceCollection(devices: model.devices, layout: layout == .orbit ? .tiles : layout)
+                hint
+            }
+            .padding(Tokens.spacingLarge)
+        }
+    }
+
+    /// The big screen's page: the devices, and the chosen one's details
+    /// beside them.
+    private var wideBody: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: Tokens.spacingMedium) {
+                summary
+                if let message = model.message {
+                    Text(message).foregroundStyle(palette.textDim)
+                }
+                if wideLayout == .orbit {
+                    OrbitView(devices: model.devices, selected: selected, busy: model.busy,
+                              select: { selected = $0 }, sync: { Task { await model.sync() } })
+                } else {
+                    ScrollView {
+                        DeviceCollection(devices: model.devices, layout: wideLayout, select: { selected = $0 })
+                    }
+                }
+                hint
+            }
+            .padding(Tokens.spacingLarge)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            if let id = selected {
+                Divider().overlay(palette.line)
+                DeviceDetailView(id: id, close: { selected = nil })
+                    .frame(width: 400)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.smooth, value: selected)
+        .sensoryFeedback(.success, trigger: model.message)
+    }
+
     /// How many devices are online, of how many.
     private var summary: some View {
         let online = model.devices.filter(\.online).count
@@ -75,7 +136,10 @@ struct HomeView: View {
 
     private var menu: some View {
         Menu {
-            Picker(selection: $layout) {
+            Picker(selection: wide ? $wideLayout : $layout) {
+                if wide {
+                    Label { Text("Orbit") } icon: { Image(systemName: "circle.circle") }.tag(DeviceLayout.orbit)
+                }
                 Label { Text("Tiles") } icon: { Image(systemName: "square.grid.2x2") }.tag(DeviceLayout.tiles)
                 Label { Text("List") } icon: { Image(systemName: "list.bullet") }.tag(DeviceLayout.list)
             } label: {
@@ -100,27 +164,33 @@ struct HomeView: View {
     }
 }
 
-/// The devices as tiles or as a list; each one opens its details.
+/// The devices as tiles or as a list; each one opens its details: on the
+/// next page, or beside them through select on a big screen.
 struct DeviceCollection: View {
     let devices: [AppModel.Computer]
     let layout: DeviceLayout
+    var select: ((AppModel.Computer.ID) -> Void)?
     @Environment(\.palette) private var palette
 
     var body: some View {
         if devices.isEmpty {
             Text("No computers connected.").foregroundStyle(palette.textDim)
-        } else if layout == .tiles {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Tokens.spacingMedium)], spacing: Tokens.spacingMedium) {
-                ForEach(devices) { d in
-                    NavigationLink(value: d.id) { DeviceTile(device: d) }.buttonStyle(.plain)
-                }
+        } else if layout == .list {
+            VStack(spacing: Tokens.spacingSmall) {
+                ForEach(devices) { d in open(d) { DeviceRow(device: d) } }
             }
         } else {
-            VStack(spacing: Tokens.spacingSmall) {
-                ForEach(devices) { d in
-                    NavigationLink(value: d.id) { DeviceRow(device: d) }.buttonStyle(.plain)
-                }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Tokens.spacingMedium)], spacing: Tokens.spacingMedium) {
+                ForEach(devices) { d in open(d) { DeviceTile(device: d) } }
             }
+        }
+    }
+
+    @ViewBuilder private func open<Content: View>(_ d: AppModel.Computer, @ViewBuilder label: () -> Content) -> some View {
+        if let select {
+            Button { select(d.id) } label: { label() }.buttonStyle(.plain)
+        } else {
+            NavigationLink(value: d.id) { label() }.buttonStyle(.plain)
         }
     }
 }
