@@ -6,6 +6,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-25
+
 ### Added
 
 - Wear OS: an app that shows the group's devices and their live dots, the latest events and
@@ -168,6 +170,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The lite member and the ESP32 firmware use x25519-dalek 3 (on curve25519-dalek 5) and
   base64 0.23. Dependabot updates the firmware's lock file in the same pull request as the
   lite member's, so the firmware's locked build keeps passing.
+- The lite member's stand-in for ring (`lite/ring-shim`) uses chacha20poly1305 0.11, the
+  version its TLS uses. smoltcp stays at 0.13, the version embassy-net 0.9 builds on: two
+  copies of smoltcp share the `managed` crate's features and do not build together, so
+  Dependabot leaves its minor versions alone until embassy-net moves.
 - The lite member dials no address outside the home network: `-peer` names a member at
   home, and away from home the device reaches the group only through the tunnel.
 - The lite member's command is `cbb`, as on a full member, with the same paths, user and
@@ -720,7 +726,8 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterEwok/clipboardbridge/releases/tag/v0.1.1

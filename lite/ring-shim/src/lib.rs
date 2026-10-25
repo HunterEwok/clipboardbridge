@@ -25,7 +25,7 @@ pub mod error {
 
 pub mod aead {
     use chacha20poly1305::ChaCha20Poly1305;
-    use chacha20poly1305::aead::{AeadInPlace, KeyInit};
+    use chacha20poly1305::aead::{AeadInOut, KeyInit};
 
     use crate::error::Unspecified;
 
@@ -60,8 +60,10 @@ pub mod aead {
             aad: Aad<A>,
             in_out: &mut [u8],
         ) -> Result<Tag, Unspecified> {
-            let tag =
-                self.0.encrypt_in_place_detached((&nonce.0).into(), aad.0.as_ref(), in_out).map_err(|_| Unspecified)?;
+            let tag = self
+                .0
+                .encrypt_inout_detached((&nonce.0).into(), aad.0.as_ref(), in_out.into())
+                .map_err(|_| Unspecified)?;
             Ok(Tag(tag.into()))
         }
 
@@ -75,8 +77,9 @@ pub mod aead {
         ) -> Result<&'a mut [u8], Unspecified> {
             let n = in_out.len().checked_sub(TAG_LEN).ok_or(Unspecified)?;
             let (data, tag) = in_out.split_at_mut(n);
+            let tag = chacha20poly1305::Tag::try_from(&*tag).map_err(|_| Unspecified)?;
             self.0
-                .decrypt_in_place_detached((&nonce.0).into(), aad.0.as_ref(), data, (&*tag).into())
+                .decrypt_inout_detached((&nonce.0).into(), aad.0.as_ref(), data.into(), &tag)
                 .map_err(|_| Unspecified)?;
             Ok(data)
         }

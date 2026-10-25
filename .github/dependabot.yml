@@ -59,6 +59,11 @@ updates:
     ignore:
       - dependency-name: "esp-*"
       - dependency-name: "xtensa-lx*"
+      # smoltcp follows embassy-net (lite/embassy): embassy-net 0.9 builds on smoltcp 0.13,
+      # and a second copy of smoltcp beside it fails to build (both turn on features of the
+      # `managed` crate). Lift this when embassy-net moves to a newer smoltcp.
+      - dependency-name: "smoltcp"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       cargo:
         patterns: ["*"]
