@@ -205,6 +205,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   joiner's first message must come within 10 s (a slow board computes its CPace message
   first), and after 5 attempts from one address that ended before they counted, the window
   answers it `busy`.
+- Security (Android): other apps can no longer fetch the group's latest copy by opening the
+  app's send activity. The tile, the widget and the notification open one that is not
+  exported; Share, the selection menu and "cbb send" open another that asks first unless the
+  home screen or the system opened it. "Always allow" now holds for one app only ("Always
+  for this app"), and Settings lists those apps; the old switch for every app is gone.
+- Security (Android): a secret is cleared from the clipboard after its minute while the
+  app is in the background too, unless the app learned of a change since.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
