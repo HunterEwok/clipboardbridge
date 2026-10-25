@@ -212,6 +212,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   for this app"), and Settings lists those apps; the old switch for every app is gone.
 - Security (Android): a secret is cleared from the clipboard after its minute while the
   app is in the background too, unless the app learned of a change since.
+- Security: `get.sh` and `get.ps1` check the archive's build provenance attestation with
+  `gh attestation verify` when the GitHub CLI is there and signed in, since `SHA256SUMS`
+  comes from the same release; `CBB_ATTESTATION=require` refuses to install without it.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
