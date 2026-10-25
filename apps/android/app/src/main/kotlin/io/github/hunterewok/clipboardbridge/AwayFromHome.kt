@@ -204,6 +204,12 @@ class AwayFromHome(
     private val log: (String, Throwable?) -> Unit = { _, _ -> },
     private val firstWaitMS: Long = 1_000,
     private val maxWaitMS: Long = 30_000,
+    /**
+     * Whether a hub is a phone, there only while its app is open (docs/design.md, "The phone as the hub"): it is
+     * tried at least every [phoneWaitMS].
+     */
+    private val isPhone: (String) -> Boolean = { false },
+    private val phoneWaitMS: Long = 5_000,
     private val homeCheckMS: Long = 5_000,
 ) {
     /** What the screens show. */
@@ -331,7 +337,7 @@ class AwayFromHome(
                     )
                 } catch (e: Exception) {
                     fail("the tunnel to the hub could not start", e)
-                    wait = backoff(wait)
+                    wait = backoff(wait, hub)
                     continue
                 }
                 if (t !== open) {
@@ -357,7 +363,7 @@ class AwayFromHome(
                     runCatching { t.setEndpoint(offer.endpoints[endpoint % offer.endpoints.size]) }
                 }
                 if (synchronized(lock) { stopped }) return
-                wait = backoff(wait)
+                wait = backoff(wait, hub)
             }
         } catch (e: InterruptedException) {
             // stopped
@@ -371,9 +377,9 @@ class AwayFromHome(
         log(what, e)
     }
 
-    private fun backoff(wait: Long): Long {
+    private fun backoff(wait: Long, hub: String): Long {
         idle(wait)
-        return minOf(wait * 2, maxWaitMS)
+        return minOf(wait * 2, if (isPhone(hub)) phoneWaitMS else maxWaitMS)
     }
 
     /** Waits ms, or until something changes; 0 waits for a change only. */

@@ -22,6 +22,11 @@ use crate::uptime;
 use crate::wire::TunnelOffer;
 
 const MAX_WAIT: Duration = Duration::from_secs(30);
+/// The longest wait between tries of a hub that is a phone, there only
+/// while its app is open (docs/design.md, "The phone as the hub"): a try
+/// costs one handshake initiation, which the forwarder drops while the
+/// phone is not registered.
+const PHONE_HUB_WAIT: Duration = Duration::from_secs(5);
 const STEADY: Duration = Duration::from_secs(30);
 /// How long discovery is given to find the hub at home after the service
 /// starts, before the tunnel is tried.
@@ -220,7 +225,39 @@ impl Away {
                 wait = Duration::from_secs(1);
             }
             std::thread::sleep(wait);
-            wait = (wait * 2).min(MAX_WAIT);
+            wait = (wait * 2).min(hub_wait(&node.devices(), &hub.device));
         }
+    }
+}
+
+/// The longest wait between tries of the hub: short for a phone, which
+/// comes and goes, and MAX_WAIT for any other.
+fn hub_wait(devices: &[crate::records::Device], hub: &str) -> Duration {
+    if devices.iter().any(|d| d.id == hub && d.role == "phone") { PHONE_HUB_WAIT } else { MAX_WAIT }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(id: &str, role: &str) -> crate::records::Device {
+        crate::records::Device {
+            id: id.into(),
+            name: role.into(),
+            role: role.into(),
+            os: String::new(),
+            key: Default::default(),
+            admin: true,
+            frozen: false,
+            keys: vec![],
+        }
+    }
+
+    #[test]
+    fn a_phone_hub_is_tried_often() {
+        let devices = [device("p", "phone"), device("c", "full")];
+        assert_eq!(hub_wait(&devices, "p"), PHONE_HUB_WAIT);
+        assert_eq!(hub_wait(&devices, "c"), MAX_WAIT);
+        assert_eq!(hub_wait(&[], "p"), MAX_WAIT);
     }
 }

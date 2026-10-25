@@ -67,6 +67,8 @@ public actor AwayFromHome {
     private let log: @Sendable (String, Error) -> Void
     private let firstWait: Duration
     private let maxWait: Duration
+    private let isPhone: @Sendable (String) -> Bool
+    private let phoneWait: Duration
     private let homeCheck: Duration
 
     private var state: AwayState?
@@ -82,15 +84,21 @@ public actor AwayFromHome {
     /// network, where it is dialed directly; dial reaches the hub's member
     /// TLS through the loopback port, checking that the peer is the hub;
     /// serve runs a connection until it ends; mayHost tells whether a device
-    /// may be the hub: the group's root or an admin (RecordSet.mayHost).
+    /// may be the hub: the group's root or an admin (RecordSet.mayHost);
+    /// isPhone tells whether a hub is a phone, there only while its app is
+    /// open (docs/design.md, "The phone as the hub"), tried at least every
+    /// phoneWait.
     public init(device: String, tunnels: Tunnels, state: AwayState?, save: @escaping @Sendable (AwayState?) throws -> Void,
                 atHome: @escaping @Sendable (String) async -> Bool, dial: @escaping Dial, serve: @escaping Serve,
                 mayHost: @escaping @Sendable (String) -> Bool,
                 log: @escaping @Sendable (String, Error) -> Void = { _, _ in },
-                firstWait: Duration = .seconds(1), maxWait: Duration = .seconds(30), homeCheck: Duration = .seconds(5)) {
+                firstWait: Duration = .seconds(1), maxWait: Duration = .seconds(30),
+                isPhone: @escaping @Sendable (String) -> Bool = { _ in false }, phoneWait: Duration = .seconds(5),
+                homeCheck: Duration = .seconds(5)) {
         (self.device, self.tunnels, self.state, self.save) = (device, tunnels, state, save)
         (self.atHome, self.dial, self.serve, self.log, self.mayHost) = (atHome, dial, serve, log, mayHost)
         (self.firstWait, self.maxWait, self.homeCheck) = (firstWait, maxWait, homeCheck)
+        (self.isPhone, self.phoneWait) = (isPhone, phoneWait)
     }
 
     public var isOn: Bool { state != nil }
@@ -188,7 +196,7 @@ public actor AwayFromHome {
                                           vless: try offer.vless?.jsonText() ?? "")
                 } catch {
                     fail("the tunnel to the hub could not start", error)
-                    wait = await backoff(wait)
+                    wait = await backoff(wait, hub)
                     continue
                 }
                 tunnel = t
@@ -207,7 +215,7 @@ public actor AwayFromHome {
                 try? t.setEndpoint(offer.endpoints[endpoint % offer.endpoints.count])
             }
             if Task.isCancelled { break }
-            wait = await backoff(wait)
+            wait = await backoff(wait, hub)
         }
         status = .off
     }
@@ -217,9 +225,9 @@ public actor AwayFromHome {
         log(what, error)
     }
 
-    private func backoff(_ wait: Duration) async -> Duration {
+    private func backoff(_ wait: Duration, _ hub: String) async -> Duration {
         await idle(wait)
-        return min(wait * 2, maxWait)
+        return min(wait * 2, isPhone(hub) ? phoneWait : maxWait)
     }
 
     /// Waits for d, or until something changes; nil waits for a change only.

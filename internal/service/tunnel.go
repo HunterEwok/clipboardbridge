@@ -448,9 +448,31 @@ func (s *Service) serveTunnelMember(ctx context.Context, raw net.Conn, release f
 	}
 }
 
+// phoneHubWait is the longest wait between tries of a hub that is a phone,
+// there only while its app is open (design.md, "The phone as the hub"): a
+// try costs one handshake initiation, which the forwarder drops while the
+// phone is not registered.
+const phoneHubWait = 5 * time.Second
+
+// hubWait is the longest wait between tries of the hub: short for a phone,
+// which comes and goes, and maxBackoff for any other.
+func (s *Service) hubWait(hub group.DeviceID) time.Duration {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return maxBackoff
+	}
+	for _, d := range s.records.Devices() {
+		if d.ID == hub && d.Role == group.RolePhone {
+			return phoneHubWait
+		}
+	}
+	return maxBackoff
+}
+
 // reachHub connects to the group's hub through the tunnel whenever the hub
 // is not on this network: neither found by discovery nor connected. It
-// tries the hub's addresses in turn.
+// tries the hub's addresses in turn, more often when the hub is a phone.
 func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.HubLink) {
 	hub := group.DeviceID(link.Device)
 	backoff := minBackoff
@@ -504,7 +526,7 @@ func (s *Service) reachHub(ctx context.Context, c *tunnel.Client, link tunnel.Hu
 			return
 		case <-time.After(backoff):
 		}
-		backoff = min(2*backoff, maxBackoff)
+		backoff = min(2*backoff, s.hubWait(hub))
 	}
 }
 

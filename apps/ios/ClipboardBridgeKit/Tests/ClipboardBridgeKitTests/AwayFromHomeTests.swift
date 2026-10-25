@@ -205,4 +205,33 @@ final class AwayFromHomeTests: XCTestCase {
         await a.stop()
         try await eventually("stopped") { await a.status == .off }
     }
+
+    /// A phone hub, there only while its app is open, is tried every few
+    /// moments however long it was away; a computer waits longer each time.
+    func testAPhoneHubIsTriedOften() async throws {
+        for phone in [true, false] {
+            let dialed = Box(0)
+            let a = AwayFromHome(
+                device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: FakeTunnels(),
+                state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
+                atHome: { _ in false },
+                dial: { _, _ in
+                    dialed.update { $0 += 1 }
+                    throw POSIXError(.ECONNREFUSED)
+                },
+                serve: { _, _ in },
+                mayHost: { _ in true },
+                firstWait: .milliseconds(10), maxWait: .seconds(3600), isPhone: { _ in phone }, phoneWait: .milliseconds(20),
+                homeCheck: Self.short.home)
+            await a.start()
+            try await Task.sleep(for: .milliseconds(400))
+            await a.stop()
+            if phone {
+                XCTAssertGreaterThanOrEqual(dialed.current, 6)
+            } else {
+                // 10, 20, 40, 80 and 160 ms, then an hour.
+                XCTAssertLessThanOrEqual(dialed.current, 6)
+            }
+        }
+    }
 }

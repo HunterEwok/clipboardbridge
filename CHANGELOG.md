@@ -16,6 +16,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   member key, and devices away from home reach it. On Android it may keep running in the
   foreground service. The computers and the lite member do not dial a phone that publishes
   itself, since it dials them.
+- A client away from home tries a phone hub at least every 5 s, since it is there only while
+  its app is open; a computer hub is still tried up to every 30 s. In `cbb`, the lite member
+  and both phone apps.
 - Docker: an image of the full service for a NAS or a home server, built from scratch with
   only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
   capabilities, on a read-only root file system, with its state in one volume. Compose files

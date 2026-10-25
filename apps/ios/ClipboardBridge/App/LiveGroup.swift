@@ -564,6 +564,7 @@ final class LiveGroup: GroupController {
             },
             serve: { t, hub in try await node.serve(t, peer: hub) },
             mayHost: { box.mayHost($0) },
+            isPhone: { box.isPhone($0) },
             log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") })
         awayRef.value = away
         Task { await away.start() }
@@ -814,6 +815,9 @@ final class LiveGroup: GroupController {
         func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
 
         func mayHost(_ device: String, chain: [Data]) -> Bool { lock.withLock { set.mayHost(device, chain: chain) } }
+
+        /// Whether device is a phone, a hub only while its app is open.
+        func isPhone(_ device: String) -> Bool { lock.withLock { set.devices.first { $0.id == device }?.role == "phone" } }
 
         func refused(chain: [Data]) -> String? { lock.withLock { set.refused(chain: chain) } }
     }

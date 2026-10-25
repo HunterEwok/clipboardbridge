@@ -534,3 +534,43 @@ func TestNearOnlyForAWhile(t *testing.T) {
 		t.Error("a member never found counts as near")
 	}
 }
+
+// TestHubWait checks that a member tries a hub that is a phone, there
+// only while its app is open, more often than one that is a computer.
+func TestHubWait(t *testing.T) {
+	now := time.Now()
+	ca, err := group.NewRootCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{records: group.NewRecords(ca.Cert)}
+	phone, pc := group.NewDeviceID(), group.NewDeviceID()
+	for _, d := range []struct {
+		id   group.DeviceID
+		role string
+	}{{phone, group.RolePhone}, {pc, group.RoleFull}} {
+		key, _ := group.NewKey()
+		leaf, err := ca.IssueMember(d.id, &key.PublicKey, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k := group.KeyHashOf(leaf)
+		r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: group.Tag(ca.Cert), TimeMS: now.UnixMilli(),
+			By: phone, Device: d.id, Name: d.role, Role: d.role, Key: &k}, ca.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := s.records.Add(r); !ok || err != nil {
+			t.Fatalf("adding the record of the %s: %v", d.role, err)
+		}
+	}
+	if w := s.hubWait(phone); w != phoneHubWait {
+		t.Errorf("a phone hub: %v", w)
+	}
+	if w := s.hubWait(pc); w != maxBackoff {
+		t.Errorf("a computer hub: %v", w)
+	}
+	if w := (&Service{}).hubWait(phone); w != maxBackoff {
+		t.Errorf("no records: %v", w)
+	}
+}

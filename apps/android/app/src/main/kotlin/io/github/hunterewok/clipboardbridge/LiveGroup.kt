@@ -664,6 +664,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             serve = { t, hub -> currentNode?.serve(t, hub) ?: t.close() },
             mayHost = { hub -> synchronized(lock) { state?.records?.mayHost(hub) == true } },
             log = { what, e -> Log.w(TAG, what, e) },
+            isPhone = { hub -> synchronized(lock) { state?.devices?.firstOrNull { it.id == hub }?.role == "phone" } },
         )
         val h = HubOnPhone(
             g.device,
