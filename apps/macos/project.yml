@@ -54,6 +54,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        # XcodeGen names the host after the target; the app's product is CBB.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/CBB.app/Contents/MacOS/CBB
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   ClipboardBridgeMac:
     build:
