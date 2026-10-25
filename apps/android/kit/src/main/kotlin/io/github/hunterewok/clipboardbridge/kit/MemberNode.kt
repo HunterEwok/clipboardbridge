@@ -74,7 +74,8 @@ class MemberNode(
     /**
      * Gets a valid tunnel offer a peer that may be a hub sent, with the
      * device ID the caller of serve named it by: a hub's answer to the
-     * tunnel key, its own or another hub's passed on.
+     * tunnel key, its own or another hub's passed on. A node with hub set
+     * gets none.
      */
     private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
     /**
@@ -268,7 +269,8 @@ class MemberNode(
                     }
                     is Member.Message.Cert -> onCert(m.cert)
                     // Only the root or an admin, by the records and its key.
-                    is Member.Message.Tunnel -> m.offer?.takeIf { it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
+                    // A hub is no client yet: it gets the other hubs' offers in their shares.
+                    is Member.Message.Tunnel -> m.offer?.takeIf { hub == null && it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }
                         ?.let { onTunnel(c.peer, it) }
                     is Member.Message.Hubs -> if (c.peer != null && records?.mayHost(c.peer, t.peerChain) != false) onHubs(c.peer, t.peerChain, m.share)
                     is Member.Message.Records -> if (m.records.isNotEmpty()) {
