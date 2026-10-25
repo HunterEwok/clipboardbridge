@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
+import io.github.hunterewok.clipboardbridge.kit.MemberNode
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
 import io.github.hunterewok.clipboardbridge.kit.PairingMember
 import io.github.hunterewok.clipboardbridge.kit.Pairing
@@ -278,6 +279,24 @@ class AppModel(private val app: Context) {
             Note(R.string.unfrozen)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /** Sets a computer's sync mode; the reason it refused, if it does, shows under the message. */
+    suspend fun setMode(id: String, mode: String) {
+        message = try {
+            group.setMode(id, mode)
+            Note(R.string.mode_set)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LiveGroup.CommandRefused) {
+            Log.e(TAG, app.getString(R.string.error_command_refused), e)
+            Note(R.string.error_command_refused, e.reason, error = true)
+        } catch (e: MemberNode.ProtocolException) {
+            describe(e, R.string.error_no_answer)
         } catch (e: Exception) {
             describe(e)
         }

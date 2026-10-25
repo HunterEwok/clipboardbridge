@@ -1180,6 +1180,86 @@
           }
         }
       }
+    },
+    "Own clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свой буфер"
+          }
+        }
+      }
+    },
+    "Own keeps this Mac's copies here and the group's away from its clipboard; Fetch still brings the group's text. Shared sends copies to the group and takes the group's. Receive only takes them, Send only sends them.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Свой буфер» оставляет копии этого Мака при нём, а копии группы в его буфер не попадают; «Получить» всё равно приносит текст группы. «Общий» отправляет копии в группу и принимает копии группы. «Только приём» только принимает, «Только отправка» только отправляет."
+          }
+        }
+      }
+    },
+    "Receive only": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только приём"
+          }
+        }
+      }
+    },
+    "Send only": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только отправка"
+          }
+        }
+      }
+    },
+    "Shared": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Общий"
+          }
+        }
+      }
+    },
+    "Sync mode": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим синхронизации"
+          }
+        }
+      }
+    },
+    "The sync mode is set.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим синхронизации изменён."
+          }
+        }
+      }
+    },
+    "This Mac's clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буфер этого Мака"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

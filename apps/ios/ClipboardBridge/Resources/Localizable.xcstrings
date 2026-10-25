@@ -1513,6 +1513,106 @@
           }
         }
       }
+    },
+    "Sync mode": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим синхронизации"
+          }
+        }
+      }
+    },
+    "Own clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свой буфер"
+          }
+        }
+      }
+    },
+    "Shared": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Общий"
+          }
+        }
+      }
+    },
+    "Receive only": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только приём"
+          }
+        }
+      }
+    },
+    "Send only": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только отправка"
+          }
+        }
+      }
+    },
+    "The sync mode is set.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим синхронизации изменён."
+          }
+        }
+      }
+    },
+    "Change a computer's sync mode": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить режим синхронизации компьютера"
+          }
+        }
+      }
+    },
+    "The computer refused: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер отказался: %@"
+          }
+        }
+      }
+    },
+    "The computer is not connected to this phone. Try again when it shows online.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер не подключён к этому телефону. Попробуйте снова, когда он будет в сети."
+          }
+        }
+      }
+    },
+    "The computer did not answer. It may run an older version of Clipboard Bridge.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютер не ответил. Возможно, на нём старая версия Clipboard Bridge."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

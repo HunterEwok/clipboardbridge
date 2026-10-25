@@ -32,6 +32,16 @@ struct SettingsView: View {
                     ForEach(Appearance.allCases) { a in Text(a.title).tag(a.rawValue) }
                 } label: { Text("Appearance") }
             } header: { Text("Look") }
+            if model.inGroup, let mode = model.status?.mode.flatMap(SyncMode.init(rawValue:)) {
+                Section {
+                    Picker(selection: Binding(get: { mode }, set: { new in Task { await model.setMode(new) } })) {
+                        ForEach(SyncMode.allCases) { m in Text(m.title).tag(m) }
+                    } label: { Text("Sync mode") }
+                        .disabled(model.busy)
+                } header: { Text("This Mac's clipboard") } footer: {
+                    Text("Own keeps this Mac's copies here and the group's away from its clipboard; Fetch still brings the group's text. Shared sends copies to the group and takes the group's. Receive only takes them, Send only sends them.")
+                }
+            }
             Section {
                 LabeledContent {
                     Text(verbatim: model.status?.version ?? "–").monospaced()

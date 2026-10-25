@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,6 +106,7 @@ private fun Summary(d: LiveGroup.Device) {
         }
         add(Line(stringResource(R.string.role), stringResource(roleTitle(d.role))))
         d.standing?.let { add(Line(stringResource(R.string.in_the_group), stringResource(it))) }
+        d.mode?.let { m -> modeTitle(m)?.let { add(Line(stringResource(R.string.sync_mode), stringResource(it))) } }
     }
     Column(Modifier.fillMaxWidth().card()) {
         lines.forEachIndexed { i, line ->
@@ -132,6 +135,17 @@ private fun roleTitle(role: String) = when (role) {
     else -> R.string.role_full
 }
 
+/** The sync modes, in the order the apps show them (docs/design.md, Sync modes). */
+private val modes = listOf("own", "shared", "receive", "send")
+
+private fun modeTitle(mode: String) = when (mode) {
+    "own" -> R.string.mode_own
+    "shared" -> R.string.mode_shared
+    "receive" -> R.string.mode_receive
+    "send" -> R.string.mode_send
+    else -> null
+}
+
 /** The actions an admin phone has for it; none on a phone that is no admin. */
 @Composable
 private fun Actions(model: AppModel, d: LiveGroup.Device) {
@@ -141,6 +155,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     var promoting by remember { mutableStateOf(false) }
     var thawing by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    var choosingMode by remember { mutableStateOf(false) }
     if (!model.isAdmin) {
         Text(stringResource(R.string.not_admin_note), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
         return
@@ -154,6 +169,11 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
         if (d.canMakeAdmin) {
             HorizontalDivider(color = palette.line)
             Action("★", stringResource(R.string.make_admin)) { promoting = true }
+        }
+        // The phones and lite members have no modes yet and refuse.
+        if (!d.isSelf && d.online && d.role == "full") {
+            HorizontalDivider(color = palette.line)
+            Action("⇄", stringResource(R.string.sync_mode)) { choosingMode = true }
         }
         if (!d.isSelf) {
             HorizontalDivider(color = palette.line)
@@ -176,6 +196,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             dismiss = { promoting = false },
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
+    if (choosingMode) ModeChoice(d, dismiss = { choosingMode = false }) { mode -> scope.launch { model.setMode(d.id, mode) } }
     if (renaming) Rename(d, dismiss = { renaming = false }) { name -> scope.launch { model.rename(d.id, name) } }
     if (thawing) {
         Confirm(
@@ -185,6 +206,36 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             dismiss = { thawing = false },
         ) { scope.launch { model.unfreeze(d.id) } }
     }
+}
+
+/** The sync modes to pick from, the computer's own marked. */
+@Composable
+private fun ModeChoice(d: LiveGroup.Device, dismiss: () -> Unit, choose: (String) -> Unit) {
+    val palette = LocalPalette.current
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.sync_mode)) },
+        text = {
+            Column {
+                for (m in modes) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
+                            dismiss()
+                            choose(m)
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (m == d.mode) "✓" else "", color = palette.accent, modifier = Modifier.width(24.dp))
+                        Text(stringResource(modeTitle(m)!!), color = palette.text, modifier = Modifier.padding(start = Tokens.spacingMedium))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+        containerColor = palette.surface,
+        titleContentColor = palette.text,
+        textContentColor = palette.textDim,
+    )
 }
 
 @Composable

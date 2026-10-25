@@ -125,6 +125,10 @@ struct DeviceDetailView: View {
                 Divider().overlay(palette.line)
                 row(Text("In the group"), Text(standing))
             }
+            if let mode = d.mode.flatMap(SyncMode.init(rawValue:)) {
+                Divider().overlay(palette.line)
+                row(Text("Sync mode"), Text(mode.title))
+            }
         }
         .glassTile(cornerRadius: Tokens.radiusCard)
     }
@@ -165,6 +169,25 @@ struct DeviceDetailView: View {
                 if d.canMakeAdmin {
                     Divider().overlay(palette.line)
                     action(Text("Make it an admin"), "person.badge.key") { promoting = true }
+                }
+                // The phones and lite members have no modes yet and refuse.
+                if !d.isSelf, d.online, d.role == "full" {
+                    Divider().overlay(palette.line)
+                    Menu {
+                        ForEach(SyncMode.allCases) { mode in
+                            Button { Task { await model.setMode(id, to: mode.rawValue) } } label: { Text(mode.title) }
+                        }
+                    } label: {
+                        HStack(spacing: Tokens.spacingMedium) {
+                            Image(systemName: "arrow.left.arrow.right").frame(width: 24).accessibilityHidden(true)
+                            Text("Sync mode")
+                            Spacer()
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, Tokens.spacingMedium)
+                        .frame(minHeight: 48)
+                        .contentShape(Rectangle())
+                    }
                 }
                 if !d.isSelf {
                     Divider().overlay(palette.line)

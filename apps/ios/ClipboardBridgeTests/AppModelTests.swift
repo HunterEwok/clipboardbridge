@@ -56,7 +56,8 @@ final class AppModelTests: XCTestCase {
         let started = ContinuousClock.now
         let said = await m.syncFromShortcut(wait: .seconds(5))
         XCTAssertFalse(said.isEmpty)
-        XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+        // Well under the five seconds it would wait; a busy simulator took 2.4 s.
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(4))
     }
 
     func testIPv4AddressesFirst() {

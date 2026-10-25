@@ -99,7 +99,8 @@ The order may change.
     switched to shared, receive only or send only by itself or by any admin (D-55). See
     "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built on the
     computers (`cbb mode`) with the admin's signed `mode` command (`cbb mode -on`) and in
-    the phone kits; the apps are next.**
+    the phone kits and apps (an admin sets a computer's mode; the Mac and tray apps set their
+    own); the phones' and the lite member's own modes are next.**
 20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
@@ -152,6 +153,10 @@ The order may change.
     addresses; never the clipboard); and the guide to running one's own forwarder or relay,
     with the plain, AmneziaWG and VLESS ways for networks and countries that block VPNs
     ([running your own servers](reference/self-hosting.md)).
+29. **Proposed for 0.6.** Secure updates: every program updates itself, or is told to,
+    from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
+    never to an older or unsigned version, and automatically where the user allows it. See
+    "Secure updates" below.
 
 ## OpenWrt routers
 
@@ -570,6 +575,100 @@ device and Android would need more rights than the app should hold.
 2. The buttons in the phone apps and `cbb run`.
 3. The presets on the lite member.
 4. The buttons on the watch (item 26, step 4).
+
+## Secure updates
+
+Proposed for 0.6. Today a release has `SHA256SUMS` and GitHub's build provenance attestation:
+`get.sh` checks the sums, which come from the same place as the archives, and checks the
+attestation only with `gh` and `CBB_ATTESTATION=require`. Nothing updates by itself, and
+nothing pins who may sign a release. The aim is that a program updates only to a release the
+project signed, from whichever server, and that a server, the network or a stolen GitHub
+token cannot slip in another build or an older one.
+
+### The signed manifest
+
+- Each release gets `release.json`: the version, the date, an expiry date, the channel
+  (stable or beta), the lowest version that may update to it directly, and the SHA-256 and
+  size of every file. It is signed with the project's **release key**. The signature uses
+  Ed25519, or P-256 if the key is kept in the Secure Enclave of the owner's Mac.
+- The programs pin the release key's public half. `release.json` may name the next key,
+  signed by the current one, so the key can be changed without a manual reinstall. A lost
+  key needs a release installed by hand, and the documentation says so.
+- **The key never sits in CI.** The release workflow builds the files and their sums and
+  stops. The owner signs `release.json` on the Mac (`tools/release-sign`, one command after
+  the tag), and the workflow publishes it. A stolen GitHub token can then publish files but
+  not a manifest that any program accepts. The build attestation stays as a second,
+  independent check.
+- The check refuses a manifest whose signature fails, one whose expiry date has passed (so a
+  mirror cannot freeze a device on an old release), a version lower than the installed one
+  (rollback), and a file whose SHA-256 differs.
+
+### Where updates come from
+
+- `https://cbb.tools/releases/` mirrors each release: the same files and the same signed
+  manifest, copied by the release workflow. Programs try cbb.tools first and GitHub second;
+  a setting names another mirror or turns the check off. Since the signature is checked, the
+  mirror is not trusted.
+- An update check tells the server the device's address, its system and its version. It is
+  at most once a day, sends no group data and works with sync away from home off. The
+  documentation says so, and the check can be turned off.
+- The service's egress limit (D-61) allows only the group's servers, so the service never
+  downloads updates itself. `cbb update` runs as its own short-lived process, from a timer
+  (systemd, launchd, a Windows scheduled task) or by hand, with only the update servers
+  allowed.
+
+### Per platform
+
+- **Linux, macOS and Windows from `get.sh`/`get.ps1`:** `cbb update` (`-check` only reports)
+  downloads the archive, checks the manifest and the sums, swaps the binaries atomically,
+  restarts the service and the agent, and puts the previous binaries back if the new service
+  does not report healthy within a minute. Off by default: the installers ask "update
+  automatically?" as they ask about the firewall, and `cbb update -auto on|off` changes it
+  later.
+- **Homebrew, winget, Docker and distribution packages:** these update through their own
+  tool. `cbb update` sees how it was installed and prints the command (`brew upgrade`,
+  `winget upgrade`, `docker compose pull`) instead of replacing files. The release workflow
+  already publishes the formula and the winget manifest from the same sums.
+- **Windows:** the files are also Authenticode-signed when the certificate is in the
+  secrets, and `cbb update` checks that signature too when the installed copy has one.
+- **The tray app** checks with the service and shows "update available" with a button that
+  runs `cbb update` through UAC or pkexec, like its other admin actions.
+- **The Mac app:** Sparkle with its EdDSA signature, once the app is signed and notarized
+  (waits for the Apple developer account), with the same manifest feeding the appcast.
+- **The lite member on Linux:** `cbb update` the same way, for its own archive.
+- **The Nano ESP32:** OTA into the second app partition, checked against the manifest and
+  the release key in the firmware, with a fallback to the old partition if the new one does
+  not boot. Later, with the firmware's sync (item 15).
+- **Android, sideloaded APK:** the app checks the manifest, downloads the APK, checks its
+  SHA-256 and that its signing certificate matches the installed app's, and hands it to
+  `PackageInstaller`. On Android 12 and later an app that installed itself can update
+  without asking each time (`setRequireUserAction`), and the user turns that on in settings.
+  Installed from a store, the app leaves updates to the store.
+- **iPhone and the watches:** only the App Store and TestFlight update them; the app shows
+  that a newer version exists.
+
+### In the group
+
+- Each device's hello already carries its version. `cbb status` and the apps mark devices that
+  run an older version than the newest one any member has seen.
+- Later: an admin asks a member to update with a signed command, like `mode` (protocol
+  section 15). The member still installs only a signed release and only if its own user
+  allowed automatic updates.
+
+### Steps
+
+1. The manifest, the release key and `tools/release-sign`; the release workflow publishes
+   the manifest and mirrors to cbb.tools; `get.sh` and `get.ps1` check the manifest.
+2. `cbb update` and `-check` on Linux, macOS and Windows: download, check, swap, restart and
+   roll back; detection of Homebrew, winget, Docker and packages; tests with a tampered
+   file, a bad signature, an expired manifest and an older version.
+3. Automatic updates: the installers' question, the timers, `cbb update -auto`.
+4. The tray app and `cbb status`.
+5. The Android app's own update for the sideloaded APK.
+6. The lite member, then OTA on the Nano ESP32.
+7. Sparkle in the Mac app, after the Apple account.
+8. On the bench: an update from the previous release on every device (L9), a refused
+   downgrade and a refused unsigned build.
 
 ## Device keys in hardware
 

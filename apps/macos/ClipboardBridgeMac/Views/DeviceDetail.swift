@@ -109,6 +109,10 @@ struct DeviceDetail: View {
                 line
                 row(Text("In the group"), Text(standing))
             }
+            if let mode = d.mode.flatMap(SyncMode.init(rawValue:)) {
+                line
+                row(Text("Sync mode"), Text(mode.title))
+            }
             if !d.online, d.lastSeenMS > 0 {
                 line
                 row(Text("Last seen"), Text(Date(timeIntervalSince1970: Double(d.lastSeenMS) / 1000), style: .relative))
@@ -154,6 +158,21 @@ struct DeviceDetail: View {
                 if model.isRoot, !d.admin, !d.frozen, d.role == "full" {
                     line
                     action("star", "Make it an admin") { promoting = true }
+                }
+                // The phones and lite members have no modes yet and refuse.
+                if !d.isSelf, d.online, d.role == "full" {
+                    line
+                    Menu {
+                        ForEach(SyncMode.allCases) { mode in
+                            Button { Task { await model.setMode(mode, on: d.id) } } label: { Text(mode.title) }
+                        }
+                    } label: {
+                        Label { Text("Sync mode") } icon: { Image(systemName: "arrow.left.arrow.right") }
+                            .foregroundStyle(palette.accent)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                    .padding(.horizontal, Tokens.spacingMedium)
                 }
                 if !d.isSelf {
                     line

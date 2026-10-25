@@ -1461,8 +1461,10 @@ so a copy on one computer replaces what was just copied on another. Each device 
   joins a group and shared for one that joined before 0.5, which has no mode file; the
   admin's signed `mode` command (`cbb mode -on DEVICE`, docs/protocol.md section 15), sent
   directly to a connected member, and in the phone kits the hello's `mode`, the commands and
-  their results. Still to come in 0.5: the modes in the phone apps, the Mac app and the tray
-  app; the phones and the lite member share until then, and refuse a `mode` command.
+  their results; the Mac app and the tray app set this computer's mode and, on an admin,
+  another computer's, and an admin phone sets a computer's from its page. Still to come in
+  0.5: the phones' and the lite member's own modes; they share until then, and refuse a
+  `mode` command.
 
 ## Remote paste (planned for 0.6)
 

@@ -24,6 +24,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   command signed by the admin's key, which the computer checks against the group's records,
   takes once and only within 30 s (docs/protocol.md, section 15). The phone kits read the
   mode in the hellos and send such commands.
+- The apps show each connected computer's sync mode. The Mac app and the tray app set this
+  computer's mode in Settings and, on an admin, another computer's from its details; an
+  admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
+  fingerprint, and says if the computer refused.
 
 ### Changed
 
