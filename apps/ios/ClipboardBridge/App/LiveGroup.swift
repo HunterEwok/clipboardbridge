@@ -599,6 +599,10 @@ final class LiveGroup: GroupController {
 
         /// Whether device may be the hub for sync away from home.
         func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
+
+        func mayHost(_ device: String, chain: [Data]) -> Bool { lock.withLock { set.mayHost(device, chain: chain) } }
+
+        func refused(chain: [Data]) -> String? { lock.withLock { set.refused(chain: chain) } }
     }
 
     /// Passes what the browser finds to the dialer, with the computers it

@@ -28,6 +28,18 @@ public protocol RecordStore: AnyObject, Sendable {
     var all: [Member.Record] { get }
     /// Takes records a peer sent and returns those that were new and valid.
     func add(_ records: [Member.Record]) -> [Member.Record]
+    /// Why the records refuse a peer's certificate chain (leaf first), as
+    /// RecordSet.refused, or nil: a removed device is dropped by its key,
+    /// not only by its ID.
+    func refused(chain: [Data]) -> String?
+    /// Whether the peer with this verified chain may be the group's hub, as
+    /// RecordSet.mayHost.
+    func mayHost(_ device: String, chain: [Data]) -> Bool
+}
+
+public extension RecordStore {
+    func refused(chain: [Data]) -> String? { nil }
+    func mayHost(_ device: String, chain: [Data]) -> Bool { true }
 }
 
 /// The phone as a member: its sync engine and its connections to the Linux
@@ -157,6 +169,7 @@ public actor MemberNode {
             if first {
                 guard case let .hello(peerRole, h) = m else { throw Failure.noHello }
                 first = false
+                if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
                 c.adminKey = h.adminKey
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
@@ -176,12 +189,16 @@ public actor MemberNode {
                 apply(engine.received(e), from: id)
             case let .cert(der, _):
                 onCert(der)
+            // Only the root or an admin, by the records and its key.
             case let .tunnel(o?) where o.isValid:
-                onTunnel(c.peer, o)
+                if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onTunnel(p, o) }
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
                     let fresh = store.add(rs)
-                    if !fresh.isEmpty { sendRecords(fresh, except: id) }
+                    if !fresh.isEmpty {
+                        sendRecords(fresh, except: id)
+                        dropRefused()
+                    }
                 }
             case .bye:
                 return
@@ -202,7 +219,17 @@ public actor MemberNode {
     }
 
     /// Sends records made on this phone to every connected member.
-    public func sendRecords(_ rs: [Member.Record]) { sendRecords(rs, except: nil) }
+    public func sendRecords(_ rs: [Member.Record]) {
+        sendRecords(rs, except: nil)
+        dropRefused()
+    }
+
+    /// Closes the connections whose peers the records now refuse, as a
+    /// device just removed.
+    private func dropRefused() {
+        guard let store = records else { return }
+        for c in conns.values where store.refused(chain: c.transport.peerChain) != nil { c.goodbye() }
+    }
 
     private func sendRecords(_ rs: [Member.Record], except: ObjectIdentifier?) {
         for (id, c) in conns where id != except && c.peerRole != nil { c.enqueue(.records(rs)) }
@@ -215,7 +242,7 @@ public actor MemberNode {
         if r.changed, let cur = engine.currentEvent { onChange(cur) }
     }
 
-    public enum Failure: Error { case noHello, timedOut }
+    public enum Failure: Error { case noHello, timedOut, refused(String) }
 
     /// One connection: a queue the writer drains, and the times of the
     /// last read and write for the ping and the timeout.

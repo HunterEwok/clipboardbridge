@@ -1259,9 +1259,12 @@ and then syncs at home only ("Through the tunnel" below).
   256 devices. It sends the offer on every connection whose hello carries a key, so a member
   learns new endpoints and a new preshared key the next time it connects.
 - A member keeps an offer only from the group's root or an admin (by its records, or an
-  admin CA in its verified chain), with the hub's device ID. Once it keeps one, it ignores
-  offers from any other device until it turns sync away from home off and on again; a new
-  offer from the same hub replaces the old one. `cbb global hub` refuses on a device that is no
+  admin CA in its verified chain), with the hub's device ID. The record that makes the peer
+  the root or an admin must name the key of the certificate it presented, not only its
+  device ID, and never the role its hello claims. Once it keeps one, it ignores offers from
+  any other device until it turns sync away from home off and on again; a new offer from the
+  same hub replaces the old one. An offer that does not decode is ignored and changes
+  nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
 - When records revoke a device (section 10, rule 6, on the chain it presented), the hub

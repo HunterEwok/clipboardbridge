@@ -527,6 +527,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             if (rooted) Thread({ restartSync() }, "restart sync").start()
             return fresh
         }
+
+        override fun refused(chain: List<ByteArray>): String? = synchronized(lock) { state?.records?.refused(chain) }
+
+        override fun mayHost(device: String, chain: List<ByteArray>): Boolean =
+            synchronized(lock) { state?.records?.mayHost(device, chain) == true }
     }
 
     /**

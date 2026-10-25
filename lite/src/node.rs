@@ -442,9 +442,16 @@ impl Node {
                     }
                 }
                 "records" if !m.records.is_empty() => self.add_records(&m.records, &c.id),
-                // Only a full member can be the group's hub.
-                "tunnel" if c.peer.lock().unwrap().as_ref().is_some_and(|(role, _, _)| role == "full") => {
-                    if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
+                // Only the group's root or an admin can be its hub, by the
+                // records and the key it proved, not by the role its hello
+                // claims (docs/protocol.md, section 11).
+                "tunnel" if m.tunnel.is_some() => {
+                    if !self.records.lock().unwrap().admin_peer(c.id.as_str(), &c.chain) {
+                        self.logf(&format!(
+                            "cbb: ignored a tunnel offer from {}: only the group's root or an admin can be its hub",
+                            c.id
+                        ));
+                    } else if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
                         f(&c.id, v);
                     }
                 }

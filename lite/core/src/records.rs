@@ -868,6 +868,54 @@ impl Records {
         out
     }
 
+    /// The root's own device, with its key, as Go's RootMember: the newest
+    /// full or phone device record the current root signed for itself. None
+    /// in a group whose root names no admins (path length 0).
+    pub fn root_member(&self) -> Option<(String, KeyHash)> {
+        let path = self.path();
+        let root = path.last().unwrap();
+        if root.path_len == Some(0) {
+            return None;
+        }
+        let cur = root.key_hash();
+        self.by_id
+            .values()
+            .filter(|r| {
+                r.body.kind == "device"
+                    && r.signer == cur
+                    && matches!(role(&r.body.role), "phone" | "full")
+                    && r.body.device == r.body.by
+                    && r.body.key.is_some()
+            })
+            .max_by_key(|r| (r.body.time_ms, r.record.id()))
+            .map(|r| (r.body.device.clone(), r.body.key.unwrap()))
+    }
+
+    /// Whether the device `dev` with the verified chain (leaf first) is the
+    /// group's root or an admin, as Go's adminPeer: an admin CA of its own
+    /// under a root on the path that is neither revoked nor frozen, the
+    /// root's own device by its key, or an admin of the devices list by its
+    /// key. Only such a device may be the group's hub (docs/protocol.md,
+    /// section 11).
+    pub fn admin_peer(&self, dev: &str, chain: &[Cert]) -> bool {
+        let Some(leaf) = chain.first() else { return false };
+        if let Some(ca) = chain.get(1)
+            && ca.is_ca
+            && ca.common_name.as_deref() == Some(format!("clipboardbridge admin {dev}").as_str())
+        {
+            let k = ca.key_hash();
+            return leaf.signed_by(ca)
+                && self.path().iter().any(|root| crate::certs::check_admin_ca(ca, root).is_ok())
+                && !self.revoked(&k)
+                && !self.frozen(&k);
+        }
+        let key = leaf.key_hash();
+        if self.root_member().is_some_and(|(id, k)| id == dev && k == key) && !self.revoked(&key) {
+            return true;
+        }
+        self.devices().iter().any(|d| d.id == dev && d.key == key && d.admin)
+    }
+
     /// Every record, sorted by ID.
     pub fn all(&self) -> Vec<Record> {
         self.by_id.values().map(|r| r.record.clone()).collect()

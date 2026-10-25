@@ -182,6 +182,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: the lite member takes a tunnel offer only from the group's root or an admin, by
+  its records and the key of its certificate, rather than from any member whose hello says
+  `full`. It keeps the first hub until sync away from home is turned off and on again, and
+  ignores an offer that does not decode instead of dropping the hub. The phone apps check
+  the hub's key the same way.
+- Security: the phone apps check each computer's certificate chain against the group's
+  records when it connects, and close the connection as soon as new records remove it. A
+  removed device is now dropped by its key, not only because its ID left the list.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
