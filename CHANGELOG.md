@@ -6,6 +6,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Added
+
+- Docker: an image of the full service for a NAS or a home server, built from scratch with
+  only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
+  capabilities, on a read-only root file system, with its state in one volume. Compose files
+  run it as an always-on member at home or as a forwarder or relay on a server
+  (packaging/docker). Releases do not publish it yet.
+
 ### Fixed
 
 - Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose

@@ -123,7 +123,7 @@ The order may change.
     difference between the computers, and it goes away with the app. The app's window and menu bar
     item over the installed service are there already (`apps/macos`, [apps.md](apps.md#the-mac-app));
     the signed app that carries the service waits for the account.
-23. **Planned for 0.5.** Docker: an image with the full service for a NAS or a home server, as an
+23. **Started: the image and its compose files are built and tested in CI; publishing it with each release is next.** Docker: an image with the full service for a NAS or a home server, as an
     always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
     `cbb relay` on a VPS. See "Docker" below.
 24. **Planned for 0.6.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
@@ -226,7 +226,7 @@ Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Docker
 
-Planned for 0.5.
+Planned for 0.5; step 1 is done ([packaging/docker](../packaging/docker/README.md)).
 
 An image with the full service, for the machines that are always on but have no desktop: a
 NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
@@ -242,8 +242,8 @@ infrastructure, not a place to copy and paste:
 
 What the image needs:
 
-- **One small image for every CPU.** `cbb` is static, so the image is the binary, the CA
-  certificates and nothing else, for linux/amd64, linux/arm64 and linux/arm/v7, published
+- **One small image for every CPU.** `cbb` is static and carries its own certificate roots,
+  so the image is the binary and nothing else (`FROM scratch`), for linux/amd64, linux/arm64 and linux/arm/v7, published
   to the GitHub Container Registry with each release and carrying the same build
   attestations as the release archives. The documentation pins it by digest.
 - **No privileges.** The tunnel runs in the process (WireGuard on gVisor netstack), so the
@@ -263,7 +263,7 @@ What the image needs:
 
 Steps, one pull request each, smaller ones together:
 
-1. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
+1. Done. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
    forwarder or relay, and a CI job that builds the image and has two containers join a
    group and sync.
 2. The release workflow publishes the multi-arch image with its attestations; README and
