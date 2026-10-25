@@ -618,10 +618,14 @@ final class LiveGroup: GroupController {
         let hub = HubOnPhone(device: g.device, tunnels: GoHubTunnels(), state: HubKeychain.load(), save: { try HubKeychain.save($0) },
                              log: { what, error in hubLog.error("\(what, privacy: .public): \(error.map { String(reflecting: $0) } ?? "", privacy: .public)") })
         let isHub = g.isAdmin && hub.isOn
+        var answer: (@Sendable (String, Data, [Data]) -> Member.TunnelOffer?)?
+        if isHub {
+            answer = { device, key, _ in hub.offer(device: device, key: key) }
+        }
+        let offered: Data? = isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) }
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
-                              tunnelKey: isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) },
-                              hub: isHub ? { device, key, _ in hub.offer(device: device, key: key) } : nil,
+                              tunnelKey: offered, hub: answer,
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
         let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
@@ -641,8 +645,8 @@ final class LiveGroup: GroupController {
             },
             serve: { t, hub in try await node.serve(t, peer: hub) },
             mayHost: { box.mayHost($0) },
-            isPhone: { box.isPhone($0) },
-            log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") })
+            log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") },
+            isPhone: { box.isPhone($0) })
         awayRef.value = away
         Task { await away.start() }
         let browser = BonjourBrowser { found in relay.update(found) }
