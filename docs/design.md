@@ -729,18 +729,23 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   when sync away from home is needed (for example to copy codes from afar for an hour), or
   no hub and sync at home only. `cbb global hub` and the documentation say so. The hub is a Linux member, normally, or a Windows PC. Both accept connections already. A Mac only
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
-  of work. Phones and lite members are clients: a phone is not always on
-  and cannot accept connections in the background, and a lite member has no room for it.
+  of work. Lite members are clients, since they have no room for it. A phone is not always
+  on and cannot accept connections in the background, so it is a client too, except in a
+  group made on a phone that has not moved its hub to a computer: there the phone is the hub
+  while its app is open (planned, see "The phone as the hub while its app is open").
 - Why sync over the internet needs a computer of the user's: the hub must be on and
   reachable all the time, it must be at home so that the devices hand it their keys there
   (below), and it is a full member that reads the texts, so it must be the user's own
   device. Any other meeting point is someone else's server, which learns at least which
   devices talk and when; the user's own hub lets nothing out but encrypted packets. A group
   without such a computer syncs at home only, unless the user runs a blind relay of their
-  own (below).
+  own (below); planned for 0.5, its phone is the hub while the app is open (below).
 - Changing the hub means making another device the hub, for example when the old one
   breaks. The new hub starts with no keys and learns each device's key when that device next
   meets it at home; a device that stays away meanwhile cannot reach it until it comes home.
+  Planned: when the old hub is still there and hands the hub over (a phone giving it to a
+  computer), it passes the new hub its clients' keys inside member TLS, so that devices far
+  away move without coming home (see "The phone as the hub while its app is open").
   A new address, provider or forwarder is not a change of hub: the hub keeps its key and
   tells its clients the new address.
 - The hub runs WireGuard in user space inside `cbb` (amneziawg-go, a fork of wireguard-go that
@@ -764,6 +769,77 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
 - Fail closed: away from home a member talks to the group only through the tunnel. If the
   tunnel cannot be built, nothing is sent, and the app or `cbb status` says why, with the
   real cause in debug builds.
+
+### The phone as the hub while its app is open (planned, 0.5)
+
+Everyone in a group has a phone; not everyone has a computer. A group made on a phone with
+TVs, set-top boxes, other phones or lite members and no computer has nothing to be its hub,
+and without a lite member nothing in it accepts connections even at home: phones never do,
+and the Android app on a TV is a phone app. So the phone takes on the hub's work as far as it
+can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
+
+- **What the user gets.** A group made on a phone has that phone as its hub from the start;
+  sync away from home is still turned on by the user, step by step as above. While the app
+  is in the foreground the group syncs, at home and from afar; when the app goes to the
+  background, the hub stops. The app says so where sync away from home is turned on and on
+  Home ("Sync away from home works while this app is open"). Some users want exactly this,
+  so it is a choice the user may keep, not a fault the app keeps pointing out.
+- **At home** the open app accepts member connections on the home network, as its
+  `TLSListener` already does for a joining phone, and publishes itself by mDNS while it is
+  open. The devices that only dial (phones, TVs, and lite members dialing out) find it and
+  connect, so a group of phones and TVs syncs at home too.
+- **From afar** nobody reaches the phone directly (carrier-grade NAT on mobile networks, an
+  address that changes, iOS closing sockets in the background), so it registers with the
+  forwarder over an outgoing connection, as a hub behind carrier-grade NAT does, and keeps
+  the registration and its hellos while the app is open. The forwarder finds a hub by its
+  key, not its address, so a phone that moves from Wi-Fi to a mobile network stays the same
+  hub. The hub's WireGuard runs in the app's process, in `mobile/cbbtun`, which has only the
+  client side today.
+- **The clients come quickly.** A phone hub is there for minutes at a time, so its clients
+  keep trying it every few seconds while their own app or service runs, instead of backing
+  off to 30 s and more; a handshake initiation to the forwarder costs one small packet, and
+  the forwarder drops it while the hub is not registered. The interval is to be measured
+  (phone batteries, the forwarder's load); the forwarder's per-group limits apply as to any
+  group.
+- **Keys.** The hub's WireGuard key lives in the phone's keychain or Keystore for this device
+  only (Curve25519 does not fit the Secure Enclave), and the clients hand their keys to it in
+  their hellos at home, as with any hub. A device far away joins with a remote invitation
+  made on the phone, which is then both the admin who confirms the device and the hub that
+  serves the guest tunnel, so no invitation has to be handed over.
+- **Android** may keep the hub running in its foreground service while the app is in the
+  background, if the user turns it on and accepts the battery cost; iOS gives an app no way
+  to do that.
+- **Moving the hub to a computer.** When a computer that can be the hub joins (Linux,
+  Windows, a Mac with its listening mode), above all one that is always on (no battery, as
+  the holder setting judges), the app suggests making it the hub, once, with the reason in
+  plain words: sync away from home then works with the app closed. The user may keep the
+  phone as the hub; the app then does not ask again, and Settings keeps the choice. When the
+  user agrees, the phone, still the hub, passes the new hub its clients' tunnel keys and
+  preshared keys inside member TLS and tells its connected clients the new hub's offer
+  through the tunnel, so devices far away (a parent's TV in another city) move without
+  coming home. The new hub admits each key only for a device whose certificate is valid in
+  the group's records.
+- **Losing the phone.** When the root phone that is the hub is lost, the admin phone that
+  takes the group over (`PhoneGroup.takeOver`) becomes its hub too. Clients at home learn
+  the new hub there; a client far away cannot learn it from a lost phone and joins again
+  with a new remote invitation. That is one more reason for a second phone as an admin,
+  which the app already suggests.
+- **What it does not change.** The rules above hold: a star around the hub, the member TLS
+  inside the tunnel, the project's forwarder only passing packets. The hub reads the texts,
+  as every hub does; the root phone is the group's most trusted device, so that adds no
+  exposure.
+
+#### Groups without a working hub
+
+| Situation | Today | Planned |
+|---|---|---|
+| Phones only, or phones and Android TVs or other Android devices | nothing syncs, at home or away: all of them only dial | a phone with its app open is the hub; the others sync while they run (Android in its foreground service, an iPhone with its app open) |
+| A phone and lite members | syncs at home, where lite members listen; not away from home | the same at home; from afar, the phone with its app open is the hub |
+| The whole group away together (a trip, a hotel Wi-Fi that isolates its clients, mobile data) | nothing syncs unless the hub at home is reached | the phone hub, through the forwarder |
+| A computer is the hub but is off, broken or offline | nothing syncs away from home | later, not in 0.5: the phone as a standby hub while its app is open, the clients keeping both offers and trying the computer first |
+| The hub's home has no public address and the project's forwarder is not reached | nothing syncs away from home | the same; a forwarder or relay of the user's own (`cbb forward`, `cbb relay`) |
+| A network blocks WireGuard | AmneziaWG, then VLESS | AmneziaWG for the phone hub as for any hub; VLESS for the phone hub's own registration is to be checked |
+| The root phone that is the hub is lost | | an admin phone takes over and is the hub; devices far away are invited again |
 
 ### Reaching the hub
 
@@ -943,7 +1019,9 @@ the pairing itself; the third is planned.
 At home no hub is needed: the members sync directly over the home network, with the phone as
 the root and any computers and lite members. Some member has to accept connections: a Linux
 member, a Windows PC, a Mac or a lite member; only phones never do. So any group with a
-computer or a lite member besides its phones syncs at home.
+computer or a lite member besides its phones syncs at home. Planned for 0.5: a phone accepts
+them while its app is open, so a group of phones and TVs syncs at home too (see "The phone as
+the hub while its app is open").
 
 ### Blind relay (self-hosted only)
 
@@ -1118,6 +1196,8 @@ only adds to it.
 9. The lite member on Linux (done: `cbb global on`, GotaTun and smoltcp in `cbb`, plain
    WireGuard only, so a group whose hub hides its tunnel keeps it at home); the ESP32 when
    WireGuard on it is mature.
+10. The phone as the hub while its app is open (planned, 0.5; its steps are in
+    [roadmap.md](roadmap.md#the-phone-as-the-hub)).
 
 ## Device keys in hardware
 
@@ -1661,3 +1741,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
 | D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |
 | D-63 | A full member publishes itself by mDNS and takes connections on the member port only on networks where it met its group (by the interface's networks and its gateway's link-layer address); elsewhere it only browses, so a laptop in a café is not tracked by its host label and group tag. |
+| D-64 | A group made on a phone has the phone as its hub while the app is open: at home it accepts member connections, from afar it registers with the forwarder over an outgoing connection, and its clients retry often; the app suggests once moving the hub to a computer that is always on, the old hub passing its clients' keys to the new one, and the user may keep the phone as the hub. Everyone has a phone, not everyone a computer, so the phone does what it can until a better device takes over. |

@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The plan for the phone as the hub while its app is open (docs/design.md, D-64;
+  docs/roadmap.md, item 28): a group made on a phone with no computer syncs at home and from
+  afar while the app is open, and the app suggests moving the hub to a computer that is
+  always on.
 - iPad: the app runs on the iPad as a phone of the group. Its Home shows the devices on orbits
   around it (or as tiles or a list), with a device's details in a pane beside them; the
   same layout serves the inner screen of a foldable iPhone, whose strip at the right edge
