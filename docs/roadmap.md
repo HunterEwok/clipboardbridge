@@ -170,6 +170,9 @@ The order may change.
     credentials made for them (the hubs' credential, the members' credential) in place of
     the group's records, so they see no device ID, name, system, role or dates. See "What
     the servers learn" below.
+33. **To research, no release yet.** The iPhone as a hub in the background: the hub run as a
+    Network Extension (a packet tunnel provider), which iOS does not suspend while the
+    tunnel is on. See "Research: the iPhone hub in a Network Extension" below.
 
 ## OpenWrt routers
 
@@ -632,6 +635,36 @@ better hub, so the app suggests it when there is one, and the user decides.
 Not yet verified on real devices: how long iOS keeps the forwarder registration and the
 tunnel up while the app is open and the screen locks, the battery cost of the clients'
 retries, and the Android foreground service as a hub across battery savers.
+
+### Research: the iPhone hub in a Network Extension
+
+To research, no release yet. Today the iPhone is the hub only while its app is open; iOS
+suspends the app soon after it leaves the screen. Android can keep the hub running in the
+foreground service, at a battery cost. The one way known for the iPhone is to run the hub as
+a Network Extension, a packet tunnel provider, a separate process that iOS keeps running
+while the tunnel is on. What the hub needs fits it on paper: an outgoing registration with
+the forwarder, WireGuard for the clients (the WireGuard app runs wireguard-go the same way),
+and member connections; it needs no clipboard. Questions to answer before any work:
+
+1. Whether it works: whether the extension may run cbbtun's hub (WireGuard, gVisor's
+   netstack, the registration) and the kit's member node within its memory limit (about
+   50 MB), reach the member key in the keychain (a shared access group) and the group's
+   state (an App Group), and route nothing of the phone's own traffic (only the tunnel's
+   prefix, or none). Also whether it may listen on the home network and publish itself by
+   Bonjour, or serves only through the forwarder.
+2. iOS allows one VPN at a time: a user who keeps another VPN on, common where a VPN is needed
+   to reach the internet, cannot run both. Check what happens when the other one starts, and
+   say it in the app.
+3. Apple's rules: the App Review Guidelines (section 5.4) allow VPN apps only through
+   NEVPNManager and, as we read them, only from developers enrolled as an organization, with
+   a clear account of what data the app sees; background use must be for the stated purpose
+   (2.5.4). Check the current text, whether the owner's developer account qualifies, and
+   whether review accepts a tunnel that carries only the group's own sync.
+4. The cost: the battery with the extension always on, measured on a real iPhone, against the
+   hub moving to a computer that is always on (step 6 above).
+
+The answers decide whether this becomes a step of the plan, an option the user turns on, or
+is dropped in favour of a computer or a second hub (D-65).
 
 ## Secure updates
 
