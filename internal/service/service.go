@@ -74,6 +74,9 @@ type Config struct {
 	// fallbackAfter is how long a full member waits for one with a lower
 	// device ID to dial it before it dials that one; fallbackDial if zero.
 	fallbackAfter time.Duration
+	// newMode is the sync mode of a device that makes or joins a group;
+	// clip.Own if nil. Tests that sync take clip.Shared.
+	newMode *clip.Mode
 }
 
 // MemberPort is the member port by default (CBB_PORT moves it, see
@@ -337,7 +340,11 @@ func (s *Service) startGroup(id *group.Identity) error {
 	}
 	id = s.withAdminKey(id)
 	gctx, cancel := context.WithCancel(context.Background())
-	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock})
+	mode, err := loadMode(s.cfg.StateDir)
+	if err != nil {
+		s.logf("cbb: the sync mode: %v; using shared", err)
+	}
+	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock, Mode: mode})
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
 	s.recMu.Unlock()

@@ -358,7 +358,7 @@ func (s *Service) trackSeen(peers []node.Peer) {
 // are not in them yet.
 func (s *Service) devices() ([]control.Device, error) {
 	s.mu.Lock()
-	id, nd := s.id, s.nd
+	id, nd, eng := s.id, s.nd, s.eng
 	seen := make(map[group.DeviceID]time.Time, len(s.seen))
 	for k, v := range s.seen {
 		seen[k] = v
@@ -399,8 +399,11 @@ func (s *Service) devices() ([]control.Device, error) {
 			d.Admin = id.IsAdmin() && !selfFrozen
 		}
 		info := s.cfg.Device.Clean()
+		if d.Self {
+			d.Mode = eng.Mode().String()
+		}
 		if p, ok := peers[dev]; ok {
-			info = p.Device
+			info, d.Mode = p.Device, p.Mode
 		} else if !d.Self {
 			info = group.DeviceInfo{}
 		}

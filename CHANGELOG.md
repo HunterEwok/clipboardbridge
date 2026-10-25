@@ -14,6 +14,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   run it as an always-on member at home or as a forwarder or relay on a server
   (packaging/docker). Each release publishes it as `ghcr.io/hunterewok/clipboardbridge` with a
   build provenance attestation and gives its digest in the release notes.
+- Sync modes on the computers: `cbb mode own|shared|receive|send` sets what moves between a
+  computer's clipboard and the group. A computer that makes or joins a group from now on
+  keeps its own clipboard (own): its copies stay on it and the group's do not come, while
+  `cbb copy` and the phones still send to the group and `cbb paste` prints the group's
+  text. Computers that joined before keep sharing. `cbb status` shows the mode, and each
+  computer's hello reports it for the devices list.
 
 ### Fixed
 

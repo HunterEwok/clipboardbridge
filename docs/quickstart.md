@@ -190,7 +190,19 @@ the hub. See "Joining from another network" in [design.md](design.md).
 
 ## 4. Use it
 
-- **Between computers**: copy on one, paste on another. Nothing else to do.
+A new device keeps its own clipboard: `cbb copy` and the phones send to the group, and
+`cbb paste` prints the group's latest text, but what you copy on a computer stays there. To
+share a computer's clipboard with the group, run on it, with `sudo` on Linux and macOS or as
+administrator on Windows:
+
+```sh
+sudo cbb mode shared
+```
+
+`cbb mode receive` takes the group's copies without sending its own, `cbb mode send` the
+other way round, `cbb mode own` goes back; see "Sync modes" in [design.md](design.md).
+
+- **Between computers** in shared mode: copy on one, paste on another. Nothing else to do.
 - **iPhone**: one press of the Action button (or a double tap on the back) picks the
   direction. Copied on a computer a moment ago: the text comes to the iPhone. Otherwise a new
   text copied on the iPhone goes to the computers, and with nothing new on the iPhone the

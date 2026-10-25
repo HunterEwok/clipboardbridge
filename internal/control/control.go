@@ -41,6 +41,7 @@ const (
 	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpMode      = "mode"       // client → service: Name "own", "shared", "receive" or "send": the sync mode
 	OpNetwork   = "network"    // client → service: take the networks this device is on now as known
 	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
 	OpTakeover  = "takeover"   // client → service: on an admin, take the group over from the lost root Name names
@@ -115,9 +116,11 @@ type Status struct {
 	HoldSetting string `json:"hold_setting,omitempty"`
 	// HoldPriority is the holder priority it publishes: 1 first, 2 as a
 	// fallback, 0 never, as without the iPhone CA key.
-	HoldPriority int      `json:"hold_priority,omitempty"`
-	Battery      bool     `json:"battery,omitempty"` // the machine has a battery, as the service guesses
-	Peers        []Device `json:"peers,omitempty"`
+	HoldPriority int `json:"hold_priority,omitempty"`
+	// Mode is the sync mode: own, shared, receive or send; "" when in no group.
+	Mode    string   `json:"mode,omitempty"`
+	Battery bool     `json:"battery,omitempty"` // the machine has a battery, as the service guesses
+	Peers   []Device `json:"peers,omitempty"`
 	// Unreached lists the members at home that could not connect to this
 	// device's member port and sync with it only because it dials them:
 	// a firewall here likely drops the port.
@@ -191,6 +194,9 @@ type Device struct {
 	OSVersion string `json:"os_version,omitempty"`
 	Version   string `json:"version,omitempty"`
 	MAC       string `json:"mac,omitempty"`
+	// Mode is its sync mode, as its hello says; "" when it says none or is
+	// not connected.
+	Mode string `json:"mode,omitempty"`
 
 	Admin      bool  `json:"admin,omitempty"`        // it can admit and remove devices
 	Root       bool  `json:"root,omitempty"`         // it holds the group's root

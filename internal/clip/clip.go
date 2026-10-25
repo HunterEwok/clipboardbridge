@@ -24,6 +24,10 @@
 // reports, which says nothing when the clipboard did not really change, and
 // Send for deliberate actions, which always make an event.
 //
+// The sync mode (Mode) decides whether the copies Copied reports go to the
+// group and whether the group's events are written to the local clipboard;
+// everything else works the same in every mode.
+//
 // Durations are measured on a clock that counts sleep and never jumps
 // (package uptime). The Engine only decides; the caller does the networking
 // and touches the local clipboard.
@@ -224,6 +228,7 @@ type Config struct {
 	LiveWindow   time.Duration        // DefaultLiveWindow if zero
 	RejoinWindow time.Duration        // DefaultRejoinWindow if zero
 	SecretMemory time.Duration        // DefaultSecretMemory if zero
+	Mode         Mode                 // the sync mode at the start; SetMode changes it
 }
 
 // Engine holds the state of one member. It is safe for concurrent use.
@@ -236,9 +241,10 @@ type Engine struct {
 	copiedAt time.Duration // uptime of the copy that made current
 	local    localText     // what this member's own clipboard holds
 	seen     recentIDs
-	written  hashRing                 // texts recently written to the local clipboard
-	secrets  secretMemory             // texts recently known as secrets
-	seq      uint64                   // counts writes, so the caller can apply them in order
+	written  hashRing     // texts recently written to the local clipboard
+	secrets  secretMemory // texts recently known as secrets
+	seq      uint64       // counts writes, so the caller can apply them in order
+	mode     Mode
 	skews    map[string]time.Duration // per connected peer, from its hello
 
 	peers       map[string]int // open connections per peer
@@ -284,8 +290,24 @@ func New(cfg Config) *Engine {
 		skews:   make(map[string]time.Duration),
 		peers:   make(map[string]int),
 	}
+	e.mode = cfg.Mode
 	rand.Read(e.key[:])
 	return e
+}
+
+// Mode returns the sync mode.
+func (e *Engine) Mode() Mode {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mode
+}
+
+// SetMode changes the sync mode; it applies to the copies and events that
+// come after it.
+func (e *Engine) SetMode(m Mode) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mode = m
 }
 
 // Current returns the group's current event, with its age as of now. It
@@ -348,7 +370,9 @@ func (e *Engine) KnownSecret(text string) bool {
 //     again by a clipboard manager;
 //   - it is the echo of a text this member recently wrote;
 //   - it is the group's own text coming back through Universal Clipboard;
-//   - it was recently a secret and is offered again without its mark.
+//   - it was recently a secret and is offered again without its mark;
+//   - the sync mode keeps this member's copies to itself (Mode.Sends): it
+//     is recorded as the local clipboard's text only.
 func (e *Engine) Copied(text string, kind Kind, via Via) (Event, bool, error) {
 	if err := checkCopy(text, kind, via); err != nil {
 		return Event{}, false, err
@@ -369,6 +393,12 @@ func (e *Engine) Copied(text string, kind Kind, via Via) (Event, bool, error) {
 	case kind == Text && e.secrets.has(sum, now, e.cfg.SecretMemory):
 		// A clipboard manager restores an earlier secret without its mark.
 		e.local = localText{}
+		return Event{}, false, nil
+	case !e.mode.Sends():
+		e.local = localText{text: text, kind: kind, at: now}
+		if kind == Secret {
+			e.secrets.add(sum, now)
+		}
 		return Event{}, false, nil
 	}
 	return e.newEvent(text, kind, via, sum, now), true, nil
@@ -593,11 +623,12 @@ func (e *Engine) receive(ev Event) Result {
 }
 
 // decideWrite decides whether the new current event goes to the local
-// clipboard: when it is live, or in the rejoin window when no copy was made
-// before this member was back in sync.
+// clipboard: when the sync mode lets the group's copies in, and the event is
+// live, or in the rejoin window when no copy was made before this member was
+// back in sync.
 func (e *Engine) decideWrite(res Result, now time.Duration) Result {
 	e.settle(now)
-	if !e.live() || e.localHas(e.current.Text, now) {
+	if !e.mode.Receives() || !e.live() || e.localHas(e.current.Text, now) {
 		return res
 	}
 	if now-e.copiedAt > e.cfg.LiveWindow && (!e.inRejoinWindow(now) || e.offlineCopy) {

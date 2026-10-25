@@ -36,6 +36,9 @@ Commands:
   forward                 Run a forwarder for hubs that clients cannot reach directly.
   relay -group TAG        Run a blind relay for groups without a hub.
   new                     Create a group with this computer as its root.
+  mode [own|shared|receive|send]
+                          Show or set what moves between this clipboard and the group;
+                          a new device keeps its own.
   pair                    In a group: show a code for a new computer. In none: join one,
                           by the phone's QR code or the code from cbb pair on the group.
   pair -code [address]    Join with the code from cbb pair on the root or an admin.
@@ -108,6 +111,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdInvite(rest, stdin, stdout, stderr)
 	case "holder":
 		return cmdHolder(rest, stdout, stderr)
+	case "mode":
+		return cmdMode(rest, stdout, stderr)
 	case "network":
 		return cmdNetwork(rest, stdout, stderr)
 	case "forward":

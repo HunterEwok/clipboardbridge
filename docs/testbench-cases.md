@@ -41,7 +41,10 @@ What `smoke` and `full` do first.
 4. For each other device: on the hub `cbb pair` (shows a six-digit code and waits); on the
    device `cbb pair -code [HUB:PORT]` (the lite member: `sudo -u clipboardbridge cbb join -code
    HUB:PORT`), the code on standard input. The hub's `cbb pair` ends when the device joins.
-5. `cbb status` on every device shows the same group tag.
+5. On every device but the lite member, which always shares, right after it made or joined
+   the group: `cbb mode shared`, since a new device keeps its own clipboard (design.md, "Sync
+   modes").
+6. `cbb status` on every device shows the same group tag.
 
 ### R3. End a run
 
@@ -238,7 +241,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P33)
+## 3. Features and platforms (section 7, P1 to P34)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -457,6 +460,17 @@ the texts are Russian.
 3. Install the phone app on a phone without Google Play services and use it as before.
 Pass: as P29, also with the phone app closed; without Play services the phone app works and
 logs once that there is no watch.
+
+**P34. Sync modes.** Runs: manual (deck and win, the group of R2).
+1. On deck `cbb mode own`; copy on deck's desktop, then on win's.
+2. On deck `cbb paste`; then `cbb mode receive` and copy on deck and on win; then `cbb mode
+   send` and do the same.
+3. Restart deck's service (`sudo systemctl restart clipboardbridge`); `cbb mode` and `cbb
+   status` on deck, `cbb devices` on win.
+4. `cbb mode shared` on deck.
+Pass: in own neither copy crosses, and `cbb paste` on deck prints win's text; in receive only
+win's copy reaches deck, in send only deck's reaches win; the mode survives the restart and
+win lists it; in shared both cross (R5).
 
 ## 4. Failure cases (section 8)
 

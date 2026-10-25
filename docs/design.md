@@ -1456,6 +1456,11 @@ so a copy on one computer replaces what was just copied on another. Each device 
   so the devices list shows it.
 - Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
   in every mode.
+- Built so far: the mode on the computers (`cbb mode`, the file `mode` in the service's state
+  directory, the hello's `mode` and the devices list), with own for a device that makes or
+  joins a group and shared for one that joined before 0.5, which has no mode file. Still to
+  come in 0.5: the admin's `mode` command, the modes in the phone apps, the Mac app and the
+  tray app; the phones and the lite member share until then.
 
 ## Remote paste (planned for 0.6)
 
