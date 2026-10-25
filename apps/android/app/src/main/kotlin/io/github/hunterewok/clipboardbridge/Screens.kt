@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,12 +61,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -86,8 +90,8 @@ import kotlinx.coroutines.launch
 /** Picks the screen, and asks once for the local network, which finding the computers needs on Android 17. */
 @Composable
 fun Root(model: AppModel) {
-    AppTheme(model.theme) {
-        GridBackground {
+    AppTheme(model.color, model.appearance) {
+        AppBackground {
             LocalNetworkPermission(model)
             Box(Modifier.safeDrawingPadding()) {
                 when (model.phase) {
@@ -269,255 +273,11 @@ private fun QrCode(text: String, modifier: Modifier) {
     }
 }
 
-// Home
-
-private enum class HomePage { MAIN, DEVICES, SETTINGS, ADD }
-
-/** The big button, the result in one line, and the computers; the other pages open from here. */
-@Composable
-private fun HomeScreen(model: AppModel) {
-    var page by rememberSaveable { mutableStateOf(HomePage.MAIN) }
-    LaunchedEffect(Unit) {
-        // The live dots: which computers are connected now.
-        while (true) {
-            model.refresh()
-            delay(2_000)
-        }
-    }
-    LaunchedEffect(Unit) { model.group.renewOwnCertificate() }
-    BackgroundSync()
-    when (page) {
-        HomePage.DEVICES -> {
-            BackHandler { page = HomePage.MAIN }
-            DevicesScreen(model) { page = HomePage.MAIN }
-        }
-        HomePage.SETTINGS -> SettingsScreen(model) { page = HomePage.MAIN }
-        HomePage.ADD -> AddDeviceScreen(model) { page = HomePage.MAIN }
-        HomePage.MAIN -> HomeMain(model, open = { page = it })
-    }
-}
-
-@Composable
-private fun HomeMain(model: AppModel, open: (HomePage) -> Unit) {
-    val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Tokens.spacingLarge), verticalArrangement = Arrangement.spacedBy(Tokens.spacingLarge)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconText("⚙", stringResource(R.string.settings)) { open(HomePage.SETTINGS) }
-            Spacer(Modifier.weight(1f))
-            if (model.isAdmin) IconText("+", stringResource(R.string.add_device)) { open(HomePage.ADD) }
-        }
-        AccentButton(stringResource(R.string.send_or_fetch), enabled = !model.busy, onClick = {
-            scope.launch {
-                model.sync()
-                haptics.performHapticFeedback(if (model.message?.error == true) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
-            }
-        })
-        model.message?.let { NoteText(it, dim = true) }
-        ComputerList(model.computers, Modifier.clickable(role = Role.Button) { open(HomePage.DEVICES) })
-    }
-}
-
-/** The computers as a compact list with a live dot each. */
-@Composable
-private fun ComputerList(computers: List<LiveGroup.Device>, modifier: Modifier) {
-    val palette = LocalPalette.current
-    val online = stringResource(R.string.online)
-    val offline = stringResource(R.string.offline)
-    Column(Modifier.fillMaxWidth().card().then(modifier).padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
-        Text(stringResource(R.string.computers), style = MaterialTheme.typography.titleMedium)
-        if (computers.isEmpty()) Text(stringResource(R.string.no_computers), color = palette.textDim)
-        for (c in computers) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = if (c.online) online else offline },
-            ) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(if (c.online) palette.accent else palette.textDim))
-                Text(c.name, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = Tokens.spacingSmall))
-            }
-        }
-    }
-}
-
-/**
- * Keeps syncing in the background: the service, and on Android 13 and later
- * the permission for its notification, asked once.
- */
-@Composable
-private fun BackgroundSync() {
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { SyncService.start(context) }
-    LaunchedEffect(Unit) {
-        val permission = Manifest.permission.POST_NOTIFICATIONS
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
-        ) {
-            launcher.launch(permission)
-        } else {
-            SyncService.start(context)
-        }
-    }
-}
-
-// Devices
-
-/**
- * The whole group: every device with its role, whether it is online, the
- * admins marked; on an admin phone a device can be renamed and removed, and on the root
- * phone a computer that offers an admin key made an admin (docs/apps.md,
- * Devices).
- */
-@Composable
-private fun DevicesScreen(model: AppModel, back: () -> Unit) {
-    val palette = LocalPalette.current
-    val scope = rememberCoroutineScope()
-    var removing by remember { mutableStateOf<LiveGroup.Device?>(null) }
-    var promoting by remember { mutableStateOf<LiveGroup.Device?>(null) }
-    var thawing by remember { mutableStateOf<LiveGroup.Device?>(null) }
-    var renaming by remember { mutableStateOf<LiveGroup.Device?>(null) }
-    Page(stringResource(R.string.devices), back) {
-        if (model.devices.isEmpty()) Text(stringResource(R.string.no_computers), color = palette.textDim)
-        Column(Modifier.fillMaxWidth().card()) {
-            model.devices.forEachIndexed { i, d ->
-                if (i > 0) HorizontalDivider(color = palette.grid)
-                DeviceRow(
-                    d,
-                    canRemove = model.isAdmin && !d.isSelf,
-                    remove = { removing = d },
-                    promote = { promoting = d },
-                    canUnfreeze = model.isAdmin && d.frozen,
-                    unfreeze = { thawing = d },
-                    canRename = model.isAdmin,
-                    rename = { renaming = d },
-                )
-            }
-        }
-        if (!model.isAdmin) {
-            Text(stringResource(R.string.not_admin_note), color = palette.textDim)
-        } else if (model.devices.count { it.admin } == 1) {
-            Text(stringResource(R.string.lost_phone_note), color = palette.textDim)
-        }
-        model.message?.let { NoteText(it, dim = true) }
-    }
-    removing?.let { d ->
-        Confirm(
-            title = stringResource(R.string.remove_title, d.name),
-            body = stringResource(if (d.isRoot) R.string.remove_root_body else R.string.remove_body),
-            action = stringResource(R.string.remove),
-            dismiss = { removing = null },
-        ) { scope.launch { model.remove(d.id) } }
-    }
-    promoting?.let { d ->
-        Confirm(
-            title = stringResource(R.string.make_admin_title, d.name),
-            body = stringResource(R.string.make_admin_body),
-            action = stringResource(R.string.make_admin),
-            dismiss = { promoting = null },
-        ) { scope.launch { model.makeAdmin(d.id) } }
-    }
-    renaming?.let { d -> Rename(d, dismiss = { renaming = null }) { name -> scope.launch { model.rename(d.id, name) } } }
-    thawing?.let { d ->
-        Confirm(
-            title = stringResource(R.string.unfreeze_title, d.name),
-            body = stringResource(R.string.unfreeze_body),
-            action = stringResource(R.string.unfreeze),
-            dismiss = { thawing = null },
-        ) { scope.launch { model.unfreeze(d.id) } }
-    }
-}
-
-@Composable
-private fun DeviceRow(
-    d: LiveGroup.Device,
-    canRemove: Boolean,
-    remove: () -> Unit,
-    promote: () -> Unit,
-    canUnfreeze: Boolean,
-    unfreeze: () -> Unit,
-    canRename: Boolean,
-    rename: () -> Unit,
-) {
-    val palette = LocalPalette.current
-    var menu by remember { mutableStateOf(false) }
-    val hasMenu = canRemove || d.canMakeAdmin || canUnfreeze || canRename
-    Row(
-        Modifier.fillMaxWidth().then(if (hasMenu) Modifier.clickable { menu = true } else Modifier)
-            .padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall + 4.dp)
-            .semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(if (d.online) palette.accent else palette.textDim))
-        Column(Modifier.weight(1f).padding(horizontal = Tokens.spacingMedium)) {
-            Text(d.name, fontFamily = FontFamily.Monospace)
-            val note = when {
-                d.isSelf && d.admin -> stringResource(R.string.this_phone_admin)
-                d.isSelf -> stringResource(R.string.this_phone)
-                d.frozen -> "${systemName(d)} · ${stringResource(R.string.frozen)}"
-                d.admin -> "${systemName(d)} · ${stringResource(R.string.admin)}"
-                else -> systemName(d)
-            }
-            Text(note, style = MaterialTheme.typography.bodySmall, color = palette.textDim)
-        }
-        Text(
-            stringResource(if (d.online) R.string.online else R.string.offline),
-            style = MaterialTheme.typography.bodySmall,
-            color = if (d.online) palette.accent else palette.textDim,
-        )
-        if (hasMenu) {
-            Box {
-                Text("⋮", modifier = Modifier.padding(start = Tokens.spacingSmall), color = palette.textDim)
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (canRename) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, onClick = {
-                            menu = false
-                            rename()
-                        })
-                    }
-                    if (canUnfreeze) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.unfreeze)) }, onClick = {
-                            menu = false
-                            unfreeze()
-                        })
-                    }
-                    if (d.canMakeAdmin) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.make_admin)) }, onClick = {
-                            menu = false
-                            promote()
-                        })
-                    }
-                    if (canRemove) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.remove), color = palette.danger) }, onClick = {
-                            menu = false
-                            remove()
-                        })
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** A device's role in a word: the protocol's names, which are the same in every language. */
-/** A device's system as the list shows it, and its role where that tells more. */
-private fun systemName(d: LiveGroup.Device): String {
-    val os = when (d.os) {
-        "linux" -> "Linux"
-        "windows" -> "Windows"
-        "macos" -> "macOS"
-        "ios" -> "iOS"
-        "android" -> "Android"
-        else -> null
-    }
-    return when {
-        d.role == "full" -> os ?: "computer"
-        os != null -> "$os · ${d.role}"
-        else -> d.role
-    }
-}
+// Dialogs (Home.kt and DeviceDetail.kt have the pages)
 
 /** Asks for a device's new name, starting from its name. */
 @Composable
-private fun Rename(d: LiveGroup.Device, dismiss: () -> Unit, rename: (String) -> Unit) {
+internal fun Rename(d: LiveGroup.Device, dismiss: () -> Unit, rename: (String) -> Unit) {
     val palette = LocalPalette.current
     var name by rememberSaveable { mutableStateOf(d.name) }
     AlertDialog(
@@ -543,7 +303,7 @@ private fun Rename(d: LiveGroup.Device, dismiss: () -> Unit, rename: (String) ->
 }
 
 @Composable
-private fun Confirm(title: String, body: String, action: String, dismiss: () -> Unit, confirm: () -> Unit) {
+internal fun Confirm(title: String, body: String, action: String, dismiss: () -> Unit, confirm: () -> Unit) {
     val palette = LocalPalette.current
     AlertDialog(
         onDismissRequest = dismiss,
@@ -566,7 +326,7 @@ private fun Confirm(title: String, body: String, action: String, dismiss: () -> 
 
 /** The camera with a frame; the text of the QR code by hand when there is no camera or it is not allowed. */
 @Composable
-private fun AddDeviceScreen(model: AppModel, close: () -> Unit) {
+internal fun AddDeviceScreen(model: AppModel, close: () -> Unit) {
     val palette = LocalPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -634,19 +394,20 @@ private fun AddDeviceScreen(model: AppModel, close: () -> Unit) {
 
 // Settings
 
-/** Theme, language, sending copies by themselves, sync away from home, about. */
+/** Theme and colour, language, sending copies by themselves, sync away from home, about. */
 @Composable
-private fun SettingsScreen(model: AppModel, back: () -> Unit) {
+internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
     val palette = LocalPalette.current
     val context = LocalContext.current
     val activity = LocalActivity.current
     BackHandler { back() }
     Page(stringResource(R.string.settings), back) {
         Section(stringResource(R.string.theme)) {
-            for (t in ThemeChoice.offered) {
-                Choice(stringResource(t.title), model.theme == t) { model.choose(t) }
+            for (a in Appearance.entries) {
+                Choice(stringResource(a.title), model.appearance == a) { model.choose(a) }
             }
         }
+        Section(stringResource(R.string.color)) { ColorSwatches(model.color) { model.choose(it) } }
         Section(stringResource(R.string.language)) {
             for (l in LanguageChoice.entries) {
                 Choice(l.ownName ?: stringResource(R.string.language_system), model.settings.language == l) {
@@ -801,7 +562,7 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
 }
 
 @Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Text(title, style = MaterialTheme.typography.titleSmall, color = LocalPalette.current.textDim)
     Column(Modifier.fillMaxWidth().card(), content = content)
 }
@@ -821,7 +582,7 @@ private fun Choice(title: String, selected: Boolean, select: () -> Unit) {
 
 /** A page with a title and a way back. */
 @Composable
-private fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Tokens.spacingLarge), verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconText("←", stringResource(R.string.back)) { back() }
@@ -833,7 +594,7 @@ private fun Page(title: String, back: () -> Unit, content: @Composable ColumnSco
 
 /** A round button with a symbol, and its name for TalkBack. */
 @Composable
-private fun IconText(symbol: String, label: String, small: Boolean = false, onClick: () -> Unit) {
+internal fun IconText(symbol: String, label: String, small: Boolean = false, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier.size(if (small) 32.dp else 44.dp).clip(CircleShape).background(if (small) Color.Transparent else palette.surface)
@@ -846,11 +607,49 @@ private fun IconText(symbol: String, label: String, small: Boolean = false, onCl
 
 /** A note: the line, and the error underneath when details are on. */
 @Composable
-private fun NoteText(note: AppModel.Note, dim: Boolean = false) {
+internal fun NoteText(note: AppModel.Note, dim: Boolean = false) {
     val palette = LocalPalette.current
     val color = if (note.error && !dim) palette.danger else palette.textDim
     Column(Modifier.fillMaxWidth()) {
         Text(stringResource(note.text), color = if (note.error) palette.danger else color)
         note.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = palette.textDim) }
+    }
+}
+
+/** The colours as round swatches, five a row, the chosen one ringed and ticked; Material You as a swatch of the wallpaper's colours. */
+@Composable
+private fun ColorSwatches(selection: String, choose: (String) -> Unit) {
+    val palette = LocalPalette.current
+    Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
+        for (row in ColorChoice.offered.chunked(5)) {
+            Row(Modifier.fillMaxWidth()) {
+                for (name in row) {
+                    val chosen = name == selection
+                    val pair = paletteNamed(name)
+                    val swatch = if (palette.dark) pair.dark else pair.light
+                    val fill = if (name == ColorChoice.MATERIAL) {
+                        Brush.sweepGradient(Tokens.colors.map { (if (palette.dark) it.dark else it.light).accent })
+                    } else {
+                        SolidColor(swatch.accent)
+                    }
+                    Column(
+                        Modifier.weight(1f).clickable(role = Role.RadioButton) { choose(name) }
+                            .semantics(mergeDescendants = true) { selected = chosen },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            Modifier.size(42.dp).border(2.dp, if (chosen) swatch.accent else Color.Transparent, CircleShape).padding(3.dp)
+                                .clip(CircleShape).background(fill),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (chosen) Text("✓", color = swatch.onAccent, fontWeight = FontWeight.Bold)
+                        }
+                        Text(stringResource(ColorChoice.title(name)), style = MaterialTheme.typography.labelSmall, maxLines = 1, color = palette.textDim)
+                    }
+                }
+                repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
