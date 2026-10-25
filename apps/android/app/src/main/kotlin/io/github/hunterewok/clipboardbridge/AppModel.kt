@@ -79,6 +79,31 @@ class AppModel(private val app: Context) {
     var awayNote by mutableStateOf<Note?>(null)
         private set
 
+    /**
+     * The phone as the group's hub as Settings and Home show it: null on a
+     * phone that cannot be the hub. home tells whether the phone is on one
+     * of the hub's home networks now.
+     */
+    data class Hub(
+        val on: Boolean,
+        val status: HubOnPhone.Status,
+        val error: Note? = null,
+        val forwarder: HubState.Forwarder? = null,
+        val background: Boolean = false,
+        val home: Boolean = false,
+        val clients: Int = 0,
+    )
+
+    var hub by mutableStateOf<Hub?>(null)
+        private set
+
+    /** What the last change to the hub said, when it failed. */
+    var hubNote by mutableStateOf<Note?>(null)
+        private set
+
+    /** The registration's last error, logged once. */
+    private var hubError: String? = null
+
     fun choose(color: String) {
         settings.color = color
         this.color = color
@@ -228,7 +253,51 @@ class AppModel(private val app: Context) {
             // AwayFromHome logs each failure itself.
             Away(a.isOn, a.status, e?.let { describe(it, R.string.away_error, log = false) })
         }
+        hub = withContext(Dispatchers.IO) {
+            group.phoneHub?.let { h ->
+                val (status, error) = h.status(paused = !group.inForeground && !h.background)
+                if (error != hubError) {
+                    hubError = error
+                    if (error != null) Log.w(TAG, "the hub: $error")
+                }
+                Hub(
+                    h.isOn, status,
+                    error?.let { Note(R.string.hub_failed, if (settings.showsErrorDetails) it else null, error = true) },
+                    h.forwarder, h.background, group.onHomeNetwork, h.clients.size,
+                )
+            }
+        }
         WatchLink.update(app, this)
+    }
+
+    /** Makes this phone the group's hub, or stops it being the hub. */
+    suspend fun setHub(on: Boolean) = hubChange { group.setPhoneHub(on) }
+
+    /** Sets the hub's forwarder; both empty for a hub at home only. */
+    suspend fun setForwarder(address: String, pin: String) = hubChange {
+        if ((address.isBlank() || pin.isBlank()) && !(address.isBlank() && pin.isBlank())) throw IllegalArgumentException("both or neither")
+        if (pin.isNotBlank() && !HubState.validPin(pin.trim())) throw IllegalArgumentException("not a pin")
+        group.setForwarder(address, pin)
+    }
+
+    /** Lets the hub run in the background, at the battery's cost. */
+    suspend fun setHubInBackground(on: Boolean) = hubChange { group.setHubInBackground(on) }
+
+    /** Remembers the network the phone is on as home. */
+    suspend fun addHomeNetwork() = hubChange { group.addHomeNetwork() }
+
+    private suspend fun hubChange(f: () -> Unit) {
+        hubNote = try {
+            withContext(Dispatchers.IO) { f() }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            describe(e, R.string.hub_bad_forwarder)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
     }
 
     /** Turns sync away from home on or off; the hub's answer comes on the next connection at home. */

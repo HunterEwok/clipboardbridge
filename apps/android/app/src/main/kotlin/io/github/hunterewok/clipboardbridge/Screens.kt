@@ -420,7 +420,8 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
         if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
-        if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -558,6 +559,85 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
             away.error?.let { NoteText(it) }
             model.awayNote?.let { NoteText(it) }
             Text(stringResource(R.string.away_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        }
+    }
+}
+
+/**
+ * The phone as the group's hub: the switch, where it stands, the
+ * forwarder, the home networks and, on Android, the background.
+ */
+@Composable
+private fun HubSection(model: AppModel, hub: AppModel.Hub) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    fun act(f: suspend () -> Unit) {
+        busy = true
+        scope.launch {
+            f()
+            busy = false
+        }
+    }
+    Section(stringResource(R.string.hub_title)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHub(!hub.on) } },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.hub_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = hub.on, onCheckedChange = null, enabled = !busy)
+            }
+            val status = when (hub.status) {
+                HubOnPhone.Status.OFF -> R.string.hub_off
+                HubOnPhone.Status.PAUSED -> R.string.hub_paused
+                HubOnPhone.Status.HOME_ONLY -> R.string.hub_home_only
+                HubOnPhone.Status.REGISTERING -> R.string.hub_registering
+                HubOnPhone.Status.REGISTERED -> R.string.hub_registered
+                HubOnPhone.Status.FAILED -> R.string.hub_failed
+            }
+            Text(stringResource(status), color = if (hub.status == HubOnPhone.Status.REGISTERED) palette.accent else palette.textDim)
+            // The registration's error underneath, when details are on.
+            hub.error?.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.textDim) }
+            if (hub.on) {
+                Text(
+                    stringResource(if (hub.home) R.string.hub_on_home else R.string.hub_not_home),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.textDim,
+                )
+                if (!hub.home) QuietButton(stringResource(R.string.hub_add_home), onClick = { if (!busy) act { model.addHomeNetwork() } })
+                var address by rememberSaveable(hub.forwarder) { mutableStateOf(hub.forwarder?.endpoint ?: "") }
+                var pin by rememberSaveable(hub.forwarder) { mutableStateOf(hub.forwarder?.pin ?: "") }
+                Text(stringResource(R.string.hub_forwarder), fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.hub_forwarder_address)) },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.hub_forwarder_key)) },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val changed = address != (hub.forwarder?.endpoint ?: "") || pin != (hub.forwarder?.pin ?: "")
+                AccentButton(stringResource(R.string.hub_forwarder_save), enabled = changed && !busy, onClick = { act { model.setForwarder(address, pin) } })
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHubInBackground(!hub.background) } },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.hub_background), modifier = Modifier.weight(1f))
+                    Switch(checked = hub.background, onCheckedChange = null, enabled = !busy)
+                }
+            }
+            model.hubNote?.let { NoteText(it) }
+            Text(stringResource(R.string.hub_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
 }

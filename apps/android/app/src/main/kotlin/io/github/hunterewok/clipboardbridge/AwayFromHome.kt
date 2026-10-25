@@ -118,25 +118,26 @@ object GoTunnels : Tunnels {
 }
 
 /**
- * The state's file, encrypted with an AES key in the Keystore that never
- * leaves it and needs no unlock, so the phone syncs in the background as
- * at home.
+ * A small file encrypted with an AES key in the Keystore, under alias,
+ * that never leaves it and needs no unlock, so the phone syncs in the
+ * background as at home.
  */
-class AwayFile(private val file: File) {
-    fun read(): AwayState? {
+class SealedFile(private val file: File, private val alias: String) {
+    /** The file's contents, or null when there is none. */
+    fun read(): ByteArray? {
         if (!file.exists()) return null
         val b = file.readBytes()
         if (b.size < IV) return null
         val c = Cipher.getInstance(CIPHER)
         c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, b, 0, IV))
-        return AwayState.decode(c.doFinal(b, IV, b.size - IV))
+        return c.doFinal(b, IV, b.size - IV)
     }
 
-    fun write(s: AwayState) {
+    fun write(data: ByteArray) {
         val c = Cipher.getInstance(CIPHER)
         c.init(Cipher.ENCRYPT_MODE, key())
         val tmp = File(file.path + ".tmp")
-        tmp.writeBytes(c.iv + c.doFinal(s.encode()))
+        tmp.writeBytes(c.iv + c.doFinal(data))
         if (!tmp.renameTo(file)) throw IOException("cannot replace $file")
     }
 
@@ -144,15 +145,15 @@ class AwayFile(private val file: File) {
     fun delete() {
         file.delete()
         val ks = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        if (ks.containsAlias(ALIAS)) ks.deleteEntry(ALIAS)
+        if (ks.containsAlias(alias)) ks.deleteEntry(alias)
     }
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (ks.getKey(alias, null) as? SecretKey)?.let { return it }
         val g = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
         g.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
@@ -163,10 +164,20 @@ class AwayFile(private val file: File) {
 
     companion object {
         private const val PROVIDER = "AndroidKeyStore"
-        private const val ALIAS = "clipboardbridge.away"
         private const val CIPHER = "AES/GCM/NoPadding"
         private const val IV = 12
     }
+}
+
+/** The state of sync away from home in its sealed file. */
+class AwayFile(file: File) {
+    private val sealed = SealedFile(file, "clipboardbridge.away")
+
+    fun read(): AwayState? = sealed.read()?.let(AwayState::decode)
+
+    fun write(s: AwayState) = sealed.write(s.encode())
+
+    fun delete() = sealed.delete()
 }
 
 /**

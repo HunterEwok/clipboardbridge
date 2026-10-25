@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package io.github.hunterewok.clipboardbridge
+
+import io.github.hunterewok.clipboardbridge.kit.Member
+import io.github.hunterewok.clipboardbridge.kit.PhoneHub
+import io.github.hunterewok.clipboardbridge.kit.Wire
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.util.Base64
+
+/**
+ * What the phone keeps as the group's hub (docs/design.md, "The phone as
+ * the hub", D-64): whether it is on, its WireGuard private key, the
+ * forwarder it registers with, whether Android keeps it running in the
+ * background, the home networks where it takes members and publishes
+ * itself, and its clients.
+ */
+data class HubState(
+    val key: ByteArray,
+    val on: Boolean = false,
+    val forwarder: Forwarder? = null,
+    val background: Boolean = false,
+    val homes: List<String> = emptyList(),
+    val clients: List<PhoneHub.Client> = emptyList(),
+) {
+    /** The forwarder: its endpoint, "ip:port", and the pin of its key, "sha256:…". */
+    data class Forwarder(val endpoint: String, val pin: String)
+
+    fun encode(): ByteArray = Wire.obj(
+        "key" to Wire.bytes(key),
+        "on" to JsonPrimitive(on),
+        "forwarder" to forwarder?.let { Wire.obj("endpoint" to Wire.str(it.endpoint), "pin" to Wire.str(it.pin)) },
+        "background" to JsonPrimitive(background),
+        "homes" to JsonArray(homes.map { JsonPrimitive(it) }),
+        "clients" to JsonArray(clients.map { it.toJson() }),
+    ).toString().toByteArray()
+
+    override fun equals(other: Any?): Boolean = other is HubState && encode().contentEquals(other.encode())
+
+    override fun hashCode(): Int = key.contentHashCode()
+
+    companion object {
+        /** The most home networks the phone remembers; the oldest goes first. */
+        const val MAX_HOMES = 8
+
+        /** The state in b, or null when it is not one this version wrote. */
+        fun decode(b: ByteArray): HubState? = runCatching {
+            val o = Json.parseToJsonElement(b.toString(Charsets.UTF_8)) as JsonObject
+            val key = Base64.getDecoder().decode(o.string("key") ?: return null)
+            if (key.size != 32) return null
+            val fw = (o["forwarder"] as? JsonObject)?.let { f -> Forwarder(f.string("endpoint") ?: return null, f.string("pin") ?: return null) }
+            HubState(
+                key,
+                on = o["on"]?.jsonPrimitive?.booleanOrNull ?: false,
+                forwarder = fw,
+                background = o["background"]?.jsonPrimitive?.booleanOrNull ?: false,
+                homes = (o["homes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty(),
+                clients = PhoneHub.clientsFromJson((o["clients"] as? JsonArray)?.toString() ?: ""),
+            )
+        }.getOrNull()
+
+        /** Whether pin is the pin of a forwarder's key, as `cbb forward` prints it. */
+        fun validPin(pin: String): Boolean =
+            pin.length == 7 + 43 && pin.startsWith("sha256:") && pin.drop(7).all { it.isLetterOrDigit() && it.code < 128 || it == '-' || it == '_' }
+
+        /**
+         * The forwarder's address as cbbtun takes it, "ip:port", from what
+         * the user typed: an address or a name with its port. A name is
+         * looked up now, IPv4 first; on the caller's IO thread.
+         */
+        fun resolve(s: String): String? {
+            val t = s.trim()
+            val i = t.lastIndexOf(':')
+            if (i <= 0 || i == t.length - 1) return null
+            val port = t.substring(i + 1).toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+            val host = t.substring(0, i).removePrefix("[").removeSuffix("]")
+            val addrs = runCatching { InetAddress.getAllByName(host).toList() }.getOrNull() ?: return null
+            val a = addrs.firstOrNull { it is Inet4Address } ?: addrs.firstOrNull() ?: return null
+            val ip = a.hostAddress ?: return null
+            return if (a is Inet6Address) "[${ip.substringBefore('%')}]:$port" else "$ip:$port"
+        }
+    }
+}
+
+/** A running hub of mobile/cbbtun. */
+interface HubTunnel {
+    fun setClients(json: String)
+    fun register(endpoint: String, pin: String, chain: String, sign: (ByteArray) -> ByteArray, records: String)
+    fun setRecords(records: String)
+    /** cbbtun's Status JSON. */
+    fun status(): String
+    fun close()
+}
+
+/** Starts hubs; the app's come from mobile/cbbtun, the tests' from a fake. */
+interface HubTunnels {
+    fun newKey(): ByteArray
+    fun publicKey(private: ByteArray): ByteArray
+    fun start(private: ByteArray, device: String, memberPort: Int, clients: String): HubTunnel
+}
+
+/** The hub of mobile/cbbtun, WireGuard in the app's process. */
+object GoHubTunnels : HubTunnels {
+    override fun newKey(): ByteArray = cbbtun.Cbbtun.newKey()
+    override fun publicKey(private: ByteArray): ByteArray = cbbtun.Cbbtun.publicKey(private)
+    override fun start(private: ByteArray, device: String, memberPort: Int, clients: String): HubTunnel {
+        val h = cbbtun.Cbbtun.startHub(private, device, memberPort.toLong(), "", clients)
+        return object : HubTunnel {
+            override fun setClients(json: String) = h.setClients(json)
+            override fun register(endpoint: String, pin: String, chain: String, sign: (ByteArray) -> ByteArray, records: String) =
+                h.register(endpoint, pin, chain, cbbtun.Signer { sign(it) }, records, "")
+            override fun setRecords(records: String) = h.setRecords(records)
+            override fun status(): String = h.status()
+            override fun close() {
+                h.close()
+            }
+        }
+    }
+}
+
+/**
+ * The phone as the group's hub while its app is open, or in the foreground
+ * service when the user allows it (D-64). At home it takes the members on
+ * its member port, which LiveGroup publishes by mDNS; from afar its
+ * clients reach it through its forwarder, with which it registers by its
+ * member key and the group's authority records (docs/protocol.md, section
+ * 13). It admits a client by the tunnel key its hello offers, as a
+ * computer's hub (PhoneHub), and answers with its offer, whose endpoint is
+ * the forwarder's: without a forwarder it is a hub at home only and offers
+ * nothing.
+ */
+class HubOnPhone(
+    private val device: String,
+    private val tunnels: HubTunnels,
+    private val load: () -> HubState?,
+    private val save: (HubState?) -> Unit,
+    private val log: (String, Throwable?) -> Unit = { _, _ -> },
+) {
+    /** What the screens show. */
+    enum class Status { OFF, PAUSED, HOME_ONLY, REGISTERING, REGISTERED, FAILED }
+
+    /** What a running hub needs from the group: the member listener's port, the member chain, the member key's signer, the authority records. */
+    class Group(val memberPort: Int, val chain: List<ByteArray>, val sign: (ByteArray) -> ByteArray, val records: List<Member.Record>)
+
+    private val lock = Any()
+    private var state: HubState? = runCatching { load() }.onFailure { log("cannot read the hub's state", it) }.getOrNull()
+    private var hub: PhoneHub? = state?.let(::phoneHub)
+    private var tunnel: HubTunnel? = null
+
+    val isOn: Boolean get() = synchronized(lock) { state?.on == true }
+    val forwarder: HubState.Forwarder? get() = synchronized(lock) { state?.forwarder }
+    val background: Boolean get() = synchronized(lock) { state?.background == true }
+    val running: Boolean get() = synchronized(lock) { tunnel != null }
+
+    /** The clients' devices, for the screens. */
+    val clients: List<String> get() = synchronized(lock) { hub?.clients.orEmpty().map { it.device } }
+
+    private fun phoneHub(s: HubState): PhoneHub? = runCatching {
+        PhoneHub(tunnels.publicKey(s.key), s.clients).also { h -> s.forwarder?.let { h.endpoints = listOf(it.endpoint) } }
+    }.onFailure { log("cannot make the hub", it) }.getOrNull()
+
+    private fun change(f: (HubState) -> HubState) {
+        val next = synchronized(lock) {
+            val s = state ?: HubState(tunnels.newKey())
+            f(s).also {
+                state = it
+                if (hub == null || !it.key.contentEquals(s.key)) hub = phoneHub(it)
+                hub?.endpoints = listOfNotNull(it.forwarder?.endpoint)
+            }
+        }
+        save(next)
+    }
+
+    /** Turns it on, remembering home, the network the phone is on now, as a home network. */
+    fun turnOn(home: String?) = change { s -> s.copy(on = true, homes = withHome(s.homes, home)) }
+
+    /** Turns it off; the key and the clients stay, so turning it on again keeps the clients' tunnels. */
+    fun turnOff() {
+        change { it.copy(on = false) }
+        stop()
+    }
+
+    /** Sets the forwarder, or none; endpoint is "ip:port" (HubState.resolve). */
+    fun setForwarder(f: HubState.Forwarder?) {
+        require(f == null || HubState.validPin(f.pin)) { "not a forwarder's key" }
+        change { it.copy(forwarder = f) }
+        stop() // the next start registers with it
+    }
+
+    /** Lets Android keep the hub running in the foreground service while the app is in the background. */
+    fun setBackground(on: Boolean) = change { it.copy(background = on) }
+
+    /** Remembers home as a home network. */
+    fun addHome(home: String) = change { s -> s.copy(homes = withHome(s.homes, home)) }
+
+    /** Whether the phone takes members and publishes itself on the network home names. */
+    fun isHome(home: String?): Boolean = home != null && synchronized(lock) { state?.homes?.contains(home) == true }
+
+    private fun withHome(homes: List<String>, home: String?): List<String> =
+        if (home == null || home in homes) homes else (homes + home).takeLast(HubState.MAX_HOMES)
+
+    /**
+     * The offer for a member whose hello offered key, for MemberNode's hub:
+     * null while the hub is off or has no forwarder, or when the key is
+     * refused.
+     */
+    fun offer(device: String, key: ByteArray): Member.TunnelOffer? {
+        val h = synchronized(lock) { if (state?.on == true && state?.forwarder != null) hub else null } ?: return null
+        return h.offer(device, key, changed = ::clientsChanged, refused = { why -> log("refused a client: $why", null) })
+    }
+
+    private fun clientsChanged(clients: List<PhoneHub.Client>) {
+        val (next, t) = synchronized(lock) {
+            val s = state ?: return
+            s.copy(clients = clients).also { state = it } to tunnel
+        }
+        runCatching { save(next) }.onFailure { log("cannot keep the hub's clients", it) }
+        val json = JsonArray(clients.map { it.toJson() }).toString()
+        t?.let { runCatching { it.setClients(json) }.onFailure { e -> log("cannot hand the clients to the tunnel", e) } }
+    }
+
+    /** Forgets the clients whose devices keep refuses, removed devices; returns them. */
+    fun prune(keep: (String) -> Boolean): List<String> {
+        val h = synchronized(lock) { hub } ?: return emptyList()
+        val gone = h.prune { keep(it.device) }
+        if (gone.isNotEmpty()) clientsChanged(h.clients)
+        return gone
+    }
+
+    /** Starts the tunnel and the registration when the hub is on and has a forwarder; nothing when it runs already. */
+    fun start(g: Group) {
+        val (s, h) = synchronized(lock) {
+            if (tunnel != null) return
+            val s = state?.takeIf { it.on } ?: return
+            s to (hub ?: return)
+        }
+        val fw = s.forwarder ?: return
+        val t = try {
+            tunnels.start(s.key, device, g.memberPort, h.clientsJson).also {
+                it.register(fw.endpoint, fw.pin, Wire.list(g.chain).toString(), g.sign, recordsJson(g.records))
+            }
+        } catch (e: Exception) {
+            log("the hub could not start", e)
+            synchronized(lock) { failure = e.message ?: e.toString() }
+            return
+        }
+        val kept = synchronized(lock) {
+            (tunnel == null && state?.on == true).also {
+                if (it) {
+                    tunnel = t
+                    failure = null
+                }
+            }
+        }
+        if (!kept) runCatching { t.close() }
+    }
+
+    /** Stops the tunnel and the registration; the clients come back at the next start. */
+    fun stop() {
+        val t = synchronized(lock) { tunnel.also { tunnel = null } }
+        t?.let { runCatching { it.close() } }
+    }
+
+    /** Hands the forwarder new authority records at the next registration, after a removal or a new admin. */
+    fun setRecords(records: List<Member.Record>) {
+        val t = synchronized(lock) { tunnel } ?: return
+        runCatching { t.setRecords(recordsJson(records)) }.onFailure { log("cannot hand the records to the tunnel", it) }
+    }
+
+    /** Why the hub could not start, until it does. */
+    private var failure: String? = null
+
+    /** Where it stands, and why it failed, for the screens; paused tells that the app is in the background. */
+    fun status(paused: Boolean): Pair<Status, String?> {
+        val (s, t, f) = synchronized(lock) { Triple(state, tunnel, failure) }
+        if (s?.on != true) return Status.OFF to null
+        if (s.forwarder == null) return Status.HOME_ONLY to null
+        if (t == null) return if (f != null && !paused) Status.FAILED to f else Status.PAUSED to null
+        val o = runCatching { Json.parseToJsonElement(t.status()) as JsonObject }.getOrNull() ?: return Status.REGISTERING to null
+        if (o["registered"]?.jsonPrimitive?.booleanOrNull == true) return Status.REGISTERED to null
+        val e = o.string("error") ?: return Status.REGISTERING to null
+        return Status.FAILED to e
+    }
+
+    private fun recordsJson(rs: List<Member.Record>): String = JsonArray(rs.map { it.toJson() }).toString()
+
+    companion object {
+        /**
+         * A network as the hub remembers it: its gateway's address and the
+         * network of the phone's address on it, as "192.168.0.1 192.168.0.0/24".
+         * Wi-Fi in a café has another, so the phone neither takes members
+         * nor publishes itself there (as D-63 on the computers).
+         */
+        fun networkKey(gateway: InetAddress?, address: InetAddress?, prefixLength: Int): String? {
+            val g = gateway?.hostAddress ?: return null
+            val a = address?.address ?: return null
+            if (prefixLength !in 0..a.size * 8) return null
+            val n = a.copyOf()
+            for (i in n.indices) {
+                val bits = (prefixLength - i * 8).coerceIn(0, 8)
+                n[i] = (n[i].toInt() and (0xff shl (8 - bits)).toByte().toInt()).toByte()
+            }
+            val net = InetAddress.getByAddress(n).hostAddress ?: return null
+            return "${g.substringBefore('%')} $net/$prefixLength"
+        }
+    }
+}
+
+private fun JsonObject.string(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
