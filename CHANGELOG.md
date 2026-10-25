@@ -12,7 +12,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
   capabilities, on a read-only root file system, with its state in one volume. Compose files
   run it as an always-on member at home or as a forwarder or relay on a server
-  (packaging/docker). Releases do not publish it yet.
+  (packaging/docker). Each release publishes it as `ghcr.io/hunterewok/clipboardbridge` with a
+  build provenance attestation and gives its digest in the release notes.
 
 ### Fixed
 

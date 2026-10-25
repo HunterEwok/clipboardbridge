@@ -146,6 +146,11 @@ Rules for workflows:
   check the result by importing it on an iPhone, and commit the signed file.
 - Published with `SHA256SUMS` and a build provenance attestation
   (`actions/attest-build-provenance`), which users can check with `gh attestation verify`.
+- After the release, the `docker` job builds the image of `packaging/docker` from the
+  release's own Linux archives for amd64, arm64 and armv7, pushes it to
+  `ghcr.io/hunterewok/clipboardbridge` as `X.Y.Z` (and `latest`, but not for a pre-release),
+  attests it in the registry and adds its digest to the release notes. The first push makes
+  the package private: once, in the package's settings on GitHub, make it public.
 
 ## Homebrew
 

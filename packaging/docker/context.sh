@@ -5,9 +5,11 @@
 # Lays out the build context of the clipboardbridge image in DIR: the
 # Dockerfile, the static cbb of each platform, named as the Dockerfile wants
 # them (cbb-amd64, cbb-arm64, cbb-armv7), and the few directories and files
-# the service needs in an image built from scratch.
+# the service needs in an image built from scratch, with LICENSE and, given
+# notices=FILE, a release archive's THIRD_PARTY_NOTICES in
+# /usr/share/doc/clipboardbridge.
 #
-#   sh packaging/docker/context.sh DIR amd64=path/to/cbb [arm64=path] [armv7=path]
+#   sh packaging/docker/context.sh DIR amd64=path/to/cbb [arm64=path] [armv7=path] [notices=FILE]
 set -eu
 
 [ $# -ge 2 ] || {
@@ -17,13 +19,20 @@ set -eu
 dir=$1
 shift
 here=$(cd "$(dirname "$0")" && pwd)
-mkdir -p "$dir"
+r=$dir/rootfs
+doc=$r/usr/share/doc/clipboardbridge
+mkdir -p "$dir" "$doc"
 cp "$here/Dockerfile" "$dir/Dockerfile"
+cp "$here/../../LICENSE" "$doc/LICENSE"
 for a in "$@"; do
 	arch=${a%%=*}
 	bin=${a#*=}
 	case $arch in
 	amd64 | arm64 | armv7) ;;
+	notices)
+		cp "$bin" "$doc/THIRD_PARTY_NOTICES"
+		continue
+		;;
 	*)
 		echo "context.sh: unknown platform $arch" >&2
 		exit 2
@@ -34,7 +43,6 @@ for a in "$@"; do
 done
 
 # The service's user, 65532, owns its state and its sockets' directory.
-r=$dir/rootfs
 mkdir -p "$r/etc" "$r/run/clipboardbridge" "$r/var/lib/clipboardbridge" "$r/tmp"
 chmod 0750 "$r/run/clipboardbridge"
 chmod 0700 "$r/var/lib/clipboardbridge"

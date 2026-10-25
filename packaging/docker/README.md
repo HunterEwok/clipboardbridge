@@ -10,6 +10,12 @@ certificate roots, a user (65532) and its two directories. It runs as that user,
 capabilities, no `/dev/net/tun` and no `--privileged` (the tunnel runs in the process), and
 works with a read-only root file system. Its state is one volume, `/var/lib/clipboardbridge`.
 
+Each release publishes it as `ghcr.io/hunterewok/clipboardbridge` (from 0.5), tagged with its
+version and `latest`, with a build provenance attestation; the release notes give its
+digest. Pin it by that digest, `image: ghcr.io/hunterewok/clipboardbridge@sha256:...`, and
+check it with `gh attestation verify oci://ghcr.io/hunterewok/clipboardbridge@sha256:...
+--repo HunterEwok/clipboardbridge`.
+
 ## At home
 
 [compose.home.yaml](compose.home.yaml) runs it as an always-on member with the host's
@@ -24,6 +30,11 @@ docker compose -f compose.home.yaml exec clipboardbridge cbb pair
 group's root or an admin. Join it as an ordinary member: the keys that admit devices belong
 on the devices you hold, not on a server. The container cannot change the host's firewall;
 let the home network reach TCP 8764 (or `CBB_PORT`) and UDP 5353.
+
+On a NAS, give the container the host's network (Synology Container Manager and QNAP
+Container Station call it "host", Unraid "Host", TrueNAS's apps "Host Network") and a
+folder or volume for `/var/lib/clipboardbridge` that user 65532 may write; then run
+`cbb pair` in its terminal.
 
 With sync away from home on, it can be the hub (`cbb global hub -firewall no`, which prints
 the rule the host needs for its UDP port).
