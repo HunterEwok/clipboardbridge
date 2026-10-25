@@ -814,17 +814,21 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   background, if the user turns it on and accepts the battery cost; iOS gives an app no way
   to do that.
 - **Moving the hub to a computer.** When a computer that can be the hub joins (Linux,
-  Windows, a Mac with its listening mode), above all one that is always on (no battery, as
-  the holder setting judges), the app suggests making it the hub, once, with the reason in
-  plain words: sync away from home then works with the app closed. The user may keep the
-  phone as the hub; the app then does not ask again, and Settings keeps the choice. When the
-  user agrees, the phone, still the hub, passes the new hub its clients' tunnel keys and
-  preshared keys inside member TLS and tells its connected clients the new hub's offer
-  through the tunnel, so devices far away (a parent's TV in another city) move without
-  coming home. The new hub admits each key only for a device whose certificate is valid in
-  the group's records.
+  Windows, a Mac with its listening mode), above all one that is always on (a desktop, a
+  server, a board or a router, by the form its hello gives), the app suggests making it the
+  hub in Settings, with the reason in plain words: sync away from home then works with the
+  app closed. The user may keep the phone as the hub; the app then does not ask again, and
+  can still move the hub to any computer there. A computer that is no admin yet is made one
+  first, on the root phone. The phone, still the hub, passes the new hub its clients' tunnel
+  keys and preshared keys in a signed `hub` command inside member TLS and tells its
+  connected clients the new hub's offer through the tunnel, so devices far away (a parent's
+  TV in another city) move without coming home; then it becomes the new hub's client. The
+  new hub admits each key only for a device the group's records list. A computer that is
+  the hub moves the role the same way (`cbb global move`). Built in 0.5 (docs/protocol.md,
+  section 11, "Moving the hub").
 - **Losing the phone.** When the root phone that is the hub is lost, the admin phone that
-  takes the group over (`PhoneGroup.takeOver`) becomes its hub too. Clients at home learn
+  takes the group over (`PhoneGroup.takeOver`) becomes its hub too, and the clients take
+  its offer because the records no longer make the lost phone an admin. Clients at home learn
   the new hub there; a client far away cannot learn it from a lost phone and joins again
   with a new remote invitation. That is one more reason for a second phone as an admin,
   which the app already suggests.
@@ -855,8 +859,9 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   the home networks it remembers (the gateway's address and the network of the phone's
   address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
   option; the clients' short retries for a phone hub (5 s); and remote invitations made
-  and served on the phone (docs/protocol.md, section 12). Moving the hub comes next
-  (roadmap item 30).
+  and served on the phone (docs/protocol.md, section 12); moving the hub to an admin
+  computer, from a phone or a computer, and the hub moving with a takeover. Several hubs
+  with a priority come next (roadmap item 30).
 
 ### Reaching the hub
 

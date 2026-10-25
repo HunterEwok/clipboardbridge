@@ -60,6 +60,7 @@ protocol GroupController: AnyObject {
     /// its name or why it ended without one.
     func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
                 ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation
+    func moveHub(to id: String) async throws
 }
 
 extension GroupController {
@@ -77,6 +78,7 @@ extension GroupController {
                 ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation {
         throw HubOnPhone.Failure.notRunning
     }
+    func moveHub(to id: String) async throws { throw HubOnPhone.Failure.notRunning }
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -156,6 +158,17 @@ final class AppModel: ObservableObject {
         var forwarder: HubState.Forwarder?
         var home = false
         var clients = 0
+        /// The connected computers the hub can move to: admins, or
+        /// computers the root can make admins.
+        var computers: [Target] = []
+        /// The computer that is always on which the app suggests as the
+        /// hub, unless the user chose to keep the phone.
+        var suggested: Target?
+
+        struct Target: Equatable, Identifiable {
+            let id: String
+            let name: String
+        }
     }
 
     @Published private(set) var hub: Hub?
@@ -368,6 +381,27 @@ final class AppModel: ObservableObject {
 
     /// Makes this phone the group's hub, or stops it being the hub.
     func setHub(_ on: Bool) async { await hubChange { try await self.group.setPhoneHub(on) } }
+
+    /// Makes a connected computer the hub in place of this phone
+    /// (docs/protocol.md, section 11, "Moving the hub").
+    func moveHub(to id: String) async {
+        do {
+            try await group.moveHub(to: id)
+            hubNote = String(localized: "The computer is the hub now; this phone reaches it from afar.", bundle: .app)
+        } catch HubOnPhone.Failure.notRunning {
+            hubNote = Self.describe(HubOnPhone.Failure.notRunning,
+                                    summary: String(localized: "The hub can move only while it runs with a forwarder.", bundle: .app))
+        } catch {
+            hubNote = Self.describe(error)
+        }
+        await refreshHub()
+    }
+
+    /// Keeps this phone as the hub: the app no longer suggests a computer.
+    func keepPhoneHub() async {
+        UserDefaults.standard.set(true, forKey: LiveGroup.keepsPhoneHubKey)
+        await refreshHub()
+    }
 
     /// Sets the hub's forwarder; both empty for a hub at home only.
     func setForwarder(address: String, pin: String) async {

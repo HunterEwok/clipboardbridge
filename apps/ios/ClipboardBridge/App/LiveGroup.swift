@@ -559,7 +559,13 @@ final class LiveGroup: GroupController {
         groupChanged()
         await node?.sendRecords(rs)
         await node?.close(peer: id)
-        await restartSync()
+        // The lost phone was the hub: this phone is the hub now
+        // (docs/design.md, "Losing the phone").
+        if await away?.hub == id {
+            try await setPhoneHub(true)
+        } else {
+            await restartSync()
+        }
     }
 
     /// Passes a changed group to the parts that run with it.
@@ -682,8 +688,64 @@ final class LiveGroup: GroupController {
     func hubStatus() async -> AppModel.Hub? {
         guard let hub, state?.isAdmin == true else { return nil }
         let (status, error) = hub.status(paused: !foreground)
-        return AppModel.Hub(on: hub.isOn, status: status, error: error, forwarder: hub.forwarder,
-                            home: hub.isHome(network), clients: hub.clients.count)
+        var h = AppModel.Hub(on: hub.isOn, status: status, error: error, forwarder: hub.forwarder,
+                             home: hub.isHome(network), clients: hub.clients.count)
+        if hub.isOn, hub.forwarder != nil {
+            let movable = computers.filter { $0.online && $0.role == "full" && ($0.admin || $0.canMakeAdmin) }
+            h.computers = movable.map { .init(id: $0.id, name: $0.name) }
+            if !UserDefaults.standard.bool(forKey: Self.keepsPhoneHubKey),
+               let s = movable.first(where: { Self.alwaysOn.contains($0.device?.form ?? "") }) {
+                h.suggested = .init(id: s.id, name: s.name)
+            }
+        }
+        return h
+    }
+
+    /// The default that records the user's choice to keep this phone as
+    /// the hub when the app suggested a computer (docs/design.md, "Moving
+    /// the hub to a computer").
+    static let keepsPhoneHubKey = "KeepsPhoneHub"
+
+    /// The forms of devices that are always on, as their hellos state them.
+    private static let alwaysOn: Set<String> = ["desktop", "server", "board", "router"]
+
+    /// Makes a connected admin computer the group's hub in place of this
+    /// phone (docs/protocol.md, section 11, "Moving the hub"): a hub command
+    /// signed with this phone's root or admin key after Face ID hands it the
+    /// clients' keys and the forwarder; the clients connected now get its
+    /// offer from this phone, which then stops being the hub and becomes
+    /// its client. A computer that is no admin yet becomes one first, on
+    /// the root.
+    func moveHub(to id: String) async throws {
+        guard let hub, hub.isOn, let fw = hub.forwarder else { throw HubOnPhone.Failure.notRunning }
+        guard let node else { throw MemberNode.Failure.notConnected }
+        if state?.records.mayHost(id) != true { try await makeAdmin(id) }
+        let ca = try await caSigner(reason: String(localized: "Move the hub to a computer", bundle: .app))
+        guard let g = state, let away else { return }
+        // This phone is the new hub's client from now on, with a key of its own.
+        let wasOn = await away.isOn
+        if !wasOn { try await away.turnOn() }
+        guard let key = await away.publicKey else { throw HubOnPhone.Failure.notRunning }
+        var psk = Data(count: 32)
+        let ok = psk.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        guard ok == errSecSuccess else { throw HubOnPhone.Failure.notRunning }
+        let clients = hub.handover + [PhoneHub.Client(device: g.device, key: key, psk: psk)]
+        let offer: Member.TunnelOffer
+        do {
+            let c = try g.hubCommand(to: id, forwarder: (fw.endpoint, fw.pin), clients: clients, caSigner: ca, now: Date())
+            let r = try await node.command(c, to: id, timeout: 20)
+            guard r.done, let o = r.tunnel else { throw CommandRefused(reason: r.reason ?? r.status) }
+            offer = o
+        } catch {
+            if !wasOn { try? await away.turnOff() }
+            throw error
+        }
+        await node.sendTunnel { hub.movedOffer(device: $0, newHub: id, offer: offer) }
+        // The clients that came through the tunnel get the offer before it closes.
+        try? await Task.sleep(for: .seconds(2))
+        try hub.turnOff()
+        await away.keep(from: id, offer: offer.with(psk: psk, hub: nil))
+        await restartSync()
     }
 
     /// Tells the group the app came to the front or went to the background;

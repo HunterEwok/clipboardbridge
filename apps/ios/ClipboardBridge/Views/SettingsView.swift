@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var model: AppModel
     @State private var switching = false
+    @State private var moving: AppModel.Hub.Target?
     @State private var forwarderAddress = ""
     @State private var forwarderKey = ""
     /// Taps on the version; seven show the error details switch, as
@@ -47,6 +48,9 @@ struct SettingsView: View {
                 hubSection(hub)
                 if hub.on, hub.status == .registered {
                     inviteSection
+                }
+                if !hub.computers.isEmpty {
+                    moveHubSection(hub)
                 }
             }
             if let away = model.away, model.hub?.on != true {
@@ -92,6 +96,40 @@ struct SettingsView: View {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// Moving the hub to a computer (docs/design.md, "Moving the hub to a
+    /// computer"): the suggestion of one that is always on, once, and a
+    /// button for each computer the hub can move to, each asking first.
+    private func moveHubSection(_ hub: AppModel.Hub) -> some View {
+        Section {
+            if let s = hub.suggested {
+                Text("\(s.name) is always on. Make it the hub, so that sync away from home works while this app is closed?")
+                Button { moving = s } label: { Text("Make it the hub") }
+                Button { Task { await model.keepPhoneHub() } } label: { Text("Keep this phone") }
+            }
+            ForEach(hub.computers.filter { $0 != hub.suggested }) { c in
+                Button { moving = c } label: { Text("Make \(c.name) the hub") }
+            }
+        } header: {
+            Text("Move the hub to a computer")
+        } footer: {
+            Text("A computer that is always on keeps sync away from home working while this app is closed. The devices that reach this phone from afar move with it.")
+        }
+        .listRowBackground(palette.surface)
+        .alert(Text("Make \(moving?.name ?? "") the hub?"), isPresented: Binding(
+            get: { moving != nil }, set: { if !$0 { moving = nil } }
+        )) {
+            Button {
+                if let c = moving {
+                    Task { await model.moveHub(to: c.id) }
+                }
+                moving = nil
+            } label: { Text("Move the hub") }
+            Button(role: .cancel) { moving = nil } label: { Text("Cancel") }
+        } message: {
+            Text("The devices that reach this phone from afar move to \(moving?.name ?? ""), and this phone becomes its client. Sync away from home must be on there (cbb global on).")
         }
     }
 

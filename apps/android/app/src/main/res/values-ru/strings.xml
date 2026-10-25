@@ -217,4 +217,17 @@
     <string name="invite_expired">Срок приглашения истёк, им никто не воспользовался.</string>
     <string name="invite_too_many">Приглашение закрыто после трёх неудачных попыток. Создайте новое.</string>
     <string name="invite_no_hub">Для приглашения хаб должен быть зарегистрирован у форвардера. Проверьте форвардер выше.</string>
+    <string name="reason_move_hub">Перенести хаб на компьютер</string>
+    <string name="hub_move_title">Перенести хаб на компьютер</string>
+    <string name="hub_move_body">Компьютер, который всегда включён, держит синхронизацию вне дома, пока приложение закрыто. Устройства, которые подключаются к этому телефону издалека, переходят вместе с хабом.</string>
+    <string name="hub_move_to">Сделать хабом %1$s</string>
+    <string name="hub_suggest">%1$s всегда включён. Сделать его хабом, чтобы синхронизация вне дома работала, пока приложение закрыто?</string>
+    <string name="hub_suggest_yes">Сделать хабом</string>
+    <string name="hub_suggest_keep">Оставить телефон</string>
+    <string name="hub_move_confirm_title">Сделать хабом %1$s?</string>
+    <string name="hub_move_confirm_body">Устройства, которые подключаются к этому телефону издалека, перейдут на %1$s, а телефон станет его клиентом. Там должна быть включена синхронизация вне дома (cbb global on).</string>
+    <string name="hub_move_confirm">Перенести хаб</string>
+    <string name="hub_moved">Теперь хаб — компьютер; телефон подключается к нему издалека.</string>
+    <string name="hub_move_refused">Компьютер не стал хабом.</string>
+    <string name="hub_move_not_running">Хаб можно перенести, только пока он работает с форвардером.</string>
 </resources>

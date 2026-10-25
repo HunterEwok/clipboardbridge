@@ -97,6 +97,10 @@ class AppModel(private val app: Context) {
         val background: Boolean = false,
         val home: Boolean = false,
         val clients: Int = 0,
+        /** The connected computers the hub can move to: admins, or computers the root can make admins; by ID, with their names. */
+        val computers: List<Pair<String, String>> = emptyList(),
+        /** The computer that is always on which the app suggests as the hub, unless the user chose to keep the phone. */
+        val suggested: Pair<String, String>? = null,
     )
 
     var hub by mutableStateOf<Hub?>(null)
@@ -286,6 +290,12 @@ class AppModel(private val app: Context) {
                     h.isOn, status,
                     error?.let { Note(R.string.hub_failed, if (settings.showsErrorDetails) it else null, error = true) },
                     h.forwarder, h.background, group.onHomeNetwork, h.clients.size,
+                    computers = if (h.isOn && h.forwarder != null) {
+                        group.computers.filter { it.online && it.role == "full" && (it.admin || it.canMakeAdmin) }.map { it.id to it.name }
+                    } else {
+                        emptyList()
+                    },
+                    suggested = group.suggestedHub?.takeIf { h.forwarder != null && !settings.keepsPhoneHub }?.let { it.id to it.name },
                 )
             }
         }
@@ -294,6 +304,36 @@ class AppModel(private val app: Context) {
 
     /** Makes this phone the group's hub, or stops it being the hub. */
     suspend fun setHub(on: Boolean) = hubChange { group.setPhoneHub(on) }
+
+    /**
+     * Makes a connected computer the hub in place of this phone
+     * (docs/protocol.md, section 11, "Moving the hub"); the reason it
+     * refused, if it does, shows under the message.
+     */
+    suspend fun moveHub(id: String) {
+        hubNote = try {
+            group.moveHub(id)
+            Note(R.string.hub_moved)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LiveGroup.CommandRefused) {
+            Log.e(TAG, app.getString(R.string.hub_move_refused), e)
+            Note(R.string.hub_move_refused, e.reason, error = true)
+        } catch (e: HubOnPhone.NotRunning) {
+            describe(e, R.string.hub_move_not_running)
+        } catch (e: MemberNode.ProtocolException) {
+            describe(e, R.string.error_no_answer)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /** Keeps this phone as the hub: the app no longer suggests a computer. */
+    suspend fun keepPhoneHub() {
+        settings.keepsPhoneHub = true
+        update()
+    }
 
     /** Sets the hub's forwarder; both empty for a hub at home only. */
     suspend fun setForwarder(address: String, pin: String) = hubChange {

@@ -1299,8 +1299,8 @@ and then syncs at home only ("Through the tunnel" below).
   admin CA in its verified chain), with the hub's device ID. The record that makes the peer
   the root or an admin must name the key of the certificate it presented, not only its
   device ID, and never the role its hello claims. Once it keeps one, it ignores offers from
-  any other device until it turns sync away from home off and on again; a new offer from the
-  same hub replaces the old one. An offer that does not decode is ignored and changes
+  any other device until it turns sync away from home off and on again, unless the hub moved
+  ("Moving the hub" below); a new offer from the same hub replaces the old one. An offer that does not decode is ignored and changes
   nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
@@ -1317,6 +1317,45 @@ and then syncs at home only ("Through the tunnel" below).
   No signed record binds the key: the member certificate already does.
 - A member that moves to another group turns sync away from home off: it deletes
   `tunnel.json` (whose `group` names the old group), and the user turns it on again.
+
+### Moving the hub
+
+The hub, a computer or a phone, hands its role to an admin computer ([design.md](design.md),
+"The phone as the hub"): `cbb global move DEVICE [-forwarder ADDR -forwarder-key KEY]
+[address:port...]` on a computer, "Move the hub to a computer" in both apps. Implemented in
+Go (`internal/service/movehub.go`), both kits (`Commands.hub`, `PhoneHub.movedOffer`) and
+both apps; `TestMoveHub` moves a hub with a client away from home.
+
+1. The old hub sends the new one a `hub` command (section 15) with the new hub's forwarder
+   and addresses, by default its own forwarder, and every client it keeps: device ID, public
+   key and preshared key. It includes itself, with a key it made for this.
+2. The new hub must be an admin with sync away from home on and without a relay; it refuses
+   otherwise. It becomes the hub with that forwarder and those addresses, takes each client
+   whose device its records list, with the keys it was given and no certificate chain yet,
+   and answers `done` with its offer (`tunnel` in the result, without `psk`). A client
+   without a chain stays while the records list its device; its chain is filled in on its
+   first hello.
+3. The old hub sends each client connected to it the new hub's offer with that client's own
+   preshared key and `hub`, the new hub's device ID. After 2 s it stops being the hub and
+   becomes the new hub's client with its own key.
+
+A client that keeps hub K takes an offer naming hub N, from the offer's `hub` or else from
+the sender, when N is not the client itself and the records alone make N the root or an
+admin, and one of these holds:
+
+- N is K (the rules above);
+- K sent it and N is another device: the kept hub passed it on;
+- its `psk` is the client's kept preshared key, which only the old hub and the hub it
+  handed the client to know;
+- the records no longer make K the root or an admin, as after a takeover (section 10).
+
+The client keeps the offer without `hub`. A client that was away from home and not
+connected at the move finds the new hub by the third rule on its next connection at home,
+or with a fresh offer once the old hub is no admin. Go, both kits and the lite member apply
+these rules (`takesOffer`, `takes_offer`, `TunnelOffer.takes`).
+
+When an admin phone takes the group over from a lost root phone that was the hub, it turns
+its own hub on; the clients take its offer by the last rule.
 
 ### Obfuscation
 
@@ -1727,8 +1766,9 @@ which a hub would not let out; what the devices send each other it cannot read.
 ## 15. Commands
 
 An admin orders one member to do something with a **command**: signed like a record (section
-10) and never stored. The only one so far is `mode`, which sets the receiver's sync mode
-(design.md, "Sync modes"); the remote paste of 0.6 will be another.
+10) and never stored. `mode` sets the receiver's sync mode (design.md, "Sync modes"); `hub`
+makes the receiver the group's hub (section 11, "Moving the hub"); the remote paste of 0.6
+will be another.
 
 ### The command
 
@@ -1737,7 +1777,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `v` | integer | `1` |
-| `type` | string | `mode` |
+| `type` | string | `mode` or `hub` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
@@ -1745,6 +1785,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send` |
+| `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
 or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
@@ -1759,8 +1800,9 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 The sender sends the command on its own connection to the receiver, which answers with a
 `result`: its `id` is the command's, its `status` `done`, `refused` (the receiver does not take
 it) or `failed` (it took it and could not carry it out), and `reason` says why for the last
-two. A member without commands, such as one before 0.5, ignores the message, so the sender
-gives up after 10 s.
+two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
+commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
+(20 s for `hub`).
 
 The receiver takes a command only when:
 
@@ -1772,6 +1814,6 @@ The receiver takes a command only when:
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
   until they expire (at most 4096 at a time).
 
-A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
+A body is at most 64 KiB. A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
 and logs who sent it.
 

@@ -118,6 +118,15 @@ class Settings(context: Context) {
         get() = if (prefs.contains(ERROR_DETAILS)) prefs.getBoolean(ERROR_DETAILS, false) else debuggable
         set(v) = prefs.edit().putBoolean(ERROR_DETAILS, v).apply()
 
+    /**
+     * Whether the user chose to keep this phone as the hub when the app
+     * suggested a computer that is always on (docs/design.md, "Moving the
+     * hub to a computer"): the app then does not suggest it again.
+     */
+    var keepsPhoneHub: Boolean
+        get() = prefs.getBoolean("keepsPhoneHub", false)
+        set(v) = prefs.edit().putBoolean("keepsPhoneHub", v).apply()
+
     /** Whether seven taps on the version showed the error details switch in Settings. */
     var errorDetailsSwitch: Boolean
         get() = prefs.getBoolean("errorDetailsSwitch", false)

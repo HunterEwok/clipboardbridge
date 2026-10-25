@@ -20,6 +20,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   hub is registered with its forwarder, shares its file, and asks whether to admit the
   device that uses it, by its fingerprint, which `cbb pair -invite` shows too
   (docs/protocol.md, section 12).
+- Moving the hub to an admin computer: `cbb global move DEVICE` on a computer that is the
+  hub, and "Move the hub to a computer" in Settings on a phone that is the hub, which
+  suggests a computer that is always on and makes it an admin first if it is not one. The
+  old hub hands over its clients' keys in a signed command and passes the new hub's offer to
+  its connected clients, so devices far away follow without coming home; the old hub then
+  becomes a client. An admin phone that takes the group over from a lost root phone that was
+  the hub becomes the hub (docs/protocol.md, section 11).
 - A client away from home tries a phone hub at least every 5 s, since it is there only while
   its app is open; a computer hub is still tried up to every 30 s. In `cbb`, the lite member
   and both phone apps.

@@ -195,8 +195,13 @@ public enum Member {
         public var id: String
         public var status: String
         public var reason: String?
+        /// In the result of a hub command, the new hub's offer without a
+        /// preshared key (section 11, "Moving the hub").
+        public var tunnel: TunnelOffer?
 
-        public init(id: String, status: String, reason: String? = nil) { (self.id, self.status, self.reason) = (id, status, reason) }
+        public init(id: String, status: String, reason: String? = nil, tunnel: TunnelOffer? = nil) {
+            (self.id, self.status, self.reason, self.tunnel) = (id, status, reason, tunnel)
+        }
 
         public var done: Bool { status == "done" }
     }
@@ -248,15 +253,44 @@ public enum Member {
         public var endpoints: [String]
         public var obfuscation: Obfuscation?
         public var vless: VLESS?
+        /// In an offer the hub passes on when it hands the hub over, the
+        /// device that is the hub now (section 11, "Moving the hub"); nil
+        /// when the sender is the hub.
+        public var hub: String?
 
-        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil) {
-            (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless) = (hubKey, psk, endpoints, obfuscation, vless)
+        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil, hub: String? = nil) {
+            (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless, self.hub) = (hubKey, psk, endpoints, obfuscation, vless, hub)
         }
 
         /// Whether both keys are 32 bytes, as a tunnel needs.
         public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
 
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless }
+        /// The same offer with another preshared key and hub.
+        public func with(psk: Data, hub: String?) -> TunnelOffer {
+            var o = self
+            (o.psk, o.hub) = (psk, hub)
+            return o
+        }
+
+        /// Whether a client that keeps the offer of the hub kept, with the
+        /// preshared key keptPSK, takes an offer for the hub hub that from
+        /// sent with the preshared key psk, as Go's takesOffer (section 11,
+        /// "Moving the hub"): from the kept hub, or for another hub when
+        /// the kept hub passed it on, when it carries the preshared key the
+        /// kept hub gave (the kept hub handed its clients over), or when
+        /// the kept hub is no longer the root or an admin (keptAdmin false),
+        /// as after a takeover.
+        public static func takes(kept: String?, keptPSK: Data?, from: String, hub: String, psk: Data, keptAdmin: Bool) -> Bool {
+            guard let kept, kept != hub else { return true }
+            let moved = hub != from && kept == from
+            var handed = false
+            if let keptPSK, keptPSK.count == psk.count {
+                handed = zip(keptPSK, psk).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+            }
+            return moved || handed || !keptAdmin
+        }
+
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -265,6 +299,7 @@ public enum Member {
             endpoints = try c.decodeIfPresent([String].self, forKey: .endpoints) ?? []
             obfuscation = try c.decodeIfPresent(Obfuscation.self, forKey: .obfuscation)
             vless = try c.decodeIfPresent(VLESS.self, forKey: .vless)
+            hub = try c.decodeIfPresent(String.self, forKey: .hub)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -274,6 +309,7 @@ public enum Member {
             if !endpoints.isEmpty { try c.encode(endpoints, forKey: .endpoints) }
             try c.encodeIfPresent(obfuscation, forKey: .obfuscation)
             try c.encodeIfPresent(vless, forKey: .vless)
+            try c.encodeIfPresent(hub, forKey: .hub)
         }
     }
 

@@ -120,6 +120,16 @@ public final class PhoneHub: @unchecked Sendable {
         return offer(for: admitted.client)
     }
 
+    /// The offer the client device gets when the hub moves to newHub,
+    /// whose offer without a preshared key is offer (a hub command's
+    /// result): with the client's own preshared key and newHub named
+    /// (docs/protocol.md, section 11, "Moving the hub"); nil for a device
+    /// that is no client, or newHub itself.
+    public func movedOffer(device: String, newHub: String, offer: Member.TunnelOffer) -> Member.TunnelOffer? {
+        guard device != newHub, let c = clients.first(where: { $0.device == device }) else { return nil }
+        return offer.with(psk: c.psk, hub: newHub)
+    }
+
     /// Forgets the clients keep refuses, removed devices for one, and
     /// returns their devices.
     @discardableResult

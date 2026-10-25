@@ -161,6 +161,16 @@ public final class HubOnPhone: @unchecked Sendable {
     /// The clients' devices, for the screens.
     public var clients: [String] { lock.withLock { hub?.clients.map(\.device) ?? [] } }
 
+    /// The clients with their keys, which a hub command hands to the new
+    /// hub (docs/protocol.md, section 11, "Moving the hub").
+    public var handover: [PhoneHub.Client] { lock.withLock { hub?.clients ?? [] } }
+
+    /// The offer the client device gets when the hub moves to newHub, as
+    /// PhoneHub.movedOffer.
+    public func movedOffer(device: String, newHub: String, offer: Member.TunnelOffer) -> Member.TunnelOffer? {
+        lock.withLock { hub }?.movedOffer(device: device, newHub: newHub, offer: offer)
+    }
+
     private func phoneHub(_ s: HubState) -> PhoneHub? {
         do {
             let h = PhoneHub(publicKey: try tunnels.publicKey(s.key), clients: s.clients)

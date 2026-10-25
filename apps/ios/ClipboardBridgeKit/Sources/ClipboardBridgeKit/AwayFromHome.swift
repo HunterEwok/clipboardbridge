@@ -128,12 +128,21 @@ public actor AwayFromHome {
 
     /// Keeps the offer a peer, the group's hub, sent for this phone's key.
     /// Only the group's root or an admin may be the hub, and once a hub is
-    /// kept, offers from another device are ignored: the hub changes only
-    /// when the user turns sync away from home off and on again.
-    public func keep(from: String?, offer: Member.TunnelOffer) {
-        guard let from, offer.isValid, var s = state, s.hub == nil || s.hub == from, s.hub != from || s.offer != offer,
-              mayHost(from) else { return }
-        s.hub = from
+    /// kept, offers for another hub are ignored until the hub moves
+    /// (docs/protocol.md, section 11, "Moving the hub"): the kept hub
+    /// passes on the new hub's offer, another hub's offer carries the
+    /// preshared key the kept hub gave, or the kept hub is no longer the
+    /// root or an admin. Otherwise the hub changes only when the user turns
+    /// sync away from home off and on again.
+    public func keep(from: String?, offer received: Member.TunnelOffer) {
+        guard let from, received.isValid, mayHost(from), var s = state else { return }
+        let hub = received.hub ?? from
+        guard hub != device, mayHost(hub) else { return }
+        let offer = received.with(psk: received.psk, hub: nil)
+        guard Member.TunnelOffer.takes(kept: s.hub, keptPSK: s.offer?.psk, from: from, hub: hub, psk: offer.psk,
+                                       keptAdmin: s.hub.map(mayHost) ?? true),
+              s.hub != hub || s.offer != offer else { return }
+        s.hub = hub
         s.offer = offer
         state = s
         // A new preshared key or new endpoints: start again with them.
@@ -141,6 +150,9 @@ public actor AwayFromHome {
         poke()
         do { try save(s) } catch { log("cannot keep the hub's offer", error) }
     }
+
+    /// The hub whose offer this phone keeps; nil without one.
+    public var hub: String? { state?.hub }
 
     /// Starts the loop that reaches the hub through the tunnel while it is
     /// away.

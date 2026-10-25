@@ -245,6 +245,16 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
     }
 
+    /// A hub command that makes the admin computer to the group's hub in
+    /// place of this phone (section 11, "Moving the hub"), signed with this
+    /// phone's root or admin key, with the hub's clients and its forwarder.
+    public func hubCommand(to device: String, forwarder: (endpoint: String, pin: String)?, clients: [PhoneHub.Client],
+                           caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin, records.mayHost(device) else { throw Failure.notAdmin }
+        return try Commands.hub(to: device, forwarder: forwarder, clients: clients.filter { $0.device != device }, group: tag, by: self.device,
+                                now: now, signer: caSigner, adminCA: adminCA)
+    }
+
     /// Removes a device from the group: signs a revocation of its key,
     /// which every member then refuses, and returns the record to send. For
     /// an admin phone it revokes its admin key too and keeps the devices

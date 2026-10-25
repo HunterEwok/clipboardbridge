@@ -195,7 +195,8 @@ final class AwayFromHomeTests: XCTestCase {
         let t = tunnels.started[0]
         // The same offer again changes nothing, nor does another admin's; a new one closes the tunnel and starts with it.
         await a.keep(from: hub, offer: offer)
-        await a.keep(from: "dddddddddddddddddddddddddddddddd", offer: Member.TunnelOffer(hubKey: offer.hubKey, psk: offer.psk, endpoints: ["203.0.113.7:8764"]))
+        await a.keep(from: "dddddddddddddddddddddddddddddddd",
+                     offer: Member.TunnelOffer(hubKey: offer.hubKey, psk: Data(repeating: 4, count: 32), endpoints: ["203.0.113.7:8764"]))
         XCTAssertFalse(t.closed)
         await a.keep(from: hub, offer: Member.TunnelOffer(hubKey: offer.hubKey, psk: offer.psk, endpoints: ["198.51.100.9:8764"]))
         XCTAssertTrue(t.closed)
@@ -204,6 +205,40 @@ final class AwayFromHomeTests: XCTestCase {
         XCTAssertEqual(tunnels.started[1].first, "198.51.100.9:8764")
         await a.stop()
         try await eventually("stopped") { await a.status == .off }
+    }
+
+    /// The hub moves: the kept hub passes on the new hub's offer, or the
+    /// new hub knows the kept preshared key (docs/protocol.md, section 11).
+    func testFollowsTheHubWhenItMoves() async throws {
+        let pc = "dddddddddddddddddddddddddddddddd"
+        let admins = Box<Set<String>>([hub, pc])
+        let a = AwayFromHome(
+            device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: FakeTunnels(),
+            state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
+            atHome: { _ in true }, dial: { _, _ in Pipe() }, serve: { _, _ in },
+            mayHost: { admins.current.contains($0) })
+        let pcOffer = Member.TunnelOffer(hubKey: Data(repeating: 5, count: 32), psk: Data(repeating: 6, count: 32), endpoints: ["203.0.113.5:8764"])
+        // Another admin's own offer is ignored while the hub stays.
+        await a.keep(from: pc, offer: pcOffer)
+        var kept = await a.hub
+        XCTAssertEqual(kept, hub)
+        // The hub passes on the computer's offer: the phone follows.
+        await a.keep(from: hub, offer: pcOffer.with(psk: offer.psk, hub: pc))
+        kept = await a.hub
+        XCTAssertEqual(kept, pc)
+        // Moved back by the preshared key: the old hub knows it.
+        await a.keep(from: hub, offer: offer)
+        kept = await a.hub
+        XCTAssertEqual(kept, hub)
+        // A hub that is no admin any more gives way, as after a takeover.
+        admins.set([pc])
+        await a.keep(from: pc, offer: pcOffer)
+        kept = await a.hub
+        XCTAssertEqual(kept, pc)
+        // An offer naming a device that is no admin is ignored.
+        await a.keep(from: pc, offer: pcOffer.with(psk: pcOffer.psk, hub: "cccccccccccccccccccccccccccccccc"))
+        kept = await a.hub
+        XCTAssertEqual(kept, pc)
     }
 
     /// A phone hub, there only while its app is open, is tried every few

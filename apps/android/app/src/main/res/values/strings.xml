@@ -220,4 +220,17 @@
     <string name="invite_expired">The invitation expired without being used.</string>
     <string name="invite_too_many">The invitation closed after three failed attempts. Make a new one.</string>
     <string name="invite_no_hub">An invitation needs the hub registered with its forwarder. Check the forwarder above.</string>
+    <string name="reason_move_hub">Move the hub to a computer</string>
+    <string name="hub_move_title">Move the hub to a computer</string>
+    <string name="hub_move_body">A computer that is always on keeps sync away from home working while this app is closed. The devices that reach this phone from afar move with it.</string>
+    <string name="hub_move_to">Make %1$s the hub</string>
+    <string name="hub_suggest">%1$s is always on. Make it the hub, so that sync away from home works while this app is closed?</string>
+    <string name="hub_suggest_yes">Make it the hub</string>
+    <string name="hub_suggest_keep">Keep this phone</string>
+    <string name="hub_move_confirm_title">Make %1$s the hub?</string>
+    <string name="hub_move_confirm_body">The devices that reach this phone from afar move to %1$s, and this phone becomes its client. Sync away from home must be on there (cbb global on).</string>
+    <string name="hub_move_confirm">Move the hub</string>
+    <string name="hub_moved">The computer is the hub now; this phone reaches it from afar.</string>
+    <string name="hub_move_refused">The computer did not become the hub.</string>
+    <string name="hub_move_not_running">The hub can move only while it runs with a forwarder.</string>
 </resources>

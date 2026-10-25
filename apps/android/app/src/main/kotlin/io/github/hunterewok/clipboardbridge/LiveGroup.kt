@@ -26,6 +26,7 @@ import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
 import io.github.hunterewok.clipboardbridge.kit.PairingMember
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
+import io.github.hunterewok.clipboardbridge.kit.PhoneHub
 import io.github.hunterewok.clipboardbridge.kit.RecordStore
 import io.github.hunterewok.clipboardbridge.kit.SyncEngine
 import io.github.hunterewok.clipboardbridge.kit.TLSListener
@@ -35,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -45,6 +47,7 @@ import java.io.IOException
 import java.net.Inet4Address
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.security.SecureRandom
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -647,6 +650,59 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Makes a connected admin computer the group's hub in place of this
+     * phone (docs/protocol.md, section 11, "Moving the hub"): a hub command
+     * signed with this phone's root or admin key hands it the clients' keys
+     * and the forwarder; the clients connected now get its offer from this
+     * phone, which then stops being the hub and becomes its client. A
+     * computer that is no admin yet becomes one first, on the root.
+     */
+    suspend fun moveHub(id: String) {
+        val h = phoneHub?.takeIf { it.isOn } ?: throw HubOnPhone.NotRunning()
+        val fw = h.forwarder ?: throw HubOnPhone.NotRunning()
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        if (copyOfState()?.records?.mayHost(id) != true) makeAdmin(id)
+        val ca = caSigner(R.string.reason_move_hub)
+        val g = copyOfState() ?: return
+        val a = awayFromHome ?: return
+        // This phone is the new hub's client from now on, with a key of its own.
+        val wasOn = a.isOn
+        if (!wasOn) a.turnOn()
+        val key = a.publicKey ?: throw HubOnPhone.NotRunning()
+        val psk = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val clients = h.handover + PhoneHub.Client(g.device, key, psk)
+        val r = try {
+            withContext(Dispatchers.IO) { n.command(id, g.hubCommand(id, fw.endpoint to fw.pin, clients, ca, Instant.now()), MOVE_TIMEOUT_MS) }
+        } catch (e: Exception) {
+            if (!wasOn) a.turnOff()
+            throw e
+        }
+        val offer = r.tunnel?.takeIf { r.done }
+        if (offer == null) {
+            if (!wasOn) a.turnOff()
+            throw CommandRefused(r.reason ?: r.status)
+        }
+        n.sendTunnel { dev -> h.movedOffer(dev, id, offer) }
+        // The clients that came through the tunnel get the offer before it closes.
+        delay(MOVE_GRACE_MS)
+        h.turnOff()
+        a.keep(id, offer.with(psk, null))
+        withContext(Dispatchers.IO) { restartSync() }
+    }
+
+    /**
+     * The connected computer this phone, the hub, suggests as the hub
+     * (docs/design.md, "Moving the hub to a computer"): one that is always
+     * on by its hello's form (a desktop, a server, a board or a router) and
+     * that is an admin or can be made one here; null without one.
+     */
+    val suggestedHub: Device?
+        get() {
+            if (phoneHub?.isOn != true) return null
+            return computers.firstOrNull { it.online && it.role == "full" && it.device?.form in ALWAYS_ON && (it.admin || it.canMakeAdmin) }
+        }
+
+    /**
      * Makes a computer an admin (docs/protocol.md, section 10, "A computer
      * as admin"): the root key certifies the admin key the computer offers;
      * the computer gets its admin CA and every member the new record.
@@ -680,7 +736,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         } ?: return
         currentNode?.sendRecords(rs)
         currentNode?.close(id)
-        withContext(Dispatchers.IO) { restartSync() }
+        // The lost phone was the hub: this phone is the hub now (docs/design.md, "Losing the phone").
+        val wasHub = awayFromHome?.hub == id
+        withContext(Dispatchers.IO) { if (wasHub) setPhoneHub(true) else restartSync() }
     }
 
     // Syncing
@@ -937,6 +995,15 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     companion object {
         private const val TAG = "clipboardbridge"
+
+        /** The forms of devices that are always on, as their hellos state them. */
+        private val ALWAYS_ON = setOf("desktop", "server", "board", "router")
+
+        /** How long a hub command may take: the computer starts its hub before it answers. */
+        private const val MOVE_TIMEOUT_MS = 20_000L
+
+        /** How long the old hub waits, after it passed on the new hub's offer, before it stops, as Go's moveGrace. */
+        private const val MOVE_GRACE_MS = 2_000L
 
         /** How long a member that browsing finds counts as at home without a connection to it. */
         private const val NEAR_GRACE_MS = 30_000L

@@ -188,6 +188,13 @@ class HubOnPhone(
     /** The clients' devices, for the screens. */
     val clients: List<String> get() = synchronized(lock) { hub?.clients.orEmpty().map { it.device } }
 
+    /** The clients with their keys, which a hub command hands to the new hub (docs/protocol.md, section 11, "Moving the hub"). */
+    val handover: List<PhoneHub.Client> get() = synchronized(lock) { hub?.clients.orEmpty() }
+
+    /** The offer the client device gets when the hub moves to newHub, as PhoneHub.movedOffer. */
+    fun movedOffer(device: String, newHub: String, offer: Member.TunnelOffer): Member.TunnelOffer? =
+        synchronized(lock) { hub }?.movedOffer(device, newHub, offer)
+
     private fun phoneHub(s: HubState): PhoneHub? = runCatching {
         PhoneHub(tunnels.publicKey(s.key), s.clients).also { h -> s.forwarder?.let { h.endpoints = listOf(it.endpoint) } }
     }.onFailure { log("cannot make the hub", it) }.getOrNull()

@@ -229,6 +229,9 @@ class AwayFromHome(
 
     val isOn: Boolean get() = synchronized(lock) { state != null }
 
+    /** The hub whose offer this phone keeps; null without one. */
+    val hub: String? get() = synchronized(lock) { state?.hub }
+
     /** The public key the hellos offer the hub; null while it is off. */
     val publicKey: ByteArray?
         get() = synchronized(lock) { state?.key }?.let { runCatching { tunnels.publicKey(it) }.getOrNull() }
@@ -256,16 +259,23 @@ class AwayFromHome(
     /**
      * Keeps the offer a peer, the group's hub, sent for this phone's key.
      * Only the group's root or an admin may be the hub, and once a hub is
-     * kept, offers from another device are ignored: the hub changes only
-     * when the user turns sync away from home off and on again.
+     * kept, offers for another hub are ignored until the hub moves
+     * (docs/protocol.md, section 11, "Moving the hub"): the kept hub passes
+     * on the new hub's offer, another hub's offer carries the preshared key
+     * the kept hub gave, or the kept hub is no longer the root or an admin.
+     * Otherwise the hub changes only when the user turns sync away from
+     * home off and on again.
      */
-    fun keep(from: String?, offer: Member.TunnelOffer) {
-        if (from == null || !offer.isValid || !mayHost(from)) return
+    fun keep(from: String?, received: Member.TunnelOffer) {
+        if (from == null || !received.isValid || !mayHost(from)) return
+        val hub = received.hub ?: from
+        if (hub == device || !mayHost(hub)) return
+        val offer = received.with(received.psk, null)
         val next = synchronized(lock) {
             val s = state ?: return
-            if (s.hub != null && s.hub != from) return
-            if (s.hub == from && s.offer == offer) return
-            s.withOffer(from, offer).also {
+            if (!Member.TunnelOffer.takes(s.hub, s.offer?.psk, from, hub, offer.psk, s.hub?.let(mayHost) ?: true)) return
+            if (s.hub == hub && s.offer == offer) return
+            s.withOffer(hub, offer).also {
                 state = it
                 // A new preshared key or new endpoints: start again with them.
                 closeTunnelLocked()

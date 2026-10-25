@@ -180,6 +180,20 @@ public actor MemberNode {
         return try await w.wait()
     }
 
+    /// Sends each connected member the offer offerFor returns for it, the
+    /// old hub passing on the new hub's offer (section 11, "Moving the
+    /// hub"), and returns the members that got one.
+    @discardableResult
+    public func sendTunnel(_ offerFor: @Sendable (String) -> Member.TunnelOffer?) -> [String] {
+        var sent: [String] = []
+        for c in conns.values {
+            guard let p = c.peer, c.peerRole != nil, let o = offerFor(p) else { continue }
+            c.enqueue(.tunnel(o))
+            sent.append(p)
+        }
+        return sent
+    }
+
     /// Sends a computer the admin CA the root issued for it.
     public func send(adminCA: Data, to peer: String) {
         for c in conns.values where c.peer == peer && c.peerRole != nil { c.enqueue(.admin(adminCA)) }

@@ -639,10 +639,50 @@ private fun HubSection(model: AppModel, hub: AppModel.Hub) {
                     Switch(checked = hub.background, onCheckedChange = null, enabled = !busy)
                 }
                 if (hub.status == HubOnPhone.Status.REGISTERED) InviteFromAfar(model)
+                if (hub.computers.isNotEmpty()) MoveHub(model, hub)
             }
             model.hubNote?.let { NoteText(it) }
             Text(stringResource(R.string.hub_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
+    }
+}
+
+/**
+ * Moving the hub to a computer (docs/design.md, "Moving the hub to a
+ * computer"): the suggestion of one that is always on, once, and a button
+ * for each computer the hub can move to, each asking first.
+ */
+@Composable
+private fun MoveHub(model: AppModel, hub: AppModel.Hub) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var asking by remember { mutableStateOf<Pair<String, String>?>(null) }
+    Text(stringResource(R.string.hub_move_title), fontWeight = FontWeight.SemiBold)
+    hub.suggested?.let { s ->
+        Text(stringResource(R.string.hub_suggest, s.second), style = MaterialTheme.typography.bodyMedium)
+        AccentButton(stringResource(R.string.hub_suggest_yes), onClick = { asking = s })
+        QuietButton(stringResource(R.string.hub_suggest_keep), onClick = { scope.launch { model.keepPhoneHub() } })
+    }
+    Text(stringResource(R.string.hub_move_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+    for (c in hub.computers.filter { it != hub.suggested }) {
+        QuietButton(stringResource(R.string.hub_move_to, c.second), onClick = { asking = c })
+    }
+    asking?.let { c ->
+        AlertDialog(
+            onDismissRequest = { asking = null },
+            title = { Text(stringResource(R.string.hub_move_confirm_title, c.second)) },
+            text = { Text(stringResource(R.string.hub_move_confirm_body, c.second)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = null
+                    scope.launch { model.moveHub(c.first) }
+                }) { Text(stringResource(R.string.hub_move_confirm), color = palette.accent) }
+            },
+            dismissButton = { TextButton(onClick = { asking = null }) { Text(stringResource(R.string.cancel)) } },
+            containerColor = palette.surface,
+            titleContentColor = palette.text,
+            textContentColor = palette.textDim,
+        )
     }
 }
 

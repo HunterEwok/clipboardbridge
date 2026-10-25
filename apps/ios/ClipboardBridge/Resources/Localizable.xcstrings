@@ -1923,6 +1923,116 @@
           }
         }
       }
+    },
+    "%@ is always on. Make it the hub, so that sync away from home works while this app is closed?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ всегда включён. Сделать его хабом, чтобы синхронизация вне дома работала, пока приложение закрыто?"
+          }
+        }
+      }
+    },
+    "Make it the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом"
+          }
+        }
+      }
+    },
+    "Keep this phone" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оставить телефон"
+          }
+        }
+      }
+    },
+    "Make %@ the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом %@"
+          }
+        }
+      }
+    },
+    "Move the hub to a computer" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести хаб на компьютер"
+          }
+        }
+      }
+    },
+    "A computer that is always on keeps sync away from home working while this app is closed. The devices that reach this phone from afar move with it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Компьютер, который всегда включён, держит синхронизацию вне дома, пока приложение закрыто. Устройства, которые подключаются к этому телефону издалека, переходят вместе с хабом."
+          }
+        }
+      }
+    },
+    "Make %@ the hub?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом %@?"
+          }
+        }
+      }
+    },
+    "Move the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести хаб"
+          }
+        }
+      }
+    },
+    "The devices that reach this phone from afar move to %@, and this phone becomes its client. Sync away from home must be on there (cbb global on)." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Устройства, которые подключаются к этому телефону издалека, перейдут на %@, а телефон станет его клиентом. Там должна быть включена синхронизация вне дома (cbb global on)."
+          }
+        }
+      }
+    },
+    "The computer is the hub now; this phone reaches it from afar." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Теперь хаб — компьютер; телефон подключается к нему издалека."
+          }
+        }
+      }
+    },
+    "The hub can move only while it runs with a forwarder." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Хаб можно перенести, только пока он работает с форвардером."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

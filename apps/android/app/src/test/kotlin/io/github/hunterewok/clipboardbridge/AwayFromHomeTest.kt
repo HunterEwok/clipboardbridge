@@ -182,6 +182,43 @@ class AwayFromHomeTest {
         }
     }
 
+    /** The hub moves: the kept hub passes on the new hub's offer, or the new hub knows the kept preshared key (docs/protocol.md, section 11). */
+    @Test
+    fun followsTheHubWhenItMoves() {
+        val saved = AtomicReference<AwayState?>(null)
+        val pc = "dddddddddddddddddddddddddddddddd"
+        val admins = mutableSetOf(hub, pc)
+        val a = AwayFromHome(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            FakeTunnels(),
+            load = { AwayState(ByteArray(32) { 1 }).withOffer(hub, offer) },
+            save = { saved.set(it) },
+            atHome = { true },
+            dial = { _, _ -> NoTransport },
+            serve = { _, _ -> },
+            mayHost = { it in admins },
+        )
+        val pcOffer = Member.TunnelOffer(ByteArray(32) { 5 }, ByteArray(32) { 6 }, listOf("203.0.113.5:8764"))
+        // Another admin's own offer is ignored while the hub stays.
+        a.keep(pc, pcOffer)
+        assertNull(saved.get())
+        // The hub passes on the computer's offer: the phone follows, without the hub field.
+        a.keep(hub, pcOffer.with(offer.psk, pc))
+        assertEquals(pc, saved.get()?.hub)
+        assertEquals(Member.TunnelOffer(pcOffer.hubKey, offer.psk, pcOffer.endpoints), saved.get()?.offer)
+        assertEquals(pc, a.hub)
+        // Moved back by the preshared key: the old hub knows it.
+        a.keep(hub, Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints))
+        assertEquals(hub, saved.get()?.hub)
+        // A hub that is no admin any more gives way, as after a takeover.
+        admins.remove(hub)
+        a.keep(pc, pcOffer)
+        assertEquals(pc, saved.get()?.hub)
+        // An offer naming a device that is no admin is ignored.
+        a.keep(pc, pcOffer.with(pcOffer.psk, "cccccccccccccccccccccccccccccccc"))
+        assertEquals(pc, saved.get()?.hub)
+    }
+
     @Test
     fun aNewOfferStartsAgain() {
         val tunnels = FakeTunnels()
@@ -204,7 +241,7 @@ class AwayFromHomeTest {
             eventually("connected") { a.status == AwayFromHome.Status.CONNECTED }
             // The same offer again changes nothing, nor does another admin's; a new one closes the tunnel and starts with it.
             a.keep(hub, offer)
-            a.keep("dddddddddddddddddddddddddddddddd", Member.TunnelOffer(offer.hubKey, offer.psk, listOf("203.0.113.7:8764")))
+            a.keep("dddddddddddddddddddddddddddddddd", Member.TunnelOffer(offer.hubKey, ByteArray(32) { 4 }, listOf("203.0.113.7:8764")))
             assertFalse(t.closed)
             val moved = Member.TunnelOffer(offer.hubKey, offer.psk, listOf("198.51.100.9:8764"))
             a.keep(hub, moved)

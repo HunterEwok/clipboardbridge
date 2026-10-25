@@ -628,9 +628,13 @@ better hub, so the app suggests it when there is one, and the user decides.
    `InvitationWindow`, and in both apps "Invite a device from afar", which shares the file
    and asks the user to confirm the device; tested against `cbb`'s joiner. Still to do:
    using an invitation on a phone or a TV, so that a parent's TV joins.
-6. Moving the hub: the suggestion when a computer that is always on joins, the old hub
-   passing its clients' keys to the new one and its offer to the clients; and the hub moving
-   with an admin phone's takeover.
+6. Done: moving the hub to an admin computer (docs/protocol.md, section 11, "Moving the
+   hub"): the `hub` command with the clients' keys, the old hub passing the new hub's offer
+   to its clients with their own preshared keys, the clients' rules for following it in
+   `cbb`, the lite member and both kits, `cbb global move`, and in both apps "Move the hub
+   to a computer" with the suggestion of a computer that is always on, and the hub moving
+   with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
+   Still to do on the bench: moving from a phone to the deck with the lite member far away.
 7. Several hubs with a priority (D-65, in the plan for 0.5): the hubs' list in the group,
    the clients keeping every hub's offer, the hubs passing each other the clients' keys,
    the lower hub yielding to the higher one, and tests of switching both ways.
