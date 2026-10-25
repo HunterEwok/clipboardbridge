@@ -13,6 +13,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now
   checks the lite member's crates, the Android apps' libraries and the tray app's Go module
   against the OSV advisories on every change.
+- Android: a certificate with a length field near 2 GiB no longer slips past the DER
+  reader's bounds check and throws an unexpected error instead of being refused. Both phone
+  kits now test their certificate checks with thousands of randomly damaged certificates.
 
 ## [0.4.0] - 2026-10-25
 
