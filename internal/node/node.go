@@ -51,7 +51,10 @@ type Config struct {
 	Role     Role
 	Name     string // this device's name, sent in the hello
 	OS       string // this device's operating system (group.OSLinux...), sent in the hello
-	Engine   *clip.Engine
+	// Device is this device's form, versions and MAC address, sent in the
+	// hello for the others to show.
+	Device group.DeviceInfo
+	Engine *clip.Engine
 
 	// OnWrite puts a text into this member's own clipboard. Writes carry
 	// growing sequence numbers; a write with a smaller one than the last
@@ -147,7 +150,10 @@ type Peer struct {
 	Role Role
 	Name string // from its hello; "" when it sent none or an invalid one
 	OS   string // from its hello; "" when it sent none or an unknown one
-	Key  group.KeyHash
+	// Device is what its hello says about its device, its invalid fields
+	// dropped.
+	Device group.DeviceInfo
+	Key    group.KeyHash
 	// AdminKey is the admin key its hello offers, a SubjectPublicKeyInfo
 	// in DER; nil when it offers none.
 	AdminKey []byte
@@ -430,9 +436,9 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys := c.peerAdminKey, c.peerOldKeys
+			adminKey, oldKeys, device := c.peerAdminKey, c.peerOldKeys, c.peerDevice
 			c.mu.Unlock()
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
 				OldKeys: oldKeys, Since: c.since})
 		}
 	}
@@ -650,6 +656,8 @@ type conn struct {
 	peerRole Role   // set by the peer's hello
 	peerName string // set by the peer's hello
 	peerOS   string // set by the peer's hello
+	// peerDevice is what the peer's hello says about its device.
+	peerDevice group.DeviceInfo
 	// peerAdminKey and peerPhoneCA are the admin key and the key hash of
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
@@ -797,6 +805,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h.Current = &ev
 		}
 		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS}
+		if d := c.n.cfg.Device.Clean(); !d.IsZero() {
+			out.Device = &d
+		}
 		id := c.n.identity()
 		if id.AdminKey != nil && id.AdminCA == nil {
 			spki, err := x509.MarshalPKIXPublicKey(&id.AdminKey.PublicKey)
@@ -949,6 +960,10 @@ func (c *conn) reader() error {
 			}
 			if group.ValidOS(extra.OS) {
 				c.peerOS = extra.OS
+			}
+			c.peerDevice = group.DeviceInfo{}
+			if extra.Device != nil {
+				c.peerDevice = extra.Device.Clean()
 			}
 			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
 			c.mu.Unlock()

@@ -108,6 +108,8 @@ func TestMemberInteropVectors(t *testing.T) {
 		msg(t, &message{Type: typeTun, Tunnel: &TunnelOffer{HubKey: vecBytes(8), PSK: vecBytes(9), Endpoints: []string{"203.0.113.9:8764"},
 			VLESS: json.RawMessage(`{"endpoint":"203.0.113.9:443","public_key":"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",` +
 				`"short_id":"0123456789abcdef","server_name":"www.example.com","id":"5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"}`)}}),
+		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500}, OS: group.OSMacOS,
+			Device: &group.DeviceInfo{Form: "laptop", OSVersion: "15.1", Version: "0.5.0", MAC: "a4:83:e7:01:02:0f"}}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",

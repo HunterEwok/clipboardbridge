@@ -51,6 +51,11 @@ fn member_frames() {
                 let want = &f["hello"];
                 assert_eq!(h.wall, want["wall_ms"].as_i64().unwrap_or(0));
                 assert_eq!(body.name, want["name"].as_str().unwrap_or(""));
+                let device = wire::DeviceInfo::of(&body);
+                assert_eq!(device.is_empty(), want.get("device").is_none());
+                if let Some(d) = want.get("device") {
+                    assert_eq!(serde_json::to_value(&device).unwrap(), *d);
+                }
                 if let Some(c) = h.current {
                     assert_eq!(serde_json::to_value(&c).unwrap(), want["current"]);
                 }
@@ -305,4 +310,23 @@ fn go_takeover() {
         }
         assert_eq!(s.digest(), c["digest"].as_str().unwrap());
     }
+}
+
+/// A hello's device keeps only its valid fields.
+#[test]
+fn device_cleaned() {
+    let good = wire::DeviceInfo {
+        form: "board".into(),
+        os_version: "Raspbian 13".into(),
+        version: "0.5.0".into(),
+        mac: "dc:a6:32:00:00:01".into(),
+    };
+    assert_eq!(good.cleaned(), good);
+    let bad = wire::DeviceInfo {
+        form: "toaster".into(),
+        os_version: "9".repeat(33),
+        version: "1\n2".into(),
+        mac: "DC:A6:32:00:00:01".into(),
+    };
+    assert!(bad.cleaned().is_empty());
 }

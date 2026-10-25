@@ -54,6 +54,12 @@ class MemberTest {
         assertContentEquals(ByteArray(32) { (it + 3).toByte() }, offer.psk)
         assertEquals(listOf("203.0.113.7:8764", "[2001:db8::7]:8764"), offer.endpoints)
         assertEquals(emptyList(), assertIs<Member.Message.Tunnel>(decoded[12]).offer!!.endpoints)
+        // A computer's hello says what it is.
+        val laptop = Member.DeviceInfo(form = "laptop", osVersion = "15.1", version = "0.5.0", mac = "a4:83:e7:01:02:0f")
+        assertEquals(laptop, assertIs<Member.Message.Hello>(decoded[15]).hello.device)
+        assertEquals(laptop, laptop.cleaned)
+        assertNull(Member.DeviceInfo(form = "toaster", osVersion = "9".repeat(33), version = "1\n2", mac = "A4:83:E7:01:02:0F").cleaned)
+        assertEquals(Member.DeviceInfo(form = "phone"), Member.DeviceInfo(form = "phone", mac = "nope").cleaned)
         // An obfuscated hub's settings are kept as they came, for the tunnel.
         val hidden = assertIs<Member.Message.Tunnel>(decoded[13]).offer!!
         assertTrue(hidden.isValid)

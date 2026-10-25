@@ -74,7 +74,21 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val canMakeAdmin: Boolean = false,
         /** An admin computer another admin froze: the root or an admin phone unfreezes or removes it. */
         val frozen: Boolean = false,
+        /** What its hello says about its device, while it is connected; this phone's own for itself. */
+        val device: Member.DeviceInfo? = null,
     )
+
+    /**
+     * What this phone says about itself in its hellos: a phone or a tablet,
+     * its Android version and the app's; Android gives apps no MAC address.
+     */
+    private val ownDevice: Member.DeviceInfo by lazy {
+        Member.DeviceInfo(
+            form = if (context.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone",
+            osVersion = Build.VERSION.RELEASE,
+            version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull(),
+        )
+    }
 
     enum class SyncResult { SENT, FETCHED, NOTHING_NEW }
 
@@ -115,6 +129,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val (g, n) = synchronized(lock) { (state ?: return emptyList()) to node }
             val online = n?.connected.orEmpty()
             val offers = n?.offeredAdminKeys.orEmpty()
+            val infos = n?.devices.orEmpty()
             val root = g.records.rootDevice
             return g.devices.map {
                 Device(
@@ -122,6 +137,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     admin = it.admin || it.id == root, isRoot = it.id == root,
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
                     frozen = it.frozen,
+                    device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
                 )
             }
         }
@@ -460,6 +476,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             deviceName,
             records = Records(),
             os = "android",
+            device = ownDevice,
             renew = ::renew,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a

@@ -122,7 +122,9 @@ enum OneShot {
         guard let key = try KeychainIdentity.loadKey(label: Shared.memberLabel) else { throw Failure.noKey }
         KeychainIdentity.removeCertificates(label: Shared.memberLabel)
         let id = try KeychainIdentity.identity(certificate: g.memberCert, key: key, label: Shared.memberLabel, storeKey: false)
-        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios")
+        let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
+                              device: Member.DeviceInfo(form: UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone",
+                                                        osVersion: UIDevice.current.systemVersion))
         let ref = DialerRef()
         let browser = BonjourBrowser { found in Task { await ref.dialer?.update(found) } }
         let dialer = MemberDialer(node: node, group: g.tag,

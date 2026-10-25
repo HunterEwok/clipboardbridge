@@ -71,6 +71,16 @@
         }
       }
     },
+    "Adding a device…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавляю устройство…"
+          }
+        }
+      }
+    },
     "Amber": {
       "localizations": {
         "ru": {
@@ -107,6 +117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Вне дома"
+          }
+        }
+      }
+    },
+    "Away from home: through your hub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вне дома: через ваш хаб"
           }
         }
       }
@@ -494,6 +514,16 @@
         }
       }
     },
+    "MAC address": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAC-адрес"
+          }
+        }
+      }
+    },
     "Make %@ an admin?": {
       "localizations": {
         "ru": {
@@ -680,6 +710,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Операционная система"
+          }
+        }
+      }
+    },
+    "Orbit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Орбита"
           }
         }
       }
@@ -1084,6 +1124,26 @@
         }
       }
     },
+    "The device is in the group.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство в группе."
+          }
+        }
+      }
+    },
+    "The device was not added.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство не добавлено."
+          }
+        }
+      }
+    },
     "The hub does not answer through the tunnel.": {
       "localizations": {
         "ru": {
@@ -1280,6 +1340,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "заморожен"
+          }
+        }
+      }
+    },
+    "hidden by the system": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "скрыт системой"
           }
         }
       }

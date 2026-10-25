@@ -73,7 +73,10 @@ class MemberNode(
     private val onTunnel: (String?, Member.TunnelOffer) -> Unit = { _, _ -> },
     /** This device's operating system, which the hellos state. */
     val os: String? = null,
+    /** This device's form, system version and version, which the hellos state too. */
+    device: Member.DeviceInfo? = null,
 ) {
+    val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
     private val conns = mutableSetOf<Conn>()
 
@@ -104,6 +107,15 @@ class MemberNode(
             conns.mapNotNull { c -> val p = c.peer; val k = c.adminKey; if (p != null && k != null) p to k else null }.toMap()
         }
 
+    /**
+     * What the connected members' hellos say about their devices, their
+     * invalid fields dropped, by device ID where the caller of serve named them.
+     */
+    val devices: Map<String, Member.DeviceInfo>
+        get() = synchronized(lock) {
+            conns.mapNotNull { c -> val p = c.peer; val d = c.device; if (p != null && d != null) p to d else null }.toMap()
+        }
+
     /** Sends a computer the admin CA the root issued for it. */
     fun sendAdminCA(adminCA: ByteArray, peer: String) = synchronized(lock) {
         for (c in conns) if (c.peer == peer && c.peerRole != null) c.enqueue(Member.Message.Admin(adminCA))
@@ -125,7 +137,7 @@ class MemberNode(
         val c = Conn(t, peer)
         synchronized(lock) {
             conns.add(c)
-            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey(), os = os)
+            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = tunnelKey(), os = os, device = device)
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()
@@ -144,6 +156,7 @@ class MemberNode(
                     records?.refused(t.peerChain)?.let { why -> throw ProtocolException("the peer is refused: $why") }
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
+                        c.device = m.hello.device?.cleaned
                         c.peerRole = m.role
                         apply(engine.reconcile(m.hello), c)
                         val store = records
@@ -222,6 +235,7 @@ class MemberNode(
 
         /** The admin key the peer's hello offered. */
         @Volatile var adminKey: ByteArray? = null
+        @Volatile var device: Member.DeviceInfo? = null
 
         /** Whether this side ended the connection. */
         @Volatile var closing = false

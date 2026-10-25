@@ -8,6 +8,7 @@
 
 mod away;
 mod control;
+mod device;
 mod discovery;
 mod error;
 mod files;

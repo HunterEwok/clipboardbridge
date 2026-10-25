@@ -52,6 +52,9 @@ public actor MemberNode {
     public let name: String?
     /// This device's operating system, which the hellos state.
     public let os: String?
+    /// This device's form, system version and version, which the hellos
+    /// state too.
+    public let device: Member.DeviceInfo?
     let engine: SyncEngine
     private var conns: [ObjectIdentifier: Conn] = [:]
     private let onChange: @Sendable (Member.Event) -> Void
@@ -84,7 +87,8 @@ public actor MemberNode {
     /// the key the hellos offer the hub, and onTunnel gets each valid offer
     /// a peer sends for it, with the device ID the caller of serve named
     /// the peer by.
-    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, records: RecordStore? = nil,
+    public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, device: Member.DeviceInfo? = nil,
+                records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
                 adminCA: (@Sendable (Data) -> Data?)? = nil,
                 tunnelKey: Data? = nil,
@@ -93,7 +97,7 @@ public actor MemberNode {
                 onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
-        (self.tunnelKey, self.onTunnel, self.os) = (tunnelKey, onTunnel, os)
+        (self.tunnelKey, self.onTunnel, self.os, self.device) = (tunnelKey, onTunnel, os, device?.cleaned)
     }
 
     /// Replaces the tunnel key that the next connections' hellos offer;
@@ -124,6 +128,15 @@ public actor MemberNode {
         return out
     }
 
+    /// What the connected members' hellos say about their devices, their
+    /// invalid fields dropped, by device ID where the caller of serve named
+    /// them.
+    public var devices: [String: Member.DeviceInfo] {
+        var out: [String: Member.DeviceInfo] = [:]
+        for c in conns.values { if let p = c.peer, let d = c.device { out[p] = d } }
+        return out
+    }
+
     /// Sends a computer the admin CA the root issued for it.
     public func send(adminCA: Data, to peer: String) {
         for c in conns.values where c.peer == peer && c.peerRole != nil { c.enqueue(.admin(adminCA)) }
@@ -146,6 +159,7 @@ public actor MemberNode {
         conns[id] = c
         var hello = engine.hello(name: name)
         hello.os = os
+        hello.device = device
         hello.records = records?.digest
         hello.tunnelKey = tunnelKey
         c.enqueue(.hello(role, hello))
@@ -171,6 +185,7 @@ public actor MemberNode {
                 first = false
                 if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
                 c.adminKey = h.adminKey
+                c.device = h.device?.cleaned
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
@@ -268,6 +283,12 @@ public actor MemberNode {
             set { lock.withLock { _adminKey = newValue } }
         }
         private var _adminKey: Data?
+        /// What the peer's hello says about its device.
+        var device: Member.DeviceInfo? {
+            get { lock.withLock { _device } }
+            set { lock.withLock { _device = newValue } }
+        }
+        private var _device: Member.DeviceInfo?
 
         init(transport: ClosableTransport, peer: String?) { (self.transport, self.peer) = (transport, peer) }
 
