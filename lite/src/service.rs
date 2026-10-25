@@ -166,10 +166,12 @@ pub fn run(cfg: Config) -> Result<()> {
     Ok(())
 }
 
-/// Takes roots that the records know and the identity does not.
+/// Takes the roots that the records lead to when they differ from the
+/// identity's, compared by content, so a root the records do not name never
+/// stays trusted; an empty set says nothing yet.
 fn with_roots(ident: Identity, records: &Records, dir: &Path, log: &dyn Fn(&str)) -> Identity {
     let roots = records.roots();
-    if roots.is_empty() || roots.iter().map(|c| &c.der).eq(ident.roots.iter().map(|c| &c.der)) {
+    if records.is_empty() || roots.iter().map(|c| &c.der).eq(ident.roots.iter().map(|c| &c.der)) {
         return ident;
     }
     let mut next = ident.clone();

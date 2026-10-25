@@ -103,17 +103,20 @@ class PhoneGroup internal constructor(
     /** The devices of the group, from the records. */
     val devices: List<RecordSet.Device> get() = records.devices
 
-    /** Adds records from other members, then follows the roots they lead to when they go further than this phone's; returns the new records. */
+    /** Adds records from other members, then follows the roots they lead to when they differ from this phone's; returns the new records. */
     fun add(rs: List<Member.Record>): List<Member.Record> {
         val fresh = records.addAll(rs, groupCA)
         adoptRoots()
         return fresh
     }
 
-    /** Takes the roots of the records when they go further than roots. */
+    /**
+     * Takes the roots of the records when they differ from roots, compared by content, so a root the records do not
+     * name never stays trusted; an empty set says nothing yet.
+     */
     private fun adoptRoots() {
         val path = records.roots
-        if (path.size > roots.size && path.take(roots.size).zip(roots).all { (a, b) -> a.contentEquals(b) }) roots = path
+        if (records.records.isNotEmpty() && (path.size != roots.size || path.zip(roots).any { (a, b) -> !a.contentEquals(b) })) roots = path
     }
 
     /** Signs and adds a device record. */
@@ -156,10 +159,10 @@ class PhoneGroup internal constructor(
             val k = other.adminKey
             if (other.id != lost && k != null && keep.none { it.contentEquals(k) }) keep.add(k)
         }
-        keep.removeAll { it.contentEquals(d.key) || it.contentEqualsOrNull(d.adminKey) }
+        keep.removeAll { k -> d.keys.any { it.contentEquals(k) } || k.contentEqualsOrNull(d.adminKey) }
         val out = mutableListOf(Records.root(newRoot, tag, device, now, adminSigner, myCA))
         records.add(out[0], groupCA)
-        out.add(Records.revoke(listOf(oldRoot, d.key) + listOfNotNull(d.adminKey), tag, device, now, rootSigner, keep))
+        out.add(Records.revoke(listOf(oldRoot) + d.keys + listOfNotNull(d.adminKey), tag, device, now, rootSigner, keep))
         out.add(Records.device(device, me.name, "phone", me.key, tag, device, now, rootSigner, me.adminKey, os = me.os ?: "android"))
         for (r in out.drop(1)) records.add(r, groupCA)
         adoptRoots()
@@ -206,7 +209,8 @@ class PhoneGroup internal constructor(
         if (device == this.device) throw Failure("this phone cannot remove itself")
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         if (device == records.rootDevice) throw Failure("the root phone is removed by taking the group over")
-        val keys = mutableListOf(d.key)
+        // Every key the device had in the group goes, so none of them stays a member nobody sees.
+        val keys = d.keys.toMutableList()
         var keep: List<ByteArray>? = null
         val admin = d.adminKey
         if (admin != null) {
@@ -308,7 +312,8 @@ class PhoneGroup internal constructor(
         val issuer = adminCA
         val canMakeAdmins = isRoot
         var adminKey: ByteArray? = null
-        val admitted = PairingMember.admit(t, code, memberCert, joinerCert, sessionID, Pairing.MemberAD(device, tag)) { dev, publicKey, info ->
+        val taken = { dev: String -> dev == device || records.knows(dev) }
+        val admitted = PairingMember.admit(t, code, memberCert, joinerCert, sessionID, Pairing.MemberAD(device, tag), taken) { dev, publicKey, info ->
             val cert = GroupCertificates.member(dev, publicKey, ca, caSigner, now)
             val key = info.adminKey
             val forAdmin = if (Pairing.Info.isPhone(info.os) && key != null && makeAdmin && canMakeAdmins) {
@@ -317,7 +322,7 @@ class PhoneGroup internal constructor(
             } else {
                 null
             }
-            Pairing.Welcome(cert, first, issuer, forAdmin, later.ifEmpty { null })
+            Pairing.Welcome(cert, first, issuer, forAdmin, later.ifEmpty { null }, if (later.isEmpty()) null else records.pathRecords)
         }
         val name = validName(admitted.info.name)
         val key = Records.keyHashOfCert(admitted.cert)
@@ -413,7 +418,9 @@ class PhoneGroup internal constructor(
             g.memberIssuer = j.welcome.issuer
             g.isRoot = false
             g.adminCA = j.welcome.adminCA
-            g.roots = j.welcome.roots.orEmpty()
+            // The records that lead to the roots stay with the group, so the roots are those its records name.
+            g.records.addAll(j.welcome.records.orEmpty(), j.welcome.groupCA)
+            g.roots = g.records.roots
             return g
         }
 

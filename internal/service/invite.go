@@ -146,7 +146,7 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 			return ctx.Err()
 		}
 	}
-	w, err := pair.Open(id, "", pair.Options{Secret: in.Secret, Lifetime: lifetime, NoCAKeys: true, Confirm: confirm, ConfirmWait: confirmWait})
+	w, err := pair.Open(id, "", pair.Options{Records: s.pathRecords, Taken: s.idTaken, Secret: in.Secret, Lifetime: lifetime, NoCAKeys: true, Confirm: confirm, ConfirmWait: confirmWait})
 	if err != nil {
 		fail(c, err)
 		return
@@ -327,7 +327,7 @@ func (s *Service) joinInvite(ctx context.Context, c net.Conn, j *pair.Joiner, m 
 		gc.Close()
 		return nil, nil, fmt.Errorf("the hub did not answer; check that the invitation is still valid, that the hub is on, and that its UDP port or its forwarder can be reached: %w", err)
 	}
-	id, err = j.JoinSecret(ctx, raw, in.Secret, confirmWait, s.saveIdentity)
+	id, err = j.JoinSecret(ctx, raw, in.Secret, confirmWait, s.saveJoined(j))
 	if err != nil {
 		gc.Close()
 		if errors.Is(err, pair.ErrDeclined) {

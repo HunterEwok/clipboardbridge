@@ -430,3 +430,41 @@ func TestRecordRoles(t *testing.T) {
 		}
 	}
 }
+
+// TestDeviceWithTwoKeys checks that a device ID whose records name two
+// keys stays listed with both while either is not revoked, and that
+// revoking both removes it: a key never hides behind a revoked one.
+func TestDeviceWithTwoKeys(t *testing.T) {
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	first := member(t, pg.root)
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pg.root.IssueMember(DeviceID(first.Subject.CommonName), &key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k1, k2 := KeyHashOf(first), KeyHashOf(second)
+	s := NewRecords(g)
+	mustAdd(t, s, deviceRecord(t, g, pg.root, nil, first, "pc", 1))
+	mustAdd(t, s, deviceRecord(t, g, pg.root, nil, second, "pc", 2))
+	if !s.Known(DeviceID(first.Subject.CommonName)) {
+		t.Error("the records do not know the device ID")
+	}
+	devs := s.Devices()
+	if len(devs) != 1 || devs[0].Key != k2 || len(devs[0].Keys) != 2 {
+		t.Fatalf("devices %+v, want one with both keys, the newer first in Key", devs)
+	}
+	// Removing only the newer key leaves the older one listed, not hidden.
+	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{k2}, nil))
+	devs = s.Devices()
+	if len(devs) != 1 || devs[0].Key != k1 {
+		t.Fatalf("devices %+v, want the device with its older key", devs)
+	}
+	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, devs[0].Keys, nil))
+	if len(s.Devices()) != 0 || s.Refused([]*x509.Certificate{first}) == nil {
+		t.Error("removing every key of the device left it in the group")
+	}
+}

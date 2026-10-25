@@ -32,8 +32,11 @@ const RecordsFileName = "records.json"
 // Limits of the record set (docs/protocol.md, section 10).
 const (
 	MaxRecords = 4096
-	// MaxPerAdmin bounds the records one admin CA signs, so a stolen admin
-	// cannot fill the set and shut the others out.
+	// MaxPerAdmin bounds the records one signer (an admin CA, or a root's
+	// own key) signs, so a stolen admin cannot fill the set and shut the
+	// others out. Past MaxRecords, the set still takes up to MaxPerAdmin
+	// records signed by the own key of a root on the path, so a full set
+	// still takes the record that removes the admin that filled it.
 	MaxPerAdmin   = 1024
 	maxRecordBody = 8 << 10
 	recordVersion = 1
@@ -312,9 +315,16 @@ type Records struct {
 	caKey   KeyHash
 	byID    map[[sha256.Size]byte]*signedRecord
 	// roots are the roots records may be signed under: the group CA and
-	// the new root of every root record in the set.
-	roots map[KeyHash]*x509.Certificate
-	// perSigner counts the records each admin CA signed (MaxPerAdmin).
+	// the new root of every root record that may make it a known root
+	// (mayBeKnown); the others wait in pending.
+	roots   map[KeyHash]*x509.Certificate
+	pending []*signedRecord
+	// named holds, for each root, the admin CAs that device records signed
+	// by its own key name: namedPhone for a phone's record, namedOther for
+	// any other; own the roles of the root's own device records.
+	named map[KeyHash]map[KeyHash]uint8
+	own   map[KeyHash]uint8
+	// perSigner counts the records each signer signed (MaxPerAdmin).
 	perSigner map[KeyHash]int
 	// ev is what the set says about revocations, worked out on first use
 	// after a change.
@@ -331,53 +341,109 @@ func NewRecords(groupCA *x509.Certificate) *Records {
 		caKey:     caKey,
 		byID:      map[[sha256.Size]byte]*signedRecord{},
 		roots:     map[KeyHash]*x509.Certificate{caKey: groupCA},
+		named:     map[KeyHash]map[KeyHash]uint8{},
+		own:       map[KeyHash]uint8{},
 		perSigner: map[KeyHash]int{},
 	}
 }
+
+// Bits of Records.named and Records.own.
+const (
+	namedPhone uint8 = 1 << iota
+	namedOther
+)
 
 // Len returns the number of records.
 func (s *Records) Len() int { return len(s.byID) }
 
 // Add checks a record and adds it. It reports whether the record was new; a
-// record that is not valid for this group is an error.
+// record that is not valid for this group is an error. The limits are
+// checked after the signature, so that a record nobody signed never fills
+// the set.
 func (s *Records) Add(r Record) (bool, error) {
 	id := r.ID()
 	if _, ok := s.byID[id]; ok {
 		return false, nil
 	}
-	if len(s.byID) >= MaxRecords {
-		return false, errors.New("group: too many records")
-	}
 	sr, err := s.verify(r)
 	if err != nil {
 		return false, err
 	}
-	if sr.signer != sr.anchor {
-		if s.perSigner[sr.signer] >= MaxPerAdmin {
-			return false, errors.New("group: too many records from one admin")
-		}
-		s.perSigner[sr.signer]++
+	if s.perSigner[sr.signer] >= MaxPerAdmin {
+		return false, errors.New("group: too many records from one signer")
 	}
+	if n := len(s.byID); n >= MaxRecords && (n >= MaxRecords+MaxPerAdmin || sr.signer != sr.anchor || !s.onPath()[sr.anchor]) {
+		return false, errors.New("group: too many records")
+	}
+	s.perSigner[sr.signer]++
 	s.byID[id] = sr
 	s.ev = nil
-	if sr.root != nil {
-		if k := KeyHashOf(sr.root); s.roots[k] == nil {
-			s.roots[k] = sr.root
+	b := sr.body
+	if b.Type == RecordDevice && sr.signer == sr.anchor {
+		bit := namedOther
+		if role(b.Role) == RolePhone {
+			bit = namedPhone
+		}
+		if b.Admin != nil {
+			if s.named[sr.anchor] == nil {
+				s.named[sr.anchor] = map[KeyHash]uint8{}
+			}
+			s.named[sr.anchor][*b.Admin] |= bit
+		}
+		if b.Device == b.By {
+			s.own[sr.anchor] |= bit
 		}
 	}
+	if sr.root != nil {
+		s.pending = append(s.pending, sr)
+	}
+	s.promote()
 	return true, nil
+}
+
+// promote moves the root records of pending that may make their new root a
+// known root into roots, until none does.
+func (s *Records) promote() {
+	for grew := true; grew; {
+		grew = false
+		rest := s.pending[:0]
+		for _, r := range s.pending {
+			if !s.mayBeKnown(r) {
+				rest = append(rest, r)
+				continue
+			}
+			if k := KeyHashOf(r.root); s.roots[k] == nil {
+				s.roots[k], grew = r.root, true
+			}
+		}
+		clear(s.pending[len(rest):])
+		s.pending = rest
+	}
+}
+
+// mayBeKnown reports whether the root record r may make its new root a
+// known root (knownRoots), leaving out the revocations and freezes that can
+// still stop it: it was signed by its root's own key, by an admin CA that a
+// phone's device record from that root's own key names, or by one a
+// computer's names when that root is a computer. A root that a computer's
+// admin CA names in a phone's group is never known, so nothing signed under
+// it enters the set, and its key cannot fill the set past the admin's own
+// limit.
+func (s *Records) mayBeKnown(r *signedRecord) bool {
+	named := s.named[r.anchor][r.signer]
+	return r.signer == r.anchor || named&namedPhone != 0 || named&namedOther != 0 && s.own[r.anchor] == namedOther
 }
 
 // AddAll adds the valid records among rs and returns those that were new,
 // and an error for each record that is not valid. A record signed under a
-// new root is taken once the root record that names that root is in the
-// set, so the result does not depend on the order of rs.
+// new root is taken once the records that may make that root known are in
+// the set, so the result does not depend on the order of rs.
 func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
 	pending := rs
 	for {
 		var rest []Record
 		errs = errs[:0]
-		rooted := false
+		roots := len(s.roots)
 		for _, r := range pending {
 			isNew, err := s.Add(r)
 			switch {
@@ -386,10 +452,9 @@ func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
 				errs = append(errs, err)
 			case isNew:
 				fresh = append(fresh, r)
-				rooted = rooted || r.Type() == RecordRoot
 			}
 		}
-		if !rooted || len(rest) == 0 {
+		if len(s.roots) == roots || len(rest) == 0 {
 			return fresh, errs
 		}
 		pending = rest
@@ -486,7 +551,15 @@ func checkRoot(c *x509.Certificate) error {
 // root record signed under it that counts and whose new root has the
 // smallest SHA-256 leads to the next.
 func (s *Records) path() []*x509.Certificate {
+	path, _ := s.steps()
+	return path
+}
+
+// steps returns the path and the root records that lead along it, one for
+// each root after the group CA.
+func (s *Records) steps() ([]*x509.Certificate, []*signedRecord) {
 	path := []*x509.Certificate{s.groupCA}
+	var steps []*signedRecord
 	on := map[KeyHash]bool{s.caKey: true}
 	for {
 		cur := KeyHashOf(path[len(path)-1])
@@ -501,11 +574,36 @@ func (s *Records) path() []*x509.Certificate {
 			}
 		}
 		if next == nil {
-			return path
+			return path, steps
 		}
 		path = append(path, next.root)
+		steps = append(steps, next)
 		on[KeyHashOf(next.root)] = true
 	}
+}
+
+// PathRecords returns the records that lead to the path: each root record
+// on it and, for one an admin CA signed, the device records its root's own
+// key signed that name that admin CA or the root's own device. A new
+// member gets them in the Welcome's records and checks with them that the
+// Welcome's roots are the group's (docs/protocol.md, section 5).
+func (s *Records) PathRecords() []Record {
+	_, steps := s.steps()
+	var out []Record
+	for _, st := range steps {
+		out = append(out, st.Record)
+		if st.signer == st.anchor {
+			continue
+		}
+		for _, id := range s.sortedIDs() {
+			r := s.byID[id]
+			b := r.body
+			if b.Type == RecordDevice && r.signer == st.anchor && r.anchor == st.anchor && (b.Device == b.By || b.Admin != nil && *b.Admin == st.signer) {
+				out = append(out, r.Record)
+			}
+		}
+	}
+	return out
 }
 
 // upgradeStands reports whether the root record r, in which a legacy group
@@ -915,8 +1013,8 @@ func (s *Records) kept(admin, leaf KeyHash) bool {
 }
 
 // Refused reports why a member certificate chain (leaf first, then its
-// issuer when that is an admin CA) is refused, or nil. The chain is assumed
-// to be verified to one of the group's roots already. A certificate is
+// issuer when that is an admin CA) is refused, or nil. A chain whose top
+// is not signed by a root on the path is refused. A certificate is
 // refused when its key is revoked, or when its issuer's key is revoked and
 // not every record that revoked the issuer keeps it: for the leaf and, when
 // an admin CA issued it, for that admin CA under its root.
@@ -959,15 +1057,17 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 		}
 		top, leaf = issuer, admin
 	}
+	// The chain must end at a root on the path: a root that only an
+	// identity or a TLS pool trusts, as one a Welcome named, is no anchor.
 	for _, root := range path {
 		if top.CheckSignatureFrom(root) == nil {
 			if !s.issued(KeyHashOf(root), leaf) {
 				return errors.New("group: the certificate is from a root that handed the group over")
 			}
-			break
+			return nil
 		}
 	}
-	return nil
+	return errors.New("group: the certificate is not from a root of the group")
 }
 
 // listed reports whether a device record that counts names the key k.
@@ -992,8 +1092,11 @@ type Device struct {
 	// AdminKey is the key of its admin CA, as its record names it; nil
 	// when it has none.
 	AdminKey *KeyHash
-	By       DeviceID // the admin that admitted it, as its record says
-	Since    time.Time
+	// Keys are every key that a counting device record names for it and
+	// that is not revoked, Key among them: what removing it revokes.
+	Keys  []KeyHash
+	By    DeviceID // the admin that admitted it, as its record says
+	Since time.Time
 	// Frozen says that it is an admin computer that another admin froze:
 	// it is no admin until the root or an admin phone unfreezes it, and its
 	// connections are refused.
@@ -1001,18 +1104,25 @@ type Device struct {
 }
 
 // Devices returns the devices list: the latest device record that counts
-// for each device, without revoked keys, sorted by name and then ID. The
-// "latest" record of a device is the one with the largest time, then the
-// largest record ID, so every member picks the same one.
+// for each device among those whose key is not revoked, sorted by name and
+// then ID. The "latest" record of a device is the one with the largest
+// time, then the largest record ID, so every member picks the same one. A
+// device whose records name more than one key stays listed while any of
+// them is not revoked, so none of its keys hides behind a revoked one.
 func (s *Records) Devices() []Device {
 	latest := map[DeviceID]*signedRecord{}
 	first := map[DeviceID]int64{}
+	keys := map[DeviceID][]KeyHash{}
 	on := s.onPath()
-	for _, r := range s.byID {
-		if r.body.Type != RecordDevice || !s.counts(r, on) {
+	for _, id := range s.sortedIDs() {
+		r := s.byID[id]
+		if r.body.Type != RecordDevice || !s.counts(r, on) || s.Revoked(*r.body.Key) {
 			continue
 		}
 		d := r.body.Device
+		if !slices.Contains(keys[d], *r.body.Key) {
+			keys[d] = append(keys[d], *r.body.Key)
+		}
 		if t, ok := first[d]; !ok || r.body.TimeMS < t {
 			first[d] = r.body.TimeMS
 		}
@@ -1022,9 +1132,6 @@ func (s *Records) Devices() []Device {
 	}
 	var out []Device
 	for id, r := range latest {
-		if s.Revoked(*r.body.Key) {
-			continue
-		}
 		out = append(out, Device{
 			ID:       id,
 			Name:     r.body.Name,
@@ -1033,6 +1140,7 @@ func (s *Records) Devices() []Device {
 			Key:      *r.body.Key,
 			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin) && !s.Frozen(*r.body.Admin),
 			AdminKey: r.body.Admin,
+			Keys:     keys[id],
 			By:       r.body.By,
 			Since:    time.UnixMilli(first[id]),
 			Frozen:   s.Frozen(*r.body.Key) || r.body.Admin != nil && s.Frozen(*r.body.Admin),
@@ -1088,9 +1196,18 @@ func (s *Records) RevokedBy(admin KeyHash) []KeyHash {
 // latest of them; "" when there is none, as in a legacy group not yet
 // upgraded, whose key every Linux member holds.
 func (s *Records) RootDevice() DeviceID {
+	dev, _ := s.RootMember()
+	return dev
+}
+
+// RootMember returns the device that holds the group's current root, as
+// RootDevice, and the member key its own device record names: a peer is
+// the root only when its certificate has that key, since a device ID is
+// what a joining device picks itself.
+func (s *Records) RootMember() (DeviceID, KeyHash) {
 	path := s.path()
 	if path[len(path)-1].MaxPathLen == 0 {
-		return ""
+		return "", KeyHash{}
 	}
 	cur := KeyHashOf(path[len(path)-1])
 	var best *signedRecord
@@ -1101,9 +1218,21 @@ func (s *Records) RootDevice() DeviceID {
 		}
 	}
 	if best == nil {
-		return ""
+		return "", KeyHash{}
 	}
-	return best.body.Device
+	return best.body.Device, *best.body.Key
+}
+
+// Known reports whether a valid device record names the device dev, with
+// any key and whether or not it counts: an ID a new device may not take
+// (docs/protocol.md, section 6).
+func (s *Records) Known(dev DeviceID) bool {
+	for _, r := range s.byID {
+		if r.body.Type == RecordDevice && r.body.Device == dev {
+			return true
+		}
+	}
+	return false
 }
 
 func newer(a, b *signedRecord) bool {

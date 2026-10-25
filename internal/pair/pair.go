@@ -86,6 +86,7 @@ var (
 	ErrTooMany   = errors.New("pair: three failed attempts; the pairing window is closed")
 	ErrRefused   = errors.New("pair: the other device refused the pairing")
 	ErrDeclined  = errors.New("pair: the admin did not confirm the device")
+	ErrTaken     = errors.New("pair: a device with this device ID is in the group already; join with a new ID")
 )
 
 // spentError is an attempt that failed after the joiner sent its
@@ -111,6 +112,7 @@ var errorCodes = map[string]error{
 	"expired":    ErrExpired,
 	"too-many":   ErrTooMany,
 	"declined":   ErrDeclined,
+	"taken":      ErrTaken,
 }
 
 // codeOf returns the code that tells the peer about err.
@@ -208,10 +210,14 @@ type Welcome struct {
 	GroupCA []byte `json:"group_ca"`         // DER: the group's first root, which names it
 	// Roots are the roots that took a phone group over from GroupCA, in
 	// order, DER; absent when it was never handed over.
-	Roots      [][]byte `json:"roots,omitempty"`
-	GroupCAKey []byte   `json:"group_ca_key,omitempty"`
-	PhoneCA    []byte   `json:"phone_ca,omitempty"`
-	PhoneCAKey []byte   `json:"phone_ca_key,omitempty"`
+	Roots [][]byte `json:"roots,omitempty"`
+	// Records are the records that lead to Roots (group.PathRecords), by
+	// which the new device checks that Roots are the group's and not ones
+	// the admitting admin made up; absent with Roots.
+	Records    []group.Record `json:"records,omitempty"`
+	GroupCAKey []byte         `json:"group_ca_key,omitempty"`
+	PhoneCA    []byte         `json:"phone_ca,omitempty"`
+	PhoneCAKey []byte         `json:"phone_ca_key,omitempty"`
 }
 
 // frame is every message of the exchange; each uses some of the fields.

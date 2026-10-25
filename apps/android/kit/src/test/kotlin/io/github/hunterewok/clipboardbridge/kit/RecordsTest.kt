@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.time.Instant
@@ -19,6 +20,24 @@ import kotlin.test.assertTrue
 
 class RecordsTest {
     private val now = Instant.now()
+
+    /** A device ID whose records name two keys stays listed while either is not revoked, as Go's TestDeviceWithTwoKeys. */
+    @Test
+    fun deviceWithTwoKeys() {
+        val g = Group(now)
+        val k1 = Records.keyHash(SoftwareSigner().publicKeyDER)
+        val k2 = Records.keyHash(SoftwareSigner().publicKeyDER)
+        val set = RecordSet()
+        val dev = "00112233445566778899aabbccddeeff"
+        set.add(Records.device(dev, "pc", "full", k1, g.tag, g.phone, now, g.rootKey), g.ca)
+        set.add(Records.device(dev, "pc", "full", k2, g.tag, g.phone, now.plusSeconds(1), g.rootKey), g.ca)
+        assertTrue(set.knows(dev))
+        assertEquals(2, set.devices.single().keys.size)
+        set.add(Records.revoke(listOf(k2), g.tag, g.phone, now, g.rootKey), g.ca)
+        assertContentEquals(k1, set.devices.single().key)
+        set.add(Records.revoke(set.devices.single().keys, g.tag, g.phone, now.plusSeconds(2), g.rootKey), g.ca)
+        assertTrue(set.devices.isEmpty())
+    }
 
     /** A phone's root, its own record and a computer's. */
     private class Group(now: Instant) {
@@ -98,7 +117,10 @@ class RecordsTest {
         val v = Interop.read("go-admins.json").jsonObject
         val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
         val set = RecordSet()
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        // The record signed under the root the computer admin named is dropped: that root is never known.
+        val dropped = v["dropped"]?.jsonPrimitive?.int ?: 0
+        assertEquals(1, dropped)
+        assertEquals(records.size - dropped, set.addAll(records, b64(v.str("group_ca"))).size)
         assertEquals(v.str("digest"), set.digest)
         assertTrue(set.roots.isEmpty(), "a computer admin handed the group over")
         val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
@@ -151,7 +173,9 @@ class RecordsTest {
             val name = c.str("name")
             val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
             val set = RecordSet()
-            assertEquals(records.size, set.addAll(records, b64(c.str("group_ca"))).size, name)
+            val dropped = c["dropped"]?.jsonPrimitive?.int ?: 0
+            assertEquals(if (name == "phone root") 1 else 0, dropped, name)
+            assertEquals(records.size - dropped, set.addAll(records, b64(c.str("group_ca"))).size, name)
             assertEquals(c.str("digest"), set.digest, name)
             val roots = (c["roots"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
             assertEquals(roots, set.roots.map { b64(it) }, name)

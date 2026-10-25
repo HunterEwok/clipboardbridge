@@ -1191,7 +1191,11 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}}
+	handover, err := group.SignRecord(group.RecordBody{Type: group.RecordRoot, Group: group.Tag(first.Cert), TimeMS: t0.UnixMilli(), Root: newRoot.Cert.Raw}, first.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}, Records: []group.Record{handover}}
 	member := memberAD{Device: phone, Group: group.Tag(first.Cert)}
 	id, err := j.identity(w, phoneCert, member)
 	if err != nil {
@@ -1200,10 +1204,20 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if len(id.Roots) != 1 || !id.Root().Equal(newRoot.Cert) {
 		t.Error("the identity does not keep the new root")
 	}
+	if len(j.Records) != 1 {
+		t.Error("the joiner does not keep the record that leads to the new root")
+	}
 	bad := *w
 	bad.Roots = nil
 	if _, err := j.identity(&bad, phoneCert, member); err == nil {
 		t.Error("accepted certificates from a root the welcome does not name")
+	}
+	// A root that no record leads to, as one an admin made up and named
+	// in the Welcome, is refused.
+	bad = *w
+	bad.Records = nil
+	if _, err := j.identity(&bad, phoneCert, member); err == nil {
+		t.Error("accepted a root that no record leads to")
 	}
 }
 
@@ -1280,5 +1294,24 @@ func TestComputerAdminAdmits(t *testing.T) {
 	plain.AdminCA, plain.Issuer, plain.Cert = nil, nil, nil
 	if _, err := Open(&plain, NewCode(), Options{}); err == nil {
 		t.Error("a computer that is no admin opened a window")
+	}
+}
+
+// TestTakenID checks that a window refuses a joiner whose device ID is in
+// the group already, before the exchange and without counting a failure,
+// and admits one with a new ID.
+func TestTakenID(t *testing.T) {
+	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	f.window.taken = func(dev group.DeviceID) bool { return dev == j.ID }
+	out := f.attempt(t, j, f.code, nil)
+	if !errors.Is(out.joinErr, ErrTaken) || !errors.Is(out.serveErr, ErrTaken) {
+		t.Fatalf("join %v, serve %v; want ErrTaken", out.joinErr, out.serveErr)
+	}
+	if Spent(out.joinErr) || f.failures() != 0 || out.savedCalls != 0 {
+		t.Error("a taken ID used up the code or counted as a failure")
+	}
+	if out := f.attempt(t, newJoiner(t, "linux"), f.code, nil); out.joinErr != nil {
+		t.Errorf("a new ID: %v", out.joinErr)
 	}
 }

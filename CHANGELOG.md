@@ -167,6 +167,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Security: a new device trusts only the roots that the group's records lead to. The Welcome
+  carries the records of that path, and every member (Go, both phone kits, the lite member)
+  refuses a certificate whose chain no root on the path signed, so an admin can no longer
+  slip a root of its own into a device it admits and keep access after the group's root
+  removes it. The roots a member trusts follow the records by content, not by count.
+- Security: an admin can no longer fill the record set to block its own removal. A record
+  signed under a root that can never be known (one a computer's admin names in a phone's
+  group) is dropped, every signer (admin CAs and roots' own keys alike) is limited to 1024
+  records, signatures are checked before the limits, and a full set still takes 1024 more
+  records from the own key of a root on the path.
+- Security: a device can no longer join twice under one device ID and leave a second key
+  behind that removing it misses. The admitting member refuses an ID that the records or a
+  connected member already have (new pairing error `taken`), the devices list shows a device
+  while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
+  every key of the device, and a peer counts as the root only with the root's own key.
 - An update without a terminal over an installation from before the firewall question no
   longer removes the firewall rules it had added: rules that are there without a kept answer
   count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing

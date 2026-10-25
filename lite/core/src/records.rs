@@ -21,9 +21,14 @@ use crate::certs::{self, Cert, KeyHash, b64, sha256};
 use crate::error::{Context, Error, Result};
 
 pub const MAX_RECORDS: usize = 4096;
-/// The records one admin CA signs at most, so a stolen admin cannot fill
-/// the set and shut the others out.
+/// The records one signer (an admin CA, or a root's own key) signs at most,
+/// so a stolen admin cannot fill the set and shut the others out. Past
+/// MAX_RECORDS the set still takes this many records from a path root's own
+/// key, so it takes the root's removal of an admin that filled it.
 pub const MAX_PER_ADMIN: usize = 1024;
+/// Bits of Records::named and Records::own.
+const NAMED_PHONE: u8 = 1;
+const NAMED_OTHER: u8 = 2;
 const MAX_BODY: usize = 8 << 10;
 const VERSION: i64 = 1;
 
@@ -43,10 +48,6 @@ impl Record {
     /// The record's ID: SHA-256 over its body.
     pub fn id(&self) -> [u8; 32] {
         sha256(&self.body)
-    }
-
-    fn is_root(&self) -> bool {
-        serde_json::from_slice::<Body>(&self.body).is_ok_and(|b| b.kind == "root")
     }
 }
 
@@ -189,6 +190,9 @@ pub struct Device {
     pub admin: bool,
     /// An admin computer another admin froze: no admin, and refused.
     pub frozen: bool,
+    /// Every key that a counting device record names for it and that is
+    /// not revoked, key among them.
+    pub keys: Vec<KeyHash>,
 }
 
 /// The set of a group's records. It only grows.
@@ -197,8 +201,17 @@ pub struct Records {
     tag: String,
     ca_key: KeyHash,
     by_id: BTreeMap<[u8; 32], Signed>,
+    /// The roots records may be signed under: the group CA and the new root
+    /// of every root record that may make it a known root (may_be_known);
+    /// the other root records wait in pending, by record ID.
     roots: BTreeMap<KeyHash, Cert>,
-    /// The records each admin CA signed (MAX_PER_ADMIN).
+    pending: Vec<[u8; 32]>,
+    /// For each root, the admin CAs that device records its own key signed
+    /// name (NAMED_PHONE or NAMED_OTHER), and the roles of its own device
+    /// records.
+    named: BTreeMap<(KeyHash, KeyHash), u8>,
+    own: BTreeMap<KeyHash, u8>,
+    /// The records each signer signed (MAX_PER_ADMIN).
     per_signer: BTreeMap<KeyHash, usize>,
     /// What the set says about revocations, worked out on first use after a
     /// change.
@@ -254,6 +267,9 @@ impl Records {
             ca_key,
             by_id: BTreeMap::new(),
             roots: BTreeMap::from([(ca_key, group_ca.clone())]),
+            pending: Vec::new(),
+            named: BTreeMap::new(),
+            own: BTreeMap::new(),
             per_signer: BTreeMap::new(),
             ev: RefCell::new(None),
         }
@@ -267,55 +283,103 @@ impl Records {
         self.by_id.is_empty()
     }
 
-    /// Checks a record and adds it; reports whether it was new.
+    /// Checks a record and adds it; reports whether it was new. The limits
+    /// are checked after the signature, so that a record nobody signed never
+    /// fills the set.
     pub fn add(&mut self, r: &Record) -> Result<bool> {
         let id = r.id();
         if self.by_id.contains_key(&id) {
             return Ok(false);
         }
-        if self.by_id.len() >= MAX_RECORDS {
+        let s = self.verify(r)?;
+        if self.per_signer.get(&s.signer).copied().unwrap_or(0) >= MAX_PER_ADMIN {
+            return Err(Error::msg("too many records from one signer"));
+        }
+        let n = self.by_id.len();
+        if n >= MAX_RECORDS
+            && (n >= MAX_RECORDS + MAX_PER_ADMIN
+                || s.signer != s.anchor
+                || !self.path().iter().any(|c| c.key_hash() == s.anchor))
+        {
             return Err(Error::msg("too many records"));
         }
-        let s = self.verify(r)?;
-        if s.signer != s.anchor {
-            let n = self.per_signer.entry(s.signer).or_insert(0);
-            if *n >= MAX_PER_ADMIN {
-                return Err(Error::msg("too many records from one admin"));
+        *self.per_signer.entry(s.signer).or_insert(0) += 1;
+        if s.body.kind == "device" && s.signer == s.anchor {
+            let bit = if role(&s.body.role) == "phone" { NAMED_PHONE } else { NAMED_OTHER };
+            if let Some(a) = s.body.admin {
+                *self.named.entry((s.anchor, a)).or_insert(0) |= bit;
             }
-            *n += 1;
+            if s.body.device == s.body.by {
+                *self.own.entry(s.anchor).or_insert(0) |= bit;
+            }
         }
-        if let Some(root) = &s.root {
-            self.roots.entry(root.key_hash()).or_insert_with(|| root.clone());
+        if s.root.is_some() {
+            self.pending.push(id);
         }
         self.by_id.insert(id, s);
         *self.ev.get_mut() = None;
+        self.promote();
         Ok(true)
+    }
+
+    /// Moves the root records of pending that may make their new root a
+    /// known root into roots, until none does.
+    fn promote(&mut self) {
+        let mut grew = true;
+        while grew {
+            grew = false;
+            let mut rest = Vec::new();
+            for id in core::mem::take(&mut self.pending) {
+                let r = &self.by_id[&id];
+                if !self.may_be_known(r) {
+                    rest.push(id);
+                    continue;
+                }
+                let root = r.root.clone().expect("a root record");
+                if let alloc::collections::btree_map::Entry::Vacant(e) = self.roots.entry(root.key_hash()) {
+                    e.insert(root);
+                    grew = true;
+                }
+            }
+            self.pending = rest;
+        }
+    }
+
+    /// Reports whether the root record r may make its new root a known root
+    /// (known_roots), leaving out the revocations and freezes that can still
+    /// stop it: it was signed by its root's own key, by an admin CA that a
+    /// phone's device record from that root's own key names, or by one a
+    /// computer's names when that root is a computer. A root that a
+    /// computer's admin CA names in a phone's group is never known, so
+    /// nothing signed under it enters the set.
+    fn may_be_known(&self, r: &Signed) -> bool {
+        let named = self.named.get(&(r.anchor, r.signer)).copied().unwrap_or(0);
+        r.signer == r.anchor
+            || named & NAMED_PHONE != 0
+            || named & NAMED_OTHER != 0 && self.own.get(&r.anchor) == Some(&NAMED_OTHER)
     }
 
     /// Adds the valid records among rs and returns those that were new, and
     /// an error for each one that is not valid. A record signed under a new
-    /// root is taken once the record that names that root is in.
+    /// root is taken once the records that make that root known are in.
     pub fn add_all(&mut self, rs: &[Record]) -> (Vec<Record>, Vec<Error>) {
         let mut fresh = Vec::new();
         let mut pending: Vec<Record> = rs.to_vec();
         loop {
             let mut rest = Vec::new();
             let mut errs = Vec::new();
-            let mut rooted = false;
+            let roots = self.roots.len();
             for r in pending {
                 match self.add(&r) {
                     Err(e) => {
                         rest.push(r);
                         errs.push(e);
                     }
-                    Ok(true) => {
-                        rooted |= r.is_root();
-                        fresh.push(r);
-                    }
+                    Ok(true) => fresh.push(r),
                     Ok(false) => {}
                 }
             }
-            if !rooted || rest.is_empty() {
+            if self.roots.len() == roots || rest.is_empty() {
                 return (fresh, errs);
             }
             pending = rest;
@@ -377,11 +441,18 @@ impl Records {
     /// root record signed under it that counts and whose new root has the
     /// smallest SHA-256 leads to the next.
     fn path(&self) -> Vec<Cert> {
+        self.steps().0
+    }
+
+    /// The path and the root records that lead along it, one for each root
+    /// after the group CA.
+    fn steps(&self) -> (Vec<Cert>, Vec<&Signed>) {
         let mut path = vec![self.group_ca.clone()];
+        let mut steps = Vec::new();
         let mut on = vec![self.ca_key];
         loop {
             let cur = path.last().unwrap().key_hash();
-            let mut next: Option<(&Cert, [u8; 32])> = None;
+            let mut next: Option<(&Signed, &Cert, [u8; 32])> = None;
             for r in self.by_id.values() {
                 let Some(root) = &r.root else { continue };
                 if r.anchor != cur
@@ -393,15 +464,16 @@ impl Records {
                     continue;
                 }
                 let sum = sha256(&root.der);
-                if next.is_none_or(|(_, best)| sum < best) {
-                    next = Some((root, sum));
+                if next.is_none_or(|(_, _, best)| sum < best) {
+                    next = Some((r, root, sum));
                 }
             }
             match next {
-                None => return path,
-                Some((root, _)) => {
+                None => return (path, steps),
+                Some((r, root, _)) => {
                     on.push(root.key_hash());
                     path.push(root.clone());
+                    steps.push(r);
                 }
             }
         }
@@ -714,25 +786,63 @@ impl Records {
             top = issuer;
             leaf = admin;
         }
+        // The chain must end at a root on the path: a root that only the
+        // identity trusts, as one a Welcome named, is no anchor.
         for root in path {
             if top.signed_by(&root) {
                 if !self.issued(&root.key_hash(), &leaf) {
                     return Some("the certificate is from a root that handed the group over");
                 }
-                break;
+                return None;
             }
         }
-        None
+        Some("the certificate is not from a root of the group")
+    }
+
+    /// The records that lead to the path: each root record on it and, for
+    /// one an admin CA signed, the device records its root's own key signed
+    /// that name that admin CA or the root's own device, as Go's
+    /// Records.PathRecords. A new member gets them in the Welcome's records
+    /// (docs/protocol.md, section 5).
+    pub fn path_records(&self) -> Vec<Record> {
+        let mut out = Vec::new();
+        for st in self.steps().1 {
+            out.push(st.record.clone());
+            if st.signer == st.anchor {
+                continue;
+            }
+            for r in self.by_id.values() {
+                let b = &r.body;
+                if b.kind == "device"
+                    && r.signer == st.anchor
+                    && r.anchor == st.anchor
+                    && (b.device == b.by || b.admin == Some(st.signer))
+                {
+                    out.push(r.record.clone());
+                }
+            }
+        }
+        out
     }
 
     /// The devices list: the latest device record that counts for each
-    /// device, without revoked keys, sorted by name and then ID.
+    /// device among those whose key is not revoked, sorted by name and then
+    /// ID.
     pub fn devices(&self) -> Vec<Device> {
         let on: Vec<KeyHash> = self.path().iter().map(Cert::key_hash).collect();
         let mut latest: BTreeMap<&str, &Signed> = BTreeMap::new();
+        let mut keys: BTreeMap<&str, Vec<KeyHash>> = BTreeMap::new();
+        // By record ID, as Go, so the keys come in the same order; a device
+        // whose records name more than one key stays listed while any of
+        // them is not revoked.
         for r in self.by_id.values() {
-            if r.body.kind != "device" || !self.counts(r, &on) {
+            let Some(key) = r.body.key else { continue };
+            if r.body.kind != "device" || !self.counts(r, &on) || self.revoked(&key) {
                 continue;
+            }
+            let ks = keys.entry(r.body.device.as_str()).or_default();
+            if !ks.contains(&key) {
+                ks.push(key);
             }
             let newer = latest
                 .get(r.body.device.as_str())
@@ -743,7 +853,6 @@ impl Records {
         }
         let mut out: Vec<Device> = latest
             .into_iter()
-            .filter(|(_, r)| !self.revoked(&r.body.key.unwrap()))
             .map(|(id, r)| Device {
                 id: id.to_string(),
                 name: r.body.name.clone(),
@@ -752,6 +861,7 @@ impl Records {
                 key: r.body.key.unwrap(),
                 admin: r.body.admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
                 frozen: self.frozen(&r.body.key.unwrap()) || r.body.admin.is_some_and(|a| self.frozen(&a)),
+                keys: keys.remove(id).unwrap_or_default(),
             })
             .collect();
         out.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));

@@ -111,17 +111,21 @@ func (s *Service) settleRecords(fresh []group.Record) {
 	}
 }
 
-// adoptRootsLocked starts trusting the roots the records lead to when they
-// go further than the identity's, after a root record handed the group to
-// a new root (docs/protocol.md, section 10). s.mu is held.
+// adoptRootsLocked makes the identity trust the roots the records lead to
+// when they differ from its own, after a root record handed the group to a
+// new root or a takeover stopped counting (docs/protocol.md, section 10).
+// The roots are compared by content, not by number, so a root the records
+// do not name never stays trusted. s.mu is held.
 func (s *Service) adoptRootsLocked() error {
 	if s.id == nil || s.nd == nil {
 		return nil
 	}
 	s.recMu.Lock()
-	roots := s.records.Roots()
+	roots, empty := s.records.Roots(), s.records.Len() == 0
 	s.recMu.Unlock()
-	if len(roots) <= len(s.id.Roots) {
+	// A set that is empty, as after a records file that could not be read,
+	// says nothing yet: the peers give the records again.
+	if empty || slices.EqualFunc(roots, s.id.Roots, (*x509.Certificate).Equal) {
 		return nil
 	}
 	next, err := s.id.WithRoots(roots)
@@ -450,12 +454,14 @@ func (s *Service) revoke(target string) (string, error) {
 	case replace && !id.ServesPhone():
 		return "", fmt.Errorf("%s is an admin and holds the iPhone CA, which goes with it, but this device does not hold it yet; remove it on the root or on another admin", d.Name)
 	}
-	key, ok := s.keyOf(group.DeviceID(d.ID), nd)
-	if !ok {
+	keys := s.keysOf(group.DeviceID(d.ID), nd)
+	if len(keys) == 0 {
 		return "", fmt.Errorf("the key of %s is unknown", d.ID)
 	}
-	// An admin goes with its admin key, and the devices it admitted stay.
-	body := group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{key}}
+	// Every key the device ever had in the group goes, so none of them
+	// stays a member nobody sees. An admin goes with its admin key, and the
+	// devices it admitted stay.
+	body := group.RecordBody{Type: group.RecordRevoke, Keys: keys}
 	if admin != nil {
 		body.Keys = append(body.Keys, *admin)
 		s.recMu.Lock()
@@ -467,7 +473,7 @@ func (s *Service) revoke(target string) (string, error) {
 			}
 		}
 		for _, k := range s.records.Admitted(*admin) {
-			if k != key && !slices.Contains(body.Keys, k) {
+			if !slices.Contains(keys, k) && !slices.Contains(body.Keys, k) {
 				body.Keep = append(body.Keep, k)
 			}
 		}
@@ -626,23 +632,43 @@ func (s *Service) adminKeyOf(dev group.DeviceID) *group.KeyHash {
 	return nil
 }
 
-// keyOf returns the key of a device: from its record, or from its
-// connection when it has none.
-func (s *Service) keyOf(dev group.DeviceID, nd *node.Node) (group.KeyHash, bool) {
+// keysOf returns the keys of a device that are not revoked: every key its
+// records name, and the key of its connection when it has one.
+func (s *Service) keysOf(dev group.DeviceID, nd *node.Node) []group.KeyHash {
 	s.recMu.Lock()
 	list := s.records.Devices()
 	s.recMu.Unlock()
+	var keys []group.KeyHash
 	for _, d := range list {
 		if d.ID == dev {
-			return d.Key, true
+			keys = append(keys, d.Keys...)
 		}
 	}
 	for _, p := range nd.Peers() {
-		if p.ID == dev {
-			return p.Key, true
+		if p.ID == dev && !slices.Contains(keys, p.Key) {
+			keys = append(keys, p.Key)
 		}
 	}
-	return group.KeyHash{}, false
+	return keys
+}
+
+// idTaken reports whether a joining device may not take the device ID dev:
+// a device record names it, with any key, or a member with it is connected
+// (docs/protocol.md, section 6). A device that joins again gets a new ID.
+func (s *Service) idTaken(dev group.DeviceID) bool {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id != nil && id.ID == dev {
+		return true
+	}
+	s.recMu.Lock()
+	known := s.records != nil && s.records.Known(dev)
+	s.recMu.Unlock()
+	if known || nd == nil {
+		return known
+	}
+	return slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == dev })
 }
 
 // PhoneRevoked reports whether the iPhone with this phone ID was removed.

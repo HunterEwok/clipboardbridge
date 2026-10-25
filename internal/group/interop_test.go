@@ -279,6 +279,9 @@ type rootVectors struct {
 	Devices []rootDevice `json:"devices"`
 	Chains  []rootChain  `json:"chains"`
 	Digest  string       `json:"digest"`
+	// Dropped is how many of Records are not valid for the set: those
+	// signed under a root that can never be known.
+	Dropped int `json:"dropped,omitempty"`
 }
 
 type rootDevice struct {
@@ -598,6 +601,9 @@ type adminVectors struct {
 	Keys    []adminKey   `json:"keys"`
 	Chains  []rootChain  `json:"chains"`
 	Digest  string       `json:"digest"`
+	// Dropped is how many of Records are not valid for the set: those
+	// signed under a root that can never be known.
+	Dropped int `json:"dropped,omitempty"`
 }
 
 type adminKey struct {
@@ -643,10 +649,11 @@ func TestGoAdminVectors(t *testing.T) {
 			deviceRecord(t, g, pc, pcChain, member(t, pc), "thief's", 9),
 		}
 		s := NewRecords(g)
-		if _, errs := s.AddAll(all); len(errs) > 0 {
-			t.Fatal(errs)
+		_, errs := s.AddAll(all)
+		if len(errs) != 1 {
+			t.Fatalf("%d records dropped, want the one signed under the root the computer admin named: %v", len(errs), errs)
 		}
-		v := adminVectors{GroupCA: g.Raw, Records: all, Digest: s.Digest()}
+		v := adminVectors{GroupCA: g.Raw, Records: all, Digest: s.Digest(), Dropped: len(errs)}
 		for _, r := range s.Roots() {
 			v.Roots = append(v.Roots, r.Raw)
 		}
@@ -671,6 +678,7 @@ func TestGoAdminVectors(t *testing.T) {
 			{"the tv", []*x509.Certificate{tv, pc.Cert}},
 			{"the computer admin", []*x509.Certificate{pcMember, pc.Cert}},
 			{"the admin phone", []*x509.Certificate{phoneMember, phone.Cert}},
+			{"the named root's device", []*x509.Certificate{member(t, own)}},
 		} {
 			rc := rootChain{Name: c.name, Refused: s.Refused(c.chain) != nil}
 			for _, cert := range c.chain {
@@ -699,8 +707,8 @@ func TestGoAdminVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
-	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
-		t.Fatal(errs)
+	if _, errs := s.AddAll(v.Records); len(errs) != v.Dropped || v.Dropped != 1 {
+		t.Fatalf("%d records dropped, the file says %d: %v", len(errs), v.Dropped, errs)
 	}
 	if s.Digest() != v.Digest {
 		t.Error("the digest differs")
@@ -721,7 +729,7 @@ func TestGoAdminVectors(t *testing.T) {
 			t.Errorf("%s: revoked %v, the file says %v", k.Name, s.Revoked(k.Key), k.Revoked)
 		}
 	}
-	wantRefused := map[string]bool{"the laptop": false, "the printer": false, "the tv": true, "the computer admin": true, "the admin phone": false}
+	wantRefused := map[string]bool{"the laptop": false, "the printer": false, "the tv": true, "the computer admin": true, "the admin phone": false, "the named root's device": true}
 	for _, c := range v.Chains {
 		var chain []*x509.Certificate
 		for _, der := range c.Chain {
@@ -744,6 +752,9 @@ type freezeVectors struct {
 	Keys    []freezeKey  `json:"keys"`
 	Chains  []rootChain  `json:"chains"`
 	Digest  string       `json:"digest"`
+	// Dropped is how many of Records are not valid for the set: those
+	// signed under a root that can never be known.
+	Dropped int `json:"dropped,omitempty"`
 }
 
 type freezeKey struct {
@@ -885,6 +896,7 @@ type takeoverCase struct {
 	Roots   [][]byte   `json:"roots"` // the roots after the group CA
 	Keys    []adminKey `json:"keys"`
 	Digest  string     `json:"digest"`
+	Dropped int        `json:"dropped,omitempty"` // as adminVectors.Dropped
 }
 
 // TestGoTakeoverVectors writes (with -update) and checks
@@ -895,6 +907,7 @@ type takeoverCase struct {
 func TestGoTakeoverVectors(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "interop", "go-takeover.json")
 	wantRoots := map[string]int{"computer root": 1}
+	wantDropped := map[string]int{"phone root": 1}
 	if *update {
 		var v takeoverVectors
 		for _, name := range []string{"computer root", "phone root", "frozen admin", "old root removes the admin"} {
@@ -922,10 +935,8 @@ func TestGoTakeoverVectors(t *testing.T) {
 				all = append(all, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
 			}
 			s := NewRecords(g)
-			if _, errs := s.AddAll(all); len(errs) > 0 {
-				t.Fatal(errs)
-			}
-			c := takeoverCase{Name: name, GroupCA: g.Raw, Records: all, Digest: s.Digest()}
+			_, errs := s.AddAll(all)
+			c := takeoverCase{Name: name, GroupCA: g.Raw, Records: all, Digest: s.Digest(), Dropped: len(errs)}
 			for _, r := range s.Roots() {
 				c.Roots = append(c.Roots, r.Raw)
 			}
@@ -962,8 +973,10 @@ func TestGoTakeoverVectors(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := NewRecords(ca)
-		if _, errs := s.AddAll(c.Records); len(errs) > 0 {
-			t.Fatal(errs)
+		// In a phone's group the new root is never known, and the
+		// revocation signed under it is dropped.
+		if _, errs := s.AddAll(c.Records); len(errs) != c.Dropped || c.Dropped != wantDropped[c.Name] {
+			t.Fatalf("%s: %d records dropped, the file says %d: %v", c.Name, len(errs), c.Dropped, errs)
 		}
 		if len(s.Roots()) != len(c.Roots) || len(c.Roots) != wantRoots[c.Name] {
 			t.Errorf("%s: %d roots, the file has %d", c.Name, len(s.Roots()), len(c.Roots))

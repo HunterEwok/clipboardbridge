@@ -43,6 +43,9 @@ public enum Pairing {
         /// The roots that took a phone group over from groupCA, in order;
         /// nil when it was never handed over (section 10, "Roots").
         public var roots: [Data]?
+        /// The records that lead to roots (RecordSet.pathRecords), by which
+        /// the joiner checks them; nil with roots.
+        public var records: [Member.Record]?
         public var groupCAKey: Data?
         public var phoneCA: Data?
         public var phoneCAKey: Data?
@@ -51,7 +54,7 @@ public enum Pairing {
         public var adminCA: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, issuer, groupCA = "group_ca", roots, groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
+            case cert, issuer, groupCA = "group_ca", roots, records, groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
                  adminCA = "admin_ca"
         }
 
@@ -106,7 +109,7 @@ public enum Pairing {
 
     /// The error codes that travel in frames. Anything else means "refused".
     public enum ErrorCode: String {
-        case wrongCode = "wrong-code", closed, busy, expired, tooMany = "too-many", refused
+        case wrongCode = "wrong-code", closed, busy, expired, tooMany = "too-many", taken, refused
         public init(wire: String) { self = ErrorCode(rawValue: wire) ?? .refused }
     }
 

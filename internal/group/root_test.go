@@ -342,3 +342,62 @@ func TestUpgraded(t *testing.T) {
 		t.Error("a key holder kept the old keys after the upgrade")
 	}
 }
+
+// TestPathRecords checks that the records a Welcome carries lead a new
+// device to the same roots as the whole set.
+func TestPathRecords(t *testing.T) {
+	h := newHandover(t)
+	s := h.records(t)
+	path := s.PathRecords()
+	fresh := NewRecords(h.pg.root.Cert)
+	if _, errs := fresh.AddAll(path); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if roots := fresh.Roots(); len(roots) != 1 || !roots[0].Equal(h.newRoot.Cert) {
+		t.Fatalf("the path records lead to %d roots, want the new root", len(roots))
+	}
+	if len(path) >= len(h.all) {
+		t.Errorf("%d path records of %d: the Welcome carries more than the path needs", len(path), len(h.all))
+	}
+	if got := NewRecords(h.pg.root.Cert).PathRecords(); len(got) != 0 {
+		t.Errorf("%d path records in a group never handed over", len(got))
+	}
+}
+
+// TestFullSetTakesTheRoot checks that admins that fill the set to
+// MaxRecords leave room for the root's own records, so the root still
+// removes them, and that no one admin goes past MaxPerAdmin.
+func TestFullSetTakesTheRoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("signs MaxRecords records")
+	}
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	admins := []*CA{pg.a, pg.b, adminCA(t, pg.root), adminCA(t, pg.root)}
+	s := NewRecords(g)
+	for _, a := range admins {
+		mustAdd(t, s, computerAdminRecord(t, pg, member(t, a), "pc", KeyHashOf(a.Cert)))
+	}
+	laptop := member(t, pg.a)
+	var err error
+	for i := 0; err == nil; i++ {
+		a := admins[i/MaxPerAdmin%len(admins)]
+		_, err = s.Add(deviceRecord(t, g, a, []*x509.Certificate{a.Cert}, laptop, "laptop", int64(i+1)))
+	}
+	if s.Len() != MaxRecords {
+		t.Fatalf("the set stopped at %d records, want %d: %v", s.Len(), MaxRecords, err)
+	}
+	if _, err := s.Add(deviceRecord(t, g, pg.a, []*x509.Certificate{pg.a.Cert}, laptop, "laptop", 1<<40)); err == nil {
+		t.Error("an admin went past MaxPerAdmin")
+	}
+	var keys []KeyHash
+	for _, a := range admins {
+		keys = append(keys, KeyHashOf(a.Cert))
+	}
+	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, keys, nil))
+	for _, k := range keys {
+		if !s.Revoked(k) {
+			t.Error("the full set did not take the root's removal of an admin")
+		}
+	}
+}

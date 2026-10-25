@@ -14,12 +14,14 @@
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use serde::{Deserialize, Serialize};
 
 use crate::certs::{self, Cert, DeviceId, b64};
 use crate::error::{Context, Error, Result, Wrap};
 use crate::identity::{self, Identity};
+use crate::records::{Record, Records};
 use crate::third_party::cpace;
 use crate::wire;
 
@@ -58,6 +60,9 @@ struct Welcome {
     group_ca: Vec<u8>,
     #[serde(with = "b64::list", default)]
     roots: Vec<Vec<u8>>,
+    /// The records that lead to roots, by which the joiner checks them.
+    #[serde(default)]
+    records: Vec<Record>,
     #[serde(with = "b64::opt", default)]
     group_ca_key: Option<Vec<u8>>,
     #[serde(with = "b64::opt", default)]
@@ -209,7 +214,10 @@ impl Joiner {
         })
         .context("cannot start the exchange")?;
         let first = frame(&Frame { msg: Some(msg), ad: Some(ad), ..Default::default() })?;
-        Ok((Exchange { joiner: self, st, member_cert, member_first, member: None }, first))
+        Ok((
+            Exchange { joiner: self, st, member_cert, member_first, member: None, records: RefCell::new(Vec::new()) },
+            first,
+        ))
     }
 }
 
@@ -224,6 +232,9 @@ pub struct Exchange<'a> {
     member_cert: Cert,
     member_first: bool,
     member: Option<MemberAd>,
+    /// The records the Welcome gave that lead to the group's roots, once
+    /// welcome took it: the program keeps them with the identity.
+    records: RefCell<Vec<Record>>,
 }
 
 /// A failed step: the error, and the frame that tells the member, if any.
@@ -277,6 +288,12 @@ impl Exchange<'_> {
         self.identity(&welcome, member)
     }
 
+    /// The records that lead to the group's roots, from the Welcome that
+    /// welcome took; the program saves them before the identity.
+    pub fn records(&self) -> Vec<Record> {
+        self.records.borrow().clone()
+    }
+
     /// Checks what the member sent and builds the new identity.
     fn identity(&self, w: &Welcome, member: &MemberAd) -> Result<Identity> {
         let member_cert = &self.member_cert;
@@ -287,7 +304,16 @@ impl Exchange<'_> {
         if certs::tag(&group_ca) != member.group {
             return Err(Error::msg("the member sent another group CA than it announced"));
         }
-        let roots = w.roots.iter().map(|d| Cert::parse(d)).collect::<Result<Vec<_>>>()?;
+        // The roots are only those the records lead to: an admin could
+        // otherwise name a root of its own, and every certificate from it
+        // would pass here for good, whatever the group's root removes.
+        let mut path = Records::new(&group_ca);
+        let _ = path.add_all(&w.records);
+        let roots = path.roots();
+        if roots.iter().map(|c| &c.der).ne(w.roots.iter()) {
+            return Err(Error::msg("the member's roots are not the ones the group's records lead to"));
+        }
+        *self.records.borrow_mut() = path.all();
         let mut id = Identity {
             id: self.joiner.id.clone(),
             key: self.joiner.key.clone(),

@@ -144,13 +144,19 @@ final class RootTests: XCTestCase {
         let selfSigned = try GroupCertificates.selfSigned(device: joiner, signer: key)
         var w = Pairing.Welcome(cert: try GroupCertificates.member(device: joiner, publicKey: key.publicKeyDER, ca: g.b.currentRoot,
                                                                    caSigner: g.newRootKey, now: t0), groupCA: g.b.groupCA)
-        w.roots = g.b.roots
+        (w.roots, w.records) = (g.b.roots, g.b.records.pathRecords)
+        XCTAssertLessThan(g.b.records.pathRecords.count, g.b.records.records.count, "the welcome carries more than the path needs")
         let j = PairingJoiner.Joined(device: joiner, welcome: w, member: .init(device: g.b.device, group: g.b.tag))
         let info = Pairing.Info(name: "C", os: "ios")
         XCTAssertNoThrow(try PairingJoiner.check(j, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
         var bad = j
         bad.welcome.roots = nil
         XCTAssertThrowsError(try PairingJoiner.check(bad, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
+        // A root that no record leads to, as one an admin made up and named
+        // in the Welcome, is refused.
+        var made = j
+        made.welcome.records = nil
+        XCTAssertThrowsError(try PairingJoiner.check(made, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
         XCTAssertEqual(PhoneGroup.joined(j).roots, g.b.roots)
     }
 
@@ -197,10 +203,14 @@ final class RootTests: XCTestCase {
             var keys: [Key]
             var chains: [Chain]
             var digest: String
+            var dropped: Int?
         }
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-admins.json")))
         var set = RecordSet()
-        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count)
+        // The record signed under the root the computer admin named is
+        // dropped: that root is never known.
+        XCTAssertEqual(v.dropped, 1)
+        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count - (v.dropped ?? 0))
         XCTAssertEqual(set.digest, v.digest)
         XCTAssertTrue(set.roots.isEmpty, "a computer admin handed the group over")
         XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
@@ -254,6 +264,7 @@ final class RootTests: XCTestCase {
                 var roots: [Data]?
                 var keys: [Key]
                 var digest: String
+                var dropped: Int?
             }
             var cases: [Case]
         }
@@ -261,7 +272,8 @@ final class RootTests: XCTestCase {
         XCTAssertEqual(v.cases.count, 4)
         for c in v.cases {
             var set = RecordSet()
-            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count, c.name)
+            XCTAssertEqual(c.dropped ?? 0, c.name == "phone root" ? 1 : 0, c.name)
+            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count - (c.dropped ?? 0), c.name)
             XCTAssertEqual(set.digest, c.digest, c.name)
             XCTAssertEqual(set.roots, c.roots ?? [], c.name)
             for k in c.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(c.name): \(k.name)") }

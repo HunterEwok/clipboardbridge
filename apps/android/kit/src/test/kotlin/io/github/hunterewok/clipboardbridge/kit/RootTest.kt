@@ -137,12 +137,16 @@ class RootTest {
         val key = SoftwareSigner()
         val selfSigned = GroupCertificates.selfSigned(joiner, key)
         val cert = GroupCertificates.member(joiner, key.publicKeyDER, g.b.currentRoot, g.newRootKey, t0)
-        val w = Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots)
+        val w = Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots, records = g.b.records.pathRecords)
         val j = PairingJoiner.Joined(joiner, w, Pairing.MemberAD(g.b.device, g.b.tag))
         val info = Pairing.Info("C", "android")
         PairingJoiner.check(j, info, g.b.memberCert, selfSigned, t0)
+        assertTrue(g.b.records.pathRecords.size < g.b.records.records.size, "the welcome carries more than the path needs")
         val bad = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA), j.member)
         assertFailsWith<PairingJoiner.Failure> { PairingJoiner.check(bad, info, g.b.memberCert, selfSigned, t0) }
+        // A root that no record leads to, as one an admin made up and named in the Welcome, is refused.
+        val made = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots), j.member)
+        assertFailsWith<PairingJoiner.Failure> { PairingJoiner.check(made, info, g.b.memberCert, selfSigned, t0) }
         assertEquals(g.b.roots.map { Key(it) }, PhoneGroup.joined(j).roots.map { Key(it) })
     }
 

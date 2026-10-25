@@ -31,6 +31,20 @@ final class RecordsTests: XCTestCase {
         XCTAssertNotEqual(g.records.digest, digest)
     }
 
+    /// A device ID whose records name two keys stays listed while either is
+    /// not revoked, and removing it revokes both, as Go's
+    /// TestDeviceWithTwoKeys.
+    func testDeviceWithTwoKeys() throws {
+        var (g, ca, pc) = try makeGroup()
+        let second = try GroupCertificates.member(device: pc, publicKey: SoftwareSigner().publicKeyDER, ca: g.groupCA, caSigner: ca,
+                                                  now: Date().addingTimeInterval(1))
+        _ = try g.record(device: pc, name: "pi", role: "full", key: Records.keyHash(cert: second), caSigner: ca, now: Date().addingTimeInterval(1))
+        XCTAssertTrue(g.records.knows(pc))
+        XCTAssertEqual(g.devices.first { $0.id == pc }?.keys.count, 2)
+        _ = try g.revoke(device: pc, caSigner: ca, now: Date())
+        XCTAssertEqual(g.devices.map(\.id), [g.device])
+    }
+
     func testRefused() throws {
         let (g, _, _) = try makeGroup()
         var set = RecordSet()

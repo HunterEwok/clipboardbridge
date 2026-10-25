@@ -17,6 +17,11 @@ use crate::identity::Identity;
 use crate::tls;
 use crate::wire;
 
+/// What stores a join's result: the records that lead to the group's
+/// roots, then the identity, so the identity never trusts roots its records
+/// do not name.
+pub type Save = dyn Fn(&Identity, &[crate::records::Record]) -> Result<()>;
+
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a listening join waits.
 pub const LIFETIME: Duration = Duration::from_secs(5 * 60);
@@ -24,7 +29,7 @@ pub const LIFETIME: Duration = Duration::from_secs(5 * 60);
 /// Runs the joining side over a connection a member dialed to this joiner,
 /// which showed its QR code. The member confirms first, so a device that
 /// does not know the code learns nothing.
-pub fn accept(j: &Joiner, sock: TcpStream, code: &str, save: &dyn Fn(&Identity) -> Result<()>) -> Result<Identity> {
+pub fn accept(j: &Joiner, sock: TcpStream, code: &str, save: &Save) -> Result<Identity> {
     let (cfg, exporter) = tls::pair_server(&j.cert, &j.key, &tls::clock())?;
     let session = tls::Session::server(Arc::new(cfg))?;
     run(j, tls::Stream::new(session, sock), &exporter, code, true, save)
@@ -32,7 +37,7 @@ pub fn accept(j: &Joiner, sock: TcpStream, code: &str, save: &dyn Fn(&Identity) 
 
 /// Runs the joining side over a connection to a member's open pairing
 /// window, with the code the user typed.
-pub fn join(j: &Joiner, sock: TcpStream, code: &str, save: &dyn Fn(&Identity) -> Result<()>) -> Result<Identity> {
+pub fn join(j: &Joiner, sock: TcpStream, code: &str, save: &Save) -> Result<Identity> {
     let (cfg, exporter) = tls::pair_client(&j.cert, &j.key, &tls::clock())?;
     let session = tls::Session::client(Arc::new(cfg), tls::server_name(None))?;
     run(j, tls::Stream::new(session, sock), &exporter, code, false, save)
@@ -44,7 +49,7 @@ fn run(
     exporter: &tls::Exporter,
     code: &str,
     member_first: bool,
-    save: &dyn Fn(&Identity) -> Result<()>,
+    save: &Save,
 ) -> Result<Identity> {
     normalize_code(code)?;
     tc.sock.set_read_timeout(Some(ATTEMPT_TIMEOUT)).context("the connection broke")?;
@@ -74,7 +79,7 @@ fn exchange(
     member_der: &[u8],
     sid: &[u8],
     member_first: bool,
-    save: &dyn Fn(&Identity) -> Result<()>,
+    save: &Save,
 ) -> Result<Identity> {
     let send = |rw: &mut dyn Write, f: &[u8]| -> Result<()> {
         rw.write_all(f).context("the connection broke")?;
@@ -92,7 +97,7 @@ fn exchange(
         }
     };
     send(rw, &confirm)?;
-    let res = ex.welcome(&wire::read_frame(rw, MAX_FRAME)?).and_then(|id| save(&id).map(|_| id));
+    let res = ex.welcome(&wire::read_frame(rw, MAX_FRAME)?).and_then(|id| save(&id, &ex.records()).map(|_| id));
     let _ = send(rw, &done(res.is_ok()));
     res
 }
@@ -146,7 +151,7 @@ pub fn listen(
     code: &str,
     wait: Duration,
     shown: &dyn Fn(&str),
-    save: &dyn Fn(&Identity) -> Result<()>,
+    save: &Save,
     log: &dyn Fn(&str),
 ) -> Result<Identity> {
     let port = ln.local_addr().context("cannot listen")?.port();

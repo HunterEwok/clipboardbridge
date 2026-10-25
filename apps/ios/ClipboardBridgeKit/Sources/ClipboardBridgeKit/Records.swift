@@ -125,11 +125,57 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
     /// Records beyond this many are refused.
     public static let max = 4096
-    /// Records one admin CA signs at most, so a stolen admin cannot fill
-    /// the set and shut the others out.
+    /// Records one signer (an admin CA, or a root's own key) signs at most,
+    /// so a stolen admin cannot fill the set and shut the others out; past
+    /// max the set still takes this many records from a path root's own
+    /// key, so it takes the root's removal of an admin that filled it.
     public static let maxPerAdmin = 1024
 
+    /// The roots records may be signed under: the group CA and the new root
+    /// of every root record that may make it a known root (mayBeKnown); the
+    /// other root records wait in pending, as Go's group.Records.
+    private var rootList: [Data] = []
+    private var pending: [Pending] = []
+    /// For each root, the admin CAs that device records its own key signed
+    /// name (namedPhone or namedOther), and the roles of its own device
+    /// records.
+    private var named: [Data: [Data: Int]] = [:]
+    private var own: [Data: Int] = [:]
+    /// The records each signer signed (maxPerAdmin).
+    private var perSigner: [Data: Int] = [:]
+
+    private struct Pending: Sendable {
+        var root: Data
+        var anchor: Data
+        var signer: Data
+    }
+
+    private static let namedPhone = 1, namedOther = 2
+
+    private enum CodingKeys: String, CodingKey { case records, groupCA }
+
     public init() {}
+
+    /// A set read back adds its records again, so that what it keeps of
+    /// them follows the same rules as for records from the peers.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rs = try c.decode([Member.Record].self, forKey: .records)
+        if let ca = try c.decodeIfPresent(Data.self, forKey: .groupCA) {
+            addAll(rs, groupCA: ca)
+            groupCA = ca
+        } else {
+            records = rs // a set saved before root records; its owner adds them again with the group CA
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(records, forKey: .records)
+        try c.encodeIfPresent(groupCA, forKey: .groupCA)
+    }
+
+    public static func == (a: RecordSet, b: RecordSet) -> Bool { a.records == b.records && a.groupCA == b.groupCA }
 
     /// A device as the list shows it.
     public struct Device: Equatable, Sendable, Identifiable {
@@ -148,61 +194,104 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// An admin computer another admin froze: no admin until the root
         /// or an admin phone unfreezes it, and refused.
         public var frozen = false
+        /// Every key that a counting device record names for it and that is
+        /// not revoked, key among them: what removing it revokes.
+        public var keys: [Data] = []
     }
 
     /// Adds a record signed under one of the group's roots, by the root's
     /// key or by an admin CA the root certified (its chain holds that CA),
     /// unless it is known; reports whether it was new. Records of another
     /// group are refused, and so is a record signed under a root that no
-    /// root record in the set names yet.
+    /// root record in the set may make known yet. The limits are checked
+    /// after the signature: maxPerAdmin for each signer, and past max only
+    /// records a path root's own key signed, up to maxPerAdmin more.
     @discardableResult
     public mutating func add(_ r: Member.Record, groupCA: Data) -> Bool {
         if self.groupCA == nil { self.groupCA = groupCA }
+        if rootList.isEmpty { rootList = [groupCA] }
         let id = Records.id(r)
-        guard self.groupCA == groupCA, !records.contains(where: { Records.id($0) == id }), records.count < Self.max,
+        guard self.groupCA == groupCA, !records.contains(where: { Records.id($0) == id }),
               let body = try? JSONDecoder().decode(Records.Body.self, from: r.body),
               body.v == Records.version, body.group == GroupCertificates.tag(groupCA: groupCA),
-              let anchor = Self.anchor(r, roots: knownRoots(groupCA)) else { return false }
+              let anchor = Self.anchor(r, roots: rootList), let anchorKey = try? Records.keyHash(cert: anchor.root) else { return false }
         if body.type == "root" {
             guard (try? ParsedCertificate(der: anchor.root))?.pathLength == 1, let root = body.root,
                   (try? GroupCertificates.checkRoot(root)) != nil else { return false }
         }
-        if let admin = r.chain?.first, records.lazy.filter({ $0.chain?.first == admin }).count >= Self.maxPerAdmin { return false }
+        let signer = anchor.signer, n = perSigner[signer] ?? 0
+        guard n < Self.maxPerAdmin else { return false }
+        if records.count >= Self.max {
+            guard records.count < Self.max + Self.maxPerAdmin, signer == anchorKey, Eval(self).onPath.contains(anchorKey) else { return false }
+        }
+        perSigner[signer] = n + 1
         records.append(r)
+        if body.type == "device" && signer == anchorKey {
+            let bit = Records.role(body.role) == "phone" ? Self.namedPhone : Self.namedOther
+            if let a = body.admin { named[anchorKey, default: [:]][a, default: 0] |= bit }
+            if body.device != nil && body.device == body.by { own[anchorKey, default: 0] |= bit }
+        }
+        if body.type == "root", let root = body.root { pending.append(Pending(root: root, anchor: anchorKey, signer: signer)) }
+        promote()
         return true
     }
 
-    /// Adds every record of rs that is valid, until nothing new is added,
-    /// so that a record signed under a new root is taken together with the
-    /// root record that names it, in any order; returns the new ones.
-    @discardableResult
-    public mutating func addAll(_ rs: [Member.Record], groupCA: Data) -> [Member.Record] {
-        var fresh: [Member.Record] = [], pending = rs
-        while true {
-            var rest: [Member.Record] = [], rooted = false
-            for r in pending {
-                if add(r, groupCA: groupCA) {
-                    fresh.append(r)
-                    rooted = rooted || (try? JSONDecoder().decode(Records.Body.self, from: r.body))?.type == "root"
-                } else if !records.contains(where: { Records.id($0) == Records.id(r) }) {
-                    rest.append(r)
+    /// Moves the root records of pending that may make their new root known
+    /// into rootList, until none does.
+    private mutating func promote() {
+        var grew = true
+        while grew {
+            grew = false
+            var rest: [Pending] = []
+            for p in pending {
+                guard mayBeKnown(p) else {
+                    rest.append(p)
+                    continue
+                }
+                if !rootList.contains(p.root) {
+                    rootList.append(p.root)
+                    grew = true
                 }
             }
-            if !rooted || rest.isEmpty { return fresh }
             pending = rest
         }
     }
 
-    /// The roots records may be signed under: the group CA and the new root
-    /// of every root record in the set.
-    private func knownRoots(_ groupCA: Data) -> [Data] {
-        var roots = [groupCA]
-        for r in records {
-            if let b = try? JSONDecoder().decode(Records.Body.self, from: r.body), b.type == "root", let root = b.root,
-               !roots.contains(root) { roots.append(root) }
-        }
-        return roots
+    /// Whether a root record may make its new root a known root, leaving
+    /// out the revocations and freezes that can still stop it: the root's
+    /// own key signed it, or an admin CA that a phone's device record from
+    /// that root's own key names, or one a computer's names when that root
+    /// is a computer. A root that a computer's admin CA names in a phone's
+    /// group is never known, so nothing signed under it enters the set.
+    private func mayBeKnown(_ p: Pending) -> Bool {
+        let n = named[p.anchor]?[p.signer] ?? 0
+        return p.signer == p.anchor || n & Self.namedPhone != 0 || (n & Self.namedOther != 0 && own[p.anchor] == Self.namedOther)
     }
+
+    /// Adds every record of rs that is valid, until nothing new is added,
+    /// so that a record signed under a new root is taken together with the
+    /// records that make that root known, in any order; returns the new
+    /// ones.
+    @discardableResult
+    public mutating func addAll(_ rs: [Member.Record], groupCA: Data) -> [Member.Record] {
+        var fresh: [Member.Record] = [], pending = rs
+        while true {
+            var rest: [Member.Record] = []
+            let roots = rootList.count
+            for r in pending {
+                if add(r, groupCA: groupCA) {
+                    fresh.append(r)
+                } else if !records.contains(where: { Records.id($0) == Records.id(r) }) {
+                    rest.append(r)
+                }
+            }
+            if rootList.count == roots || rest.isEmpty { return fresh }
+            pending = rest
+        }
+    }
+
+    /// The roots records may be signed under (rootList).
+    private func knownRoots(_ groupCA: Data) -> [Data] { rootList.isEmpty ? [groupCA] : rootList }
 
     /// The root a record was signed under and the key hash of its signer:
     /// a root's own key without a chain, an admin CA under a root with one;
@@ -260,6 +349,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// The roots from the group CA to the current one, DER.
         var path: [Data] = []
         var onPath: Set<Data> = []
+        /// The root records that lead along path, one for each root after
+        /// the group CA.
+        var steps: [Entry] = []
 
         init(_ set: RecordSet) {
             guard let groupCA = set.groupCA else { return }
@@ -275,14 +367,15 @@ public struct RecordSet: Codable, Equatable, Sendable {
             path = [groupCA]
             onPath = [(try? Records.keyHash(cert: groupCA)) ?? Data()]
             while let cur = path.last.flatMap({ try? Records.keyHash(cert: $0) }) {
-                let next = entries.compactMap { e -> (Data, Data)? in
+                let next = entries.compactMap { e -> (Data, Data, Entry)? in
                     guard e.body.type == "root", e.anchor == cur, let root = e.body.root, let k = try? Records.keyHash(cert: root),
                           !onPath.contains(k), !revoked.contains(e.signer), fromRoot(e), mayHandOver(e) else { return nil }
-                    return (root, k)
+                    return (root, k, e)
                 }.min { Data(SHA256.hash(data: $0.0)).lexicographicallyPrecedes(Data(SHA256.hash(data: $1.0))) }
                 guard let next else { break }
                 path.append(next.0)
                 onPath.insert(next.1)
+                steps.append(next.2)
             }
         }
 
@@ -495,25 +588,54 @@ public struct RecordSet: Codable, Equatable, Sendable {
             }
             (top, leaf) = (issuer, admin)
         }
-        if let root = ev.path.first(where: { GroupCertificates.signed(top, by: $0) }), let rk = try? Records.keyHash(cert: root),
-           !ev.issued(rk, leaf) {
+        // The chain must end at a root on the path: a root that only the
+        // identity trusts, as one a Welcome named, is no anchor.
+        guard let root = ev.path.first(where: { GroupCertificates.signed(top, by: $0) }) else {
+            return "the certificate is not from a root of the group"
+        }
+        if let rk = try? Records.keyHash(cert: root), !ev.issued(rk, leaf) {
             return "the certificate is from a root that handed the group over"
         }
         return nil
     }
 
+    /// The records that lead to the path: each root record on it and, for
+    /// one an admin CA signed, the device records its root's own key signed
+    /// that name that admin CA or the root's own device, as Go's
+    /// Records.PathRecords. A new member gets them in the Welcome's records
+    /// (docs/protocol.md, section 5).
+    public var pathRecords: [Member.Record] {
+        let ev = Eval(self)
+        var out: [Member.Record] = []
+        for st in ev.steps {
+            out.append(st.record)
+            if st.signer == st.anchor { continue }
+            out += ev.entries.filter { e in
+                let b = e.body
+                return b.type == "device" && e.signer == st.anchor && e.anchor == st.anchor
+                    && ((b.device != nil && b.device == b.by) || b.admin == st.signer)
+            }.sorted { $0.id.lexicographicallyPrecedes($1.id) }.map(\.record)
+        }
+        return out
+    }
+
     /// The devices list: the latest device record that counts for each
-    /// device (by time, then record ID), less the revoked keys, sorted by
-    /// name. A device record counts when it was signed under a root on the
-    /// path, by an admin CA that still stands under it, and its signer is
-    /// not revoked, or every revocation of the signer keeps the device's
-    /// key.
+    /// device (by time, then record ID) among those whose key is not
+    /// revoked, sorted by name. A device record counts when it was signed
+    /// under a root on the path, by an admin CA that still stands under it,
+    /// and its signer is not revoked, or every revocation of the signer
+    /// keeps the device's key. A device whose records name more than one
+    /// key stays listed while any of them is not revoked, as Go's
+    /// Records.Devices.
     public var devices: [Device] {
         let ev = Eval(self)
         var latest: [String: (Member.Record, Records.Body)] = [:]
-        for e in ev.entries where e.body.type == "device" {
+        var keys: [String: [Data]] = [:]
+        // By record ID, as Go, so the keys come in the same order.
+        for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) where e.body.type == "device" {
             let (r, b) = (e.record, e.body)
-            guard ev.counts(e), let d = b.device else { continue }
+            guard ev.counts(e), let d = b.device, let k = b.key, !ev.revoked.contains(k) else { continue }
+            if !(keys[d] ?? []).contains(k) { keys[d, default: []].append(k) }
             if let cur = latest[d] {
                 let newer = b.time_ms != cur.1.time_ms ? b.time_ms > cur.1.time_ms
                     : Records.id(r).lexicographicallyPrecedes(Records.id(cur.0)) == false
@@ -522,10 +644,10 @@ public struct RecordSet: Codable, Equatable, Sendable {
             latest[d] = (r, b)
         }
         return latest.compactMap { d, rb -> Device? in
-            guard let key = rb.1.key, !ev.revoked.contains(key) else { return nil }
+            guard let key = rb.1.key else { return nil }
             return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
                           admin: rb.1.admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: rb.1.admin,
-                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false)
+                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false, keys: keys[d] ?? [key])
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 
@@ -553,6 +675,13 @@ public struct RecordSet: Codable, Equatable, Sendable {
             if let k = e.body.key, !keys.contains(k) { keys.append(k) }
         }
         return keys
+    }
+
+    /// Whether a valid device record names the device ID, with any key and
+    /// whether or not it counts: an ID a new device may not take (section
+    /// 6).
+    public func knows(_ device: String) -> Bool {
+        records.contains { (try? JSONDecoder().decode(Records.Body.self, from: $0.body)).map { $0.type == "device" && $0.device == device } ?? false }
     }
 
     /// The phone that holds the root: the one whose own record the current
