@@ -30,7 +30,8 @@ import (
 // names another one. The group's hub sends a tunnel message to a member
 // whose hello offers a tunnel key. An admin sends a command message with a
 // signed command for the receiver, such as a sync mode, which answers with
-// a result message.
+// a result message. A hub sends a hubs message to another device that may
+// be a hub, with its offer and its clients' keys.
 const (
 	typeHello   = "hello"
 	typeEvent   = "event"
@@ -43,6 +44,7 @@ const (
 	typeTun     = "tunnel"
 	typeCommand = "command"
 	typeResult  = "result"
+	typeHubs    = "hubs"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -101,6 +103,20 @@ type message struct {
 	Command *group.Record `json:"command,omitempty"`
 	// Result, in a result message, answers a command.
 	Result *Result `json:"result,omitempty"`
+	// Hubs, in a hubs message, is what a hub shares with the group's other
+	// hubs (docs/protocol.md, section 11, "Several hubs").
+	Hubs *HubShare `json:"hubs,omitempty"`
+}
+
+// HubShare is what a hub tells another device that may be a hub: its offer
+// without a preshared key, whether it serves its clients now, and the
+// clients it keeps, itself among them, with their keys, so that each hub
+// of the group can take every client (docs/protocol.md, section 11,
+// "Several hubs").
+type HubShare struct {
+	Serving bool              `json:"serving,omitempty"`
+	Offer   *TunnelOffer      `json:"offer,omitempty"`
+	Clients []group.HubClient `json:"clients,omitempty"`
 }
 
 // Result answers a command (docs/protocol.md, section 15).
@@ -138,10 +154,14 @@ type TunnelOffer struct {
 	// object that internal/tunnel reads; with it, it is the only way to
 	// the hub.
 	VLESS json.RawMessage `json:"vless,omitempty"`
-	// Hub, in an offer the group's hub passes on when it hands the hub
-	// over, is the device that is the hub now (section 11, "Moving the
-	// hub"); absent when the sender is the hub.
+	// Hub, in an offer a hub passes on, is the hub it is for: another of
+	// the group's hubs, or the new hub when the sender hands the hub over
+	// (section 11, "Several hubs" and "Moving the hub"); absent when the
+	// offer is the sender's own.
 	Hub group.DeviceID `json:"hub,omitempty"`
+	// Moved, in an offer passed on, tells that the sender is no hub any
+	// more: the receiver forgets the sender's own offer.
+	Moved bool `json:"moved,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to
@@ -156,6 +176,9 @@ type helloBody struct {
 	Device *group.DeviceInfo `json:"device,omitempty"`
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
+	// TunnelPSK is the sender's own preshared key, which every hub uses
+	// for it; absent from a member before several hubs.
+	TunnelPSK []byte `json:"tunnel_psk,omitempty"`
 	// Mode is the sender's sync mode, for showing; "" from a member that
 	// predates sync modes, or one that has none, such as a phone.
 	Mode string `json:"mode,omitempty"`
@@ -193,6 +216,8 @@ type helloOut struct {
 	OldKeys bool `json:"old_keys,omitempty"`
 	// TunnelKey is this member's WireGuard public key, for the group's hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
+	// TunnelPSK is this member's own preshared key, for every hub.
+	TunnelPSK []byte `json:"tunnel_psk,omitempty"`
 	// Mode is this member's sync mode (clip.Mode), for the others to show.
 	Mode string `json:"mode,omitempty"`
 }

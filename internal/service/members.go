@@ -343,7 +343,7 @@ func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string
 	knowsHub := func() bool {
 		s.tunMu.Lock()
 		defer s.tunMu.Unlock()
-		return s.tunnel != nil && s.tunnel.ToHub != nil
+		return s.tunnel != nil && len(s.tunnel.Hubs) > 0
 	}
 	// The connection ends too once the hub's offer came, so the tunnel
 	// takes over.

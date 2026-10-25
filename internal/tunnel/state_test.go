@@ -4,6 +4,8 @@
 package tunnel
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -59,7 +61,7 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := newDevice(t)
-	if _, _, err := s.Admit(a.id, pubKey(t), [][]byte{[]byte("cert")}); err != nil {
+	if _, _, err := s.Admit(a.id, pubKey(t), Key{}, [][]byte{[]byte("cert")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Save(dir); err != nil {
@@ -96,9 +98,12 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h := gotC.ToHub; h == nil || h.Device != hub.id || h.PublicKey != link.PublicKey || h.PresharedKey != link.PresharedKey || len(h.Endpoints) != 2 ||
+	if h := gotC.Hub(hub.id); h == nil || h.Device != hub.id || h.PublicKey != link.PublicKey || h.PresharedKey != link.PresharedKey || len(h.Endpoints) != 2 ||
 		!h.Obfuscation.Equal(link.Obfuscation) {
-		t.Errorf("loaded hub %+v, saved %+v", gotC.ToHub, link)
+		t.Errorf("loaded hub %+v, saved %+v", h, link)
+	}
+	if gotC.PSK != c.PSK || c.PSK.IsZero() {
+		t.Error("the client's own preshared key did not load")
 	}
 
 	// A device that meets the others at a relay.
@@ -152,27 +157,36 @@ func TestAdmit(t *testing.T) {
 	a, b := newDevice(t), newDevice(t)
 	keyA := pubKey(t)
 	chain := [][]byte{[]byte("cert a")}
-	m, changed, err := s.Admit(a.id, keyA, chain)
+	m, changed, err := s.Admit(a.id, keyA, Key{}, chain)
 	if err != nil || !changed || m.PresharedKey.IsZero() {
 		t.Fatalf("Admit = %+v, %v, %v", m, changed, err)
 	}
 	psk := m.PresharedKey
 
 	// The same key again: nothing changes, the preshared key stays.
-	m, changed, err = s.Admit(a.id, keyA, chain)
+	m, changed, err = s.Admit(a.id, keyA, Key{}, chain)
 	if err != nil || changed || m.PresharedKey != psk {
 		t.Errorf("Admit again = %+v, %v, %v", m, changed, err)
 	}
 	// A renewed certificate: the chain changes, the preshared key stays.
 	renewed := [][]byte{[]byte("cert a, renewed")}
-	m, changed, err = s.Admit(a.id, keyA, renewed)
+	m, changed, err = s.Admit(a.id, keyA, Key{}, renewed)
 	if err != nil || !changed || m.PresharedKey != psk || string(s.Members[0].Chain[0]) != "cert a, renewed" {
 		t.Errorf("Admit renewed = %+v, %v, %v", m, changed, err)
 	}
 	// A new key gets a new preshared key.
-	m, changed, err = s.Admit(a.id, pubKey(t), renewed)
+	m, changed, err = s.Admit(a.id, pubKey(t), Key{}, renewed)
 	if err != nil || !changed || m.PresharedKey == psk {
 		t.Errorf("Admit new key = %+v, %v, %v", m, changed, err)
+	}
+	// The client's own preshared key is the one the hub uses.
+	own := pubKey(t)
+	m, changed, err = s.Admit(a.id, m.PublicKey, own, renewed)
+	if err != nil || !changed || m.PresharedKey != own {
+		t.Errorf("Admit with its own preshared key = %+v, %v, %v", m, changed, err)
+	}
+	if _, changed, _ = s.Admit(a.id, m.PublicKey, own, renewed); changed {
+		t.Error("the same keys again changed the client")
 	}
 	if len(s.Members) != 1 {
 		t.Errorf("%d members, want 1", len(s.Members))
@@ -181,11 +195,11 @@ func TestAdmit(t *testing.T) {
 	// Refused: another device's key, the hub's own key, no key, no chain,
 	// a bad device ID.
 	for name, try := range map[string]func() error{
-		"another device's key": func() error { _, _, err := s.Admit(b.id, s.Members[0].PublicKey, chain); return err },
-		"the hub's key":        func() error { _, _, err := s.Admit(b.id, s.Key.Public(), chain); return err },
-		"no key":               func() error { _, _, err := s.Admit(b.id, Key{}, chain); return err },
-		"no chain":             func() error { _, _, err := s.Admit(b.id, pubKey(t), nil); return err },
-		"bad device":           func() error { _, _, err := s.Admit("nope", pubKey(t), chain); return err },
+		"another device's key": func() error { _, _, err := s.Admit(b.id, s.Members[0].PublicKey, Key{}, chain); return err },
+		"the hub's key":        func() error { _, _, err := s.Admit(b.id, s.Key.Public(), Key{}, chain); return err },
+		"no key":               func() error { _, _, err := s.Admit(b.id, Key{}, Key{}, chain); return err },
+		"no chain":             func() error { _, _, err := s.Admit(b.id, pubKey(t), Key{}, nil); return err },
+		"bad device":           func() error { _, _, err := s.Admit("nope", pubKey(t), Key{}, chain); return err },
 	} {
 		if try() == nil {
 			t.Errorf("%s: admitted", name)
@@ -195,7 +209,7 @@ func TestAdmit(t *testing.T) {
 		t.Errorf("%d members after refusals, want 1", len(s.Members))
 	}
 
-	if _, _, err := s.Admit(b.id, pubKey(t), chain); err != nil {
+	if _, _, err := s.Admit(b.id, pubKey(t), Key{}, chain); err != nil {
 		t.Fatal(err)
 	}
 	peers := s.Peers()
@@ -214,7 +228,7 @@ func TestPrune(t *testing.T) {
 	}
 	a, b := newDevice(t), newDevice(t)
 	for _, d := range []testDevice{a, b} {
-		if _, _, err := s.Admit(d.id, pubKey(t), [][]byte{[]byte(d.id)}); err != nil {
+		if _, _, err := s.Admit(d.id, pubKey(t), Key{}, [][]byte{[]byte(d.id)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -243,7 +257,7 @@ func TestSetHub(t *testing.T) {
 	}
 	moved := link
 	moved.Endpoints = []netip.AddrPort{netip.MustParseAddrPort("192.0.2.2:8764")}
-	if changed, err := s.SetHub(moved); err != nil || !changed || s.ToHub.Endpoints[0] != moved.Endpoints[0] {
+	if changed, err := s.SetHub(moved); err != nil || !changed || s.Hubs[0].Endpoints[0] != moved.Endpoints[0] || len(s.Hubs) != 1 {
 		t.Errorf("SetHub with a new address = %v, %v", changed, err)
 	}
 	obf, err := NewObfuscation()
@@ -252,7 +266,7 @@ func TestSetHub(t *testing.T) {
 	}
 	hidden := moved
 	hidden.Obfuscation = obf
-	if changed, err := s.SetHub(hidden); err != nil || !changed || !s.ToHub.Obfuscation.Equal(obf) {
+	if changed, err := s.SetHub(hidden); err != nil || !changed || !s.Hubs[0].Obfuscation.Equal(obf) {
 		t.Errorf("SetHub with obfuscation = %v, %v", changed, err)
 	}
 
@@ -275,10 +289,44 @@ func TestSetHub(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if s.ToHub.Endpoints[0] != moved.Endpoints[0] {
+	if s.Hubs[0].Endpoints[0] != moved.Endpoints[0] {
 		t.Error("a refused offer changed the hub")
 	}
+
+	// Another hub's offer is kept beside the first, and forgotten alone.
+	other := newDevice(t)
+	if changed, err := s.SetHub(HubLink{Device: other.id, PublicKey: other.priv.Public(), PresharedKey: hub.psk}); err != nil || !changed || len(s.Hubs) != 2 {
+		t.Fatalf("another hub: %v, %v, %d hubs", changed, err, len(s.Hubs))
+	}
+	if gone := s.ForgetHubs(func(h HubLink) bool { return h.Device != hub.id }); !slices.Equal(gone, []string{hub.id}) || s.Hub(hub.id) != nil || s.Hub(other.id) == nil {
+		t.Errorf("forgetting a hub: %v, %+v", gone, s.Hubs)
+	}
 }
+
+// TestLegacyHub checks that a state from before several hubs keeps its
+// hub's offer and gets a preshared key of its own.
+func TestLegacyHub(t *testing.T) {
+	dir := t.TempDir()
+	hub, key := newDevice(t), newDevice(t).priv
+	data := fmt.Sprintf(`{"v":1,"key":%q,"to_hub":{"device":%q,"key":%q,"psk":%q,"endpoints":["192.0.2.1:8764"]}}`,
+		b64(key), hub.id, b64(hub.priv.Public()), b64(hub.psk))
+	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := s.Hub(hub.id); h == nil || h.PresharedKey != hub.psk || s.PSK.IsZero() {
+		t.Fatalf("loaded %+v", s)
+	}
+	again, err := LoadState(dir)
+	if err != nil || again.PSK != s.PSK {
+		t.Errorf("the preshared key it made was not saved: %v", err)
+	}
+}
+
+func b64(k Key) string { return base64.StdEncoding.EncodeToString(k[:]) }
 
 func TestForGroup(t *testing.T) {
 	s, err := NewState()
@@ -290,7 +338,7 @@ func TestForGroup(t *testing.T) {
 		t.Error("a new group did not change the state")
 	}
 	s.IsHub = true
-	if _, _, err := s.Admit(newDevice(t).id, pubKey(t), [][]byte{[]byte("c")}); err != nil {
+	if _, _, err := s.Admit(newDevice(t).id, pubKey(t), Key{}, [][]byte{[]byte("c")}); err != nil {
 		t.Fatal(err)
 	}
 	if s.ForGroup("aaaaaaaaaaaaaaaa") {
@@ -330,8 +378,10 @@ func TestDestinations(t *testing.T) {
 		"hub alone":         {State{IsHub: true, Endpoints: []netip.AddrPort{ap("203.0.113.7:8764")}}, nil},
 		"hub, forwarder":    {State{IsHub: true, Forwarder: fw}, []netip.Addr{a("198.51.100.9")}},
 		"relay":             {State{Relay: &RelayLink{Endpoint: ap("[2001:db8::5]:8764")}}, []netip.Addr{a("2001:db8::5")}},
-		"client":            {State{ToHub: &HubLink{Endpoints: []netip.AddrPort{ap("203.0.113.7:8764"), ap("[::ffff:198.51.100.9]:9000")}}}, []netip.Addr{a("203.0.113.7"), a("198.51.100.9")}},
-		"client over VLESS": {State{ToHub: &HubLink{VLESS: &VLESS{Endpoint: ap("198.51.100.10:443")}}}, []netip.Addr{a("198.51.100.10")}},
+		"client":            {State{Hubs: []HubLink{{Endpoints: []netip.AddrPort{ap("203.0.113.7:8764"), ap("[::ffff:198.51.100.9]:9000")}}}}, []netip.Addr{a("203.0.113.7"), a("198.51.100.9")}},
+		"client over VLESS": {State{Hubs: []HubLink{{VLESS: &VLESS{Endpoint: ap("198.51.100.10:443")}}}}, []netip.Addr{a("198.51.100.10")}},
+		"two hubs":          {State{Hubs: []HubLink{{Endpoints: []netip.AddrPort{ap("203.0.113.7:8764")}}, {Endpoints: []netip.AddrPort{ap("203.0.113.8:8764")}}}}, []netip.Addr{a("203.0.113.7"), a("203.0.113.8")}},
+		"hub with a hub":    {State{IsHub: true, Forwarder: fw, Hubs: []HubLink{{Endpoints: []netip.AddrPort{ap("203.0.113.8:8764")}}}}, []netip.Addr{a("198.51.100.9"), a("203.0.113.8")}},
 	} {
 		if got := c.st.Destinations(); !slices.Equal(got, c.want) {
 			t.Errorf("%s: %v, want %v", name, got, c.want)
@@ -339,9 +389,10 @@ func TestDestinations(t *testing.T) {
 	}
 }
 
-// TestTake checks the clients a hub takes from the old hub: with the keys
-// they have and no chain, never twice, never with another's key or the
-// hub's own, and a chain once they meet the hub.
+// TestTake checks the clients a hub takes from another hub: with the keys
+// they have and no chain, new keys while it has not met them, never with
+// another's key or the hub's own, and a chain once they meet the hub, after
+// which what other hubs share changes nothing.
 func TestTake(t *testing.T) {
 	s, err := NewState()
 	if err != nil {
@@ -351,8 +402,12 @@ func TestTake(t *testing.T) {
 	if changed, err := s.Take(dev, pub, psk); err != nil || !changed {
 		t.Fatalf("take: %v, %v", changed, err)
 	}
-	if changed, err := s.Take(dev, pubKey(t), pubKey(t)); err != nil || changed {
+	if changed, err := s.Take(dev, pub, psk); err != nil || changed {
 		t.Errorf("taking a client it keeps: %v, %v", changed, err)
+	}
+	pub, psk = pubKey(t), pubKey(t)
+	if changed, err := s.Take(dev, pub, psk); err != nil || !changed || s.Members[0].PublicKey != pub {
+		t.Errorf("taking new keys of a client it has not met: %v, %v", changed, err)
 	}
 	for name, try := range map[string]func() error{
 		"another's key": func() error { _, err := s.Take("fedcba9876543210fedcba9876543210", pub, psk); return err },
@@ -371,8 +426,11 @@ func TestTake(t *testing.T) {
 	if _, err := LoadState(dir); err != nil {
 		t.Errorf("a taken client without a chain does not load: %v", err)
 	}
-	m, changed, err := s.Admit(dev, pub, [][]byte{{1}})
+	m, changed, err := s.Admit(dev, pub, Key{}, [][]byte{{1}})
 	if err != nil || !changed || m.PresharedKey != psk || len(m.Chain) != 1 {
 		t.Errorf("meeting the hub: %+v, %v, %v", m, changed, err)
+	}
+	if changed, err := s.Take(dev, pubKey(t), pubKey(t)); err != nil || changed {
+		t.Errorf("taking a client it met: %v, %v", changed, err)
 	}
 }

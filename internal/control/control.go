@@ -136,7 +136,8 @@ type Status struct {
 
 // Away describes sync away from home on this device.
 type Away struct {
-	Hub        bool       `json:"hub,omitempty"`        // this device is the group's hub
+	Hub        bool       `json:"hub,omitempty"`        // this device is one of the group's hubs
+	Standby    bool       `json:"standby,omitempty"`    // on a hub: a hub above it serves, or it tries those; it is their client
 	Port       int        `json:"port,omitempty"`       // the hub's UDP port
 	Endpoints  []string   `json:"endpoints,omitempty"`  // the hub's addresses away from home
 	Clients    int        `json:"clients,omitempty"`    // on the hub: the devices it admitted

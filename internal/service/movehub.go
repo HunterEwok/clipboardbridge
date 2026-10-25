@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
@@ -111,8 +112,10 @@ func (s *Service) takeHub(body group.CommandBody) node.Result {
 		return refuse(node.ResultRefused, "this computer meets the others at a blind relay; a group with a relay has no hub")
 	}
 	old := *st
-	st.IsHub, st.ToHub, st.Endpoints, st.Forwarder, st.Obfuscation = true, nil, eps, fw, nil
+	st.IsHub, st.Endpoints, st.Forwarder, st.Obfuscation = true, eps, fw, nil
 	st.Members = append([]tunnel.Member(nil), old.Members...)
+	// The old hub is no hub any more.
+	st.Hubs = slices.DeleteFunc(slices.Clone(old.Hubs), func(h tunnel.HubLink) bool { return h.Device == string(body.By) })
 	taken := 0
 	for _, c := range o.Clients {
 		if string(c.Device) == s.tunSelf {
@@ -138,8 +141,10 @@ func (s *Service) takeHub(body group.CommandBody) node.Result {
 		*st = old
 		return refuse(node.ResultFailed, fmt.Sprintf("saving the tunnel state: %v", err))
 	}
+	s.tunServing = true
 	s.stopTunnelLocked()
 	s.runTunnelLocked()
+	s.shareLocked()
 	s.logf("cbb: this device is the group's hub for sync away from home now, in place of %s, with %d of its clients", body.By, taken)
 	offer := s.hubOfferLocked(st, nil)
 	if offer == nil {
@@ -205,11 +210,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 		order.Clients = append(order.Clients, group.HubClient{Device: group.DeviceID(m.Device), Key: m.PublicKey[:], PSK: m.PresharedKey[:]})
 	}
 	// This device is the new hub's client from now on.
-	selfPSK, err := tunnel.NewPresharedKey()
-	if err != nil {
-		s.tunMu.Unlock()
-		return err
-	}
+	selfPSK := st.PSK
 	pub := st.Key.Public()
 	order.Clients = append(order.Clients, group.HubClient{Device: id.ID, Key: pub[:], PSK: selfPSK[:]})
 	s.tunMu.Unlock()
@@ -249,7 +250,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 			return nil
 		}
 		o := *res.Tunnel
-		o.PSK, o.Hub = psk, newHub
+		o.PSK, o.Hub, o.Moved = psk, newHub, true
 		return &o
 	})
 	s.logf("cbb: %s is the group's hub now; passed its offer on to %d connected clients", d.Name, len(sent))
@@ -263,7 +264,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 		return nil // sync away from home was turned off meanwhile
 	}
 	old := *st
-	*st = tunnel.State{Key: st.Key, Group: st.Group, KeysInFile: st.KeysInFile}
+	*st = tunnel.State{Key: st.Key, PSK: st.PSK, Group: st.Group, KeysInFile: st.KeysInFile, Hubs: slices.Clone(st.Hubs)}
 	if _, err := st.SetHub(link); err != nil {
 		*st = old
 		return err

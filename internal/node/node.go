@@ -104,14 +104,23 @@ type Config struct {
 	Records RecordStore
 
 	// TunnelKey, if set, is this member's WireGuard public key, which its
-	// hello offers the group's hub.
+	// hello offers the group's hubs, with TunnelPSK, its own preshared key.
 	TunnelKey []byte
+	TunnelPSK []byte
 
-	// OnTunnelKey, if set, is called with the tunnel key a peer's hello
-	// offered and the certificate chain the peer presented. On the group's
-	// hub it admits the key and returns the offer to send the peer; on
-	// other members it returns nil.
-	OnTunnelKey func(peer group.DeviceID, chain []*x509.Certificate, key []byte) *TunnelOffer
+	// OnTunnelKey, if set, is called with the tunnel key and preshared
+	// key (nil from a member before several hubs) a peer's hello offered
+	// and the certificate chain the peer presented. On a hub it admits the
+	// key and returns the offers to send the peer: its own, then those of
+	// the group's other hubs it passes on; on other members it returns
+	// none.
+	OnTunnelKey func(peer group.DeviceID, chain []*x509.Certificate, key, psk []byte) []TunnelOffer
+
+	// HubShare, if set, returns what this member, a hub, shares with the
+	// peer, a device that may be a hub too, after its hello; nil for
+	// nothing. OnHubs, if set, is called with what a peer shared.
+	HubShare func(peer group.DeviceID) *HubShare
+	OnHubs   func(from group.DeviceID, chain []*x509.Certificate, h HubShare) error
 
 	// OnTunnel, if set, is called with the offer a peer, the group's hub,
 	// sent for this member's tunnel key, and the peer's verified chain; it
@@ -178,7 +187,7 @@ type Peer struct {
 type Node struct {
 	cfg       Config
 	id        atomic.Pointer[group.Identity] // the current identity; renewal replaces it
-	tunnelKey atomic.Pointer[[]byte]         // what the hello offers the hub; nil for none
+	tunnelKey atomic.Pointer[[2][]byte]      // the key and preshared key the hello offers the hubs; nil for none
 
 	rejoinMu sync.Mutex // one Rejoin at a time
 
@@ -212,19 +221,19 @@ func New(cfg Config) *Node {
 	}
 	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn), waiting: make(map[string]waiter)}
 	n.id.Store(cfg.Identity)
-	n.SetTunnelKey(cfg.TunnelKey)
+	n.SetTunnelKey(cfg.TunnelKey, cfg.TunnelPSK)
 	return n
 }
 
-// SetTunnelKey replaces the tunnel key that hellos offer the group's hub;
-// nil offers none. Connections made from now on carry it (see Reconnect).
-func (n *Node) SetTunnelKey(key []byte) {
+// SetTunnelKey replaces the tunnel key and preshared key that hellos offer
+// the group's hubs; a nil key offers none. Connections made from now on
+// carry them (see Reconnect).
+func (n *Node) SetTunnelKey(key, psk []byte) {
 	if len(key) == 0 {
 		n.tunnelKey.Store(nil)
 		return
 	}
-	k := bytes.Clone(key)
-	n.tunnelKey.Store(&k)
+	n.tunnelKey.Store(&[2][]byte{bytes.Clone(key), bytes.Clone(psk)})
 }
 
 // Reconnect closes every connection, so that the members connect again
@@ -520,13 +529,28 @@ func (n *Node) offerRecords(c *conn, digest string) {
 }
 
 // offerTunnel passes the tunnel key the peer of c offered to OnTunnelKey
-// and sends the peer the hub's offer, if any.
-func (n *Node) offerTunnel(c *conn, key []byte) {
-	if n.cfg.OnTunnelKey == nil || len(key) == 0 {
-		return
+// and sends the peer the offers it returns, then what this hub shares with
+// the peer, if anything.
+func (n *Node) offerTunnel(c *conn, key, psk []byte) {
+	if n.cfg.OnTunnelKey != nil && len(key) > 0 {
+		for _, o := range n.cfg.OnTunnelKey(c.id, c.peerChain, key, psk) {
+			c.enqueue(outgoing{tunnel: &o})
+		}
 	}
-	if o := n.cfg.OnTunnelKey(c.id, c.peerChain, key); o != nil {
-		c.enqueue(outgoing{tunnel: o})
+	if n.cfg.HubShare != nil {
+		if h := n.cfg.HubShare(c.id); h != nil {
+			c.enqueue(outgoing{hubs: h})
+		}
+	}
+}
+
+// SendHubs sends each connected member what shareFor returns for it, such
+// as a hub's share when it starts or stops serving.
+func (n *Node) SendHubs(shareFor func(dev group.DeviceID) *HubShare) {
+	for _, c := range n.helloed() {
+		if h := shareFor(c.id); h != nil {
+			c.enqueue(outgoing{hubs: h})
+		}
 	}
 }
 
@@ -781,6 +805,7 @@ type outgoing struct {
 	phoneCA *group.CA         // the iPhone CA with its key
 	command *group.Record     // a command for the peer
 	result  *Result           // the answer to the peer's command
+	hubs    *HubShare         // what this hub shares with the peer
 	queued  time.Duration
 }
 
@@ -925,7 +950,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 			out.Records = c.n.cfg.Records.Digest()
 		}
 		if k := c.n.tunnelKey.Load(); k != nil {
-			out.TunnelKey = *k
+			out.TunnelKey, out.TunnelPSK = k[0], k[1]
 		}
 		data, err := encode(out)
 		if err != nil {
@@ -948,6 +973,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeCommand, Command: o.command}, nil
 	case o.result != nil:
 		return &message{Type: typeResult, Result: o.result}, nil
+	case o.hubs != nil:
+		return &message{Type: typeHubs, Hubs: o.hubs}, nil
 	case o.phoneCA != nil:
 		key, err := x509.MarshalPKCS8PrivateKey(o.phoneCA.Key)
 		if err != nil {
@@ -1083,7 +1110,7 @@ func (c *conn) reader() error {
 			c.n.apply(res, c)
 			c.n.renewPeer(c)
 			c.n.offerRecords(c, extra.Records)
-			c.n.offerTunnel(c, extra.TunnelKey)
+			c.n.offerTunnel(c, extra.TunnelKey, extra.TunnelPSK)
 			c.n.sharePhoneCA(c)
 			continue
 		}
@@ -1127,6 +1154,13 @@ func (c *conn) reader() error {
 			}
 			if err := c.n.cfg.OnTunnel(c.id, c.peerChain, *m.Tunnel); err != nil {
 				c.n.cfg.Logf("node: a tunnel offer from %s: %v", c.id, err)
+			}
+		case typeHubs:
+			if c.n.cfg.OnHubs == nil || m.Hubs == nil {
+				continue
+			}
+			if err := c.n.cfg.OnHubs(c.id, c.peerChain, *m.Hubs); err != nil {
+				c.n.cfg.Logf("node: what the hub %s shared: %v", c.id, err)
 			}
 		case typeRecs:
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {
