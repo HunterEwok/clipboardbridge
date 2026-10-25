@@ -87,6 +87,7 @@ type Header struct {
 	NewToken     bool     `json:"new_token,omitempty"`   // pair-phone: revoke every shortcut's token first
 	Name         string   `json:"name,omitempty"`        // a device name
 	NewName      string   `json:"new_name,omitempty"`    // rename: the device's new name
+	Device       string   `json:"device,omitempty"`      // mode: the device, by name or ID, whose mode an admin sets; this device if empty
 	Expires      int      `json:"expires,omitempty"`     // seconds a pairing window stays open; for a listening join, seconds to wait
 	Port         int      `json:"port,omitempty"`        // away hub: the UDP port; 0 for the default
 	Forwarder    string   `json:"forwarder,omitempty"`   // away hub: the forwarder's address, with its key in ForwarderKey

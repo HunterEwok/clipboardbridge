@@ -16,6 +16,9 @@ import kotlinx.serialization.json.JsonPrimitive
  * pings, records and goodbyes.
  */
 object Member {
+    /** The sync modes (design.md, "Sync modes"). */
+    val MODES = setOf("own", "shared", "receive", "send")
+
     /** The ALPN protocol of member connections. */
     const val ALPN = "clipboardbridge/1"
 
@@ -179,11 +182,13 @@ object Member {
         val tunnelKey: ByteArray? = null,
         /** What the sender says about its device, for showing. */
         val device: DeviceInfo? = null,
+        /** The sender's sync mode: "own", "shared", "receive" or "send"; null from a member without one, which shares. */
+        val mode: String? = null,
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
-                tunnelKey.contentEqualsOrNull(other.tunnelKey) && device == other.device
+                tunnelKey.contentEqualsOrNull(other.tunnelKey) && device == other.device && mode == other.mode
 
         override fun hashCode(): Int = wallMS.hashCode()
     }
@@ -300,6 +305,18 @@ object Member {
         }
     }
 
+    /** The answer to a command (section 15): its ID, "done", "refused" or "failed", and why for the last two. */
+    data class CommandResult(val id: String, val status: String, val reason: String? = null) {
+        val done: Boolean get() = status == "done"
+
+        fun toJson(): JsonObject = Wire.obj("id" to Wire.str(id), "status" to Wire.str(status), "reason" to Wire.str(reason))
+
+        companion object {
+            fun fromJson(o: JsonObject): CommandResult =
+                CommandResult(o.optString("id") ?: "", o.optString("status") ?: "", o.optString("reason"))
+        }
+    }
+
     /** One message of the protocol. */
     sealed class Message {
         data class Hello(val role: Role, val hello: Member.Hello) : Message()
@@ -331,6 +348,12 @@ object Member {
         /** From the group's hub: its offer for the tunnel key the receiver's hello carried; null when absent. */
         data class Tunnel(val offer: TunnelOffer?) : Message()
 
+        /** From an admin: a command signed for the receiver (section 15). */
+        data class Command(val command: Record) : Message()
+
+        /** The answer to a command. */
+        data class Result(val result: CommandResult) : Message()
+
         /** A type from a newer version, ignored. */
         data class Unknown(val type: String) : Message()
     }
@@ -351,6 +374,7 @@ object Member {
                 "device" to m.hello.device?.toJson(),
                 "admin_key" to Wire.bytes(m.hello.adminKey),
                 "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
+                "mode" to Wire.str(m.hello.mode),
             ),
         )
         is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
@@ -360,6 +384,8 @@ object Member {
         is Message.Records -> Wire.obj("t" to Wire.str("records"), "records" to JsonArray(m.records.map { it.toJson() }))
         is Message.Admin -> Wire.obj("t" to Wire.str("admin"), "admin_ca" to Wire.bytes(m.adminCA))
         is Message.Tunnel -> Wire.obj("t" to Wire.str("tunnel"), "tunnel" to m.offer?.toJson())
+        is Message.Command -> Wire.obj("t" to Wire.str("command"), "command" to m.command.toJson())
+        is Message.Result -> Wire.obj("t" to Wire.str("result"), "result" to m.result.toJson())
         is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
     }
 
@@ -406,6 +432,7 @@ object Member {
                             adminKey = h.optBytes("admin_key"),
                             tunnelKey = h.optBytes("tunnel_key"),
                             device = DeviceInfo.fromJson(h.opt("device")),
+                            mode = h.optString("mode")?.takeIf { it in MODES },
                         ),
                     )
                 }
@@ -418,6 +445,8 @@ object Member {
                 )
                 "admin" -> Message.Admin(o.optBytes("admin_ca") ?: ByteArray(0))
                 "tunnel" -> Message.Tunnel(o.optObject("tunnel")?.let { TunnelOffer.fromJson(it) })
+                "command" -> o.optObject("command")?.let { Message.Command(Record.fromJson(it)) } ?: Message.Unknown(t)
+                "result" -> o.optObject("result")?.let { Message.Result(CommandResult.fromJson(it)) } ?: Message.Unknown(t)
                 else -> Message.Unknown(t)
             }
         } catch (e: WireTypeException) {

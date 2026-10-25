@@ -174,13 +174,31 @@ public enum Member {
         public var tunnelKey: Data?
         /// What the sender says about its device, for showing.
         public var device: DeviceInfo?
+        /// The sender's sync mode: "own", "shared", "receive" or "send";
+        /// nil from a member without one, which shares.
+        public var mode: String?
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
-                    adminKey: Data? = nil, tunnelKey: Data? = nil, device: DeviceInfo? = nil) {
+                    adminKey: Data? = nil, tunnelKey: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
-            self.device = device
+            (self.device, self.mode) = (device, mode)
         }
+    }
+
+    /// The sync modes (design.md, "Sync modes").
+    public static let modes: Set<String> = ["own", "shared", "receive", "send"]
+
+    /// The answer to a command (section 15): its ID, "done", "refused" or
+    /// "failed", and why for the last two.
+    public struct CommandResult: Codable, Equatable, Sendable {
+        public var id: String
+        public var status: String
+        public var reason: String?
+
+        public init(id: String, status: String, reason: String? = nil) { (self.id, self.status, self.reason) = (id, status, reason) }
+
+        public var done: Bool { status == "done" }
     }
 
     /// What a hello says about the sender's device (section 4, "Device"):
@@ -334,6 +352,10 @@ public enum Member {
         /// receiver's hello carried; nil when absent or when it did not
         /// decode.
         case tunnel(TunnelOffer?)
+        /// From an admin: a command signed for the receiver (section 15).
+        case command(Record)
+        /// The answer to a command.
+        case result(CommandResult)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -370,7 +392,8 @@ public enum Member {
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
-                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, device: h.device?.value))
+                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, device: h.device?.value,
+                                      mode: h.mode.flatMap { modes.contains($0) ? $0 : nil }))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -378,6 +401,8 @@ public enum Member {
         case "records": return .records(w.records ?? [])
         case "admin": return .admin(w.admin_ca ?? Data())
         case "tunnel": return .tunnel(w.tunnel?.value)
+        case "command": return w.command?.value.map { .command($0) } ?? .unknown(w.t)
+        case "result": return w.result?.value.map { .result($0) } ?? .unknown(w.t)
         default: return .unknown(w.t)
         }
     }
@@ -398,6 +423,7 @@ public enum Member {
         var admin_key: Data?
         var tunnel_key: Data?
         var device: Lenient<DeviceInfo>?
+        var mode: String?
     }
 
     struct WireIn: Decodable {
@@ -410,14 +436,16 @@ public enum Member {
         var records: [Record]?
         var admin_ca: Data?
         var tunnel: Lenient<TunnelOffer>?
+        var command: Lenient<Record>?
+        var result: Lenient<CommandResult>?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, command, result }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, mode }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -434,6 +462,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.device, forKey: .device)
                 try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
                 try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
+                try hc.encodeIfPresent(h.mode, forKey: .mode)
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)
@@ -452,6 +481,12 @@ public enum Member {
             case let .tunnel(o):
                 try c.encode("tunnel", forKey: .t)
                 try c.encodeIfPresent(o, forKey: .tunnel)
+            case let .command(r):
+                try c.encode("command", forKey: .t)
+                try c.encode(r, forKey: .command)
+            case let .result(r):
+                try c.encode("result", forKey: .t)
+                try c.encode(r, forKey: .result)
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }

@@ -20,6 +20,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `cbb copy` and the phones still send to the group and `cbb paste` prints the group's
   text. Computers that joined before keep sharing. `cbb status` shows the mode, and each
   computer's hello reports it for the devices list.
+- An admin sets the sync mode of another computer with `cbb mode -on DEVICE MODE`: a
+  command signed by the admin's key, which the computer checks against the group's records,
+  takes once and only within 30 s (docs/protocol.md, section 15). The phone kits read the
+  mode in the hellos and send such commands.
 
 ### Fixed
 

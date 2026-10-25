@@ -5,6 +5,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 
@@ -12,15 +13,21 @@ import (
 )
 
 // cmdMode shows or changes this device's sync mode: what moves between its
-// clipboard and the group.
+// clipboard and the group. With -on, an admin sets another device's mode.
 func cmdMode(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 1 {
-		fmt.Fprintln(stderr, "usage: cbb mode [own|shared|receive|send]")
+	fs := flag.NewFlagSet("mode", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	on := fs.String("on", "", "the device, by name or ID, whose mode to set (on an admin)")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if fs.NArg() > 1 || *on != "" && fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "usage: cbb mode [own|shared|receive|send]\n       cbb mode -on DEVICE own|shared|receive|send")
 		return 2
 	}
 	h := control.Header{Op: control.OpStatus}
-	if len(args) == 1 {
-		h = control.Header{Op: control.OpMode, Name: args[0]}
+	if fs.NArg() == 1 {
+		h = control.Header{Op: control.OpMode, Name: fs.Arg(0), Device: *on}
 	}
 	c, err := control.DialFor(h.Op)
 	if err != nil {
@@ -30,6 +37,10 @@ func cmdMode(args []string, stdout, stderr io.Writer) int {
 	m, err := c.Do(&control.Message{Header: h})
 	if err != nil {
 		return fail(stderr, err)
+	}
+	if *on != "" {
+		fmt.Fprintf(stdout, "%s is in sync mode %s now.\n", *on, fs.Arg(0))
+		return 0
 	}
 	if m.Status == nil {
 		return fail(stderr, errors.New("the service sent no status"))

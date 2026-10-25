@@ -98,7 +98,8 @@ The order may change.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
     "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built on the
-    computers (`cbb mode`); the admin's signed `mode` command and the apps are next.**
+    computers (`cbb mode`) with the admin's signed `mode` command (`cbb mode -on`) and in
+    the phone kits; the apps are next.**
 20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at

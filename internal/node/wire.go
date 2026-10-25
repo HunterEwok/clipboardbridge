@@ -28,7 +28,9 @@ import (
 // offers an admin key. In a group a computer created, an admin sends a
 // phone_ca message with the iPhone CA and its key to an admin whose hello
 // names another one. The group's hub sends a tunnel message to a member
-// whose hello offers a tunnel key.
+// whose hello offers a tunnel key. An admin sends a command message with a
+// signed command for the receiver, such as a sync mode, which answers with
+// a result message.
 const (
 	typeHello   = "hello"
 	typeEvent   = "event"
@@ -39,6 +41,8 @@ const (
 	typeAdmin   = "admin"
 	typePhoneCA = "phone_ca"
 	typeTun     = "tunnel"
+	typeCommand = "command"
+	typeResult  = "result"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -92,7 +96,27 @@ type message struct {
 	// Tunnel, in a tunnel message from the group's hub, is its offer for
 	// the tunnel key the receiver's hello carried.
 	Tunnel *TunnelOffer `json:"tunnel,omitempty"`
+	// Command, in a command message from an admin, is a command signed
+	// for the receiver (group.CommandBody).
+	Command *group.Record `json:"command,omitempty"`
+	// Result, in a result message, answers a command.
+	Result *Result `json:"result,omitempty"`
 }
+
+// Result answers a command (docs/protocol.md, section 15).
+type Result struct {
+	ID     string `json:"id"`     // the command's ID
+	Status string `json:"status"` // ResultDone, ResultRefused or ResultFailed
+	// Reason says why it was refused or failed, for the sender to show.
+	Reason string `json:"reason,omitempty"`
+}
+
+// The statuses of a Result.
+const (
+	ResultDone    = "done"
+	ResultRefused = "refused" // the receiver does not take the command: its signer, times or content
+	ResultFailed  = "failed"  // the receiver took it but could not carry it out
+)
 
 // TunnelOffer is the group's hub's answer to a member's tunnel key
 // (docs/protocol.md, section 11): the hub's WireGuard public key, the

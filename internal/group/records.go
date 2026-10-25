@@ -476,41 +476,9 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 		return nil, errors.New("group: the record is for another group")
 	}
 	sr := &signedRecord{Record: r, id: r.ID(), body: body}
-	sum := sha256.Sum256(r.Body)
-	switch len(r.Chain) {
-	case 0:
-		// Signed by a root's own key.
-		for k, root := range s.roots {
-			if ecdsa.VerifyASN1(root.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
-				sr.signer, sr.anchor = k, k
-				break
-			}
-		}
-		if sr.signer == (KeyHash{}) {
-			return nil, errors.New("group: the record's signature is not valid")
-		}
-	case 1:
-		admin, err := x509.ParseCertificate(r.Chain[0])
-		if err != nil {
-			return nil, fmt.Errorf("group: a record's signer: %w", err)
-		}
-		anchor, ok := KeyHash{}, false
-		err = errors.New("group: the signer is not an admin CA of the group")
-		for k, root := range s.roots {
-			if err = checkAdminCA(admin, root); err == nil {
-				anchor, ok = k, true
-				break
-			}
-		}
-		if !ok {
-			return nil, err
-		}
-		if !ecdsa.VerifyASN1(admin.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
-			return nil, errors.New("group: the record's signature is not valid")
-		}
-		sr.signer, sr.anchor = KeyHashOf(admin), anchor
-	default:
-		return nil, errors.New("group: a record's chain is too long")
+	var err error
+	if sr.signer, sr.anchor, err = s.signerOf(r); err != nil {
+		return nil, err
 	}
 	if body.Type == RecordRoot {
 		// A legacy group CA hands the group to its first root itself, with
@@ -532,6 +500,43 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 		sr.root = root
 	}
 	return sr, nil
+}
+
+// signerOf checks the signature of a record or a command: by a known root's
+// own key (no chain), or by an admin CA under one (the chain holds it). It
+// returns the signer's key and the root it was signed under.
+func (s *Records) signerOf(r Record) (signer, anchor KeyHash, err error) {
+	sum := sha256.Sum256(r.Body)
+	switch len(r.Chain) {
+	case 0:
+		for k, root := range s.roots {
+			if ecdsa.VerifyASN1(root.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
+				return k, k, nil
+			}
+		}
+		return KeyHash{}, KeyHash{}, errors.New("group: the record's signature is not valid")
+	case 1:
+		admin, err := x509.ParseCertificate(r.Chain[0])
+		if err != nil {
+			return KeyHash{}, KeyHash{}, fmt.Errorf("group: a record's signer: %w", err)
+		}
+		anchor, ok := KeyHash{}, false
+		err = errors.New("group: the signer is not an admin CA of the group")
+		for k, root := range s.roots {
+			if err = checkAdminCA(admin, root); err == nil {
+				anchor, ok = k, true
+				break
+			}
+		}
+		if !ok {
+			return KeyHash{}, KeyHash{}, err
+		}
+		if !ecdsa.VerifyASN1(admin.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
+			return KeyHash{}, KeyHash{}, errors.New("group: the record's signature is not valid")
+		}
+		return KeyHashOf(admin), anchor, nil
+	}
+	return KeyHash{}, KeyHash{}, errors.New("group: a record's chain is too long")
 }
 
 // checkRoot checks the new root of a root record: a self-signed CA with

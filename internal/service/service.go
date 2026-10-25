@@ -164,7 +164,10 @@ type Service struct {
 	lastSeq        uint64
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
-	online         map[group.DeviceID]bool
+	// commands holds the IDs of the commands carried out, until they
+	// expire, so that none is carried out twice.
+	commands map[string]time.Time
+	online   map[group.DeviceID]bool
 	// unreached holds the members at home that could not connect to this
 	// one and synced only because it dialed them back (cbb status).
 	unreached map[group.DeviceID]bool
@@ -355,7 +358,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunMu.Unlock()
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng,
-		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin,
+		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,

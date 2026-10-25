@@ -865,6 +865,7 @@ A connection carries one request: the service reads the first message and dispat
 | `pair-phone` | none | first `{code, expires: 300, fingerprint, address}` (the member port, where the profile is), then `{name: <phone ID>, done}` or an error. Only on a member that holds the iPhone CA (in a group a computer created, the root or an admin) and answers for `clipboardbridge.local`. Hanging up closes the window |
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
 | `invite` | `{expires?}`: seconds, 3600 if absent, at most 86 400 | Only on the group's hub, when it can admit devices. First `{invite, expires}`: the invitation's text. Then, for each device that used it and proved it knows the secret, `{joining: {id, name, os, fingerprint}}`, which the client answers with `{"op": "answer", consent}` (`true` admits it); last `{name, done}` or an error. Hanging up cancels the invitation |
+| `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
@@ -1680,3 +1681,55 @@ Only its key file. Registrations and connections live in memory while they last;
 logs none of them, and with `CBB_DEBUG=1` it logs counts each minute. It learns which
 devices of a group are on it, which of them connect to each other, when and how much,
 which a hub would not let out; what the devices send each other it cannot read.
+
+## 15. Commands
+
+An admin orders one member to do something with a **command**: signed like a record (section
+10) and never stored. The only one so far is `mode`, which sets the receiver's sync mode
+(design.md, "Sync modes"); the remote paste of 0.6 will be another.
+
+### The command
+
+It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `v` | integer | `1` |
+| `type` | string | `mode` |
+| `group` | string | the group tag |
+| `by` | string | the signer's device ID, for showing |
+| `to` | string | the receiver's device ID |
+| `id` | string | 128 random bits in lowercase hex |
+| `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
+| `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
+| `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send` |
+
+`sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
+or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
+
+### In the member protocol
+
+```
+{"t":"command","command":{"body":"...","sig":"...","chain":["..."]}}
+{"t":"result","result":{"id":"...","status":"done"}}
+```
+
+The sender sends the command on its own connection to the receiver, which answers with a
+`result`: its `id` is the command's, its `status` `done`, `refused` (the receiver does not take
+it) or `failed` (it took it and could not carry it out), and `reason` says why for the last
+two. A member without commands, such as one before 0.5, ignores the message, so the sender
+gives up after 10 s.
+
+The receiver takes a command only when:
+
+- its body decodes, with a known `type` and a lifetime of at most 30 s;
+- `group` is its group and `to` its own device ID;
+- the signature verifies under a root on the path of the group's records, and the signer is
+  that root or an admin CA under it that is neither revoked nor frozen;
+- `expires_ms` is after its clock and `time_ms` at most 60 s ahead of it;
+- its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
+  until they expire (at most 4096 at a time).
+
+A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
+and logs who sent it.
+
