@@ -12,14 +12,18 @@
 # adds the firewall rules clipboardbridge needs without asking and says what
 # it added, CBB_FIREWALL=no adds none and prints the commands that would
 # (without either, install.ps1 lists the rules and asks), CBB_VERSION=v1.2.3
-# picks a release instead of the latest, CBB_ERROR_DETAILS=1 shows the full
+# picks a release instead of the latest, CBB_ATTESTATION=require refuses to
+# install unless GitHub's build provenance attestation of the archive checks
+# out (it needs gh, signed in), CBB_ATTESTATION=skip does not check it,
+# CBB_ERROR_DETAILS=1 shows the full
 # error of a failure, and
 # CBB_RELEASE_DIR, for tests, takes the files from a directory instead of
 # downloading them.
 #
 # It downloads the archive for this machine's architecture and SHA256SUMS
-# from the release, checks the archive against it, and runs install.ps1
-# from the archive.
+# from the release, checks the archive against it and, when gh is there and
+# signed in, against the release workflow's attestation, and runs
+# install.ps1 from the archive.
 
 & {
 	Set-StrictMode -Version 3
@@ -89,6 +93,30 @@
 			$got = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $archive)).Hash.ToLowerInvariant()
 			if ($got -ne $want) {
 				throw "$archive does not match SHA256SUMS; not installing it"
+			}
+
+			# SHA256SUMS comes from the same release, so it shows only that
+			# the download is whole. The attestation shows that this
+			# repository's release workflow built the archive.
+			$step = "checking the build attestation of $archive"
+			$attestation = if ($env:CBB_ATTESTATION) { $env:CBB_ATTESTATION } else { 'check' }
+			$gh = Get-Command gh -ErrorAction SilentlyContinue
+			$signedIn = $false
+			if ($gh) {
+				& $gh.Source auth status *> $null
+				$signedIn = $LASTEXITCODE -eq 0
+			}
+			if ($env:CBB_RELEASE_DIR -or $attestation -eq 'skip') {
+			} elseif ($signedIn) {
+				& $gh.Source attestation verify (Join-Path $tmp $archive) --repo HunterEwok/clipboardbridge *> $null
+				if ($LASTEXITCODE -ne 0) {
+					throw "$archive does not have this repository's build attestation; not installing it"
+				}
+				Write-Host "The archive's build attestation checks out."
+			} elseif ($attestation -eq 'require') {
+				throw 'CBB_ATTESTATION=require needs gh, signed in (gh auth login), to check the build attestation'
+			} else {
+				Write-Host 'Not checked: the build attestation of the archive (it needs gh, signed in). SHA256SUMS matched.'
 			}
 
 			$step = "unpacking $archive"

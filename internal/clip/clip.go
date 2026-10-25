@@ -441,10 +441,18 @@ func (e *Engine) Received(ev Event) (Result, error) {
 	if err := ev.Validate(); err != nil {
 		return Result{}, err
 	}
+	if e.cfg.Clock.Ahead(ev.Time) {
+		return Result{}, errAhead
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.receive(ev), nil
 }
+
+// errAhead refuses an event whose time is more than hlc.MaxAhead ahead of
+// this member's clock: it would stay the current event and hold every
+// clock of the group near the end of time.
+var errAhead = errors.New("clip: the event's time is more than 7 days ahead of this device's clock; check the sender's date")
 
 // Hello is what a member sends when a connection starts.
 type Hello struct {
@@ -516,6 +524,10 @@ func (e *Engine) Reconcile(peer string, h Hello) (Result, error) {
 		}
 		if h.Current.Kind == Secret && !h.Current.IsMark() {
 			return Result{}, errors.New("clip: a hello must not carry a secret's text")
+		}
+		if e.cfg.Clock.Ahead(h.Current.Time) {
+			// Taken as no current event; the connection stays.
+			h.Current = nil
 		}
 	}
 	e.mu.Lock()

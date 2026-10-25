@@ -730,19 +730,37 @@ class RecordSet {
     /**
      * Whether device may be the group's hub for sync away from home: the
      * root (a device whose own record the current root's key signed, a
-     * phone or a computer, as Go's Records.RootDevice) or a device listed as
+     * phone or a computer, as Go's Records.RootMember) or a device listed as
      * an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+     * Only by device ID: MemberNode passes on an offer only from a peer
+     * that mayHost(device, chain) takes, which also checks the key.
      */
-    fun mayHost(device: String): Boolean {
-        if (devices.any { it.id == device && it.admin }) return true
+    fun mayHost(device: String): Boolean =
+        devices.any { it.id == device && it.admin } || rootMember()?.let { (id, key) -> id == device && key !in Eval(this).revoked } == true
+
+    /**
+     * mayHost for a peer whose verified certificate chain (leaf first) is
+     * chain: the record that makes it the root or an admin must name the
+     * key of its certificate, since a device ID alone is what a joining
+     * device picks itself.
+     */
+    fun mayHost(device: String, chain: List<ByteArray>): Boolean {
+        val leaf = chain.firstOrNull() ?: return false
+        val key = runCatching { Key(Records.keyHashOfCert(leaf)) }.getOrNull() ?: return false
+        if (devices.any { it.id == device && it.admin && Key(it.key) == key }) return true
+        val (id, own) = rootMember() ?: return false
+        return id == device && own == key && key !in Eval(this).revoked
+    }
+
+    /** The root's own device and its key: the newest full or phone device record the current root signed for itself. */
+    private fun rootMember(): Pair<String, Key>? {
         val ev = Eval(this)
-        val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return false
+        val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
         val own = ev.entries.filter {
             it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
                 it.body.device != null && it.body.device == it.body.by
-        }.maxByOrNull { it.body.timeMS } ?: return false
-        val key = own.body.key ?: return false
-        return own.body.device == device && Key(key) !in ev.revoked
+        }.maxByOrNull { it.body.timeMS } ?: return null
+        return (own.body.device ?: return null) to Key(own.body.key ?: return null)
     }
 
     /** SHA-256 over the sorted record IDs, base64, as the hello carries it; null for an empty set. */

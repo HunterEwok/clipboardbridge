@@ -697,18 +697,38 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
     /// Whether device may be the group's hub for sync away from home: the
     /// root (a device whose own record the current root's key signed, a
-    /// phone or a computer, as Go's Records.RootDevice) or a device listed as
+    /// phone or a computer, as Go's Records.RootMember) or a device listed as
     /// an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+    /// Only by device ID: MemberNode passes on an offer only from a peer that
+    /// mayHost(_:chain:) takes, which also checks the key.
     public func mayHost(_ device: String) -> Bool {
         if devices.contains(where: { $0.id == device && $0.admin }) { return true }
+        guard let root = rootMember() else { return false }
+        return root.device == device && !Eval(self).revoked.contains(root.key)
+    }
+
+    /// mayHost for a peer whose verified certificate chain (leaf first) is
+    /// chain: the record that makes it the root or an admin must name the
+    /// key of its certificate, since a device ID alone is what a joining
+    /// device picks itself.
+    public func mayHost(_ device: String, chain: [Data]) -> Bool {
+        guard let leaf = chain.first, let key = try? Records.keyHash(cert: leaf) else { return false }
+        if devices.contains(where: { $0.id == device && $0.admin && $0.key == key }) { return true }
+        guard let root = rootMember() else { return false }
+        return root.device == device && root.key == key && !Eval(self).revoked.contains(key)
+    }
+
+    /// The root's own device and its key: the newest full or phone device
+    /// record the current root signed for itself.
+    private func rootMember() -> (device: String, key: Data)? {
         let ev = Eval(self)
-        guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return false }
+        guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return nil }
         let own = ev.entries.filter {
             $0.signer == cur && $0.body.type == "device" && ["phone", "full"].contains(Records.role($0.body.role)) &&
                 $0.body.device != nil && $0.body.device == $0.body.by
         }.max { $0.body.time_ms < $1.body.time_ms }
-        guard let own, own.body.device == device, let key = own.body.key else { return false }
-        return !ev.revoked.contains(key)
+        guard let own, let id = own.body.device, let key = own.body.key else { return nil }
+        return (device: id, key: key)
     }
 
     /// SHA-256 over the sorted record IDs, base64, as the hello carries it;

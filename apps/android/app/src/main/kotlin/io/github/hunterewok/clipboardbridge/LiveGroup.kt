@@ -84,6 +84,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private var browser: NsdBrowser? = null
     private var dialer: MemberDialer? = null
     private var found: Set<FoundMember> = emptySet()
+
+    /** When browsing first found each member, as System.nanoTime. */
+    private var foundAt: Map<String, Long> = emptyMap()
     private var away: AwayFromHome? = null
     private val awayFile = AwayFile(File(file.parentFile, "away.bin"))
 
@@ -418,6 +421,19 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         relay()
     }
 
+    /**
+     * Whether browsing finds the hub on the home network now, and either
+     * found it within [NEAR_GRACE_MS] or the dialer is connected to it:
+     * anyone on a network can announce a member's name and the group's tag
+     * (docs/protocol.md, section 11).
+     */
+    private fun atHome(hub: String): Boolean {
+        val (at, d) = synchronized(lock) { foundAt[hub] to dialer }
+        if (at == null) return false
+        if ((System.nanoTime() - at) / 1_000_000 < NEAR_GRACE_MS) return true
+        return d?.connected?.contains(hub) == true
+    }
+
     private fun startBrowsing(): NsdBrowser? = synchronized(lock) {
         val g = state ?: return null
         if (node != null) return null
@@ -429,7 +445,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             GoTunnels,
             load = awayFile::read,
             save = { s -> if (s == null) awayFile.delete() else awayFile.write(s) },
-            atHome = { hub -> synchronized(lock) { found.any { it.device == hub } } },
+            atHome = ::atHome,
             dial = { port, hub ->
                 TLSTransport.dial("127.0.0.1", port, Member.ALPN, member.privateKey, g.memberChain) { peer ->
                     runCatching { GroupCertificates.verifyMember(peer, g.trusted, Instant.now()) }.getOrNull() == hub
@@ -456,7 +472,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             onTunnel = a::keep,
         )
         val b = NsdBrowser(context) { members ->
-            synchronized(lock) { found = members }
+            synchronized(lock) {
+                found = members
+                val now = System.nanoTime()
+                foundAt = members.filter { it.group == g.tag }.associate { it.device to (foundAt[it.device] ?: now) }
+            }
             relay()
         }
         val known = { d: String -> synchronized(lock) { state?.addresses?.get(d).orEmpty() } }
@@ -527,6 +547,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             if (rooted) Thread({ restartSync() }, "restart sync").start()
             return fresh
         }
+
+        override fun refused(chain: List<ByteArray>): String? = synchronized(lock) { state?.records?.refused(chain) }
+
+        override fun mayHost(device: String, chain: List<ByteArray>): Boolean =
+            synchronized(lock) { state?.records?.mayHost(device, chain) == true }
     }
 
     /**
@@ -614,6 +639,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     companion object {
         private const val TAG = "clipboardbridge"
+
+        /** How long a member that browsing finds counts as at home without a connection to it. */
+        private const val NEAR_GRACE_MS = 30_000L
 
         /** How long admitting a device may take once it is dialed: a computer that stops answering mid-pairing fails then. */
         const val PAIRING_DEADLINE_MS = 30_000L

@@ -49,7 +49,10 @@ class CopyWatcher : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> clipboardOverlayShown()
             else -> false
         }
-        if (copied) copied()
+        if (copied) {
+            Clipboard.changed()
+            copied()
+        }
     }
 
     override fun onInterrupt() {}

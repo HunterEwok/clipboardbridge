@@ -18,6 +18,19 @@ import io.github.hunterewok.clipboardbridge.kit.SyncEngine
  * clipboard without taps").
  */
 object Clipboard {
+    /** Counts the changes of the clipboard that the app learns of; a secret's timer compares it. */
+    @Volatile
+    private var changes = 0L
+
+    /**
+     * Notes that the clipboard changed: CopyWatcher saw a copy. A secret
+     * written before then is no longer the clipboard's, so it stays.
+     */
+    @Synchronized
+    fun changed() {
+        changes++
+    }
+
     /** The text on the clipboard, or null when there is none or the app may not read it now. */
     fun read(context: Context): String? {
         val cm = context.getSystemService(ClipboardManager::class.java)
@@ -60,11 +73,17 @@ object Clipboard {
             clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
         }
         cm.setPrimaryClip(clip)
+        changed()
+        val written = changes
         if (kind == Member.Kind.SECRET) {
             Handler(Looper.getMainLooper()).postDelayed({
-                // Only the secret itself goes: the app reads the clipboard
-                // only while it is in front, and another copy stays.
-                if (read(context) == text) cm.clearPrimaryClip()
+                // Only the secret itself goes. While the app may read the
+                // clipboard, by its text; otherwise (the service writes
+                // most secrets in the background) unless the app learned
+                // of a change since (a copy CopyWatcher saw, or another
+                // text it wrote), so that it does not stay for good.
+                val now = read(context)
+                if (if (now != null) now == text else changes == written) cm.clearPrimaryClip()
             }, SyncEngine.SECRET_TTL_MS)
         }
     }

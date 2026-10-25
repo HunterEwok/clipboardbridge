@@ -95,31 +95,44 @@ impl Away {
         Ok(())
     }
 
-    /// Keeps the offer a full member sent, if sync away from home is on.
+    /// Keeps the offer the group's root or an admin sent, if sync away from
+    /// home is on. The first hub's offer stays until sync away from home is
+    /// turned off and on again; another device's offer, and one that does
+    /// not decode, are ignored, so neither moves nor stops the tunnel.
     pub fn offered(&self, from: &DeviceId, v: &serde_json::Value) {
         let mut st = self.st.lock().unwrap();
         let Some(cur) = st.as_mut() else { return };
+        if let Some(h) = &cur.to_hub
+            && h.device != from.as_str()
+        {
+            (self.log)(&format!(
+                "cbb: ignored the tunnel offer from {from}: this device keeps the offer of the hub {}; run cbb global off and cbb global on here to take another",
+                h.device
+            ));
+            return;
+        }
         let hub = serde_json::from_value::<TunnelOffer>(v.clone())
             .map_err(|e| Error::with("the hub's offer does not decode", e))
             .and_then(|o| tunnel::hub_from_offer(from, &o));
         let hub = match hub {
-            Ok(h) => Some(h),
+            Ok(h) => h,
             Err(e) => {
-                (self.log)(&format!("cbb: a tunnel offer from {from}: {}", e.for_log()));
+                (self.log)(&format!("cbb: ignored a tunnel offer from {from}: {}", e.for_log()));
                 *self.error.lock().unwrap() = Some((e.message().to_string(), e.details()));
-                None
+                return;
             }
         };
-        if cur.to_hub == hub {
+        if cur.to_hub.as_ref() == Some(&hub) {
             return;
         }
         let mut next = cur.clone();
-        next.to_hub = hub;
+        let first = next.to_hub.is_none();
+        next.to_hub = Some(hub);
         if let Err(e) = next.save(&self.dir) {
             (self.log)(&format!("cbb: {}", e.for_log()));
             return;
         }
-        if next.to_hub.as_ref().is_some_and(|h| cur.to_hub.as_ref().is_none_or(|o| o.device != h.device)) {
+        if first {
             (self.log)(&format!("cbb: {from} is the group's hub for sync away from home"));
         }
         *cur = next;

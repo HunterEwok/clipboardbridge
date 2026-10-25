@@ -364,6 +364,9 @@ func cmdPairPhone(newToken bool, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "\n  (or open http://%s/ in Safari)\n\n", m.Address)
 	fmt.Fprintf(stdout, "The profile's fingerprint must start with:  %s\n", shortFingerprint(m.Fingerprint))
+	fmt.Fprintln(stdout, "  Compare it on the iPhone before you trust the profile: Settings > General >")
+	fmt.Fprintln(stdout, "  VPN & Device Management > clipboardbridge > More Details. Only this terminal")
+	fmt.Fprintln(stdout, "  shows the right one; if it differs, remove the profile and stop.")
 	fmt.Fprintf(stdout, "The code the shortcut asks for:            %s %s\n", m.Code[:3], m.Code[3:])
 	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
 	if _, err := c.Receive(); err != nil {

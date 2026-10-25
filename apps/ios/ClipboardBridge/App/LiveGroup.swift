@@ -471,7 +471,7 @@ final class LiveGroup: GroupController {
         let chain = Self.chain(g), roots = g.trusted
         let away = AwayFromHome(
             device: g.device, tunnels: GoTunnels(), state: awayState, save: { try AwayKeychain.save($0) },
-            atHome: { relay.has($0) },
+            atHome: { hub in await relay.atHome(hub) },
             dial: { port, hub in
                 let t = TLSTransport(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port) ?? .any),
                                      alpn: Member.alpn, identity: id, chain: chain) { peer in
@@ -599,6 +599,10 @@ final class LiveGroup: GroupController {
 
         /// Whether device may be the hub for sync away from home.
         func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
+
+        func mayHost(_ device: String, chain: [Data]) -> Bool { lock.withLock { set.mayHost(device, chain: chain) } }
+
+        func refused(chain: [Data]) -> String? { lock.withLock { set.refused(chain: chain) } }
     }
 
     /// Passes what the browser finds to the dialer, with the computers it
@@ -611,6 +615,7 @@ final class LiveGroup: GroupController {
         private var _allowed: Set<String>? = []
         private var _addresses: [String: [String]] = [:]
         private var last: Set<FoundMember> = []
+        private var foundAt: [String: TimeInterval] = [:]
         /// The group tag of the members at known addresses.
         let group: String
 
@@ -635,12 +640,25 @@ final class LiveGroup: GroupController {
                 update(lock.withLock { last })
             }
         }
-        /// Whether the browser finds device on the home network now.
-        func has(_ device: String) -> Bool { lock.withLock { last.contains { $0.device == device } } }
+        /// How long a member that the browser finds counts as at home
+        /// without a connection to it: anyone on a network can announce a
+        /// member's name and the group's tag (docs/protocol.md, section 11).
+        static let nearGrace: TimeInterval = 30
+
+        /// Whether the browser finds device on the home network now, and
+        /// either found it within nearGrace or the dialer is connected to it.
+        func atHome(_ device: String) async -> Bool {
+            let (at, d): (TimeInterval?, MemberDialer?) = lock.withLock { (foundAt[device], _dialer) }
+            guard let at else { return false }
+            if ProcessInfo.processInfo.systemUptime - at < Self.nearGrace { return true }
+            return await d?.connected.contains(device) ?? false
+        }
 
         func update(_ found: Set<FoundMember>) {
             let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {
                 last = found
+                let now = ProcessInfo.processInfo.systemUptime
+                foundAt = Dictionary(uniqueKeysWithValues: Set(found.filter { $0.group == group }.map(\.device)).map { ($0, foundAt[$0] ?? now) })
                 let all = Discovery.withKnown(found, known: Set(_addresses.keys), group: group)
                 return (_dialer, _allowed.map { a in all.filter { a.contains($0.device) } } ?? all)
             }

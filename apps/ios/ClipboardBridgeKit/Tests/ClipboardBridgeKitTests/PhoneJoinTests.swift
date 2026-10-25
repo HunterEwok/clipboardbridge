@@ -89,6 +89,11 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertTrue(root.records.mayHost(root.device))
         XCTAssertTrue(root.records.mayHost(second.device))
         XCTAssertFalse(root.records.mayHost(pc.device))
+        // By key: the root's own chain and the admin's, not another device's under their IDs.
+        XCTAssertTrue(root.records.mayHost(root.device, chain: root.memberChain))
+        XCTAssertTrue(root.records.mayHost(second.device, chain: admin.memberChain))
+        XCTAssertFalse(root.records.mayHost(second.device, chain: [pcJoined.welcome.cert, adminCA]), "a chain whose key no admin record names")
+        XCTAssertFalse(root.records.mayHost(root.device, chain: admin.memberChain))
 
         // Renewals: an admin renews what it issued, the root renews any.
         let later = t0.addingTimeInterval(500 * 24 * 3600)

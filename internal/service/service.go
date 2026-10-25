@@ -148,8 +148,8 @@ type Service struct {
 	// another that still stood, kept in case the records revoke that one.
 	pendingPhoneCA *group.CA
 	dialers        map[group.DeviceID]*dialer
-	nearby         map[group.DeviceID]bool // the members of the group that discovery finds on this network
-	prio           map[group.DeviceID]int  // their holder priority (TXT h), for those that can hold the name
+	nearby         map[group.DeviceID]time.Duration // the members of the group that discovery finds on this network, by the uptime they were first found
+	prio           map[group.DeviceID]int           // their holder priority (TXT h), for those that can hold the name
 	watchers       map[*watcher]bool
 	lastSeq        uint64
 	pending        *node.Write                  // a write that no watcher got, for the next one
