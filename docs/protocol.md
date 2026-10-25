@@ -107,6 +107,11 @@ follows the same RFCs but not every detail below: it publishes the PTR, SRV, TXT
 records of the table (the TXT with `r=lite`), with the addresses of its interfaces except
 loopback, and never holds `clipboardbridge.local`.
 
+A full member publishes, answers queries and takes connections on the member port only on
+an interface whose network it knows (design.md, "Known networks"); elsewhere it only
+browses, and connections to its member port there are closed at once, except while a pairing
+window is open. The lite member publishes on every interface.
+
 ### Records a full member publishes
 
 | Name | Type | Data | TTL | Cache-flush |

@@ -99,8 +99,11 @@ type DiscoveryConfig struct {
 	Port       uint16
 	TXT        []string
 	BrowseOnly bool // find members without publishing this device
-	OnPeers    func([]mdns.Peer)
-	Logf       func(string, ...any)
+	// Publish tells whether to publish this device on an interface, by its
+	// name and networks; everywhere if nil.
+	Publish func(name string, prefixes []netip.Prefix) bool
+	OnPeers func([]mdns.Peer)
+	Logf    func(string, ...any)
 }
 
 // Discovery publishes a member and finds the others.
@@ -111,7 +114,7 @@ type Discovery interface {
 }
 
 func mdnsDiscovery(c DiscoveryConfig) (Discovery, error) {
-	return mdns.New(mdns.Config{ID: c.ID, Port: c.Port, TXT: c.TXT, BrowseOnly: c.BrowseOnly, OnPeers: c.OnPeers, Logf: c.Logf})
+	return mdns.New(mdns.Config{ID: c.ID, Port: c.Port, TXT: c.TXT, BrowseOnly: c.BrowseOnly, Publish: c.Publish, OnPeers: c.OnPeers, Logf: c.Logf})
 }
 
 // Service is a running clipboardbridge service.
@@ -127,6 +130,7 @@ type Service struct {
 	eng           *clip.Engine    // made with the identity
 	nd            *node.Node
 	responder     Discovery
+	nets          *networks // the known networks; set before the group starts
 	discoveryStop context.CancelFunc
 	discoveryDone chan struct{}
 	port          uint16
@@ -260,6 +264,8 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	s.clock = clock
 
+	s.nets = loadNetworks(cfg.StateDir, id != nil, cfg.Logf)
+
 	ln, err := listenControl(cfg.Socket, false)
 	if err != nil {
 		return err
@@ -352,7 +358,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		return err
 	}
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.priorityLocked(id), false), OnPeers: s.found, Logf: s.logf,
-		Port: uint16(ln.Addr().(*net.TCPAddr).Port)}
+		Port: uint16(ln.Addr().(*net.TCPAddr).Port), Publish: s.nets.Publish}
 	r, err := s.cfg.Discover(dc)
 	if err != nil {
 		ln.Close()
@@ -466,6 +472,10 @@ func (s *Service) accept(ctx context.Context, ln net.Listener) {
 		ap, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
 		if !mdns.Published(ap.Addr()) && !ap.Addr().Unmap().IsLoopback() {
 			raw.Close()
+			return
+		}
+		if !ap.Addr().Unmap().IsLoopback() && !s.takesOn(raw.LocalAddr()) {
+			raw.Close() // a network this device has not met its group on
 			return
 		}
 		select {

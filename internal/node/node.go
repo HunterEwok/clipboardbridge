@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -155,6 +156,9 @@ type Peer struct {
 	// legacy group.
 	OldKeys bool
 	Since   time.Duration // uptime when the connection started
+	// Local is this end's address of the connection; invalid when it is
+	// not an IP connection.
+	Local netip.Addr
 }
 
 // A Node is a member's set of connections.
@@ -432,8 +436,9 @@ func (n *Node) Peers() []Peer {
 			c.mu.Lock()
 			adminKey, oldKeys := c.peerAdminKey, c.peerOldKeys
 			c.mu.Unlock()
+			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
-				OldKeys: oldKeys, Since: c.since})
+				OldKeys: oldKeys, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
