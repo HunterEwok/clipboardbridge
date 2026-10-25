@@ -33,7 +33,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the kit's member listener and registers with the forwarder (`Register`). A phone hub
   registers with its member key, without Face ID, when the group's records make that key
   the root's or an admin's; the forwarder now takes such a registration
-  (docs/protocol.md, section 13).
+  (docs/protocol.md, section 13). Both phone kits listen for member connections
+  (`MemberListener`) and, as the hub, admit a client by the tunnel key its hello offers and
+  answer with the offer (`PhoneHub`).
 
 ### Changed
 

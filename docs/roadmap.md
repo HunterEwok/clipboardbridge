@@ -583,7 +583,7 @@ device and Android would need more rights than the app should hold.
 
 ## The phone as the hub
 
-Planned for 0.5; step 1 is done. The design, and the other cases of a group without a
+Planned for 0.5; steps 1 and 2 are done. The design, and the other cases of a group without a
 working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open-planned-for-05) (D-64).
 
 Everyone has a phone; not everyone has a computer. A group made on a phone gets a hub at once,
@@ -596,13 +596,17 @@ better hub, so the app suggests it when there is one, and the user decides.
    the member port leading to the kit's member listener, and the registration with the
    forwarder and its hellos by the phone's member key, which the forwarder takes when the
    group's records make that key the root's or an admin's (docs/protocol.md, section 13);
-   tested with the Go client through a forwarder. Tests against the lite member and both
-   kits come with step 2.
-2. The listening member in both kits while the app is open: member connections on the home
-   network and mDNS publishing, then the hub's member port behind the tunnel.
-3. The phone hub in both apps: on by default in a group made on a phone, its status on Home
-   and in the away screen, and on Android the option to keep it running in the foreground
-   service.
+   tested with the Go client through a forwarder.
+2. Done: the listening member in both kits (`MemberListener`, on the loopback address for
+   the tunnel or on every address for the home network) and the hub's part of the member
+   protocol (`PhoneHub`, MemberNode's `hub`): it admits a client by the tunnel key its hello
+   offers, by the rules of a computer's hub, and answers with its offer; tested over member
+   TLS in the Kotlin kit and over a pipe in the Swift kit.
+3. The phone hub in both apps: on by default in a group made on a phone, `StartHub` with the
+   member listener's port, `Register` with the group's forwarder, its status on Home and in
+   the away screen, mDNS publishing of the member port on the home network, and on Android
+   the option to keep it running in the foreground service; tests of the whole way, a
+   computer and the lite member through the forwarder to a phone, on the bench.
 4. Clients for a hub that comes and goes: short retries in `cbb`, the lite member and both
    kits, the interval measured for phone batteries and the forwarder's load.
 5. Remote invitations made and served on the phone (step 7 of the order of work in

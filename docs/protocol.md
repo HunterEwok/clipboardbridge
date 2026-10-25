@@ -1300,6 +1300,11 @@ and then syncs at home only ("Through the tunnel" below).
   nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
+- A phone can be the hub while its app is open ([design.md](design.md), "The phone as the
+  hub", D-64): its kit listens for member connections (`MemberListener`, on the loopback
+  address, where `mobile/cbbtun`'s `Hub` leads each connection through the tunnel) and
+  admits clients and answers with the offer by the rules above (`PhoneHub`, MemberNode's
+  `hub`); `cbbtun`'s `SetClients` takes the clients it keeps.
 - When records revoke a device (section 10, rule 6, on the chain it presented), the hub
   forgets its key at once.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met

@@ -6,6 +6,7 @@ package io.github.hunterewok.clipboardbridge.kit
 import org.conscrypt.Conscrypt
 import java.io.Closeable
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -180,14 +181,16 @@ class TLSTransport private constructor(private val socket: SSLSocket, private va
 
 /**
  * Listens for TLS 1.3 connections, as a phone does while it shows its join
- * QR code (docs/protocol.md, section 6, "The joiner listens"). It requires a
- * client certificate and lets verifyChain decide on it.
+ * QR code (docs/protocol.md, section 6, "The joiner listens") and while it
+ * is the group's hub (MemberListener). It requires a client certificate and
+ * lets verifyChain decide on it. It listens on every address, or on address.
  */
 class TLSListener(
     port: Int = 0,
     private val alpn: String,
     key: PrivateKey,
     chain: List<ByteArray>,
+    address: InetAddress? = null,
     verifyChain: (List<ByteArray>) -> Boolean,
 ) {
     private val server: SSLServerSocket =
@@ -195,7 +198,7 @@ class TLSListener(
 
     init {
         server.reuseAddress = true
-        server.bind(InetSocketAddress(port))
+        server.bind(InetSocketAddress(address, port))
     }
 
     /** The port it listens on. */
@@ -205,12 +208,19 @@ class TLSListener(
      * Waits for the next connection and runs its handshake; throws when the
      * handshake fails, and once the listener is stopped.
      */
-    fun accept(timeoutMS: Int = TLSTransport.HANDSHAKE_TIMEOUT_MS): TLSTransport {
+    fun accept(timeoutMS: Int = TLSTransport.HANDSHAKE_TIMEOUT_MS): TLSTransport = acceptLater()(timeoutMS)
+
+    /**
+     * Waits for the next connection and returns its handshake, to run on
+     * another thread, so that a slow peer holds up no other; throws once the
+     * listener is stopped.
+     */
+    internal fun acceptLater(): (Int) -> TLSTransport {
         val s = server.accept() as SSLSocket
         TLSTransport.setUp(s, alpn)
         s.useClientMode = false
         s.needClientAuth = true
-        return TLSTransport.accepted(s, alpn, timeoutMS)
+        return { timeoutMS -> TLSTransport.accepted(s, alpn, timeoutMS) }
     }
 
     fun stop() {

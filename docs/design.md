@@ -848,8 +848,9 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
 - **Built so far:** the hub's side in `mobile/cbbtun` (`StartHub`, `Register`): the clients'
   tunnels, the member port that leads to the kit's member listener on the loopback address,
   and the registration with the forwarder by the member key, with the forwarder's check of
-  it. The listening member in the kits, the apps, the clients' short retries, remote
-  invitations on the phone and moving the hub come next (roadmap item 30).
+  it; in both kits the member listener (`MemberListener`) and the hub's answer to a hello's
+  tunnel key (`PhoneHub`, by the rules of a computer's hub). The apps, the clients' short
+  retries, remote invitations on the phone and moving the hub come next (roadmap item 30).
 
 ### Reaching the hub
 
