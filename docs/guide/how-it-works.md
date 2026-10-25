@@ -28,21 +28,7 @@ On one home network the devices find each other by themselves (mDNS) and connect
 Nothing leaves your network, and there is no server in the middle: any device can be off,
 and the others go on syncing.
 
-```mermaid
-flowchart LR
-    subgraph home["🏠 Home network"]
-        phone["📱 Phone (root)"]
-        a["💻 Laptop"]
-        b["💻 Desktop"]
-        pi["📟 Raspberry Pi<br/>(lite member)"]
-    end
-    phone <--> a
-    phone <--> b
-    a <--> b
-    pi <--> a
-    pi <--> b
-    phone <--> pi
-```
+![At home every device talks to every other one directly, with no server](../images/at-home.svg)
 
 **Two networks at home**, for example a separate network for smart devices: mDNS does not
 cross the router, so devices on different networks do not find each other by themselves.
@@ -56,22 +42,7 @@ When a laptop or a phone leaves home, it needs a way back. One computer at home 
 the group's **hub**: the devices that are away connect to it through the group's own
 encrypted tunnel (WireGuard), and it passes the clipboard on to everyone at home.
 
-```mermaid
-flowchart LR
-    subgraph away["🌍 Away"]
-        laptop["💻 Laptop"]
-        phone["📱 Phone"]
-    end
-    subgraph home["🏠 Home network"]
-        hub["🖥️ Hub<br/>(an admin computer)"]
-        b["💻 Desktop"]
-        pi["📟 Raspberry Pi"]
-    end
-    laptop ==>|"group's WireGuard tunnel"| hub
-    phone ==>|"group's WireGuard tunnel"| hub
-    hub <--> b
-    hub <--> pi
-```
+![Away from home, the laptop and the phone reach the hub at home through the group's WireGuard tunnel](../images/hub.svg)
 
 - The hub is your own computer, a Linux machine or a Windows PC, and it must be an admin. A
   Mac cannot be the hub yet. The hub is a full member of the group: it reads the clipboard
@@ -91,22 +62,7 @@ port forward helps. The hub can instead register with a **forwarder**, a server 
 internet that passes the tunnel's encrypted packets between your devices and your hub. The
 hub dials out to the forwarder, so nothing at home has to be opened.
 
-```mermaid
-flowchart LR
-    subgraph away["🌍 Away"]
-        laptop["💻 Laptop"]
-        phone["📱 Phone"]
-    end
-    fwd["☁️ Forwarder<br/>passes encrypted packets"]
-    subgraph home["🏠 Home, behind the provider's NAT"]
-        hub["🖥️ Hub"]
-        b["💻 Desktop"]
-    end
-    laptop ==>|tunnel| fwd
-    phone ==>|tunnel| fwd
-    hub ==>|"registers, dials out"| fwd
-    hub <--> b
-```
+![The hub behind the provider's NAT dials out to a forwarder, which passes the tunnel from the devices away](../images/forwarder.svg)
 
 The forwarder holds no keys and cannot read anything: it only sees encrypted packets going
 to your hub. Two kinds:
@@ -143,15 +99,7 @@ there are two choices:
   it, so it cannot read the clipboard. It does see which of your devices talk, and when.
   Computers can use it; the phone apps cannot yet.
 
-```mermaid
-flowchart LR
-    a["💻 Laptop, away"]
-    relay["☁️ Blind relay<br/>joins two devices,<br/>reads nothing"]
-    b["💻 Mac, at home"]
-    a ==>|"tunnel"| relay
-    b ==>|"tunnel"| relay
-    a <-.->|"end-to-end encryption"| b
-```
+![A blind relay joins the laptop away and the Mac at home; the encryption runs end to end through it](../images/relay.svg)
 
 **Planned:**
 
