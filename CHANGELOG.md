@@ -6,6 +6,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-25
+
 ### Added
 
 - Wear OS: an app that shows the group's devices and their live dots, the latest events and
@@ -724,7 +726,8 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/HunterEwok/clipboardbridge/releases/tag/v0.1.1
