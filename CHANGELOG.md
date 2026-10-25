@@ -177,6 +177,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   group) is dropped, every signer (admin CAs and roots' own keys alike) is limited to 1024
   records, signatures are checked before the limits, and a full set still takes 1024 more
   records from the own key of a root on the path.
+- Security: a device can no longer join twice under one device ID and leave a second key
+  behind that removing it misses. The admitting member refuses an ID that the records or a
+  connected member already have (new pairing error `taken`), the devices list shows a device
+  while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
+  every key of the device, and a peer counts as the root only with the root's own key.
 - An update without a terminal over an installation from before the firewall question no
   longer removes the firewall rules it had added: rules that are there without a kept answer
   count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing

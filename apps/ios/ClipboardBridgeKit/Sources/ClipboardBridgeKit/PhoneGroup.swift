@@ -198,10 +198,10 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         for other in list where other.id != lost {
             if let k = other.adminKey, !keep.contains(k) { keep.append(k) }
         }
-        keep.removeAll { $0 == d.key || $0 == d.adminKey }
+        keep.removeAll { d.keys.contains($0) || $0 == d.adminKey }
         var out = [try Records.root(newRoot, group: tag, by: device, now: now, signer: adminSigner, adminCA: myCA)]
         records.add(out[0], groupCA: groupCA)
-        out.append(try Records.revoke([oldRoot, d.key] + (d.adminKey.map { [$0] } ?? []), keep: keep, group: tag, by: device, now: now,
+        out.append(try Records.revoke([oldRoot] + d.keys + (d.adminKey.map { [$0] } ?? []), keep: keep, group: tag, by: device, now: now,
                                       signer: rootSigner))
         out.append(try Records.device(device, name: me.name, role: "phone", os: me.os ?? "ios", key: me.key, admin: me.adminKey, group: tag, by: device,
                                       now: now, signer: rootSigner))
@@ -247,7 +247,9 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard device != self.device else { throw Failure.cannotRemoveItself }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
         guard device != records.rootDevice else { throw Failure.cannotRemoveRoot }
-        var keys = [d.key], keep: [Data]?
+        // Every key the device had in the group goes, so none of them stays
+        // a member nobody sees.
+        var keys = d.keys, keep: [Data]?
         if let admin = d.adminKey {
             keys.append(admin)
             // Its own removals stop counting with it, so this record names them again.
@@ -332,7 +334,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         var adminKey: Data?
         let admitted = try await PairingMember.admit(
             over: t, code: code, memberCert: memberCert, joinerCert: joinerCert, sessionID: sessionID,
-            memberAD: Pairing.MemberAD(device: device, group: tag)
+            memberAD: Pairing.MemberAD(device: device, group: tag), taken: { [device, records] in $0 == device || records.knows($0) }
         ) { dev, publicKey, info in
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
                                     groupCA: first, issuer: issuer)

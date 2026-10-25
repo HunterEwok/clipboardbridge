@@ -190,6 +190,9 @@ pub struct Device {
     pub admin: bool,
     /// An admin computer another admin froze: no admin, and refused.
     pub frozen: bool,
+    /// Every key that a counting device record names for it and that is
+    /// not revoked, key among them.
+    pub keys: Vec<KeyHash>,
 }
 
 /// The set of a group's records. It only grows.
@@ -823,13 +826,23 @@ impl Records {
     }
 
     /// The devices list: the latest device record that counts for each
-    /// device, without revoked keys, sorted by name and then ID.
+    /// device among those whose key is not revoked, sorted by name and then
+    /// ID.
     pub fn devices(&self) -> Vec<Device> {
         let on: Vec<KeyHash> = self.path().iter().map(Cert::key_hash).collect();
         let mut latest: BTreeMap<&str, &Signed> = BTreeMap::new();
+        let mut keys: BTreeMap<&str, Vec<KeyHash>> = BTreeMap::new();
+        // By record ID, as Go, so the keys come in the same order; a device
+        // whose records name more than one key stays listed while any of
+        // them is not revoked.
         for r in self.by_id.values() {
-            if r.body.kind != "device" || !self.counts(r, &on) {
+            let Some(key) = r.body.key else { continue };
+            if r.body.kind != "device" || !self.counts(r, &on) || self.revoked(&key) {
                 continue;
+            }
+            let ks = keys.entry(r.body.device.as_str()).or_default();
+            if !ks.contains(&key) {
+                ks.push(key);
             }
             let newer = latest
                 .get(r.body.device.as_str())
@@ -840,7 +853,6 @@ impl Records {
         }
         let mut out: Vec<Device> = latest
             .into_iter()
-            .filter(|(_, r)| !self.revoked(&r.body.key.unwrap()))
             .map(|(id, r)| Device {
                 id: id.to_string(),
                 name: r.body.name.clone(),
@@ -849,6 +861,7 @@ impl Records {
                 key: r.body.key.unwrap(),
                 admin: r.body.admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
                 frozen: self.frozen(&r.body.key.unwrap()) || r.body.admin.is_some_and(|a| self.frozen(&a)),
+                keys: keys.remove(id).unwrap_or_default(),
             })
             .collect();
         out.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));

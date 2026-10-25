@@ -31,6 +31,12 @@ type Options struct {
 	// roots (group.Records.PathRecords), for the Welcome; a group that was
 	// handed over needs them, or the new device refuses the Welcome.
 	Records func() []group.Record
+	// Taken, when set, reports whether a device ID is in the group already:
+	// a device record names it or a member with it is connected. Such a
+	// joiner is refused before the exchange, since a device picks its own
+	// ID and a second key under one ID would be a member that removing the
+	// device leaves behind.
+	Taken func(group.DeviceID) bool
 
 	// Secret, when set, is the password in place of a six-digit code: the
 	// secret of a remote invitation, at least MinSecret bytes.
@@ -56,6 +62,7 @@ type Window struct {
 	code     []byte // the password: the six digits, or a secret
 	noCAKeys bool
 	records  func() []group.Record
+	taken    func(group.DeviceID) bool
 	confirm  func(context.Context, Request) error
 	wait     time.Duration // how long confirm may take
 	now      func() time.Time
@@ -123,7 +130,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, confirm: opt.Confirm, wait: opt.ConfirmWait,
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
 		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
@@ -384,6 +391,10 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 	joiner, err := joinerID(cs)
 	if err != nil {
 		return nil, false, err
+	}
+	if w.taken != nil && w.taken(joiner) {
+		readFrame(conn) // answered after the joiner's first message, as acquire's errors
+		return nil, false, ErrTaken
 	}
 	first, err := readFrame(conn)
 	if err != nil {

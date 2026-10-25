@@ -194,6 +194,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// An admin computer another admin froze: no admin until the root
         /// or an admin phone unfreezes it, and refused.
         public var frozen = false
+        /// Every key that a counting device record names for it and that is
+        /// not revoked, key among them: what removing it revokes.
+        public var keys: [Data] = []
     }
 
     /// Adds a record signed under one of the group's roots, by the root's
@@ -617,17 +620,22 @@ public struct RecordSet: Codable, Equatable, Sendable {
     }
 
     /// The devices list: the latest device record that counts for each
-    /// device (by time, then record ID), less the revoked keys, sorted by
-    /// name. A device record counts when it was signed under a root on the
-    /// path, by an admin CA that still stands under it, and its signer is
-    /// not revoked, or every revocation of the signer keeps the device's
-    /// key.
+    /// device (by time, then record ID) among those whose key is not
+    /// revoked, sorted by name. A device record counts when it was signed
+    /// under a root on the path, by an admin CA that still stands under it,
+    /// and its signer is not revoked, or every revocation of the signer
+    /// keeps the device's key. A device whose records name more than one
+    /// key stays listed while any of them is not revoked, as Go's
+    /// Records.Devices.
     public var devices: [Device] {
         let ev = Eval(self)
         var latest: [String: (Member.Record, Records.Body)] = [:]
-        for e in ev.entries where e.body.type == "device" {
+        var keys: [String: [Data]] = [:]
+        // By record ID, as Go, so the keys come in the same order.
+        for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) where e.body.type == "device" {
             let (r, b) = (e.record, e.body)
-            guard ev.counts(e), let d = b.device else { continue }
+            guard ev.counts(e), let d = b.device, let k = b.key, !ev.revoked.contains(k) else { continue }
+            if !(keys[d] ?? []).contains(k) { keys[d, default: []].append(k) }
             if let cur = latest[d] {
                 let newer = b.time_ms != cur.1.time_ms ? b.time_ms > cur.1.time_ms
                     : Records.id(r).lexicographicallyPrecedes(Records.id(cur.0)) == false
@@ -636,10 +644,10 @@ public struct RecordSet: Codable, Equatable, Sendable {
             latest[d] = (r, b)
         }
         return latest.compactMap { d, rb -> Device? in
-            guard let key = rb.1.key, !ev.revoked.contains(key) else { return nil }
+            guard let key = rb.1.key else { return nil }
             return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
                           admin: rb.1.admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: rb.1.admin,
-                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false)
+                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false, keys: keys[d] ?? [key])
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 
@@ -667,6 +675,13 @@ public struct RecordSet: Codable, Equatable, Sendable {
             if let k = e.body.key, !keys.contains(k) { keys.append(k) }
         }
         return keys
+    }
+
+    /// Whether a valid device record names the device ID, with any key and
+    /// whether or not it counts: an ID a new device may not take (section
+    /// 6).
+    public func knows(_ device: String) -> Bool {
+        records.contains { (try? JSONDecoder().decode(Records.Body.self, from: $0.body)).map { $0.type == "device" && $0.device == device } ?? false }
     }
 
     /// The phone that holds the root: the one whose own record the current

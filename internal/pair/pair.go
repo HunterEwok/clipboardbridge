@@ -86,6 +86,7 @@ var (
 	ErrTooMany   = errors.New("pair: three failed attempts; the pairing window is closed")
 	ErrRefused   = errors.New("pair: the other device refused the pairing")
 	ErrDeclined  = errors.New("pair: the admin did not confirm the device")
+	ErrTaken     = errors.New("pair: a device with this device ID is in the group already; join with a new ID")
 )
 
 // spentError is an attempt that failed after the joiner sent its
@@ -111,6 +112,7 @@ var errorCodes = map[string]error{
 	"expired":    ErrExpired,
 	"too-many":   ErrTooMany,
 	"declined":   ErrDeclined,
+	"taken":      ErrTaken,
 }
 
 // codeOf returns the code that tells the peer about err.

@@ -47,13 +47,19 @@ public enum PairingMember {
     /// description; it is called only after the joiner proved it knows the
     /// code.
     public static func admit(over t: FrameTransport, code: String, memberCert: Data, joinerCert: Data,
-                             sessionID: [UInt8], memberAD: Pairing.MemberAD,
+                             sessionID: [UInt8], memberAD: Pairing.MemberAD, taken: (String) -> Bool = { _ in false },
                              issue: (String, Data, Pairing.Info) throws -> Pairing.Welcome) async throws -> Admitted {
         let joiner = try CertificateInfo(der: joinerCert)
         guard let device = joiner.commonName, GroupCertificates.isDeviceID(device) else {
             throw Failure.badJoiner("the computer's certificate names no device ID")
         }
         let first = try await t.readFrame()
+        // A device picks its own ID, so one that is in the group already is
+        // refused before the exchange.
+        if taken(device) {
+            try? await t.writeFrame(Pairing.Frame(error: Pairing.ErrorCode.taken.rawValue))
+            throw Failure.refused(.taken)
+        }
         guard let ya = first.msg, let ada = first.ad,
               let info = try? JSONDecoder().decode(Pairing.Info.self, from: ada), info.isValid else {
             throw Failure.protocolError("bad first frame")

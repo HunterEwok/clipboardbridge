@@ -21,6 +21,24 @@ import kotlin.test.assertTrue
 class RecordsTest {
     private val now = Instant.now()
 
+    /** A device ID whose records name two keys stays listed while either is not revoked, as Go's TestDeviceWithTwoKeys. */
+    @Test
+    fun deviceWithTwoKeys() {
+        val g = Group(now)
+        val k1 = Records.keyHash(SoftwareSigner().publicKeyDER)
+        val k2 = Records.keyHash(SoftwareSigner().publicKeyDER)
+        val set = RecordSet()
+        val dev = "00112233445566778899aabbccddeeff"
+        set.add(Records.device(dev, "pc", "full", k1, g.tag, g.phone, now, g.rootKey), g.ca)
+        set.add(Records.device(dev, "pc", "full", k2, g.tag, g.phone, now.plusSeconds(1), g.rootKey), g.ca)
+        assertTrue(set.knows(dev))
+        assertEquals(2, set.devices.single().keys.size)
+        set.add(Records.revoke(listOf(k2), g.tag, g.phone, now, g.rootKey), g.ca)
+        assertContentEquals(k1, set.devices.single().key)
+        set.add(Records.revoke(set.devices.single().keys, g.tag, g.phone, now.plusSeconds(2), g.rootKey), g.ca)
+        assertTrue(set.devices.isEmpty())
+    }
+
     /** A phone's root, its own record and a computer's. */
     private class Group(now: Instant) {
         val rootKey = SoftwareSigner()

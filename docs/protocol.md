@@ -548,7 +548,11 @@ Fields, all optional, each frame using some: `msg` (bytes), `ad` (bytes), `tag` 
   identity.
 
 Error codes: `wrong-code`, `closed`, `busy`, `expired`, `too-many`, `refused`, `declined`
-(the admin did not confirm the device of a remote invitation). An unknown
+(the admin did not confirm the device of a remote invitation), `taken` (the joiner's device
+ID is in the group already). A joining device picks its own device ID, so the member refuses
+one that a `device` record names, with any key, or that a connected member or the member
+itself has, after the joiner's first frame and before its own CPace message; this does not
+count as a failed attempt, and the joiner joins again with a new ID. An unknown
 code is treated as `refused`. Errors carry no free text, so an unauthenticated peer cannot
 put words in front of the user.
 
@@ -1149,10 +1153,14 @@ after every member runs this version:
    `cbb revoke` refuses to remove it.
 
 The devices list is, for each device, the `device` record that counts with the largest
-`time_ms` (then the largest record ID), less the revoked keys; a device is an admin when its
+`time_ms` (then the largest record ID) among those whose key is not revoked, so a device
+whose records name more than one key stays listed while any of them stands. Removing a device
+revokes every key that its counting records name and that is not revoked yet, and the key of
+its connection. A device is an admin when its
 record names an admin CA whose key is neither revoked nor frozen. The **root** is the phone or computer whose
 own `device` record (`by` = `device`, role `phone` or `full`) the current root's key signed,
-the latest of them; a legacy group has none, and there every Linux and Windows member that
+the latest of them; a peer is the root only when its certificate's key is the one that
+record names, since a device ID alone proves nothing; a legacy group has none, and there every Linux and Windows member that
 holds the CA keys is an admin. Go keeps the records in `records.json` next to the
 identity (mode 0600) and the path in the identity file's `roots`.
 

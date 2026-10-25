@@ -1092,8 +1092,11 @@ type Device struct {
 	// AdminKey is the key of its admin CA, as its record names it; nil
 	// when it has none.
 	AdminKey *KeyHash
-	By       DeviceID // the admin that admitted it, as its record says
-	Since    time.Time
+	// Keys are every key that a counting device record names for it and
+	// that is not revoked, Key among them: what removing it revokes.
+	Keys  []KeyHash
+	By    DeviceID // the admin that admitted it, as its record says
+	Since time.Time
 	// Frozen says that it is an admin computer that another admin froze:
 	// it is no admin until the root or an admin phone unfreezes it, and its
 	// connections are refused.
@@ -1101,18 +1104,25 @@ type Device struct {
 }
 
 // Devices returns the devices list: the latest device record that counts
-// for each device, without revoked keys, sorted by name and then ID. The
-// "latest" record of a device is the one with the largest time, then the
-// largest record ID, so every member picks the same one.
+// for each device among those whose key is not revoked, sorted by name and
+// then ID. The "latest" record of a device is the one with the largest
+// time, then the largest record ID, so every member picks the same one. A
+// device whose records name more than one key stays listed while any of
+// them is not revoked, so none of its keys hides behind a revoked one.
 func (s *Records) Devices() []Device {
 	latest := map[DeviceID]*signedRecord{}
 	first := map[DeviceID]int64{}
+	keys := map[DeviceID][]KeyHash{}
 	on := s.onPath()
-	for _, r := range s.byID {
-		if r.body.Type != RecordDevice || !s.counts(r, on) {
+	for _, id := range s.sortedIDs() {
+		r := s.byID[id]
+		if r.body.Type != RecordDevice || !s.counts(r, on) || s.Revoked(*r.body.Key) {
 			continue
 		}
 		d := r.body.Device
+		if !slices.Contains(keys[d], *r.body.Key) {
+			keys[d] = append(keys[d], *r.body.Key)
+		}
 		if t, ok := first[d]; !ok || r.body.TimeMS < t {
 			first[d] = r.body.TimeMS
 		}
@@ -1122,9 +1132,6 @@ func (s *Records) Devices() []Device {
 	}
 	var out []Device
 	for id, r := range latest {
-		if s.Revoked(*r.body.Key) {
-			continue
-		}
 		out = append(out, Device{
 			ID:       id,
 			Name:     r.body.Name,
@@ -1133,6 +1140,7 @@ func (s *Records) Devices() []Device {
 			Key:      *r.body.Key,
 			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin) && !s.Frozen(*r.body.Admin),
 			AdminKey: r.body.Admin,
+			Keys:     keys[id],
 			By:       r.body.By,
 			Since:    time.UnixMilli(first[id]),
 			Frozen:   s.Frozen(*r.body.Key) || r.body.Admin != nil && s.Frozen(*r.body.Admin),
@@ -1188,9 +1196,18 @@ func (s *Records) RevokedBy(admin KeyHash) []KeyHash {
 // latest of them; "" when there is none, as in a legacy group not yet
 // upgraded, whose key every Linux member holds.
 func (s *Records) RootDevice() DeviceID {
+	dev, _ := s.RootMember()
+	return dev
+}
+
+// RootMember returns the device that holds the group's current root, as
+// RootDevice, and the member key its own device record names: a peer is
+// the root only when its certificate has that key, since a device ID is
+// what a joining device picks itself.
+func (s *Records) RootMember() (DeviceID, KeyHash) {
 	path := s.path()
 	if path[len(path)-1].MaxPathLen == 0 {
-		return ""
+		return "", KeyHash{}
 	}
 	cur := KeyHashOf(path[len(path)-1])
 	var best *signedRecord
@@ -1201,9 +1218,21 @@ func (s *Records) RootDevice() DeviceID {
 		}
 	}
 	if best == nil {
-		return ""
+		return "", KeyHash{}
 	}
-	return best.body.Device
+	return best.body.Device, *best.body.Key
+}
+
+// Known reports whether a valid device record names the device dev, with
+// any key and whether or not it counts: an ID a new device may not take
+// (docs/protocol.md, section 6).
+func (s *Records) Known(dev DeviceID) bool {
+	for _, r := range s.byID {
+		if r.body.Type == RecordDevice && r.body.Device == dev {
+			return true
+		}
+	}
+	return false
 }
 
 func newer(a, b *signedRecord) bool {

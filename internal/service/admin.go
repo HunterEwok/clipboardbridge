@@ -104,10 +104,12 @@ func (s *Service) adminPeer(dev group.DeviceID, chain []*x509.Certificate) bool 
 		return chain[0].CheckSignatureFrom(chain[1]) == nil && underRoot(id, chain[1]) &&
 			!s.records.Revoked(group.KeyHashOf(chain[1])) && !s.records.Frozen(group.KeyHashOf(chain[1]))
 	}
-	if s.records.RootDevice() == dev {
+	// The root is the device whose own record has this key: an ID alone is
+	// what a joining device picks itself.
+	key := group.KeyHashOf(chain[0])
+	if root, rootKey := s.records.RootMember(); root == dev && rootKey == key && !s.records.Revoked(key) {
 		return true
 	}
-	key := group.KeyHashOf(chain[0])
 	for _, d := range s.records.Devices() {
 		if d.ID == dev && d.Key == key && d.Admin {
 			return true
@@ -326,8 +328,8 @@ func (s *Service) takeOver(target string) (string, error) {
 	case !id.ServesPhone():
 		return "", errors.New("this admin does not hold the iPhone CA yet, which the new root replaces; connect it to another admin first, or take the group over on another admin")
 	}
-	lost, ok := s.keyOf(group.DeviceID(d.ID), nd)
-	if !ok {
+	lostKeys := s.keysOf(group.DeviceID(d.ID), nd)
+	if len(lostKeys) == 0 {
 		return "", fmt.Errorf("the key of %s is unknown", d.ID)
 	}
 	now := s.cfg.now()
@@ -363,7 +365,7 @@ func (s *Service) takeOver(target string) (string, error) {
 	}
 	nd.SendRecords([]group.Record{rr})
 
-	revoke := group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{oldRoot, lost, oldPhoneCA}}
+	revoke := group.RecordBody{Type: group.RecordRevoke, Keys: append(append([]group.KeyHash{oldRoot}, lostKeys...), oldPhoneCA)}
 	var self *group.Device
 	for i, dev := range devs {
 		switch {
@@ -376,7 +378,7 @@ func (s *Service) takeOver(target string) (string, error) {
 			keep = append(keep, *dev.AdminKey)
 		}
 	}
-	revoke.Keep = slices.DeleteFunc(keep, func(k group.KeyHash) bool { return k == lost })
+	revoke.Keep = slices.DeleteFunc(keep, func(k group.KeyHash) bool { return slices.Contains(lostKeys, k) })
 	name := s.cfg.Name
 	if self != nil {
 		name = self.Name

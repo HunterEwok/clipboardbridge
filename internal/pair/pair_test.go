@@ -1296,3 +1296,22 @@ func TestComputerAdminAdmits(t *testing.T) {
 		t.Error("a computer that is no admin opened a window")
 	}
 }
+
+// TestTakenID checks that a window refuses a joiner whose device ID is in
+// the group already, before the exchange and without counting a failure,
+// and admits one with a new ID.
+func TestTakenID(t *testing.T) {
+	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	f.window.taken = func(dev group.DeviceID) bool { return dev == j.ID }
+	out := f.attempt(t, j, f.code, nil)
+	if !errors.Is(out.joinErr, ErrTaken) || !errors.Is(out.serveErr, ErrTaken) {
+		t.Fatalf("join %v, serve %v; want ErrTaken", out.joinErr, out.serveErr)
+	}
+	if Spent(out.joinErr) || f.failures() != 0 || out.savedCalls != 0 {
+		t.Error("a taken ID used up the code or counted as a failure")
+	}
+	if out := f.attempt(t, newJoiner(t, "linux"), f.code, nil); out.joinErr != nil {
+		t.Errorf("a new ID: %v", out.joinErr)
+	}
+}

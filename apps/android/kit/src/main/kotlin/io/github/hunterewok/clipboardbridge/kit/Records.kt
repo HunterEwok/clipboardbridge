@@ -202,10 +202,13 @@ class RecordSet {
         val os: String? = null,
         /** An admin computer another admin froze: no admin until the root or an admin phone unfreezes it, and refused. */
         val frozen: Boolean = false,
+        /** Every key that a counting device record names for it and that is not revoked, key among them: what removing it revokes. */
+        val keys: List<ByteArray> = listOf(key),
     ) {
         override fun equals(other: Any?): Boolean =
             other is Device && id == other.id && name == other.name && role == other.role && os == other.os && key.contentEquals(other.key) &&
-                admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey) && frozen == other.frozen
+                admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey) && frozen == other.frozen &&
+                keys.size == other.keys.size && keys.zip(other.keys).all { (a, b) -> a.contentEquals(b) }
 
         override fun hashCode(): Int = id.hashCode()
     }
@@ -633,20 +636,26 @@ class RecordSet {
 
     /**
      * The devices list: the latest device record that counts for each
-     * device (by time, then record ID), less the revoked keys, sorted by
-     * name. A device record counts when it was signed under a root on the
-     * path, by an admin CA that still stands under it, and its signer is
-     * not revoked, or every revocation of the signer keeps the device's key.
+     * device (by time, then record ID) among those whose key is not
+     * revoked, sorted by name. A device record counts when it was signed
+     * under a root on the path, by an admin CA that still stands under it,
+     * and its signer is not revoked, or every revocation of the signer keeps
+     * the device's key. A device whose records name more than one key stays
+     * listed while any of them is not revoked, as Go's Records.Devices.
      */
     val devices: List<Device>
         get() {
             val ev = Eval(this)
             val latest = mutableMapOf<String, Entry>()
-            for (e in ev.entries) {
+            val keys = mutableMapOf<String, MutableList<ByteArray>>()
+            for (e in ev.entries.sortedBy { it.id.hex }) { // by record ID, as Go, so the keys come in the same order
                 val b = e.body
                 if (b.type != "device") continue
                 val d = b.device ?: continue
-                if (!ev.counts(e)) continue
+                val k = b.key ?: continue
+                if (!ev.counts(e) || Key(k) in ev.revoked) continue
+                val ks = keys.getOrPut(d) { mutableListOf() }
+                if (ks.none { it.contentEquals(k) }) ks.add(k)
                 val cur = latest[d]
                 if (cur != null) {
                     val newer = if (b.timeMS != cur.body.timeMS) {
@@ -660,11 +669,10 @@ class RecordSet {
             }
             return latest.mapNotNull { (d, e) ->
                 val key = e.body.key ?: return@mapNotNull null
-                if (Key(key) in ev.revoked) return@mapNotNull null
                 val admin = e.body.admin?.let { Key(it) }
                 Device(
                     d, e.body.name ?: d, Records.role(e.body.role), key, admin?.let { it !in ev.revoked && !ev.frozen(it) } ?: false, e.body.admin,
-                    Records.os(e.body), ev.frozen(Key(key)) || (admin != null && ev.frozen(admin)),
+                    Records.os(e.body), ev.frozen(Key(key)) || (admin != null && ev.frozen(admin)), keys[d].orEmpty(),
                 )
             }.sortedWith(compareBy({ it.name }, { it.id }))
         }
@@ -701,6 +709,9 @@ class RecordSet {
         }
         return keys
     }
+
+    /** Whether a valid device record names the device ID, with any key and whether or not it counts: an ID a new device may not take (section 6). */
+    fun knows(device: String): Boolean = list.any { Records.Body.decode(it.body)?.let { b -> b.type == "device" && b.device == device } == true }
 
     /**
      * The phone that holds the root: the one whose own record the current

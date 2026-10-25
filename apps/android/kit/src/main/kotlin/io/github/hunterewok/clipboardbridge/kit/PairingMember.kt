@@ -26,7 +26,9 @@ object PairingMember {
      * of the handshake, the joiner's already checked against the QR code's
      * fingerprint; sessionID is the TLS exporter's output. issue makes the
      * welcome for the joiner's device ID, public key and description; it is
-     * called only after the joiner proved it knows the code.
+     * called only after the joiner proved it knows the code. taken reports
+     * whether the joiner's device ID is in the group already; such a joiner
+     * is refused before the exchange, as a device picks its own ID.
      */
     fun admit(
         t: FrameTransport,
@@ -35,12 +37,17 @@ object PairingMember {
         joinerCert: ByteArray,
         sessionID: ByteArray,
         memberAD: Pairing.MemberAD,
+        taken: (String) -> Boolean = { false },
         issue: (String, ByteArray, Pairing.Info) -> Pairing.Welcome,
     ): Admitted {
         val joiner = CertificateInfo(joinerCert)
         val device = joiner.commonName
         if (device == null || !GroupCertificates.isDeviceID(device)) throw Failure("the device's certificate names no device ID")
         val first = t.readFrame()
+        if (taken(device)) {
+            runCatching { t.writeFrame(Pairing.Frame(error = Pairing.ErrorCode.TAKEN.wire)) }
+            throw Failure("a device with this device ID is in the group already", Pairing.ErrorCode.TAKEN)
+        }
         val ya = first.msg
         val ada = first.ad
         val info = ada?.let { Pairing.Info.decode(it) }

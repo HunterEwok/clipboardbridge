@@ -325,7 +325,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 		end()
 		return nil, nil, nil, s.errNotAdmitter()
 	}
-	opened, err := pair.Open(id, code, pair.Options{Records: s.pathRecords})
+	opened, err := pair.Open(id, code, pair.Options{Records: s.pathRecords, Taken: s.idTaken})
 	if err != nil {
 		end()
 		return nil, nil, nil, err
