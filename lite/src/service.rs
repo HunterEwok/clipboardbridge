@@ -143,7 +143,12 @@ pub fn run(cfg: Config) -> Result<()> {
     node.set_tunnel_key(away.key());
     {
         let away = away.clone();
-        node.on_tunnel(Box::new(move |from, v, may_host| away.offered(from, v, may_host)));
+        let n = Arc::downgrade(&node);
+        node.on_tunnel(Box::new(move |from, v, may_host| {
+            if let (Some(hub), Some(node)) = (away.offered(from, v, may_host), n.upgrade()) {
+                away.retry(&node, &hub);
+            }
+        }));
     }
     *svc.node.write().unwrap() = Some(node.clone());
     *svc.away.write().unwrap() = Some(away.clone());

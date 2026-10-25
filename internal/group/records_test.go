@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -504,43 +503,5 @@ func TestAuthorityRecords(t *testing.T) {
 	}
 	if got[other.ID()] {
 		t.Error("a plain device's record is shown")
-	}
-}
-
-// TestHubOrder checks the order of the group's hubs: the phones first, the
-// root's own device first among them, then the admin computers by device
-// ID; never a device that is no admin.
-func TestHubOrder(t *testing.T) {
-	g := newPhoneGroup(t)
-	s := NewRecords(g.root.Cert)
-	rootCert := member(t, g.root)
-	rootDev := DeviceID(rootCert.Subject.CommonName)
-	key := KeyHashOf(rootCert)
-	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g.root.Cert), TimeMS: 1, By: rootDev,
-		Device: rootDev, Name: "root phone", Role: RolePhone, Key: &key}, g.root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustAdd(t, s, r)
-	phone := member(t, g.root)
-	mustAdd(t, s, adminRecord(t, g.root.Cert, g.root, nil, phone, "admin phone", KeyHashOf(g.a.Cert)))
-	var pcs []DeviceID
-	for _, name := range []string{"pc one", "pc two"} {
-		pc := member(t, g.root)
-		k := KeyHashOf(pc)
-		admin := KeyHashOf(adminCA(t, g.root).Cert)
-		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g.root.Cert), TimeMS: 1,
-			Device: DeviceID(pc.Subject.CommonName), Name: name, Role: RoleFull, Key: &k, Admin: &admin}, g.root.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		mustAdd(t, s, r)
-		pcs = append(pcs, DeviceID(pc.Subject.CommonName))
-	}
-	slices.Sort(pcs)
-	mustAdd(t, s, deviceRecord(t, g.root.Cert, g.root, nil, member(t, g.root), "plain pc", 1))
-	want := append([]DeviceID{rootDev, DeviceID(phone.Subject.CommonName)}, pcs...)
-	if got := s.HubOrder(); !slices.Equal(got, want) {
-		t.Errorf("HubOrder = %v, want %v", got, want)
 	}
 }

@@ -218,6 +218,22 @@ fn check_roots(file: &str) {
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
 }
 
+/// The order of the group's hubs (go-hubs.json, docs/protocol.md section
+/// 11, "Several hubs"), as Go's TestGoHubVectors writes it.
+#[test]
+fn go_hubs() {
+    let v = vectors("go-hubs.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut rs = records(&v["records"]);
+    rs.reverse();
+    let (_, errs) = s.add_all(&rs);
+    assert!(errs.is_empty(), "{errs:?}");
+    let want: Vec<String> =
+        v["hub_order"].as_array().unwrap().iter().map(|d| d.as_str().unwrap().to_string()).collect();
+    assert_eq!(want.len(), 4);
+    assert_eq!(s.hub_order(), want);
+}
+
 /// What a computer's admin CA may do in a phone's group (go-admins.json):
 /// it removes a device but neither the admin phone nor the root, nor hands
 /// the group over, and nothing it signs after the admin phone removed it

@@ -52,7 +52,7 @@ const HANDSHAKE_RATE_LIMIT: u64 = 100;
 const MAX_POLL: Duration = Duration::from_millis(250);
 
 /// The tunnel state, kept while sync away from home is on: the device's own
-/// key, made on it, and the offer of the group's hub.
+/// key and preshared key, made on it, and the offers of the group's hubs.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct State {
     #[serde(rename = "v")]
@@ -61,11 +61,19 @@ pub struct State {
     pub group: String,
     #[serde(with = "b64")]
     key: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_hub: Option<Hub>,
+    /// The preshared key every hub uses for this device (docs/protocol.md,
+    /// section 11, "Several hubs"); made on load for a state before it.
+    #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
+    pub psk: Vec<u8>,
+    /// The hub's offer in a state before several hubs, read into `hubs`.
+    #[serde(default, skip_serializing)]
+    to_hub: Option<Hub>,
+    /// The offers of the group's hubs, one per hub.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hubs: Vec<Hub>,
 }
 
-/// The offer of the group's hub, as this member keeps it.
+/// The offer of one of the group's hubs, as this member keeps it.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Hub {
     pub device: String,
@@ -78,11 +86,16 @@ pub struct Hub {
 }
 
 impl State {
-    /// A new state with a new key.
+    /// A new state with a new key and preshared key.
     pub fn new(group: &str) -> Result<State> {
-        let mut key = vec![0u8; 32];
-        getrandom::fill(&mut key).map_err(|_| Error::msg("cannot make a key: the system has no randomness"))?;
-        Ok(State { version: 1, group: group.to_string(), key, to_hub: None })
+        Ok(State {
+            version: 1,
+            group: group.to_string(),
+            key: random_key()?,
+            psk: random_key()?,
+            to_hub: None,
+            hubs: vec![],
+        })
     }
 
     /// Reads dir/tunnel.json; None if there is none.
@@ -93,11 +106,32 @@ impl State {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(Error::with(format!("cannot read {}", path.display()), e)),
         };
-        let st: State = serde_json::from_slice(&data).context(format!("{} is damaged", path.display()))?;
+        let mut st: State = serde_json::from_slice(&data).context(format!("{} is damaged", path.display()))?;
         if st.key.len() != 32 {
             return Err(Error::msg(format!("{} is damaged: the key is not 32 bytes", path.display())));
         }
+        if let Some(h) = st.to_hub.take() {
+            st.hubs.insert(0, h);
+        }
+        if st.psk.len() != 32 {
+            st.psk = random_key()?;
+            st.save(dir)?;
+        }
         Ok(Some(st))
+    }
+
+    /// The offer of the hub `device`, if this member keeps one.
+    pub fn hub(&self, device: &str) -> Option<&Hub> {
+        self.hubs.iter().find(|h| h.device == device)
+    }
+
+    /// The offers this member tries, in the group's order of hubs `order`:
+    /// those of hubs in the order, with an address.
+    pub fn hubs_to_try(&self, order: &[String]) -> Vec<Hub> {
+        let mut out: Vec<Hub> =
+            self.hubs.iter().filter(|h| order.contains(&h.device) && !h.endpoints.is_empty()).cloned().collect();
+        out.sort_by_key(|h| order.iter().position(|d| *d == h.device));
+        out
     }
 
     /// Writes dir/tunnel.json, readable only by its owner.
@@ -127,6 +161,13 @@ impl State {
     pub fn public_key(&self) -> Vec<u8> {
         PublicKey::from(&self.secret()).as_bytes().to_vec()
     }
+}
+
+/// 32 random bytes, for a key.
+fn random_key() -> Result<Vec<u8>> {
+    let mut key = vec![0u8; 32];
+    getrandom::fill(&mut key).map_err(|_| Error::msg("cannot make a key: the system has no randomness"))?;
+    Ok(key)
 }
 
 /// Checks the offer of the hub `from` and returns what this member keeps of

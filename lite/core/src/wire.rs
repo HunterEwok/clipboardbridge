@@ -67,6 +67,10 @@ pub struct HelloBody {
     /// absent while sync away from home is off on it.
     #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
     pub tunnel_key: Option<Vec<u8>>,
+    /// The sender's own preshared key, which every hub uses for it
+    /// (section 11, "Several hubs").
+    #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
+    pub tunnel_psk: Option<Vec<u8>>,
 }
 
 /// What a hello says about the sender's device (section 4, "Device"): its
@@ -140,10 +144,14 @@ pub struct TunnelOffer {
     /// The way to the hub's forwarder over VLESS, then the only way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vless: Option<Value>,
-    /// In an offer the hub passes on when it hands the hub over, the
-    /// device that is the hub now (section 11, "Moving the hub").
+    /// In an offer a hub passes on, the hub it is for: another of the
+    /// group's hubs, or the new hub when the sender hands the hub over
+    /// (section 11, "Several hubs" and "Moving the hub").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hub: Option<String>,
+    /// In an offer passed on, that the sender is no hub any more.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    pub moved: bool,
 }
 
 /// The roles a peer may claim.
@@ -153,14 +161,14 @@ pub fn known_role(r: &str) -> bool {
 
 /// A hello message from a lite member running on `os` (`"linux"`, or
 /// `"none"` for firmware) with what it says about its device, with its
-/// tunnel key while sync away from home is on.
+/// tunnel key and its own preshared key while sync away from home is on.
 pub fn hello(
     h: &Hello,
     records: String,
     name: &str,
     os: &str,
     device: &DeviceInfo,
-    tunnel_key: Option<&[u8]>,
+    tunnel_key: Option<(&[u8], &[u8])>,
 ) -> Message {
     let device = device.cleaned();
     let body = HelloBody {
@@ -170,7 +178,8 @@ pub fn hello(
         name: name.to_string(),
         os: os.to_string(),
         device: if device.is_empty() { None } else { Some(serde_json::to_value(&device).unwrap()) },
-        tunnel_key: tunnel_key.map(<[u8]>::to_vec),
+        tunnel_key: tunnel_key.map(|(k, _)| k.to_vec()),
+        tunnel_psk: tunnel_key.map(|(_, p)| p.to_vec()),
     };
     Message {
         kind: "hello".into(),
