@@ -320,14 +320,15 @@ final class AwayFromHomeTests: XCTestCase {
                 firstWait: .milliseconds(10), maxWait: .seconds(3600), isPhone: { _ in phone }, phoneWait: .milliseconds(20),
                 homeCheck: Self.short.home)
             await a.start()
-            try await Task.sleep(for: .milliseconds(400))
-            await a.stop()
             if phone {
-                XCTAssertGreaterThanOrEqual(dialed.current, 6)
+                // Every 20 ms; a slow runner gets there later, but gets there.
+                try await eventually("a phone hub tried often") { dialed.current >= 6 }
             } else {
                 // 10, 20, 40, 80 and 160 ms, then an hour.
+                try await Task.sleep(for: .milliseconds(400))
                 XCTAssertLessThanOrEqual(dialed.current, 6)
             }
+            await a.stop()
         }
     }
 }
