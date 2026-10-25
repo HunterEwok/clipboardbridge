@@ -1,6 +1,6 @@
 # Contributing
 
-clipboardbridge is developed by one maintainer. Thank you for your interest.
+Clipboard Bridge is developed by one maintainer. Thank you for your interest.
 
 ## Issues are welcome
 
@@ -58,7 +58,7 @@ The checks that CI runs, by part. CI also builds every target; see
 
 ### Go
 
-clipboardbridge needs Go; `go.mod` names the exact toolchain, and the `go` command downloads
+Clipboard Bridge needs Go; `go.mod` names the exact toolchain, and the `go` command downloads
 it when needed. From the repository root:
 
 ```sh

@@ -16,7 +16,7 @@ import (
 //   - a relative link in a Markdown file names a file or directory of the
 //     repository, and its #anchor, if any, a heading of that file;
 //   - the project's old name does not come back, outside the changelog;
-//   - every command of cbb, the full and the lite member, is in docs/cli.md,
+//   - every command of cbb, the full and the lite member, is in docs/reference/cli.md,
 //     the lite member's in its section.
 
 var (
@@ -134,13 +134,13 @@ func slug(heading string) string {
 	return b.String()
 }
 
-// liteSection is the heading of the lite member's commands in docs/cli.md.
+// liteSection is the heading of the lite member's commands in docs/reference/cli.md.
 const liteSection = "## The lite member"
 
-// checkCommands reports the commands of cbb that docs/cli.md does not name:
+// checkCommands reports the commands of cbb that docs/reference/cli.md does not name:
 // the full member's anywhere, the lite member's in its section.
 func checkCommands(files map[string][]byte) []string {
-	ref, ok := files["docs/cli.md"]
+	ref, ok := files["docs/reference/cli.md"]
 	if !ok {
 		return nil
 	}
@@ -162,7 +162,7 @@ func checkCommands(files map[string][]byte) []string {
 		}
 		for _, m := range c.re.FindAllStringSubmatch(string(src), -1) {
 			if !strings.Contains(c.doc, "`cbb "+m[1]) {
-				problems = append(problems, fmt.Sprintf("docs/cli.md:1: the command cbb %s (%s) is not described", m[1], c.source))
+				problems = append(problems, fmt.Sprintf("docs/reference/cli.md:1: the command cbb %s (%s) is not described", m[1], c.source))
 			}
 		}
 	}

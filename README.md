@@ -1,97 +1,82 @@
-# clipboardbridge
+# Clipboard Bridge
 
-One clipboard for your Apple devices, Android phones and every Linux and Windows computer on
-your home network. Its command is `cbb`: `cbb new`, `cbb pair`, `cbb status`.
+One clipboard for your phone and every computer at home: copy on one, paste on another.
+Android, iPhone, Linux, Windows and Mac, on your own network, with no cloud and no
+accounts. Its command is `cbb`.
 
 > **Status: early development.** What works, and what has been tried on real devices, is
 > in the [status table](#status) below.
 
-## Install
-
-The [quick start](docs/quickstart.md) walks through installing and pairing step by step.
-In short, from the latest release:
-
-```sh
-# Linux with systemd (x86-64, ARM64, ARMv7, ARMv6) and macOS (Apple silicon, Intel)
-curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
-
-# or on macOS, with Homebrew (the second line starts the service; run it again after brew upgrade)
-brew install hunterewok/tap/clipboardbridge
-sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
+```mermaid
+flowchart LR
+    phone["📱 Phone"] <--> linux["💻 Linux"]
+    phone <--> mac["💻 Mac"]
+    phone <--> win["💻 Windows"]
+    linux <--> mac
+    mac <--> win
+    win <--> linux
 ```
 
-```sh
-# or in Docker, on a NAS or a home server (packaging/docker/README.md)
-docker compose -f packaging/docker/compose.home.yaml up -d
-```
+## Get started
 
-```powershell
-# Windows 10 (1809 or later) or 11, x86-64 or ARM64, in an administrator PowerShell
-irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+1. Install the app on your phone (Android: the APK in the
+   [latest release](https://github.com/HunterEwok/clipboardbridge/releases/latest); iPhone:
+   TestFlight, coming).
+2. Install Clipboard Bridge on a computer:
 
-# or with winget, once the package is in winget's repository (the second line starts the service)
-winget install HunterEwok.clipboardbridge
-cbb install
-```
+   ```sh
+   # Linux and Mac
+   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
+   ```
 
-The installers check the download against the release's `SHA256SUMS`, list the firewall
-rules clipboardbridge needs (its one port, TCP 8764, and mDNS from the home network) and ask
-before adding them, or add them at once with `--express`; their
-options are in the [command reference](docs/cli.md#installers). Every release file has a
-build provenance attestation: `gh attestation verify FILE --repo HunterEwok/clipboardbridge`.
-Then make a group and add your devices, as the quick start says.
+   ```powershell
+   # Windows 10 or 11, in an administrator PowerShell
+   irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+   ```
+
+3. Run `sudo cbb pair` on the computer and scan its QR code in the app.
+
+The [quick start](docs/guide/quickstart.md) walks through it step by step;
+[Installing](docs/guide/install.md) has Homebrew, winget, Docker and the firewall.
 
 ## What it does
 
-Copy on one device and paste on another, with the normal copy and paste of each system:
+| From → to | What you do |
+|---|---|
+| Computer → computer | Copy on one, paste on another. Automatic. |
+| Computer → Android | Copy on the computer, paste on the phone. Automatic. |
+| Android → computer | Copy on the phone; sent by itself with the accessibility service, or with one tap. |
+| Computer ↔ iPhone | One press of the Action button or a double tap on the back, then paste. |
 
-| From → to       | What you do                                                                 |
-|-----------------|-----------------------------------------------------------------------------|
-| Mac → Linux     | Copy on the Mac, paste on Linux. Automatic.                                 |
-| Linux → Mac     | Copy on Linux, paste on the Mac. Automatic.                                 |
-| Linux → Linux   | Copy on one machine, paste on any other. Automatic.                         |
-| Windows ↔ others | Copy on Windows, paste on Linux or the Mac, and back. Automatic.           |
-| iPhone → Linux  | Copy on the iPhone, press the Action button or double-tap the back, paste on Linux. |
-| Linux → iPhone  | Copy on Linux, press the same button, paste on the iPhone.                  |
-| Others → Android | Copy on a computer, paste on the phone. Automatic.                         |
-| Android → others | Copy on the phone; sent by itself with the accessibility service, or with one tap. |
-
-Apple devices on one Apple Account already share a clipboard through Universal Clipboard;
-clipboardbridge connects them to Linux. The iPhone needs one press because iOS does not let apps
-read the clipboard in the background.
-
-On Linux it works with and without a desktop:
-
-- **With a desktop** (any X11 desktop, GNOME, KDE, sway, labwc and others): the normal
-  clipboard, Ctrl+V, and Shift+Insert in terminals.
-- **Without a desktop** (text console): copy and paste inside tmux, and `cbb copy` and
-  `cbb paste` on the command line. A console paste on a key press, which would work even at
-  the login prompt, is planned.
+iOS does not let apps read the clipboard in the background, so the iPhone needs one
+gesture. Apple devices on one Apple Account already share a clipboard; Clipboard Bridge
+connects them to everything else. On Linux it works with any desktop, and without one
+through tmux and `cbb copy` and `cbb paste`.
 
 ## Principles
 
-- **Your network only.** Devices find each other on the home network; away from home they
-  reach it only through the group's own WireGuard tunnel to a computer at home, never
-  through anyone else's server. No cloud, no accounts, no telemetry.
-- **Encrypted and paired.** All traffic uses TLS. A device joins your group once, with a
-  six-digit code, and talks only to the devices of the group.
-- **No central server.** Every Linux machine, Windows PC and Mac is an equal member; any of them can be
-  switched off.
+- **Your network only.** At home the devices talk to each other directly. Away from home
+  they reach a computer of yours at home through the group's own encrypted tunnel
+  ([how it works](docs/guide/how-it-works.md)). No cloud, no accounts, no telemetry.
+- **Encrypted and paired.** All traffic uses TLS. A device joins your group once, by a QR
+  code or a six-digit code, and talks only to the devices of the group.
+- **The key stays on the phone.** In a group made on a phone, the phone holds the group's
+  key in its security chip and admits every device.
 - **Small.** One file per platform, no dependencies; runs on a Raspberry Pi Zero W.
 - **Passwords stay put.** Items that password managers mark as secret are not synced
   automatically.
 
 ## Platforms
 
-| Platform                                                                 | Component                                       |
-|--------------------------------------------------------------------------|-------------------------------------------------|
-| Linux: Ubuntu, Raspberry Pi OS and other distributions; x86-64, ARM64, ARMv7, ARMv6 (Raspberry Pi Zero W) | service, desktop connector, console helper |
-| macOS                                                                    | background agent                                |
-| Windows 10 (1809 or later) and 11; x86-64, ARM64                         | service, clipboard agent                        |
-| iOS and iPadOS                                                           | the app, or a shortcut in the Shortcuts app     |
-| Android                                                                  | the app (an APK in every release)               |
-| Apple Watch, Wear OS                                                     | a watch app, through the phone                  |
-| Small Linux devices (routers, boards)                                    | the lite member, also `cbb` ([lite/README.md](lite/README.md)) |
+| Platform | Component |
+|---|---|
+| Linux: Ubuntu, Raspberry Pi OS and other distributions; x86-64, ARM64, ARMv7, ARMv6 | service, desktop connector, console helper, tray app |
+| macOS | service, pasteboard agent, Mac app |
+| Windows 10 (1809 or later) and 11; x86-64, ARM64 | service, clipboard agent, tray app |
+| Android | the app (an APK in every release) |
+| iOS and iPadOS | the app, or a shortcut in the Shortcuts app |
+| Apple Watch, Wear OS | a watch app, through the phone |
+| Small Linux devices (routers, boards) | the lite member, also `cbb` ([lite/README.md](lite/README.md)) |
 
 ## Status
 
@@ -107,7 +92,8 @@ On Linux it works with and without a desktop:
 | Lite member on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
 | Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
 | Sync away from home between computers (`cbb global`, `cbb invite`) | built | not yet |
-| Sync away from home for the phones and the lite member | planned | |
+| Sync away from home for the phones and the lite member | built | not yet |
+| The phone as the hub, several hubs, a public blind relay | planned for 0.5 | |
 | Console paste on a key press | planned | |
 | Homebrew | set up; the tap gets its first formula with the next release | not yet |
 | Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |
@@ -116,15 +102,18 @@ The order of what comes next is the [roadmap](docs/roadmap.md).
 
 ## Documentation
 
-The [documentation index](docs/README.md) lists every document and who it is for: the
-[quick start](docs/quickstart.md), the [phone apps](docs/apps-guide.md), the
-[commands](docs/cli.md), [troubleshooting](docs/troubleshooting.md), the
-[lite member](lite/README.md), and for developers the [design](docs/design.md) and the
-[protocol](docs/protocol.md).
+- **Using it**: the [quick start](docs/guide/quickstart.md), [how it works](docs/guide/how-it-works.md)
+  (with pictures), [installing](docs/guide/install.md), [away from home](docs/guide/away-from-home.md),
+  [networks that block VPNs](docs/guide/blocked-networks.md), [the apps](docs/guide/apps.md),
+  [without the app](docs/guide/without-app.md) and [troubleshooting](docs/guide/troubleshooting.md).
+- **Reference**: [commands](docs/reference/cli.md), [devices, ports and files](docs/reference/devices.md),
+  [running your own servers](docs/reference/self-hosting.md), the [lite member](lite/README.md).
+- **For developers**: the [design](docs/design.md), the [protocol](docs/protocol.md) and the
+  rest in the [documentation index](docs/README.md).
 
 ## License
 
-clipboardbridge is free software, licensed under the
+Clipboard Bridge is free software, licensed under the
 [GNU Affero General Public License v3.0 only](LICENSE).
 
 ## Security

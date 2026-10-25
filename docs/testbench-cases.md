@@ -39,7 +39,7 @@ What `smoke` and `full` do first.
    run (mDNS does not cross subnets) and restarts its service.
 3. On the hub: `cbb new`.
 4. For each other device: on the hub `cbb pair` (shows a six-digit code and waits); on the
-   device `cbb pair -code [HUB:PORT]` (the lite member: `sudo -u clipboardbridge cbb join -code
+   device `cbb pair -code [HUB:PORT]` (the lite member: `sudo -u Clipboard Bridge cbb join -code
    HUB:PORT`), the code on standard input. The hub's `cbb pair` ends when the device joins.
 5. On every device but the lite member, which always shares, right after it made or joined
    the group: `cbb mode shared`, since a new device keeps its own clipboard (design.md, "Sync
@@ -276,7 +276,7 @@ or two connections.
    nothing for it) and still dials its peers.
 3. `-no-listen`: the member port is closed (`ss -ltn`), it dials and syncs.
 4. `cbb watch` prints each received text; `cbb watch -0` ends each with a zero byte.
-Pass: each as docs/cli.md says.
+Pass: each as docs/reference/cli.md says.
 
 **P6. Another port.** Runs: manual.
 1. Reinstall each member with `--port 8800` (Windows `-Port 8800`, or `CBB_PORT`).
@@ -476,7 +476,7 @@ win lists it; in shared both cross (R5).
 
 **F1. Kill the service.** Runs: auto (`full`).
 1. On each member kill the service hard: Linux and lite `sudo systemctl kill -s KILL
-   clipboardbridge`; Windows `Stop-Process -Force` on the service's process; Mac `sudo launchctl
+   Clipboard Bridge`; Windows `Stop-Process -Force` on the service's process; Mac `sudo launchctl
    kill KILL system/io.github.hunterewok.clipboardbridge` (the bench's sudoers rule).
 2. Within 30 s `cbb status` shows the same group.
 3. Copy a marker on another member; wait for it (twice the usual time).
@@ -607,7 +607,7 @@ Pass: refused with a message that names the group; the admin socket refuses non-
 
 **S12. Installers' firewall.** Runs: manual (passed on the bench).
 1. After each install list the rules: `ufw status verbose`, `Get-NetFirewallRule -DisplayName
-   clipboardbridge*`, the macOS application firewall.
+   Clipboard Bridge*`, the macOS application firewall.
 Pass: only the member port and mDNS from the local subnet; the tunnel port only on the hub.
 
 **S13. Two groups on one network.** Runs: manual.
