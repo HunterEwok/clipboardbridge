@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.MemberNode
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
@@ -19,9 +20,13 @@ import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.time.Instant
 
 /**
  * What the app shows and does; the screens only read it and call it. Its
@@ -103,6 +108,23 @@ class AppModel(private val app: Context) {
 
     /** The registration's last error, logged once. */
     private var hubError: String? = null
+
+    /**
+     * A remote invitation as Settings shows it: when it expires, the file to
+     * share, and the device waiting for the user's answer.
+     */
+    data class Invite(val expires: Instant, val file: File, val request: PairingMember.Request? = null)
+
+    var invite by mutableStateOf<Invite?>(null)
+        private set
+
+    /** How the last invitation ended, or why it did not open. */
+    var inviteNote by mutableStateOf<Note?>(null)
+        private set
+
+    private var invitation: LiveGroup.Invitation? = null
+    private var answer: CompletableDeferred<Boolean>? = null
+    private val main = Handler(Looper.getMainLooper())
 
     fun choose(color: String) {
         settings.color = color
@@ -300,6 +322,69 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /**
+     * Opens a remote invitation for a device far away (docs/protocol.md,
+     * section 12), valid for an hour: Settings shares its file, and asks
+     * the user about the device that uses it.
+     */
+    suspend fun openInvite() {
+        if (invite != null) return
+        inviteNote = try {
+            val inv = withContext(Dispatchers.IO) { group.invite(INVITE_SECONDS, ::ask) { r -> main.post { inviteEnded(r) } } }
+            val file = withContext(Dispatchers.IO) { Invitations.write(app, inv.text) }
+            invitation = inv
+            invite = Invite(inv.expires, file)
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HubOnPhone.NotRunning) {
+            describe(e, R.string.invite_no_hub)
+        } catch (e: Exception) {
+            describe(e)
+        }
+    }
+
+    /** Asks the user about a device that used the invitation, for up to 5 minutes. */
+    private suspend fun ask(req: PairingMember.Request): Boolean = withContext(Dispatchers.Main) {
+        val d = CompletableDeferred<Boolean>()
+        answer = d
+        invite = invite?.copy(request = req)
+        val yes = withTimeoutOrNull(CONFIRM_MS) { d.await() } ?: false
+        invite = invite?.copy(request = null)
+        yes
+    }
+
+    /** The user's answer about the device that used the invitation. */
+    fun answer(yes: Boolean) {
+        answer?.complete(yes)
+        answer = null
+    }
+
+    /** Cancels the open invitation. */
+    fun cancelInvite() {
+        invitation?.cancel?.invoke()
+    }
+
+    private fun inviteEnded(r: Result<String>) {
+        invite?.file?.let(Invitations::delete)
+        invite = null
+        invitation = null
+        answer?.complete(false)
+        answer = null
+        inviteNote = r.fold(
+            { Note(R.string.invite_admitted) },
+            { e ->
+                val code = (e as? InvitationWindow.Ended)?.code
+                when (code) {
+                    Pairing.ErrorCode.CLOSED -> null
+                    Pairing.ErrorCode.EXPIRED -> Note(R.string.invite_expired)
+                    Pairing.ErrorCode.TOO_MANY -> Note(R.string.invite_too_many, error = true)
+                    else -> describe(e as? Exception ?: Exception(e))
+                }
+            },
+        )
+    }
+
     /** Turns sync away from home on or off; the hub's answer comes on the next connection at home. */
     suspend fun setAway(on: Boolean) {
         awayNote = try {
@@ -393,6 +478,12 @@ class AppModel(private val app: Context) {
 
     companion object {
         private const val TAG = "clipboardbridge"
+
+        /** How long an invitation from the phone is valid: an hour, as cbb invite's default. */
+        const val INVITE_SECONDS = 3600
+
+        /** How long the user may take to confirm a device that used an invitation (docs/protocol.md, section 12). */
+        const val CONFIRM_MS = 5 * 60_000L
 
         /** Reads what the camera saw, or what the user pasted: the text of the QR code of cbb pair or of another phone. */
         fun read(text: String): JoinCode? {

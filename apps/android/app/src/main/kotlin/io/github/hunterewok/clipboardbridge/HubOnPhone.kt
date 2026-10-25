@@ -98,6 +98,20 @@ interface HubTunnel {
     fun setRecords(records: String)
     /** cbbtun's Status JSON. */
     fun status(): String
+    /** Opens a remote invitation's guest tunnel (cbbtun's Hub.Invite). */
+    fun invite(group: String, endpoints: String, lifetimeS: Int, guestPort: Int): HubGuest
+    fun close()
+}
+
+/** The guest tunnel of a remote invitation, cbbtun's Guest. */
+interface HubGuest {
+    /** The invitation's text, clipboardbridge://invite#…. */
+    val text: String
+    val secret: ByteArray
+    /** When it expires, Unix seconds. */
+    val expires: Long
+    /** The window admitted the device: its first member connection goes to the member port. */
+    fun admitted()
     fun close()
 }
 
@@ -120,6 +134,16 @@ object GoHubTunnels : HubTunnels {
                 h.register(endpoint, pin, chain, cbbtun.Signer { sign(it) }, records, "")
             override fun setRecords(records: String) = h.setRecords(records)
             override fun status(): String = h.status()
+            override fun invite(group: String, endpoints: String, lifetimeS: Int, guestPort: Int): HubGuest {
+                val g = h.invite(group, endpoints, lifetimeS.toLong(), guestPort.toLong())
+                return object : HubGuest {
+                    override val text: String = g.text()
+                    override val secret: ByteArray = g.secret()
+                    override val expires: Long = g.expires()
+                    override fun admitted() = g.admitted()
+                    override fun close() = g.close()
+                }
+            }
             override fun close() {
                 h.close()
             }
@@ -275,6 +299,20 @@ class HubOnPhone(
         val t = synchronized(lock) { tunnel } ?: return
         runCatching { t.setRecords(recordsJson(records)) }.onFailure { log("cannot hand the records to the tunnel", it) }
     }
+
+    /**
+     * Opens a remote invitation's guest tunnel to the window on guestPort
+     * (docs/protocol.md, section 12), with the forwarder as the hub's
+     * address away from home; throws while the hub does not run.
+     */
+    fun invite(group: String, lifetimeS: Int, guestPort: Int): HubGuest {
+        val (t, fw) = synchronized(lock) { tunnel to state?.forwarder }
+        if (t == null || fw == null) throw NotRunning()
+        return t.invite(group, JsonArray(listOf(JsonPrimitive(fw.endpoint))).toString(), lifetimeS, guestPort)
+    }
+
+    /** The hub does not run: an invitation needs its tunnel and forwarder. */
+    class NotRunning : Exception("the hub does not run")
 
     /** Why the hub could not start, until it does. */
     private var failure: String? = null

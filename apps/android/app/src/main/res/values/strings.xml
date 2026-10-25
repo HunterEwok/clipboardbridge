@@ -206,4 +206,18 @@
     <string name="event_frozen">%1$s was frozen: the others refuse it until an admin unfreezes it.</string>
     <string name="event_unfrozen">%1$s was unfrozen.</string>
     <string name="event_taken_over">%1$s took the group over: it holds the group\'s root now.</string>
+    <string name="invite_title">Invite a device from afar</string>
+    <string name="invite_body">For a device that is not on your network, such as a parent\'s computer: share the invitation file with its owner, who joins with cbb pair -invite. It works once, for an hour, while this app is open.</string>
+    <string name="invite_open">Make an invitation</string>
+    <string name="invite_open_until">The invitation is open until %1$s. Share its file only with the person who joins: anyone who has it can ask to join.</string>
+    <string name="invite_share">Share the invitation</string>
+    <string name="invite_cancel">Cancel the invitation</string>
+    <string name="invite_ask_title">Admit %1$s?</string>
+    <string name="invite_ask_body">A device (%1$s) used the invitation. Admit it only if the device shows the same fingerprint:</string>
+    <string name="invite_admit">Admit</string>
+    <string name="invite_decline">Not this one</string>
+    <string name="invite_admitted">The device joined the group; it appears in the list once it connects.</string>
+    <string name="invite_expired">The invitation expired without being used.</string>
+    <string name="invite_too_many">The invitation closed after three failed attempts. Make a new one.</string>
+    <string name="invite_no_hub">An invitation needs the hub registered with its forwarder. Check the forwarder above.</string>
 </resources>

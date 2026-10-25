@@ -8,6 +8,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
@@ -39,6 +40,19 @@ class HubOnPhoneTest {
         }
 
         override fun status(): String = report
+
+        var invited: List<Any>? = null
+
+        override fun invite(group: String, endpoints: String, lifetimeS: Int, guestPort: Int): HubGuest {
+            invited = listOf(group, endpoints, lifetimeS, guestPort)
+            return object : HubGuest {
+                override val text = "clipboardbridge://invite#x"
+                override val secret = ByteArray(16)
+                override val expires = 0L
+                override fun admitted() {}
+                override fun close() {}
+            }
+        }
 
         override fun close() {
             closed = true
@@ -105,6 +119,7 @@ class HubOnPhoneTest {
         assertNull(h.offer(pc, ByteArray(32) { 2 }))
         h.turnOn("192.168.0.1 192.168.0.0/24")
         assertTrue(h.isOn)
+        assertThrows(HubOnPhone.NotRunning::class.java) { h.invite("tag", 3600, 5555) }
         assertTrue(h.isHome("192.168.0.1 192.168.0.0/24"))
         assertFalse(h.isHome("10.0.0.1 10.0.0.0/24"))
         assertFalse(h.isHome(null))
@@ -135,6 +150,10 @@ class HubOnPhoneTest {
         assertEquals(HubOnPhone.Status.REGISTERED, h.status(paused = false).first)
         t.report = """{"error":"the forwarder refused it"}"""
         assertEquals(HubOnPhone.Status.FAILED to "the forwarder refused it", h.status(paused = false))
+
+        // An invitation goes through the running tunnel, with the forwarder as the hub's address.
+        h.invite("tag", 3600, 5555)
+        assertEquals(listOf("tag", "[\"203.0.113.9:8764\"]", 3600, 5555), t.invited)
 
         // A new client reaches the running tunnel; a removed one leaves it.
         h.offer(tv, ByteArray(32) { 4 })

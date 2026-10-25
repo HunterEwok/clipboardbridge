@@ -15,6 +15,7 @@ import io.github.hunterewok.clipboardbridge.kit.Discovery
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
 import io.github.hunterewok.clipboardbridge.kit.GroupCertificates
 import io.github.hunterewok.clipboardbridge.kit.HybridClock
+import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.LocalAddresses
 import io.github.hunterewok.clipboardbridge.kit.Member
@@ -36,6 +37,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -46,6 +48,7 @@ import java.net.SocketTimeoutException
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The phone's group (docs/protocol.md, section 9): its root or admin key
@@ -424,6 +427,66 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             }
         }
         throw failure ?: Failure(Failure.Kind.UNREACHABLE)
+    }
+
+    // Inviting from afar
+
+    /** An open remote invitation: its text, as a file of one line holds it, when it expires, and how to cancel it. */
+    class Invitation(val text: String, val expires: Instant, val cancel: () -> Unit)
+
+    /**
+     * Opens a remote invitation on this phone, the group's hub
+     * (docs/protocol.md, section 12): a guest tunnel through the hub's
+     * forwarder and its pairing window, for one device, for lifetimeS
+     * seconds. ask asks the user whether to admit a device that proved it
+     * knows the secret, showing its name and fingerprint; on yes the user
+     * unlocks the group's key. ended gets the admitted device's name, or why
+     * the invitation ended without one.
+     */
+    fun invite(lifetimeS: Int, ask: suspend (PairingMember.Request) -> Boolean, ended: (Result<String>) -> Unit): Invitation {
+        val g = synchronized(lock) { state }?.takeIf { it.isAdmin } ?: throw Failure(Failure.Kind.NOT_ADMIN)
+        val h = phoneHub ?: throw HubOnPhone.NotRunning()
+        val member = memberSigner()
+        val guest = AtomicReference<HubGuest?>()
+        val window = InvitationWindow(
+            member.privateKey, g.memberCert, Instant.now().plusSeconds(lifetimeS.toLong()),
+            admit = { t, joinerCert, sid -> admitInvited(t, joinerCert, sid, guest.get() ?: throw HubOnPhone.NotRunning(), ask) },
+            onEnd = { r ->
+                if (r.isFailure) guest.get()?.close()
+                ended(r.map { it.info.name })
+            },
+            onError = { Log.w(TAG, "an attempt with the invitation failed", it) },
+        )
+        val gt = try {
+            h.invite(g.tag, lifetimeS, window.port)
+        } catch (e: Exception) {
+            window.close()
+            throw e
+        }
+        guest.set(gt)
+        return Invitation(gt.text, Instant.ofEpochSecond(gt.expires)) { window.close() }
+    }
+
+    /** One attempt with an invitation: the device that proves the secret and that the user confirms is admitted. */
+    private fun admitInvited(
+        t: TLSTransport,
+        joinerCert: ByteArray,
+        sid: ByteArray,
+        guest: HubGuest,
+        ask: suspend (PairingMember.Request) -> Boolean,
+    ): PairingMember.Admitted {
+        val g = copyOfState() ?: throw Failure(Failure.Kind.NOT_ADMIN)
+        val alias = signingAlias(g)
+        val invitation = PairingMember.Invitation(guest.secret) { req ->
+            // The window's thread waits for the user, up to the 5 minutes the device waits.
+            runBlocking { ask(req) && runCatching { signer(alias, R.string.reason_add) }.isSuccess }
+        }
+        // The key signs only once the user unlocked it in ask.
+        val admitted = g.admit(t, "", joinerCert, sid, Keys.loadOrCreate(context, alias), Instant.now(), invitation = invitation)
+        guest.admitted()
+        adopt(g)
+        currentNode?.sendRecords(g.records.records)
+        return admitted
     }
 
     /** A deep copy of the group, to change it outside the lock and keep it only when the change works. */

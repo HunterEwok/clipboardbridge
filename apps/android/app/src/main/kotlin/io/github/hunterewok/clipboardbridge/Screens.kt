@@ -83,6 +83,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -635,11 +638,53 @@ private fun HubSection(model: AppModel, hub: AppModel.Hub) {
                     Text(stringResource(R.string.hub_background), modifier = Modifier.weight(1f))
                     Switch(checked = hub.background, onCheckedChange = null, enabled = !busy)
                 }
+                if (hub.status == HubOnPhone.Status.REGISTERED) InviteFromAfar(model)
             }
             model.hubNote?.let { NoteText(it) }
             Text(stringResource(R.string.hub_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
+}
+
+/**
+ * A remote invitation for a device far away (docs/protocol.md, section 12):
+ * the button that opens it, then its file to share, and the question about
+ * the device that used it, with the fingerprint to compare.
+ */
+@Composable
+private fun InviteFromAfar(model: AppModel) {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Text(stringResource(R.string.invite_title), fontWeight = FontWeight.SemiBold)
+    val invite = model.invite
+    if (invite == null) {
+        Text(stringResource(R.string.invite_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        QuietButton(stringResource(R.string.invite_open), onClick = { scope.launch { model.openInvite() } })
+    } else {
+        val until = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(invite.expires.atZone(ZoneId.systemDefault()))
+        Text(stringResource(R.string.invite_open_until, until), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        AccentButton(stringResource(R.string.invite_share), onClick = { context.startActivity(Invitations.share(context, invite.file)) })
+        QuietButton(stringResource(R.string.invite_cancel), onClick = model::cancelInvite)
+        invite.request?.let { req ->
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text(stringResource(R.string.invite_ask_title, req.info.name)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+                        Text(stringResource(R.string.invite_ask_body, req.info.os))
+                        Text(req.fingerprint, fontFamily = FontFamily.Monospace, color = palette.text)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { model.answer(true) }) { Text(stringResource(R.string.invite_admit), color = palette.accent) } },
+                dismissButton = { TextButton(onClick = { model.answer(false) }) { Text(stringResource(R.string.invite_decline)) } },
+                containerColor = palette.surface,
+                titleContentColor = palette.text,
+                textContentColor = palette.textDim,
+            )
+        }
+    }
+    model.inviteNote?.let { NoteText(it) }
 }
 
 @Composable
