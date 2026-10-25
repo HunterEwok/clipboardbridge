@@ -39,6 +39,17 @@ class EngineTest {
         Member.Event(id, "0123456789abcdef0123456789abcdef", Member.Via.COPY, Member.Timestamp(wall, 0), age, kind, text)
 
     @Test
+    fun aheadRefused() {
+        val now = 1_792_886_400_000L // 2026-10-25
+        val e = SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock { now }) { 100_000L }
+        val far = event("d0000000000000000000000000000000", Member.Timestamp.MAX_WALL)
+        assertEquals(SyncEngine.Result(null, false), e.received(far))
+        assertEquals(SyncEngine.Result(null, false), e.reconcile(Member.Hello(now, far)))
+        val near = event("e0000000000000000000000000000000", now + 6 * 24 * 3600 * 1000L)
+        assertEquals(SyncEngine.Result(near, true), e.received(near))
+    }
+
+    @Test
     fun engine() {
         var up = 100_000L
         val e = SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock { 1000 }) { up }

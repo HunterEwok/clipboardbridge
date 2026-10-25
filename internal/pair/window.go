@@ -74,7 +74,8 @@ type Window struct {
 	committed bool          // the running attempt is sending the welcome
 	cancel    context.CancelFunc
 	failures  int
-	err       error // why the window closed; nil while open
+	idle      map[string]int // attempts by address that ended before they counted
+	err       error          // why the window closed; nil while open
 	result    *Result
 	done      chan struct{}
 	stopTimer func() bool
@@ -192,8 +193,9 @@ func (w *Window) closeLocked(err error) {
 	close(w.done)
 }
 
-// acquire starts an attempt, or reports why the window takes none.
-func (w *Window) acquire(cancel context.CancelFunc) error {
+// acquire starts an attempt from addr ("" for one the member dialed), or
+// reports why the window takes none.
+func (w *Window) acquire(cancel context.CancelFunc, addr string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !w.busy && w.uptime() >= w.expires {
@@ -204,7 +206,7 @@ func (w *Window) acquire(cancel context.CancelFunc) error {
 		return ErrClosed
 	case w.err != nil:
 		return w.err
-	case w.busy:
+	case w.busy, addr != "" && w.idle[addr] >= maxIdle:
 		return ErrBusy
 	}
 	w.busy, w.cancel = true, cancel
@@ -223,12 +225,21 @@ func (w *Window) commit() error {
 	return nil
 }
 
-// release ends an attempt that admitted no device; failed reports whether
-// it counts.
-func (w *Window) release(failed bool) {
+// release ends an attempt from addr that admitted no device; failed
+// reports whether it counts. One that does not count still counts against
+// its address, so that one device cannot keep the window busy.
+func (w *Window) release(failed bool, addr string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.busy, w.cancel = false, nil
+	if !failed && addr != "" {
+		if w.idle == nil {
+			w.idle = map[string]int{}
+		}
+		if len(w.idle) < 1024 {
+			w.idle[addr]++
+		}
+	}
 	if failed {
 		w.failures++
 		if w.failures >= MaxFailures {
@@ -357,7 +368,11 @@ func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error
 	if err := conn.HandshakeContext(ctx); err != nil {
 		return err
 	}
-	if err := w.acquire(cancel); err != nil {
+	addr := ""
+	if !dialed {
+		addr = hostOf(conn.RemoteAddr())
+	}
+	if err := w.acquire(cancel, addr); err != nil {
 		// Read the joiner's first message before answering, so the answer
 		// does not arrive while the joiner is still writing.
 		readFrame(conn)
@@ -375,9 +390,25 @@ func (w *Window) attempt(ctx context.Context, conn *tls.Conn, dialed bool) error
 	if ctx.Err() != nil && errors.Is(context.Cause(ctx), context.Canceled) {
 		err = ErrClosed // Close ended the attempt
 	}
-	w.release(started)
+	if errors.Is(err, ErrClosed) {
+		addr = "" // not the joiner's doing
+	}
+	w.release(started, addr)
 	writeFrame(conn, &frame{Error: codeOf(err)})
 	return err
+}
+
+// hostOf returns the IP address of a connection's remote end, or "" when it
+// has none.
+func hostOf(a net.Addr) string {
+	if a == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(a.String())
+	if err != nil {
+		return ""
+	}
+	return host
 }
 
 // serve runs the exchange. It returns a result once the welcome went out,
@@ -396,9 +427,16 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 		readFrame(conn) // answered after the joiner's first message, as acquire's errors
 		return nil, false, ErrTaken
 	}
+	if !memberFirst {
+		conn.SetReadDeadline(time.Now().Add(firstTimeout))
+	}
 	first, err := readFrame(conn)
 	if err != nil {
 		return nil, false, err
+	}
+	conn.SetReadDeadline(time.Time{})
+	if ctx.Err() != nil {
+		conn.SetDeadline(time.Unix(1, 0)) // as attempt's AfterFunc, which the line above may have undone
 	}
 	var info Info
 	if err := json.Unmarshal(first.AD, &info); err != nil {

@@ -186,6 +186,39 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: the lite member takes a tunnel offer only from the group's root or an admin, by
+  its records and the key of its certificate, rather than from any member whose hello says
+  `full`. It keeps the first hub until sync away from home is turned off and on again, and
+  ignores an offer that does not decode instead of dropping the hub. The phone apps check
+  the hub's key the same way.
+- Security: the phone apps check each computer's certificate chain against the group's
+  records when it connects, and close the connection as soon as new records remove it. A
+  removed device is now dropped by its key, not only because its ID left the list.
+- Security: a member refuses an event more than 7 days ahead of its clock (Go, the lite
+  member and both phone kits), so a device with a wrong date or a removed member can no
+  longer hold the group's clocks at the year 9999 and keep every later copy from winning. A
+  clock that reads before 2026 refuses nothing, for boards that have not set their time.
+- Security: an mDNS announcement of the hub on a foreign network no longer turns off sync
+  away from home (Go, the lite member and both apps). A member found by discovery counts as
+  on this network for 30 s; after that only a connection to it keeps the tunnel and the
+  relay closed.
+- Security: the iPhone shortcut's pairing page no longer shows the profile's fingerprint,
+  which comes over plain HTTP and could be changed on the way; it sends the user to the
+  terminal of `cbb pair -phone`, which now spells out where to compare it.
+- Security: a device on the home network can no longer hold a pairing window busy. The
+  joiner's first message must come within 10 s (a slow board computes its CPace message
+  first), and after 5 attempts from one address that ended before they counted, the window
+  answers it `busy`.
+- Security (Android): other apps can no longer fetch the group's latest copy by opening the
+  app's send activity. The tile, the widget and the notification open one that is not
+  exported; Share, the selection menu and "cbb send" open another that asks first unless the
+  home screen or the system opened it. "Always allow" now holds for one app only ("Always
+  for this app"), and Settings lists those apps; the old switch for every app is gone.
+- Security (Android): a secret is cleared from the clipboard after its minute while the
+  app is in the background too, unless the app learned of a change since.
+- Security: `get.sh` and `get.ps1` check the archive's build provenance attestation with
+  `gh attestation verify` when the GitHub CLI is there and signed in, since `SHA256SUMS`
+  comes from the same release; `CBB_ATTESTATION=require` refuses to install without it.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub

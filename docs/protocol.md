@@ -381,7 +381,15 @@ A timestamp is `(wall, logical)`: `wall` is milliseconds since the Unix epoch, 0
 253402300799999 (the last millisecond of 9999); `logical` is a uint32. Text form: the two
 numbers in decimal separated by a dot, with no sign or spaces, for example
 `1761024000000.3`. Order: by `wall`, then by `logical`. The zero timestamp sorts first and is
-invalid in an event. No timestamp is ever refused for being ahead of the local clock.
+invalid in an event.
+
+An event whose `wall` is more than 7 days (MaxAhead) ahead of the receiver's reference, the
+later of its wall clock and `last.wall`, is refused: as a message it changes nothing (Go and
+the lite member answer it with an error), and as a hello's current event it is taken as no
+current event while the connection stays. Otherwise one device with a wrong date, or a removed
+member, could hold every clock of the group at MaxWall for good. A device whose reference is
+before 2026-01-01 (1767225600000), such as a board without a real-time clock that has not set
+its time yet, refuses nothing.
 
 - `Now()` for a local event: `pt = min(wall clock in ms, MaxWall)`. If `pt > last.wall`, then
   `last = (pt, 0)`; otherwise `logical` is incremented (if it is at its maximum, `last =
@@ -475,7 +483,10 @@ the member publishes `p=1`. The window lives 5 minutes (counting sleep); an atte
 started may finish after that. One attempt at a time; another gets `busy`. The window closes
 after a success or after the third failed attempt (`too-many`). An attempt fails (counts)
 when it fails after the member sent its CPace message; errors before that (bad AD, bad
-certificate, a dropped connection) do not count. Each attempt has 30 s on both sides.
+certificate, a dropped connection) do not count. Each attempt has 30 s on both sides, and
+the joiner's first message must arrive within 10 s of the TLS handshake. After 5 attempts
+from one IP address that ended before they counted, the window answers that address `busy`,
+so that one device on the network cannot hold the window for its whole life.
 
 A window for a remote invitation (design.md, "Joining from another network") differs:
 
@@ -749,7 +760,7 @@ pairing window is open, same address restriction:
 
 | Path | Content |
 |------|---------|
-| `GET /` | an HTML page with the steps and the iPhone CA fingerprint |
+| `GET /` | an HTML page with the steps; it sends the user to the terminal of `cbb pair -phone` for the iPhone CA fingerprint and does not show it, since it comes over plain HTTP |
 | `GET /clipboardbridge.mobileconfig` | the configuration profile, `application/x-apple-aspen-config` |
 | `GET /clipboardbridge.shortcut` | the signed sync shortcut, `application/octet-stream` (404 if the build has none) |
 
@@ -1259,9 +1270,12 @@ and then syncs at home only ("Through the tunnel" below).
   256 devices. It sends the offer on every connection whose hello carries a key, so a member
   learns new endpoints and a new preshared key the next time it connects.
 - A member keeps an offer only from the group's root or an admin (by its records, or an
-  admin CA in its verified chain), with the hub's device ID. Once it keeps one, it ignores
-  offers from any other device until it turns sync away from home off and on again; a new
-  offer from the same hub replaces the old one. `cbb global hub` refuses on a device that is no
+  admin CA in its verified chain), with the hub's device ID. The record that makes the peer
+  the root or an admin must name the key of the certificate it presented, not only its
+  device ID, and never the role its hello claims. Once it keeps one, it ignores offers from
+  any other device until it turns sync away from home off and on again; a new offer from the
+  same hub replaces the old one. An offer that does not decode is ignored and changes
+  nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
   admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
   by the first 96 bits of the ID), so the offer does not carry them.
 - When records revoke a device (section 10, rule 6, on the chain it presented), the hub
@@ -1331,8 +1345,11 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
   so a device cannot use another device's tunnel key.
 - A member that keeps a hub's offer runs the other end, with the hub as its only peer and
   a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member TLS
-  whenever the hub is neither found by discovery nor connected on the home network, trying
-  the offer's endpoints in turn, with the dialers' backoff (1 s, doubling to 30 s).
+  whenever the hub is not connected on the home network, trying the offer's endpoints in
+  turn, with the dialers' backoff (1 s, doubling to 30 s). A hub that discovery finds holds
+  this off for 30 s only: anyone on a network can announce the hub's name and the group's
+  tag, so after that only a connection to the hub counts. The relay path (section 14) and
+  the dialers through the hub follow the same rule.
 - It fails closed: when the hub or the link cannot start, or the hub does not answer, the
   member syncs at home only, and `status` says why (`error`, with `detail` for debugging).
 - The lite member starts its end only while it dials the hub through it, so at home it sends

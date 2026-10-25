@@ -18,7 +18,11 @@ Any Linux with systemd: a Raspberry Pi, a laptop, a server, a Steam Deck.
 curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 ```
 
-The script checks the download and starts the service. It finds the firewall, lists the
+The script checks the download and starts the service. The checksum it compares comes from
+the same release; with the [GitHub CLI](https://cli.github.com/) installed and signed in for
+root (`sudo gh auth login`), it also checks the release workflow's build attestation, and
+`CBB_ATTESTATION=require` (`curl ... | sudo CBB_ATTESTATION=require sh`) refuses to install
+without it. It finds the firewall, lists the
 rules clipboardbridge needs and asks before it adds them (see below). Log out and in again
 once, so your user may use clipboardbridge.
 

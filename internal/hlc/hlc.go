@@ -143,6 +143,26 @@ func (c *Clock) Now() Timestamp {
 	return c.last
 }
 
+// MaxAhead is how far a received timestamp may be ahead of this clock: one
+// further ahead is refused (Ahead), so that no member can move the group's
+// clocks to MaxWall for good (docs/protocol.md, section 5).
+const MaxAhead = 7 * 24 * time.Hour
+
+// plausible is a wall time before which this clock does not trust itself to
+// refuse timestamps for being ahead: a device without a real-time clock
+// that has not set its time yet (2026-01-01).
+const plausible = 1767225600000
+
+// Ahead reports whether remote is more than MaxAhead ahead of this clock:
+// of its wall time or the latest timestamp it issued or observed, whichever
+// is later. A clock that reads before 2026 refuses nothing.
+func (c *Clock) Ahead(remote Timestamp) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ref := max(c.now().UnixMilli(), c.last.Wall)
+	return ref >= plausible && remote.Wall > ref+MaxAhead.Milliseconds()
+}
+
 // Last returns the latest timestamp the clock has issued or observed.
 func (c *Clock) Last() Timestamp {
 	c.mu.Lock()

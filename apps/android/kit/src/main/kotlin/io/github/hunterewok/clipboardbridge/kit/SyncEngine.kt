@@ -7,7 +7,8 @@ import java.security.SecureRandom
 
 /**
  * The hybrid logical clock of docs/protocol.md, section 5, as internal/hlc
- * implements it. It never refuses a timestamp for being ahead.
+ * implements it. A timestamp more than [MAX_AHEAD_MS] ahead of it is
+ * refused ([ahead]).
  */
 class HybridClock(
     /** A timestamp the clock must not go below, such as the last one this device issued before a restart. */
@@ -44,10 +45,27 @@ class HybridClock(
         }
     }
 
+    /**
+     * Whether r is more than [MAX_AHEAD_MS] ahead of this clock: of its wall
+     * time or the latest timestamp, whichever is later. A clock that reads
+     * before 2026 refuses nothing.
+     */
+    @Synchronized
+    fun ahead(r: Member.Timestamp): Boolean {
+        val ref = maxOf(wallMS(), last.wall)
+        return ref >= PLAUSIBLE && r.wall > ref + MAX_AHEAD_MS
+    }
+
     private fun inc(l: Long): Long = if (l == MAX_LOGICAL) l else l + 1
 
-    private companion object {
-        const val MAX_LOGICAL = 0xffff_ffffL
+    companion object {
+        private const val MAX_LOGICAL = 0xffff_ffffL
+
+        /** How far a received timestamp may be ahead of the clock: 7 days. */
+        const val MAX_AHEAD_MS = 7L * 24 * 3600 * 1000
+
+        /** 2026-01-01: before it the clock is not trusted to refuse anything. */
+        private const val PLAUSIBLE = 1_767_225_600_000L
     }
 }
 
@@ -102,9 +120,13 @@ class SyncEngine(
         return e
     }
 
-    /** Takes in an event from a connection, or the current event of a hello. An event that is not valid changes nothing. */
+    /**
+     * Takes in an event from a connection, or the current event of a hello.
+     * An event that is not valid, or more than 7 days ahead of the clock,
+     * changes nothing.
+     */
     fun received(e: Member.Event): Result {
-        if (!e.isValid) return Result(null, false)
+        if (!e.isValid || clock.ahead(e.time)) return Result(null, false)
         if (e.id in seen) {
             // Seen before: only a mark that gets its text matters.
             val cur = current

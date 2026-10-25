@@ -139,16 +139,27 @@ declaration; the GitHub and F-Droid builds have it from the start.
 - the **Quick Settings tile** "Send clipboard", and the **home-screen widget** of the same name;
 - the **"Send" button** in the service's notification;
 - **text selection → clipboardbridge** (`ACTION_PROCESS_TEXT`) and **Share → clipboardbridge**,
-  which first ask "Allow" or "Always allow", since any app can hand over a text; "Always
-  allow" holds for every app (Android does not tell reliably which one shared), and Settings
-  turns the question on again;
+  which first ask "Allow" or "Always for this app", naming the app, since any app can hand
+  over a text. "Always" holds only for the app that Android records as the one that opened
+  clipboardbridge (never one an intent names itself), and Settings lists those apps and asks
+  every app again;
 - **double-tap the back**: on a Pixel, Settings → System → Gestures → Quick Tap → Open app →
   "cbb send" (a second launcher entry that sends and closes); on Samsung, Good Lock's
-  RegiStar → Back-Tap action → Open app → "cbb send";
+  RegiStar → Back-Tap action → Open app → "cbb send". Opened by the home screen or the
+  system it syncs at once; opened by another app (a back-tap app, or any app at all) it
+  asks first, with "Always for this app", because a sync may put the computers' latest copy
+  on the clipboard, where that app could read it;
 - **opening the app**, by the Home button's rule.
 
 Each of these opens a transparent activity for a moment: it has the focus, reads the
-clipboard, sends, says what it did in one line (a toast) and closes.
+clipboard, sends, says what it did in one line (a toast) and closes. The tile, the widget and
+the notification open one that other apps cannot (not exported); Share, the selection menu and
+"cbb send" open the exported one, which asks as above.
+
+A secret written to the clipboard goes after its minute even while the app is in the
+background, where it may not read the clipboard: unless the app learned of a change since
+(another text it wrote, or a copy the accessibility service saw), it clears the clipboard
+without reading it.
 
 **To check on a device before building on it:** that the accessibility overlay gets the
 focus the clipboard needs on Android 10 to 17, on a Pixel and a Samsung; which copy events

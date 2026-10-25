@@ -18,6 +18,14 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
+    <!-- The home screens, which may open the launcher entry without a question. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
     <application
         android:name=".ClipboardBridgeApp"
         android:allowBackup="false"
@@ -36,9 +44,19 @@
             </intent-filter>
         </activity>
 
-        <!-- The one button without the app's screens: tile, notification, Share, selection menu. -->
+        <!-- The one button without the app's screens, from this app: tile, notification, widget. -->
         <activity
             android:name=".SendActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/send_launcher"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- The same from other apps: Share, the selection menu, the launcher entry. It asks first. -->
+        <activity
+            android:name=".OutsideSendActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:label="@string/send_launcher"
@@ -62,7 +80,7 @@
             android:name=".SendLauncher"
             android:exported="true"
             android:label="@string/send_launcher"
-            android:targetActivity=".SendActivity">
+            android:targetActivity=".OutsideSendActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -361,7 +361,7 @@ func TestExpiryDuringAnAttempt(t *testing.T) {
 	// A failed attempt that runs past the end closes the window when it
 	// ends, and the timer does not close it while it runs.
 	g := newFixture(t)
-	if err := g.window.acquire(func() {}); err != nil {
+	if err := g.window.acquire(func() {}, ""); err != nil {
 		t.Fatal(err)
 	}
 	g.clock.advance(Lifetime + time.Second)
@@ -369,7 +369,7 @@ func TestExpiryDuringAnAttempt(t *testing.T) {
 	if closed(g.window) {
 		t.Fatal("the window closed during an attempt")
 	}
-	g.window.release(true)
+	g.window.release(true, "")
 	if _, err := g.window.Result(); !errors.Is(err, ErrExpired) {
 		t.Errorf("Result error %v, want ErrExpired", err)
 	}
@@ -1313,5 +1313,55 @@ func TestTakenID(t *testing.T) {
 	}
 	if out := f.attempt(t, newJoiner(t, "linux"), f.code, nil); out.joinErr != nil {
 		t.Errorf("a new ID: %v", out.joinErr)
+	}
+}
+
+// TestIdleAttemptsFromOneAddress checks that one address cannot keep the
+// window busy with attempts that end before they count.
+func TestIdleAttemptsFromOneAddress(t *testing.T) {
+	f := newFixture(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	connect := func() (net.Conn, chan error) {
+		a, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := ln.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		served := make(chan error, 1)
+		go func() { served <- f.window.Serve(context.Background(), tls.Server(b, ServerTLS(f.admin))) }()
+		return a, served
+	}
+	for range maxIdle {
+		a, served := connect()
+		cfg, err := newJoiner(t, "linux").tlsConfigVerifiedByCPace()
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := tls.Client(a, cfg)
+		if err := c.Handshake(); err != nil {
+			t.Fatal(err)
+		}
+		c.Close() // without a first message
+		if err := <-served; err == nil || errors.Is(err, ErrBusy) {
+			t.Fatalf("an attempt without a first message: %v", err)
+		}
+	}
+	if f.failures() != 0 {
+		t.Errorf("%d failures counted", f.failures())
+	}
+	a, served := connect()
+	_, joinErr := newJoiner(t, "linux").Join(context.Background(), a, f.code, func(*group.Identity) error { return nil })
+	if !errors.Is(joinErr, ErrBusy) || !errors.Is(<-served, ErrBusy) {
+		t.Errorf("after %d idle attempts from one address: %v; want busy", maxIdle, joinErr)
+	}
+	if closed(f.window) {
+		t.Error("the window closed")
 	}
 }
