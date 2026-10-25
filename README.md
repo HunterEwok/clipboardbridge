@@ -7,15 +7,7 @@ accounts. Its command is `cbb`.
 > **Status: early development.** What works, and what has been tried on real devices, is
 > in the [status table](#status) below.
 
-```mermaid
-flowchart LR
-    phone["📱 Phone"] <--> linux["💻 Linux"]
-    phone <--> mac["💻 Mac"]
-    phone <--> win["💻 Windows"]
-    linux <--> mac
-    mac <--> win
-    win <--> linux
-```
+![The phone adds each computer by its QR code; then the devices share one clipboard](docs/images/group.svg)
 
 ## Get started
 

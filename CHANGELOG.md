@@ -35,7 +35,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `docs/reference`: the quick start begins with the phone app as the group's root and then
   suggests making an always-on computer an admin and the hub; "How it works" draws every
   way the devices connect (at home, through the hub, through a forwarder, a blind relay,
-  networks that block VPNs); new pages cover installing, sync away from home, AmneziaWG and
+  networks that block VPNs), in SVG pictures of one style with a light and a dark theme,
+  drawn by `tools/diagrams`; new pages cover installing, sync away from home, AmneziaWG and
   VLESS, the devices, ports and files, and running one's own forwarder or relay. Text for
   readers says Clipboard Bridge; commands, paths and packages keep `clipboardbridge` and
   `cbb`.
