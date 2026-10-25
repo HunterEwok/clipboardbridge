@@ -326,3 +326,49 @@ func TestTakeover(t *testing.T) {
 		t.Errorf("takeover without a device: %d", code)
 	}
 }
+
+func TestTerminalText(t *testing.T) {
+	for _, c := range []struct {
+		in, want string
+		all      bool
+		dropped  int
+	}{
+		{in: "ls -l\n", want: "ls -l"},
+		{in: "a\tb", want: "a\tb"},
+		{in: "echo \x1b[201~; rm -rf ~\n", want: "echo [201~; rm -rf ~"},
+		{in: "x\u009b31my\x7f\x00", want: "x31my"},
+		{in: "one\r\ntwo\nthree\n", want: "one", dropped: 2},
+		{in: "one\r\ntwo\nthree\n", want: "one\ntwo\nthree", all: true},
+		{in: "\n\nfirst\n", want: "first"},
+		{in: "bad \xff byte", want: "bad  byte"},
+		{in: "line\rover", want: "lineover"},
+	} {
+		got, dropped := terminalText(c.in, c.all)
+		if got != c.want || dropped != c.dropped {
+			t.Errorf("terminalText(%q, %v) = %q, %d; want %q, %d", c.in, c.all, got, dropped, c.want, c.dropped)
+		}
+	}
+}
+
+func TestPasteTerminal(t *testing.T) {
+	secret := control.Message{Header: control.Header{Kind: control.KindSecret, Done: true}, Payload: []byte("hunter2\n")}
+	fakeService(t, secret)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"paste", "-terminal"}, strings.NewReader(""), &stdout, &stderr); code != 1 || stdout.Len() != 0 {
+		t.Errorf("a secret without -secret: %d, %q, %q", code, stdout.String(), stderr.String())
+	}
+	fakeService(t, secret)
+	stdout.Reset()
+	if code := run([]string{"paste", "-terminal", "-secret"}, strings.NewReader(""), &stdout, &stderr); code != 0 || stdout.String() != "hunter2" {
+		t.Errorf("a secret with -secret: %d, %q", code, stdout.String())
+	}
+	fakeService(t, control.Message{Header: control.Header{Done: true}, Payload: []byte("cd /tmp\nrm -rf *\n")})
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"paste", "-terminal"}, strings.NewReader(""), &stdout, &stderr); code != 0 || stdout.String() != "cd /tmp" || !strings.Contains(stderr.String(), "1 more") {
+		t.Errorf("two lines: %d, %q, %q", code, stdout.String(), stderr.String())
+	}
+	if code := run([]string{"paste", "-lines"}, strings.NewReader(""), &stdout, &stderr); code != 2 {
+		t.Errorf("-lines without -terminal: %d", code)
+	}
+}

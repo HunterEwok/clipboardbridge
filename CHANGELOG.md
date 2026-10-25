@@ -182,6 +182,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: tmux's paste key no longer types control characters, a second line or a secret
+  into the terminal. It runs the new `cbb paste -terminal` (full and lite member), which drops
+  the control characters of C0 but tab and line feed, DEL and those of C1, keeps only the
+  first line unless `-lines`, leaves out the last line feed, and refuses a secret unless
+  `-secret`.
 - An update without a terminal over an installation from before the firewall question no
   longer removes the firewall rules it had added: rules that are there without a kept answer
   count as an earlier Yes (Linux, macOS, Windows), and with no terminal and no answer nothing

@@ -45,7 +45,11 @@ Commands:
                        dials the computers, and phones and other lite
                        members dial it on the member port (8764, CBB_PORT).
   copy [-secret]       Send standard input to the group.
-  paste                Print this member's clipboard text.
+  paste [-terminal [-lines] [-secret]]
+                       Print this member's clipboard text; -terminal makes
+                       it safe to paste into a terminal: no control
+                       characters, only the first line unless -lines, and
+                       no secret unless -secret.
   status               Show this device, its group and the group's devices.
   global [on|off]      Show sync away from home, or turn it on or off here:
                        through the group's own WireGuard tunnel to its hub.
@@ -104,8 +108,8 @@ fn main() {
                 "next" => std::process::exit(next::run(&g, rest)),
                 "run" => cmd_run(&g, rest),
                 "copy" => cmd_copy(&g, rest),
-                "paste" => cmd_simple(&g, "paste", rest),
-                "status" => cmd_simple(&g, "status", rest),
+                "paste" => cmd_paste(&g, rest),
+                "status" => cmd_status(&g, rest),
                 "global" => cmd_global(&g, rest),
                 "watch" => cmd_watch(&g, rest),
                 "version" | "-version" | "--version" => {
@@ -398,42 +402,81 @@ fn os_name(os: &str) -> &str {
     }
 }
 
-fn cmd_simple(g: &Global, op: &str, args: &[String]) -> Result<()> {
-    if !args.is_empty() {
-        return Err(Error::msg(format!("{op} takes no arguments")));
+fn cmd_paste(g: &Global, args: &[String]) -> Result<()> {
+    let (mut terminal, mut lines, mut secret) = (false, false, false);
+    for a in args {
+        match flag(a) {
+            Some("terminal") => terminal = true,
+            Some("lines") => lines = true,
+            Some("secret") => secret = true,
+            _ => return Err(Error::msg("usage: cbb paste [-terminal [-lines] [-secret]]")),
+        }
     }
-    let m = request(g, &control::Message::new(control::Header { op: op.into(), ..Default::default() }, Vec::new()))?;
-    match op {
-        "paste" => {
-            std::io::stdout().write_all(&m.payload).context("cannot write the text")?;
+    if (lines || secret) && !terminal {
+        return Err(Error::msg("-lines and -secret go with -terminal"));
+    }
+    let m =
+        request(g, &control::Message::new(control::Header { op: "paste".into(), ..Default::default() }, Vec::new()))?;
+    let mut out = m.payload;
+    if terminal {
+        if m.header.kind == "secret" && !secret {
+            return Err(Error::msg("the clipboard holds a secret; add -secret to paste it"));
         }
-        "status" => {
-            let s = m.header.status.unwrap_or_default();
-            println!("device  {}\ngroup   {}\nrole    {}\nversion {}", s.device, s.group, s.role, s.version);
-            if s.peers.is_empty() {
-                println!("no members connected");
-            }
-            print_away(s.away.as_ref());
-            if s.group.is_empty() {
-                return Ok(());
-            }
-            let devs = request(
-                g,
-                &control::Message::new(control::Header { op: "devices".into(), ..Default::default() }, Vec::new()),
-            )?;
-            for d in devs.header.devices {
-                let mut marks = [(d.this, "this device"), (d.online, "online"), (d.admin, "admin")]
-                    .iter()
-                    .filter(|(on, _)| *on)
-                    .map(|(_, s)| s.to_string())
-                    .collect::<Vec<_>>();
-                if let Some(p) = s.peers.iter().find(|p| p.id == d.id) {
-                    marks.push(format!("clock {:+} ms", p.skew_ms));
-                }
-                println!("{}  {:<24} {:<8} {:<8} {}", d.id, d.name, os_name(&d.os), d.role, marks.join(", "));
-            }
+        let (text, dropped) = terminal_text(&String::from_utf8_lossy(&out), lines);
+        if dropped > 0 {
+            eprintln!("cbb: pasted only the first line; {dropped} more left out (add -lines to paste them)");
         }
-        _ => {}
+        out = text.into_bytes();
+    }
+    std::io::stdout().write_all(&out).context("cannot write the text")?;
+    Ok(())
+}
+
+/// Makes a text safe to paste into a terminal, as the full member's
+/// terminalText does: it drops the control characters of C0 but tab and line
+/// feed, DEL and those of C1, ends with no line feed, and unless `all` keeps
+/// only the first line, returning how many lines it left out.
+fn terminal_text(text: &str, all: bool) -> (String, usize) {
+    let text: String = text
+        .replace("\r\n", "\n")
+        .chars()
+        .filter(|&c| c == '\t' || c == '\n' || !(c < ' ' || ('\u{7f}'..'\u{a0}').contains(&c)))
+        .filter(|&c| c != char::REPLACEMENT_CHARACTER)
+        .collect();
+    let text = text.trim_matches('\n');
+    match text.split_once('\n') {
+        Some((first, rest)) if !all => (first.to_string(), rest.matches('\n').count() + 1),
+        _ => (text.to_string(), 0),
+    }
+}
+
+fn cmd_status(g: &Global, args: &[String]) -> Result<()> {
+    if !args.is_empty() {
+        return Err(Error::msg("status takes no arguments"));
+    }
+    let m =
+        request(g, &control::Message::new(control::Header { op: "status".into(), ..Default::default() }, Vec::new()))?;
+    let s = m.header.status.unwrap_or_default();
+    println!("device  {}\ngroup   {}\nrole    {}\nversion {}", s.device, s.group, s.role, s.version);
+    if s.peers.is_empty() {
+        println!("no members connected");
+    }
+    print_away(s.away.as_ref());
+    if s.group.is_empty() {
+        return Ok(());
+    }
+    let devs =
+        request(g, &control::Message::new(control::Header { op: "devices".into(), ..Default::default() }, Vec::new()))?;
+    for d in devs.header.devices {
+        let mut marks = [(d.this, "this device"), (d.online, "online"), (d.admin, "admin")]
+            .iter()
+            .filter(|(on, _)| *on)
+            .map(|(_, s)| s.to_string())
+            .collect::<Vec<_>>();
+        if let Some(p) = s.peers.iter().find(|p| p.id == d.id) {
+            marks.push(format!("clock {:+} ms", p.skew_ms));
+        }
+        println!("{}  {:<24} {:<8} {:<8} {}", d.id, d.name, os_name(&d.os), d.role, marks.join(", "));
     }
     Ok(())
 }
@@ -537,4 +580,25 @@ fn cmd_watch(g: &Global, args: &[String]) -> Result<()> {
         out.flush().ok();
     }
     Err(Error::msg("the service stopped"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_text;
+
+    #[test]
+    fn terminal_text_is_safe() {
+        for (input, all, want, dropped) in [
+            ("ls -l\n", false, "ls -l", 0),
+            ("a\tb", false, "a\tb", 0),
+            ("echo \x1b[201~; rm -rf ~\n", false, "echo [201~; rm -rf ~", 0),
+            ("x\u{9b}31my\x7f\0", false, "x31my", 0),
+            ("one\r\ntwo\nthree\n", false, "one", 2),
+            ("one\r\ntwo\nthree\n", true, "one\ntwo\nthree", 0),
+            ("\n\nfirst\n", false, "first", 0),
+            ("line\rover", false, "lineover", 0),
+        ] {
+            assert_eq!(terminal_text(input, all), (want.to_string(), dropped), "{input:?}");
+        }
+    }
 }

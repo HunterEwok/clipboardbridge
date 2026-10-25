@@ -345,7 +345,10 @@ and lifetimes. The installer enables what the device needs.
   two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
   for the window.
 - tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
-  pastes the member's own clipboard text into any program inside tmux. A login snippet starts tmux on the
+  pastes the member's own clipboard text into any program inside tmux. The binding runs
+  `cbb paste -terminal`, so that a text from another device cannot drive the terminal or the
+  shell: no control characters (an escape could end bracketed paste and run the rest), only
+  the first line, no final line feed, and never a secret. A login snippet starts tmux on the
   text console.
 
 ### 2. Desktop connector

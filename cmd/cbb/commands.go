@@ -64,10 +64,23 @@ func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// cmdPaste writes the member's own clipboard text to standard output.
+// cmdPaste writes the member's own clipboard text to standard output. With
+// -terminal it makes the text safe to paste into a terminal: see terminalText.
 func cmdPaste(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
+	fs := flag.NewFlagSet("paste", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	terminal := fs.Bool("terminal", false, "make the text safe for a terminal: no control characters, only the first line")
+	lines := fs.Bool("lines", false, "with -terminal, keep every line instead of only the first")
+	secret := fs.Bool("secret", false, "with -terminal, paste a secret too")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "cbb: paste takes no arguments")
+		return 2
+	}
+	if (*lines || *secret) && !*terminal {
+		fmt.Fprintln(stderr, "cbb: -lines and -secret go with -terminal")
 		return 2
 	}
 	c, err := control.Dial(control.SocketPath())
@@ -79,10 +92,49 @@ func cmdPaste(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if _, err := stdout.Write(m.Payload); err != nil {
+	out := m.Payload
+	if *terminal {
+		if m.Kind == control.KindSecret && !*secret {
+			return fail(stderr, errors.New("the clipboard holds a secret; add -secret to paste it"))
+		}
+		text, dropped := terminalText(string(m.Payload), *lines)
+		if dropped > 0 {
+			fmt.Fprintf(stderr, "cbb: pasted only the first line; %d more left out (add -lines to paste them)\n", dropped)
+		}
+		out = []byte(text)
+	}
+	if _, err := stdout.Write(out); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
+}
+
+// terminalText makes a text safe to paste into a terminal. It drops the
+// control characters of C0 but tab and line feed, DEL and those of C1, which
+// could move the cursor, end a bracketed paste or talk to the terminal
+// itself, and bytes that are not UTF-8. It ends with no line feed, so that a
+// shell does not run the text by itself, and unless all is set it keeps only
+// the first line, returning how many lines it left out.
+func terminalText(text string, all bool) (string, int) {
+	text = strings.ToValidUTF8(strings.ReplaceAll(text, "\r\n", "\n"), "")
+	text = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n':
+			return r
+		case r < 0x20 || r >= 0x7f && r < 0xa0:
+			return -1
+		}
+		return r
+	}, text)
+	text = strings.Trim(text, "\n")
+	if all {
+		return text, 0
+	}
+	first, rest, more := strings.Cut(text, "\n")
+	if !more {
+		return first, 0
+	}
+	return first, strings.Count(rest, "\n") + 1
 }
 
 func cmdStatus(args []string, stdout, stderr io.Writer) int {
