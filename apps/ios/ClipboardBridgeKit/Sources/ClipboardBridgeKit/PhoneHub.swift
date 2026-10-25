@@ -8,14 +8,37 @@ import Foundation
 /// 11), by the same rules as a computer's hub. The tunnel itself is
 /// cbbtun's Hub, which takes clientsJSON. It is thread-safe.
 public final class PhoneHub: @unchecked Sendable {
-    /// A client: its device ID, the tunnel key it offered and the preshared
-    /// key the hub gave it.
+    /// A client: its device ID, the tunnel key it offered and its
+    /// preshared key, and whether this hub met it itself (by its hello)
+    /// rather than only taking it from another hub.
     public struct Client: Codable, Equatable, Sendable {
         public var device: String
         public var key: Data
         public var psk: Data
+        public var met: Bool
 
-        public init(device: String, key: Data, psk: Data) { (self.device, self.key, self.psk) = (device, key, psk) }
+        public init(device: String, key: Data, psk: Data, met: Bool = false) { (self.device, self.key, self.psk, self.met) = (device, key, psk, met) }
+
+        /// The same without met, as cbbtun and the other hubs take it.
+        public var shared: Client { Client(device: device, key: key, psk: psk) }
+
+        enum CodingKeys: String, CodingKey { case device, key, psk, met }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            device = try c.decode(String.self, forKey: .device)
+            key = try c.decode(Data.self, forKey: .key)
+            psk = try c.decode(Data.self, forKey: .psk)
+            met = try c.decodeIfPresent(Bool.self, forKey: .met) ?? false
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(device, forKey: .device)
+            try c.encode(key, forKey: .key)
+            try c.encode(psk, forKey: .psk)
+            if met { try c.encode(true, forKey: .met) }
+        }
     }
 
     public enum Refused: Error, Equatable { case badDevice, badKey, keyOfAnother(String), tooManyClients }
@@ -28,6 +51,9 @@ public final class PhoneHub: @unchecked Sendable {
     private let lock = NSLock()
     private var list: [Client]
     private var link = Link()
+    /// The other hubs' offers without a preshared key, by device, which
+    /// this hub passes on to its clients.
+    private var others: [String: Member.TunnelOffer] = [:]
 
     /// What the offers carry besides the keys.
     struct Link {
@@ -71,29 +97,94 @@ public final class PhoneHub: @unchecked Sendable {
         set { lock.withLock { link.vless = newValue } }
     }
 
-    /// Admits device with the tunnel key it offered, as the hub keeps it. A
-    /// client that keeps its key keeps its preshared key; a new key gets a
-    /// new one. changed tells whether the clients must be saved and handed
-    /// to the tunnel again. It refuses a key that is not 32 bytes, the
-    /// hub's own, or another client's, and a 257th client.
-    public func admit(device: String, key: Data) throws -> (client: Client, changed: Bool) {
+    /// Admits device with the tunnel key and the preshared key it offered
+    /// (nil from an older member), as Go's State.Admit: the client's own
+    /// preshared key when it offers one, so every hub of the group uses the
+    /// same (docs/protocol.md, section 11, "Several hubs"); otherwise a
+    /// client that keeps its key keeps its preshared key, and a new key
+    /// gets a new one. changed tells whether the clients must be saved and
+    /// handed to the tunnel again. It refuses a key that is not 32 bytes,
+    /// the hub's own, or another client's, and a 257th client.
+    public func admit(device: String, key: Data, psk: Data? = nil) throws -> (client: Client, changed: Bool) {
         try lock.withLock {
             guard GroupCertificates.isDeviceID(device) else { throw Refused.badDevice }
             guard key.count == 32, key.contains(where: { $0 != 0 }), key != publicKey else { throw Refused.badKey }
+            let own = psk.flatMap { $0.count == 32 && $0.contains(where: { $0 != 0 }) ? $0 : nil }
             let i = list.firstIndex { $0.device == device }
             if let other = list.enumerated().first(where: { $0.offset != i && $0.element.key == key }) {
                 throw Refused.keyOfAnother(other.element.device)
             }
             if let i {
-                if list[i].key == key { return (list[i], false) }
-                list[i] = Client(device: device, key: key, psk: Self.newPSK())
+                let c = list[i]
+                if c.met && c.key == key && (own == nil || own == c.psk) { return (c, false) }
+                list[i] = Client(device: device, key: key, psk: own ?? (c.key == key ? c.psk : Self.newPSK()), met: true)
                 return (list[i], true)
             }
             guard list.count < Self.maxClients else { throw Refused.tooManyClients }
-            let c = Client(device: device, key: key, psk: Self.newPSK())
+            let c = Client(device: device, key: key, psk: own ?? Self.newPSK(), met: true)
             list.append(c)
             return (c, true)
         }
+    }
+
+    /// Takes a client another hub shared or handed over, with the keys it
+    /// has, as Go's State.Take: a client this hub met itself stays as it
+    /// is; one only taken before gets the new keys. It returns whether the
+    /// clients changed, and refuses as admit.
+    @discardableResult
+    public func take(_ c: Client) throws -> Bool {
+        try lock.withLock {
+            guard GroupCertificates.isDeviceID(c.device) else { throw Refused.badDevice }
+            guard c.key.count == 32, c.psk.count == 32, c.key.contains(where: { $0 != 0 }), c.psk.contains(where: { $0 != 0 }),
+                  c.key != publicKey else { throw Refused.badKey }
+            let i = list.firstIndex { $0.device == c.device }
+            if let other = list.enumerated().first(where: { $0.offset != i && $0.element.key == c.key }) {
+                throw Refused.keyOfAnother(other.element.device)
+            }
+            if let i {
+                let o = list[i]
+                if o.met || o.key == c.key && o.psk == c.psk { return false }
+                list[i] = c.shared
+                return true
+            }
+            guard list.count < Self.maxClients else { throw Refused.tooManyClients }
+            list.append(c.shared)
+            return true
+        }
+    }
+
+    /// Keeps the offer of another hub, from what it shared, to pass on;
+    /// nil forgets it. It returns whether it changed.
+    @discardableResult
+    public func setOther(_ device: String, offer: Member.TunnelOffer?) -> Bool {
+        lock.withLock {
+            guard let offer, offer.hubKey != publicKey else { return others.removeValue(forKey: device) != nil }
+            let o = offer.with(psk: Data(), hub: nil)
+            defer { others[device] = o }
+            return others[device] != o
+        }
+    }
+
+    /// The offers the client c gets: this hub's own, then the other hubs'
+    /// with c's preshared key and the hub named, highest first in order.
+    public func offers(for c: Client, order: [String] = []) -> [Member.TunnelOffer] {
+        guard let own = offer(for: c) else { return [] }
+        func rank(_ d: String) -> Int { order.firstIndex(of: d) ?? order.count }
+        let rest = lock.withLock { others }
+            .filter { $0.key != c.device }
+            .sorted { (rank($0.key), $0.key) < (rank($1.key), $1.key) }
+            .map { $0.value.with(psk: c.psk, hub: $0.key) }
+        return [own] + rest
+    }
+
+    /// What this hub shares with the group's other hubs: that it serves,
+    /// its offer without a preshared key and its clients; nil while its
+    /// offers wait for VLESS.
+    public func share() -> Member.HubShare? {
+        let l = lock.withLock { link }
+        if l.vlessOnly && l.vless == nil { return nil }
+        let o = Member.TunnelOffer(hubKey: publicKey, psk: Data(), endpoints: Array(l.endpoints.prefix(8)), obfuscation: l.obfuscation, vless: l.vless)
+        return Member.HubShare(serving: true, offer: o, clients: clients.map(\.shared))
     }
 
     /// The offer for a client admitted with admit, or nil while the offers
@@ -109,15 +200,24 @@ public final class PhoneHub: @unchecked Sendable {
     /// the clients when they changed.
     public func offer(device: String, key: Data, changed: ([Client]) -> Void = { _ in },
                       refused: (Error) -> Void = { _ in }) -> Member.TunnelOffer? {
+        offers(device: device, key: key, psk: nil, changed: changed, refused: refused).first
+    }
+
+    /// Admits a peer with the keys its hello offers and returns its offers,
+    /// this hub's own first, for MemberNode's hub: none when it is refused
+    /// (refused tells why) or the offers wait. changed gets the clients
+    /// when they changed.
+    public func offers(device: String, key: Data, psk: Data?, order: [String] = [], changed: ([Client]) -> Void = { _ in },
+                       refused: (Error) -> Void = { _ in }) -> [Member.TunnelOffer] {
         let admitted: (client: Client, changed: Bool)
         do {
-            admitted = try admit(device: device, key: key)
+            admitted = try admit(device: device, key: key, psk: psk)
         } catch {
             refused(error)
-            return nil
+            return []
         }
         if admitted.changed { changed(clients) }
-        return offer(for: admitted.client)
+        return offers(for: admitted.client, order: order)
     }
 
     /// The offer the client device gets when the hub moves to newHub,
@@ -127,7 +227,7 @@ public final class PhoneHub: @unchecked Sendable {
     /// that is no client, or newHub itself.
     public func movedOffer(device: String, newHub: String, offer: Member.TunnelOffer) -> Member.TunnelOffer? {
         guard device != newHub, let c = clients.first(where: { $0.device == device }) else { return nil }
-        return offer.with(psk: c.psk, hub: newHub)
+        return offer.with(psk: c.psk, hub: newHub, moved: true)
     }
 
     /// Forgets the clients keep refuses, removed devices for one, and
@@ -143,7 +243,7 @@ public final class PhoneHub: @unchecked Sendable {
 
     /// The clients as cbbtun's StartHub and SetClients take them.
     public func clientsJSON() throws -> String {
-        String(decoding: try JSONEncoder().encode(clients), as: UTF8.self)
+        String(decoding: try JSONEncoder().encode(clients.map(\.shared)), as: UTF8.self)
     }
 
     /// The clients clientsJSON gave.

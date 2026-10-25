@@ -172,6 +172,10 @@ public enum Member {
         /// The sender's WireGuard public key, 32 bytes, for the group's
         /// hub (section 11).
         public var tunnelKey: Data?
+        /// With tunnelKey, the preshared key the sender chose for its
+        /// tunnels, 32 bytes, so every hub of the group uses the same one
+        /// (section 11, "Several hubs"); nil from an older member.
+        public var tunnelPSK: Data?
         /// What the sender says about its device, for showing.
         public var device: DeviceInfo?
         /// The sender's sync mode: "own", "shared", "receive" or "send";
@@ -179,10 +183,10 @@ public enum Member {
         public var mode: String?
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
-                    adminKey: Data? = nil, tunnelKey: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil) {
+                    adminKey: Data? = nil, tunnelKey: Data? = nil, tunnelPSK: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
-            (self.device, self.mode) = (device, mode)
+            (self.tunnelPSK, self.device, self.mode) = (tunnelPSK, device, mode)
         }
     }
 
@@ -257,40 +261,27 @@ public enum Member {
         /// device that is the hub now (section 11, "Moving the hub"); nil
         /// when the sender is the hub.
         public var hub: String?
+        /// Whether the sender is no hub any more and hands its clients over
+        /// to hub: the client forgets the sender's own offer.
+        public var moved: Bool
 
-        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil, hub: String? = nil) {
+        public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil, hub: String? = nil,
+                    moved: Bool = false) {
             (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless, self.hub) = (hubKey, psk, endpoints, obfuscation, vless, hub)
+            self.moved = moved
         }
 
         /// Whether both keys are 32 bytes, as a tunnel needs.
         public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
 
-        /// The same offer with another preshared key and hub.
-        public func with(psk: Data, hub: String?) -> TunnelOffer {
+        /// The same offer with another preshared key and hub, and moved set.
+        public func with(psk: Data, hub: String?, moved: Bool = false) -> TunnelOffer {
             var o = self
-            (o.psk, o.hub) = (psk, hub)
+            (o.psk, o.hub, o.moved) = (psk, hub, moved)
             return o
         }
 
-        /// Whether a client that keeps the offer of the hub kept, with the
-        /// preshared key keptPSK, takes an offer for the hub hub that from
-        /// sent with the preshared key psk, as Go's takesOffer (section 11,
-        /// "Moving the hub"): from the kept hub, or for another hub when
-        /// the kept hub passed it on, when it carries the preshared key the
-        /// kept hub gave (the kept hub handed its clients over), or when
-        /// the kept hub is no longer the root or an admin (keptAdmin false),
-        /// as after a takeover.
-        public static func takes(kept: String?, keptPSK: Data?, from: String, hub: String, psk: Data, keptAdmin: Bool) -> Bool {
-            guard let kept, kept != hub else { return true }
-            let moved = hub != from && kept == from
-            var handed = false
-            if let keptPSK, keptPSK.count == psk.count {
-                handed = zip(keptPSK, psk).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
-            }
-            return moved || handed || !keptAdmin
-        }
-
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub }
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub, moved }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -300,6 +291,7 @@ public enum Member {
             obfuscation = try c.decodeIfPresent(Obfuscation.self, forKey: .obfuscation)
             vless = try c.decodeIfPresent(VLESS.self, forKey: .vless)
             hub = try c.decodeIfPresent(String.self, forKey: .hub)
+            moved = try c.decodeIfPresent(Bool.self, forKey: .moved) ?? false
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -310,6 +302,36 @@ public enum Member {
             try c.encodeIfPresent(obfuscation, forKey: .obfuscation)
             try c.encodeIfPresent(vless, forKey: .vless)
             try c.encodeIfPresent(hub, forKey: .hub)
+            if moved { try c.encode(true, forKey: .moved) }
+        }
+    }
+
+    /// What a hub tells the group's other hubs (section 11, "Several
+    /// hubs"): whether it serves as the hub now, its offer without a
+    /// preshared key, and its clients, itself among them, with their keys.
+    public struct HubShare: Codable, Equatable, Sendable {
+        public var serving: Bool
+        public var offer: TunnelOffer?
+        public var clients: [PhoneHub.Client]
+
+        public init(serving: Bool = false, offer: TunnelOffer? = nil, clients: [PhoneHub.Client] = []) {
+            (self.serving, self.offer, self.clients) = (serving, offer, clients)
+        }
+
+        enum CodingKeys: String, CodingKey { case serving, offer, clients }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            serving = try c.decodeIfPresent(Bool.self, forKey: .serving) ?? false
+            offer = try c.decodeIfPresent(TunnelOffer.self, forKey: .offer)
+            clients = try c.decodeIfPresent([PhoneHub.Client].self, forKey: .clients) ?? []
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if serving { try c.encode(true, forKey: .serving) }
+            try c.encodeIfPresent(offer, forKey: .offer)
+            if !clients.isEmpty { try c.encode(clients, forKey: .clients) }
         }
     }
 
@@ -388,6 +410,10 @@ public enum Member {
         /// receiver's hello carried; nil when absent or when it did not
         /// decode.
         case tunnel(TunnelOffer?)
+        /// Between the group's hubs (section 11, "Several hubs"): whether
+        /// the sender serves as the hub, its offer without a preshared key,
+        /// and its clients with their keys, so any hub can take them.
+        case hubs(HubShare)
         /// From an admin: a command signed for the receiver (section 15).
         case command(Record)
         /// The answer to a command.
@@ -428,7 +454,7 @@ public enum Member {
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
-                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, device: h.device?.value,
+                                      os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, tunnelPSK: h.tunnel_psk, device: h.device?.value,
                                       mode: h.mode.flatMap { modes.contains($0) ? $0 : nil }))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
@@ -437,6 +463,7 @@ public enum Member {
         case "records": return .records(w.records ?? [])
         case "admin": return .admin(w.admin_ca ?? Data())
         case "tunnel": return .tunnel(w.tunnel?.value)
+        case "hubs": return w.hubs?.value.map { .hubs($0) } ?? .unknown(w.t)
         case "command": return w.command?.value.map { .command($0) } ?? .unknown(w.t)
         case "result": return w.result?.value.map { .result($0) } ?? .unknown(w.t)
         default: return .unknown(w.t)
@@ -458,6 +485,7 @@ public enum Member {
         var os: String?
         var admin_key: Data?
         var tunnel_key: Data?
+        var tunnel_psk: Data?
         var device: Lenient<DeviceInfo>?
         var mode: String?
     }
@@ -472,6 +500,7 @@ public enum Member {
         var records: [Record]?
         var admin_ca: Data?
         var tunnel: Lenient<TunnelOffer>?
+        var hubs: Lenient<HubShare>?
         var command: Lenient<Record>?
         var result: Lenient<CommandResult>?
     }
@@ -480,8 +509,8 @@ public enum Member {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, command, result }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, mode }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -498,6 +527,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.device, forKey: .device)
                 try hc.encodeIfPresent(h.adminKey, forKey: .admin_key)
                 try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
+                try hc.encodeIfPresent(h.tunnelPSK, forKey: .tunnel_psk)
                 try hc.encodeIfPresent(h.mode, forKey: .mode)
             case let .event(e):
                 try c.encode("event", forKey: .t)
@@ -517,6 +547,9 @@ public enum Member {
             case let .tunnel(o):
                 try c.encode("tunnel", forKey: .t)
                 try c.encodeIfPresent(o, forKey: .tunnel)
+            case let .hubs(h):
+                try c.encode("hubs", forKey: .t)
+                try c.encode(h, forKey: .hubs)
             case let .command(r):
                 try c.encode("command", forKey: .t)
                 try c.encode(r, forKey: .command)

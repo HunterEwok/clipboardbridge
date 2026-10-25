@@ -14,29 +14,47 @@ final class AwayFromHomeTests: XCTestCase {
 
     func testStateRoundTrips() throws {
         let key = Data(repeating: 1, count: 32)
-        XCTAssertEqual(AwayState.decode(try AwayState(key: key).encoded()), AwayState(key: key))
-        let on = AwayState(key: key, hub: hub, offer: offer)
+        let off = AwayState(key: key)
+        XCTAssertEqual(off.psk.count, 32)
+        XCTAssertEqual(AwayState.decode(try off.encoded()), off)
+        let pc = "dddddddddddddddddddddddddddddddd"
+        let on = off.with(hub, offer: offer).with(pc, offer: offer)
         XCTAssertEqual(AwayState.decode(try on.encoded()), on)
+        XCTAssertEqual(on.hubs.map(\.device), [hub, pc])
+        XCTAssertEqual(on.offer(hub), offer)
+        XCTAssertEqual(on.without(hub).hubs.map(\.device), [pc])
         // An obfuscated hub's settings are kept with its offer.
         var hidden = offer
         hidden.obfuscation = Member.Obfuscation(jc: 4, jmin: 50, jmax: 300, s1: 20, s2: 40, s3: 16, s4: 24,
                                                 h1: "100-200", h2: "300-400", h3: "500-600", h4: "700-800",
                                                 headerProtectionKey: Data(repeating: 8, count: 32))
-        let kept = AwayState(key: key, hub: hub, offer: hidden)
+        let kept = off.with(hub, offer: hidden)
         XCTAssertEqual(AwayState.decode(try kept.encoded()), kept)
         // So is the way over VLESS.
         var tunneled = offer
         tunneled.vless = Member.VLESS(endpoint: "203.0.113.9:443", publicKey: Data(repeating: 9, count: 32),
                                       shortID: "0123456789abcdef", serverName: "www.example.com",
                                       id: "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f")
-        let overVLESS = AwayState(key: key, hub: hub, offer: tunneled)
+        let overVLESS = off.with(hub, offer: tunneled)
         XCTAssertEqual(AwayState.decode(try overVLESS.encoded()), overVLESS)
-        // A short key, a bad offer and an offer without its hub are not states.
+        // A short key, a short preshared key and a bad offer are not states.
         XCTAssertNil(AwayState.decode(try AwayState(key: Data(count: 31)).encoded()))
-        XCTAssertNil(AwayState.decode(try AwayState(key: key, hub: hub,
-                                                    offer: Member.TunnelOffer(hubKey: Data(count: 31), psk: Data(count: 32))).encoded()))
-        XCTAssertNil(AwayState.decode(try AwayState(key: key, offer: offer).encoded()))
+        XCTAssertNil(AwayState.decode(try AwayState(key: key, psk: Data(count: 31)).encoded()))
+        XCTAssertNil(AwayState.decode(try off.with(hub, offer: Member.TunnelOffer(hubKey: Data(count: 31), psk: Data(count: 32))).encoded()))
         XCTAssertNil(AwayState.decode(Data("{".utf8)))
+    }
+
+    /// The state of earlier versions kept one hub's offer and no preshared
+    /// key of the phone's own: it gets one.
+    func testReadsTheOneHubOfEarlierVersions() throws {
+        let key = Data(repeating: 1, count: 32)
+        let old = #"{"key":"\#(key.base64EncodedString())","hub":"\#(hub)","offer":\#(String(decoding: try JSONEncoder().encode(offer), as: UTF8.self))}"#
+        let s = try XCTUnwrap(AwayState.decode(Data(old.utf8)))
+        XCTAssertEqual(s.hubs.map(\.device), [hub])
+        XCTAssertEqual(s.offer(hub), offer)
+        XCTAssertEqual(s.psk.count, 32)
+        XCTAssertNotEqual(s.psk, offer.psk)
+        XCTAssertEqual(AwayState.decode(Data(#"{"key":"\#(key.base64EncodedString())"}"#.utf8))?.hubs, [])
     }
 
     final class FakeTunnel: OpenTunnel, @unchecked Sendable {
@@ -118,6 +136,7 @@ final class AwayFromHomeTests: XCTestCase {
                 while release.current <= mine { try await Task.sleep(for: .milliseconds(2)) }
             },
             mayHost: { $0 == hub },
+            order: { [hub] },
             firstWait: Self.short.first, maxWait: Self.short.max, homeCheck: Self.short.home)
         await a.start()
 
@@ -137,11 +156,13 @@ final class AwayFromHomeTests: XCTestCase {
 
         // An offer from a device that is neither the root nor an admin is ignored.
         await a.keep(from: "cccccccccccccccccccccccccccccccc", offer: offer)
-        XCTAssertNil(saved.current?.hub)
+        XCTAssertEqual(saved.current?.hubs, [])
         // The hub's answer, from a peer the node named: away, the tunnel starts on its first endpoint.
         await a.keep(from: nil, offer: offer)
         await a.keep(from: hub, offer: offer)
-        XCTAssertEqual(saved.current?.hub, hub)
+        XCTAssertEqual(saved.current?.offer(hub), offer)
+        let psk = await a.psk
+        XCTAssertEqual(psk, saved.current?.psk)
         try await eventually("a tunnel") { tunnels.started.count == 1 }
         let t = tunnels.started[0]
         XCTAssertEqual(t.first, offer.endpoints[0])
@@ -185,10 +206,10 @@ final class AwayFromHomeTests: XCTestCase {
         let release = Box(0)
         let a = AwayFromHome(
             device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: tunnels,
-            state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
+            state: AwayState(key: Data(repeating: 1, count: 32)).with(hub, offer: offer), save: { _ in },
             atHome: { _ in false }, dial: { _, _ in Pipe() },
             serve: { _, _ in while release.current == 0 { try await Task.sleep(for: .milliseconds(2)) } },
-            mayHost: { _ in true },
+            mayHost: { _ in true }, order: { [self.hub, "dddddddddddddddddddddddddddddddd"] },
             firstWait: Self.short.first, maxWait: Self.short.max, homeCheck: Self.short.home)
         await a.start()
         try await eventually("connected") { await a.status == .connected }
@@ -207,38 +228,78 @@ final class AwayFromHomeTests: XCTestCase {
         try await eventually("stopped") { await a.status == .off }
     }
 
-    /// The hub moves: the kept hub passes on the new hub's offer, or the
-    /// new hub knows the kept preshared key (docs/protocol.md, section 11).
-    func testFollowsTheHubWhenItMoves() async throws {
+    /// Every hub's offer is kept, its own or passed on by another hub, and
+    /// one marked moved makes the phone forget the sender's
+    /// (docs/protocol.md, section 11, "Several hubs").
+    func testKeepsEveryHubsOffer() async throws {
         let pc = "dddddddddddddddddddddddddddddddd"
         let admins = Box<Set<String>>([hub, pc])
+        let saved = Box<AwayState?>(nil)
+        let hub = hub
         let a = AwayFromHome(
             device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: FakeTunnels(),
-            state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
+            state: AwayState(key: Data(repeating: 1, count: 32)).with(hub, offer: offer), save: { saved.set($0) },
             atHome: { _ in true }, dial: { _, _ in Pipe() }, serve: { _, _ in },
-            mayHost: { admins.current.contains($0) })
+            mayHost: { admins.current.contains($0) }, order: { [hub, pc] })
         let pcOffer = Member.TunnelOffer(hubKey: Data(repeating: 5, count: 32), psk: Data(repeating: 6, count: 32), endpoints: ["203.0.113.5:8764"])
-        // Another admin's own offer is ignored while the hub stays.
+        // Another hub's own offer is kept beside the first's.
         await a.keep(from: pc, offer: pcOffer)
-        var kept = await a.hub
-        XCTAssertEqual(kept, hub)
-        // The hub passes on the computer's offer: the phone follows.
-        await a.keep(from: hub, offer: pcOffer.with(psk: offer.psk, hub: pc))
-        kept = await a.hub
-        XCTAssertEqual(kept, pc)
-        // Moved back by the preshared key: the old hub knows it.
-        await a.keep(from: hub, offer: offer)
-        kept = await a.hub
-        XCTAssertEqual(kept, hub)
-        // A hub that is no admin any more gives way, as after a takeover.
-        admins.set([pc])
-        await a.keep(from: pc, offer: pcOffer)
-        kept = await a.hub
-        XCTAssertEqual(kept, pc)
-        // An offer naming a device that is no admin is ignored.
+        XCTAssertEqual(saved.current?.hubs.map(\.device), [hub, pc])
+        let first = await a.hub
+        XCTAssertEqual(first, hub)
+        // Passed on by the hub, without the hub field, in place of the earlier one.
+        let passed = Member.TunnelOffer(hubKey: pcOffer.hubKey, psk: offer.psk, endpoints: ["203.0.113.6:8764"])
+        await a.keep(from: hub, offer: passed.with(psk: passed.psk, hub: pc))
+        XCTAssertEqual(saved.current?.offer(pc), passed)
+        // The hub moves to the computer: its own offer goes.
+        await a.keep(from: hub, offer: pcOffer.with(psk: pcOffer.psk, hub: pc, moved: true))
+        XCTAssertEqual(saved.current?.hubs.map(\.device), [pc])
+        XCTAssertEqual(saved.current?.offer(pc), pcOffer)
+        // An offer naming a device that is no admin, or from one, is ignored, as is this phone's own.
         await a.keep(from: pc, offer: pcOffer.with(psk: pcOffer.psk, hub: "cccccccccccccccccccccccccccccccc"))
-        kept = await a.hub
-        XCTAssertEqual(kept, pc)
+        await a.keep(from: "cccccccccccccccccccccccccccccccc", offer: offer)
+        await a.keep(from: pc, offer: offer.with(psk: offer.psk, hub: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+        admins.set([hub])
+        await a.keep(from: pc, offer: offer)
+        XCTAssertEqual(saved.current?.hubs.map(\.device), [pc])
+        XCTAssertEqual(saved.current?.offer(pc), pcOffer)
+    }
+
+    /// The first hub in the order that answers is used; on a lower one the
+    /// connection ends after the up check, and the phone goes back up to
+    /// the first once it answers.
+    func testUsesTheFirstHubThatAnswers() async throws {
+        let pc = "dddddddddddddddddddddddddddddddd"
+        let pcOffer = Member.TunnelOffer(hubKey: Data(repeating: 5, count: 32), psk: Data(repeating: 6, count: 32), endpoints: ["203.0.113.5:8764"])
+        let pcUp = Box(false)
+        let served = Box<[String]>([])
+        let a = AwayFromHome(
+            device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: FakeTunnels(),
+            state: AwayState(key: Data(repeating: 1, count: 32)).with(hub, offer: offer).with(pc, offer: pcOffer), save: { _ in },
+            atHome: { _ in false },
+            dial: { _, h in
+                if h == pc && !pcUp.current { throw POSIXError(.ECONNREFUSED) }
+                return Pipe()
+            },
+            serve: { t, h in
+                served.update { $0.append(h) }
+                // Until the connection closes.
+                while !(t as! Pipe).isClosed { try await Task.sleep(for: .milliseconds(2)) }
+            },
+            mayHost: { _ in true }, order: { [pc, self.hub] },
+            firstWait: Self.short.first, maxWait: Self.short.max, homeCheck: Self.short.home, upCheck: .milliseconds(100))
+        await a.start()
+        try await eventually("the second hub") { served.current == [hub] }
+        let second = await a.hub
+        XCTAssertEqual(second, hub)
+        pcUp.set(true)
+        try await eventually("back to the first") { served.current == [hub, pc] }
+        let first = await a.hub
+        XCTAssertEqual(first, pc)
+        // On the first hub there is no up check.
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(served.current, [hub, pc])
+        await a.stop()
     }
 
     /// A phone hub, there only while its app is open, is tried every few
@@ -248,14 +309,14 @@ final class AwayFromHomeTests: XCTestCase {
             let dialed = Box(0)
             let a = AwayFromHome(
                 device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tunnels: FakeTunnels(),
-                state: AwayState(key: Data(repeating: 1, count: 32), hub: hub, offer: offer), save: { _ in },
+                state: AwayState(key: Data(repeating: 1, count: 32)).with(hub, offer: offer), save: { _ in },
                 atHome: { _ in false },
                 dial: { _, _ in
                     dialed.update { $0 += 1 }
                     throw POSIXError(.ECONNREFUSED)
                 },
                 serve: { _, _ in },
-                mayHost: { _ in true },
+                mayHost: { _ in true }, order: { [self.hub] },
                 firstWait: .milliseconds(10), maxWait: .seconds(3600), isPhone: { _ in phone }, phoneWait: .milliseconds(20),
                 homeCheck: Self.short.home)
             await a.start()

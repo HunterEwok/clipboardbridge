@@ -235,13 +235,54 @@ public final class HubOnPhone: @unchecked Sendable {
         return Array((homes + [home]).suffix(HubState.maxHomes))
     }
 
-    /// The offer for a member whose hello offered key, for MemberNode's
-    /// hub: nil while the hub is off or has no forwarder, or when the key
-    /// is refused.
-    public func offer(device: String, key: Data) -> Member.TunnelOffer? {
-        guard let h = lock.withLock({ state?.on == true && state?.forwarder != nil ? hub : nil }) else { return nil }
-        return h.offer(device: device, key: key, changed: { self.clientsChanged($0) },
-                       refused: { self.log("refused a client", $0) })
+    /// The hub while it is on and has a forwarder, as it offers and shares.
+    private var offering: PhoneHub? { lock.withLock { state?.on == true && state?.forwarder != nil ? hub : nil } }
+
+    /// The offers for a member whose hello offered key and psk, for
+    /// MemberNode's hub: this hub's own, then the group's other hubs' it
+    /// passes on, in order (docs/protocol.md, section 11, "Several hubs");
+    /// none while the hub is off or has no forwarder, or when the key is
+    /// refused.
+    public func offers(device: String, key: Data, psk: Data? = nil, order: [String] = []) -> [Member.TunnelOffer] {
+        guard let h = offering else { return [] }
+        return h.offers(device: device, key: key, psk: psk, order: order, changed: { self.clientsChanged($0) },
+                        refused: { self.log("refused a client", $0) })
+    }
+
+    /// The offer for a member whose hello offered key, as offers gives it
+    /// first; nil without one.
+    public func offer(device: String, key: Data) -> Member.TunnelOffer? { offers(device: device, key: key).first }
+
+    /// The offers a connected client device gets, after another hub's offer
+    /// changed; none for a device that is no client.
+    public func offers(for device: String, order: [String]) -> [Member.TunnelOffer] {
+        guard let h = offering, let c = h.clients.first(where: { $0.device == device }) else { return [] }
+        return h.offers(for: c, order: order)
+    }
+
+    /// What this hub shares with another of the group's hubs: that it
+    /// serves, its offer and its clients; nil while it is off or has no
+    /// forwarder. The phone serves whenever it is on: it does not yet give
+    /// way to a hub above it.
+    public func share() -> Member.HubShare? { offering?.share() }
+
+    /// Takes what another hub, from, shared: the clients the records know
+    /// (known), which this hub can then serve too, and the offer it passes
+    /// on to its clients. It returns whether that offer changed, so the
+    /// connected clients get it.
+    @discardableResult
+    public func shared(from: String, _ share: Member.HubShare, known: (String) -> Bool) -> Bool {
+        guard let h = offering else { return false }
+        var changed = false
+        for c in share.clients where c.device != device && known(c.device) {
+            do {
+                if try h.take(c) { changed = true }
+            } catch {
+                log("refused a client \(from) shared", error)
+            }
+        }
+        if changed { clientsChanged(h.clients) }
+        return h.setOther(from, offer: share.offer.flatMap { $0.hubKey.count == 32 && $0.endpoints.count <= 8 ? $0 : nil })
     }
 
     private func clientsChanged(_ clients: [PhoneHub.Client]) {
@@ -255,7 +296,7 @@ public final class HubOnPhone: @unchecked Sendable {
         do { try save(next) } catch { log("cannot keep the hub's clients", error) }
         guard let t else { return }
         do {
-            try t.setClients(String(decoding: try JSONEncoder().encode(clients), as: UTF8.self))
+            try t.setClients(String(decoding: try JSONEncoder().encode(clients.map(\.shared)), as: UTF8.self))
         } catch {
             log("cannot hand the clients to the tunnel", error)
         }

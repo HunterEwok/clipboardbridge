@@ -619,20 +619,30 @@ final class LiveGroup: GroupController {
         // on, and the hub's answer goes to AwayFromHome.
         let awayState = AwayKeychain.load()
         let awayRef = Ref<AwayFromHome>()
-        // The phone as the hub answers the tunnel keys of the hellos and
-        // takes no offer itself (D-64).
+        // The phone as the hub answers the tunnel keys of the hellos, shares
+        // its clients with the group's other hubs and passes their offers
+        // on; it is no client itself (D-64; docs/protocol.md, section 11,
+        // "Several hubs").
         let hub = HubOnPhone(device: g.device, tunnels: GoHubTunnels(), state: HubKeychain.load(), save: { try HubKeychain.save($0) },
                              log: { what, error in hubLog.error("\(what, privacy: .public): \(error.map { String(reflecting: $0) } ?? "", privacy: .public)") })
         let isHub = g.isAdmin && hub.isOn
-        var answer: (@Sendable (String, Data, [Data]) -> Member.TunnelOffer?)?
+        var answer: (@Sendable (String, Data, Data?, [Data]) -> [Member.TunnelOffer])?
+        var sharing: (@Sendable (String, [Data]) -> Member.HubShare?)?
         if isHub {
-            answer = { device, key, _ in hub.offer(device: device, key: key) }
+            answer = { device, key, psk, _ in hub.offers(device: device, key: key, psk: psk, order: box.hubOrder) }
+            sharing = { peer, chain in box.mayHost(peer, chain: chain) ? hub.share() : nil }
         }
         let offered: Data? = isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) }
+        let nodeRef = Ref<MemberNode>()
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
-                              tunnelKey: offered, hub: answer,
-                              onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
+                              tunnelKey: offered, tunnelPSK: offered == nil ? nil : awayState?.psk, hub: answer, hubShare: sharing,
+                              onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } },
+                              onHubs: { from, _, share in
+                                  guard isHub, hub.shared(from: from, share, known: { box.knows($0) }) else { return }
+                                  Task { await nodeRef.value?.sendTunnels { hub.offers(for: $0, order: box.hubOrder) } }
+                              })
+        nodeRef.value = node
         let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
         // Through the tunnel the phone dials the hub's member port with the
@@ -651,6 +661,7 @@ final class LiveGroup: GroupController {
             },
             serve: { t, hub in try await node.serve(t, peer: hub) },
             mayHost: { box.mayHost($0) },
+            order: { box.hubOrder },
             log: { what, error in awayLog.error("\(what, privacy: .public): \(String(reflecting: error), privacy: .public)") },
             isPhone: { box.isPhone($0) })
         awayRef.value = away
@@ -725,10 +736,7 @@ final class LiveGroup: GroupController {
         // This phone is the new hub's client from now on, with a key of its own.
         let wasOn = await away.isOn
         if !wasOn { try await away.turnOn() }
-        guard let key = await away.publicKey else { throw HubOnPhone.Failure.notRunning }
-        var psk = Data(count: 32)
-        let ok = psk.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
-        guard ok == errSecSuccess else { throw HubOnPhone.Failure.notRunning }
+        guard let key = await away.publicKey, let psk = await away.psk else { throw HubOnPhone.Failure.notRunning }
         let clients = hub.handover + [PhoneHub.Client(device: g.device, key: key, psk: psk)]
         let offer: Member.TunnelOffer
         do {
@@ -958,6 +966,12 @@ final class LiveGroup: GroupController {
         func mayHost(_ device: String) -> Bool { lock.withLock { set.mayHost(device) } }
 
         func mayHost(_ device: String, chain: [Data]) -> Bool { lock.withLock { set.mayHost(device, chain: chain) } }
+
+        /// The group's hubs, highest first.
+        var hubOrder: [String] { lock.withLock { set.hubOrder } }
+
+        /// Whether a record names device.
+        func knows(_ device: String) -> Bool { lock.withLock { set.knows(device) } }
 
         /// Whether device is a phone, a hub only while its app is open.
         func isPhone(_ device: String) -> Bool { lock.withLock { set.devices.first { $0.id == device }?.role == "phone" } }

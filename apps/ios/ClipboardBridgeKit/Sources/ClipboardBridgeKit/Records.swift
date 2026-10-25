@@ -745,6 +745,21 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return root.device == device && root.key == key && !Eval(self).revoked.contains(key)
     }
 
+    /// The devices that may be the group's hub, highest first, as Go's
+    /// Records.HubOrder (docs/protocol.md, section 11, "Several hubs"):
+    /// phones before computers, within each the root first, then by device
+    /// ID.
+    public var hubOrder: [String] {
+        let root = rootMember().flatMap { Eval(self).revoked.contains($0.key) ? nil : $0.device }
+        return devices.filter { $0.id == root || $0.admin }
+            .sorted { a, b in
+                if (a.role == "phone") != (b.role == "phone") { return a.role == "phone" }
+                if (a.id == root) != (b.id == root) { return a.id == root }
+                return a.id < b.id
+            }
+            .map(\.id)
+    }
+
     /// The root's own device and its key: the newest full or phone device
     /// record the current root signed for itself.
     private func rootMember() -> (device: String, key: Data)? {

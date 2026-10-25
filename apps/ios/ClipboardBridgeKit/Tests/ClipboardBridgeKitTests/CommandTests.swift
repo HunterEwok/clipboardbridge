@@ -44,24 +44,10 @@ final class CommandTests: XCTestCase {
         let hub = PhoneHub(publicKey: Data(repeating: 9, count: 32), clients: [client])
         let moved = try XCTUnwrap(hub.movedOffer(device: client.device, newHub: pc, offer: offer))
         XCTAssertEqual(moved.hub, pc)
+        XCTAssertTrue(moved.moved)
         XCTAssertEqual(moved.psk, client.psk)
         XCTAssertNil(hub.movedOffer(device: pc, newHub: pc, offer: offer))
         XCTAssertEqual(try Member.decode(body: Data(Member.encode(.tunnel(moved)).dropFirst(4))), .tunnel(moved))
-    }
-
-    /// The offers a client takes once it keeps a hub's, as Go's TestOfferRules.
-    func testOfferRules() {
-        let kept = Data(repeating: 1, count: 32)
-        func takes(_ k: String?, _ from: String, _ hub: String, _ psk: UInt8, _ admin: Bool = true) -> Bool {
-            Member.TunnelOffer.takes(kept: k, keptPSK: k == nil ? nil : kept, from: from, hub: hub, psk: Data(repeating: psk, count: 32), keptAdmin: admin)
-        }
-        XCTAssertTrue(takes(nil, "mac", "mac", 2))
-        XCTAssertTrue(takes("pi", "pi", "pi", 3))
-        XCTAssertFalse(takes("pi", "mac", "mac", 2))
-        XCTAssertTrue(takes("pi", "mac", "mac", 1))
-        XCTAssertTrue(takes("pi", "pi", "mac", 2))
-        XCTAssertFalse(takes("pi", "deck", "mac", 2))
-        XCTAssertTrue(takes("pi", "mac", "mac", 2, false))
     }
 
     /// A command and its result through the frames, as Go sends and reads them.

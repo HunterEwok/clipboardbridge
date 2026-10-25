@@ -209,6 +209,22 @@ final class RootTests: XCTestCase {
         for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
     }
 
+    /// Reads testdata/interop/go-hubs.json, from Go's TestGoHubVectors: the
+    /// order of the group's hubs.
+    func testGoHubOrder() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            var group_ca: Data
+            var records: [Member.Record]
+            var hub_order: [String]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-hubs.json")))
+        var set = RecordSet()
+        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
+        XCTAssertEqual(set.hubOrder, v.hub_order)
+    }
+
     /// Reads testdata/interop/go-admins.json, from Go's TestGoAdminVectors:
     /// a computer's admin CA removes a device but neither the admin phone
     /// nor the root, nor hands the group over, and nothing it signs after
