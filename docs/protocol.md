@@ -757,7 +757,7 @@ pairing window is open, same address restriction:
 
 | Path | Content |
 |------|---------|
-| `GET /` | an HTML page with the steps and the iPhone CA fingerprint |
+| `GET /` | an HTML page with the steps; it sends the user to the terminal of `cbb pair -phone` for the iPhone CA fingerprint and does not show it, since it comes over plain HTTP |
 | `GET /clipboardbridge.mobileconfig` | the configuration profile, `application/x-apple-aspen-config` |
 | `GET /clipboardbridge.shortcut` | the signed sync shortcut, `application/octet-stream` (404 if the build has none) |
 

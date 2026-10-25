@@ -198,6 +198,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   away from home (Go, the lite member and both apps). A member found by discovery counts as
   on this network for 30 s; after that only a connection to it keeps the tunnel and the
   relay closed.
+- Security: the iPhone shortcut's pairing page no longer shows the profile's fingerprint,
+  which comes over plain HTTP and could be changed on the way; it sends the user to the
+  terminal of `cbb pair -phone`, which now spells out where to compare it.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub
