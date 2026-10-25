@@ -87,6 +87,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
 - `apps/zxnext`: `.cbb`, the dot command for the ZX Spectrum Next in C for z88dk (`frame.c`
   parses the frames of the lite member's `cbb next`, `link.c` drives the UART to the Next's Pi; `make test`
   runs the parser's tests on the host).
+- `apps/macos`: the Mac app (SwiftUI, XcodeGen) over the service's control socket
+  (`Control.swift`), admin actions through `cbb` with administrator privileges (`Admin.swift`),
+  the iPhone app's `Theme` shared; CI's `Mac app` job.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from

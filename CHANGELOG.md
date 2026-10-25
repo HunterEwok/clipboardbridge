@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Mac: an app (SwiftUI) over the cbb service, a window and a menu bar item in the Glass
+  design: the devices as tiles, a list or orbits, a device's details beside them, send and
+  fetch, sync away from home, and renaming, removing, freezing and making admins after the
+  administrator's password.
 - Android: notifications of the group's events, as on the iPhone, each with a switch in
   Settings; the background service hears of them at once.
 - Android: the Glass design of the iPhone app: ten colours and a Dark, Light or System theme

@@ -165,6 +165,33 @@ the phone does not answer. The notifications of the group's events reach the wat
 every iPhone notification does. The watch's own admin key and its emergency actions are
 roadmap item 26, steps 3 and 4.
 
+## The Mac app
+
+The Mac app (`apps/macos`, SwiftUI, macOS 14) is a window and a menu bar item over the
+service that the installer or Homebrew put on the Mac; the service and its pasteboard agent
+keep syncing without it. It speaks the service's control socket (`Control`, the protocol of
+`internal/control`: a JSON header line, then the payload), as a member of the
+`_clipboardbridge` group, and reads the status and the devices every few seconds.
+
+- **The window**: the group in a line (how many devices are online, its tag, sync away from
+  home and its switch), the devices as tiles, a list or orbits around this Mac (the toolbar
+  switches), a device's details in a pane beside them (the summary rows of the phones,
+  with its device ID and when it was last seen), and "Send the clipboard" and "Fetch" at the
+  bottom. "+" gives the commands that add a device.
+- **The menu bar item**: how many devices are online, send, fetch, the window, Settings.
+- **Settings**: the colour and the appearance of the phones (`Theme.swift` and `Tokens.swift`
+  of the iPhone app, shared), and error details (on in debug builds, off in release ones, and
+  the `ShowErrorDetails` default either way).
+- What changes the group (rename, remove, make an admin, freeze, unfreeze, sync away from
+  home) goes only through the admin socket, which only root reaches, so the app runs
+  `cbb` with administrator privileges (`Admin`, `do shell script … with administrator
+  privileges`): macOS asks for the password, as `sudo cbb` does in Terminal. With error
+  details on, `CBB_DEBUG=1` makes cbb name the error underneath.
+- Pairing runs in Terminal for now (`cbb pair`); the Developer ID app of roadmap item 22
+  carries the service itself and a Network Extension.
+
+CI's `Mac app` job builds it and runs its tests, signed ad hoc. Not yet run on a real Mac.
+
 ## Android: the clipboard without taps
 
 Since Android 10 an app reads the clipboard only while it has the input focus, or when it is
@@ -286,6 +313,7 @@ key and its secrets are in [maintaining.md](maintaining.md#android-signing-key).
   group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
   `root` record with its admin key, then, as the new root, the revocation and its own record.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
+- `apps/macos/` — the Mac app (SwiftUI): `project.yml` for XcodeGen, like the iPhone app's.
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard
   drawings; `go run ./tools/icon` sets each on a fill of its colour as the iPhone app's icon
   for light and dark mode, and the Android app takes the same drawings); `go run ./tools/tokens` turns `tokens.json` into

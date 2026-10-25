@@ -152,3 +152,11 @@ xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \
 
 To run it on a phone, open the project in Xcode, pick your team under Signing, and run.
 
+The Mac app (macOS with Xcode):
+
+```sh
+cd apps/macos && xcodegen generate   # ClipboardBridgeMac.xcodeproj and Info.plist are not committed
+xcodebuild test -project ClipboardBridgeMac.xcodeproj -scheme ClipboardBridgeMac \
+  -destination 'platform=macOS' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
+```
+
