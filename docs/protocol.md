@@ -484,7 +484,7 @@ started may finish after that. One attempt at a time; another gets `busy`. The w
 after a success or after the third failed attempt (`too-many`). An attempt fails (counts)
 when it fails after the member sent its CPace message; errors before that (bad AD, bad
 certificate, a dropped connection) do not count. Each attempt has 30 s on both sides, and
-the joiner's first message must arrive within 5 s of the TLS handshake. After 5 attempts
+the joiner's first message must arrive within 10 s of the TLS handshake. After 5 attempts
 from one IP address that ended before they counted, the window answers that address `busy`,
 so that one device on the network cannot hold the window for its whole life.
 

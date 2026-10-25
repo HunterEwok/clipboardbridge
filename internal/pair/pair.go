@@ -75,7 +75,7 @@ const (
 	// firstTimeout is how long the joiner has for its first message once
 	// it holds the window's one attempt: a device that only connects holds
 	// it no longer than that.
-	firstTimeout = 5 * time.Second
+	firstTimeout = 10 * time.Second
 	// maxIdle is how many attempts from one address may end before they
 	// count (without the joiner getting the member's CPace message); the
 	// window refuses that address afterwards, as busy.
