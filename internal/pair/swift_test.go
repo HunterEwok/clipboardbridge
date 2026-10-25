@@ -4,10 +4,13 @@
 package pair
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -198,6 +201,87 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			}
 			if ca := id.GroupCA.Cert; ca.MaxPathLen != 1 || !strings.HasPrefix(ca.Subject.CommonName, "clipboardbridge group root ") {
 				t.Errorf("the phone's group CA is %q with path length %d, want its root with 1", ca.Subject.CommonName, ca.MaxPathLen)
+			}
+		})
+	}
+}
+
+// TestSwiftHubAdmitsInvitedGoJoiner runs the phones' pairing window of a
+// remote invitation (docs/protocol.md, section 12) against this joiner: the
+// tool opens it with the secret, as the phone that is the hub does, the
+// joiner dials it with TLS and the secret, as cbb pair -invite does through
+// the guest tunnel, and the tool's admin confirms the device by the
+// fingerprint the joiner shows, or declines it.
+func TestSwiftHubAdmitsInvitedGoJoiner(t *testing.T) {
+	tool := os.Getenv("CBB_SWIFT_INTEROP_TLS")
+	if tool == "" {
+		t.Skip("CBB_SWIFT_INTEROP_TLS names no clipboardbridge-interop binary")
+	}
+	secret := make([]byte, MinSecret)
+	rand.Read(secret)
+	for _, tc := range []struct {
+		name   string
+		secret []byte
+		answer string
+		want   error // nil: admitted
+	}{
+		{"admitted", secret, "yes", nil},
+		{"declined", secret, "no", ErrDeclined},
+		{"a wrong secret", make([]byte, MinSecret), "yes", ErrWrongCode},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, tool, "invite-window", base64.StdEncoding.EncodeToString(secret), tc.answer)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var errOut strings.Builder
+			cmd.Stderr = &errOut
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer cmd.Wait()
+			lines := bufio.NewScanner(stdout)
+			next := func(prefix string) string {
+				if !lines.Scan() || !strings.HasPrefix(lines.Text(), prefix) {
+					cmd.Process.Kill()
+					t.Fatalf("the tool did not say %q: %q, %s", prefix, lines.Text(), errOut.String())
+				}
+				return strings.TrimPrefix(lines.Text(), prefix)
+			}
+			port := next("port ")
+			conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", port))
+			if err != nil {
+				t.Fatal(err)
+			}
+			j := newJoiner(t, "linux")
+			j.Now = time.Now
+			fp, _ := j.Fingerprint()
+			saved := 0
+			id, joinErr := j.JoinSecret(ctx, conn, tc.secret, 30*time.Second, func(*group.Identity) error { saved++; return nil })
+			if tc.want != nil {
+				if !errors.Is(joinErr, tc.want) || saved != 0 {
+					t.Fatalf("join %v, want %v; saved %d", joinErr, tc.want, saved)
+				}
+				return
+			}
+			if joinErr != nil {
+				t.Fatalf("join %v: %s", joinErr, errOut.String())
+			}
+			if got := next("fingerprint "); got != fp {
+				t.Errorf("the admin was shown %s, the device shows %s", got, fp)
+			}
+			ca := next("")
+			if err := cmd.Wait(); err != nil {
+				t.Fatalf("tool %v: %s", err, errOut.String())
+			}
+			if err := id.Check(); err != nil || id.ServesPhone() || saved != 1 {
+				t.Fatalf("the identity from the phone: %v, admin %v, saved %d", err, id.ServesPhone(), saved)
+			}
+			if caDER, err := base64.StdEncoding.DecodeString(ca); err != nil || string(caDER) != string(id.GroupCA.Cert.Raw) {
+				t.Errorf("the joiner holds another group CA than the phone made")
 			}
 		})
 	}

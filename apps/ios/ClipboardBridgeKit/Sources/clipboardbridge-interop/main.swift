@@ -17,7 +17,16 @@
 // a key in the keychain and prints "key <SubjectPublicKeyInfo, base64>",
 // reads "cert <DER, base64>" and "ca <DER, base64>" from standard input,
 // dials the Go member PEER with TLS, sends "from swift", waits for "from
-// go", and prints "ok". Test use only.
+// go", and prints "ok".
+//
+//   clipboardbridge-interop invite-window SECRET yes|no   (macOS)
+//
+// opens a remote invitation's pairing window (InvitationWindow) with SECRET
+// (base64), as the phone that is the hub does (internal/pair,
+// TestSwiftHubAdmitsInvitedGoJoiner), and prints "port N"; for the device
+// that proves it knows the secret it prints "fingerprint F" and admits it or
+// not; then it prints the group CA in base64, or fails with the first failed
+// attempt. Test use only.
 
 import ClipboardBridgeKit
 import Foundation
@@ -126,9 +135,60 @@ func memberTLS(host: String, port: UInt16, peer: String) async throws {
     await node.closeAll()
     try await serving.value
 }
+
+/// The group the window's attempts change.
+final class GroupBox: @unchecked Sendable {
+    var group: PhoneGroup
+    init(_ g: PhoneGroup) { group = g }
+}
+
+func inviteWindow(secret: Data, yes: Bool) async throws {
+    let now = Date()
+    let caSigner = SoftwareSigner()
+    let label = "clipboardbridge-interop-hub-\(SyncEngine.newID())"
+    let signer = try SecKeySigner(try KeychainIdentity.makeKey(label: label))
+    let box = GroupBox(try PhoneGroup.create(caSigner: caSigner, memberKey: signer.publicKeyDER, now: now))
+    let identity = try KeychainIdentity.identity(certificate: box.group.memberCert, key: signer.key, label: label, storeKey: false)
+    let invitation = PairingMember.Invitation(secret: secret) { req in
+        print("fingerprint \(req.fingerprint)")
+        fflush(stdout)
+        return yes
+    }
+    let (ended, cont) = AsyncStream<Result<PairingMember.Admitted, Error>>.makeStream()
+    let window = try InvitationWindow(identity: identity, expires: now.addingTimeInterval(60), admit: { t, joinerCert, sid in
+        var g = box.group
+        let a = try await g.admit(over: t, code: "", joinerCert: joinerCert, sessionID: sid, caSigner: caSigner, invitation: invitation, now: Date())
+        box.group = g
+        return a
+    }, onEnd: { cont.yield($0) }, onError: { cont.yield(.failure($0)) })
+    let port = try await window.start()
+    print("port \(port)")
+    fflush(stdout)
+    var it = ended.makeAsyncIterator()
+    guard let result = await it.next() else { throw TLSTransport.Failure.closed }
+    let admitted = try result.get()
+    guard admitted.confirmed, box.group.computers.map(\.device) == [admitted.device] else {
+        throw TLSTransport.Failure.notReady("the joiner did not confirm")
+    }
+    print(box.group.groupCA.base64EncodedString())
+}
 #endif
 
 let args = CommandLine.arguments
+if args.count == 4, args[1] == "invite-window", let secret = Data(base64Encoded: args[2]) {
+    #if canImport(Network)
+    do {
+        try await inviteWindow(secret: secret, yes: args[3] == "yes")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write("clipboardbridge-interop: \(error)\n".data(using: .utf8)!)
+        exit(1)
+    }
+    #else
+    FileHandle.standardError.write("invite-window needs Network.framework\n".data(using: .utf8)!)
+    exit(2)
+    #endif
+}
 if args.count == 5, args[1] == "member-tls", let port = UInt16(args[3]) {
     #if canImport(Network)
     do {

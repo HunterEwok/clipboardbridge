@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -15,13 +16,22 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/invite"
+	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
+
+// guestGrace is how long a guest tunnel stays after its device was
+// admitted, for the device's first member connection, as on a computer's
+// hub (internal/service/invite.go).
+const guestGrace = 2 * time.Minute
 
 // Signer signs with the phone's member key, which never leaves the Secure
 // Enclave or the Keystore and signs without the user: the kit's key behind
@@ -38,6 +48,7 @@ type Signer interface {
 // and its registration with the group's forwarder.
 type Hub struct {
 	hub        *tunnel.Hub
+	device     string
 	key        tunnel.Key
 	obf        *tunnel.Obfuscation
 	memberPort int
@@ -46,6 +57,8 @@ type Hub struct {
 	wg         sync.WaitGroup
 
 	mu         sync.Mutex
+	clients    []tunnel.Peer
+	guests     map[netip.Addr]*Guest
 	conns      map[net.Conn]struct{}
 	registered bool // Register was called
 	records    []group.Record
@@ -93,7 +106,8 @@ func StartHub(private []byte, device string, memberPort int, obfuscation, client
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	ph := &Hub{hub: h, key: priv, obf: obf, memberPort: memberPort, ctx: ctx, cancel: cancel, conns: map[net.Conn]struct{}{}}
+	ph := &Hub{hub: h, device: device, key: priv, obf: obf, memberPort: memberPort, ctx: ctx, cancel: cancel,
+		clients: peers, guests: map[netip.Addr]*Guest{}, conns: map[net.Conn]struct{}{}}
 	ph.wg.Add(1)
 	go ph.serve()
 	return ph, nil
@@ -106,7 +120,146 @@ func (h *Hub) SetClients(clients string) error {
 	if err != nil {
 		return err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.clients = peers
+	return h.setPeersLocked()
+}
+
+// setPeersLocked gives the tunnel the clients and the open invitations'
+// guests.
+func (h *Hub) setPeersLocked() error {
+	peers := slices.Clone(h.clients)
+	for _, g := range h.guests {
+		peers = append(peers, g.peer)
+	}
 	return h.hub.SetPeers(peers)
+}
+
+// Guest is the guest tunnel of a remote invitation the phone made as the
+// hub (docs/protocol.md, section 12): a one-time WireGuard key whose
+// connections through the tunnel go to the kit's pairing window on the
+// loopback address, and once it admitted the device, to the member port.
+type Guest struct {
+	h         *Hub
+	text      string
+	secret    []byte
+	expires   int64
+	peer      tunnel.Peer
+	guestPort int
+	admitted  bool // Admitted was called
+	timer     *time.Timer
+}
+
+// Invite opens a remote invitation: the group's tag, the hub's addresses
+// away from home (the forwarder's endpoint) as a JSON array of "ip:port",
+// how long it is valid in seconds (at most a day), and the loopback TCP
+// port of the kit's pairing window for it. Text is the invitation to hand
+// over; the window takes Secret in place of a code. The guest goes when it
+// expires, at Close, or 2 minutes after Admitted.
+func (h *Hub) Invite(groupTag, endpoints string, lifetime, guestPort int) (*Guest, error) {
+	if lifetime <= 0 || time.Duration(lifetime)*time.Second > invite.MaxLifetime {
+		return nil, fmt.Errorf("cbbtun: an invitation is valid for %v at most", invite.MaxLifetime)
+	}
+	if guestPort <= 0 || guestPort > 65535 {
+		return nil, fmt.Errorf("cbbtun: %d is not a port", guestPort)
+	}
+	var eps []string
+	if err := json.Unmarshal([]byte(endpoints), &eps); err != nil {
+		return nil, fmt.Errorf("cbbtun: the endpoints: %w", err)
+	}
+	in := &invite.Invitation{Group: groupTag, Hub: h.device, HubKey: h.key.Public(), Obfuscation: h.obf,
+		Expires: time.Now().Add(time.Duration(lifetime) * time.Second).Truncate(time.Second), Secret: make([]byte, pair.MinSecret)}
+	for _, e := range eps {
+		ep, err := netip.ParseAddrPort(e)
+		if err != nil {
+			return nil, fmt.Errorf("cbbtun: %q is not an endpoint: %w", e, err)
+		}
+		in.Endpoints = append(in.Endpoints, ep)
+	}
+	rand.Read(in.Secret)
+	var err error
+	if in.GuestKey, err = tunnel.NewPrivateKey(); err == nil {
+		in.GuestPSK, err = tunnel.NewPresharedKey()
+	}
+	if err != nil {
+		return nil, err
+	}
+	text := in.String()
+	// Parse checks it as the joiner will: the group's tag, 1 to 8 endpoints.
+	if _, err := invite.Parse(text); err != nil {
+		return nil, fmt.Errorf("cbbtun: %w", err)
+	}
+	pub := in.GuestKey.Public()
+	g := &Guest{h: h, text: text, secret: in.Secret, expires: in.Expires.Unix(), guestPort: guestPort,
+		peer: tunnel.Peer{PublicKey: pub, PresharedKey: in.GuestPSK, Addr: tunnel.GuestAddr(pub)}}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.ctx.Err() != nil {
+		return nil, errors.New("cbbtun: the hub is closed")
+	}
+	h.guests[g.peer.Addr] = g
+	if err := h.setPeersLocked(); err != nil {
+		delete(h.guests, g.peer.Addr)
+		return nil, err
+	}
+	g.timer = time.AfterFunc(time.Until(in.Expires), g.Close)
+	return g, nil
+}
+
+// Text is the invitation's text, clipboardbridge://invite#…, as a file of
+// one line holds it.
+func (g *Guest) Text() string { return g.text }
+
+// Secret is the pairing password of the invitation's window, 16 bytes.
+func (g *Guest) Secret() []byte { return g.secret }
+
+// Expires is when the invitation expires, Unix seconds.
+func (g *Guest) Expires() int64 { return g.expires }
+
+// Admitted tells that the window admitted the device: its next
+// connections through the guest tunnel go to the member port, for its first
+// hello, in which it offers its own tunnel key, and the guest goes 2
+// minutes later.
+func (g *Guest) Admitted() {
+	g.h.mu.Lock()
+	defer g.h.mu.Unlock()
+	g.admitted = true
+	g.timer.Reset(guestGrace)
+}
+
+// Close drops the guest: its packets are dropped from then on.
+func (g *Guest) Close() {
+	h := g.h
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.guests[g.peer.Addr] != g {
+		return
+	}
+	g.timer.Stop()
+	delete(h.guests, g.peer.Addr)
+	if h.ctx.Err() == nil {
+		h.setPeersLocked()
+	}
+}
+
+// target is the loopback port a connection through the tunnel from addr
+// goes to: the member port for a client, the pairing window for a guest
+// until it admitted its device; 0 closes it.
+func (h *Hub) target(addr netip.Addr) int {
+	if !tunnel.IsGuest(addr) {
+		return h.memberPort
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	switch g := h.guests[addr]; {
+	case g == nil:
+		return 0
+	case g.admitted:
+		return h.memberPort
+	default:
+		return g.guestPort
+	}
 }
 
 func parseClients(s string) ([]tunnel.Peer, error) {
@@ -313,10 +466,10 @@ func (h *Hub) Close() error {
 }
 
 // serve takes the connections through the tunnel to the member port and
-// joins each to the kit's member listener.
+// joins each to the kit's member listener, or a guest's to its pairing
+// window.
 func (h *Hub) serve() {
 	defer h.wg.Done()
-	member := net.JoinHostPort("127.0.0.1", strconv.Itoa(h.memberPort))
 	for {
 		c, err := h.hub.Listener().Accept()
 		if err != nil {
@@ -326,12 +479,18 @@ func (h *Hub) serve() {
 			c.Close()
 			return
 		}
+		from, _ := netip.ParseAddrPort(c.RemoteAddr().String())
+		port := h.target(from.Addr().Unmap())
+		if port == 0 {
+			h.untrack(c)
+			continue
+		}
 		h.wg.Add(1)
 		go func() {
 			defer h.wg.Done()
 			defer h.untrack(c)
 			d := net.Dialer{Timeout: dialTimeout}
-			m, err := d.DialContext(h.ctx, "tcp", member)
+			m, err := d.DialContext(h.ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 			if err != nil {
 				return
 			}

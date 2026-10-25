@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/invite"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -250,4 +252,115 @@ func TestHubBadArguments(t *testing.T) {
 			t.Errorf("%s: Register succeeded", name)
 		}
 	}
+}
+
+// says stands for a listener of the kit that says who it is and hangs up.
+func says(t *testing.T, word string) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Write([]byte(word))
+			c.Close()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// TestPhoneHubInvitation opens a remote invitation on the phone's hub: the
+// guest key in its text reaches the pairing window, then, once the window
+// admitted the device, the member port, and nothing after Close.
+func TestPhoneHubInvitation(t *testing.T) {
+	phone := newRootPhone(t)
+	hubPriv, _ := NewKey()
+	hub, err := StartHub(hubPriv, phone.device, says(t, "member"), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	window := says(t, "window")
+	at := fmt.Sprintf(`["127.0.0.1:%d"]`, hub.UDPPort())
+	for name, call := range map[string]func() (*Guest, error){
+		"no lifetime":  func() (*Guest, error) { return hub.Invite("tag", at, 0, window) },
+		"two days":     func() (*Guest, error) { return hub.Invite("tag", at, 2*86400, window) },
+		"no port":      func() (*Guest, error) { return hub.Invite("tag", at, 3600, 0) },
+		"bad endpoint": func() (*Guest, error) { return hub.Invite("tag", `["cbb.tools:8764"]`, 3600, window) },
+		"no endpoints": func() (*Guest, error) { return hub.Invite("tag", `[]`, 3600, window) },
+		"not JSON":     func() (*Guest, error) { return hub.Invite("tag", "127.0.0.1:1", 3600, window) },
+	} {
+		if _, err := call(); err == nil {
+			t.Errorf("%s: Invite succeeded", name)
+		}
+	}
+	tag := group.Tag(mustCert(t, phone.chain))
+	g, err := hub.Invite(tag, at, 3600, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := invite.Parse(g.Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Hub != phone.device || in.Group != tag || !bytes.Equal(in.Secret, g.Secret()) || len(in.Secret) != 16 ||
+		in.Expires.Unix() != g.Expires() || in.HubKey != mustKey(t, hubPriv).Public() {
+		t.Fatalf("the invitation: %+v", in)
+	}
+	hubAddr, _ := tunnel.Addr(in.Hub)
+	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: in.GuestKey, PresharedKey: in.GuestPSK, Addr: tunnel.GuestAddr(in.GuestKey.Public()),
+		HubPublicKey: in.HubKey, HubAddr: hubAddr, Endpoint: in.Endpoints[0], Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	hears := func() string {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		conn, err := c.Dial(ctx)
+		if err != nil {
+			return ""
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(10 * time.Second))
+		b, _ := io.ReadAll(conn)
+		return string(b)
+	}
+	if got := hears(); got != "window" {
+		t.Fatalf("before the device is admitted the guest reached %q", got)
+	}
+	g.Admitted()
+	if got := hears(); got != "member" {
+		t.Fatalf("after the device was admitted the guest reached %q", got)
+	}
+	g.Close()
+	if got := hears(); got != "" {
+		t.Fatalf("after Close the guest reached %q", got)
+	}
+}
+
+func mustCert(t *testing.T, chain string) *x509.Certificate {
+	t.Helper()
+	var ders [][]byte
+	json.Unmarshal([]byte(chain), &ders)
+	c, err := x509.ParseCertificate(ders[len(ders)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func mustKey(t *testing.T, b []byte) tunnel.Key {
+	t.Helper()
+	k, err := key(b, "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }
