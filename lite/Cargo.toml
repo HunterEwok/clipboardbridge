@@ -31,7 +31,7 @@ serde_json = "1"
 gotatun = { version = "0.10.2", default-features = false, features = ["ring"] }
 bytes = "1"
 getrandom = { version = "0.4", features = ["std"] }
-smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 
 # GotaTun's AEAD on RustCrypto instead of ring's C and assembly (ring-shim/src/lib.rs).
 [patch.crates-io]
