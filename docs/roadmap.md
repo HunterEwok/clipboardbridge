@@ -83,11 +83,11 @@ The order may change.
     port, the tokens, and the rule for who holds `clipboardbridge.local`, which only the
     shortcut uses. The group then has one kind of trust, the member certificates, and no
     key that cannot be revoked by a record.
-18. **Planned for 0.5.** Remote paste: an admin device sends a text to one member and has
+18. **Planned for 0.6.** Remote paste: an admin device sends a text to one member and has
     it pasted or typed where that member's focus is, with nothing pressed on the target;
     every admin may do it on every member whose user turned it on, Enter and root consoles
     separately (D-54, D-59), the iPhone only sends. See "Remote paste"
-    in [design.md](design.md#remote-paste-planned-for-05). One pull request each:
+    in [design.md](design.md#remote-paste-planned-for-06). One pull request each:
     1. the signed `paste` command, its result and its forwarding, in Go and both phone
        kits with interop vectors; `cbb paste --on DEVICE`;
     2. Linux targets: X11, Wayland (virtual keyboard, uinput), tmux and the console helper
@@ -97,12 +97,13 @@ The order may change.
     5. the lite member's target, then the Nano ESP32's keyboard.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
-    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05).
-20. **Planned for 0.5.** Images, files and folders, with formatted text last and optional
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built on the
+    computers (`cbb mode`); the admin's signed `mode` command and the apps are next.**
+20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
     home, 25 MiB away from home, at most 1 GiB). See "Images and files" in
-    [design.md](design.md#images-and-files-planned-for-05). One pull request each:
+    [design.md](design.md#images-and-files-planned-for-06). One pull request each:
     1. the `media` event, the content cache, `get` and `chunk`, the limits, interop vectors;
        `cbb copy FILE` and `cbb paste -o DIR`;
     2. images in the desktop connectors (Wayland, X11, Mac, Windows);
@@ -110,7 +111,7 @@ The order may change.
     4. the phone apps: images, then files and the share targets;
     5. away from home: the away limit and the hub serving its clients, on the bench;
     6. HTML, optional.
-21. **Planned for 0.5.** OpenWrt routers: the full service on a router as an always-on
+21. **Planned for 0.6.** OpenWrt routers: the full service on a router as an always-on
     member and the natural hub, the lite member for small routers. See "OpenWrt routers" below.
 22. **Planned, when the Apple developer account is there.** A Mac app, signed with Developer ID
     and notarized, that carries the service and a Network Extension (a content filter): the
@@ -123,26 +124,26 @@ The order may change.
     difference between the computers, and it goes away with the app. The app's window and menu bar
     item over the installed service are there already (`apps/macos`, [apps.md](apps.md#the-mac-app));
     the signed app that carries the service waits for the account.
-23. **Planned for 0.5.** Docker: an image with the full service for a NAS or a home server, as an
+23. **Built: the image, its compose files and its publishing with each release; a container as the hub on the bench is next.** Docker: an image with the full service for a NAS or a home server, as an
     always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
     `cbb relay` on a VPS. See "Docker" below.
-24. **Planned for 0.5.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
+24. **Planned for 0.6.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
     pfSense gateways as the hub). See "FreeBSD" below.
-25. **Planned for 0.5, after remote paste (item 18).** Devices that are hard to type into: TVs,
+25. **Planned for 0.6, after remote paste (item 18).** Devices that are hard to type into: TVs,
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
-26. **Planned for 0.5.** Watches: the Apple Watch, and Wear OS after it, show the group's
+26. **Partly: the notifications and both watch apps are done; the watch's admin key and its emergency actions are planned for 0.6.** Watches: the Apple Watch, and Wear OS after it, show the group's
     events, turn sync away from home on and off, and act at once on a stolen device with an
     admin key of their own. The root stays on the phone. See "Watches" below.
-27. **Planned for 0.5, after remote paste (item 18).** Quick actions: one button in the apps,
+27. **Planned for 0.6, after remote paste (item 18).** Quick actions: one button in the apps,
     on the watch or in `cbb` runs an action on a member, such as reboot or lock the screen,
     from a few presets and the user's own, always defined on the member itself. See "Quick
     actions" below.
 
 ## OpenWrt routers
 
-Planned for 0.5.
+Planned for 0.6.
 
 A router has no desktop and no clipboard of its own, so on a router clipboardbridge is
 infrastructure, not a place to copy and paste:
@@ -226,7 +227,7 @@ Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Docker
 
-Planned for 0.5.
+Planned for 0.5; steps 1 and 2 are done ([packaging/docker](../packaging/docker/README.md)).
 
 An image with the full service, for the machines that are always on but have no desktop: a
 NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
@@ -242,8 +243,8 @@ infrastructure, not a place to copy and paste:
 
 What the image needs:
 
-- **One small image for every CPU.** `cbb` is static, so the image is the binary, the CA
-  certificates and nothing else, for linux/amd64, linux/arm64 and linux/arm/v7, published
+- **One small image for every CPU.** `cbb` is static and carries its own certificate roots,
+  so the image is the binary and nothing else (`FROM scratch`), for linux/amd64, linux/arm64 and linux/arm/v7, published
   to the GitHub Container Registry with each release and carrying the same build
   attestations as the release archives. The documentation pins it by digest.
 - **No privileges.** The tunnel runs in the process (WireGuard on gVisor netstack), so the
@@ -263,16 +264,16 @@ What the image needs:
 
 Steps, one pull request each, smaller ones together:
 
-1. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
+1. Done. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
    forwarder or relay, and a CI job that builds the image and has two containers join a
    group and sync.
-2. The release workflow publishes the multi-arch image with its attestations; README and
+2. Done. The release workflow publishes the multi-arch image with its attestations; README and
    the installer pages say how to run it on the common NAS systems.
 3. The bench gets a container as the hub, with cases for it in [testbench.md](testbench.md).
 
 ## FreeBSD
 
-Planned for 0.5.
+Planned for 0.6.
 
 FreeBSD runs servers, some desktops, and the gateways OPNsense and pfSense. Go builds `cbb`
 for it already (`GOOS=freebsd`, amd64 and arm64, no cgo); what is missing is what the
@@ -307,7 +308,7 @@ Steps:
 
 ## Devices that are hard to type into
 
-Planned for 0.5, after remote paste (item 18).
+Planned for 0.6, after remote paste (item 18).
 
 The aim: a text copied on any device of the group lands in a field of a device where typing
 it is slow or impossible with what is in the user's hands, usually a TV remote or a gamepad.
@@ -442,9 +443,9 @@ One pull request each, smaller ones together:
 
 ## Watches
 
-Planned for 0.5. Decided on 2026-10-24: a watch is never the group's root, but it carries
-notifications, a switch for sync away from home and the emergency actions, with an admin key
-of its own.
+Steps 1 and 2 done in 0.4; the rest planned for 0.6. Decided on 2026-10-24: a watch is never
+the group's root, but it carries notifications, a switch for sync away from home and the
+emergency actions, with an admin key of its own.
 
 ### Why not the root
 
@@ -513,7 +514,7 @@ starting the Android app's listener for the Wear OS switch, and the delay of not
 
 ## Quick actions
 
-Planned for 0.5, after remote paste (item 18), whose signed commands and opt-in it reuses.
+Planned for 0.6, after remote paste (item 18), whose signed commands and opt-in it reuses.
 
 One button runs an action on a member: in the phone apps, on the watch (item 26), or with
 `cbb run <device> <action>`. Running commands on another machine is the most dangerous thing

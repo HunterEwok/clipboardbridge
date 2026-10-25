@@ -6,6 +6,34 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Added
+
+- Docker: an image of the full service for a NAS or a home server, built from scratch with
+  only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
+  capabilities, on a read-only root file system, with its state in one volume. Compose files
+  run it as an always-on member at home or as a forwarder or relay on a server
+  (packaging/docker). Each release publishes it as `ghcr.io/hunterewok/clipboardbridge` with a
+  build provenance attestation and gives its digest in the release notes.
+- Sync modes on the computers: `cbb mode own|shared|receive|send` sets what moves between a
+  computer's clipboard and the group. A computer that makes or joins a group from now on
+  keeps its own clipboard (own): its copies stay on it and the group's do not come, while
+  `cbb copy` and the phones still send to the group and `cbb paste` prints the group's
+  text. Computers that joined before keep sharing. `cbb status` shows the mode, and each
+  computer's hello reports it for the devices list.
+
+### Fixed
+
+- Security: the lite member on Linux takes crypto-bigint 0.7.6 and ctutils 0.4.5, whose
+  arithmetic and comparisons no longer branch on secrets on some compilers and CPUs
+  (RUSTSEC-2026-0387, RUSTSEC-2026-0385); the Nano ESP32 firmware had them already. CI now
+  checks the lite member's crates, the Android apps' libraries and the tray app's Go module
+  against the OSV advisories on every change.
+- Android: a certificate with a length field near 2 GiB no longer slips past the DER
+  reader's bounds check and throws an unexpected error instead of being refused. Both phone
+  kits now test their certificate checks with thousands of randomly damaged certificates.
+- iPhone kit: a key whose algorithm identifiers are damaged is refused, as Go and the
+  Android kit refuse it; swift-crypto on Linux read the key's point without checking them.
+
 ## [0.4.0] - 2026-10-25
 
 ### Added

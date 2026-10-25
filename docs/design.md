@@ -494,10 +494,10 @@ Not built yet (roadmap item 10); the design:
 ## Limits
 
 - Text: UTF-8, up to 1 MiB per item.
-- Images and files (planned for 0.5): up to 100 MiB per copy at home and 25 MiB away from
+- Images and files (planned for 0.6): up to 100 MiB per copy at home and 25 MiB away from
   home by default, set on each device up to 1 GiB (see "Images and files").
 
-## Images and files (planned for 0.5)
+## Images and files (planned for 0.6)
 
 Images, files and folders travel wherever the platform lets a program read and write them,
 with the same protection as text; formatted text (HTML next to the plain text) comes last
@@ -617,7 +617,7 @@ and cover traffic cannot hide a large transfer.
 | Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
 | Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
 | Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
-| An admin orders a paste on a member (planned, 0.5)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
+| An admin orders a paste on a member (planned, 0.6)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
 | A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
 
 ## Build
@@ -1456,8 +1456,13 @@ so a copy on one computer replaces what was just copied on another. Each device 
   so the devices list shows it.
 - Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
   in every mode.
+- Built so far: the mode on the computers (`cbb mode`, the file `mode` in the service's state
+  directory, the hello's `mode` and the devices list), with own for a device that makes or
+  joins a group and shared for one that joined before 0.5, which has no mode file. Still to
+  come in 0.5: the admin's `mode` command, the modes in the phone apps, the Mac app and the
+  tray app; the phones and the lite member share until then.
 
-## Remote paste (planned for 0.5)
+## Remote paste (planned for 0.6)
 
 An admin device sends a text to one chosen member and has it pasted where that member's
 focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for

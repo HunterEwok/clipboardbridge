@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
@@ -276,6 +277,7 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 		browseFor:  2 * time.Second,
 		joinListen: func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
 		joinAddrs:  func(port uint16) []string { return []string{fmt.Sprintf("127.0.0.1:%d", port)} },
+		newMode:    &sharedMode,
 	}
 	if s.cfg != nil {
 		s.cfg(&cfg)
@@ -1883,3 +1885,6 @@ func TestBrokenIdentity(t *testing.T) {
 		t.Fatalf("the identity file changed: %q, %v", data, err)
 	}
 }
+
+// sharedMode is the sync mode of the test services, which sync.
+var sharedMode = clip.Shared

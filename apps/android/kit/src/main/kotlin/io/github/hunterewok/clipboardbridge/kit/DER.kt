@@ -120,7 +120,7 @@ internal class DERReader(val bytes: ByteArray) {
             pos += k
             if (n < 0) throw MalformedException()
         }
-        if (pos + n > bytes.size) throw MalformedException()
+        if (n > bytes.size - pos) throw MalformedException() // pos + n could overflow
         val out = DERReader(bytes.copyOfRange(if (raw) start else pos, pos + n))
         pos += n
         return out

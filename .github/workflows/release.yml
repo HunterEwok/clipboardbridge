@@ -2,8 +2,9 @@
 # Builds a release from a version tag: an archive per platform, the lite
 # member's archives, the Android app's and the Wear OS app's APKs, SHA256SUMS,
 # the Linux and Windows installers and a build provenance attestation for each
-# file, the Homebrew formula for the tap and the winget manifest; with a
-# certificate in the secrets, the signed Windows programs.
+# file, the Docker image on ghcr.io, the Homebrew formula for the tap and the
+# winget manifest; with a certificate in the secrets, the signed Windows
+# programs.
 # It publishes only after the iPhone app's CodeQL analysis (codeql-swift.yml)
 # passes on the tag, which takes about 45 minutes.
 name: release
@@ -238,6 +239,73 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
             --title "clipboardbridge $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" \
             --generate-notes --verify-tag $prerelease
+
+  docker:
+    # The image of packaging/docker, from the release's own Linux archives, so
+    # it holds the binaries the release attests.
+    if: github.ref_type == 'tag'
+    needs: [release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # the image's digest in the release notes
+      packages: write # push the image
+      id-token: write # sign the attestation
+      attestations: write
+    env:
+      IMAGE: ghcr.io/hunterewok/clipboardbridge
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: clipboardbridge-linux-*
+          path: dist
+          merge-multiple: true
+      - name: the build context
+        run: |
+          for a in amd64 arm64 armv7; do
+            mkdir -p "$RUNNER_TEMP/$a"
+            tar -xzf "dist/clipboardbridge-linux-$a.tar.gz" -C "$RUNNER_TEMP/$a"
+          done
+          t=$RUNNER_TEMP
+          sh packaging/docker/context.sh "$t/image" amd64="$t/amd64/clipboardbridge/cbb" arm64="$t/arm64/clipboardbridge/cbb" \
+            armv7="$t/armv7/clipboardbridge/cbb" notices="$t/amd64/clipboardbridge/THIRD_PARTY_NOTICES"
+      - name: build and push
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use --name cbb >/dev/null
+          version=${GITHUB_REF_NAME#v}
+          set -- -t "$IMAGE:$version"
+          case $GITHUB_REF_NAME in *-*) ;; *) set -- "$@" -t "$IMAGE:latest" ;; esac
+          # The attestation below is GitHub's; buildx's own would add a platform
+          # "unknown" to the index, which confuses some NAS systems.
+          docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --provenance=false --sbom=false \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.licenses=AGPL-3.0-only" \
+            "$@" --push --metadata-file "$RUNNER_TEMP/meta.json" "$RUNNER_TEMP/image"
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/meta.json")
+          case $digest in sha256:*) ;; *) echo "no digest in the build's metadata" >&2; exit 1 ;; esac
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: the digest in the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body -q .body >"$RUNNER_TEMP/notes.md"
+          # shellcheck disable=SC2016 # the backticks are Markdown, not a command
+          printf '\n## Docker\n\n```\n%s@%s\n```\n\nPin the image by this digest (packaging/docker/README.md).\n' "$IMAGE" "$DIGEST" >>"$RUNNER_TEMP/notes.md"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
 
   homebrew:
     # A pre-release stays out of the tap, as it stays out of releases/latest.

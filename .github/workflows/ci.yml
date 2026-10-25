@@ -243,7 +243,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -1052,10 +1052,84 @@ jobs:
           mobile/cbbtun/bind.sh "$TARGET" "$OUT"
           ls -la "$OUT"
 
+  advisories:
+    name: advisories (Rust, Android, tray app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the versions Gradle resolves
+        working-directory: apps/android
+        # The init script locks every configuration, so --write-locks writes each
+        # project's gradle.lockfile for the scan. Only the release runtime classpaths
+        # are resolved: they are what the APKs carry, while lint and the other build
+        # tools (with their own Bouncy Castle and HttpClient) never reach a phone.
+        # A dependency Gradle could not resolve would be missing from the lockfile,
+        # so that fails the job.
+        run: |
+          init="$GITHUB_WORKSPACE/.github/gradle/lock-all.init.gradle.kts"
+          release="--configuration releaseRuntimeClasspath"
+          # shellcheck disable=SC2086 # $release is two words on purpose
+          ./gradlew --no-daemon -q --init-script "$init" --write-locks \
+            :app:dependencies $release :shared:dependencies $release :wear:dependencies $release > deps.txt
+          ./gradlew --no-daemon -q --init-script "$init" --write-locks \
+            -p kit dependencies --configuration runtimeClasspath >> deps.txt
+          if grep ' FAILED$' deps.txt; then
+            echo "Gradle could not resolve these dependencies."
+            exit 1
+          fi
+      - name: OSV-Scanner
+        # govulncheck checks the service's Go module in the check job; this checks the
+        # lite member's crates, the Android apps' libraries and the tray app's module.
+        run: |
+          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0 scan source \
+            --config .github/osv-scanner.toml \
+            -L lite/Cargo.lock -L lite/esp32/Cargo.lock -L apps/desktop/go.mod \
+            -L apps/android/app/gradle.lockfile -L apps/android/shared/gradle.lockfile \
+            -L apps/android/wear/gradle.lockfile -L apps/android/kit/gradle.lockfile
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: go build for each platform of the image
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+        run: |
+          GOARCH=amd64 go build -trimpath -o "$RUNNER_TEMP/cbb-amd64" ./cmd/cbb
+          GOARCH=arm64 go build -trimpath -o "$RUNNER_TEMP/cbb-arm64" ./cmd/cbb
+          GOARCH=arm GOARM=7 go build -trimpath -o "$RUNNER_TEMP/cbb-armv7" ./cmd/cbb
+      - name: the image for every platform
+        run: |
+          ctx="$RUNNER_TEMP/image"
+          sh packaging/docker/context.sh "$ctx" amd64="$RUNNER_TEMP/cbb-amd64" arm64="$RUNNER_TEMP/cbb-arm64" armv7="$RUNNER_TEMP/cbb-armv7"
+          docker build -t clipboardbridge:ci "$ctx"
+          for p in linux/arm64 linux/arm/v7; do
+            docker build --platform "$p" -t "clipboardbridge:ci-$(echo "$p" | tr / -)" "$ctx"
+          done
+          for f in packaging/docker/compose.*.yaml; do docker compose -f "$f" config -q; done
+      - name: two containers pair and sync, and a forwarder starts
+        run: sh tools/e2e/docker.sh clipboardbridge:ci
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

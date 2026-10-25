@@ -20,6 +20,11 @@ brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
 ```
 
+```sh
+# or in Docker, on a NAS or a home server (packaging/docker/README.md)
+docker compose -f packaging/docker/compose.home.yaml up -d
+```
+
 ```powershell
 # Windows 10 (1809 or later) or 11, x86-64 or ARM64, in an administrator PowerShell
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex

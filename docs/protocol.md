@@ -351,6 +351,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
+| `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member without sync modes (a phone, a lite member, a version before 0.5), which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 
 ### Device
