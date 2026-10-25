@@ -197,10 +197,24 @@ final class AppModelTests: XCTestCase {
     }
 
     func testThemes() {
-        XCTAssertEqual(ThemeChoice.system.palette(for: .dark), Tokens.terminal)
-        XCTAssertEqual(ThemeChoice.system.palette(for: .light), Tokens.light)
-        XCTAssertEqual(ThemeChoice.amber.palette(for: .light), Tokens.amber)
-        XCTAssertEqual(Set(ThemeChoice.allCases.map { $0.palette(for: .dark).dark }), [true, false])
+        XCTAssertEqual(Tokens.colors.count, 10)
+        XCTAssertEqual(Appearance.system.palette("terminal", for: .dark), Tokens.colors[0].dark)
+        XCTAssertEqual(Appearance.system.palette("terminal", for: .light), Tokens.colors[0].light)
+        XCTAssertEqual(Appearance.dark.palette("amber", for: .light), AccentChoice.pair("amber").dark)
+        XCTAssertEqual(Appearance.light.palette("unknown", for: .dark), Tokens.colors[0].light)
+        XCTAssertEqual(Set(Appearance.allCases.map { $0.palette("ocean", for: .dark).dark }), [true, false])
+    }
+
+    func testThemeMigration() {
+        let d = freshDefaults()
+        d.set("midnight", forKey: "theme")
+        Appearance.migrate(d)
+        XCTAssertEqual(d.string(forKey: AccentChoice.key), "midnight")
+        XCTAssertEqual(d.string(forKey: Appearance.key), "dark")
+        XCTAssertNil(d.string(forKey: "theme"))
+        d.set("light", forKey: "theme")
+        Appearance.migrate(d)
+        XCTAssertEqual(d.string(forKey: Appearance.key), "light")
     }
 
     /// A fresh defaults domain per test, removed after it.

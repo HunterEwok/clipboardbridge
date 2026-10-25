@@ -55,6 +55,12 @@ data class Palette(
     val danger: Color,
 )
 
+/** One accent colour's palettes for the dark and the light appearance. */
+data class PalettePair(val name: String, val dark: Palette, val light: Palette)
+
+/** The colour named [name], or the default, Terminal. */
+fun paletteNamed(name: String): PalettePair = Tokens.colors.firstOrNull { it.name == name } ?: Tokens.colors.first()
+
 /**
  * The theme the user picks in Settings; System follows the system's light
  * or dark mode with Terminal and Light, and Material You takes the
@@ -77,7 +83,7 @@ enum class ThemeChoice(val key: String, @StringRes val title: Int) {
     }
 }
 
-val LocalPalette = staticCompositionLocalOf { Tokens.terminal }
+val LocalPalette = staticCompositionLocalOf { Tokens.colors.first().dark }
 
 /** The palette of a Material colour scheme, for Material You. */
 private fun ColorScheme.palette(dark: Boolean) = Palette(
@@ -127,11 +133,9 @@ fun AppTheme(choice: ThemeChoice, content: @Composable () -> Unit) {
         }
         else -> {
             val p = when (choice) {
-                ThemeChoice.TERMINAL -> Tokens.terminal
-                ThemeChoice.MIDNIGHT -> Tokens.midnight
-                ThemeChoice.AMBER -> Tokens.amber
-                ThemeChoice.LIGHT -> Tokens.light
-                else -> if (systemDark) Tokens.terminal else Tokens.light
+                ThemeChoice.TERMINAL, ThemeChoice.MIDNIGHT, ThemeChoice.AMBER -> paletteNamed(choice.key).dark
+                ThemeChoice.LIGHT -> paletteNamed("terminal").light
+                else -> paletteNamed("terminal").let { if (systemDark) it.dark else it.light }
             }
             p to p.scheme()
         }

@@ -2,9 +2,10 @@
 // Copyright (C) 2026 HunterEwok
 
 // Command tokens turns the apps' design tokens (apps/design/tokens.json)
-// into Swift for the iPhone app and Kotlin for the Android app, and checks
-// that every theme meets WCAG AA contrast: 4.5:1 for text, 3:1 for the
-// accent against the background.
+// into Swift for the iPhone app and Kotlin for the Android app: each
+// accent colour on the dark and the light base gives a palette, and every
+// palette must meet WCAG AA contrast: 4.5:1 for text, 3:1 for the accent
+// against the background.
 //
 //	go run ./tools/tokens          rewrite the generated files
 //	go run ./tools/tokens -check   fail if they are out of date
@@ -28,17 +29,18 @@ const (
 	kotlinFile = "apps/android/app/src/main/kotlin/io/github/hunterewok/clipboardbridge/Tokens.kt"
 )
 
-// Palette is one theme's colours, "#RRGGBB".
+// Palette is one theme's colours, "#RRGGBB", derived from a base and an
+// accent.
 type Palette struct {
-	Dark       bool   `json:"dark"`
-	Background string `json:"background"`
-	Surface    string `json:"surface"`
-	Grid       string `json:"grid"`
-	Text       string `json:"text"`
-	TextDim    string `json:"textDim"`
-	Accent     string `json:"accent"`
-	OnAccent   string `json:"onAccent"`
-	Danger     string `json:"danger"`
+	Dark       bool
+	Background string
+	Surface    string
+	Grid       string
+	Text       string
+	TextDim    string
+	Accent     string
+	OnAccent   string
+	Danger     string
 }
 
 // colour is one named colour of a palette.
@@ -52,11 +54,78 @@ func (p Palette) colours() []colour {
 	}
 }
 
+// Base is the neutral half of a palette for the dark or the light
+// appearance; the tints say how much of the accent each derived colour
+// takes in.
+type Base struct {
+	Background     string  `json:"background"`
+	Surface        string  `json:"surface"`
+	Text           string  `json:"text"`
+	TextDim        string  `json:"textDim"`
+	OnAccent       string  `json:"onAccent"`
+	Danger         string  `json:"danger"`
+	BackgroundTint float64 `json:"backgroundTint"`
+	SurfaceTint    float64 `json:"surfaceTint"`
+	GridTint       float64 `json:"gridTint"`
+}
+
+// Accent is one of the colours the user picks in Settings, for the dark
+// and the light appearance.
+type Accent struct {
+	Name  string `json:"name"`
+	Dark  string `json:"dark"`
+	Light string `json:"light"`
+}
+
 // Tokens is the whole file.
 type Tokens struct {
-	Themes  map[string]Palette `json:"themes"`
+	Colors []Accent `json:"colors"`
+	Base   struct {
+		Dark  Base `json:"dark"`
+		Light Base `json:"light"`
+	} `json:"base"`
 	Radius  map[string]float64 `json:"radius"`
 	Spacing map[string]float64 `json:"spacing"`
+}
+
+// pair is an accent's two palettes.
+type pair struct {
+	name        string
+	dark, light Palette
+}
+
+// palette derives the palette of an accent on a base.
+func palette(dark bool, b Base, accent string) (Palette, error) {
+	bg, err := mix(accent, b.Background, b.BackgroundTint)
+	if err != nil {
+		return Palette{}, err
+	}
+	surface, err := mix(accent, b.Surface, b.SurfaceTint)
+	if err != nil {
+		return Palette{}, err
+	}
+	grid, err := mix(accent, b.Surface, b.GridTint)
+	if err != nil {
+		return Palette{}, err
+	}
+	return Palette{
+		Dark: dark, Background: bg, Surface: surface, Grid: grid, Text: b.Text, TextDim: b.TextDim,
+		Accent: accent, OnAccent: b.OnAccent, Danger: b.Danger,
+	}, nil
+}
+
+// mix is t of a over b.
+func mix(a, b string, t float64) (string, error) {
+	ar, ag, ab, err := rgb(a)
+	if err != nil {
+		return "", err
+	}
+	br, bg, bb, err := rgb(b)
+	if err != nil {
+		return "", err
+	}
+	c := func(x, y float64) int { return int(math.Round((y + (x-y)*t) * 255)) }
+	return fmt.Sprintf("#%02X%02X%02X", c(ar, br), c(ag, bg), c(ab, bb)), nil
 }
 
 func main() {
@@ -100,44 +169,73 @@ func generate(data []byte) (swift, kotlin []byte, err error) {
 	if err := dec.Decode(&t); err != nil {
 		return nil, nil, err
 	}
-	for _, name := range []string{"terminal", "midnight", "amber", "light"} {
-		if _, ok := t.Themes[name]; !ok {
-			return nil, nil, fmt.Errorf("the theme %q is missing", name)
-		}
+	if len(t.Colors) == 0 || t.Colors[0].Name != "terminal" {
+		return nil, nil, fmt.Errorf("the first colour, the default, must be terminal")
 	}
-	for _, name := range sortedKeys(t.Themes) {
-		p := t.Themes[name]
-		if err := checkContrast(name, p); err != nil {
-			return nil, nil, err
+	seen := map[string]bool{}
+	var pairs []pair
+	for _, a := range t.Colors {
+		if a.Name == "" || seen[a.Name] {
+			return nil, nil, fmt.Errorf("the colour %q is unnamed or repeated", a.Name)
 		}
-		for _, c := range p.colours() {
-			if _, _, _, err := rgb(c.hex); err != nil {
-				return nil, nil, fmt.Errorf("%s.%s: %w", name, c.name, err)
+		seen[a.Name] = true
+		dark, err := palette(true, t.Base.Dark, a.Dark)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s.dark: %w", a.Name, err)
+		}
+		light, err := palette(false, t.Base.Light, a.Light)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s.light: %w", a.Name, err)
+		}
+		for _, p := range []struct {
+			name string
+			p    Palette
+		}{{a.Name + " dark", dark}, {a.Name + " light", light}} {
+			for _, c := range p.p.colours() {
+				if _, _, _, err := rgb(c.hex); err != nil {
+					return nil, nil, fmt.Errorf("%s.%s: %w", p.name, c.name, err)
+				}
+			}
+			if err := checkContrast(p.name, p.p); err != nil {
+				return nil, nil, err
 			}
 		}
+		pairs = append(pairs, pair{a.Name, dark, light})
 	}
-	return generateSwift(t), generateKotlin(t), nil
+	return generateSwift(t, pairs), generateKotlin(t, pairs), nil
 }
 
-func generateSwift(t Tokens) []byte {
+func generateSwift(t Tokens, pairs []pair) []byte {
 	var b strings.Builder
 	b.WriteString("// SPDX-License-Identifier: AGPL-3.0-only\n")
 	b.WriteString("// Code generated by go run ./tools/tokens from apps/design/tokens.json; DO NOT EDIT.\n\n")
 	b.WriteString("import SwiftUI\n\n")
 	b.WriteString("enum Tokens {\n")
-	for _, name := range sortedKeys(t.Themes) {
-		p := t.Themes[name]
-		fmt.Fprintf(&b, "    static let %s = Palette(\n        dark: %v,\n", name, p.Dark)
+	b.WriteString("    /// The colours offered in Settings, the default first.\n")
+	b.WriteString("    static let colors: [PalettePair] = [\n")
+	palette := func(field string, p Palette, last bool) {
+		fmt.Fprintf(&b, "            %s: Palette(\n                dark: %v,\n", field, p.Dark)
 		cs := p.colours()
 		for i, c := range cs {
 			sep := ","
 			if i == len(cs)-1 {
 				sep = ""
 			}
-			fmt.Fprintf(&b, "        %s: Color(rgb: 0x%s)%s\n", c.name, strings.ToUpper(c.hex[1:]), sep)
+			fmt.Fprintf(&b, "                %s: Color(rgb: 0x%s)%s\n", c.name, strings.ToUpper(c.hex[1:]), sep)
 		}
-		b.WriteString("    )\n")
+		if last {
+			b.WriteString("            )\n")
+		} else {
+			b.WriteString("            ),\n")
+		}
 	}
+	for _, p := range pairs {
+		fmt.Fprintf(&b, "        PalettePair(\n            name: %q,\n", p.name)
+		palette("dark", p.dark, false)
+		palette("light", p.light, true)
+		b.WriteString("        ),\n")
+	}
+	b.WriteString("    ]\n")
 	for _, group := range []struct {
 		prefix string
 		values map[string]float64
@@ -150,7 +248,7 @@ func generateSwift(t Tokens) []byte {
 	return []byte(b.String())
 }
 
-func generateKotlin(t Tokens) []byte {
+func generateKotlin(t Tokens, pairs []pair) []byte {
 	var b strings.Builder
 	b.WriteString("// SPDX-License-Identifier: AGPL-3.0-only\n")
 	b.WriteString("// Code generated by go run ./tools/tokens from apps/design/tokens.json; DO NOT EDIT.\n\n")
@@ -158,14 +256,23 @@ func generateKotlin(t Tokens) []byte {
 	b.WriteString("import androidx.compose.ui.graphics.Color\n")
 	b.WriteString("import androidx.compose.ui.unit.dp\n\n")
 	b.WriteString("object Tokens {\n")
-	for _, name := range sortedKeys(t.Themes) {
-		p := t.Themes[name]
-		fmt.Fprintf(&b, "    val %s = Palette(\n        dark = %v,\n", name, p.Dark)
-		for _, c := range p.colours() {
-			fmt.Fprintf(&b, "        %s = Color(0xFF%s),\n", c.name, strings.ToUpper(c.hex[1:]))
+	b.WriteString("    /** The colours offered in Settings, the default first. */\n")
+	b.WriteString("    val colors = listOf(\n")
+	for _, p := range pairs {
+		fmt.Fprintf(&b, "        PalettePair(\n            name = %q,\n", p.name)
+		for _, half := range []struct {
+			field string
+			p     Palette
+		}{{"dark", p.dark}, {"light", p.light}} {
+			fmt.Fprintf(&b, "            %s = Palette(\n                dark = %v,\n", half.field, half.p.Dark)
+			for _, c := range half.p.colours() {
+				fmt.Fprintf(&b, "                %s = Color(0xFF%s),\n", c.name, strings.ToUpper(c.hex[1:]))
+			}
+			b.WriteString("            ),\n")
 		}
-		b.WriteString("    )\n")
+		b.WriteString("        ),\n")
 	}
+	b.WriteString("    )\n")
 	for _, group := range []struct {
 		prefix string
 		values map[string]float64

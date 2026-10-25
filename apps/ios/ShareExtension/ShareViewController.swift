@@ -52,8 +52,8 @@ final class ShareModel: ObservableObject {
         } catch {
             let summary: String
             switch error {
-            case OneShot.Failure.noGroup: summary = String(localized: "This phone is in no group yet: open clipboardbridge to make one or join one.")
-            case OneShot.Failure.noKey: summary = String(localized: "Open clipboardbridge once, then share again.")
+            case OneShot.Failure.noGroup: summary = String(localized: "This phone is in no group yet: open Clipboard Bridge to make one or join one.")
+            case OneShot.Failure.noKey: summary = String(localized: "Open Clipboard Bridge once, then share again.")
             case OneShot.Failure.noComputers: summary = String(localized: "No computer of your group answered. Are they on, and is this phone on the home network?")
             default: summary = String(localized: "Sending failed.")
             }

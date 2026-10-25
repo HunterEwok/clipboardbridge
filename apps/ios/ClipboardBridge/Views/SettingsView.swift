@@ -2,9 +2,10 @@
 
 import SwiftUI
 
-/// Theme, language, sync away from home, about.
+/// Colour and appearance, language, sync away from home, about.
 struct SettingsView: View {
-    @AppStorage("theme") private var theme = ThemeChoice.system
+    @AppStorage(AccentChoice.key) private var color = Tokens.colors[0].name
+    @AppStorage(Appearance.key) private var appearance = Appearance.system
     @AppStorage(LanguageChoice.key) private var language = LanguageChoice.system
     @Environment(\.palette) private var palette
     @EnvironmentObject private var model: AppModel
@@ -21,10 +22,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Picker(selection: $theme) {
-                ForEach(ThemeChoice.allCases) { Text($0.title).tag($0) }
-            } label: {
-                Text("Theme")
+            Section {
+                Picker(selection: $appearance) {
+                    ForEach(Appearance.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    Text("Theme")
+                }
+                .pickerStyle(.segmented)
+                ColorSwatches(selection: $color)
+            } header: {
+                Text("Colour")
             }
             .listRowBackground(palette.surface)
             Picker(selection: $language) {
@@ -67,7 +74,7 @@ struct SettingsView: View {
             .listRowBackground(palette.surface)
         }
         .scrollContentBackground(.hidden)
-        .background(GridBackground())
+        .background(AppBackground())
         .navigationTitle(Text("Settings"))
         .task {
             // Where sync away from home stands, as it changes.
@@ -115,5 +122,40 @@ struct SettingsView: View {
         case .connected: return Text("Connected to the hub through the tunnel.")
         case .off, .waitingForHub: return Text("Waiting for the hub: open the app at home once, near a computer of the group.")
         }
+    }
+}
+
+/// The ten colours as round swatches, the chosen one ringed and ticked.
+struct ColorSwatches: View {
+    @Binding var selection: String
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Tokens.spacingSmall), count: 5), spacing: Tokens.spacingMedium) {
+            ForEach(Tokens.colors, id: \.name) { pair in
+                let swatch = palette.dark ? pair.dark : pair.light
+                let chosen = pair.name == selection
+                Button { selection = pair.name } label: {
+                    VStack(spacing: 6) {
+                        Circle()
+                            .fill(swatch.accent)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                if chosen {
+                                    Image(systemName: "checkmark").font(.footnote.weight(.bold)).foregroundStyle(swatch.onAccent)
+                                }
+                            }
+                            .padding(3)
+                            .overlay(Circle().stroke(chosen ? swatch.accent : .clear, lineWidth: 2))
+                        Text(AccentChoice.title(pair.name)).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
+                            .foregroundStyle(chosen ? palette.text : palette.textDim)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, Tokens.spacingSmall)
     }
 }

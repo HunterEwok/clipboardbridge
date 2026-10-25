@@ -65,6 +65,6 @@ struct SyncControl: ControlWidget {
             }
         }
         .displayName("Sync clipboard")
-        .description("Opens clipboardbridge and syncs the clipboard with your computers.")
+        .description("Opens Clipboard Bridge and syncs the clipboard with your computers.")
     }
 }

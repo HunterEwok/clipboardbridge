@@ -6,6 +6,10 @@ import SwiftUI
 struct ClipboardBridgeApp: App {
     @StateObject private var model = AppModel.shared
 
+    init() {
+        Appearance.migrate()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
