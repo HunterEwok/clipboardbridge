@@ -169,8 +169,9 @@ The order may change.
 32. **Planned for 0.6.** What the forwarder and the relay learn, cut to what they need: short
     credentials made for them (the hubs' credential, the members' credential) in place of
     the group's records, so they see no device ID, name, system, role or dates. See "What
-    the servers learn" below.
-33. **To research, no release yet.** The iPhone as a hub in the background: the hub run as a
+    the servers learn" below, with the research of what is left to hide (the addresses
+    and online times, stable pseudonyms, the group tag, the count of devices).
+33. **To research in 0.6.** The iPhone as a hub in the background: the hub run as a
     Network Extension (a packet tunnel provider), which iOS does not suspend while the
     tunnel is on. See "Research: the iPhone hub in a Network Extension" below.
 
@@ -638,7 +639,7 @@ retries, and the Android foreground service as a hub across battery savers.
 
 ### Research: the iPhone hub in a Network Extension
 
-To research, no release yet. Today the iPhone is the hub only while its app is open; iOS
+To research in 0.6, no release chosen. Today the iPhone is the hub only while its app is open; iOS
 suspends the app soon after it leaves the screen. Android can keep the hub running in the
 foreground service, at a battery cost. The one way known for the iPhone is to run the hub as
 a Network Extension, a packet tunnel provider, a separate process that iOS keeps running
@@ -814,6 +815,35 @@ credentials made for them instead, signed with the group's keys:
   hubs or members there are, addresses, timing and sizes.
 - Face ID is asked only when the credentials change (a device admitted or removed, a hub
   set) and once per expiry. Inside the group cbb keeps using the full records.
+
+### Research for 0.6: what is left to hide
+
+To research in 0.6, with the credentials above and the several hubs (D-65). Even with them,
+the servers see something. From the most to the least revealing:
+
+1. the addresses of the hub and its clients, the times they are online, and the volume;
+2. a stable pseudonym per device (its key hash);
+3. the group tag;
+4. how many devices there are;
+5. when the root changes (a takeover);
+6. the root certificate.
+
+Proposals to study:
+
+- **No logs on cbb.tools**: the forwarder and the relay we run keep no logs and no
+  addresses on disk; say so in the docs, and check it on the test bench.
+- **The address**: document that a system VPN hides the user's address from cbb.tools;
+  maybe a setting to reach cbb.tools through a proxy or a VPN of the user's choice.
+- **The hub's online times**: optionally keep the hub registered all the time, so its
+  hours are not seen. On Android in the foreground service, at a battery cost; on the
+  iPhone only as a Network Extension (item 33, "Research: the iPhone hub in a Network
+  Extension").
+- **Rotating pseudonyms**: new device pseudonyms and a new group tag with each renewal of
+  the credentials (about every 30 days), derived from a group secret the servers do not
+  know. Today the forwarder sees the hub's member key, which never changes, so this needs
+  a separate short-lived key for the servers, signed by the root.
+- **Padding**: the credentials' lists padded to 4, 8 or 16 entries, so the count of
+  devices shows only roughly.
 
 ## Device keys in hardware
 
