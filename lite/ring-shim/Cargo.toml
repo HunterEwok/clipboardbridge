@@ -12,7 +12,7 @@ description = "The part of ring's AEAD API that GotaTun uses, on RustCrypto's Ch
 publish = false
 
 [dependencies]
-chacha20poly1305 = { version = "0.10.1", default-features = false }
+chacha20poly1305 = { version = "0.11.0", default-features = false }
 
 # ring's features, so that crates that may ask for them resolve (rustls-webpki
 # lists ring as an optional dependency, off here); none changes anything.
