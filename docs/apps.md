@@ -128,6 +128,33 @@ Screen, in the colour chosen in Settings, and never what was copied:
 - **A sync**: its result ("Sent to the computers.", "Fetched from the computers.") for a
   few seconds.
 
+## Notifications
+
+The app notifies of the group's events (roadmap item 26, step 1), each kind with a switch
+in Settings, all on by default: a device joined or was removed, became an admin, was frozen
+or unfrozen, the group was taken over, and the hub does not answer through the tunnel for
+two minutes while away from home. The app compares the devices with what it saw last time
+(`GroupEvent`, `Notifier`), so it hears of an event while it runs and syncs; an iPhone app
+has no background sync, so an event that happened while it was closed comes the next time
+it opens. iOS asks for notifications once, when the phone is first in a group.
+
+## Apple Watch
+
+The watch app (`apps/ios/Watch`, watchOS 10) has no network of its own: watchOS gives an
+ordinary app no sockets, so it works only through its iPhone, over WatchConnectivity
+(`WatchLink` on the phone, `WatchModel` on the watch). It shows, in the phone's colour:
+
+- how many devices are online, and each device with its icon and live dot;
+- the switch for sync away from home, which turns the phone's own away mode on and off as
+  Settings does, and where it stands;
+- the latest events of the group.
+
+The phone sends the watch its state (`WatchState`: devices, away, events, colour; never
+the clipboard) whenever it changes; the watch shows the last one it got and says so when
+the phone does not answer. The notifications of the group's events reach the watch as
+every iPhone notification does. The watch's own admin key and its emergency actions are
+roadmap item 26, steps 3 and 4.
+
 ## Android: the clipboard without taps
 
 Since Android 10 an app reads the clipboard only while it has the input focus, or when it is

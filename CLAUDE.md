@@ -90,7 +90,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
   `apps/android/app`: the Compose app.
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
-  `apps/design/tokens.json`, String Catalogs in English and Russian).
+  `apps/design/tokens.json`, String Catalogs in English and Russian; `GroupEvents` notifies of
+  the group's events, `WatchLink` talks to the watch); `apps/ios/Watch`: the Apple Watch app,
+  which works only through the iPhone over WatchConnectivity (`Shared/WatchState.swift`).
 
 ## Status
 

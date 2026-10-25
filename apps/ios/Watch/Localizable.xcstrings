@@ -1,0 +1,156 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%lld of %lld online": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld из %lld в сети"
+          }
+        }
+      }
+    },
+    "As the iPhone last said.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По последним данным с iPhone."
+          }
+        }
+      }
+    },
+    "At home: syncing directly.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дома: синхронизация напрямую."
+          }
+        }
+      }
+    },
+    "Away from home": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вне дома"
+          }
+        }
+      }
+    },
+    "Connecting to the hub…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение к хабу…"
+          }
+        }
+      }
+    },
+    "Devices": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройства"
+          }
+        }
+      }
+    },
+    "Latest": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Последнее"
+          }
+        }
+      }
+    },
+    "Off": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключено"
+          }
+        }
+      }
+    },
+    "Open Clipboard Bridge on the iPhone to make or join a group.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте Clipboard Bridge на iPhone, чтобы создать группу или войти в неё."
+          }
+        }
+      }
+    },
+    "Open Clipboard Bridge on the iPhone, then try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте Clipboard Bridge на iPhone и попробуйте снова."
+          }
+        }
+      }
+    },
+    "The iPhone did not answer. Try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone не ответил. Попробуйте снова."
+          }
+        }
+      }
+    },
+    "Through your hub.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через ваш хаб."
+          }
+        }
+      }
+    },
+    "Waiting for the hub.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждём хаб."
+          }
+        }
+      }
+    },
+    "offline": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "не в сети"
+          }
+        }
+      }
+    },
+    "online": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "в сети"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

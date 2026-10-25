@@ -31,6 +31,8 @@ targets:
       - target: ShareExtension
       # The home-screen widget and the Control Center control.
       - target: Widgets
+      # The Apple Watch app, in the app's Watch folder.
+      - target: Watch
       # The tunnel for sync away from home, a static framework bound by gomobile:
       # ../../mobile/cbbtun/bind.sh ios Cbbtun.xcframework (not committed).
       - framework: Cbbtun.xcframework
@@ -119,6 +121,27 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge.widgets
         TARGETED_DEVICE_FAMILY: "1,2"
+  Watch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - Watch
+      - Shared/WatchState.swift
+      # The phone's colours.
+      - ClipboardBridge/Theme
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: CBB
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ru]
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: io.github.hunterewok.clipboardbridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge.watchkitapp
+        SWIFT_EMIT_LOC_STRINGS: YES
   ClipboardBridgeTests:
     type: bundle.unit-test
     platform: iOS

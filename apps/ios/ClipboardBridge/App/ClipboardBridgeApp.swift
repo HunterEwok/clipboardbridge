@@ -9,6 +9,8 @@ struct ClipboardBridgeApp: App {
 
     init() {
         Appearance.migrate()
+        // Early, for a watch that asks while the app is not running.
+        WatchLink.shared.start()
     }
 
     var body: some Scene {

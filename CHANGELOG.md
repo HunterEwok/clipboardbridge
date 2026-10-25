@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- iPhone: notifications of the group's events (a device joined or was removed, became an
+  admin, was frozen or unfrozen, the group was taken over, the hub does not answer away from
+  home), each with a switch in Settings.
+- Apple Watch: an app that shows the group's devices and their live dots, the latest events
+  and the switch for sync away from home, through the paired iPhone.
 - iPad: the app runs on the iPad as a phone of the group. Its Home shows the devices on orbits
   around it (or as tiles or a list), with a device's details in a pane beside them; the
   same layout serves the inner screen of a foldable iPhone, whose strip at the right edge

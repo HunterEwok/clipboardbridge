@@ -1,12 +1,102 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ is an admin now.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ теперь админ."
+          }
+        }
+      }
+    },
+    "%@ joined the group.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ теперь в группе."
+          }
+        }
+      }
+    },
+    "%@ took the group over: it holds the group's root now.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ забрал группу себе: теперь он создатель группы."
+          }
+        }
+      }
+    },
+    "%@ was frozen: the others refuse it until an admin unfreezes it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ заморожен: остальные его не принимают, пока админ его не разморозит."
+          }
+        }
+      }
+    },
+    "%@ was removed from the group.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ больше не в группе: устройство удалено."
+          }
+        }
+      }
+    },
+    "%@ was unfrozen.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ разморожен."
+          }
+        }
+      }
+    },
     "%lld of %lld online": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld из %lld в сети"
+          }
+        }
+      }
+    },
+    "A device became an admin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство стало админом"
+          }
+        }
+      }
+    },
+    "A device joined or was removed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство добавлено или удалено"
+          }
+        }
+      }
+    },
+    "A device was frozen or unfrozen": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство заморожено или разморожено"
           }
         }
       }
@@ -624,6 +714,16 @@
         }
       }
     },
+    "Notifications": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уведомления"
+          }
+        }
+      }
+    },
     "Ocean": {
       "localizations": {
         "ru": {
@@ -1094,6 +1194,16 @@
         }
       }
     },
+    "The app notifies of these while it runs, and a paired Apple Watch shows them too. It hears of an event when it next syncs with the group.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложение сообщает об этом, пока работает, и показывает это на связанных Apple Watch. О событии оно узнаёт при следующей синхронизации с группой."
+          }
+        }
+      }
+    },
     "The code did not match. Run cbb pair on the computer again and scan the new code.": {
       "localizations": {
         "ru": {
@@ -1140,6 +1250,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Устройство не добавлено."
+          }
+        }
+      }
+    },
+    "The group was taken over": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Группу забрали себе"
+          }
+        }
+      }
+    },
+    "The hub does not answer away from home": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хаб не отвечает вне дома"
           }
         }
       }
