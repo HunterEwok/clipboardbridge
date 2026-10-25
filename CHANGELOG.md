@@ -236,6 +236,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Security: `get.sh` and `get.ps1` check the archive's build provenance attestation with
   `gh attestation verify` when the GitHub CLI is there and signed in, since `SHA256SUMS`
   comes from the same release; `CBB_ATTESTATION=require` refuses to install without it.
+- Security: a computer publishes itself by mDNS and takes connections on the member port only
+  on networks where it met its group (created or joined it, opened a pairing window, or
+  connected to a member there), told by their addresses and the gateway's link-layer
+  address. In a café or a hotel it only looks for the members, so its host label and group
+  tag no longer follow a laptop around. `cbb status` says where it keeps quiet, and
+  `sudo cbb network` takes the current network as known, as at home after a new router. An
+  updated computer takes the networks it is on at the update as known.
 - Security: only the group's root or an admin can register the group on a forwarder. The hub
   signs the registration with its root or admin CA key, and sends the group's authority
   records with it. The forwarder and the relay keep those records in memory and refuse a hub

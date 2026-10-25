@@ -282,10 +282,11 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 	}
 	go func() { s.done <- Run(ctx, cfg) }()
 	t.Cleanup(s.stop)
-	// Wait for the control socket, or for Run to fail.
+	// Wait for the admin socket, which the tests dial and which opens
+	// after the control socket, or for Run to fail.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if c, err := control.Dial(s.socket); err == nil {
+		if c, err := control.Dial(control.AdminSocketFor(s.socket)); err == nil {
 			c.Close()
 			break
 		}
@@ -296,7 +297,7 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s: the control socket never appeared", name)
+			t.Fatalf("%s: the admin socket never appeared", name)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

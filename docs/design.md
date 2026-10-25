@@ -198,6 +198,25 @@ apps" below).
   once and announces the name. After a power cut the others notice the missing member when
   its connection falls silent and take the name over within about 15–20 seconds.
 - Only private IPv4, unique-local and link-local IPv6 addresses are published.
+- **Known networks** (D-63). A full member publishes itself, and takes connections on the
+  member port, only on networks where it met its group: where it created or joined the
+  group (not by a remote invitation), opened a pairing window, or had a member connection
+  come up. Elsewhere, in a café or a hotel, it only browses, so that its host label and the
+  group tag do not follow a laptop around and its port answers nobody there. A network is
+  told by the IPv4 networks of the interface (its IPv6 networks when it has none, since ISPs
+  change IPv6 prefixes) and the link-layer address of its default gateway, read from the
+  system's ARP table (`internal/netid`), so the same `192.168.1.0/24` behind a café's router
+  is another network. Just after a link comes up, before the gateway's address is in the
+  table, the addresses alone count. `networks.json` in the state directory keeps a random key
+  and, for at most 64 networks, an HMAC of each under that key, which says nothing about
+  them. A member that is updated to a version with the list and has none yet takes the
+  networks it is on as known, as it is most likely at home then. In a network it does not
+  know it still finds the members that publish themselves, and once a connection to one
+  comes up there the network is known. `cbb status` names the interfaces where it keeps
+  quiet; `sudo cbb network` takes the current networks as known, for a home with a new
+  router where every member keeps quiet. A pairing window takes connections on any network
+  while it is open. The lite member publishes itself everywhere: it runs on boards that stay
+  at home.
 
 ## Sync model
 
@@ -1641,3 +1660,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |
 | D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
 | D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |
+| D-63 | A full member publishes itself by mDNS and takes connections on the member port only on networks where it met its group (by the interface's networks and its gateway's link-layer address); elsewhere it only browses, so a laptop in a café is not tracked by its host label and group tag. |

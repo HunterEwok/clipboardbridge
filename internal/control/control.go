@@ -41,6 +41,7 @@ const (
 	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
 	OpAway      = "away"       // client → service: Name "on", "off" or "hub": sync away from home
 	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpNetwork   = "network"    // client → service: take the networks this device is on now as known
 	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
 	OpTakeover  = "takeover"   // client → service: on an admin, take the group over from the lost root Name names
 	OpUpgrade   = "upgrade"    // client → service: on a key holder of a legacy group, give the group a root
@@ -122,8 +123,11 @@ type Status struct {
 	// a firewall here likely drops the port.
 	Unreached []string `json:"unreached,omitempty"`
 	Port      int      `json:"port,omitempty"` // the member port
-	Away      *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
-	Version   string   `json:"version"`
+	// Quiet lists the interfaces on networks this device has not met its
+	// group on: it does not publish itself or take connections there.
+	Quiet   []string `json:"quiet,omitempty"`
+	Away    *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
+	Version string   `json:"version"`
 }
 
 // Away describes sync away from home on this device.

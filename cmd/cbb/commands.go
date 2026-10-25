@@ -190,6 +190,9 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 		fmt.Fprintln(w, "This device was removed from the group: its members refuse it. To join again, remove clipboardbridge with its keys (uninstall --purge), install it again and join.")
 	}
 	fmt.Fprintln(w, holderLine(st))
+	if q := quietLine(st); q != "" {
+		fmt.Fprintln(w, q)
+	}
 	writeAway(w, st.Away)
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")

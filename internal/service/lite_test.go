@@ -88,9 +88,10 @@ func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 		time.AfterFunc(5*time.Second, func() { cmd.Process.Kill() })
 	}
 	t.Cleanup(s.stop)
+	// The admin socket, which the tests dial, opens after the control socket.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if c, err := control.Dial(s.socket); err == nil {
+		if c, err := control.Dial(control.AdminSocketFor(s.socket)); err == nil {
 			c.Close()
 			return s
 		}
@@ -101,7 +102,7 @@ func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the control socket of the lite member never appeared")
+			t.Fatal("the admin socket of the lite member never appeared")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

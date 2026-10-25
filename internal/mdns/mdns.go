@@ -63,6 +63,11 @@ type Config struct {
 	// is about to join a group.
 	BrowseOnly bool
 
+	// Publish, if set, tells whether to publish this member on an
+	// interface, by its name and networks; elsewhere it only browses. It is
+	// asked when the interfaces change and after Recheck.
+	Publish func(name string, prefixes []netip.Prefix) bool
+
 	// Logf, if set, receives diagnostics.
 	Logf func(format string, args ...any)
 
@@ -100,6 +105,7 @@ type Responder struct {
 type change struct {
 	goodbye []func(ips []netip.Addr) []rr
 	fresh   bool // announce the whole zone again
+	recheck bool // ask Publish again for every interface
 }
 
 // New returns a responder; Run starts it.
@@ -165,6 +171,16 @@ func (r *Responder) SetHolder(hold bool) {
 			func(ips []netip.Addr) []rr { return addrs(PhoneName, phoneTTL, ips) },
 		}})
 	}
+	r.mu.Unlock()
+	r.wake()
+}
+
+// Recheck asks Config.Publish again for every interface: the member
+// publishes itself on those where it now may, with a goodbye on those
+// where it no longer may.
+func (r *Responder) Recheck() {
+	r.mu.Lock()
+	r.pending = append(r.pending, change{recheck: true})
 	r.mu.Unlock()
 	r.wake()
 }
@@ -373,12 +389,19 @@ func (s *state) rescan(now time.Time) {
 		s.r.logf("mdns: listing interfaces: %v", err)
 		return
 	}
-	for _, ifc := range ifaces {
+	for i := range ifaces {
+		ifc := &ifaces[i]
+		ifc.publish = !s.r.cfg.BrowseOnly && (s.r.cfg.Publish == nil || s.r.cfg.Publish(ifc.name, ifc.prefixes))
 		old := slices.IndexFunc(s.ifaces, func(o iface) bool { return o.index == ifc.index })
 		if old < 0 || !slices.Equal(s.ifaces[old].addrs, ifc.addrs) {
 			s.r.addrGen.Add(1)
 		}
-		if old >= 0 && !s.r.cfg.BrowseOnly {
+		if old >= 0 && s.ifaces[old].publish && !ifc.publish {
+			// No longer published here: a goodbye for all of it.
+			s.sendRecords(s.ifaces[old], s.r.zone().all(s.ifaces[old].addrs), 0)
+			continue
+		}
+		if old >= 0 && s.ifaces[old].publish && ifc.publish {
 			// Addresses that went away get a goodbye, so the others do not
 			// keep them, whatever they cached a moment ago.
 			gone := slices.DeleteFunc(slices.Clone(s.ifaces[old].addrs), func(a netip.Addr) bool { return slices.Contains(ifc.addrs, a) })
@@ -388,10 +411,10 @@ func (s *state) rescan(now time.Time) {
 				if z.holder {
 					rrs = append(rrs, addrRecords(PhoneName, phoneTTL, gone)...)
 				}
-				s.sendRecords(ifc, rrs, 0)
+				s.sendRecords(*ifc, rrs, 0)
 			}
 		}
-		if old < 0 || !slices.Equal(s.ifaces[old].addrs, ifc.addrs) {
+		if ifc.publish && (old < 0 || !s.ifaces[old].publish || !slices.Equal(s.ifaces[old].addrs, ifc.addrs)) {
 			// A new interface or new addresses: announce there.
 			s.announce = append(s.announce, announcement{at: now, ifIndex: ifc.index, left: announceCount})
 		}
@@ -400,7 +423,13 @@ func (s *state) rescan(now time.Time) {
 }
 
 func (s *state) apply(c change, now time.Time) {
+	if c.recheck {
+		s.rescan(now)
+	}
 	for _, ifc := range s.ifaces {
+		if !ifc.publish {
+			continue
+		}
 		var rrs []rr
 		for _, g := range c.goodbye {
 			rrs = append(rrs, g(ifc.addrs)...)
@@ -428,7 +457,7 @@ func (s *state) timers(now time.Time) {
 		}
 		z := s.r.zone()
 		for _, ifc := range s.ifaces {
-			if !s.r.cfg.BrowseOnly && (a.ifIndex == 0 || a.ifIndex == ifc.index) {
+			if ifc.publish && (a.ifIndex == 0 || a.ifIndex == ifc.index) {
 				s.sendRecords(ifc, z.all(ifc.addrs), -1)
 			}
 		}
@@ -525,7 +554,9 @@ func (s *state) goodbye() {
 	}
 	z := s.r.zone()
 	for _, ifc := range s.ifaces {
-		s.sendRecords(ifc, z.all(ifc.addrs), 0)
+		if ifc.publish {
+			s.sendRecords(ifc, z.all(ifc.addrs), 0)
+		}
 	}
 }
 
@@ -548,7 +579,7 @@ func (s *state) handle(p packet, now time.Time) {
 		s.updatePeers(now)
 		return
 	}
-	if !s.r.cfg.BrowseOnly {
+	if ifc.publish {
 		s.respond(msg, p, ifc, now)
 	}
 }
