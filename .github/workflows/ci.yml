@@ -744,7 +744,9 @@ jobs:
       - name: GTK 4 and WebKitGTK, which Wails builds on
         if: runner.os == 'Linux'
         run: sudo apt-get update -q && sudo apt-get install -y -q libgtk-4-dev libwebkitgtk-6.0-dev
+      # A Windows checkout gives go.sum CR LF line ends, which -diff reports.
       - name: go mod tidy
+        if: runner.os == 'Linux'
         run: go mod tidy -diff
       - name: vet and test
         run: |
