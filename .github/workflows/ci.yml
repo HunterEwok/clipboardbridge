@@ -702,6 +702,26 @@ jobs:
           xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$udid" \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
+  macapp:
+    name: Mac app
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: generate the Xcode project
+        working-directory: apps/macos
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: build and test, signed ad hoc
+        working-directory: apps/macos
+        run: |
+          set -o pipefail
+          xcodebuild test -project ClipboardBridgeMac.xcodeproj -scheme ClipboardBridgeMac -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
+
   android:
     name: Android app
     runs-on: ubuntu-latest
@@ -994,7 +1014,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, android, phonetunnel, lite, esp32, zxnext]
+    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, android, phonetunnel, lite, esp32, zxnext]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

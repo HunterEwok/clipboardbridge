@@ -120,7 +120,9 @@ The order may change.
     (`internal/netguard`, and the member port's check of the address), which every computer
     has as well; macOS has no per-program limit without such an app (the application firewall
     allows or blocks a program, and pf is shared by the whole system), so this is the one
-    difference between the computers, and it goes away with the app.
+    difference between the computers, and it goes away with the app. The app's window and menu bar
+    item over the installed service are there already (`apps/macos`, [apps.md](apps.md#the-mac-app));
+    the signed app that carries the service waits for the account.
 23. **Planned for 0.5.** Docker: an image with the full service for a NAS or a home server, as an
     always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
     `cbb relay` on a VPS. See "Docker" below.

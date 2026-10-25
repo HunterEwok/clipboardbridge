@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The Mac app's Xcode project, for XcodeGen: cd apps/macos && xcodegen generate.
+# The generated ClipboardBridgeMac.xcodeproj and Info.plist are not committed.
+name: ClipboardBridgeMac
+options:
+  bundleIdPrefix: io.github.hunterewok
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+targets:
+  ClipboardBridgeMac:
+    type: application
+    platform: macOS
+    sources:
+      - ClipboardBridgeMac
+      # The phone's colours and glass.
+      - ../ios/ClipboardBridge/Theme
+    info:
+      path: ClipboardBridgeMac/Info.plist
+      properties:
+        CFBundleName: CBB
+        CFBundleDisplayName: Clipboard Bridge
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ru]
+        LSApplicationCategoryType: public.app-category.utilities
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge.mac
+        PRODUCT_NAME: CBB
+        # The app talks to the service's control socket and runs cbb, which the
+        # App Sandbox does not allow; the Developer ID app (roadmap item 22)
+        # carries the service itself.
+        ENABLE_APP_SANDBOX: NO
+      configs:
+        # Notarization needs it; debug builds go without, so that the tests
+        # load into the app signed ad hoc.
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+  ClipboardBridgeMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - ClipboardBridgeMacTests
+    dependencies:
+      - target: ClipboardBridgeMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        # XcodeGen names the host after the target; the app's product is CBB.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/CBB.app/Contents/MacOS/CBB
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  ClipboardBridgeMac:
+    build:
+      targets:
+        ClipboardBridgeMac: all
+    test:
+      targets:
+        - ClipboardBridgeMacTests

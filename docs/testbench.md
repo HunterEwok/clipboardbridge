@@ -187,6 +187,11 @@ Every other way clipboardbridge works, so no path ships untested:
 | P24 | GNOME on the Steam Deck: a copy in a native Wayland app (GNOME Text Editor); a received text pasted into it without clicking any window; the same right after sign-in, before any X11 app has started XWayland | the copy arrives within the usual latency; the paste gives the received text |
 | P25 | The Mac holds `clipboardbridge.local`: the other full members off or set to `cbb holder never` | `cbb status` on the Mac shows it holds the name; `avahi-resolve` on `deck` and `Resolve-DnsName` on `win` resolve it to the Mac |
 | P26 | The Mac's application firewall set to "Block all incoming connections" | the Mac still finds the members and reaches them; whether they find and reach it is recorded |
+| P27 | The phone apps' Glass design: each of the ten colours in dark, light and system; tiles, list and orbits; a device's page; an iPad and a foldable's inner screen | every device shows its icon, system and live dot; the details match `cbb status`; a phone's MAC address reads "hidden by the system" |
+| P28 | The group's events on both phones: a device added, removed, made an admin, frozen and unfrozen, a takeover, the hub off while away; each switch off in turn | one notification per event, in its words, none for a switch that is off; nothing shows the clipboard |
+| P29 | The Apple Watch with its iPhone: the devices, the away switch, the latest events; the phone out of reach | the watch follows the phone; the switch turns the phone's away mode; out of reach it says so |
+| P30 | The Dynamic Island: adding a device, the phone away from home, a sync | the timer while adding, the shield while away, the result for a moment; never the copied text |
+| P31 | The Mac app: the window and the menu bar item, send and fetch, each layout, rename, remove, freeze, unfreeze, make an admin and sync away from home after the password, the prompt cancelled, the service stopped, error details on and off | each action does what the same `cbb` command does; a cancelled prompt changes nothing and says nothing; a stopped service is explained, with the error underneath when details are on |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
 (`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
@@ -355,7 +360,7 @@ One pull request per step, merged in order:
 2. `tools/bench`: the inventory, the SSH runner, a clipboard driver per platform, the
    report, the `check` and `smoke` suites on N1; the Windows setup script.
 3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
-   P26, section 7): installing and
+   P31, section 7): installing and
    removing with the installers, the snapshot of the Windows VM, the emulator, the
    router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.

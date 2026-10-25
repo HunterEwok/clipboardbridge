@@ -238,7 +238,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P26)
+## 3. Features and platforms (section 7, P1 to P31)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -400,6 +400,45 @@ Pass: the Mac says it holds the name; both resolve it to the Mac.
 1. Set the application firewall to "Block all incoming connections".
 2. Copy each way between the Mac and the others.
 Pass: the Mac finds and reaches the members; whether they reach it is recorded.
+
+**P27. The phone apps' Glass design.** Runs: manual (the iPhone and Android phones; an iPad
+and a foldable when there is one).
+1. In Settings pick each of the ten colours with Dark, Light and System.
+2. On Home switch tiles and list (and the orbits on a big screen); open each device's page.
+3. Compare each page with `cbb status` on the device.
+Pass: every tile shows the icon, system and live dot; type, system, versions, MAC address and
+role match; a phone's MAC address reads "hidden by the system".
+
+**P28. The group's events.** Runs: manual (both phones).
+1. Add a device, remove it, make a computer an admin, freeze and unfreeze it, take the group
+   over, and stop the hub while a phone is away from home.
+2. Turn each switch in Settings off in turn and repeat its event.
+Pass: one notification per event, in its words; none for a switch that is off; none shows
+the clipboard.
+
+**P29. The Apple Watch.** Runs: manual.
+1. Look at the devices and the latest events on the watch; turn sync away from home on and
+   off there.
+2. Put the iPhone out of reach and look again.
+Pass: the watch follows the phone; the switch turns the phone's away mode; out of reach it
+says the phone does not answer.
+
+**P30. The Dynamic Island.** Runs: manual (an iPhone with the Dynamic Island).
+1. Add a device; sync away from home; send and fetch.
+Pass: the timer while adding, the shield while away, the result for a moment; never the copied
+text.
+
+**P31. The Mac app.** Runs: manual.
+1. Open the window and the menu bar item; send and fetch from both; switch tiles, list and
+   orbits.
+2. Rename a device, freeze and unfreeze an admin computer, make a computer an admin, remove a
+   device, turn sync away from home on and off: each after the password.
+3. Cancel the password prompt once.
+4. Stop the service (`sudo launchctl bootout system/io.github.hunterewok.clipboardbridge`) and
+   look at the window with error details on and off; start it again.
+Pass: each action does what the same `cbb` command does; the cancelled prompt changes nothing
+and says nothing; the stopped service is explained, with the error underneath when details
+are on.
 
 ## 4. Failure cases (section 8)
 
