@@ -106,8 +106,11 @@ func TestAdminSetsTheMode(t *testing.T) {
 	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "alpha", Name: "receive"}, ""); err != nil || a.status(t).Mode != "receive" {
 		t.Errorf("the root's own mode: %v, %q", err, a.status(t).Mode)
 	}
+	// alpha may not have seen the connection end yet; then it ends while
+	// alpha waits for the result.
 	b.stop()
-	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "beta", Name: "own"}, ""); err == nil || !strings.Contains(err.Error(), "not connected") {
+	if _, err := a.do(t, control.Header{Op: control.OpMode, Device: "beta", Name: "own"}, ""); err == nil ||
+		!strings.Contains(err.Error(), "not connected") && !strings.Contains(err.Error(), "closed before it answered") {
 		t.Errorf("a mode for a device that is off: %v", err)
 	}
 }
