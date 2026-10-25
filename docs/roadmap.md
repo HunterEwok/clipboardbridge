@@ -157,11 +157,19 @@ The order may change.
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See
     "Secure updates" below.
-30. **Planned for 0.5; step 1 is built.** The phone as the hub while its app is open: a
+30. **Planned for 0.5; steps 1 and 2 are built.** The phone as the hub while its app is open: a
     group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
     afar while the app is open, through the project's forwarder; once a computer that is
     always on joins, the app suggests moving the hub there, and the user may keep it on the
     phone. See "The phone as the hub" below.
+31. **Planned for 0.6.** Key levels: the user picks who may be the group's root, an admin
+    or a hub: only devices whose hardware key is proven by attestation, devices with a key in
+    hardware (the default), or, after a warning, devices with a key in a file too. See "Key
+    levels" below and the guide "Keys and attestation", which comes with it.
+32. **Planned for 0.6.** What the forwarder and the relay learn, cut to what they need: short
+    credentials made for them (the hubs' credential, the members' credential) in place of
+    the group's records, so they see no device ID, name, system, role or dates. See "What
+    the servers learn" below.
 
 ## OpenWrt routers
 
@@ -716,6 +724,61 @@ token cannot slip in another build or an older one.
 7. Sparkle in the Mac app, after the Apple account.
 8. On the bench: an update from the previous release on every device (L9), a refused
    downgrade and a refused unsigned build.
+
+## Key levels
+
+Planned for 0.6 (D-66). The owner's rule: the root, the admins and the hub hold keys in
+hardware. A key in hardware cannot be copied, even from a device that is broken into; it
+can only be misused on that device while the attacker holds it. A key in a file can be
+copied once and used anywhere, for as long as nobody removes the device.
+
+The user picks one of three levels for the group, at its root:
+
+1. **Proven hardware only.** A device may be the root, an admin or a hub only when
+   attestation proves its key is in hardware: Android's Key Attestation, a TPM with its
+   maker's certificate, the iPhone through App Attest. This asks outside servers, and the
+   guide says which: Apple's for each iPhone that makes a key, Google's public list of
+   revoked attestation keys, and for some TPMs their maker's server. The public lists are
+   mirrored on cbb.tools, signed like the releases (item 29), so the devices ask only us;
+   the per-device requests (Apple, the TPM makers) cannot be mirrored. This level is the
+   one exception to D-47, and only for a group whose user chose it.
+2. **Hardware (the default).** The device's own word that its key is in hardware: the
+   phones, a Mac's Secure Enclave, a TPM without its maker's certificate. Nothing about the
+   device leaves the group, which is why it is the default (D-47).
+3. **Files allowed.** A device whose key is in a file may also be an admin or the hub, each
+   time after the user allows it, with a warning that the key can be copied and must be
+   watched. A group of computers only, while they have no TPM or Secure Enclave support
+   (D-44), works only at this level.
+
+- A device that shows signs of being broken into (a jailbreak or root, an unlocked
+  bootloader, a Keystore in software, which attestation reports) counts as a key in a file,
+  and the devices list marks it.
+- Groups made before 0.6 keep working; one whose root or admins hold keys in files shows a
+  warning and suggests moving the root to a phone.
+- The guide "Keys and attestation" (docs/guide) says all of this plainly.
+
+## What the servers learn
+
+Planned for 0.6 (D-67). A forwarder and a relay now see the group's authority records,
+which name the root's and the admins' devices with their names, systems and dates, and the
+removals with who made them and when. Signed records cannot be cut, so the servers get
+credentials made for them instead, signed with the group's keys:
+
+- **The hubs' credential**, signed by the root (the several hubs' table, D-65): the group
+  tag, a version, an expiry, and the hubs' member key hashes with their priority. The
+  forwarder keeps only the newest version of each group and refuses older ones; a hub
+  removed is left out of the next version. The hub's TLS to the forwarder presents a
+  certificate without its device ID.
+- **The members' credential**, for a relay: the group tag, a version, an expiry and the
+  members' key hashes, signed by the root or an admin the hubs' credential lists. Tunnel
+  addresses on a relay come from a key the group keeps, not from the device ID, so the
+  relay sees pseudonyms only.
+- Roots after a takeover: the chain from the old root to the new, without the device that
+  took over.
+- What stays: the group tag and root certificate, key hashes (stable pseudonyms), how many
+  hubs or members there are, addresses, timing and sizes.
+- Face ID is asked only when the credentials change (a device admitted or removed, a hub
+  set) and once per expiry. Inside the group cbb keeps using the full records.
 
 ## Device keys in hardware
 
