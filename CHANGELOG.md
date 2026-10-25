@@ -51,6 +51,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A member that got a takeover's root record before the records that make its signer an
+  admin kept trusting the old root until it restarted; it now checks the roots after every
+  record that can change them. A member admitted by an admin computer no longer logs that
+  it was removed from the group when records arrive.
 - Security: a forwarder keeps a group's authority records after the group's registration
   ends, and writes the roots, removals and freezes among them (never a device's name) to
   `groups` next to its key (`cbb forward -records`), so an admin the group removed can no

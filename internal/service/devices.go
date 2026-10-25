@@ -98,7 +98,11 @@ func (s *Service) settleRecords(fresh []group.Record) {
 		}
 		rooted = rooted || r.Type() == group.RecordRoot
 	}
-	if rooted {
+	// A root record may not count yet when it comes: a takeover's root
+	// record counts once the records that make its signer an admin are in,
+	// and those may come later from another peer. So the roots are checked
+	// after every record that can change them.
+	if rooted || revoked {
 		s.mu.Lock()
 		err := s.adoptRootsLocked()
 		s.mu.Unlock()
@@ -167,9 +171,18 @@ func (s *Service) afterRevocation() {
 	}
 	s.pruneTunnel()
 	s.dropRevokedPhoneCA()
-	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
+	if id != nil && s.allow(id.ID, ownChain(id)) != nil {
 		s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
 	}
+}
+
+// ownChain is the chain this device presents: its member certificate and
+// the admin CA that issued it, if one did.
+func ownChain(id *group.Identity) []*x509.Certificate {
+	if id.Issuer != nil {
+		return []*x509.Certificate{id.Cert, id.Issuer}
+	}
+	return []*x509.Certificate{id.Cert}
 }
 
 // allow is the TLS check of member connections: it refuses devices that the
