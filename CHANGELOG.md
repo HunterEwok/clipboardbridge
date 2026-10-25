@@ -8,6 +8,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The phone as the group's hub while its app is open, on Android and the iPhone: on from the
+  start in a group made on the phone, and a switch in Settings on a root or admin phone. At
+  home the other phones, TVs and lite members connect to it; it takes them and publishes
+  itself (`r=phone`) only on the home networks it remembers. With a forwarder set in
+  Settings (its address and key, as `cbb forward` prints them) it registers there by its
+  member key, and devices away from home reach it. On Android it may keep running in the
+  foreground service. The computers and the lite member do not dial a phone that publishes
+  itself, since it dials them.
 - Docker: an image of the full service for a NAS or a home server, built from scratch with
   only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
   capabilities, on a read-only root file system, with its state in one volume. Compose files

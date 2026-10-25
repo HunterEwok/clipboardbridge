@@ -13,10 +13,14 @@ struct ClipboardBridgeApp: App {
         WatchLink.shared.start()
     }
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(model)
         }
+        // The phone is the group's hub while the app is open (D-64).
+        .onChange(of: scenePhase, initial: true) { _, phase in model.group.setForeground(phase == .active) }
     }
 }

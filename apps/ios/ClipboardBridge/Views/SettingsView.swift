@@ -11,6 +11,8 @@ struct SettingsView: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var model: AppModel
     @State private var switching = false
+    @State private var forwarderAddress = ""
+    @State private var forwarderKey = ""
     /// Taps on the version; seven show the error details switch, as
     /// Android's build number shows its developer options.
     @State private var versionTaps = 0
@@ -41,7 +43,10 @@ struct SettingsView: View {
                 Text("Language")
             }
             .listRowBackground(palette.surface)
-            if let away = model.away {
+            if let hub = model.hub {
+                hubSection(hub)
+            }
+            if let away = model.away, model.hub?.on != true {
                 awaySection(away)
             }
             NotificationSettings()
@@ -84,6 +89,79 @@ struct SettingsView: View {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// The phone as the group's hub: the switch, where it stands, the
+    /// forwarder and the home networks.
+    private func hubSection(_ hub: AppModel.Hub) -> some View {
+        Section {
+            Toggle(isOn: Binding(get: { hub.on }, set: { on in
+                switching = true
+                Task {
+                    await model.setHub(on)
+                    switching = false
+                }
+            })) {
+                Text("This phone is the group's hub")
+            }
+            .disabled(switching)
+            hubStatus(hub)
+                .foregroundStyle(hub.status == .registered ? palette.accent : palette.textDim)
+            // The registration's error underneath, when details are on.
+            if let error = hub.error, AppModel.showsErrorDetails {
+                Text(verbatim: error).font(.caption).foregroundStyle(palette.textDim)
+            }
+            if hub.on {
+                Text(hub.home ? "On a home network: devices here connect to this phone."
+                     : "This network is not one of the hub's home networks: devices here do not see this phone.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textDim)
+                if !hub.home {
+                    Button { Task { await model.addHomeNetwork() } } label: { Text("This is my home network") }
+                }
+                TextField(text: $forwarderAddress) { Text("Forwarder address, such as 198.51.100.9:8764") }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                TextField(text: $forwarderKey) { Text("Forwarder key, sha256:…") }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(.body, design: .monospaced))
+                Button {
+                    switching = true
+                    Task {
+                        await model.setForwarder(address: forwarderAddress, pin: forwarderKey)
+                        switching = false
+                    }
+                } label: {
+                    Text("Save the forwarder")
+                }
+                .disabled(switching || (forwarderAddress == (hub.forwarder?.endpoint ?? "") && forwarderKey == (hub.forwarder?.pin ?? "")))
+            }
+            if let note = model.hubNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(palette.danger)
+            }
+        } header: {
+            Text("This phone as the hub")
+        } footer: {
+            Text("While the app is open, this phone is the hub of a group without a computer: the other phones, TVs and lite members on the home network connect to it, and with a forwarder they reach it from afar too. The forwarder only passes encrypted packets; it learns the group's tag, this phone's tunnel key and the addresses, never what is copied. A computer that is always on is the better hub; until then this phone does it.")
+        }
+        .listRowBackground(palette.surface)
+        .onAppear {
+            forwarderAddress = hub.forwarder?.endpoint ?? ""
+            forwarderKey = hub.forwarder?.pin ?? ""
+        }
+    }
+
+    private func hubStatus(_ hub: AppModel.Hub) -> Text {
+        switch hub.status {
+        case .off: return Text("Off: this phone is no hub.")
+        case .paused: return Text("Waiting for the app: the hub works while the app is open.")
+        case .homeOnly: return Text("The hub at home only: add a forwarder for sync away from home.")
+        case .registering: return Text("Registering with the forwarder…")
+        case .registered: return Text("Registered with the forwarder: devices away from home reach this phone.")
+        case .failed: return Text("The forwarder does not take this phone. Check its address and key.")
         }
     }
 

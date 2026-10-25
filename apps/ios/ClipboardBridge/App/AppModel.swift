@@ -45,6 +45,16 @@ protocol GroupController: AnyObject {
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)?
     /// Turns sync away from home on or off.
     func setAwayFromHome(_ on: Bool) async throws
+    /// The phone as the group's hub; nil on a phone that cannot be it.
+    func hubStatus() async -> AppModel.Hub?
+    /// Makes this phone the group's hub, or stops it being the hub.
+    func setPhoneHub(_ on: Bool) async throws
+    /// Sets the hub's forwarder; both empty for a hub at home only.
+    func setForwarder(address: String, pin: String) async throws
+    /// Remembers the network the phone is on as a home network of the hub.
+    func addHomeNetwork() async throws
+    /// Tells the group whether the app is in front, where the hub works.
+    func setForeground(_ on: Bool)
 }
 
 extension GroupController {
@@ -53,6 +63,11 @@ extension GroupController {
     func setMode(_ id: String, to mode: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
+    func hubStatus() async -> AppModel.Hub? { nil }
+    func setPhoneHub(_ on: Bool) async throws {}
+    func setForwarder(address: String, pin: String) async throws {}
+    func addHomeNetwork() async throws {}
+    func setForeground(_ on: Bool) {}
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -120,6 +135,25 @@ final class AppModel: ObservableObject {
     @Published private(set) var away: Away?
     /// What turning it on or off said, when it failed.
     @Published private(set) var awayNote: String?
+
+    /// The phone as the group's hub as Settings and Home show it: nil on a
+    /// phone that cannot be the hub. home tells whether the phone is on
+    /// one of the hub's home networks now.
+    struct Hub: Equatable {
+        var on: Bool
+        var status: HubOnPhone.Status
+        /// Why the forwarder does not take it, as cbbtun says.
+        var error: String?
+        var forwarder: HubState.Forwarder?
+        var home = false
+        var clients = 0
+    }
+
+    @Published private(set) var hub: Hub?
+    /// What the last change to the hub said, when it failed.
+    @Published private(set) var hubNote: String?
+    /// The registration's last error, logged once.
+    private var hubError: String?
 
     let group: GroupController
     private let defaults: UserDefaults
@@ -261,6 +295,7 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         await refreshAway()
+        await refreshHub()
         if notifies {
             Notifier.shared.observe(devices)
             WatchLink.shared.update(self)
@@ -286,6 +321,44 @@ final class AppModel: ObservableObject {
         away = Away(on: a.on, status: a.status, error: failing.map {
             Self.describe($0, summary: String(localized: "The hub does not answer through the tunnel.", bundle: .app), log: false)
         })
+    }
+
+    private func refreshHub() async {
+        let h = await group.hubStatus()
+        if h?.error != hubError {
+            hubError = h?.error
+            if let e = hubError { log.error("the hub: \(e, privacy: .public)") }
+        }
+        hub = h
+    }
+
+    /// Makes this phone the group's hub, or stops it being the hub.
+    func setHub(_ on: Bool) async { await hubChange { try await self.group.setPhoneHub(on) } }
+
+    /// Sets the hub's forwarder; both empty for a hub at home only.
+    func setForwarder(address: String, pin: String) async {
+        await hubChange {
+            let a = address.trimmingCharacters(in: .whitespaces), p = pin.trimmingCharacters(in: .whitespaces)
+            guard a.isEmpty == p.isEmpty, p.isEmpty || HubState.validPin(p) else { throw HubOnPhone.Failure.badForwarder }
+            try await self.group.setForwarder(address: a, pin: p)
+        }
+    }
+
+    /// Remembers the network the phone is on as home.
+    func addHomeNetwork() async { await hubChange { try await self.group.addHomeNetwork() } }
+
+    private func hubChange(_ f: () async throws -> Void) async {
+        do {
+            try await f()
+            hubNote = nil
+        } catch HubOnPhone.Failure.badForwarder {
+            hubNote = Self.describe(HubOnPhone.Failure.badForwarder, summary: String(
+                localized: "Give the forwarder's address with its port and its key, as cbb forward prints them, or leave both empty.",
+                bundle: .app))
+        } catch {
+            hubNote = Self.describe(error)
+        }
+        await refreshHub()
     }
 
     /// Turns sync away from home on or off; the hub's answer comes on the

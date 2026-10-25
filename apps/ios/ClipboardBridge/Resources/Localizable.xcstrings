@@ -1613,6 +1613,176 @@
           }
         }
       }
+    },
+    "This phone is the group's hub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон — хаб группы"
+          }
+        }
+      }
+    },
+    "Off: this phone is no hub.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключено: этот телефон не хаб."
+          }
+        }
+      }
+    },
+    "Waiting for the app: the hub works while the app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждём приложение: хаб работает, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "The hub at home only: add a forwarder for sync away from home.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хаб только дома: добавьте форвардер для синхронизации вне дома."
+          }
+        }
+      }
+    },
+    "Registering with the forwarder…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Регистрация на форвардере…"
+          }
+        }
+      }
+    },
+    "Registered with the forwarder: devices away from home reach this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зарегистрирован на форвардере: устройства вне дома видят этот телефон."
+          }
+        }
+      }
+    },
+    "The forwarder does not take this phone. Check its address and key.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Форвардер не принимает этот телефон. Проверьте его адрес и ключ."
+          }
+        }
+      }
+    },
+    "On a home network: devices here connect to this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Домашняя сеть: устройства здесь подключаются к этому телефону."
+          }
+        }
+      }
+    },
+    "This network is not one of the hub's home networks: devices here do not see this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта сеть не входит в домашние сети хаба: устройства здесь не видят этот телефон."
+          }
+        }
+      }
+    },
+    "This is my home network": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это моя домашняя сеть"
+          }
+        }
+      }
+    },
+    "Forwarder address, such as 198.51.100.9:8764": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Адрес форвардера, например 198.51.100.9:8764"
+          }
+        }
+      }
+    },
+    "Forwarder key, sha256:…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ форвардера, sha256:…"
+          }
+        }
+      }
+    },
+    "Save the forwarder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить форвардер"
+          }
+        }
+      }
+    },
+    "This phone as the hub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон как хаб"
+          }
+        }
+      }
+    },
+    "While the app is open, this phone is the hub of a group without a computer: the other phones, TVs and lite members on the home network connect to it, and with a forwarder they reach it from afar too. The forwarder only passes encrypted packets; it learns the group's tag, this phone's tunnel key and the addresses, never what is copied. A computer that is always on is the better hub; until then this phone does it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока приложение открыто, этот телефон служит хабом группы без компьютера: к нему подключаются другие телефоны, телевизоры и лайт-участники в домашней сети, а с форвардером и издалека. Форвардер только передаёт зашифрованные пакеты: он узнаёт метку группы, ключ туннеля этого телефона и адреса, но никогда не видит, что копируется. Лучший хаб — компьютер, который всегда включён; пока его нет, хабом будет этот телефон."
+          }
+        }
+      }
+    },
+    "This phone is the hub: sync works while the app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон — хаб: синхронизация работает, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "Give the forwarder's address with its port and its key, as cbb forward prints them, or leave both empty.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Укажите адрес форвардера с портом и его ключ, как их выводит cbb forward, или оставьте оба поля пустыми."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

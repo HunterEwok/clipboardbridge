@@ -849,8 +849,13 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   tunnels, the member port that leads to the kit's member listener on the loopback address,
   and the registration with the forwarder by the member key, with the forwarder's check of
   it; in both kits the member listener (`MemberListener`) and the hub's answer to a hello's
-  tunnel key (`PhoneHub`, by the rules of a computer's hub). The apps, the clients' short
-  retries, remote invitations on the phone and moving the hub come next (roadmap item 30).
+  tunnel key (`PhoneHub`, by the rules of a computer's hub); in both apps the phone as the
+  hub, on by default in a group made on the phone, its registration with the forwarder set
+  in Settings, its status on Home, its member port and Bonjour service (`r=phone`) only on
+  the home networks it remembers (the gateway's address and the network of the phone's
+  address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
+  option. The clients' short retries, remote invitations on the phone and moving the hub
+  come next (roadmap item 30).
 
 ### Reaching the hub
 

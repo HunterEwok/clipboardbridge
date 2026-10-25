@@ -11,6 +11,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "away")
+private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
 
 /// The phone's own group (docs/protocol.md, section 9): its root CA key in
 /// the Secure Enclave, signing only after Face ID or the passcode (a
@@ -76,6 +77,22 @@ final class LiveGroup: GroupController {
     private var renewer: Renewer?
     private var admins: AdminBox?
     private var away: AwayFromHome?
+    /// The phone as the group's hub, and while it runs its member
+    /// listeners: on the loopback address for the tunnel, and on a home
+    /// network, published by Bonjour.
+    private var hub: HubOnPhone?
+    private var tunnelListener: (listener: MemberListener, port: UInt16)?
+    private var homeListener: MemberListener?
+    /// This phone's TLS identity, for the hub's listeners.
+    private var memberIdentity: SecIdentity?
+    /// Whether the app is in front: the phone is the hub only then (iOS
+    /// gives an app no way to keep it running in the background).
+    private var foreground = false
+    /// The network the phone is on, as the hub remembers home networks.
+    private var network: String?
+    private let paths = NWPathMonitor()
+    /// The hub's changes, one after another.
+    private var hubWork: Task<Void, Never>?
     private var online: Set<String> = []
     /// The admin keys the connected computers offer, by device ID.
     private var offers: [String: Data] = [:]
@@ -102,6 +119,29 @@ final class LiveGroup: GroupController {
         state = try? PhoneGroup.load(from: file)
         try? startSync()
         Task { await renewOwnCertificate() }
+        // A new network may be a home network of the hub, or no longer be one.
+        paths.pathUpdateHandler = { [weak self] path in
+            let key = Self.networkKey(path)
+            Task { @MainActor in
+                self?.network = key
+                self?.refreshHub()
+            }
+        }
+        paths.start(queue: DispatchQueue(label: "clipboardbridge.paths"))
+    }
+
+    /// The network of path as the hub remembers it (HubState.networkKey):
+    /// Wi-Fi or Ethernet with an IPv4 gateway, never a mobile network.
+    nonisolated static func networkKey(_ path: NWPath) -> String? {
+        guard path.status == .satisfied,
+              let interface = path.availableInterfaces.first(where: { $0.type == .wifi || $0.type == .wiredEthernet }),
+              path.usesInterfaceType(interface.type) else { return nil }
+        let gateway = path.gateways.lazy.compactMap { e -> String? in
+            if case .hostPort(let host, _) = e, case .ipv4(let a) = host { return "\(a)" }
+            return nil
+        }.first
+        guard let local = LocalAddresses.ipv4(interface: interface.name) else { return nil }
+        return HubState.networkKey(gateway: gateway, address: local.address, prefixLength: local.prefixLength)
     }
 
     /// Renews this phone's own member certificate when it is due, which
@@ -211,6 +251,7 @@ final class LiveGroup: GroupController {
     func admit(_ code: JoinCode) async throws {
         let ca = try await caSigner(reason: String(localized: "Add a computer to your group", bundle: .app))
         let member = try memberSigner()
+        let made = state == nil
         var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
         let id = try identity(g, member)
         var failure: Error?
@@ -243,6 +284,8 @@ final class LiveGroup: GroupController {
                 state = g
                 try startSync()
                 groupChanged()
+                // A group made on this phone has it as its hub from the start (D-64).
+                if made { try? await setPhoneHub(true) }
                 await node?.sendRecords(g.records.records)
                 guard admitted.confirmed else { throw Failure.notConfirmed }
                 return
@@ -449,6 +492,7 @@ final class LiveGroup: GroupController {
         admins?.group = g
         relay?.allowed = Self.allowed(g)
         relay?.addresses = g.addresses
+        hubRecords(g)
     }
 
     /// The devices the phone dials: those in the list. A phone that joined
@@ -469,6 +513,7 @@ final class LiveGroup: GroupController {
         try? g.save(to: file)
         state = g
         relay?.allowed = Self.allowed(g)
+        hubRecords(g)
         if g.roots != roots { Task { await restartSync() } }
     }
 
@@ -491,9 +536,15 @@ final class LiveGroup: GroupController {
         // on, and the hub's answer goes to AwayFromHome.
         let awayState = AwayKeychain.load()
         let awayRef = Ref<AwayFromHome>()
+        // The phone as the hub answers the tunnel keys of the hellos and
+        // takes no offer itself (D-64).
+        let hub = HubOnPhone(device: g.device, tunnels: GoHubTunnels(), state: HubKeychain.load(), save: { try HubKeychain.save($0) },
+                             log: { what, error in hubLog.error("\(what, privacy: .public): \(error.map { String(reflecting: $0) } ?? "", privacy: .public)") })
+        let isHub = g.isAdmin && hub.isOn
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
-                              tunnelKey: awayState.flatMap { try? GoTunnels().publicKey($0.key) },
+                              tunnelKey: isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) },
+                              hub: isHub ? { device, key, _ in hub.offer(device: device, key: key) } : nil,
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } })
         let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
@@ -525,10 +576,15 @@ final class LiveGroup: GroupController {
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins, self.away) =
             (node, browser, dialer, relay, box, renewer, admins, away)
+        (self.hub, memberIdentity) = (hub, id)
+        refreshHub()
     }
 
     /// Stops syncing and starts again, with a renewed certificate.
     private func restartSync() async {
+        await hubDone()
+        stopHub()
+        hub = nil
         await away?.stop()
         await dialer?.stop()
         browser?.stop()
@@ -536,6 +592,132 @@ final class LiveGroup: GroupController {
         (node, browser, dialer, relay, recordBox, renewer, admins, away) = (nil, nil, nil, nil, nil, nil, nil, nil)
         try? startSync()
     }
+
+    // MARK: The phone as the hub
+
+    /// The phone as the group's hub as Settings shows it: nil without a
+    /// group, or on a phone that is no admin, which cannot be the hub.
+    func hubStatus() async -> AppModel.Hub? {
+        guard let hub, state?.isAdmin == true else { return nil }
+        let (status, error) = hub.status(paused: !foreground)
+        return AppModel.Hub(on: hub.isOn, status: status, error: error, forwarder: hub.forwarder,
+                            home: hub.isHome(network), clients: hub.clients.count)
+    }
+
+    /// Tells the group the app came to the front or went to the background;
+    /// the hub follows.
+    func setForeground(_ on: Bool) {
+        foreground = on
+        refreshHub()
+    }
+
+    /// Makes this phone the group's hub, or stops it being the hub. A hub
+    /// is no client of another, so turning it on turns this phone's own
+    /// sync away from home off; then it connects again, so the hellos it
+    /// answers get its offers.
+    func setPhoneHub(_ on: Bool) async throws {
+        guard let hub, state?.isAdmin == true else { return }
+        if on {
+            if await away?.isOn == true { try await away?.turnOff() }
+            try hub.turnOn(home: network)
+        } else {
+            try hub.turnOff()
+        }
+        await restartSync()
+    }
+
+    /// Sets the hub's forwarder, or none for a hub at home only.
+    func setForwarder(address: String, pin: String) async throws {
+        guard let hub else { return }
+        let a = address.trimmingCharacters(in: .whitespaces), p = pin.trimmingCharacters(in: .whitespaces)
+        if a.isEmpty && p.isEmpty {
+            try hub.setForwarder(nil)
+        } else {
+            guard let ep = HubState.endpoint(a) else { throw HubOnPhone.Failure.badForwarder }
+            try hub.setForwarder(.init(endpoint: ep, pin: p))
+        }
+        refreshHub()
+    }
+
+    /// Remembers the network the phone is on as a home network, where the
+    /// hub takes members and publishes itself.
+    func addHomeNetwork() async throws {
+        guard let hub, let network else { return }
+        try hub.addHome(network)
+        refreshHub()
+    }
+
+    /// Runs updateHub after the changes before it.
+    private func refreshHub() {
+        let previous = hubWork
+        hubWork = Task { @MainActor [weak self] in
+            await previous?.value
+            await self?.updateHub()
+        }
+    }
+
+    private func hubDone() async { await hubWork?.value }
+
+    /// Runs the hub's parts that the moment calls for: with the hub on and
+    /// the app in front, the member listener on the loopback address and
+    /// the tunnel with its registration; on a home network besides, the
+    /// member listener there, published by Bonjour. Otherwise it stops
+    /// them.
+    private func updateHub() async {
+        guard let hub, let node, let g = state, let id = memberIdentity, g.isAdmin, hub.isOn, foreground,
+              let member = try? memberSigner() else { return stopHub() }
+        let roots = g.trusted, chain = Self.chain(g)
+        let onError: @Sendable (Error) -> Void = { hubLog.error("a member connection to the hub failed: \(String(reflecting: $0), privacy: .public)") }
+        if tunnelListener == nil {
+            do {
+                let l = try MemberListener(node: node, identity: id, chain: chain, trusted: { roots }, onError: onError)
+                tunnelListener = (l, try await l.start())
+            } catch {
+                hubLog.error("the hub cannot listen: \(String(reflecting: error), privacy: .public)")
+                return
+            }
+        }
+        guard let port = tunnelListener?.port, self.hub === hub else { return }
+        let sign: @Sendable (Data) throws -> Data = { try member.signature(digest: $0) }
+        // The forwarder takes the member chain and the group's roots after it (docs/protocol.md, section 13).
+        hub.start(.init(memberPort: port, chain: g.memberChain + roots, sign: sign, records: g.records.authorityRecords))
+        guard hub.isHome(network) else {
+            homeListener?.stop()
+            homeListener = nil
+            return
+        }
+        guard homeListener == nil else { return }
+        let service = (name: g.device, txt: ["v": "1", "g": g.tag, "r": "phone"])
+        for p in [Self.memberPort, 0] {
+            guard let l = try? MemberListener(node: node, identity: id, chain: chain, trusted: { roots }, port: p, loopback: false,
+                                              service: service, onError: onError) else { continue }
+            if (try? await l.start()) != nil {
+                homeListener = l
+                return
+            }
+        }
+        hubLog.error("the hub cannot listen on the home network")
+    }
+
+    private func stopHub() {
+        homeListener?.stop()
+        tunnelListener?.listener.stop()
+        (homeListener, tunnelListener) = (nil, nil)
+        hub?.stop()
+    }
+
+    /// Forgets the hub's clients the records removed and hands its
+    /// forwarder the new authority records.
+    private func hubRecords(_ g: PhoneGroup) {
+        guard let hub else { return }
+        let ids = Set(g.devices.map(\.id))
+        hub.prune { ids.contains($0) }
+        hub.setRecords(g.records.authorityRecords)
+    }
+
+    /// The member port the hub takes members on at home, as the computers';
+    /// another when it is taken.
+    static let memberPort: UInt16 = 8764
 
     /// Sync away from home as Settings shows it; nil without a group.
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? {

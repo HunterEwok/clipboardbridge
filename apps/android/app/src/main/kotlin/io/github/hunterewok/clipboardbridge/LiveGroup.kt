@@ -269,7 +269,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val loop = synchronized(lock) { tunnelListener } ?: runCatching {
             MemberListener(n, member.privateKey, g.memberChain, trusted, onError = onError)
         }.onFailure { Log.w(TAG, "the hub cannot listen", it) }.getOrNull()?.also { l -> synchronized(lock) { tunnelListener = l } } ?: return
-        h.start(HubOnPhone.Group(loop.port, g.memberChain, member::signDigest, g.records.authorityRecords))
+        // The forwarder takes the member chain and the group's roots after it (docs/protocol.md, section 13).
+        h.start(HubOnPhone.Group(loop.port, g.memberChain + g.trusted, member::signDigest, g.records.authorityRecords))
         if (!h.isHome(currentNetwork())) {
             stopHome()
             return
