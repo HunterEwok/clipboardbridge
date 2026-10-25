@@ -32,6 +32,7 @@ type iface struct {
 	addrs      []netip.Addr   // the addresses it publishes there, sorted
 	prefixes   []netip.Prefix // every address with its network, for the link check
 	has4, has6 bool           // it publishes addresses of that family
+	publish    bool           // the member is published here (Config.Publish)
 }
 
 // transport is the network as the responder sees it; tests replace it.

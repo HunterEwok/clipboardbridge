@@ -173,6 +173,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader, 
 	srv = &http.Server{Handler: homeOnly(phone.ProfileHandler(id.PhoneCA)), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	go srv.Serve(ln)
+	s.learnNetworks() // the user opens a window where the group is
 	s.mu.Lock()
 	s.phoneWindow, s.phoneOpening, s.profileConns = w, false, ln
 	s.mu.Unlock()

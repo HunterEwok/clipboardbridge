@@ -53,6 +53,7 @@ see the agent's log in a terminal.
 | Command | What it does |
 |---|---|
 | `cbb holder [auto\|first\|fallback\|never]` | Shows or sets whether this computer holds `clipboardbridge.local`, the name the iPhone shortcut reaches: `first`, only as a `fallback` when no computer set first is on, or `never`. `auto`, the default, picks `fallback` on a machine with a battery and `first` on any other. Only a computer with the group's iPhone key takes part. |
+| `cbb network` (with sudo) | Takes the networks this computer is on now as networks where its group is. A computer publishes itself and takes connections only on those (design.md, "Known networks"); it learns them by itself when it creates or joins the group, opens a pairing window or connects to a member there. Needed only at home after a new router, when every member keeps quiet; `cbb status` says "Quiet on" for such a network. |
 | `cbb service` | Runs the service; started by systemd, launchd or the Windows service manager, not by hand. |
 | `cbb agent` | Links this desktop's clipboard to the service: the Mac's pasteboard, the Windows clipboard, or a Linux desktop's through Wayland or X11. It starts by itself at sign-in (`cbbw.exe agent` on Windows, the autostart entry on a Linux desktop); run it by hand only to see its log. |
 

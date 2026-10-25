@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1046,4 +1047,45 @@ func TestCacheBounds(t *testing.T) {
 	if c.count != 0 {
 		t.Errorf("%d entries after expiry", c.count)
 	}
+}
+
+// TestPublishOnlyWhereAllowed checks Config.Publish: a member that may not
+// publish on its network only browses there, until Recheck lets it, and
+// says goodbye when it may no longer.
+func TestPublishOnlyWhereAllowed(t *testing.T) {
+	var l fakeLink
+	clock := newClock()
+	a, b := l.host("192.168.1.10"), l.host("192.168.1.11")
+	var allowed atomic.Bool
+	ra := start(t, a, idA, 4001, clock)
+	rb := start(t, b, idB, 4002, clock, func(c *Config) {
+		c.Publish = func(string, []netip.Prefix) bool { return allowed.Load() }
+	})
+	// The quiet member finds the other one, but is not found.
+	waitPeers(t, rb.peers, func(p []Peer) bool { return len(p) == 1 && p[0].ID == idA })
+	select {
+	case p := <-ra.peers:
+		if len(p) > 0 {
+			t.Errorf("a member that may not publish was found: %+v", p)
+		}
+	case <-time.After(1500 * time.Millisecond):
+	}
+	allowed.Store(true)
+	rb.r.Recheck()
+	waitPeers(t, ra.peers, func(p []Peer) bool { return len(p) == 1 && p[0].ID == idB })
+	allowed.Store(false)
+	rb.r.Recheck()
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+				clock.advance(500 * time.Millisecond)
+			}
+		}
+	}()
+	waitPeers(t, ra.peers, func(p []Peer) bool { return len(p) == 0 })
 }

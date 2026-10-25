@@ -119,6 +119,9 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpNetwork:
+		s.learnNetworks()
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpHolder:
 		if err := s.setHolder(m.Name); err != nil {
 			fail(c, err)
@@ -240,6 +243,7 @@ func (s *Service) status() *control.Status {
 	}
 	slices.Sort(st.Unreached)
 	st.Port, _ = Port()
+	st.Quiet = s.nets.Unknown()
 	st.Away = s.awayStatus()
 	return st
 }
@@ -341,6 +345,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 		return nil, nil, nil, err
 	}
 	w = opened
+	s.learnNetworks() // the user opens a window where the group is
 	s.mu.Lock()
 	s.window = w
 	s.responder.SetTXT(s.txtLocked())
@@ -400,6 +405,7 @@ func (s *Service) createGroup() (*group.Identity, error) {
 		err = id.Save(s.cfg.StateDir)
 	}
 	if err == nil {
+		s.nets.learnAll() // a group is made where it is used
 		err = s.startGroup(id)
 	}
 	if err != nil {
@@ -520,6 +526,11 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		id, err = s.dialMember(ctx, j, code, m.Address)
 	}
 	if err == nil {
+		if m.Invite == "" {
+			// Joined at home; a remote invitation comes from away, so the
+			// network it came through stays unknown.
+			s.nets.learnAll()
+		}
 		err = s.startGroup(id)
 		if after != nil {
 			after(err == nil)

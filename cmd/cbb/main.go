@@ -48,6 +48,8 @@ Commands:
 Rarely needed:
   holder [auto|first|fallback|never]
                           Show or set whether this computer holds clipboardbridge.local.
+  network                 Take the network this computer is on now as one where the group
+                          is: it publishes itself and takes connections only on those.
   install [options]       Windows, after winget: install the service from this copy
                           (the options of install.ps1, such as -Express).
   service                 Run the service (started by systemd, launchd or Windows).
@@ -106,6 +108,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdInvite(rest, stdin, stdout, stderr)
 	case "holder":
 		return cmdHolder(rest, stdout, stderr)
+	case "network":
+		return cmdNetwork(rest, stdout, stderr)
 	case "forward":
 		return cmdForward(rest, stdout, stderr)
 	case "relay":

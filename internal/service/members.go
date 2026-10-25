@@ -403,6 +403,7 @@ func (s *Service) peersChanged() {
 		return
 	}
 	peers := nd.Peers()
+	s.learnFrom(peers)
 	s.trackSeen(peers)
 	s.noteOldKeys(peers)
 	s.ensureListed()
