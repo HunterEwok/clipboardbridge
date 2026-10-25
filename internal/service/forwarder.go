@@ -5,11 +5,14 @@ package service
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/tls"
+	"crypto/x509"
 	"strings"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -37,7 +40,8 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 			}
 			return s.id.ForwarderCertificate()
 		},
-		Send: h.Send,
+		Authority: s.forwarderAuthority,
+		Send:      h.Send,
 		Report: func(r forward.Report) {
 			s.tunMu.Lock()
 			defer s.tunMu.Unlock()
@@ -105,4 +109,36 @@ func (s *Service) vlessLearnedLocked(v *tunnel.VLESS) {
 			nd.Reconnect()
 		}
 	}()
+}
+
+// forwarderAuthority is what a hub shows its forwarder that it may register
+// the group: the key of its root or admin CA, that admin CA, and the
+// group's authority records.
+func (s *Service) forwarderAuthority() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	if id == nil {
+		return nil, nil, nil
+	}
+	ca, chain := id.Signer()
+	if ca == nil {
+		return nil, nil, nil
+	}
+	var admin *x509.Certificate
+	if len(chain) > 0 {
+		admin = chain[0]
+	}
+	return ca.Key, admin, s.authorityRecords()
+}
+
+// authorityRecords returns the group's authority records for its
+// forwarder or relay.
+func (s *Service) authorityRecords() []group.Record {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.AuthorityRecords()
 }

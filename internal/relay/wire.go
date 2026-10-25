@@ -14,6 +14,8 @@
 package relay
 
 import (
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -43,6 +45,10 @@ type (
 	claim struct {
 		Key   []byte `json:"key"`   // the member's WireGuard public key
 		Proof []byte `json:"proof"` // HMAC-SHA256(X25519(member key, e), the TLS proof key)
+		// Records are the group's authority records
+		// (group.Records.AuthorityRecords): the relay keeps them for the
+		// group and refuses, and drops, the devices they remove.
+		Records []group.Record `json:"records,omitempty"`
 	}
 	welcome struct {
 		Error string `json:"error,omitempty"` // why the relay refused it

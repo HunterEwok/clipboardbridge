@@ -182,6 +182,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   connected member already have (new pairing error `taken`), the devices list shows a device
   while any of its keys stands, `cbb revoke`, `cbb takeover` and the apps' Remove revoke
   every key of the device, and a peer counts as the root only with the root's own key.
+- Security: only the group's root or an admin can register the group on a forwarder. The hub
+  signs the registration with its root or admin CA key, and sends the group's authority
+  records with it. The forwarder and the relay keep those records in memory and refuse a hub
+  or device that the records remove or freeze, so a removed device can no longer push the
+  real hub out or hold a relay slot.
+- Security: a forwarder takes at most 16 registrations from one address and 64 from one
+  network (/24 or /64), and gives each network a sixteenth of the budget for checking
+  handshakes against the groups, so a few hosts can no longer fill it or use up the budget.
 - Security: membership in the `clipboardbridge` group gives the clipboard only. The service
   takes what changes the group (`new`, `pair`, `invite`, `revoke`, `rename`, `admin`,
   `takeover`, `upgrade`, `freeze`, `unfreeze`, the holder setting, `global` on, off and hub)

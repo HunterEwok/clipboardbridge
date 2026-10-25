@@ -6,6 +6,7 @@ package forward
 import (
 	"context"
 	"crypto/ecdh"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -62,7 +64,13 @@ type HubConfig struct {
 	// Cert returns the hub's member certificate with its chain to the
 	// group's root; it is asked at each registration, so a renewed
 	// certificate is taken.
-	Cert func() tls.Certificate
+	// Authority returns the key of the group's root or of this hub's admin
+	// CA, that admin CA (nil for a root), and the group's authority records
+	// (group.Records.AuthorityRecords): only the root or an admin may
+	// register its group, and the forwarder learns from the records whom
+	// the group removed.
+	Authority func() (key *ecdsa.PrivateKey, admin *x509.Certificate, records []group.Record)
+	Cert      func() tls.Certificate
 
 	// Send sends a packet from the hub's WireGuard port, so that the
 	// forwarder learns where that port is reached.
@@ -178,7 +186,24 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	if err != nil {
 		return err
 	}
-	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID}); err != nil {
+	c := claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID}
+	if cfg.Authority != nil {
+		key, admin, records := cfg.Authority()
+		if key == nil {
+			return errors.New("only the group's root or an admin can be its hub")
+		}
+		if c.AdminSig, err = SignAdmin(key, cs, c.Key); err != nil {
+			return err
+		}
+		if admin != nil {
+			c.Admin = admin.Raw
+		}
+		if len(records) > maxClaimRecords {
+			records = records[:maxClaimRecords]
+		}
+		c.Records = records
+	}
+	if err := enc.Encode(c); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
 	var a answer

@@ -25,6 +25,23 @@ import (
 // certificate, its admin CA and the group's roots.
 const maxChain = 8
 
+// maxClaim bounds a claim, which carries the group's authority records,
+// and maxClaimRecords the records in it, whose signatures the relay checks.
+const (
+	maxClaim        = 1 << 20
+	maxClaimRecords = 1024
+)
+
+// rootOf returns the root among certs that names the group tag.
+func rootOf(certs []*x509.Certificate, tag string) *x509.Certificate {
+	for _, c := range certs[1:] {
+		if c.IsCA && c.CheckSignatureFrom(c) == nil && group.Tag(c) == tag {
+			return c
+		}
+	}
+	return nil
+}
+
 // serverTLS is the registrations' TLS: TLS 1.3, the relay's own
 // certificate, and a member certificate whose chain the relay checks
 // itself against the groups it serves.
@@ -145,7 +162,7 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 	if err != nil {
 		return nil, err
 	}
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, 4096))
+	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, maxClaim))
 	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes()}); err != nil {
 		return nil, err
 	}
@@ -175,11 +192,25 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 	if !hmac.Equal(want, c.Proof) {
 		return refuse("the device does not hold that WireGuard key")
 	}
+	if len(c.Records) > maxClaimRecords {
+		return refuse("too many records")
+	}
+	leaf := group.KeyHashOf(cs.PeerCertificates[0])
+	r.mu.Lock()
+	known := r.records[tag]
+	r.mu.Unlock()
+	// The signatures take time, so the records are checked outside the lock.
+	recs := group.NewRecords(rootOf(cs.PeerCertificates, tag))
+	recs.AddAll(known)
+	recs.AddAll(c.Records)
+	if recs.Revoked(leaf) {
+		return refuse("the device was removed from its group")
+	}
 	psk, err := tunnel.NewPresharedKey()
 	if err != nil {
 		return nil, err
 	}
-	m := &member{tag: tag, device: device, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}}
+	m := &member{tag: tag, device: device, leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}}
 	copy(m.key[:], c.Key)
 	r.mu.Lock()
 	select {
@@ -187,6 +218,17 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		r.mu.Unlock()
 		return refuse("the relay is stopping")
 	default:
+	}
+	if len(c.Records) > 0 {
+		if all := recs.All(); len(all) > len(r.records[tag]) {
+			r.records[tag] = all
+			// The devices the new records remove go now.
+			for _, o := range r.groups[tag] {
+				if recs.Revoked(o.leaf) {
+					r.dropLocked(o)
+				}
+			}
+		}
 	}
 	if err := r.addLocked(m); err != nil {
 		r.mu.Unlock()

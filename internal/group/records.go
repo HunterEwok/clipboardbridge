@@ -606,6 +606,33 @@ func (s *Records) PathRecords() []Record {
 	return out
 }
 
+// AuthorityRecords returns the records that say who governs the group: the
+// path records, every record that is no device record (revocations,
+// freezes, thaws, roots), and the device records a root signed with its
+// own key, which name the admin phones. A hub or a member sends them to its
+// forwarder or relay, which knows no records otherwise, so that it can tell
+// a removed device or admin (docs/protocol.md, section 13).
+func (s *Records) AuthorityRecords() []Record {
+	seen := map[[sha256.Size]byte]bool{}
+	var out []Record
+	add := func(r Record) {
+		if id := r.ID(); !seen[id] {
+			seen[id] = true
+			out = append(out, r)
+		}
+	}
+	for _, r := range s.PathRecords() {
+		add(r)
+	}
+	for _, id := range s.sortedIDs() {
+		r := s.byID[id]
+		if r.body.Type != RecordDevice || r.signer == r.anchor {
+			add(r.Record)
+		}
+	}
+	return out
+}
+
 // upgradeStands reports whether the root record r, in which a legacy group
 // CA hands the group to its first root (cbb upgrade), still counts though
 // the group CA's key is revoked: every record that revokes it was signed

@@ -807,10 +807,17 @@ user can run `cbb forward` on a server of their own.
   between groups.
 - **Registration.** The hub keeps one connection out to the forwarder and registers its
   WireGuard public key by proving its membership (its member key with the chain to the group
-  CA); nobody else can take its place. The forwarder knows a group only by its tag, the hash of the CA
-  certificate, and stores nothing on disk: its state is the open connections.
+  CA) and that it is the root or an admin (a signature by the root's or its admin CA's key).
+  It also sends the group's authority records, so the forwarder refuses an admin or device that
+  the group removed or froze. A member that is no admin, or a removed one, cannot take the hub's
+  place. The forwarder knows a group only by its tag, the hash of the CA certificate, and stores
+  nothing on disk: its state is the open connections and, while a group is registered, its
+  records.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
-  memory. A group that reaches a limit is slowed down alone.
+  memory. A group that reaches a limit is slowed down alone. Limits per source: registrations
+  per address and per network (/24, /64), and a share of the budget for checking handshakes
+  against the groups per network, so a few hosts can neither fill the forwarder nor starve the
+  others.
 - **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
   the network and can at most stop forwarding.
 - It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its

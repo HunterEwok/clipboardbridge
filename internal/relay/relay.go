@@ -69,11 +69,15 @@ type Relay struct {
 	byAddr  map[netip.Addr]*member
 	calls   map[string]*call // by ticket
 	setting int
+	// records are each group's authority records, from all its members'
+	// registrations, in memory while the relay runs.
+	records map[string][]group.Record
 }
 
 // member is a registered device.
 type member struct {
 	tag, device string
+	leaf        group.KeyHash // the key of its member certificate
 	key, psk    tunnel.Key
 	addr        netip.Addr
 	conn        *tls.Conn // the registration, open while it is registered
@@ -124,7 +128,8 @@ func Listen(cfg Config) (*Relay, error) {
 		return nil, fmt.Errorf("relay: %w", err)
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
-		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{}}
+		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
+		records: map[string][]group.Record{}}
 	r.tlsCfg = r.serverTLS()
 	return r, nil
 }

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -48,6 +49,11 @@ type MemberConfig struct {
 	// root; it is asked at each registration, so a renewed certificate is
 	// taken.
 	Cert func() tls.Certificate
+
+	// Records, if set, returns the group's authority records
+	// (group.Records.AuthorityRecords), which the relay keeps to refuse
+	// the devices the group removed.
+	Records func() []group.Record
 
 	// Want tells whether to connect to a device through the relay now:
 	// false while it is connected already, for example on the home
@@ -239,7 +245,14 @@ func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error)
 	if err != nil {
 		return fail(err)
 	}
-	if err := enc.Encode(claim{Key: priv.PublicKey().Bytes(), Proof: p}); err != nil {
+	c := claim{Key: priv.PublicKey().Bytes(), Proof: p}
+	if cfg.Records != nil {
+		c.Records = cfg.Records()
+		if len(c.Records) > maxClaimRecords {
+			c.Records = c.Records[:maxClaimRecords]
+		}
+	}
+	if err := enc.Encode(c); err != nil {
 		return fail(fmt.Errorf("registering with the relay: %w", err))
 	}
 	var w welcome

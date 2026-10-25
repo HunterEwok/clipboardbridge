@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
@@ -50,6 +51,15 @@ type Limits struct {
 	// source addresses can be forged.
 	ScanRate    float64
 	Connections int // registrations being set up at a time
+	// NetworkScanRate is ScanRate for the handshakes from one network (an
+	// IPv4 /24 or an IPv6 /64), so that one network cannot use up the
+	// budget of all; ScanRate/16 if zero.
+	NetworkScanRate float64
+	// PerAddress and PerNetwork bound the registrations, held or being
+	// set up, from one address and from one network (an IPv4 /24 or an
+	// IPv6 /64), so that nobody fills the forwarder from a few hosts; 16
+	// and 64 if zero.
+	PerAddress, PerNetwork int
 }
 
 // DefaultLimits are generous for clipboard texts and small enough that a
@@ -63,6 +73,8 @@ var DefaultLimits = Limits{
 	SourceRate:  10,
 	ScanRate:    500_000,
 	Connections: 256,
+	PerAddress:  16,
+	PerNetwork:  64,
 }
 
 // How long the forwarder remembers a handshake and a session. WireGuard
@@ -92,9 +104,12 @@ type Forwarder struct {
 	byAddr   map[netip.AddrPort]map[*reg]int // client addresses and the groups they have handshakes and sessions with
 	byInit   map[int][]*reg                  // obfuscated groups by the size of their handshake initiation
 	sources  map[netip.Addr]*bucket
-	scans    *bucket  // ScanRate
-	setting  int      // registrations being set up
-	mask     [32]byte // the key of the hellos' mask, given to every hub
+	scans    *bucket                  // ScanRate
+	netScans map[netip.Prefix]*bucket // NetworkScanRate
+	fromAddr map[netip.Addr]int       // registrations held or being set up, by address
+	fromNet  map[netip.Prefix]int     // and by network
+	setting  int                      // registrations being set up
+	mask     [32]byte                 // the key of the hellos' mask, given to every hub
 	vless    *vless.Server
 	vlessCfg *VLESSConfig
 	byVLESS  map[string]*reg // by the group's VLESS user ID
@@ -121,8 +136,9 @@ type reg struct {
 	packets  bucket
 	bytes    bucket
 	closed   bool
-	conn     net.Conn // the registration's TLS
-	raw      net.Conn // its TCP connection, which closes without waiting, unlike TLS
+	conn     net.Conn       // the registration's TLS
+	raw      net.Conn       // its TCP connection, which closes without waiting, unlike TLS
+	records  []group.Record // the group's records, from this and the earlier registrations
 }
 
 // clientKey names a client's session by the index it chose; indices are
@@ -222,14 +238,23 @@ func Listen(cfg Config) (*Forwarder, error) {
 		regs: map[string]*reg{}, byID: map[uint64]*reg{}, byHubEP: map[netip.AddrPort]*reg{},
 		pending: map[clientKey]pending{}, byHubIdx: map[uint32]*session{}, byClient: map[clientKey]*session{},
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
-		sources: map[netip.Addr]*bucket{},
-		done:    make(chan struct{}),
+		sources: map[netip.Addr]*bucket{}, netScans: map[netip.Prefix]*bucket{},
+		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
+		done: make(chan struct{}),
 	}
-	scanRate := limits.ScanRate
-	if scanRate <= 0 {
-		scanRate = DefaultLimits.ScanRate
+	if f.limits.ScanRate <= 0 {
+		f.limits.ScanRate = DefaultLimits.ScanRate
 	}
-	f.scans = newBucket(scanRate, time.Now())
+	if f.limits.NetworkScanRate <= 0 {
+		f.limits.NetworkScanRate = f.limits.ScanRate / 16
+	}
+	if f.limits.PerAddress <= 0 {
+		f.limits.PerAddress = DefaultLimits.PerAddress
+	}
+	if f.limits.PerNetwork <= 0 {
+		f.limits.PerNetwork = DefaultLimits.PerNetwork
+	}
+	f.scans = newBucket(f.limits.ScanRate, time.Now())
 	if _, err := rand.Read(f.mask[:]); err != nil {
 		udp.Close()
 		tcp.Close()
@@ -406,7 +431,7 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, m []byte, n int, now time.Time
 func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initiationSize]byte, now time.Time) (netip.AddrPort, bool) {
 	switch messageType(p) {
 	case msgInitiation:
-		if !f.sourceLocked(from, now) || !f.scans.take(float64(len(f.regs)), now) {
+		if !f.sourceLocked(from, now) || !f.scanLocked(from, len(f.regs), now) {
 			return netip.AddrPort{}, false
 		}
 		if r := f.addressedLocked(p); r != nil {
@@ -437,7 +462,7 @@ func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initia
 		}
 	}
 	regs := f.byInit[len(p)]
-	if len(regs) == 0 || !f.sourceLocked(from, now) || !f.scans.take(float64(len(regs)), now) {
+	if len(regs) == 0 || !f.sourceLocked(from, now) || !f.scanLocked(from, len(regs), now) {
 		return netip.AddrPort{}, false
 	}
 	for _, r := range regs {
@@ -466,6 +491,47 @@ func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
 		f.sources[from.Addr()] = src
 	}
 	return src.take(1, now)
+}
+
+// network is the network of an address that the forwarder's per-network
+// limits count: an IPv4 /24 or an IPv6 /64, where one host usually gets
+// a whole /64.
+func network(a netip.Addr) netip.Prefix {
+	a = a.Unmap()
+	bits := 64
+	if a.Is4() {
+		bits = 24
+	}
+	p, _ := a.Prefix(bits)
+	return p
+}
+
+// scanLocked charges a handshake that n groups are checked against to the
+// budget of all sources and to that of its network; false drops it. One
+// handshake costs a network at most its whole budget, so it still passes
+// now and then on a forwarder with more groups than the budget.
+func (f *Forwarder) scanLocked(from netip.AddrPort, n int, now time.Time) bool {
+	if f.vless != nil && from.Addr().IsLoopback() {
+		return f.scans.take(float64(n), now)
+	}
+	p := network(from.Addr())
+	b := f.netScans[p]
+	if b == nil {
+		if len(f.netScans) >= 4*f.limits.Groups {
+			return false
+		}
+		b = newBucket(f.limits.NetworkScanRate, now)
+		f.netScans[p] = b
+	}
+	cost := min(float64(n), 2*f.limits.NetworkScanRate)
+	if !b.take(cost, now) {
+		return false
+	}
+	if !f.scans.take(float64(n), now) {
+		b.tokens += cost
+		return false
+	}
+	return true
 }
 
 // initiationLocked passes the handshake initiation m, in a packet of n
@@ -645,6 +711,11 @@ func (f *Forwarder) sweepAt(now time.Time) {
 	for a, b := range f.sources {
 		if b.full(now) {
 			delete(f.sources, a)
+		}
+	}
+	for p, b := range f.netScans {
+		if b.full(now) {
+			delete(f.netScans, p)
 		}
 	}
 }

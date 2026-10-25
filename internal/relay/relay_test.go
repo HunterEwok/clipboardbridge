@@ -33,9 +33,10 @@ func newGroup(t *testing.T) *group.CA {
 // device is a member of a group as the relay sees it: its certificate with
 // the chain, its ID and its WireGuard key.
 type device struct {
-	cert tls.Certificate
-	id   string
-	key  tunnel.Key
+	cert    tls.Certificate
+	id      string
+	key     tunnel.Key
+	records []group.Record
 }
 
 func newDevice(t *testing.T, ca *group.CA) device {
@@ -114,8 +115,9 @@ func join(t *testing.T, link Link, d device) *joined {
 	j.stop = cancel
 	cfg := MemberConfig{
 		Link: link, Self: d.id, Key: d.key,
-		Cert: func() tls.Certificate { return d.cert },
-		Want: func(string) bool { return true },
+		Cert:    func() tls.Certificate { return d.cert },
+		Records: func() []group.Record { return d.records },
+		Want:    func(string) bool { return true },
 		Dialed: func(ctx context.Context, peer string, c net.Conn) error {
 			msg := "hello from " + d.id + "\n"
 			if _, err := c.Write([]byte(msg)); err != nil {
@@ -358,4 +360,26 @@ func TestKeys(t *testing.T) {
 	if err := CheckPin(k1.Pin()); err != nil {
 		t.Error(err)
 	}
+}
+
+// TestRemovedDevice checks that the records one member sends make the relay
+// drop, and then refuse, a device its group removed.
+func TestRemovedDevice(t *testing.T) {
+	ca := newGroup(t)
+	_, link := startRelay(t, ca)
+	gone, stays := newDevice(t, ca), newDevice(t, ca)
+	j := join(t, link, gone)
+	waitFor(t, "the device to connect", func() bool { return j.last().Connected })
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(ca.Cert), TimeMS: time.Now().UnixMilli(),
+		Keys: []group.KeyHash{group.KeyHashOf(gone.cert.Leaf)}}, ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stays.records = []group.Record{revoke}
+	k := join(t, link, stays)
+	waitFor(t, "the other device to connect", func() bool { return k.last().Connected })
+	waitFor(t, "the removed device to be refused", func() bool {
+		r := j.last()
+		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
+	})
 }
