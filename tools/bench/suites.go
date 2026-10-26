@@ -130,7 +130,8 @@ type benchGroup struct {
 	hub     *Device
 	members []*Device // the hub first
 	tag     string
-	codes   []string // the pairing codes of the run, which no log may hold
+	codes   []string  // the pairing codes of the run, which no log may hold
+	left    []*Device // joined, but out of the cases: only revoked at the end
 	undo    []func()
 }
 
@@ -204,17 +205,25 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 		if d == hub {
 			continue
 		}
+		joined := false
 		if r.Do(suite+"/"+d.Name+"/join", func() error {
 			code, err := pairOne(ctx, hub, d)
 			if code != "" {
 				g.codes = append(g.codes, code)
 			}
-			if err == nil {
-				err = shareClipboard(ctx, d)
+			if err != nil {
+				return err
 			}
-			return err
+			joined = true
+			// cbb join on the lite member returns a moment before its
+			// service has taken the group.
+			return eventually(ctx, 10*time.Second, func() error { return shareClipboard(ctx, d) })
 		}) == nil {
 			g.members = append(g.members, d)
+		} else if joined {
+			// It is in the group even if the rest failed: the end of the
+			// run revokes it with the others.
+			g.left = append(g.left, d)
 		}
 	}
 	r.Do(suite+"/group", func() error {
@@ -259,7 +268,7 @@ func atHome(devices []*Device) []*Device {
 // every other member can be removed.
 func (g *benchGroup) end(ctx context.Context, r *Report) {
 	ctx = context.WithoutCancel(ctx)
-	for _, d := range g.members[1:] {
+	for _, d := range append(g.members[1:], g.left...) {
 		r.Do(g.suite+"/"+d.Name+"/revoke", func() error {
 			id, err := deviceOf(ctx, d)
 			if err != nil {
