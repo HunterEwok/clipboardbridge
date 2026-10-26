@@ -22,8 +22,9 @@ Every device starts a run in no group; the bench never touches a group it did no
 
 1. Linux, macOS: `sudo ./uninstall.sh --purge` (or the installer's copy), then install the
    build under test with `install.sh` (or `get.sh`). Lite member: `get.sh --lite` after the
-   purge. Windows: revert the VM to its clean snapshot, or `uninstall.ps1 -Purge`, then
-   `get.ps1`. Container: on its host `sh tools/bench/setup-docker.sh up CBB`, which removes
+   purge. Windows: `uninstall.ps1 -Purge`, a check that it left nothing (L10), then
+   `install.ps1` from the build's zip; no VM snapshot is needed. Container: on its host
+   `sh tools/bench/setup-docker.sh up CBB`, which removes
    the old container with its volume and starts one of the image built from CBB, the
    `linux` binary under test for the host's CPU, with `compose.home.yaml`.
 2. On the Linux member with a desktop, sign out and in again (or reboot), so the desktop

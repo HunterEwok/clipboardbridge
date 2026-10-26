@@ -27,6 +27,9 @@ const macHelper = "/usr/local/libexec/cbbbench/cbbbench-root"
 // build copies nothing.
 const stateBase = "$HOME/.cache/cbbbench"
 
+// winStateBase is stateBase on Windows, in PowerShell.
+const winStateBase = "$env:LOCALAPPDATA\\cbbbench"
+
 // Build is the build under test: the release archives in a directory, as
 // the release workflow and CI make them (packaging/archive.sh,
 // lite/packaging/archive.sh), checked against its SHA256SUMS.
@@ -55,7 +58,7 @@ func LoadBuild(dir string) (*Build, error) {
 		f.Close()
 	}
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".tar.gz") {
+		if !strings.HasSuffix(e.Name(), ".tar.gz") && !strings.HasSuffix(e.Name(), ".zip") {
 			continue
 		}
 		sum, err := fileSum(filepath.Join(dir, e.Name()))
@@ -68,7 +71,7 @@ func LoadBuild(dir string) (*Build, error) {
 		b.sums[e.Name()] = sum
 	}
 	if len(b.sums) == 0 {
-		return nil, fmt.Errorf("the build %s has no .tar.gz archives", dir)
+		return nil, fmt.Errorf("the build %s has no .tar.gz or .zip archives", dir)
 	}
 	_, err = os.Stat(filepath.Join(dir, "SHA256SUMS.sig"))
 	b.signed = err == nil
@@ -89,8 +92,9 @@ func fileSum(path string) (string, error) {
 }
 
 // archiveFor names the archive a device installs, for the CPU uname -m
-// reports.
+// reports (on Windows, PROCESSOR_ARCHITECTURE).
 func archiveFor(d *Device, machine string) (string, error) {
+	machine = strings.ToLower(machine)
 	arch := map[string]string{"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64", "armv7l": "armv7", "armv6l": "armv6"}[machine]
 	if arch == "" {
 		return "", fmt.Errorf("%s: no build for the CPU %q", d.Name, machine)
@@ -102,6 +106,8 @@ func archiveFor(d *Device, machine string) (string, error) {
 		return "clipboardbridge-lite-linux-" + arch + ".tar.gz", nil
 	case "darwin":
 		return "clipboardbridge-darwin-" + arch + ".tar.gz", nil
+	case "windows":
+		return "clipboardbridge-windows-" + arch + ".zip", nil
 	}
 	return "", fmt.Errorf("%s: the bench does not reset os %s yet", d.Name, d.OS)
 }
@@ -228,15 +234,88 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		}
 		_, err = RunFor(ctx, d, "sh "+d.Setup+" up "+dir+"/cbb", "", 5*time.Minute)
 		return err
+	case "windows":
+		return resetWindows(ctx, r, d, b, quick)
 	}
 	return Skipped("the bench does not reset os " + d.OS + " yet; reset it by hand (docs/testbench-cases.md, R1)")
+}
+
+// resetWindows is R1 on Windows: uninstall.ps1 -Purge, a check that it left
+// nothing behind, and install.ps1 of the build. The bench user is an
+// administrator, and an SSH session signed in with a key has the full token.
+func resetWindows(ctx context.Context, r *Report, d *Device, b *Build, quick bool) error {
+	if quick {
+		// The keys and the group live in state; the folder keeps the
+		// access list that install.ps1 gave it.
+		_, err := RunFor(ctx, d, `Stop-Service clipboardbridge -Force
+Get-ChildItem (Join-Path $env:ProgramData 'clipboardbridge\state') -Force | Remove-Item -Recurse -Force
+Start-Service clipboardbridge`, "", 2*time.Minute)
+		return err
+	}
+	if d.Firewall != "yes" && d.Firewall != "no" {
+		return fmt.Errorf("%s: set firewall = \"yes\" (the installer adds its rules) or \"no\" (it leaves the firewall alone) in the inventory", d.Name)
+	}
+	dir, err := stage(ctx, d, b)
+	if err != nil {
+		return err
+	}
+	if _, err := RunFor(ctx, d, `$u = Join-Path $env:ProgramFiles 'clipboardbridge\uninstall.ps1'
+if (Test-Path $u) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $u -Purge -Details }`, "", 2*time.Minute); err != nil {
+		return err
+	}
+	r.Do("reset/"+d.Name+"/L10-clean", func() error { return uninstalledWindows(ctx, d) })
+	opt := "-Express"
+	if d.Firewall == "no" {
+		opt = "-NoFirewall"
+	}
+	if _, err := RunFor(ctx, d, "Remove-Item Env:CBB_FIREWALL -ErrorAction SilentlyContinue; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '"+dir+`\packaging\windows\install.ps1' `+opt+" -Details", "", 3*time.Minute); err != nil {
+		return err
+	}
+	// install.ps1 starts the agent in the session of the user signed in
+	// at the console, through a scheduled task.
+	r.Do("reset/"+d.Name+"/agent", func() error {
+		return eventually(ctx, 15*time.Second, func() error {
+			out, err := Run(ctx, d, `@(Get-Process cbbw -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -ne 0 }).Count`, "")
+			if err == nil && strings.TrimSpace(out) == "0" {
+				err = errors.New("the agent (cbbw.exe agent) does not run in the signed-in session")
+			}
+			return err
+		})
+	})
+	return nil
+}
+
+// uninstalledWindows (L10) checks that uninstall.ps1 -Purge left nothing
+// behind: the files, the data with the keys, the service, the group, the
+// firewall rules, the sign-in and uninstaller entries and the PATH entry.
+func uninstalledWindows(ctx context.Context, d *Device) error {
+	out, err := Run(ctx, d, `$n = 'clipboardbridge'
+$left = @()
+foreach ($p in @((Join-Path $env:ProgramFiles $n), (Join-Path $env:ProgramData $n), "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$n")) { if (Test-Path $p) { $left += $p } }
+if (Get-Service $n -ErrorAction SilentlyContinue) { $left += 'the service' }
+if (Get-LocalGroup $n -ErrorAction SilentlyContinue) { $left += 'the group' }
+if (Get-NetFirewallRule -Group $n -ErrorAction SilentlyContinue) { $left += 'firewall rules' }
+if (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name $n -ErrorAction SilentlyContinue) { $left += 'the sign-in entry' }
+if (([Environment]::GetEnvironmentVariable('Path', 'Machine') -split ';') -contains (Join-Path $env:ProgramFiles $n)) { $left += 'the PATH entry' }
+$left -join ', '`, "")
+	if err != nil {
+		return err
+	}
+	if left := strings.TrimSpace(out); left != "" {
+		return fmt.Errorf("uninstall.ps1 -Purge left %s", left)
+	}
+	return nil
 }
 
 // stage copies the device's archive of the build to it, unless it is
 // there from an earlier reset, and returns the directory that holds cbb
 // and packaging/ (on a Mac, archive.tar.gz for the helper).
 func stage(ctx context.Context, d *Device, b *Build) (string, error) {
-	out, err := Run(ctx, d, "uname -m", "")
+	machine := "uname -m"
+	if d.OS == "windows" {
+		machine = "$env:PROCESSOR_ARCHITECTURE"
+	}
+	out, err := Run(ctx, d, machine, "")
 	if err != nil {
 		return "", err
 	}
@@ -247,6 +326,9 @@ func stage(ctx context.Context, d *Device, b *Build) (string, error) {
 	sum, ok := b.sums[name]
 	if !ok {
 		return "", fmt.Errorf("the build has no %s for %s", name, d.Name)
+	}
+	if d.OS == "windows" {
+		return stageWindows(ctx, d, b, name, sum)
 	}
 	dir := stateBase + "/" + sum[:16]
 	unpack := "tar -xzf - -C " + dir
@@ -274,6 +356,43 @@ func stage(ctx context.Context, d *Device, b *Build) (string, error) {
 		return "", err
 	}
 	return strings.TrimSuffix(strings.TrimSpace(firstLine(out)), "/"), nil
+}
+
+// stageWindows is stage on Windows: the zip goes over with scp, as the
+// standard input of a PowerShell command over Windows' OpenSSH stalls after
+// a few megabytes, and is unpacked in the bench user's LOCALAPPDATA. It
+// returns the directory that holds cbb.exe.
+func stageWindows(ctx context.Context, d *Device, b *Build, name, sum string) (string, error) {
+	dir := winStateBase + "\\" + sum[:16]
+	if _, err := Run(ctx, d, "if (-not (Test-Path \""+dir+"\\ok\")) { exit 1 }", ""); err != nil {
+		// A fresh directory, and its path as scp takes it: /C:/Users/...
+		out, err := Run(ctx, d, `$d = "`+dir+`"
+if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+'/' + (New-Item -ItemType Directory -Force $d).FullName.Replace('\', '/')`, "")
+		if err != nil {
+			return "", err
+		}
+		if err := CopyTo(ctx, d, filepath.Join(b.dir, name), strings.TrimSpace(out)+"/archive.zip", 10*time.Minute); err != nil {
+			return "", err
+		}
+		// Keep the newest three builds on the device.
+		cmd := `$d = "` + dir + `"
+$zip = Join-Path $d 'archive.zip'
+if ((Get-FileHash -Algorithm SHA256 $zip).Hash -ne '` + sum + `') { throw 'the archive arrived damaged' }
+Expand-Archive -Path $zip -DestinationPath $d
+Remove-Item $zip
+New-Item -ItemType File (Join-Path $d 'ok') | Out-Null
+Get-ChildItem "` + winStateBase + `" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Recurse -Force`
+		if _, err := RunFor(ctx, d, cmd, "", 5*time.Minute); err != nil {
+			return "", err
+		}
+	}
+	// The archive holds one directory, clipboardbridge.
+	out, err := Run(ctx, d, "(Join-Path \""+dir+"\" clipboardbridge | Resolve-Path).Path", "")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(firstLine(out)), nil
 }
 
 // uninstalled (L10) checks that uninstall.sh --purge left nothing behind.
