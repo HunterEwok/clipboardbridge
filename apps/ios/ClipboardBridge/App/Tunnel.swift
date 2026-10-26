@@ -98,6 +98,49 @@ final class GoGuest: HubGuest, @unchecked Sendable {
     func close() { guest.close() }
 }
 
+/// The links of mobile/cbbtun to a blind relay.
+struct GoRelayLinks: RelayLinks {
+    func newKey() throws -> Data { try GoTunnels().newKey() }
+
+    func start(privateKey: Data, device: String, endpoint: String, pin: String, chain: [Data],
+               sign: @escaping @Sendable (Data) throws -> Data, records: String, memberPort: UInt16,
+               events: RelayLinkEvents) throws -> RelayLink {
+        let ders = String(decoding: try JSONEncoder().encode(chain), as: UTF8.self)
+        var error: NSError?
+        guard let r = CbbtunStartRelay(privateKey, device, endpoint, pin, ders, DigestSigner(sign), records, Int(memberPort),
+                                       GoRelayEvents(events), &error) else {
+            throw error ?? GoTunnels.Failure(call: "StartRelay")
+        }
+        return GoRelay(r)
+    }
+}
+
+/// A running link of mobile/cbbtun to a blind relay.
+final class GoRelay: RelayLink, @unchecked Sendable {
+    private let relay: CbbtunRelay
+
+    init(_ relay: CbbtunRelay) { self.relay = relay }
+
+    func setRecords(_ records: String) throws { try relay.setRecords(records) }
+
+    func close() { relay.close() }
+}
+
+/// The kit's RelayLinkEvents as cbbtun's RelayEvents.
+final class GoRelayEvents: NSObject, CbbtunRelayEventsProtocol, @unchecked Sendable {
+    private let events: RelayLinkEvents
+
+    init(_ events: RelayLinkEvents) { self.events = events }
+
+    func dial(_ peer: String?, port: Int) { events.dial(peer: peer ?? "", port: UInt16(clamping: port)) }
+
+    func calling(_ peer: String?, localPort: Int) { events.calling(peer: peer ?? "", localPort: UInt16(clamping: localPort)) }
+
+    func wanted(_ peer: String?) -> Bool { events.wanted(peer: peer ?? "") }
+
+    func changed(_ state: String?) { events.changed(state ?? "") }
+}
+
 /// The member key as cbbtun's Signer: it signs the digests of the hub's
 /// TLS to its forwarder, without the user.
 final class DigestSigner: NSObject, CbbtunSignerProtocol, @unchecked Sendable {
@@ -161,4 +204,14 @@ enum HubKeychain {
 
     /// Keeps s; nil deletes it.
     static func save(_ s: HubState?) throws { try KeychainData.save(service, try s.map { try $0.encoded() }) }
+}
+
+/// The phone's settings for a blind relay in the keychain.
+enum RelayKeychain {
+    static let service = "io.github.hunterewok.clipboardbridge.relay"
+
+    static func load() -> RelaySettings? { KeychainData.load(service).flatMap(RelaySettings.decode) }
+
+    /// Keeps s; nil deletes it.
+    static func save(_ s: RelaySettings?) throws { try KeychainData.save(service, try s.map { try $0.encoded() }) }
 }
