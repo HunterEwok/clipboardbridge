@@ -64,6 +64,9 @@ Rarely needed:
                           (the options of install.ps1, such as -Express).
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link this desktop's clipboard to the service (started at sign-in).
+  paste-helper tmux|console|uinput
+                          Take remote pastes into tmux (started by clipboardbridge.conf)
+                          or the Linux text console (the clipboardbridge-console unit).
 
 The design is in docs/design.md.
 `
@@ -135,6 +138,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdService(rest, stderr)
 	case "agent":
 		return cmdAgent(rest, stderr)
+	case "paste-helper":
+		return cmdPasteHelper(rest, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

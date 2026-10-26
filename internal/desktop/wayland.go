@@ -67,6 +67,10 @@ type Wayland struct {
 	device uint32
 	ifaces string // the protocol's prefix, for the offer and source interfaces
 	logf   func(string, ...any)
+	seat   uint32
+	vkm    uint32 // the virtual keyboard manager, 0 if the compositor has none
+	inj    waylandInject
+	kb     keyboard // a paste's keys on GNOME and KDE, which have no virtual keyboard; nil without a way
 
 	mu         sync.Mutex
 	offers     map[uint32][]string // the types of each live offer
@@ -114,6 +118,12 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 	w.ifaces = mgr.Interface[:len(mgr.Interface)-len("manager_v1")]
 	w.mgr = reg.Bind(mgr, 2, nil)
 	seatID := reg.Bind(seat, 1, nil)
+	w.seat = seatID
+	if vkm, ok := reg.Find(virtualKeyboards); ok {
+		w.vkm = reg.Bind(vkm, 1, nil)
+	} else {
+		w.kb = pasteKeys(logf)
+	}
 	w.device = d.NewID(w.deviceEvent)
 	if err := d.Send(w.mgr, mgrGetDevice, (&wl.Request{}).Uint(w.device).Uint(seatID)); err != nil {
 		d.Close()
@@ -133,7 +143,10 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 }
 
 // Close closes the connection.
-func (w *Wayland) Close() error { return w.d.Close() }
+func (w *Wayland) Close() error {
+	closeKeys(w.kb)
+	return w.d.Close()
+}
 
 func (w *Wayland) loop() {
 	for {

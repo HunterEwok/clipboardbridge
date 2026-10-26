@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -31,8 +32,20 @@ const (
 	targetConsole = "console"
 )
 
-// injectWait bounds how long a watcher may take to inject.
-const injectWait = 5 * time.Second
+// injectWait bounds how long a watcher may take to inject; typing takes
+// typeWait more for each byte.
+const (
+	injectWait = 5 * time.Second
+	typeWait   = 5 * time.Millisecond
+)
+
+// injectTime is how long a watcher may take to inject body's text.
+func injectTime(body group.CommandBody) time.Duration {
+	if body.Mode == group.PasteByTyping {
+		return injectWait + time.Duration(len(body.Text))*typeWait
+	}
+	return injectWait
+}
 
 // An inject is a paste for a watcher, with where its answer goes.
 type inject struct {
@@ -89,9 +102,21 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 		res.Reason = "the text has nothing that may be pasted: only control characters"
 		return res
 	}
-	order := []string{targetDesktop, targetTmux}
-	if set.Console {
-		order = append(order, targetConsole)
+	// A line break runs what comes before it where keys go straight to a
+	// shell: in a typed text, and in tmux and on a console. There it needs
+	// the user's leave for Enter; a desktop's terminal takes a paste
+	// bracketed.
+	lines := strings.Contains(text, "\n") && !set.Enter
+	if lines && body.Mode == group.PasteByTyping {
+		res.Reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line"
+		return res
+	}
+	order := []string{targetDesktop}
+	if !lines {
+		order = append(order, targetTmux)
+		if set.Console {
+			order = append(order, targetConsole)
+		}
 	}
 	s.mu.Lock()
 	var ws []*watcher
@@ -103,13 +128,17 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			}
 		}
 	}
+	term := false // tmux or a console is here
 	for w := range s.watchers {
 		console = console || w.inject == targetConsole
+		term = term || w.inject == targetTmux || w.inject == targetConsole
 	}
 	s.mu.Unlock()
 	if len(ws) == 0 {
 		res.Reason = "nothing on this device can paste: no desktop session, tmux or console helper of Clipboard Bridge runs here"
-		if console && !set.Console {
+		if lines && term {
+			res.Reason = "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
+		} else if console && !set.Console {
 			res.Reason = "only a text console is here, and its user did not allow consoles (cbb paste-receive on -console)"
 		}
 		return res
@@ -129,7 +158,7 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			}
 			res.Status = r.Status
 			reasons = append(reasons, r.Reason)
-		case <-time.After(injectWait):
+		case <-time.After(injectTime(body)):
 			reasons = append(reasons, "the "+w.inject+" target did not answer")
 		}
 	}
@@ -280,7 +309,7 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second+injectTime(body))
 	defer cancel()
 	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
 	if err != nil {

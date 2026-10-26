@@ -44,6 +44,12 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   in the TPM (`internal/tpmkey`, go-tpm, tested against swtpm) on Linux.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync, commands passed on to members; `internal/service`: the daemon and CLI.
+- Remote paste targets, each a `connector.Target`: `internal/desktop/x11paste.go` (XTEST),
+  `waylandpaste.go` (the virtual keyboard), `portal.go` (the RemoteDesktop portal on GNOME and KDE,
+  keys through `internal/ei`, the ei protocol, with `ei/eitest` an EIS server for tests), `internal/uinput`
+  (`cbb paste-helper uinput`, the opt-in keys helper the desktop connector asks for Shift+Insert), `internal/tmuxpaste` (`cbb paste-helper tmux`),
+  `internal/consolepaste` (`cbb paste-helper console`, TIOCSTI); `internal/lockcheck` tells
+  them a locked session.
 - `internal/remotepaste`: remote paste on a member (the user's switches, cleaning the text, the
   limits per sender, the log); `internal/service/paste.go` takes `paste` commands and hands
   them to the watchers that offer a target.
