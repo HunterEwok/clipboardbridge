@@ -55,21 +55,26 @@ object Releases {
     /** What a device keeps between checks: the highest sequence numbers and version it has taken. */
     data class Seen(val keysSeq: Long = 0, val channelSeq: Long = 0, val version: String = "")
 
-    private val VERSION = Regex("^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$")
+    private val VERSION = Regex("^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})(-rc\\.([1-9][0-9]{0,5}))?$")
     private val CHANNEL = Regex("^[a-z][a-z0-9-]{0,31}$")
     private val SHA256 = Regex("^[0-9a-f]{64}$")
     private val ASSET = Regex("^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
     private val BINARY = Regex("^[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}$")
     private val DIGEST = Regex("^sha256:[0-9a-f]{64}$")
 
-    private fun parseVersion(s: String): List<Int>? = if (VERSION.matches(s)) s.split('.').map { it.toInt() } else null
+    /** X, Y, Z and the release candidate's number, Int.MAX_VALUE for a release. */
+    private fun parseVersion(s: String): List<Int>? {
+        val m = VERSION.matchEntire(s) ?: return null
+        val g = m.groupValues
+        return listOf(g[1].toInt(), g[2].toInt(), g[3].toInt(), if (g[5].isEmpty()) Int.MAX_VALUE else g[5].toInt())
+    }
 
-    /** Compares two versions X.Y.Z; a string that is not a version sorts below every version. */
+    /** Compares two versions X.Y.Z or X.Y.Z-rc.N, a release candidate before its release; a string that is not a version sorts below every version. */
     fun compare(a: String, b: String): Int {
         val pa = parseVersion(a)
         val pb = parseVersion(b)
         if (pa == null || pb == null) return (if (pa != null) 1 else 0) - (if (pb != null) 1 else 0)
-        for (i in 0 until 3) if (pa[i] != pb[i]) return pa[i].compareTo(pb[i]).coerceIn(-1, 1)
+        for (i in 0 until 4) if (pa[i] != pb[i]) return pa[i].compareTo(pb[i]).coerceIn(-1, 1)
         return 0
     }
 

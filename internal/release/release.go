@@ -222,7 +222,7 @@ var (
 	assetName  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
 	channelRE  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 	hexSHA256  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	versionRE  = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
+	versionRE  = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})(-rc\.([1-9][0-9]{0,5}))?$`)
 	digestRE   = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	binaryName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}$`)
 )
@@ -415,8 +415,9 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	return r, next, nil
 }
 
-// Compare compares two versions of the form X.Y.Z, as -1, 0 or 1. A
-// string that is not a version sorts below every version.
+// Compare compares two versions of the form X.Y.Z or X.Y.Z-rc.N, as -1,
+// 0 or 1; a release candidate comes before its release. A string that is
+// not a version sorts below every version.
 func Compare(a, b string) int {
 	pa, oka := parseVersion(a)
 	pb, okb := parseVersion(b)
@@ -441,16 +442,25 @@ func Compare(a, b string) int {
 	return 0
 }
 
-func parseVersion(s string) ([3]int, bool) {
-	var out [3]int
-	if !versionRE.MatchString(s) {
+// parseVersion returns X, Y, Z and the release candidate's number, or
+// finalRelease for a release.
+func parseVersion(s string) ([4]int, bool) {
+	var out [4]int
+	m := versionRE.FindStringSubmatch(s)
+	if m == nil {
 		return out, false
 	}
-	for i, p := range strings.Split(s, ".") {
+	for i, p := range []string{m[1], m[2], m[3]} {
 		out[i], _ = strconv.Atoi(p)
+	}
+	out[3] = finalRelease
+	if m[5] != "" {
+		out[3], _ = strconv.Atoi(m[5])
 	}
 	return out, true
 }
+
+const finalRelease = 1 << 30
 
 // Direct reports whether a device at installed may update to r in one
 // step, or must first take r.MinFrom.

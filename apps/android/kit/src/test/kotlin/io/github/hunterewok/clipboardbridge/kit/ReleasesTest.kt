@@ -43,5 +43,9 @@ class ReleasesTest {
         assertEquals(-1, Releases.compare("0.6.0", "0.6.1"))
         assertEquals(-1, Releases.compare("v0.6.0", "0.0.0"))
         assertEquals(-1, Releases.compare("0.06.0", "0.0.0"))
+        assertEquals(-1, Releases.compare("0.6.0-rc.1", "0.6.0"))
+        assertEquals(-1, Releases.compare("0.6.0-rc.2", "0.6.0-rc.10"))
+        assertEquals(1, Releases.compare("0.6.0-rc.1", "0.5.9"))
+        assertEquals(-1, Releases.compare("0.6.0-rc.0", "0.0.0"))
     }
 }

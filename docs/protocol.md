@@ -1903,8 +1903,9 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 | `release` (`release.json`) | a release key | `version`, `channel`, `time_ms`, `min_from` (a version, optional), `files`: 1 to 256 of `{name, size, sha256, binaries?}`, `docker` (optional `{image, digest}`) |
 | `channel` (`stable.json`, ...) | a release key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
 
-- A version is `X.Y.Z`, three decimal numbers of at most 6 digits without leading zeros,
-  compared number by number; tags add the `v`.
+- A version is `X.Y.Z` or, for a release candidate, `X.Y.Z-rc.N`: decimal numbers of at
+  most 6 digits without leading zeros (`N` from 1), compared number by number, a release
+  candidate before its release; tags add the `v`.
 - A channel name is 1-32 of `a-z`, `0-9` and `-`, starting with a letter.
 - A file `name` is 1-128 of `A-Z a-z 0-9 . _ -`, not starting with `.` or `-`, each name
   once. `size` is its length in bytes and `sha256` its hash in lowercase hex. `binaries`, at

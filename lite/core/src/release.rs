@@ -178,24 +178,31 @@ fn name_ok(s: &str, max: usize, slash: bool) -> bool {
         && b.iter().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(c) || (slash && *c == b'/'))
 }
 
-/// Parses a version of the form X.Y.Z.
-pub fn parse_version(s: &str) -> Option<[u32; 3]> {
-    let mut out = [0u32; 3];
-    let mut parts = s.split('.');
-    for p in out.iter_mut() {
-        let part = parts.next()?;
+/// Parses a version of the form X.Y.Z or X.Y.Z-rc.N into X, Y, Z and the
+/// release candidate's number, u32::MAX for a release.
+pub fn parse_version(s: &str) -> Option<[u32; 4]> {
+    fn number(part: &str, zero: bool) -> Option<u32> {
         if part.is_empty() || part.len() > 6 || !part.bytes().all(|c| c.is_ascii_digit()) {
             return None;
         }
-        if part.len() > 1 && part.starts_with('0') {
+        if (part.len() > 1 || !zero) && part.starts_with('0') {
             return None;
         }
-        *p = part.parse().ok()?;
+        part.parse().ok()
+    }
+    let (main, rc) = match s.split_once("-rc.") {
+        Some((m, n)) => (m, number(n, false)?),
+        None => (s, u32::MAX),
+    };
+    let mut out = [0u32, 0, 0, rc];
+    let mut parts = main.split('.');
+    for p in out.iter_mut().take(3) {
+        *p = number(parts.next()?, true)?;
     }
     if parts.next().is_some() { None } else { Some(out) }
 }
 
-/// Compares two versions; a string that is not a version sorts below
+/// Compares two versions, a release candidate before its release; a string that is not a version sorts below
 /// every version.
 pub fn compare(a: &str, b: &str) -> core::cmp::Ordering {
     parse_version(a).cmp(&parse_version(b))

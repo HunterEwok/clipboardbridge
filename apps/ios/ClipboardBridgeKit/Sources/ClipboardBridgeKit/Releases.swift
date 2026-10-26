@@ -121,27 +121,40 @@ public enum Releases {
         var release_sha256: String
     }
 
+    /// X, Y, Z and the release candidate's number, Int.max for a release.
     static func parseVersion(_ s: String) -> [Int]? {
-        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+        func number(_ p: Substring, zero: Bool) -> Int? {
+            guard !p.isEmpty, p.count <= 6, p.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  (p.count == 1 && zero) || !p.hasPrefix("0") else { return nil }
+            return Int(p)
+        }
+        var main = Substring(s)
+        var rc = Int.max
+        if let r = s.range(of: "-rc.") {
+            guard let n = number(s[r.upperBound...], zero: false) else { return nil }
+            main = s[..<r.lowerBound]
+            rc = n
+        }
+        let parts = main.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3 else { return nil }
         var out: [Int] = []
         for p in parts {
-            guard !p.isEmpty, p.count <= 6, p.allSatisfy({ $0.isASCII && $0.isNumber }),
-                  p.count == 1 || !p.hasPrefix("0"), let n = Int(p) else { return nil }
+            guard let n = number(p, zero: true) else { return nil }
             out.append(n)
         }
-        return out
+        return out + [rc]
     }
 
-    /// Compares two versions X.Y.Z as -1, 0 or 1; a string that is not a
-    /// version sorts below every version.
+    /// Compares two versions X.Y.Z or X.Y.Z-rc.N as -1, 0 or 1, a release
+    /// candidate before its release; a string that is not a version sorts
+    /// below every version.
     public static func compare(_ a: String, _ b: String) -> Int {
         switch (parseVersion(a), parseVersion(b)) {
         case (nil, nil): return 0
         case (nil, _): return -1
         case (_, nil): return 1
         case let (pa?, pb?):
-            for i in 0..<3 where pa[i] != pb[i] { return pa[i] < pb[i] ? -1 : 1 }
+            for i in 0..<4 where pa[i] != pb[i] { return pa[i] < pb[i] ? -1 : 1 }
             return 0
         }
     }

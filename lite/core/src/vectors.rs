@@ -392,4 +392,19 @@ fn go_release() {
             assert!(r.direct("0.5.3") && !r.direct("0.3.9"), "{label}");
         }
     }
+    use core::cmp::Ordering::*;
+    for (a, b, want) in [
+        ("0.10.0", "0.9.0", Greater),
+        ("0.6.0", "0.6.0", Equal),
+        ("0.6.0-rc.1", "0.6.0", Less),
+        ("0.6.0-rc.2", "0.6.0-rc.10", Less),
+        ("0.6.0-rc.1", "0.5.9", Greater),
+        ("v0.6.0", "0.0.0", Less),
+        ("0.06.0", "0.0.0", Less),
+    ] {
+        assert_eq!(release::compare(a, b), want, "{a} {b}");
+    }
+    for bad in ["0.6", "0.6.0-rc.0", "0.6.0-rc.01", "0.6.0-beta.1", "0.6.0.1", "1234567.0.0"] {
+        assert!(release::parse_version(bad).is_none(), "{bad}");
+    }
 }

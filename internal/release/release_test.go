@@ -243,12 +243,15 @@ func TestCompare(t *testing.T) {
 		{"0.6.0", "0.6.1", -1},
 		{"bad", "0.0.0", -1},
 		{"0.0.0", "", 1},
+		{"0.6.0-rc.1", "0.6.0", -1},
+		{"0.6.0-rc.2", "0.6.0-rc.10", -1},
+		{"0.6.0-rc.1", "0.5.9", 1},
 	} {
 		if got := Compare(c.a, c.b); got != c.want {
 			t.Errorf("Compare(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
-	for _, bad := range []string{"v0.6.0", "0.6", "0.06.0", "0.6.0-rc.1", "0.6.0.1", "1234567.0.0"} {
+	for _, bad := range []string{"v0.6.0", "0.6", "0.06.0", "0.6.0-rc.0", "0.6.0-beta.1", "0.6.0.1", "1234567.0.0"} {
 		if _, ok := parseVersion(bad); ok {
 			t.Errorf("%q passed as a version", bad)
 		}
