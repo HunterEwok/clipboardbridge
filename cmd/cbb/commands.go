@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -68,7 +69,12 @@ func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // cmdPaste writes the member's own clipboard text to standard output. With
 // -terminal it makes the text safe to paste into a terminal: see terminalText.
-func cmdPaste(args []string, stdout, stderr io.Writer) int {
+func cmdPaste(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if slices.ContainsFunc(args, func(a string) bool {
+		return a == "-on" || a == "--on" || strings.HasPrefix(a, "-on=") || strings.HasPrefix(a, "--on=")
+	}) {
+		return cmdPasteOn(args, stdin, stdout, stderr)
+	}
 	fs := flag.NewFlagSet("paste", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	terminal := fs.Bool("terminal", false, "make the text safe for a terminal: no control characters, only the first line")

@@ -27,32 +27,36 @@ const (
 
 // Operations.
 const (
-	OpCopy      = "copy"       // client → service: make an event from a deliberate action
-	OpPaste     = "paste"      // client → service: ask for the member's own clipboard text
-	OpStatus    = "status"     // client → service: ask for the status
-	OpNew       = "new"        // client → service: create a group with this device as its root
-	OpPair      = "pair"       // client → service: open a pairing window; answers follow
-	OpPairPhone = "pair-phone" // client → service: open an iPhone pairing window; answers follow
-	OpJoin      = "join"       // client → service: join a group with a code
-	OpDevices   = "devices"    // client → service: list the group's devices
-	OpRevoke    = "revoke"     // client → service: remove the device Name names (a name or a device ID)
-	OpRename    = "rename"     // client → service: give the device Name names the name NewName
-	OpFreeze    = "freeze"     // client → service: freeze the admin computer Name names
-	OpThaw      = "thaw"       // client → service: on the root, unfreeze the admin computer Name names
-	OpAway      = "away"       // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
-	OpHolder    = "holder"     // client → service: Name "auto", "first", "fallback" or "never": the holder setting
-	OpMode      = "mode"       // client → service: Name "own", "shared", "receive" or "send": the sync mode
-	OpNetwork   = "network"    // client → service: take the networks this device is on now as known
-	OpAdmin     = "admin"      // client → service: on the root, make the device Name names an admin
-	OpTakeover  = "takeover"   // client → service: on an admin, take the group over from the lost root Name names
-	OpUpgrade   = "upgrade"    // client → service: on a key holder of a legacy group, give the group a root
-	OpInvite    = "invite"     // client → service: make a remote invitation on the hub; answers and a question follow
-	OpAnswer    = "answer"     // client → service: Consent answers the service's question during a request
-	OpWatch     = "watch"      // watcher → service: start watching, with what the clipboard holds now
-	OpCopied    = "copied"     // watcher → service: the clipboard changed
-	OpClipboard = "clipboard"  // watcher → service: what the clipboard holds, without a change
-	OpWrite     = "write"      // service → watcher: put this text into the clipboard
-	OpReply     = "reply"      // service → client: the answer to a request
+	OpCopy      = "copy"          // client → service: make an event from a deliberate action
+	OpPaste     = "paste"         // client → service: ask for the member's own clipboard text
+	OpStatus    = "status"        // client → service: ask for the status
+	OpNew       = "new"           // client → service: create a group with this device as its root
+	OpPair      = "pair"          // client → service: open a pairing window; answers follow
+	OpPairPhone = "pair-phone"    // client → service: open an iPhone pairing window; answers follow
+	OpJoin      = "join"          // client → service: join a group with a code
+	OpDevices   = "devices"       // client → service: list the group's devices
+	OpRevoke    = "revoke"        // client → service: remove the device Name names (a name or a device ID)
+	OpRename    = "rename"        // client → service: give the device Name names the name NewName
+	OpFreeze    = "freeze"        // client → service: freeze the admin computer Name names
+	OpThaw      = "thaw"          // client → service: on the root, unfreeze the admin computer Name names
+	OpAway      = "away"          // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
+	OpHolder    = "holder"        // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpMode      = "mode"          // client → service: Name "own", "shared", "receive" or "send": the sync mode
+	OpNetwork   = "network"       // client → service: take the networks this device is on now as known
+	OpAdmin     = "admin"         // client → service: on the root, make the device Name names an admin
+	OpTakeover  = "takeover"      // client → service: on an admin, take the group over from the lost root Name names
+	OpUpgrade   = "upgrade"       // client → service: on a key holder of a legacy group, give the group a root
+	OpInvite    = "invite"        // client → service: make a remote invitation on the hub; answers and a question follow
+	OpAnswer    = "answer"        // client → service: Consent answers the service's question during a request
+	OpWatch     = "watch"         // watcher → service: start watching, with what the clipboard holds now
+	OpCopied    = "copied"        // watcher → service: the clipboard changed
+	OpClipboard = "clipboard"     // watcher → service: what the clipboard holds, without a change
+	OpWrite     = "write"         // service → watcher: put this text into the clipboard
+	OpPasteOn   = "paste-on"      // client → service: as an admin, have the member Device put the payload where its focus is
+	OpReceive   = "paste-receive" // client → service: Name "on" or "off": remote paste on this device, or off on Device or All
+	OpInject    = "inject"        // service → watcher: put the payload where the focus is, a remote paste
+	OpInjected  = "injected"      // watcher → service: how the inject with Seq ended: Error empty, or why not
+	OpReply     = "reply"         // service → client: the answer to a request
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
@@ -78,6 +82,20 @@ type Header struct {
 	// command shows in a debug build or with CBB_DEBUG=1.
 	Detail string `json:"detail,omitempty"`
 	Done   bool   `json:"done,omitempty"` // the last answer to a request
+
+	// Remote paste (design.md, "Remote paste"). Method is "paste" (the
+	// clipboard and the paste keys) or "type"; Enter presses Enter after
+	// it; Console allows text consoles and root's tmux; All turns remote
+	// paste off on every member; Inject, in a watch request, is the target
+	// the watcher offers ("desktop", "tmux" or "console"), none if empty;
+	// Refused, in an injected answer, says the target refused rather than
+	// failed.
+	Method  string `json:"method,omitempty"`
+	Enter   bool   `json:"enter,omitempty"`
+	Console bool   `json:"console,omitempty"`
+	All     bool   `json:"all,omitempty"`
+	Inject  string `json:"inject,omitempty"`
+	Refused bool   `json:"refused,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
@@ -129,9 +147,20 @@ type Status struct {
 	Port      int      `json:"port,omitempty"` // the member port
 	// Quiet lists the interfaces on networks this device has not met its
 	// group on: it does not publish itself or take connections there.
-	Quiet   []string `json:"quiet,omitempty"`
-	Away    *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
-	Version string   `json:"version"`
+	Quiet []string `json:"quiet,omitempty"`
+	Away  *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
+	// Paste is remote paste on this device; nil when in no group.
+	Paste   *Paste `json:"paste,omitempty"`
+	Version string `json:"version"`
+}
+
+// Paste describes remote paste on this device: the switches its user set
+// and the targets the connected watchers offer.
+type Paste struct {
+	On      bool     `json:"on,omitempty"`
+	Enter   bool     `json:"enter,omitempty"`
+	Console bool     `json:"console,omitempty"`
+	Targets []string `json:"targets,omitempty"`
 }
 
 // Away describes sync away from home on this device.

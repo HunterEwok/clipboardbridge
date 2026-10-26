@@ -20,6 +20,12 @@ Commands:
   paste [-terminal [-lines] [-secret]]
                           Print this member's clipboard text; -terminal makes it
                           safe to paste into a terminal.
+  paste -on DEVICE [-type] [-enter] [-secret]
+                          On an admin: put standard input, or this clipboard, where the
+                          focus is on another device that allows remote paste.
+  paste-receive [on [-enter] [-console] | off]
+                          Show, or turn on or off, remote paste on this device;
+                          off -on DEVICE or off -all on an admin turns it off elsewhere.
   status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
   rename <name or ID> <new name>
@@ -88,7 +94,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "copy":
 		return cmdCopy(rest, stdin, stdout, stderr)
 	case "paste":
-		return cmdPaste(rest, stdout, stderr)
+		return cmdPaste(rest, stdin, stdout, stderr)
+	case "paste-receive":
+		return cmdPasteReceive(rest, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
 	case "global":

@@ -205,7 +205,8 @@ type Node struct {
 
 	mu        sync.Mutex
 	conns     map[group.DeviceID]*conn
-	waiting   map[string]waiter // the commands sent, by ID, until their result
+	waiting   map[string]waiter  // the commands sent, by ID, until their result
+	passed    map[string]passing // the commands passed on for other members, by ID
 	closed    bool
 	rejoining chan struct{} // closed when a Rejoin in progress is done; nil if none
 	wg        sync.WaitGroup
@@ -231,7 +232,7 @@ func New(cfg Config) *Node {
 	if cfg.OnWrite == nil {
 		cfg.OnWrite = func(Write) {}
 	}
-	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn), waiting: make(map[string]waiter)}
+	n := &Node{cfg: cfg, conns: make(map[group.DeviceID]*conn), waiting: make(map[string]waiter), passed: make(map[string]passing)}
 	n.id.Store(cfg.Identity)
 	n.SetTunnelKey(cfg.TunnelKey, cfg.TunnelPSK)
 	return n
@@ -651,70 +652,158 @@ func (n *Node) SendEvidence(dev group.DeviceID, e Evidence) bool {
 // errNotConnected is SendCommand's error for a member that is not connected.
 var errNotConnected = errors.New("the device is not connected to this one; it must be on and in reach")
 
-// SendCommand sends the connected member dev a command signed for it and
-// waits for its result until ctx ends.
-func (n *Node) SendCommand(ctx context.Context, dev group.DeviceID, cmd group.Record, id string) (Result, error) {
-	var c *conn
+// SendCommand sends the member dev a command signed for it and waits for
+// its result until ctx ends. Connected to dev, it sends the command there;
+// otherwise, with via set, to every connected member, and one connected to
+// dev passes it on (docs/protocol.md, section 15).
+func (n *Node) SendCommand(ctx context.Context, dev group.DeviceID, cmd group.Record, id string, via bool) (Result, error) {
+	var to []*conn
 	for _, h := range n.helloed() {
 		if h.id == dev {
-			c = h
+			to = []*conn{h}
+			break
+		}
+		if via {
+			to = append(to, h)
 		}
 	}
-	if c == nil {
+	if len(to) == 0 || !via && to[0].id != dev {
 		return Result{}, errNotConnected
 	}
 	got := make(chan Result, 1)
+	from := make(map[group.DeviceID]bool, len(to))
+	for _, c := range to {
+		from[c.id] = true
+	}
 	n.mu.Lock()
-	n.waiting[id] = waiter{dev, got}
+	n.waiting[id] = waiter{from, got}
 	n.mu.Unlock()
 	defer func() {
 		n.mu.Lock()
 		delete(n.waiting, id)
 		n.mu.Unlock()
 	}()
-	c.enqueue(outgoing{command: &cmd})
+	for _, c := range to {
+		c.enqueue(outgoing{command: &cmd})
+	}
+	var closed <-chan struct{}
+	if len(to) == 1 && to[0].id == dev {
+		closed = to[0].done
+	}
 	select {
 	case r := <-got:
 		return r, nil
-	case <-c.done:
+	case <-closed:
 		return Result{}, errors.New("the connection to the device closed before it answered")
 	case <-ctx.Done():
+		if to[0].id != dev {
+			return Result{}, errors.New("the device did not answer in time: it is not connected to this one, and no member connected to it passed the command on")
+		}
 		return Result{}, errors.New("the device did not answer in time")
 	}
 }
 
-// command answers a command a peer sent.
+// passing is a command passed on to the member to for the peer from,
+// waiting for its result until expires; from is nil once it came.
+type passing struct {
+	from    *conn
+	to      group.DeviceID
+	expires time.Time
+}
+
+// maxPassed bounds the commands a member passes on at a time.
+const maxPassed = 4096
+
+// pass passes a command for another member on, once, when that member is
+// connected, and reports whether it did. The receiver checks the
+// signature, so a member that passes a command can neither forge nor
+// change it.
+func (c *conn) pass(cmd *group.Record, id string, to group.DeviceID, expires time.Time) bool {
+	n := c.n
+	var dst *conn
+	for _, h := range n.helloed() {
+		if h.id == to {
+			dst = h
+		}
+	}
+	if dst == nil || dst == c || id == "" {
+		return false
+	}
+	now := n.cfg.Now()
+	if !expires.After(now) || expires.Sub(now) > group.CommandLifetime+group.CommandAhead {
+		return false
+	}
+	n.mu.Lock()
+	for k, p := range n.passed {
+		if !p.expires.After(now) {
+			delete(n.passed, k)
+		}
+	}
+	_, seen := n.passed[id]
+	if !seen && len(n.passed) < maxPassed {
+		n.passed[id] = passing{from: c, to: to, expires: expires}
+	}
+	n.mu.Unlock()
+	if seen {
+		return true
+	}
+	dst.enqueue(outgoing{command: cmd})
+	return true
+}
+
+// command answers a command a peer sent, or passes on one for another
+// member.
 func (c *conn) command(cmd *group.Record) {
+	var b struct {
+		ID        string         `json:"id"`
+		To        group.DeviceID `json:"to"`
+		ExpiresMS int64          `json:"expires_ms"`
+	}
+	json.Unmarshal(cmd.Body, &b)
+	if self := c.n.identity(); self != nil && b.To != "" && b.To != self.ID {
+		if !c.pass(cmd, b.ID, b.To, time.UnixMilli(b.ExpiresMS)) {
+			c.n.cfg.Logf("node: a command from %s for %s, which is not connected here", c.id, b.To)
+		}
+		return
+	}
 	res := Result{Status: ResultRefused, Reason: "this device takes no commands"}
 	if c.n.cfg.OnCommand != nil {
 		res = c.n.cfg.OnCommand(c.id, *cmd)
 	}
 	if res.ID == "" {
-		var b struct {
-			ID string `json:"id"`
-		}
-		json.Unmarshal(cmd.Body, &b)
 		res.ID = b.ID
 	}
 	c.enqueue(outgoing{result: &res})
 }
 
-// waiter is a command sent to dev, waiting for its result.
+// waiter is a command sent, waiting for its result from one of the
+// members it went to.
 type waiter struct {
-	dev group.DeviceID
-	got chan Result
+	from map[group.DeviceID]bool
+	got  chan Result
 }
 
 // result passes a peer's result to the command sent to it that waits for it.
 func (n *Node) result(from group.DeviceID, r *Result) {
 	n.mu.Lock()
 	w, ok := n.waiting[r.ID]
+	p, passed := n.passed[r.ID]
+	passed = passed && p.to == from && p.from != nil
+	if passed {
+		// Kept until it expires, so that the command is not passed on
+		// again; the result goes back once.
+		n.passed[r.ID] = passing{to: p.to, expires: p.expires}
+	}
 	n.mu.Unlock()
-	if ok && w.dev == from {
+	if ok && w.from[from] {
 		select {
 		case w.got <- *r:
 		default:
 		}
+		return
+	}
+	if passed {
+		p.from.enqueue(outgoing{result: r})
 	}
 }
 

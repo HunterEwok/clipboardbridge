@@ -1124,3 +1124,49 @@ func TestNoTunnelKey(t *testing.T) {
 	default:
 	}
 }
+
+func TestCommandsPassThroughAMember(t *testing.T) {
+	// a reaches b only through the hub, which passes the command on and
+	// the result back; the hub carries out none of it.
+	got := make(chan string, 4)
+	on := func(name string) option {
+		return func(_ *clip.Config, nc *Config) {
+			nc.OnCommand = func(peer group.DeviceID, c group.Record) Result {
+				got <- name
+				return Result{Status: ResultDone}
+			}
+		}
+	}
+	a, hub, b := newMember(t, Full, on("a")), newMember(t, Full, on("hub")), newMember(t, Full, on("b"))
+	link(t, a, hub)
+	link(t, b, hub)
+	waitPeers(t, hub, 2)
+	waitPeers(t, a, 1)
+	waitPeers(t, b, 1)
+	id := group.NewCommandID()
+	body, _ := json.Marshal(map[string]any{"id": id, "to": b.id.ID, "expires_ms": time.Now().Add(10 * time.Second).UnixMilli()})
+	cmd := group.Record{Body: body}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := a.SendCommand(ctx, b.id.ID, cmd, id, false); err == nil {
+		t.Error("a command went to a member that is not connected, without via")
+	}
+	res, err := a.SendCommand(ctx, b.id.ID, cmd, id, true)
+	if err != nil || res.Status != ResultDone || res.ID != id {
+		t.Fatalf("the command through the hub: %+v, %v", res, err)
+	}
+	if who := <-got; who != "b" {
+		t.Errorf("%s carried out the command", who)
+	}
+	// The same command again is passed on once only.
+	short, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	if _, err := a.SendCommand(short, b.id.ID, cmd, id, true); err == nil {
+		t.Error("the hub passed the same command on twice")
+	}
+	select {
+	case who := <-got:
+		t.Errorf("%s carried out a command again", who)
+	default:
+	}
+}

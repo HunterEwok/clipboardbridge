@@ -31,6 +31,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/remotepaste"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -166,6 +167,7 @@ type Service struct {
 	nearby         map[group.DeviceID]time.Duration // the members of the group that discovery finds on this network, by the uptime they were first found
 	prio           map[group.DeviceID]int           // their holder priority (TXT h), for those that can hold the name
 	watchers       map[*watcher]bool
+	pastes         remotepaste.Limiter // remote pastes per sender
 	lastSeq        uint64
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
