@@ -211,6 +211,9 @@ func inviteJoin(ctx context.Context, g *benchGroup, d *Device) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	file := "/tmp/cbbbench-invite-" + g.run
+	// cbb invite deletes the file when it ends, but not when the bench's
+	// SSH session is cut.
+	defer Run(context.WithoutCancel(ctx), g.hub, "sudo -n rm -f "+file, "")
 	ready := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	var hubPrint string
