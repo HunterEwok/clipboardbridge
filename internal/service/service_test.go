@@ -278,6 +278,9 @@ func startIn(t *testing.T, h *hub, s *testService) *testService {
 		joinListen: func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") },
 		joinAddrs:  func(port uint16) []string { return []string{fmt.Sprintf("127.0.0.1:%d", port)} },
 		newMode:    &sharedMode,
+		// Not the host's battery: a laptop running the tests would change
+		// the holder priorities they expect.
+		battery: func() bool { return false },
 	}
 	if s.cfg != nil {
 		s.cfg(&cfg)
