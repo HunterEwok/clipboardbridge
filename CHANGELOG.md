@@ -195,6 +195,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
+  so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
+  each MiB.
 - A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
   admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
   means. `cbb new` warns that the root key is a file.

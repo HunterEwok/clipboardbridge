@@ -89,7 +89,22 @@ func dial(path, denied string) (*Client, error) {
 		}
 		return nil, &DialError{Msg: "the Clipboard Bridge service is not running (" + err.Error() + ")", Err: err}
 	}
+	SetBuffers(c)
 	return &Client{c: c, r: NewReader(c)}, nil
+}
+
+// socketBuffer is the size of a control connection's socket buffers.
+const socketBuffer = 1 << 20
+
+// SetBuffers gives a control connection socket buffers of 1 MiB each way.
+// A Unix socket's are 8 KiB on macOS, so a copy of files there woke the
+// sender and the service a hundred times or more for each MiB. The system
+// may give less, and an error leaves the defaults.
+func SetBuffers(c net.Conn) {
+	if u, ok := c.(*net.UnixConn); ok {
+		u.SetReadBuffer(socketBuffer)
+		u.SetWriteBuffer(socketBuffer)
+	}
 }
 
 // A DialError is a connection to the service that failed: Denied when the
