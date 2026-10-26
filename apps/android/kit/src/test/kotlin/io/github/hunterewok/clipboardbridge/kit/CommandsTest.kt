@@ -88,6 +88,58 @@ class CommandsTest {
         assertNull(odd.hello.mode)
     }
 
+    /** A paste command carries its way, Enter, kind and text, within the limits; paste-off carries nothing. */
+    @Test
+    fun pasteCommand() {
+        val root = SoftwareSigner()
+        val ca = GroupCertificates.groupCA(root, now, pathLength = 1)
+        val c = Commands.paste(pc, "ls <dir>", enter = true, kind = "secret", group = GroupCertificates.tag(ca), by = pc, now = now, signer = root)
+        val o = Wire.parse(c.body)!!
+        assertEquals("paste", o.optString("type"))
+        assertEquals("paste", o.optString("mode"))
+        assertEquals("ls <dir>", o.optString("text"))
+        assertEquals("secret", o.optString("kind"))
+        assertEquals(true, o.optBool("enter"))
+        assertFailsWith<IllegalArgumentException> { Commands.paste(pc, "", group = "t", by = pc, now = now, signer = root) }
+        assertFailsWith<IllegalArgumentException> { Commands.paste(pc, "x".repeat(Commands.MAX_TYPE_TEXT + 1), "type", group = "t", by = pc, now = now, signer = root) }
+        assertFailsWith<IllegalArgumentException> { Commands.paste(pc, "x", "drop", group = "t", by = pc, now = now, signer = root) }
+        val off = Wire.parse(Commands.pasteOff(pc, "t", pc, now, root).body)!!
+        assertEquals("paste-off", off.optString("type"))
+        assertNull(off.opt("text"))
+    }
+
+    /** A command for a member this one is not connected to goes through one that is, and the result comes back. */
+    @Test
+    fun commandPassedOn() {
+        val (ia, ib, ih) = listOf("a", "b", "c").map { it.repeat(32) }
+        val got = mutableListOf<String>()
+        val a = MemberNode(SyncEngine(ia, HybridClock()), "Pixel")
+        val hub = MemberNode(SyncEngine(ih, HybridClock()), "Hub", onCommand = { _, _ -> synchronized(got) { got += "hub" }; Member.CommandResult("", "done") })
+        val b = MemberNode(SyncEngine(ib, HybridClock()), "Phone two", onCommand = { _, c -> synchronized(got) { got += "b" }; Member.CommandResult(Commands.idOf(c)!!, "done") })
+        val (p1, p2) = Pipe.pair()
+        val (p3, p4) = Pipe.pair()
+        val ts = listOf(
+            Background { a.serve(p1, ih) },
+            Background { hub.serve(p2, ia) },
+            Background { b.serve(p3, ih) },
+            Background { hub.serve(p4, ib) },
+        )
+        waitUntil { a.peers == 1 && b.peers == 1 && hub.peers == 2 }
+        val c = Commands.mode(ib, "own", "tag", ia, Instant.now(), SoftwareSigner())
+        assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c) }
+        val r = a.command(ib, c, via = true)
+        assertEquals("done", r.status)
+        assertEquals(ib, r.by)
+        assertEquals(listOf("b"), synchronized(got) { got.toList() })
+        // The hub passes the same command on once only.
+        assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c, timeoutMS = 300, via = true) }
+        assertEquals(listOf("b"), synchronized(got) { got.toList() })
+        a.closeAll()
+        b.closeAll()
+        hub.closeAll()
+        ts.forEach { it.join() }
+    }
+
     /** A command goes to the named peer, and its result comes back; a phone refuses commands. */
     @Test
     fun commandRoundTrip() {
@@ -138,6 +190,8 @@ class CommandsTest {
                         now,
                         root,
                     ).toJson(),
+                    Commands.paste(pc, "echo <ok> & \"done\"\n", "type", enter = true, group = tag, by = by, now = now, signer = admin, adminCA = adminCA).toJson(),
+                    Commands.pasteOff(pc, tag, by, now, root).toJson(),
                 ),
             ),
         )
@@ -153,12 +207,13 @@ class CommandsTest {
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
         val now = v.getValue("now_ms").jsonPrimitive.long
         val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
-        assertEquals(11, commands.size)
+        assertEquals(14, commands.size)
         for (c in commands) {
             val name = c.str("name")
             val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }
             assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
-            got.getOrNull()?.let { assertEquals(c.str("mode"), it.mode, name) }
+            got.getOrNull()?.let { assertEquals(c["mode"]?.jsonPrimitive?.content, it.mode, name) }
+            got.getOrNull()?.takeIf { it.type == "paste" }?.let { assertTrue(it.enter && it.kind == "text" && it.text!!.endsWith("\"done\"\n"), name) }
         }
     }
 }

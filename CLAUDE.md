@@ -43,7 +43,10 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   member TLS, signed device and revocation records; `keys.go` puts new member and admin keys
   in the TPM (`internal/tpmkey`, go-tpm, tested against swtpm) on Linux.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
-- `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
+- `internal/node`: the member protocol and sync, commands passed on to members; `internal/service`: the daemon and CLI.
+- `internal/remotepaste`: remote paste on a member (the user's switches, cleaning the text, the
+  limits per sender, the log); `internal/service/paste.go` takes `paste` commands and hands
+  them to the watchers that offer a target.
 - `internal/tunnel`: WireGuard for sync away from home (amneziawg-go, a wireguard-go fork that is
   plain WireGuard until obfuscation is set, with gVisor netstack in the process): the hub,
   which opens only the member port to its clients, and the client;

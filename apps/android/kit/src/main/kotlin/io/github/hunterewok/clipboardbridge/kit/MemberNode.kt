@@ -115,7 +115,16 @@ class MemberNode(
     val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
     private val conns = mutableSetOf<Conn>()
-    private val waiting = mutableMapOf<String, Pair<String, CompletableFuture<Member.CommandResult>>>()
+    private val waiting = mutableMapOf<String, Waiting>()
+
+    /** A command sent to peer, through the members in via, waiting for its result. */
+    private class Waiting(val peer: String, val via: Set<String>, val got: CompletableFuture<Member.CommandResult>)
+
+    /** A command passed on to the member to for the connection from, kept until it expires; from is null once the result went back. */
+    private class Passing(var from: Conn?, val to: String, val expiresMS: Long)
+
+    /** The commands passed on for other members, by ID (section 15). */
+    private val passed = mutableMapOf<String, Passing>()
 
     /** A renewed member certificate for a peer, DER, and the admin CA that issued it; null when a root did. */
     class Renewal(val cert: ByteArray, val issuer: ByteArray? = null)
@@ -166,28 +175,51 @@ class MemberNode(
         }
 
     /**
-     * Sends the connected member peer a command signed for it (section 15)
-     * and waits for its result, at most timeoutMS. It throws when peer is
-     * not connected, the connection ends first or no result comes in time.
+     * Sends the member peer a command signed for it (section 15) and waits
+     * for its result, at most timeoutMS: on the connection to peer, or, with
+     * via and without one, to every connected member, one of which passes it
+     * on. It throws when it reaches no member, the connection to peer ends
+     * first or no result comes in time.
      */
-    fun command(peer: String, command: Member.Record, timeoutMS: Long = 10_000): Member.CommandResult {
+    fun command(peer: String, command: Member.Record, timeoutMS: Long = 10_000, via: Boolean = false): Member.CommandResult {
         val id = Commands.idOf(command) ?: throw IllegalArgumentException("the command has no ID")
         val got = CompletableFuture<Member.CommandResult>()
+        val direct: Boolean
         synchronized(lock) {
-            val c = conns.firstOrNull { it.peer == peer && it.peerRole != null } ?: throw ProtocolException("the device is not connected")
-            waiting[id] = peer to got
-            c.waiters += got
-            c.enqueue(Member.Message.Command(command))
+            val helloed = conns.filter { it.peer != null && it.peerRole != null }
+            val to = helloed.firstOrNull { it.peer == peer }?.let { listOf(it) } ?: if (via) helloed else emptyList()
+            if (to.isEmpty()) throw ProtocolException("the device is not connected")
+            direct = to.size == 1 && to[0].peer == peer
+            waiting[id] = Waiting(peer, to.mapNotNull { it.peer }.toSet(), got)
+            if (direct) to[0].waiters += got
+            to.forEach { it.enqueue(Member.Message.Command(command)) }
         }
         try {
             return got.get(timeoutMS, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
+            if (!direct) throw ProtocolException("the device did not answer in time: it is not connected to this one, and no member connected to it passed the command on")
             throw ProtocolException("the device did not answer in time")
         } catch (e: ExecutionException) {
             throw ProtocolException("the connection to the device closed before it answered")
         } finally {
             synchronized(lock) { waiting.remove(id) }
         }
+    }
+
+    /**
+     * Passes a command for the member to on, once by its ID, when to is
+     * connected, and later its result back to from (section 15). The
+     * receiver checks the signature, so this node can neither forge nor
+     * change it.
+     */
+    private fun pass(from: Conn, command: Member.Record, id: String, to: String, expiresMS: Long) = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        passed.entries.removeIf { it.value.expiresMS <= now }
+        val dst = conns.firstOrNull { it.peer == to && it.peerRole != null }
+        if (dst == null || dst === from || id.isEmpty() || expiresMS <= now || expiresMS - now > Commands.LIFETIME_MS + Commands.AHEAD_MS) return@synchronized
+        if (passed.containsKey(id) || passed.size >= MAX_PASSED) return@synchronized
+        passed[id] = Passing(from, to, expiresMS)
+        dst.enqueue(Member.Message.Command(command))
     }
 
     /**
@@ -307,14 +339,27 @@ class MemberNode(
                             }
                         }
                     }
-                    is Member.Message.Command -> c.enqueue(
-                        Member.Message.Result(
-                            onCommand?.invoke(c.peer, m.command)
-                                ?: Member.CommandResult(Commands.idOf(m.command) ?: "", "refused", "this device takes no commands"),
-                        ),
-                    )
+                    is Member.Message.Command -> {
+                        val o = Wire.parse(m.command.body)
+                        val to = o?.optString("to")
+                        if (to != null && to != engine.device) {
+                            pass(c, m.command, o.optString("id") ?: "", to, o.optLong("expires_ms") ?: 0)
+                        } else {
+                            val r = onCommand?.invoke(c.peer, m.command)
+                                ?: Member.CommandResult(Commands.idOf(m.command) ?: "", "refused", "this device takes no commands")
+                            c.enqueue(Member.Message.Result(r.copy(by = engine.device)))
+                        }
+                    }
                     is Member.Message.Result -> synchronized(lock) {
-                        waiting[m.result.id]?.takeIf { it.first == c.peer }?.second?.complete(m.result)
+                        val r = m.result
+                        val w = waiting[r.id]
+                        // A member the command went to so that it passes it on answers only with the receiver's result.
+                        if (w != null && c.peer in w.via && (c.peer == w.peer || r.by == w.peer)) {
+                            w.got.complete(r)
+                        } else {
+                            val p = passed[r.id]
+                            if (p != null && p.to == c.peer) p.from?.let { from -> p.from = null; from.enqueue(Member.Message.Result(r)) }
+                        }
                     }
                     Member.Message.Bye -> return
                     else -> {} // a ping, an event that did not decode, or a newer type
@@ -465,3 +510,6 @@ class MemberNode(
         }
     }
 }
+
+/** The most commands a member passes on at a time, as Go. */
+private const val MAX_PASSED = 4096

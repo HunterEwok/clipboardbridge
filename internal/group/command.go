@@ -4,6 +4,7 @@
 package group
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
@@ -18,10 +19,29 @@ import (
 // The types of commands (docs/protocol.md, section 15): CommandMode sets
 // the sync mode of one member; CommandHub makes the receiver, a computer
 // that is an admin, the group's hub for sync away from home in place of the
-// sender, with the sender's clients (section 11, "Moving the hub").
+// sender, with the sender's clients (section 11, "Moving the hub");
+// CommandPaste puts a text where the receiver's focus is, and
+// CommandPasteOff turns remote paste off on the receiver (design.md,
+// "Remote paste").
 const (
-	CommandMode = "mode"
-	CommandHub  = "hub"
+	CommandMode     = "mode"
+	CommandHub      = "hub"
+	CommandPaste    = "paste"
+	CommandPasteOff = "paste-off"
+)
+
+// The ways a paste command puts its text in: PasteByClipboard writes the
+// clipboard and presses the paste keys, PasteByTyping types each character.
+const (
+	PasteByClipboard = "paste"
+	PasteByTyping    = "type"
+)
+
+// The longest text of a paste command, in bytes of UTF-8: typing is slow,
+// so it takes less.
+const (
+	MaxPasteText = 1 << 20
+	MaxTypeText  = 4 << 10
 )
 
 // MaxHubClients bounds the clients a hub command hands over, as many as a
@@ -29,8 +49,12 @@ const (
 const MaxHubClients = 256
 
 // maxCommandBody bounds a command's body: a hub command carries the keys of
-// up to MaxHubClients clients.
-const maxCommandBody = 64 << 10
+// up to MaxHubClients clients. maxPasteBody bounds a paste command's, whose
+// text JSON may escape.
+const (
+	maxCommandBody = 64 << 10
+	maxPasteBody   = 2 << 20
+)
 
 // The limits of a command's times: it expires at most CommandLifetime after
 // it was signed, and its time may be at most CommandAhead ahead of the
@@ -52,8 +76,11 @@ type CommandBody struct {
 	ID        string    `json:"id"` // 128 random bits in hex, for the receiver's replay cache
 	TimeMS    int64     `json:"time_ms"`
 	ExpiresMS int64     `json:"expires_ms"`
-	Mode      string    `json:"mode,omitempty"` // mode: own, shared, receive or send
-	Hub       *HubOrder `json:"hub,omitempty"`  // hub: how the receiver is the hub
+	Mode      string    `json:"mode,omitempty"`  // mode: own, shared, receive or send; paste: PasteByClipboard or PasteByTyping
+	Hub       *HubOrder `json:"hub,omitempty"`   // hub: how the receiver is the hub
+	Enter     bool      `json:"enter,omitempty"` // paste: press Enter after the text
+	Kind      string    `json:"kind,omitempty"`  // paste: text or secret
+	Text      string    `json:"text,omitempty"`  // paste: what to put in
 }
 
 // A HubOrder is what a hub command tells the new hub: where its clients
@@ -95,9 +122,17 @@ func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate
 	if err := body.check(); err != nil {
 		return Record{}, err
 	}
-	data, err := json.Marshal(body)
-	if err != nil {
+	// A paste's text is sent as it is: without the escapes of HTML, which
+	// would make a text of brackets six times longer.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(body); err != nil {
 		return Record{}, err
+	}
+	data := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	if len(data) > body.maxBody() {
+		return Record{}, errors.New("group: the command is too large")
 	}
 	sum := sha256.Sum256(data)
 	sig, err := key.Sign(rand.Reader, sum[:], crypto.SHA256)
@@ -121,6 +156,9 @@ func (b *CommandBody) check() error {
 	if _, err := hex.DecodeString(b.ID); err != nil {
 		return errors.New("group: a command has no valid ID")
 	}
+	if b.Type != CommandPaste && (b.Enter || b.Kind != "" || b.Text != "") {
+		return fmt.Errorf("group: a %s command carries a paste", b.Type)
+	}
 	switch b.Type {
 	case CommandMode:
 		if b.Mode == "" || b.Hub != nil {
@@ -132,6 +170,14 @@ func (b *CommandBody) check() error {
 		}
 		if err := b.Hub.check(); err != nil {
 			return err
+		}
+	case CommandPaste:
+		if err := b.checkPaste(); err != nil {
+			return err
+		}
+	case CommandPasteOff:
+		if b.Mode != "" || b.Hub != nil {
+			return errors.New("group: a paste-off command carries an order")
 		}
 	default:
 		return fmt.Errorf("group: unknown command type %q", b.Type)
@@ -152,11 +198,14 @@ func (b *CommandBody) check() error {
 // caller keeps the replay cache.
 func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (CommandBody, error) {
 	var body CommandBody
-	if len(c.Body) > maxCommandBody {
+	if len(c.Body) > maxPasteBody {
 		return body, errors.New("group: the command is too large")
 	}
 	if err := json.Unmarshal(c.Body, &body); err != nil {
 		return body, fmt.Errorf("group: a command: %w", err)
+	}
+	if len(c.Body) > body.maxBody() {
+		return body, errors.New("group: the command is too large")
 	}
 	if err := body.check(); err != nil {
 		return body, err
@@ -182,6 +231,35 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 		return body, errors.New("group: the command was signed in the future; check the clocks of both devices")
 	}
 	return body, nil
+}
+
+func (b *CommandBody) maxBody() int {
+	if b.Type == CommandPaste {
+		return maxPasteBody
+	}
+	return maxCommandBody
+}
+
+func (b *CommandBody) checkPaste() error {
+	limit := MaxPasteText
+	switch b.Mode {
+	case PasteByClipboard:
+	case PasteByTyping:
+		limit = MaxTypeText
+	default:
+		return fmt.Errorf("group: a paste command's way %q is not paste or type", b.Mode)
+	}
+	switch {
+	case b.Hub != nil:
+		return errors.New("group: a paste command carries a hub order")
+	case b.Kind != "text" && b.Kind != "secret":
+		return fmt.Errorf("group: a paste command's kind %q is not text or secret", b.Kind)
+	case b.Text == "":
+		return errors.New("group: a paste command has no text")
+	case len(b.Text) > limit:
+		return fmt.Errorf("group: a paste command's text is longer than %d bytes", limit)
+	}
+	return nil
 }
 
 func (o *HubOrder) check() error {

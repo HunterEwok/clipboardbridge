@@ -146,8 +146,13 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		res.Status, res.Reason = node.ResultRefused, "too many commands; try again in a minute"
 		return res
 	}
-	if body.Type == group.CommandHub {
+	switch body.Type {
+	case group.CommandHub:
 		return s.takeHub(body)
+	case group.CommandPaste:
+		return s.pasted(body)
+	case group.CommandPasteOff:
+		return s.pasteOff(body)
 	}
 	if _, err := clip.ParseMode(body.Mode); err != nil {
 		res.Status, res.Reason = node.ResultRefused, err.Error()
@@ -197,7 +202,7 @@ func (s *Service) setModeOn(ctx context.Context, target, name string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID)
+	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
 	if err != nil {
 		return fmt.Errorf("setting the sync mode of %s: %w", d.Name, err)
 	}
