@@ -355,7 +355,7 @@ thead th { font: 500 13px/1.3 var(--f-mono); letter-spacing: .06em; text-transfo
 :root:not([data-skin="deco"]) .card {
   background: linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 24px 24px, linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px, var(--raised);
 }
-.lead { max-width: 36em; }
+.lead { max-width: none; }
 .card p { margin: 0 0 10px; color: var(--dim); }
 .card h3 + p { margin-top: 4px; }
 .card ul { padding-inline-start: 20px; margin: 12px 0 0; }
