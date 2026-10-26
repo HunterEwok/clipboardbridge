@@ -543,7 +543,7 @@ func TestActed(t *testing.T) {
 		{act, actions.Lock, "", "", false},
 		{act, actions.Sleep, "the lid is closed", "", true},
 		{act, actions.Reboot, "the session could not run reboot", "osascript: exit status 1", false},
-		{nil, actions.Lock, "this watcher runs no actions", "", true},
+		{nil, actions.Lock, "this session runs no presets: the service runs them", "", true},
 	} {
 		m := acted(context.Background(), c.act, &control.Message{Header: control.Header{Op: control.OpAct, Seq: 7, Name: c.name}}, logf)
 		if m.Op != control.OpActed || m.Seq != 7 || m.Error != c.err || m.Detail != c.det || m.Refused != c.refused {

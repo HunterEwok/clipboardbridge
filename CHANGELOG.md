@@ -120,6 +120,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   signed in (`pmset` and loginwindow's Apple events on a Mac, where the minute before a
   reboot is the agent's; `LockWorkStation`, `SetSuspendState` and `InitiateSystemShutdownEx`
   on Windows, which warns the users signed in).
+- Quick actions of the user's own: `sudo cbb action add NAME [-by KINDS] -- PROGRAM ARGS`
+  on a computer adds an action that runs PROGRAM, by its full path and with those arguments
+  only, as the user signed in, through the agent; only its exit status goes back, and it
+  must end within 15 s. `cbb action remove NAME` takes it away.
 
 ### Changed
 

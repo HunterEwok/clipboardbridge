@@ -180,3 +180,86 @@ func TestQuickActionsInSession(t *testing.T) {
 		t.Errorf("the agent got %s and %s", a, b)
 	}
 }
+
+// TestOwnActions: the user's own action runs in the session, through the
+// agent, with the program and arguments its user gave and nothing else.
+func TestOwnActions(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	set := func(a control.Action) error {
+		_, err := deck.do(t, control.Header{Op: control.OpActionSet, Actions: []control.Action{a}}, "")
+		return err
+	}
+	for _, c := range []struct {
+		a    control.Action
+		want string
+	}{
+		{control.Action{Name: actions.Lock, On: true, Command: []string{"/bin/true"}}, "is a preset"},
+		{control.Action{Name: "backup", On: true, Command: []string{"backup.sh"}}, "full path"},
+		{control.Action{Name: "Backup", On: true, Command: []string{"/bin/true"}}, "not an action's name"},
+		{control.Action{Name: "backup", On: true}, "has no action"},
+	} {
+		if err := set(c.a); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: %v, want %q", c.a, err, c.want)
+		}
+	}
+	if err := set(control.Action{Name: "backup", On: true, Command: []string{"/usr/local/bin/backup", "--quick"}}); err != nil {
+		t.Fatal(err)
+	}
+	var own *control.Action
+	for _, a := range deck.status(t).Actions {
+		if a.Name == "backup" {
+			own = &a
+		}
+	}
+	if own == nil || !own.On || strings.Join(own.Command, " ") != "/usr/local/bin/backup --quick" {
+		t.Fatalf("the status lists %+v", own)
+	}
+
+	w := deck.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Act: true}}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *control.Message, 2)
+	go func() {
+		for {
+			m, err := w.Receive()
+			if err != nil {
+				return
+			}
+			if m.Op == control.OpAct {
+				got <- m
+				w.Send(&control.Message{Header: control.Header{Op: control.OpActed, Seq: m.Seq}})
+			}
+		}
+	}()
+	if _, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "deck", Name: "backup"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if m := <-got; m.Name != "backup" || strings.Join(m.Command, " ") != "/usr/local/bin/backup --quick" {
+		t.Errorf("the agent got %+v", m.Header)
+	}
+
+	// Disabling keeps the command; removing takes it away, and a preset
+	// stays.
+	if err := set(control.Action{Name: "backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if a, err := actions.Load(deck.dir); err != nil || a.Get("backup").On || len(a.Get("backup").Command) != 2 {
+		t.Errorf("after disable: %+v, %v", a, err)
+	}
+	if _, err := deck.do(t, control.Header{Op: control.OpActionDel, Name: actions.Lock}, ""); err == nil || !strings.Contains(err.Error(), "is a preset") {
+		t.Errorf("removing a preset: %v", err)
+	}
+	if _, err := deck.do(t, control.Header{Op: control.OpActionDel, Name: "backup"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second) // one action a second from one sender
+	if _, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "deck", Name: "backup"}, ""); err == nil || !strings.Contains(err.Error(), "has no action") {
+		t.Errorf("a removed action: %v", err)
+	}
+}

@@ -860,7 +860,8 @@ Header fields (all omitted when empty):
 | `all` | bool | `paste-receive off`: on every device of the group |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
-| `act` | bool | `watch`: the watcher runs the quick actions in its session, as the agent on a Mac and on Windows |
+| `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
+| `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
@@ -908,7 +909,9 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
 - Service to watcher, for a quick action (section 15), only to a watcher whose watch request
-  set `act`: `act` (`seq`, and `name`, the action). The watcher runs it in its session and
+  set `act`: `act` (`seq`, `name`, the action, and for an action of the user's own
+  `command`, its program by full path and its arguments, as the device's user set them).
+  The watcher runs it in its session, a `command` without a shell and for at most 15 s, and
   answers `acted` with the same `seq`, as `injected` below: no `error` when it did, or
   `error` (and `detail`), with `refused` when it would not. On a Mac and on Windows the
   service's own user has no right to lock, sleep or shut down, so the service hands the
@@ -1949,7 +1952,9 @@ An `action` command carries only the action's name: what it does is defined on t
 which knows the presets `lock` (lock the screen), `sleep`, `reboot` and `shutdown` (both a
 minute after the command, so that `cancel-shutdown` can stop them), `cancel-shutdown` and
 `restart` (the service ends and its service manager starts it again, after the result is
-sent). The receiver refuses it unless its user turned that action on there, and then:
+sent), and the actions its user added there, each a program with fixed arguments that the
+agent of the user signed in runs; nothing in the command reaches its arguments, and only
+the exit status comes back. The receiver refuses it unless its user turned that action on there, and then:
 
 - unless the signer is of a kind the user allowed for it, when the user named kinds: `root`
   (the root's own key signed it), `phone` or `computer` (the role of the signer's device, the

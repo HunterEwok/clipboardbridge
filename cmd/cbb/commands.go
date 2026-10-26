@@ -570,7 +570,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	w := pasteboard.NewWatch(b)
-	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Logf: logf}); err != nil {
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Commands: true, Logf: logf}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0

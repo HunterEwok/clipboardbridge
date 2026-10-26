@@ -81,10 +81,12 @@ type Config struct {
 	Socket string // the control socket
 	Board  Board  // nil for a paste target without a clipboard
 	Target Target // nil to use Board's when it is one
-	// Actor runs the quick actions in this session; nil where the
-	// service runs them itself.
-	Actor Actor
-	Logf  func(format string, args ...any)
+	// Actor runs the quick actions' presets in this session; nil where
+	// the service runs them itself. Commands runs the user's own actions
+	// here, as a desktop's agent does.
+	Actor    Actor
+	Commands bool
+	Logf     func(format string, args ...any)
 }
 
 // An Actor runs a quick action (internal/actions) in the user's session.
@@ -225,7 +227,7 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 	if tgt != nil {
 		watchReq.Inject = tgt.Target()
 	}
-	watchReq.Act = cfg.Actor != nil
+	watchReq.Act = cfg.Actor != nil || cfg.Commands
 	if cfg.Board != nil {
 		if it, ok, err := cfg.Board.Current(); err == nil && ok {
 			if m := report(control.OpClipboard, it); m != nil {
@@ -368,11 +370,16 @@ func injected(ctx context.Context, tgt Target, m *control.Message, logf func(str
 // paste.
 func acted(ctx context.Context, act Actor, m *control.Message, logf func(string, ...any)) *control.Message {
 	ans := &control.Message{Header: control.Header{Op: control.OpActed, Seq: m.Seq}}
-	if act == nil {
-		ans.Error, ans.Refused = "this watcher runs no actions", true
+	var err error
+	switch {
+	case len(m.Command) > 0:
+		err = actions.RunCommand(ctx, m.Command)
+	case act == nil:
+		ans.Error, ans.Refused = "this session runs no presets: the service runs them", true
 		return ans
+	default:
+		err = act.Run(ctx, m.Name)
 	}
-	err := act.Run(ctx, m.Name)
 	var r *actions.Refusal
 	switch {
 	case err == nil:

@@ -123,6 +123,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpActionDel:
+		if err := s.removeAction(m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpActionOn:
 		if err := s.runActionOn(ctx, m); err != nil {
 			fail(c, err)
@@ -955,7 +961,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			injMu.Unlock()
 			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By)}
 			if in.body.Type == group.CommandAction {
-				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action}
+				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action, Command: in.command}
 			}
 			if control.Write(c, &control.Message{Header: h, Payload: []byte(in.text)}) != nil {
 				answer(injSeq, node.Result{Status: node.ResultFailed, Reason: "the connection to the paste target closed"})
