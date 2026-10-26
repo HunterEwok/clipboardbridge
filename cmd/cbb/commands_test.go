@@ -116,8 +116,17 @@ func TestCopy(t *testing.T) {
 		t.Errorf("copy sent kind %q", m.Kind)
 	}
 	stderr.Reset()
-	if code := run([]string{"copy", "hello"}, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "standard input") {
-		t.Errorf("copy with an argument: %d, %q", code, stderr.String())
+	// An argument is a file to send, never a text.
+	if code := run([]string{"copy", "-secret", "hello"}, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "not for files") {
+		t.Errorf("copy -secret FILE: %d, %q", code, stderr.String())
+	}
+	stderr.Reset()
+	if code := run([]string{"copy", "-type", "png"}, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "go with FILE") {
+		t.Errorf("copy -type without a file: %d, %q", code, stderr.String())
+	}
+	stderr.Reset()
+	if code := run([]string{"copy", "no-such-file"}, strings.NewReader(""), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "no-such-file") {
+		t.Errorf("copy of a missing file: %d, %q", code, stderr.String())
 	}
 }
 
