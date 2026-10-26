@@ -586,7 +586,6 @@ func TestHubWait(t *testing.T) {
 // client (docs/protocol.md, section 11, "Moving the hub").
 func TestMoveHub(t *testing.T) {
 	t.Setenv("CBB_DEBUG", "1")
-	moveGrace = 200 * time.Millisecond
 	var h hub
 	pi := startService(t, &h, "pi")
 	mac := startService(t, &h, "mac")

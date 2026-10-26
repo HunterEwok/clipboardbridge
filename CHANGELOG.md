@@ -114,6 +114,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Moving the hub could leave a device far from home without a hub: the old hub stopped its
+  tunnel two seconds after it queued the new hub's offer, whether or not the offer had gone
+  out. It now says goodbye after the offer on each connection through its tunnel, waits up
+  to ten seconds for those connections to end, and only then stops the tunnel.
 - A member that got a takeover's root record before the records that make its signer an
   admin kept trusting the old root until it restarted; it now checks the roots after every
   record that can change them. A member admitted by an admin computer no longer logs that

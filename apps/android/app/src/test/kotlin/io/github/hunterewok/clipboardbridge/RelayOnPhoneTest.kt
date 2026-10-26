@@ -17,10 +17,10 @@ class RelayOnPhoneTest {
     private val tv = "f".repeat(32)
     private val pin = "sha256:" + "A".repeat(43)
 
-    private class FakeLink(val args: List<String>, val memberPort: Int, var records: String) : RelayLink {
+    private class FakeLink(val args: List<String>, val memberPort: Int, var shown: String) : RelayLink {
         @Volatile var closed = false
         override fun setRecords(records: String) {
-            this.records = records
+            shown = records
         }
         override fun close() {
             closed = true

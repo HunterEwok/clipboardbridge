@@ -23,10 +23,20 @@ import (
 // with its offer; the old hub passes that offer on to each connected
 // client with the client's own preshared key, and stops being the hub.
 
-// moveGrace is how long the old hub waits, after it passed on the new
-// hub's offer, before it stops its tunnel, so that the clients that are
-// connected through it get the offer.
-var moveGrace = 2 * time.Second
+// moveGrace is the longest the old hub waits, after it passed on the new
+// hub's offer, for the connections through its tunnel to the clients it
+// passed the offer to to end: it closes each one after the offer and a
+// goodbye. Then it keeps the tunnel for moveLinger, so that the last
+// packets arrive, and stops it. A client that missed the offer would be
+// left far from home with the old hub's only.
+var moveGrace = 10 * time.Second
+
+// moveLinger is how long the old hub keeps its tunnel after the connections
+// through it ended.
+var moveLinger = time.Second
+
+// moveCheck is how often the old hub looks whether those connections ended.
+const moveCheck = 50 * time.Millisecond
 
 // listed reports whether the records list the device dev as a member.
 func (s *Service) listed(dev group.DeviceID) bool {
@@ -254,10 +264,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 		return &o
 	})
 	s.logf("cbb: %s is the group's hub now; passed its offer on to %d connected clients", d.Name, len(sent))
-	select {
-	case <-ctx.Done():
-	case <-time.After(moveGrace):
-	}
+	s.waitClientsLeft(ctx, nd, id.ID, sent)
 	s.tunMu.Lock()
 	defer s.tunMu.Unlock()
 	if s.tunnel != st {
@@ -276,4 +283,33 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 	s.stopTunnelLocked()
 	s.runTunnelLocked()
 	return nil
+}
+
+// waitClientsLeft says goodbye, after the new hub's offer, to the clients
+// the old hub passed it to that are connected through its tunnel, waits for
+// up to moveGrace until those connections ended, and then for moveLinger.
+// Those at home stay connected without the tunnel and need no wait.
+func (s *Service) waitClientsLeft(ctx context.Context, nd *node.Node, self group.DeviceID, sent []group.DeviceID) {
+	addr, err := tunnel.Addr(string(self))
+	if err != nil || len(sent) == 0 {
+		return
+	}
+	nd.SayGoodbye(sent, addr)
+	deadline := time.After(moveGrace)
+	tick := time.NewTicker(moveCheck)
+	defer tick.Stop()
+	for slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.Local == addr && slices.Contains(sent, p.ID) }) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline:
+			s.logf("cbb: a client of this hub did not take the new hub's offer in %v; it gets it at home", moveGrace)
+			return
+		case <-tick.C:
+		}
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(moveLinger):
+	}
 }

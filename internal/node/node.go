@@ -448,6 +448,25 @@ func (n *Node) closeAll() []*conn {
 	return conns
 }
 
+// SayGoodbye closes the connections to the devices devs whose local
+// address is local, as through a hub's tunnel, after sending what is queued
+// for them and a goodbye.
+func (n *Node) SayGoodbye(devs []group.DeviceID, local netip.Addr) {
+	var conns []*conn
+	n.mu.Lock()
+	for id, c := range n.conns {
+		if slices.Contains(devs, id) {
+			conns = append(conns, c)
+		}
+	}
+	n.mu.Unlock()
+	for _, c := range conns {
+		if a, err := netip.ParseAddrPort(c.tc.LocalAddr().String()); err == nil && a.Addr().Unmap() == local {
+			c.close(true)
+		}
+	}
+}
+
 // Peers returns the connected members that sent their hello, sorted by
 // device ID.
 func (n *Node) Peers() []Peer {
