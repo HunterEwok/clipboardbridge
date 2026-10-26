@@ -364,6 +364,16 @@ func checkLockedDown(line string) error {
 // recreateCmd makes docker compose start a new container of the service,
 // from composeLabels' line, or is "" when docker compose did not start it.
 func recreateCmd(line string) string {
+	cmd := composeCmd(line)
+	if cmd == "" {
+		return ""
+	}
+	return cmd + " up -d --force-recreate " + shellQuote(strings.Split(line, "|")[2])
+}
+
+// composeCmd is docker compose for the project of composeLabels' line, or
+// "" when docker compose did not start the container.
+func composeCmd(line string) string {
 	f := strings.Split(line, "|")
 	if len(f) != 3 || f[0] == "" || f[1] == "" || f[2] == "" {
 		return ""
@@ -372,5 +382,5 @@ func recreateCmd(line string) string {
 	for _, file := range strings.Split(f[1], ",") {
 		cmd += " -f " + shellQuote(file)
 	}
-	return cmd + " up -d --force-recreate " + shellQuote(f[2])
+	return cmd
 }

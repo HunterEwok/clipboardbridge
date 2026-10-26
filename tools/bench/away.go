@@ -89,8 +89,15 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			joined = append(joined, d)
 		}
 	}
+	// The cases below need an away device that syncs; one that does not
+	// would only make each of them wait out its time.
+	var synced []*Device
 	for _, d := range joined {
-		bothWays(ctx, r, g, "away/P11/"+d.Name+"/sync/", d, timeout)
+		if !bothWays(ctx, r, g, "away/P11/"+d.Name+"/sync/", d, timeout) {
+			r.Skip("away/"+d.Name+"/rest", "it did not sync away from home (P11), so F6, P37, P36 and F7 leave it out")
+			continue
+		}
+		synced = append(synced, d)
 		if r.Do("away/P11/"+d.Name+"/off-on", func() error {
 			if _, err := Run(ctx, d, adminCmd(d)+" global off", ""); err != nil {
 				return err
@@ -103,6 +110,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			bothWays(ctx, r, g, "away/P11/"+d.Name+"/again/", d, timeout)
 		}
 	}
+	joined = synced
 	if len(joined) == 0 {
 		return
 	}
@@ -186,15 +194,19 @@ func forwarderDown(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joi
 	}
 }
 
-// bothWays copies on the hub and on d, and waits for each on the other.
-func bothWays(ctx context.Context, r *Report, g *benchGroup, prefix string, d *Device, timeout time.Duration) {
+// bothWays copies on the hub and on d, and waits for each on the other. It
+// reports whether both arrived.
+func bothWays(ctx context.Context, r *Report, g *benchGroup, prefix string, d *Device, timeout time.Duration) bool {
+	ok := true
 	for _, p := range [][2]*Device{{g.hub, d}, {d, g.hub}} {
 		from, to := p[0], p[1]
 		text := fmt.Sprintf("cbb-bench %s %s from %s", g.run, strings.TrimSuffix(prefix, "/"), from.Name)
-		if r.Do(prefix+from.Name+"/copy", func() error { return Copy(ctx, from, text) }) == nil {
-			r.Do(prefix+from.Name+"->"+to.Name, func() error { return arrives(ctx, to, seen(text, from, to), 2*timeout) })
+		if r.Do(prefix+from.Name+"/copy", func() error { return Copy(ctx, from, text) }) != nil ||
+			r.Do(prefix+from.Name+"->"+to.Name, func() error { return arrives(ctx, to, seen(text, from, to), 2*timeout) }) != nil {
+			ok = false
 		}
 	}
+	return ok
 }
 
 func globalOff(ctx context.Context, r *Report, suite string, d *Device) {
@@ -293,13 +305,13 @@ func Relay(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 			continue
 		}
 		if r.Do("relay/P12/"+d.Name+"/on", func() error {
-			// The relay is part of sync away from home, which comes first.
-			if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
-				return noSudo(d, err)
-			}
-			g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, d) })
+			// cbb global relay turns sync away from home on too; -yes agrees
+			// to both.
 			_, err := Run(ctx, d, adminCmd(d)+" global relay "+rel.Address+" -key "+rel.Key+" -yes", "")
-			return err
+			if err == nil {
+				g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, d) })
+			}
+			return noSudo(d, err)
 		}) == nil {
 			met = append(met, d)
 		}

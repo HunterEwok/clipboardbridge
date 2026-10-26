@@ -13,6 +13,8 @@ ssh = "user@deck.lan"
 # its XWayland display. On KDE or wlroots, "wayland".
 clipboard = "x11"
 roles = ["member", "hub", "away"]
+# reset: the installer opens the member port in the firewall.
+firewall = "yes"
 
 [device.rpi0w]
 os = "linux-lite"
@@ -37,6 +39,8 @@ os = "linux"
 ssh = "user@vps.example.net"
 clipboard = "none"
 roles = ["away"]
+# A server that does other work: reset leaves its firewall alone.
+firewall = "no"
 
 # The Docker image on a host, started with packaging/docker/compose.home.yaml:
 # the bench runs cbb in it with docker exec. tools/bench/setup-docker.sh
@@ -45,6 +49,8 @@ roles = ["away"]
 os = "docker"
 ssh = "user@pi4.lan"
 roles = ["member"]
+# reset: setup-docker.sh in a checkout of the repository on the host.
+setup = "~/clipboardbridge/tools/bench/setup-docker.sh"
 
 [router]
 ssh = "root@router.lan"

@@ -285,9 +285,10 @@ relay over SSH.
 
 **Starting a run**:
 
-- by hand on the controller (`go run ./tools/bench check`, `go run ./tools/bench smoke`,
-  `go run ./tools/bench full`, later `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`,
-  `-only a,b` limits the run to some devices);
+- by hand on the controller (`go run ./tools/bench check`, `-build DIR reset` or `-quick
+  reset` before each suite (section 13, "A test cycle"), `smoke`, `full`, `away`, `relay`,
+  later `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`, `-only
+  a,b` limits the run to some devices);
 - from GitHub: a self-hosted runner on the controller, started **only** by
   `workflow_dispatch` and by release tags, never by pull requests (a pull request from a
   stranger must never run code on the home network). The runner gets no repository
@@ -378,12 +379,50 @@ address = "relay.example.net:8765"
 key = "sha256:..."     # cbb relay -show-key on the server
 ```
 
-On the Mac the bench user runs `cbb` as root without a password through one sudoers rule,
-`/etc/sudoers.d/cbbbench` (with `visudo -f`), beside the installers' and F1's:
+On the Mac the bench user runs two programs as root without a password: `cbb`, and the
+bench's helper `cbbbench-root`, which `tools/bench/setup-mac.sh` installs with its sudoers
+rule (below).
 
-```
-USER ALL=(root) NOPASSWD: /usr/local/bin/cbb
-```
+For `reset`, a Linux device names `firewall = "yes"` (the installer opens the member port,
+as on a home computer) or `"no"` (it leaves the firewall alone, as on a server that does other
+work), and the container names `setup`, the path of `tools/bench/setup-docker.sh` on its
+host.
+
+### Setting the bench up, and taking it down
+
+Each piece of the bench outside the devices' installs has a setup and a teardown, so that a
+test cycle starts with a few commands and ends with one per piece. Run each from a checkout
+of the repository:
+
+| Piece | Where | Setup | Teardown |
+|---|---|---|---|
+| The container's host | the controller (or another host) | `sh tools/bench/setup-docker.sh setup` (Docker, the docker group, the kill helper for F1) | `sh tools/bench/setup-docker.sh teardown [--group]` |
+| SSH to itself, for a device on the controller | the controller | `sh tools/bench/setup-controller.sh setup` | `sh tools/bench/setup-controller.sh teardown` |
+| The Mac's root helper | the Mac | `sudo sh tools/bench/setup-mac.sh setup SHA256SUMS` | `sudo sh tools/bench/setup-mac.sh teardown` |
+| The blind relay of the relay suite | the server beside the forwarder | `sudo sh setup-relay.sh setup [PORT]` (prints its key; open the port in the provider's firewall too) | `sudo sh setup-relay.sh teardown [--purge]` |
+
+The Mac's helper has fixed steps only: remove the install with its keys, install a release
+archive, search the state directory and `/tmp` for a run's text, list the state directory's
+open files, run `cbb status` as `nobody` and print the service's log. It installs only an
+archive whose SHA-256 is in the `SHA256SUMS` that the owner gave `setup` or `trust`, which
+`/usr/local/libexec/cbbbench` keeps root-owned; give it each new build's sums with `sudo sh
+tools/bench/setup-mac.sh trust SHA256SUMS`. `cbb` itself runs as root through the same rule,
+which is as much as the group's admin can do on that Mac anyway; still, the rule belongs to a
+test cycle, and teardown removes it.
+
+### A test cycle
+
+1. Put the build under test on the controller: its release archives
+   (`clipboardbridge-<os>-<arch>.tar.gz`, `clipboardbridge-lite-linux-<arch>.tar.gz`) and
+   `SHA256SUMS`, from the release or from CI, in a directory of their own.
+2. `bench -build DIR reset`: every device at once gets its archive (once per build; a
+   device keeps the newest three), loses its install and keys (`uninstall.sh --purge`, which
+   L10 then checks), installs the build, and answers in no group. On a Linux desktop the
+   bench starts the agent again inside the signed-in session, so nobody signs out and in.
+   `bench -quick reset` keeps the installs and only wipes the services' state, between
+   suites of the same build.
+3. `bench check`, then the suites, each after a reset.
+4. At the end of the cycle, the teardowns above.
 
 A device with `os = "docker"` is the image running on a host: the bench calls `docker exec
 -i CONTAINER cbb` there, as the image's user, and copies and pastes with `cbb copy` and `cbb

@@ -266,3 +266,40 @@ key = "sha256:BBBB"
 		t.Fatalf("fingerprint: %q", m)
 	}
 }
+
+func TestReset(t *testing.T) {
+	for _, c := range []struct{ os, machine, want string }{
+		{"linux", "x86_64", "clipboardbridge-linux-amd64.tar.gz"},
+		{"docker", "aarch64", "clipboardbridge-linux-arm64.tar.gz"},
+		{"linux-lite", "armv6l", "clipboardbridge-lite-linux-armv6.tar.gz"},
+		{"darwin", "arm64", "clipboardbridge-darwin-arm64.tar.gz"},
+	} {
+		if got, err := archiveFor(&Device{OS: c.os}, c.machine); err != nil || got != c.want {
+			t.Errorf("archiveFor(%s, %s) = %q, %v", c.os, c.machine, got, err)
+		}
+	}
+	if _, err := archiveFor(&Device{OS: "linux"}, "mips"); err == nil {
+		t.Error("archiveFor took an unknown CPU")
+	}
+
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "clipboardbridge-linux-amd64.tar.gz"), []byte("archive"), 0o600)
+	b, err := LoadBuild(dir)
+	if err != nil || len(b.sums) != 1 || len(b.sums["clipboardbridge-linux-amd64.tar.gz"]) != 64 {
+		t.Fatalf("LoadBuild = %+v, %v", b, err)
+	}
+	os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte(strings.Repeat("0", 64)+"  clipboardbridge-linux-amd64.tar.gz\n"), 0o600)
+	if _, err := LoadBuild(dir); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("a wrong checksum: %v", err)
+	}
+	if _, err := LoadBuild(t.TempDir()); err == nil {
+		t.Fatal("LoadBuild took a directory without archives")
+	}
+
+	if got := composeCmd("cbb-nas|/home/u/cbb-nas/compose.yaml|clipboardbridge"); got != "docker compose -p 'cbb-nas' -f '/home/u/cbb-nas/compose.yaml'" {
+		t.Fatalf("composeCmd = %q", got)
+	}
+	if composeCmd("||") != "" {
+		t.Fatal("composeCmd of a container docker compose did not start")
+	}
+}

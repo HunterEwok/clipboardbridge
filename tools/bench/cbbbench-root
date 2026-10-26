@@ -1,0 +1,69 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# The bench's root helper on a Mac, installed by tools/bench/setup-mac.sh as
+# /usr/local/libexec/cbbbench/cbbbench-root: the steps of the bench that need
+# root, each fixed, so the sudoers rule names this one program.
+#
+#   cbbbench-root purge            uninstall.sh --purge of the installed copy
+#   cbbbench-root install ARCHIVE  install a release archive, only one whose
+#                                  SHA-256 the owner trusted (setup-mac.sh trust)
+#   cbbbench-root grep RUN         files in the state directory or /tmp that hold RUN
+#   cbbbench-root perms            files in the state directory open to others
+#   cbbbench-root stranger         cbb status as the user nobody (S11)
+#   cbbbench-root logs             the service's log
+set -eu
+
+dir=/usr/local/libexec/cbbbench
+state="/Library/Application Support/clipboardbridge/state"
+
+usage() {
+	echo "usage: cbbbench-root purge | install ARCHIVE | grep RUN | perms | stranger | logs" >&2
+	exit 2
+}
+
+case ${1:-} in
+purge)
+	[ $# -eq 1 ] || usage
+	if [ -f /usr/local/share/clipboardbridge/uninstall.sh ]; then
+		sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+	fi
+	;;
+install)
+	[ $# -eq 2 ] || usage
+	work=$(mktemp -d)
+	trap 'rm -rf "$work"' EXIT
+	# The archive is copied first, so it cannot change between the check and
+	# the install.
+	cp "$2" "$work/archive.tar.gz"
+	sum=$(shasum -a 256 "$work/archive.tar.gz" | cut -d' ' -f1)
+	if ! grep -q "^$sum " "$dir/SHA256SUMS" 2>/dev/null; then
+		echo "cbbbench-root: the archive's SHA-256 $sum is not in $dir/SHA256SUMS; trust its build first: sudo sh tools/bench/setup-mac.sh trust SHA256SUMS" >&2
+		exit 1
+	fi
+	tar -xzf "$work/archive.tar.gz" -C "$work"
+	sh "$work/clipboardbridge/packaging/macos/install.sh" --express "$work/clipboardbridge/cbb"
+	;;
+grep)
+	[ $# -eq 2 ] || usage
+	case $2 in '' | -* | *[!A-Za-z0-9T._-]*) usage ;; esac
+	grep -r -l -F -- "$2" "$state" /tmp /private/tmp 2>/dev/null || true
+	;;
+perms)
+	[ $# -eq 1 ] || usage
+	find "$state" -mindepth 1 \( -perm -g=r -o -perm -g=w -o -perm -o=r -o -perm -o=w \)
+	;;
+stranger)
+	[ $# -eq 1 ] || usage
+	cd /
+	exec sudo -u nobody /usr/local/bin/cbb status
+	;;
+logs)
+	[ $# -eq 1 ] || usage
+	cat /Library/Logs/clipboardbridge/service.log
+	;;
+*)
+	usage
+	;;
+esac
