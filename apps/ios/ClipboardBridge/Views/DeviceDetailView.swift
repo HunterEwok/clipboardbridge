@@ -185,8 +185,8 @@ struct DeviceDetailView: View {
                     Divider().overlay(palette.line)
                     modeMenu(d)
                 }
-                // Computers and lite members take pastes; phones do not.
-                if !d.isSelf, d.role == "full" || d.role == "lite" {
+                // Computers, lite members and Android phones take pastes; iPhones cannot.
+                if !d.isSelf, d.role == "full" || d.role == "lite" || (d.role == "phone" && d.os == "android") {
                     Divider().overlay(palette.line)
                     action(Text("Paste on it…"), "keyboard") { pasting = true }
                 }

@@ -311,6 +311,25 @@ accessibility service until "Allow restricted settings" is chosen in the app's A
 F-Droid or Google Play skips it. Google Play allows the service only with its accessibility
 declaration; the GitHub and F-Droid builds have it from the start.
 
+**Remote paste onto the phone** (docs/design.md, "Remote paste"). The same service is the
+phone's paste target, once the phone's user turned remote paste on in Settings ("Let the
+group's admins paste here", and apart from it "Let a paste press Enter"). A `paste` command
+an admin signed (`PasteReceiver`, with the switches, the limits per sender and the log of
+the last 100 pastes without their text, as on a computer) goes into the text field that has
+the input focus in another app:
+
+- **paste**: the text goes on the clipboard, marked sensitive for a secret, and the field gets
+  `ACTION_PASTE`, or `ACTION_SET_TEXT` where it takes no paste. After half a second the
+  clipboard gets its item back, unless something else was copied meanwhile. The service's
+  own copy detection ignores that moment, so the text is not sent to the group.
+- **type**: the text replaces the field's selection through `ACTION_SET_TEXT`, and the cursor
+  goes after it.
+- **Enter**: `ACTION_IME_ENTER`, from Android 11.
+
+It refuses while the phone is locked, when no editable field has the focus, and while the
+service is off. Settings say so and open the accessibility settings. A notification names
+the sender.
+
 **Sending with one tap, without the service** (and always as well):
 
 - the **Quick Settings tile** "Send clipboard", and the **home-screen widget** of the same name;

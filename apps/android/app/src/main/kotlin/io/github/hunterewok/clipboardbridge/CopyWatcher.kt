@@ -5,23 +5,34 @@ package io.github.hunterewok.clipboardbridge
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.KeyguardManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.PixelFormat
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PersistableBundle
 import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.AccessibilityNodeInfo
 import io.github.hunterewok.clipboardbridge.kit.Member
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * "Send my copies by themselves" (docs/apps.md, "Android: the clipboard
@@ -31,12 +42,26 @@ import kotlinx.coroutines.withContext
  * overlay, reads the clipboard and sends it. If the overlay does not get
  * the focus, SendActivity does the same. It reads nothing on the screen
  * beyond what tells it that a copy happened.
+ *
+ * It is also the phone's remote paste target (docs/design.md, "Remote
+ * paste"; PasteReceiver): it puts a text into the focused text field of
+ * another app, through the clipboard and ACTION_PASTE, or ACTION_SET_TEXT
+ * where the field takes no paste and for typing, and presses Enter with
+ * ACTION_IME_ENTER.
  */
 class CopyWatcher : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private val scope = MainScope()
     private var overlay: View? = null
     private var lastCopy = 0L
+
+    /** Until when a copy is the service's own paste, not the user's. */
+    private var pastingUntil = 0L
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        running = this
+    }
 
     /** The labels of a copy action: the platform's in the system's language, and English. */
     private val copyLabels: Set<String> by lazy {
@@ -59,6 +84,7 @@ class CopyWatcher : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        if (running === this) running = null
         removeOverlay()
         scope.cancel()
         super.onDestroy()
@@ -78,7 +104,7 @@ class CopyWatcher : AccessibilityService() {
     private fun copied() {
         if (!Member.sends((application as ClipboardBridgeApp).model.group.syncMode)) return
         val now = SystemClock.elapsedRealtime()
-        if (now - lastCopy < 1_000) return
+        if (now < pastingUntil || now - lastCopy < 1_000) return
         lastCopy = now
         // The app that copied sets the clipboard right after the click.
         main.postDelayed({ focusAndSend() }, 150)
@@ -129,7 +155,92 @@ class CopyWatcher : AccessibilityService() {
         scope.launch { runCatching { withContext(Dispatchers.IO) { model.group.send(text) } } }
     }
 
+    /** Why a paste did not go in: refused, or failed. */
+    data class InjectFailure(val reason: String, val refused: Boolean = true)
+
+    /** Puts text into the focused text field, on the main thread; null when it did. */
+    fun inject(text: String, method: String, enter: Boolean, secret: Boolean): InjectFailure? {
+        if (method != "paste" && method != "type") return InjectFailure("this phone pastes or types, not $method")
+        val done = CompletableFuture<InjectFailure?>()
+        main.post {
+            done.complete(
+                try {
+                    injectNow(text, method, enter, secret)
+                } catch (e: RuntimeException) {
+                    Log.e(TAG, "a paste failed", e)
+                    InjectFailure("the paste failed: $e", refused = false)
+                },
+            )
+        }
+        return try {
+            done.get(5, TimeUnit.SECONDS)
+        } catch (e: TimeoutException) {
+            InjectFailure("the accessibility service did not answer", refused = false)
+        }
+    }
+
+    private fun injectNow(text: String, method: String, enter: Boolean, secret: Boolean): InjectFailure? {
+        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return InjectFailure("the phone is locked")
+        if (enter && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return InjectFailure("this phone presses Enter from Android 11 on; send the text without Enter")
+        val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
+            ?: return InjectFailure("no text field has the focus on this phone")
+        val ok = if (method == "paste") paste(node, text, secret) else insert(node, text)
+        if (!ok) return InjectFailure("the text field took no text", refused = false)
+        if (enter && !node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) {
+            return InjectFailure("the text is in, but the text field took no Enter", refused = false)
+        }
+        return null
+    }
+
+    /** Pastes through the clipboard, which gets its item back after half a second unless the user copied meanwhile; a field that takes no paste gets the text set. */
+    private fun paste(node: AccessibilityNodeInfo, text: String, secret: Boolean): Boolean {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val prev = runCatching { cm.primaryClip }.getOrNull()
+        val clip = ClipData.newPlainText("clipboardbridge", text)
+        if (secret) clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        pastingUntil = SystemClock.elapsedRealtime() + 2_000
+        cm.setPrimaryClip(clip)
+        val ok = node.performAction(AccessibilityNodeInfo.ACTION_PASTE) || insert(node, text)
+        main.postDelayed({
+            val now = runCatching { cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString() }.getOrNull()
+            if (now == text) {
+                pastingUntil = SystemClock.elapsedRealtime() + 2_000
+                if (prev != null) cm.setPrimaryClip(prev) else cm.clearPrimaryClip()
+            }
+        }, RESTORE_AFTER_MS)
+        return ok
+    }
+
+    /** Puts text in place of the field's selection, the cursor after it. */
+    private fun insert(node: AccessibilityNodeInfo, text: String): Boolean {
+        val old = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
+        var start = node.textSelectionStart.takeIf { it in 0..old.length } ?: old.length
+        var end = node.textSelectionEnd.takeIf { it in 0..old.length } ?: start
+        if (start > end) start = end.also { end = start }
+        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, old.substring(0, start) + text + old.substring(end)) }
+        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+        val at = start + text.length
+        node.performAction(
+            AccessibilityNodeInfo.ACTION_SET_SELECTION,
+            Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, at)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, at)
+            },
+        )
+        return true
+    }
+
     companion object {
+        private const val TAG = "clipboardbridge"
+
+        /** How long the app with the focus has to read a pasted text before the clipboard gets its item back. */
+        private const val RESTORE_AFTER_MS = 500L
+
+        /** The service while it runs: the phone's remote paste target. */
+        @Volatile
+        var running: CopyWatcher? = null
+            private set
+
         /** Whether the user turned the service on. */
         fun isOn(context: Context): Boolean =
             context.getSystemService(AccessibilityManager::class.java)

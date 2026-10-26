@@ -98,7 +98,7 @@
     <string name="share_forget">Ask every app again</string>
     <string name="tile_label">Send clipboard</string>
     <string name="accessibility_label">Send my copies by themselves</string>
-    <string name="accessibility_description">Notices when you copy text, then reads the clipboard for a moment and sends the text to your computers. It reads nothing else on the screen.</string>
+    <string name="accessibility_description">Notices when you copy text, then reads the clipboard for a moment and sends the text to your computers. With remote paste on, it puts an admin\'s text into the text field that has the focus. It reads nothing else on the screen.</string>
     <string name="auto_send_body">Android lets an app read the clipboard only while it is in front. Turn Clipboard Bridge on in Accessibility, and what you copy goes to your computers without a tap; Android then says \"CBB pasted from your clipboard\" each time. Without it, use the Send clipboard tile, the notification\'s Send button, or Share.</string>
     <string name="auto_send_on">On</string>
     <string name="auto_send_off">Off</string>
@@ -267,4 +267,11 @@
     <string name="pasted">Pasted.</string>
     <string name="error_paste_refused">The device did not paste.</string>
     <string name="reason_paste">Paste on a device</string>
+    <string name="remote_paste">Remote paste</string>
+    <string name="remote_paste_switch">Let the group\'s admins paste here</string>
+    <string name="remote_paste_enter">Let a paste press Enter</string>
+    <string name="remote_paste_body">An admin of the group then puts a text into the text field that has the focus on this phone, from its own app or with cbb paste. This phone shows who pasted, and keeps a log of the last pastes without their text. Never on the lock screen.</string>
+    <string name="remote_paste_needs_service">It pastes through the service "Send my copies by themselves", which is off: turn it on in the system\'s accessibility settings.</string>
+    <string name="channel_pastes">Remote pastes</string>
+    <string name="pasted_from">Pasted from %1$s</string>
 </resources>

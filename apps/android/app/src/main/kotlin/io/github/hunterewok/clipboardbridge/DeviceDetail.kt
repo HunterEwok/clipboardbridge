@@ -195,8 +195,8 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             HorizontalDivider(color = palette.line)
             Action("⇄", stringResource(R.string.sync_mode)) { choosingMode = true }
         }
-        // Computers and lite members take pastes; phones do not.
-        if (!d.isSelf && (d.role == "full" || d.role == "lite")) {
+        // Computers, lite members and Android phones take pastes; iPhones cannot.
+        if (!d.isSelf && (d.role == "full" || d.role == "lite" || (d.role == "phone" && d.os == "android"))) {
             HorizontalDivider(color = palette.line)
             Action("⌨", stringResource(R.string.paste_on_it)) { pasting = true }
         }

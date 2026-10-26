@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, SyncSender};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -25,6 +25,7 @@ use crate::identity::Stored as _;
 use crate::node::{Node, WriteReq};
 use crate::records::Records;
 use crate::records::Stored as _;
+use crate::remotepaste;
 use crate::uptime;
 use crate::wire;
 
@@ -44,6 +45,50 @@ const MODE_FILE: &str = "mode";
 const MAX_COMMANDS: usize = 4096;
 const WATCH_QUEUE: usize = 16;
 
+/// The targets a watcher offers for remote paste, as its watch request
+/// names them (docs/protocol.md, section 8). The lite member has no desktop
+/// of its own, but a full member's desktop connector may watch it.
+const DESKTOP: &str = "desktop";
+const TMUX: &str = "tmux";
+const CONSOLE: &str = "console";
+
+/// How long a watcher may take to put a paste in; typing takes TYPE_WAIT
+/// more for each byte, as on a full member.
+const INJECT_WAIT: Duration = Duration::from_secs(5);
+const TYPE_WAIT: Duration = Duration::from_millis(5);
+
+/// What the service sends a watcher: a write for its clipboard, or a paste
+/// to put where the focus is.
+enum ToWatcher {
+    Write(WriteReq),
+    Inject(Inject),
+}
+
+/// A remote paste for a watcher, with where its answer goes: the status,
+/// done, refused or failed, and the reason.
+struct Inject {
+    text: String,
+    method: String,
+    enter: bool,
+    kind: String,
+    name: String,
+    done: SyncSender<(String, String)>,
+}
+
+/// The pastes sent to a watcher that wait for its answer, by their seq.
+type Waiting = HashMap<u64, SyncSender<(String, String)>>;
+
+/// A watcher connected to the control socket.
+struct Watcher {
+    id: u64,
+    /// The paste target it offers; empty for none.
+    target: String,
+    /// It holds a clipboard: tmux, the console and paste-only watchers do
+    /// not, so they get no writes and report no copies.
+    board: bool,
+    tx: SyncSender<ToWatcher>,
+}
+
 /// How the service runs.
 pub struct Config {
     pub state_dir: PathBuf,
@@ -62,7 +107,10 @@ pub struct Config {
 struct Service {
     node: RwLock<Option<Arc<Node>>>,
     away: RwLock<Option<Arc<Away>>>,
-    watchers: Mutex<Vec<SyncSender<WriteReq>>>,
+    watchers: Mutex<Vec<Watcher>>,
+    next_watcher: AtomicU64,
+    /// The limits of remote paste per sender.
+    pastes: Mutex<remotepaste::Limiter>,
     pending: Mutex<Option<WriteReq>>, // a write decided while no watcher was connected
     state_dir: PathBuf,
     /// The replay cache: the IDs of the commands carried out, until they
@@ -96,6 +144,8 @@ pub fn run(cfg: Config) -> Result<()> {
         node: RwLock::new(None),
         away: RwLock::new(None),
         watchers: Mutex::new(Vec::new()),
+        next_watcher: AtomicU64::new(0),
+        pastes: Mutex::new(remotepaste::Limiter::default()),
         pending: Mutex::new(None),
         state_dir: cfg.state_dir.clone(),
         commands: Mutex::new(HashMap::new()),
@@ -159,7 +209,7 @@ pub fn run(cfg: Config) -> Result<()> {
     log(&format!("cbb: the sync mode is {}", engine.mode().name()));
     {
         let svc = svc.clone();
-        node.on_command(Box::new(move |peer, c| svc.command(peer, c)));
+        node.on_command(Arc::new(move |peer, c| svc.command(peer, c)));
     }
     node.set_tunnel_key(away.key());
     {
@@ -366,8 +416,8 @@ impl Service {
     /// Carries out a command a member sent (docs/protocol.md, section 15):
     /// one that an admin signed for this device in its group, that has not
     /// expired and was not carried out before. The lite member takes mode
-    /// commands; it is never the group's hub, so it refuses hub commands,
-    /// and it refuses pastes, with remote paste off.
+    /// and paste commands; it is never the group's hub, so it refuses hub
+    /// commands.
     fn command(&self, peer: &crate::certs::DeviceId, c: &crate::records::Record) -> wire::CommandResult {
         let refused = |id: &str, why: String| {
             (self.log)(&format!("cbb: refused a command from {peer}: {why}"));
@@ -396,10 +446,19 @@ impl Service {
         }
         match body.kind.as_str() {
             "hub" => return refused(&body.id, "the lite member is never the group's hub".into()),
-            // Remote paste on the lite member comes with its targets, tmux
-            // and the console helper; until then it is off, and stays off.
-            "paste" => return refused(&body.id, "remote paste is off on this device".into()),
-            "paste-off" => return wire::CommandResult { id: body.id, status: "done".into(), reason: String::new() },
+            "paste" => return self.pasted(&node, body),
+            "paste-off" => {
+                let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
+                match remotepaste::save(&self.state_dir, remotepaste::Settings::default()) {
+                    Ok(()) => (self.log)(&format!("cbb: {} turned remote paste off here", body.by)),
+                    Err(e) => {
+                        (self.log)(&format!("cbb: turning remote paste off: {}", e.for_log()));
+                        res.status = "failed".into();
+                        res.reason = e.message().to_string();
+                    }
+                }
+                return res;
+            }
             _ => {}
         }
         if let Err(e) = Mode::parse(&body.mode) {
@@ -413,11 +472,198 @@ impl Service {
         wire::CommandResult { id: body.id, status: "done".into(), reason: String::new() }
     }
 
-    /// Passes a write the engine decided on to every watcher.
+    /// Carries out a paste command that verify_command took, as a full
+    /// member does (internal/service/paste.go).
+    fn pasted(&self, node: &Node, body: crate::records::Command) -> wire::CommandResult {
+        let mut res = wire::CommandResult { id: body.id.clone(), status: "refused".into(), reason: String::new() };
+        match remotepaste::load(&self.state_dir) {
+            Err(e) => {
+                res.status = "failed".into();
+                res.reason = format!("reading the remote paste settings: {}", e.for_log());
+            }
+            Ok(set) if !set.on => {
+                res.reason =
+                    "remote paste is off on this device; its user turns it on there with sudo cbb paste-receive on"
+                        .into();
+            }
+            Ok(set) if body.enter && !set.enter => {
+                res.reason = "this device takes pastes without Enter only; its user allows Enter with sudo cbb paste-receive on -enter".into();
+            }
+            Ok(_) if !self.pastes.lock().unwrap().allow(&body.by, uptime::wall_ms()) => {
+                res.reason = "too many pastes: at most one a second and 30 a minute from one device".into();
+            }
+            Ok(set) => res = self.inject(&body, &remotepaste::clean(&body.text), set, &device_name(node, &body.by)),
+        }
+        if res.status == "done" {
+            (self.log)(&format!("cbb: {} pasted {} bytes here", body.by, body.text.len()));
+        } else {
+            (self.log)(&format!("cbb: a paste from {}: {}: {}", body.by, res.status, res.reason));
+        }
+        if body.paste_kind != "secret" {
+            let e = remotepaste::Entry {
+                time_ms: uptime::wall_ms(),
+                by: body.by.clone(),
+                name: device_name(node, &body.by),
+                len: body.text.len(),
+                method: body.mode.clone(),
+                enter: body.enter,
+                result: res.status.clone(),
+                reason: res.reason.clone(),
+            };
+            if let Err(e) = remotepaste::append(&self.state_dir, e) {
+                (self.log)(&format!("cbb: keeping the paste log: {}", e.for_log()));
+            }
+        }
+        res
+    }
+
+    /// Hands the text to the watchers that can put it in, best target
+    /// first, until one did: a desktop session, then tmux, then a text
+    /// console when the user allowed consoles.
+    fn inject(
+        &self,
+        body: &crate::records::Command,
+        text: &str,
+        set: remotepaste::Settings,
+        name: &str,
+    ) -> wire::CommandResult {
+        let mut res = wire::CommandResult { id: body.id.clone(), status: "refused".into(), reason: String::new() };
+        if text.is_empty() {
+            res.reason = "the text has nothing that may be pasted: only control characters".into();
+            return res;
+        }
+        // A line break runs what comes before it where keys go straight to a
+        // shell: in a typed text, and in tmux and on a console. There it
+        // needs the user's leave for Enter.
+        let lines = text.contains('\n') && !set.enter;
+        if lines && body.mode == "type" {
+            res.reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line".into();
+            return res;
+        }
+        let mut order = vec![DESKTOP];
+        if !lines {
+            order.push(TMUX);
+            if set.console {
+                order.push(CONSOLE);
+            }
+        }
+        let (targets, console, term) = {
+            let ws = self.watchers.lock().unwrap();
+            let targets: Vec<(String, SyncSender<ToWatcher>)> = order
+                .iter()
+                .flat_map(|t| ws.iter().filter(move |w| w.target == *t))
+                .map(|w| (w.target.clone(), w.tx.clone()))
+                .collect();
+            let console = ws.iter().any(|w| w.target == CONSOLE);
+            (targets, console, console || ws.iter().any(|w| w.target == TMUX))
+        };
+        if targets.is_empty() {
+            res.reason = if lines && term {
+                "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
+            } else if console && !set.console {
+                "only a text console is here, and its user did not allow consoles (sudo cbb paste-receive on -console)"
+            } else {
+                "nothing on this device can paste: no tmux or console helper of Clipboard Bridge runs here"
+            }
+            .into();
+            return res;
+        }
+        let wait = if body.mode == "type" { INJECT_WAIT + TYPE_WAIT * text.len() as u32 } else { INJECT_WAIT };
+        let mut reasons: Vec<String> = Vec::new();
+        for (target, tx) in targets {
+            let (done, answer) = mpsc::sync_channel(1);
+            let i = Inject {
+                text: text.to_string(),
+                method: body.mode.clone(),
+                enter: body.enter,
+                kind: body.paste_kind.clone(),
+                name: name.to_string(),
+                done,
+            };
+            if tx.try_send(ToWatcher::Inject(i)).is_err() {
+                continue;
+            }
+            let reason = match answer.recv_timeout(wait) {
+                Ok((status, _)) if status == "done" => {
+                    res.status = status;
+                    return res;
+                }
+                Ok((status, reason)) => {
+                    res.status = status;
+                    reason
+                }
+                Err(RecvTimeoutError::Timeout) => format!("the {target} target did not answer"),
+                Err(RecvTimeoutError::Disconnected) => {
+                    res.status = "failed".into();
+                    "the connection to the paste target closed".into()
+                }
+            };
+            if reasons.last() != Some(&reason) {
+                reasons.push(reason);
+            }
+        }
+        if reasons.is_empty() {
+            reasons.push("the paste targets here are busy; try again".into());
+        }
+        res.reason = reasons.join("; ");
+        res
+    }
+
+    /// Remote paste here, for the status: the switches and the targets that
+    /// run.
+    fn paste_status(&self) -> Option<control::Paste> {
+        let set = remotepaste::load(&self.state_dir).ok()?;
+        let mut targets: Vec<String> =
+            self.watchers.lock().unwrap().iter().filter(|w| !w.target.is_empty()).map(|w| w.target.clone()).collect();
+        targets.sort();
+        targets.dedup();
+        Some(control::Paste { on: set.on, enter: set.enter, console: set.console, targets })
+    }
+
+    /// cbb paste-receive on or off: only this device's own user turns
+    /// remote paste on here; the lite member is never an admin, so it turns
+    /// it off on no other device.
+    fn set_receive(&self, h: &Header) -> Result<Message> {
+        match h.name.as_str() {
+            "on" | "off" => {}
+            n => return Err(Error::msg(format!("remote paste is on or off, not {n:?}"))),
+        }
+        if !h.device.is_empty() {
+            return Err(Error::msg(if h.name == "on" {
+                "only a device's own user turns remote paste on there"
+            } else {
+                "only an admin turns remote paste off on another device; the lite member is never one: use the phone app or a full member"
+            }));
+        }
+        if h.name == "off" && (h.enter || h.console) {
+            return Err(Error::msg("-enter and -console go with on"));
+        }
+        self.node()?;
+        let set = remotepaste::Settings { on: h.name == "on", enter: h.enter, console: h.console };
+        remotepaste::save(&self.state_dir, set).map_err(|e| e.context("saving the remote paste settings"))?;
+        (self.log)(&format!("cbb: remote paste is {} here (enter {}, console {})", h.name, set.enter, set.console));
+        let status = Status { paste: self.paste_status(), ..Default::default() };
+        Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
+    }
+
+    /// Passes a write the engine decided on to every watcher that holds a
+    /// clipboard; with none, it waits for the next one.
     fn deliver(&self, w: WriteReq) {
         let mut ws = self.watchers.lock().unwrap();
-        ws.retain(|tx| !matches!(tx.try_send(w.clone()), Err(mpsc::TrySendError::Disconnected(_))));
-        if ws.is_empty() {
+        let mut got = false;
+        ws.retain(|x| {
+            if !x.board {
+                return true;
+            }
+            match x.tx.try_send(ToWatcher::Write(w.clone())) {
+                Err(mpsc::TrySendError::Disconnected(_)) => false,
+                _ => {
+                    got = true;
+                    true
+                }
+            }
+        });
+        if !got {
             *self.pending.lock().unwrap() = Some(w);
         }
     }
@@ -500,6 +746,7 @@ impl Service {
                     version: VERSION.into(),
                     mode: node.engine.mode().name().into(),
                     away: self.away()?.status(&node),
+                    paste: self.paste_status(),
                 };
                 Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
             }
@@ -540,6 +787,10 @@ impl Service {
                 Ok(control::reply(Header { devices: out, ..Default::default() }, Vec::new()))
             }
             "away" => self.global(h),
+            "paste-receive" => self.set_receive(h),
+            "paste-on" => Err(Error::msg(
+                "only an admin pastes on another device; the lite member is never one: use the phone app or a full member",
+            )),
             "mode" => {
                 if !h.device.is_empty() {
                     return Err(Error::msg(
@@ -558,7 +809,8 @@ impl Service {
     }
 
     /// Serves a watcher: what it reports goes to the engine, the writes the
-    /// engine decides on go to it.
+    /// engine decides on go to it, and so do the remote pastes for the
+    /// target it offers, each answered with injected.
     fn watch(&self, m: Message, mut r: control::Reader<UnixStream>, mut out: UnixStream) {
         let node = match self.node() {
             Ok(n) => n,
@@ -567,10 +819,18 @@ impl Service {
                 return;
             }
         };
-        if let (Ok(text), Ok(kind)) = (String::from_utf8(m.payload), kind_of(&m.header.kind)) {
+        let target = match m.header.inject.as_str() {
+            t @ ("" | DESKTOP | TMUX | CONSOLE) => t.to_string(),
+            t => {
+                (self.log)(&format!("cbb: a watcher offers the paste target {t:?}, which is not known"));
+                String::new()
+            }
+        };
+        let board = !m.header.paste_only && target != TMUX && target != CONSOLE;
+        if board && let (Ok(text), Ok(kind)) = (String::from_utf8(m.payload), kind_of(&m.header.kind)) {
             node.engine.clipboard_is(&text, kind);
         }
-        let (tx, rx) = mpsc::sync_channel::<WriteReq>(WATCH_QUEUE);
+        let (tx, rx) = mpsc::sync_channel::<ToWatcher>(WATCH_QUEUE);
         if control::write(&mut out, &Message::new(Header { op: "reply".into(), ..Default::default() }, Vec::new()))
             .is_err()
         {
@@ -578,34 +838,69 @@ impl Service {
         }
         // A write decided while no watcher was connected, if the member's
         // own text is still that.
-        if let Some(w) = self.pending.lock().unwrap().take()
+        if board
+            && let Some(w) = self.pending.lock().unwrap().take()
             && node.engine.local().is_some_and(|(t, _, _)| t == w.text)
         {
-            let _ = tx.try_send(w);
+            let _ = tx.try_send(ToWatcher::Write(w));
         }
-        self.watchers.lock().unwrap().push(tx);
-        let done = Arc::new(AtomicBool::new(false));
+        let id = self.next_watcher.fetch_add(1, Ordering::SeqCst);
+        self.watchers.lock().unwrap().push(Watcher { id, target: target.clone(), board, tx });
+        let waiting: Arc<Mutex<Waiting>> = Arc::default();
         {
-            let done = done.clone();
+            let waiting = waiting.clone();
             std::thread::spawn(move || {
-                while let Ok(w) = rx.recv() {
-                    let h = Header {
-                        op: "write".into(),
-                        kind: kind_name(w.kind).into(),
-                        via: if w.via == Via::Copy { String::new() } else { via_name(w.via).into() },
-                        seq: w.seq,
-                        ttl_ms: w.ttl.map(|d| d.as_millis() as i64).unwrap_or(0),
-                        ..Default::default()
+                let mut seq = 0;
+                while let Ok(o) = rx.recv() {
+                    let m = match o {
+                        ToWatcher::Write(w) => Message::new(
+                            Header {
+                                op: "write".into(),
+                                kind: kind_name(w.kind).into(),
+                                via: if w.via == Via::Copy { String::new() } else { via_name(w.via).into() },
+                                seq: w.seq,
+                                ttl_ms: w.ttl.map(|d| d.as_millis() as i64).unwrap_or(0),
+                                ..Default::default()
+                            },
+                            w.text.into_bytes(),
+                        ),
+                        ToWatcher::Inject(i) => {
+                            seq += 1;
+                            waiting.lock().unwrap().insert(seq, i.done);
+                            Message::new(
+                                Header {
+                                    op: "inject".into(),
+                                    seq,
+                                    method: i.method,
+                                    enter: i.enter,
+                                    kind: i.kind,
+                                    name: i.name,
+                                    ..Default::default()
+                                },
+                                i.text.into_bytes(),
+                            )
+                        }
                     };
-                    if done.load(Ordering::SeqCst)
-                        || control::write(&mut out, &Message::new(h, w.text.into_bytes())).is_err()
-                    {
+                    if control::write(&mut out, &m).is_err() {
+                        // The paste waiting, if any, hears that the
+                        // connection closed.
+                        waiting.lock().unwrap().clear();
                         return;
                     }
                 }
             });
         }
         while let Ok(Some(m)) = r.read() {
+            if m.header.op == "injected" {
+                if let Some(done) = waiting.lock().unwrap().remove(&m.header.seq) {
+                    let _ = done.try_send(injected(&m.header));
+                }
+                continue;
+            }
+            if !board {
+                (self.log)(&format!("cbb: the {target} paste target sent {:?}, which it does not send", m.header.op));
+                continue;
+            }
             let text = String::from_utf8(m.payload).unwrap_or_default();
             let (Ok(kind), Ok(via)) = (kind_of(&m.header.kind), via_of(&m.header.via)) else {
                 (self.log)(&format!(
@@ -624,6 +919,24 @@ impl Service {
                 op => (self.log)(&format!("cbb: a watcher sent {op:?}")),
             }
         }
-        done.store(true, Ordering::SeqCst);
+        // Its sender goes, so the writer ends; the pastes waiting hear that
+        // the connection closed.
+        self.watchers.lock().unwrap().retain(|w| w.id != id);
+        waiting.lock().unwrap().clear();
     }
+}
+
+/// The status and reason of an injected answer, as a full member reads it.
+fn injected(h: &Header) -> (String, String) {
+    if h.error.is_empty() {
+        return ("done".into(), String::new());
+    }
+    let status = if h.refused { "refused" } else { "failed" };
+    let reason = if h.detail.is_empty() { h.error.clone() } else { format!("{}: {}", h.error, h.detail) };
+    (status.into(), reason)
+}
+
+/// The name of the group's device id, empty when unknown.
+fn device_name(node: &Node, id: &str) -> String {
+    node.devices().into_iter().find(|d| d.id == id).map(|d| d.name).unwrap_or_default()
 }

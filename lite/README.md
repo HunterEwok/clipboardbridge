@@ -166,6 +166,24 @@ member speaks plain WireGuard only, and the device syncs at home only. The keys 
 `/var/lib/clipboardbridge/tunnel.json`, a file, so the warning asks you to protect the disk
 or memory card.
 
+### Remote paste
+
+```sh
+sudo cbb paste-receive on      # the group's admins may paste into tmux here
+sudo cbb paste-receive on -console -enter   # also the text console, and Enter
+cbb paste-receive              # how it stands, and whether a target runs
+sudo cbb paste-receive off
+```
+
+An admin phone's "Paste on it…", or `cbb paste --on` on an admin computer, puts a text where
+this device's keyboard focus is, as on a full Linux member: into the tmux pane in use, through
+the helper that clipboardbridge's `tmux.conf` starts in each tmux server, or, with
+`-console`, into the active text console, through the `clipboardbridge-console` unit that
+`--console` installs. The device's own user turns it on, never an admin; a text with a line
+break needs `-enter`, since tmux and the console would run it; a locked tmux client or console,
+a login prompt or a console without a logged-in user refuse. The last 100 pastes, never their
+text, are in `/var/lib/clipboardbridge/pastes.json`.
+
 ## ZX Spectrum Next
 
 On the Accelerated ZX Spectrum Next, the lite member runs on the Raspberry Pi wired to the
