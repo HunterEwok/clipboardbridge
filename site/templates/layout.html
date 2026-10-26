@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!doctype html>
-<html lang="{{.Lang.Tag}}" dir="{{if .Lang.RTL}}rtl{{else}}ltr{{end}}">
+<html lang="{{.Lang.Tag}}" dir="{{if .Lang.RTL}}rtl{{else}}ltr{{end}}" data-skin="slate">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,6 +22,7 @@
 <meta name="twitter:card" content="summary_large_image">
 {{end}}<meta name="theme-color" content="#0A7A3E">
 <link rel="stylesheet" href="{{asset "style.css"}}">
+<script src="/static/skin.js"></script>
 <link rel="icon" href="/static/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
@@ -41,8 +42,9 @@
       <a href="https://github.com/HunterEwok/clipboardbridge/blob/main/docs/README.md">{{t "Docs"}}</a>
       <a href="https://github.com/HunterEwok/clipboardbridge">GitHub</a>
     </nav>
+    <button class="skin" type="button" hidden><span>Slate</span><span>Deco</span></button>
     <details class="langs">
-      <summary><svg class="globe" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span class="sr">{{t "Language"}}: </span>{{.Lang.Name}}</summary>
+      <summary><svg class="globe" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span class="sr">{{t "Language"}}: </span><span class="lname">{{.Lang.Name}}</span></summary>
       <ul>
         {{range .Langs}}<li><a href="/?lang={{.Code}}&amp;p={{$.Page}}" lang="{{.Tag}}" hreflang="{{.Tag}}"{{if eq .Code $.Lang.Code}} aria-current="true"{{end}}>{{.Name}}</a></li>
         {{end}}

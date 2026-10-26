@@ -32,7 +32,10 @@ os = "windows"
 ssh = "user@win.lan"
 clipboard = "windows"
 roles = ["member"]
-vm = { host = "mac", vmx = "~/Virtual Machines.localized/Windows 11 64-bit Arm.vmwarevm", snapshot = "clean" }
+# reset: uninstall.ps1 -Purge, then install.ps1 -Express of the build's zip.
+# The user is an administrator, signed in on the desktop, and has run
+# tools/bench/setup-windows.ps1 once.
+firewall = "yes"
 
 [device.remote]
 os = "linux"
