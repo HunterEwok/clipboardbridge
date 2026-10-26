@@ -215,7 +215,7 @@ struct ControlClient {
         }
         addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
         let connected = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         if connected != 0 {
             let e = errno
