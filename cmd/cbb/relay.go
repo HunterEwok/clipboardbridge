@@ -29,6 +29,7 @@ func cmdRelay(args []string, stdout, stderr io.Writer) int {
 	listen := fs.String("listen", ":8764", "the address to listen on, UDP and TCP")
 	keyFile := fs.String("key", defaultRelayKey(), "the relay's keys, made on the first run")
 	groups := fs.String("group", "", "the tags of the groups to serve, separated by commas, as cbb status shows them")
+	open := fs.Bool("open", false, "serve every group that registers, within limits per group and per network, in place of -group")
 	showKey := fs.Bool("show-key", false, "print the key for cbb global relay -key and stop")
 	if fs.Parse(args) != nil {
 		return 2
@@ -52,11 +53,15 @@ func cmdRelay(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
-	r, err := relay.Listen(relay.Config{Listen: *listen, Keys: keys, Groups: tags, Logf: logf, Verbose: os.Getenv("CBB_DEBUG") == "1"})
+	r, err := relay.Listen(relay.Config{Listen: *listen, Keys: keys, Groups: tags, Open: *open, Logf: logf, Verbose: os.Getenv("CBB_DEBUG") == "1"})
 	if err != nil {
 		return fail(stderr, err)
 	}
-	logf("cbb relay: listening on UDP and TCP port %s for %d groups; its key, for cbb global relay -key: %s", portOf(r.Addr().String()), len(tags), keys.Pin())
+	serving := fmt.Sprintf("%d groups", len(tags))
+	if *open {
+		serving = "every group"
+	}
+	logf("cbb relay: listening on UDP and TCP port %s for %s; its key, for cbb global relay -key: %s", portOf(r.Addr().String()), serving, keys.Pin())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if os.Getenv("CBB_DEBUG") == "1" {

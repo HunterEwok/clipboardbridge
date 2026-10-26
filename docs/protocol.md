@@ -1718,8 +1718,8 @@ last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts eac
 
 ## 14. The blind relay
 
-The meeting point, on a server the user runs, for a group that has no computer to be its
-hub ([design.md](design.md), "Blind relay"). Implemented in Go (`internal/relay`,
+The meeting point, on the user's own server or the project's open relay, for a group that has
+no computer to be its hub ([design.md](design.md), "Blind relay"). Implemented in Go (`internal/relay`,
 `cbb relay`, and on the devices `internal/service/relay.go`) for computers; the phones do
 not take part yet. It holds none of the group's keys: it ends each device's WireGuard
 tunnel and joins two devices' connections inside the tunnels, and member TLS (section 4)
@@ -1729,7 +1729,10 @@ runs end to end between the two devices.
   key file holds an ECDSA P-256 key with a self-signed certificate, which devices pin as a
   forwarder's (section 13), and its WireGuard key.
 - It serves only the groups it is started for (`cbb relay -group`, by tag), and refuses
-  every other.
+  every other; an open relay (`cbb relay -open`) serves every group whose device registers,
+  within the limits below.
+- A device's service takes a relay only with the user's consent (`consent` on the control
+  socket's `away` request, section 8), after `cbb global relay` showed what the relay learns.
 - A device keeps `relay: {endpoint, key}` in its `tunnel.json` (section 11), and then is
   neither a hub nor a hub's client: it ignores a hub's offer.
 
@@ -1796,6 +1799,11 @@ lines of its own, notes:
    but cannot pose as either.
 4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections;
    256 registrations and requests being set up at a time.
+5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address
+   and 64 from one network (an IPv4 /24 or an IPv6 /64); and 1 MiB a second of copying for
+   each group, both ways together, after a burst of two seconds' worth. A registration over
+   a limit gets `{"error": string}`. It forgets a group's records once the group's last
+   device leaves.
 
 ### What it keeps
 

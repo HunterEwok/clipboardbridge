@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- An open blind relay: `cbb relay -open` serves every group that registers, as the project's
+  relay at `cbb.tools` will, within limits that keep groups nobody vouches for from filling
+  it: 4096 groups, 16 registrations from one address and 64 from one network, and 1 MiB a
+  second of copying for each group. It forgets a group once its last device leaves.
 - The phone as the group's hub while its app is open, on Android and the iPhone: on from the
   start in a group made on the phone, and a switch in Settings on a root or admin phone. At
   home the other phones, TVs and lite members connect to it; it takes them and publishes
@@ -79,6 +83,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- `cbb global relay` first says what a relay learns (which devices are online and from
+  where, which talk, when and how much) and asks you to type yes, or takes `-yes`; the
+  service takes a relay only with that consent. The design no longer keeps the relay to
+  self-hosting only (D-68).
 - The lite member's release archives are `clipboardbridge-lite-linux-amd64.tar.gz`, `-arm64`
   and `-armv6`, holding `clipboardbridge-lite/`, like the full member's `clipboardbridge-*`
   (they were `cbb-lite-linux-*`). `get.sh --lite` takes the new names, and the old ones for

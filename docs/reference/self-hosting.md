@@ -148,11 +148,17 @@ its computers, then run it on the server:
 cbb relay -group 0123456789abcdef        # several groups: -group TAG1,TAG2
 ```
 
+To serve anyone's groups, as the project's relay does, run `cbb relay -open` instead: it
+takes every group that registers, within limits per group and per network
+([protocol](../protocol.md), section 14).
+
 On each computer of the group, after `sudo cbb global on`, in place of a hub:
 
 ```sh
 sudo cbb global relay 198.51.100.9:8764 -key sha256:...
 ```
+
+It says what the relay learns and asks you to type yes.
 
 The computers then meet at the relay whenever they are not on one network. Both must be
 online at once, since the relay stores nothing. It speaks plain WireGuard only.

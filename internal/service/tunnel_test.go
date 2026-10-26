@@ -421,7 +421,10 @@ func TestAwayThroughRelay(t *testing.T) {
 		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: "sha256:nope"}, ""); err == nil {
 			t.Error("a relay with a bad key")
 		}
-		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err != nil {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err == nil || !strings.Contains(err.Error(), "learns") {
+			t.Errorf("a relay without consent: %v", err)
+		}
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin(), Consent: true}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

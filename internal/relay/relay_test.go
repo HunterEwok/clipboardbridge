@@ -68,7 +68,21 @@ func startRelay(t *testing.T, groups ...*group.CA) (*Relay, Link) {
 	for _, g := range groups {
 		tags = append(tags, group.Tag(g.Cert))
 	}
-	r, err := Listen(Config{Listen: "127.0.0.1:0", Keys: keys, Groups: tags, Logf: t.Logf})
+	return startWith(t, Config{Keys: keys, Groups: tags})
+}
+
+// startWith runs a relay with cfg on a port of its own.
+func startWith(t *testing.T, cfg Config) (*Relay, Link) {
+	t.Helper()
+	cfg.Listen, cfg.Logf = "127.0.0.1:0", t.Logf
+	if cfg.Keys.Cert.Leaf == nil {
+		keys, err := NewKeys()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Keys = keys
+	}
+	r, err := Listen(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +97,7 @@ func startRelay(t *testing.T, groups ...*group.CA) (*Relay, Link) {
 		<-done
 	})
 	ep := netip.MustParseAddrPort(r.Addr().String())
-	return r, Link{Endpoint: ep, Pin: keys.Pin()}
+	return r, Link{Endpoint: ep, Pin: cfg.Keys.Pin()}
 }
 
 // joined is a member's link to the relay in a test: it echoes each line it
@@ -328,6 +342,63 @@ func TestRefused(t *testing.T) {
 	}
 	if _, n := r.Stats(); n != 1 {
 		t.Errorf("the relay holds %d devices, want 1", n)
+	}
+}
+
+// TestOpenRelay: an open relay serves any group that registers, within
+// its limits on groups and on registrations from one address.
+func TestOpenRelay(t *testing.T) {
+	r, link := startWith(t, Config{Open: true, Limits: Limits{Groups: 2, PerAddress: 3}})
+	ctx := context.Background()
+	reg := func(d device) error {
+		tc, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
+		if err == nil {
+			t.Cleanup(func() { tc.Close() })
+		}
+		return err
+	}
+	g1, g2, g3 := newGroup(t), newGroup(t), newGroup(t)
+	for _, g := range []*group.CA{g1, g2} {
+		if err := reg(newDevice(t, g)); err != nil {
+			t.Fatalf("a group of its own on an open relay: %v", err)
+		}
+	}
+	if err := reg(newDevice(t, g3)); err == nil || !strings.Contains(err.Error(), "as many groups") {
+		t.Errorf("a third group on a relay for two: %v", err)
+	}
+	if err := reg(newDevice(t, g1)); err != nil {
+		t.Fatalf("a second device of a group already there: %v", err)
+	}
+	// Every registration here comes from 127.0.0.1.
+	if err := reg(newDevice(t, g2)); err == nil || !strings.Contains(err.Error(), "this network") {
+		t.Errorf("a fourth registration from one address: %v", err)
+	}
+	if g, n := r.Stats(); g != 2 || n != 3 {
+		t.Errorf("the relay holds %d groups and %d devices, want 2 and 3", g, n)
+	}
+	keys, err := NewKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Listen(Config{Listen: "127.0.0.1:0", Keys: keys, Open: true, Groups: []string{group.Tag(g1.Cert)}}); err == nil {
+		t.Error("an open relay with groups given")
+	}
+}
+
+// TestRate: a group's rate holds back what goes over it.
+func TestRate(t *testing.T) {
+	b := newRate(1000)
+	start := time.Now()
+	b.take(500, nil)
+	b.take(1500, nil) // the two seconds' burst is spent now
+	b.take(300, nil)  // and this waits for 300 ms of rate
+	if d := time.Since(start); d < 250*time.Millisecond {
+		t.Errorf("2300 bytes at 1000 a second with a 2000-byte burst took %v", d)
+	}
+	stop := make(chan struct{})
+	close(stop)
+	if b.take(10000, stop) {
+		t.Error("a wait that was stopped reported tokens")
 	}
 }
 

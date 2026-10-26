@@ -657,6 +657,11 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if err := relay.CheckPin(m.RelayKey); err != nil {
 			return false, nil, nil, err
 		}
+		// The relay learns who talks to whom, when and how much, which a
+		// hub of the group's own would not let out: the user agrees first.
+		if !m.Consent {
+			return false, nil, nil, errors.New("a relay learns which devices of the group talk, when and how much, and their addresses; run cbb global relay and read what it says")
+		}
 		old := *st
 		*st = tunnel.State{Key: st.Key, PSK: st.PSK, Group: st.Group, KeysInFile: st.KeysInFile,
 			Relay: &tunnel.RelayLink{Endpoint: netip.AddrPortFrom(ep.Addr().Unmap(), ep.Port()), Pin: m.RelayKey}}
