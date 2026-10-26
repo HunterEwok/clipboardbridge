@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 {{define "title"}}{{t "Download"}}: Clipboard Bridge{{end}}
+{{define "description"}}{{t "Download Clipboard Bridge for Android, iPhone, Windows, Mac and Linux. Free and open source."}}{{end}}
 
 {{define "content"}}
 <section class="wrap page">
@@ -11,7 +12,7 @@
     <div class="card">
       <h3>Android</h3>
       <p>{{t "Android 10 or later. Download the APK from the latest release on the phone and open it."}}</p>
-      <p><a class="button accent" href="https://github.com/HunterEwok/clipboardbridge/releases/latest">{{t "Latest release"}}</a></p>
+      <p><a class="button accent go" href="https://github.com/HunterEwok/clipboardbridge/releases/latest">{{t "Download for Android"}}</a></p>
     </div>
     <div class="card">
       <h3>iPhone</h3>
@@ -49,5 +50,11 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
   <h2>{{t "Checking a download"}}</h2>
   <p>{{t "The installers check every file against the release's checksums. Each file also has a build attestation that ties it to this repository and the build that made it, which %s checks:" (code "gh attestation verify")}}</p>
   <pre><code>gh attestation verify clipboardbridge-linux-amd64.tar.gz --repo HunterEwok/clipboardbridge</code></pre>
+
+  <div class="final">
+    <h2>{{t "Next: make your group"}}</h2>
+    <p>{{t "The quick start walks you through the first devices, with a computer or with phones only."}}</p>
+    <p class="actions"><a class="button accent go" href="https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md">{{t "Open the quick start"}}</a></p>
+  </div>
 </section>
 {{end}}

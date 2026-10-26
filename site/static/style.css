@@ -56,13 +56,13 @@ h3 { font-size: 19px; margin: 0 0 8px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; text-decoration: none; }
 .brand img { border-radius: 8px; display: block; }
 nav { display: flex; gap: 18px; flex-wrap: wrap; margin-inline-start: auto; }
-nav a { color: var(--dim); text-decoration: none; font-weight: 500; }
+nav a { color: var(--dim); text-decoration: none; font-weight: 500; padding: 10px 0; }
 nav a:hover, nav a[aria-current] { color: var(--accent); }
 
 .langs { position: relative; }
 .langs summary {
-  cursor: pointer; list-style: none; padding: 6px 12px; border: 1px solid var(--line);
-  border-radius: 20px; color: var(--text);
+  cursor: pointer; list-style: none; padding: 6px 14px; border: 1px solid var(--line);
+  border-radius: 22px; color: var(--text); min-height: 44px; display: flex; align-items: center;
 }
 .langs summary::-webkit-details-marker { display: none; }
 .langs summary::before { content: "🌐 "; }
@@ -71,17 +71,52 @@ nav a:hover, nav a[aria-current] { color: var(--accent); }
   list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
   min-width: 170px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
 }
-.langs li a { display: block; padding: 6px 10px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.langs li a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--text); text-decoration: none; }
 .langs li a:hover { background: var(--grid); }
 .langs li a[aria-current] { color: var(--accent); font-weight: 600; }
 
 .hero { padding: 72px 0 24px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
 .button {
-  display: inline-block; padding: 11px 22px; border-radius: 20px; text-decoration: none;
-  font-weight: 600; border: 1px solid var(--line); color: var(--text); background: var(--surface);
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 22px;
+  border-radius: 22px; text-decoration: none; font-weight: 600;
+  border: 1px solid var(--line); color: var(--text); background: var(--surface);
 }
 .button.accent { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.button.go::after { content: "→"; display: inline-block; }
+[dir="rtl"] .button.go::after { content: "←"; }
+.button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+.skip { position: absolute; inset-inline-start: 16px; top: -100px; z-index: 3; }
+.skip:focus { top: 8px; background: var(--surface); padding: 10px 14px; border-radius: 10px; }
+
+.platforms { color: var(--dim); font-weight: 600; letter-spacing: .02em; margin: 8px 0 0; }
+[dir="rtl"] .platforms { text-align: right; }
+
+.facts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 24px; }
+.facts div { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; }
+.facts strong { display: block; color: var(--accent); }
+.facts span { color: var(--dim); font-size: 15px; }
+
+.compare td { text-align: center; color: var(--accent); font-weight: 700; font-size: 20px; }
+.compare td.no { color: var(--dim); font-weight: 400; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.compare tr.us th { color: var(--accent); }
+.compare th { white-space: normal; }
+
+.faq details { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 10px; }
+.faq summary { cursor: pointer; padding: 14px 18px; font-weight: 600; min-height: 44px; }
+.faq details p { margin: 0; padding: 0 18px 16px; }
+
+.final { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 8px 24px 24px; margin-top: 56px; }
+.final h2 { margin-top: 24px; }
+
+.oops { text-align: center; padding-bottom: 40px; }
+.oops .lead { margin-inline: auto; }
+.oops .actions { justify-content: center; }
+.oops .code { font: 700 72px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--accent); margin: 24px 0 8px; }
+
+.dock { display: none; }
 
 .table { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; background: var(--surface); border-radius: 14px; overflow: hidden; }
@@ -90,8 +125,10 @@ tr:last-child th, tr:last-child td { border-bottom: none; }
 th { white-space: nowrap; }
 
 .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.cards.four { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .cards.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; min-width: 0; }
+.lead, .page p, .page li, section > p { max-width: 75ch; }
 .card p { margin: 0 0 10px; }
 .card ul { padding-inline-start: 20px; margin: 12px 0 0; }
 .card li { margin-bottom: 6px; }
@@ -126,10 +163,45 @@ th { white-space: nowrap; }
 .foot a { color: var(--dim); }
 
 @media (max-width: 640px) {
-  body { font-size: 16px; }
+  body { font-size: 16px; padding-bottom: 76px; }
+  .dock {
+    display: block; position: fixed; inset-inline: 0; bottom: 0; z-index: 2; margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--surface);
+    border-top: 1px solid var(--line);
+  }
+  .dock .button { width: 100%; justify-content: center; }
   .hero { padding-top: 40px; }
   nav { width: 100%; margin-inline-start: 0; order: 3; padding-bottom: 10px; }
   .langs { margin-inline-start: auto; }
   h2 { font-size: 24px; margin-top: 40px; }
   th { white-space: normal; }
+  .top { position: static; }
+  nav { gap: 0 16px; }
+  .compare { font-size: 14px; hyphens: auto; }
+  .compare th, .compare td { padding: 10px 8px; }
 }
+
+/* Motion: short, and none for those who ask for less. The scroll-driven
+   parts need a browser that has animation-timeline; elsewhere the page is
+   simply still. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero h1, .hero .lead, .hero .platforms, .hero .actions { animation: rise .6s ease-out both; }
+  .hero .lead { animation-delay: .1s; }
+  .hero .platforms { animation-delay: .2s; }
+  .hero .actions { animation-delay: .3s; }
+  .card, .facts div { transition: transform .2s ease-out, box-shadow .2s ease-out; }
+  .card:hover, .facts div:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0, 0, 0, .08); }
+  .button { transition: filter .2s; }
+  .button:hover { filter: brightness(1.08); }
+  .button.go::after { transition: transform .2s ease-out; }
+  .button.go:hover::after { transform: translateX(4px); }
+  [dir="rtl"] .button.go:hover::after { transform: translateX(-4px); }
+  @supports (animation-timeline: view()) {
+    .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
+  }
+  @supports (animation-timeline: scroll()) {
+    .top .bar { animation: shrink linear both; animation-timeline: scroll(); animation-range: 0 120px; }
+  }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes shrink { from { min-height: 60px; } to { min-height: 48px; } }

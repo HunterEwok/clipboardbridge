@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 {{define "title"}}{{t "Security and privacy"}}: Clipboard Bridge{{end}}
+{{define "description"}}{{t "What protects your clipboard in Clipboard Bridge, and what each server can and cannot see."}}{{end}}
 
 {{define "content"}}
 <section class="wrap page">
@@ -20,8 +21,8 @@
   <table>
     <tr><th></th><th>{{t "Reads the clipboard"}}</th><th>{{t "Knows which of your devices talk, and when"}}</th><th>{{t "Whose it is"}}</th></tr>
     <tr><th>{{t "Hub"}}</th><td>{{t "yes, it is one of your devices"}}</td><td>{{t "yes"}}</td><td>{{t "yours: a computer, or a phone while its app is open"}}</td></tr>
-    <tr><th>{{t "Forwarder"}}</th><td>{{t "no"}}</td><td>{{t "no: it only passes encrypted packets to your hub"}}</td><td>{{t "yours, or the project's at cbb.tools"}}</td></tr>
-    <tr><th>{{t "Blind relay"}}</th><td>{{t "no"}}</td><td>{{t "yes"}}</td><td>{{t "yours, or the project's at cbb.tools"}}</td></tr>
+    <tr><th>{{t "Forwarder"}}</th><td>{{t "no"}}</td><td>{{t "no: it only passes encrypted packets to your hub"}}</td><td>{{t "yours; the project's at cbb.tools is not open yet"}}</td></tr>
+    <tr><th>{{t "Blind relay"}}</th><td>{{t "no"}}</td><td>{{t "yes"}}</td><td>{{t "yours; the project's at cbb.tools is not open yet"}}</td></tr>
   </table>
   </div>
   <p>{{t "The servers at cbb.tools keep no logs. The details are in %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/how-it-works.md" (t "how it works"))}}</p>
@@ -36,5 +37,11 @@
 
   <h2>{{t "Found a problem?"}}</h2>
   <p>{{t "Please report a vulnerability privately, as %s describes, and not in a public issue." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/SECURITY.md" "SECURITY.md")}}</p>
+
+  <div class="final">
+    <h2>{{t "Try it on your devices"}}</h2>
+    <p>{{t "It takes a few minutes and costs nothing."}}</p>
+    <p class="actions"><a class="button accent go" href="download.html">{{t "Download for free"}}</a></p>
+  </div>
 </section>
 {{end}}

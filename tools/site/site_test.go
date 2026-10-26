@@ -4,11 +4,14 @@
 package main
 
 import (
+	"encoding/json"
+	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -174,16 +177,55 @@ func TestSite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ld := regexp.MustCompile(`(?s)<script type="application/ld\+json">(.*?)</script>`)
 	for _, l := range langs {
-		for _, p := range pages {
+		for _, p := range append(slices.Clone(pages), errorPages...) {
 			data, err := os.ReadFile(filepath.Join(out, l.Code, p+".html"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(data), `lang="`+l.Tag+`"`) {
+			html := string(data)
+			if !strings.Contains(html, `lang="`+l.Tag+`"`) {
 				t.Errorf("%s/%s.html: no lang=%q", l.Code, p, l.Tag)
 			}
+			if n := strings.Count(html, "<h1"); n != 1 {
+				t.Errorf("%s/%s.html: %d h1, want 1", l.Code, p, n)
+			}
+			isError := slices.Contains(errorPages, p)
+			if strings.Contains(html, `name="robots" content="noindex"`) != isError {
+				t.Errorf("%s/%s.html: noindex should be on the error pages only", l.Code, p)
+			}
+			if !isError && !strings.Contains(html, `rel="canonical" href="https://cbb.tools/`+l.Code+`/`) {
+				t.Errorf("%s/%s.html: no canonical link", l.Code, p)
+			}
+			for _, m := range ld.FindAllStringSubmatch(html, -1) {
+				var v map[string]any
+				if err := json.Unmarshal([]byte(m[1]), &v); err != nil || v["@context"] != "https://schema.org" {
+					t.Errorf("%s/%s.html: bad JSON-LD %.80q: %v", l.Code, p, m[1], err)
+				}
+			}
 		}
+	}
+	data, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sm struct {
+		URLs []struct {
+			Loc   string `xml:"loc"`
+			Links []struct {
+				Lang string `xml:"hreflang,attr"`
+			} `xml:"link"`
+		} `xml:"url"`
+	}
+	if err := xml.Unmarshal(data, &sm); err != nil {
+		t.Fatal(err)
+	}
+	if len(sm.URLs) != len(pages)*len(langs) || len(sm.URLs[0].Links) != len(langs) {
+		t.Errorf("sitemap: %d pages, want %d, each with %d languages", len(sm.URLs), len(pages)*len(langs), len(langs))
+	}
+	if _, err := os.Stat(filepath.Join(out, "robots.txt")); err != nil {
+		t.Error(err)
 	}
 }
 

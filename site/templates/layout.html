@@ -5,19 +5,35 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{template "title" .}}</title>
-<meta name="description" content="{{t "One clipboard for your phone and your computers, on your own network: no cloud, no accounts."}}">
+<meta name="description" content="{{template "description" .}}">
+{{if .Error}}<meta name="robots" content="noindex">
+{{else}}<link rel="canonical" href="{{.URL .Lang}}">
+{{range .Langs}}<link rel="alternate" hreflang="{{.Tag}}" href="{{$.URL .}}">
+{{end}}<link rel="alternate" hreflang="x-default" href="https://cbb.tools/{{if .Path}}?p={{.Path}}{{end}}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Clipboard Bridge">
+<meta property="og:title" content="{{template "title" .}}">
+<meta property="og:description" content="{{template "description" .}}">
+<meta property="og:url" content="{{.URL .Lang}}">
+<meta property="og:image" content="https://cbb.tools/static/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{t "Clipboard Bridge: copy on one device, paste on another."}}">
+<meta name="twitter:card" content="summary_large_image">
+{{end}}<meta name="theme-color" content="#0A7A3E">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" href="/static/icon.png">
-{{range .Langs}}<link rel="alternate" hreflang="{{.Tag}}" href="/{{.Code}}/{{$.Page}}">
-{{end}}</head>
+<link rel="apple-touch-icon" href="/static/icon.png">
+{{block "head" .}}{{end}}</head>
 <body>
+<a class="skip" href="#main">{{t "Skip to content"}}</a>
 <header class="top">
   <div class="wrap bar">
     <a class="brand" href="/{{.Lang.Code}}/">
       <picture><source srcset="/static/icon-dark.png" media="(prefers-color-scheme: dark)"><img src="/static/icon.png" alt="" width="32" height="32"></picture>
       <span>Clipboard Bridge</span>
     </a>
-    <nav>
+    <nav aria-label="{{t "Main"}}">
       <a href="/{{.Lang.Code}}/download.html"{{if eq .Page "download.html"}} aria-current="page"{{end}}>{{t "Download"}}</a>
       <a href="/{{.Lang.Code}}/privacy.html"{{if eq .Page "privacy.html"}} aria-current="page"{{end}}>{{t "Privacy"}}</a>
       <a href="https://github.com/HunterEwok/clipboardbridge/blob/main/docs/README.md">{{t "Docs"}}</a>
@@ -32,7 +48,7 @@
     </details>
   </div>
 </header>
-<main>
+<main id="main">
 {{template "content" .}}
 </main>
 <footer class="foot">
@@ -43,5 +59,6 @@
        <a href="https://db-ip.com">{{t "IP Geolocation by DB-IP"}}</a></p>
   </div>
 </footer>
-</body>
+{{if ne .Page "download.html"}}<p class="dock"><a class="button accent go" href="/{{.Lang.Code}}/download.html">{{t "Download for free"}}</a></p>
+{{end}}</body>
 </html>

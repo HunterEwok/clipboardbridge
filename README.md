@@ -89,7 +89,8 @@ through tmux and `cbb copy` and `cbb paste`.
 | Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
 | Sync away from home between computers (`cbb global`, `cbb invite`) | built | not yet |
 | Sync away from home for the phones and the lite member | built | not yet |
-| The phone as the hub, several hubs, a public blind relay | planned for 0.5 | |
+| The phone as the hub, several hubs, your own blind relay | built | not yet |
+| The project's forwarder and relay at `cbb.tools`, open to everyone | being tested | |
 | Console paste on a key press | planned | |
 | Homebrew | set up; the tap gets its first formula with the next release | not yet |
 | Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |

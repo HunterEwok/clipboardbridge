@@ -1,5 +1,20 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 {{define "title"}}Clipboard Bridge: {{t "one clipboard for all your devices"}}{{end}}
+{{define "description"}}{{t "One clipboard for your phone and your computers, on your own network: no cloud, no accounts."}}{{end}}
+
+{{define "head"}}<script type="application/ld+json">{{jsonld (dict
+  "@context" "https://schema.org"
+  "@type" "SoftwareApplication"
+  "name" "Clipboard Bridge"
+  "url" (.URL .Lang)
+  "inLanguage" .Lang.Tag
+  "description" (t "One clipboard for your phone and your computers, on your own network: no cloud, no accounts.")
+  "applicationCategory" "UtilitiesApplication"
+  "operatingSystem" "Android, iOS, Windows, macOS, Linux"
+  "license" "https://www.gnu.org/licenses/agpl-3.0.html"
+  "offers" (dict "@type" "Offer" "price" "0" "priceCurrency" "USD"))}}</script>
+<script type="application/ld+json">{{jsonld faqld}}</script>
+{{end}}
 
 {{define "orbit"}}
 <div class="orbit" aria-hidden="true">
@@ -16,28 +31,59 @@
 <section class="hero">
   <div class="wrap">
     <h1>{{t "Copy on one device. Paste on another."}}</h1>
-    <p class="lead">{{t "Clipboard Bridge gives your phone and your computers one clipboard: Android, iPhone, Linux, Windows and Mac. The devices talk directly on your own network, always encrypted. No cloud, no accounts, no telemetry."}}</p>
+    <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
+    <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
     <p class="actions">
-      <a class="button accent" href="download.html">{{t "Download"}}</a>
-      <a class="button" href="#groups">{{t "How it works"}}</a>
+      <a class="button accent go" href="download.html">{{t "Download for free"}}</a>
+      <a class="button" href="#how">{{t "How it works"}}</a>
     </p>
   </div>
 </section>
 
-<section class="wrap">
-  <h2>{{t "What it does"}}</h2>
-  <div class="table">
-  <table>
-    <tr><th>{{t "Computer → computer"}}</th><td>{{t "Copy on one, paste on another. Automatic."}}</td></tr>
-    <tr><th>{{t "Computer → Android"}}</th><td>{{t "Copy on the computer, paste on the phone. Automatic."}}</td></tr>
-    <tr><th>{{t "Android → computer"}}</th><td>{{t "Copy on the phone; it is sent by itself with the accessibility service, or with one tap."}}</td></tr>
-    <tr><th>{{t "Computer ↔ iPhone"}}</th><td>{{t "One press of the Action button or a double tap on the back, then paste."}}</td></tr>
-  </table>
-  </div>
-  <p class="dim">{{t "iOS does not let apps read the clipboard in the background, so the iPhone needs one gesture. On Linux it works with any desktop, and without one in tmux."}}</p>
+<section class="wrap facts" aria-label="{{t "In short"}}">
+  <div><strong>{{t "Open source"}}</strong><span>{{t "Every line is on GitHub"}}</span></div>
+  <div><strong>{{t "No accounts"}}</strong><span>{{t "Nothing to sign up for"}}</span></div>
+  <div><strong>{{t "No telemetry"}}</strong><span>{{t "It reports to no one"}}</span></div>
+  <div><strong>{{t "Encrypted"}}</strong><span>{{t "Only between your devices"}}</span></div>
 </section>
 
-<section class="wrap" id="groups">
+<section class="wrap reveal">
+  <h2>{{t "Works where you do"}}</h2>
+  <div class="cards four">
+    <div class="card"><h3>Android</h3><p>{{t "Receives copies by itself, and sends them with the accessibility service or one tap."}}</p></div>
+    <div class="card"><h3>iPhone</h3><p>{{t "One press of the Action button or a double tap on the back, then paste."}}</p></div>
+    <div class="card"><h3>{{t "Windows, Mac and Linux"}}</h3><p>{{t "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux."}}</p></div>
+    <div class="card"><h3>{{t "Raspberry Pi, router, NAS"}}</h3><p>{{t "A small member that only syncs, or a Docker image that is always on."}}</p></div>
+  </div>
+  <p class="dim">{{t "iOS does not let apps read the clipboard in the background, so the iPhone needs one gesture."}}</p>
+</section>
+
+<section class="wrap reveal">
+  <h2>{{t "Why not just send it to yourself?"}}</h2>
+  <p>{{t "A message to yourself works, but it takes several steps every time, and your text stays on someone else's server. A clipboard built into one system works only within it."}}</p>
+  <div class="table">
+  <table class="compare">
+    <tr><th></th><th>{{t "Just copy and paste"}}</th><th>{{t "Text stays on your devices"}}</th><th>{{t "Between any systems"}}</th></tr>
+    <tr class="us"><th>Clipboard Bridge</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th>{{t "A message to yourself"}}</th><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th>{{t "A cloud clipboard app"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th>{{t "The clipboard of one system"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td></tr>
+  </table>
+  </div>
+</section>
+
+<section class="wrap reveal" id="how">
+  <h2>{{t "Set up in three steps"}}</h2>
+  <ol class="steps">
+    <li><strong>{{t "Install the app on your phone."}}</strong> {{t "Android: the APK from the latest release. iPhone: the app comes with TestFlight; until then a shortcut and a computer do the job."}}</li>
+    <li><strong>{{t "Install Clipboard Bridge on a computer."}}</strong> {{t "One command on Linux, Mac or Windows: see %s." (link "download.html" (t "Download"))}}</li>
+    <li><strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
+  </ol>
+  <p>{{t "No computer? Make the group in the app, then open the app on each other phone and join from its start screen."}}
+     {{t "Step by step: the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" (t "quick start"))}}</p>
+</section>
+
+<section class="wrap reveal" id="groups">
   <h2>{{t "Two ways to build your group"}}</h2>
   <p>{{t "Your devices form a group. Only devices you let in belong to it, and they talk only to each other. A group can have a computer at its heart, or only phones: both are fully supported. We will be honest, though: with a computer everything is simpler."}}</p>
   <div class="cards two">
@@ -46,7 +92,7 @@
       <h3>{{t "With a computer"}}</h3>
       {{template "orbit" (list (t "Computer") (t "Phone") (t "Laptop") (t "Phone") (t "Mac"))}}
       <ul>
-        <li>{{t "A computer that is often on, such as a desktop, a Raspberry Pi or a home server, keeps the group going."}}</li>
+        <li>{{t "A Linux or Windows computer that is often on, such as a desktop, a Raspberry Pi or a home server, keeps the group going."}}</li>
         <li>{{t "Away from home, your phone and laptop sync through it at any time: it is the group's hub."}}</li>
         <li>{{t "The phone can still hold the group's key in its security chip and admit every device."}}</li>
         <li>{{t "No app needed: a computer can hold the group by itself, and an iPhone joins with a shortcut."}}</li>
@@ -66,18 +112,17 @@
   <p class="note">{{t "Why a computer is simpler: it is on far more often than a phone app is open, so sync away from home just works, and the iPhone gives an app little time in the background. When a computer that is always on joins a group of phones, the app offers to make it the hub."}}</p>
 </section>
 
-<section class="wrap">
-  <h2>{{t "Get started"}}</h2>
-  <ol class="steps">
-    <li><strong>{{t "Install the app on your phone."}}</strong> {{t "Android: the APK from the latest release. iPhone: the app comes with TestFlight; until then a shortcut and a computer do the job."}}</li>
-    <li><strong>{{t "Install Clipboard Bridge on a computer."}}</strong> {{t "One command on Linux, Mac or Windows: see %s." (link "download.html" (t "Download"))}}</li>
-    <li><strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
-  </ol>
-  <p>{{t "No computer? Make the group in the app, then open the app on each other phone and join from its start screen."}}
-     {{t "Step by step: the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" (t "quick start"))}}</p>
+<section class="wrap reveal">
+  <h2>{{t "What people use it for"}}</h2>
+  <div class="cards four">
+    <div class="card"><h3>{{t "From the phone to the computer"}}</h3><p>{{t "Found a link or an address on the phone? Copy it, and paste it on the computer."}}</p></div>
+    <div class="card"><h3>{{t "From the computer to the phone"}}</h3><p>{{t "A code, an address, a piece of text: copy on the computer, paste on the phone."}}</p></div>
+    <div class="card"><h3>{{t "Between your computers"}}</h3><p>{{t "A laptop and a desktop, a Mac and a Linux box: as if they shared one clipboard."}}</p></div>
+    <div class="card"><h3>{{t "On a server"}}</h3><p>{{t "Copy a command on your laptop and paste it in tmux on the server, or the other way round."}}</p></div>
+  </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
   <h2>{{t "Principles"}}</h2>
   <div class="cards three">
     <div class="card"><h3>{{t "Your network only"}}</h3><p>{{t "At home the devices talk to each other directly. Away from home they reach your group through its own encrypted tunnel. Nothing goes through a cloud."}}</p></div>
@@ -86,6 +131,25 @@
     <div class="card"><h3>{{t "Passwords stay put"}}</h3><p>{{t "What password managers mark as secret is not synced automatically."}}</p></div>
     <div class="card"><h3>{{t "Small"}}</h3><p>{{t "One file per platform and no dependencies. It runs even on a Raspberry Pi Zero."}}</p></div>
     <div class="card"><h3>{{t "Open"}}</h3><p>{{t "Free software: every line is on GitHub, and every release is built there in the open."}}</p></div>
+  </div>
+</section>
+
+<section class="wrap reveal" id="faq">
+  <h2>{{t "Questions"}}</h2>
+  <div class="faq">
+    {{range faq}}<details><summary>{{.Q}}</summary><p>{{.A}}</p></details>
+    {{end}}
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="final">
+    <h2>{{t "Try it on your devices"}}</h2>
+    <p>{{t "It takes a few minutes and costs nothing."}}</p>
+    <p class="actions">
+      <a class="button accent go" href="download.html">{{t "Download for free"}}</a>
+      <a class="button" href="https://github.com/HunterEwok/clipboardbridge">{{t "Source on GitHub"}}</a>
+    </p>
   </div>
 </section>
 {{end}}

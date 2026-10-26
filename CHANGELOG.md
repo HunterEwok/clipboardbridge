@@ -23,7 +23,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer at its heart and phones only, and says plainly why a computer is simpler. "/"
   picks the visitor's language by the language they picked before, their country (a local
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
-  nginx with its ACME module serves it (`site/deploy`), and CI checks every translation.
+  The start page leads with what it does, then the platforms, a comparison with sending
+  yourself a message, three steps to start, uses and questions; every page ends with a next
+  step, and a phone keeps a "Download" button at the bottom of the screen. Short CSS-only
+  motion, off for those who ask for less motion; no scripts. Error pages (404, 5xx) in the
+  visitor's language, Open Graph, canonical and hreflang links, `sitemap.xml`, `robots.txt`
+  and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
+  HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

@@ -4,7 +4,8 @@
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
 security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
-sites and has no scripts.
+sites and runs no scripts (its only `<script>` elements are schema.org data for search
+engines). It also has error pages (`404`, `50x`) in every language, which nginx shows.
 
 ## Editing
 
@@ -17,7 +18,16 @@ sites and has no scripts.
 - `go run ./tools/site check` fails when a language lacks a text, keeps one no page uses, or a
   translation has another number of `%s`; CI runs it. After changing an English text, change
   its key in every language, and mark the translation for review in the pull request.
-- The colours are the apps' default palette from `apps/design/tokens.json`.
+- The questions of the start page are `faq` in `tools/site/build.go`, also given to search
+  engines as a FAQPage; their answers are plain text, with no links.
+- Write for the reader: the benefit first, short sentences, buttons that say what happens
+  ("Download for Android", not "More"), and a next step at the end of every page. State only
+  what is true today: no invented reviews or numbers, and what is planned says so.
+- The colours are the apps' default palette from `apps/design/tokens.json`. Motion is CSS
+  only, 0.2 to 0.6 s, and off under `prefers-reduced-motion`. Buttons are at least 44 px
+  high.
+- `static/og.png` (1200×630) is the picture links to the site show in chats and social
+  networks.
 - Present both kinds of group as nearly equal: with a computer at its heart (simpler, and
   said so) and phones only (fully supported).
 
@@ -62,7 +72,8 @@ installs and changes it; nothing here does it by itself.
    log, since the site promises none.
 2. DNS: `cbb.tools` already points at the server; add `www.cbb.tools` (a CNAME to
    `cbb.tools`), which redirects to `cbb.tools`.
-3. The firewall: TCP 80 and 443.
+3. The firewall: TCP 80 and 443, and UDP 443 for HTTP/3 (QUIC). Without UDP 443 browsers
+   use HTTP/2 or HTTP/1.1 over TCP, as old clients always do.
 4. The language chooser: build it with `GOOS=linux GOARCH=amd64 go build -o cbb-site
    ./tools/site`, copy it to `/usr/local/bin/cbb-site`, copy
    [`deploy/cbb-site.service`](deploy/cbb-site.service),
