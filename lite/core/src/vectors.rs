@@ -367,3 +367,29 @@ fn go_commands() {
         }
     }
 }
+
+/// The signed files of a release (docs/protocol.md, section 16), as Go's
+/// TestReleaseVectors writes them: which combinations a device takes.
+#[test]
+fn go_release() {
+    use crate::release::{self, File, Seen};
+    let v = vectors("go-release.json");
+    let roots: Vec<Vec<u8>> = v["roots"].as_array().unwrap().iter().map(bytes).collect();
+    let roots: Vec<&[u8]> = roots.iter().map(|r| r.as_slice()).collect();
+    let name = v["channel"].as_str().unwrap();
+    let now = v["now_ms"].as_i64().unwrap();
+    let cases = v["vectors"].as_array().unwrap();
+    assert_eq!(cases.len(), 23);
+    for c in cases {
+        let file = |k: &str| -> File { serde_json::from_value(c[k].clone()).unwrap() };
+        let seen: Seen = serde_json::from_value(c["seen"].clone()).unwrap();
+        let got = release::check(&file("keys"), &file("channel"), &file("release"), &roots, name, now, &seen);
+        let label = c["name"].as_str().unwrap();
+        assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{label}: {:?}", got.as_ref().err().map(|e| e.message()));
+        if let Ok((r, next)) = got {
+            assert_eq!(r.version, c["version"].as_str().unwrap(), "{label}");
+            assert_eq!(next.version, r.version, "{label}");
+            assert!(r.direct("0.5.3") && !r.direct("0.3.9"), "{label}");
+        }
+    }
+}
