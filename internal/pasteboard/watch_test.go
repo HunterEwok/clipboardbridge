@@ -50,3 +50,24 @@ func TestWatch(t *testing.T) {
 		t.Errorf("the user's copy was cleared: %+v", it)
 	}
 }
+
+// TestWatchHolds checks Holds, which a remote paste asks before it gives
+// the clipboard its text back: true while the agent's write stands, false
+// once another program copied.
+func TestWatchHolds(t *testing.T) {
+	b := private(t)
+	w := NewWatch(b)
+	if w.Holds("pasted") {
+		t.Error("holds a text before any write")
+	}
+	if err := w.Write("pasted", false); err != nil {
+		t.Fatal(err)
+	}
+	if !w.Holds("pasted") {
+		t.Error("does not hold its own write")
+	}
+	b.Write("copied by the user", false)
+	if w.Holds("pasted") {
+		t.Error("holds its write after the user copied")
+	}
+}

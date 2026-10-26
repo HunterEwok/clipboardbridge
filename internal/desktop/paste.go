@@ -17,40 +17,6 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/uinput"
 )
 
-// pasteBoard is the clipboard a paste goes through.
-type pasteBoard interface {
-	Current() (connector.Item, bool, error)
-	Write(text string, secret bool) error
-	ClearIfUnchanged() error
-	// holds reports whether the clipboard still holds text from this
-	// board's own write.
-	holds(text string) bool
-}
-
-// pasteThrough puts text into the clipboard, lets press press the paste
-// keys, and gives the clipboard back what it held, after restoreAfter,
-// unless the user copied meanwhile. A secret leaves no copy behind.
-func pasteThrough(b pasteBoard, text string, secret bool, press func() error) error {
-	prev, had, _ := b.Current()
-	if err := b.Write(text, secret); err != nil {
-		return err
-	}
-	err := press()
-	time.Sleep(restoreAfter)
-	switch {
-	case !b.holds(text): // the user copied meanwhile
-	case had:
-		if werr := b.Write(prev.Text, prev.Secret); werr != nil && err == nil {
-			err = werr
-		}
-	default:
-		if cerr := b.ClearIfUnchanged(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}
-	return err
-}
-
 // keyboard presses a paste's keys where the board's own way cannot: the
 // RemoteDesktop portal, or the uinput helper.
 type keyboard interface {
@@ -62,7 +28,7 @@ type keyboard interface {
 
 // keysInject pastes through the clipboard and kb, on GNOME and KDE and
 // where the user installed the uinput helper.
-func keysInject(kb keyboard, b pasteBoard, text, method string, enter, secret bool) error {
+func keysInject(kb keyboard, b connector.PasteBoard, text, method string, enter, secret bool) error {
 	switch method {
 	case "paste":
 	case "type":
@@ -76,7 +42,7 @@ func keysInject(kb keyboard, b pasteBoard, text, method string, enter, secret bo
 	if err := kb.ready(); err != nil {
 		return err
 	}
-	err := pasteThrough(b, text, secret, kb.paste)
+	err := connector.PasteThrough(b, text, secret, kb.paste)
 	if err == nil && enter {
 		err = kb.enter()
 	}

@@ -84,6 +84,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Shift+Insert and Enter for the desktop connector of the session on the screen, so that
   remote paste works on GNOME and KDE without the portal's dialog. It presses them only for
   the user of the active graphical session, and never on a login or lock screen.
+- Remote paste on Windows: the clipboard agent pastes into the window with the focus
+  through the clipboard and Ctrl+V, or types any character with SendInput's Unicode keys.
+  It refuses on the lock screen and under an administrator prompt, and when the window with
+  the focus runs as administrator, since Windows drops keys sent to it.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 
