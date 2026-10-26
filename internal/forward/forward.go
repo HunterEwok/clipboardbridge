@@ -186,32 +186,68 @@ type VLESSConfig struct {
 	Key  [32]byte // the REALITY key, X25519
 }
 
-// listenPair opens UDP and TCP on the same port of host. A port of 0 is
-// picked for TCP first, since Windows reserves ranges of TCP ports that it
-// never hands out but that a UDP pick could land in; a pick whose UDP side
-// is taken is given back and another one is tried.
+// listenPair opens UDP and TCP on the same port of host. Windows reserves
+// ranges of ports, for TCP and for UDP apart, that it never hands out but
+// that a pick of the other protocol can land in, and its picks run in
+// order, so a whole run of them may fall in one range. A port of 0 is
+// therefore picked by TCP and by UDP in turn; a pick whose other side is
+// refused is given back and another one is tried.
 func listenPair(host string, port int) (*net.UDPConn, net.Listener, error) {
 	tries := 1
 	if port == 0 {
-		tries = 20
+		tries = 40
 	}
 	var err error
-	for range tries {
-		var tcp net.Listener
-		if tcp, err = net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port))); err != nil {
-			return nil, nil, err
-		}
-		p := tcp.Addr().(*net.TCPAddr).Port
-		var ua *net.UDPAddr
+	for i := range tries {
 		var udp *net.UDPConn
-		if ua, err = net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(p))); err == nil {
-			if udp, err = net.ListenUDP("udp", ua); err == nil {
-				return udp, tcp, nil
-			}
+		var tcp net.Listener
+		if i%2 == 0 {
+			tcp, udp, err = tcpFirst(host, port)
+		} else {
+			udp, tcp, err = udpFirst(host)
 		}
-		tcp.Close()
+		if err == nil {
+			return udp, tcp, nil
+		}
 	}
 	return nil, nil, err
+}
+
+// tcpFirst listens on TCP at port, then on UDP at the same port.
+func tcpFirst(host string, port int) (net.Listener, *net.UDPConn, error) {
+	tcp, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+	if err != nil {
+		return nil, nil, err
+	}
+	udp, err := listenUDP(host, tcp.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		tcp.Close()
+		return nil, nil, err
+	}
+	return tcp, udp, nil
+}
+
+// udpFirst listens on UDP at a port the system picks, then on TCP at the
+// same port.
+func udpFirst(host string) (*net.UDPConn, net.Listener, error) {
+	udp, err := listenUDP(host, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	tcp, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(udp.LocalAddr().(*net.UDPAddr).Port)))
+	if err != nil {
+		udp.Close()
+		return nil, nil, err
+	}
+	return udp, tcp, nil
+}
+
+func listenUDP(host string, port int) (*net.UDPConn, error) {
+	ua, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(port)))
+	if err != nil {
+		return nil, err
+	}
+	return net.ListenUDP("udp", ua)
 }
 
 // Listen opens the forwarder's ports. Serve then runs it.
