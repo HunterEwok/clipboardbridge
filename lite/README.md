@@ -84,8 +84,8 @@ rustup target add arm-unknown-linux-musleabihf
 cargo build --release --target arm-unknown-linux-musleabihf
 ```
 
-CI builds both for every pull request: the `cbb-lite-linux-arm64` and `cbb-lite-linux-armv6`
-artifacts of the `lite member (Rust)` job. A release builds static musl binaries for x86-64,
+CI builds both for every pull request: the `clipboardbridge-lite-linux-arm64` and
+`clipboardbridge-lite-linux-armv6` artifacts of the `lite member (Rust)` job. A release builds static musl binaries for x86-64,
 ARM64 and ARMv6 with Rust's own linker (`.cargo/config.toml`), each in an archive
 (`packaging/archive.sh`) with `THIRD_PARTY_NOTICES`, the licenses of the crates it is built
 from (`packaging/notices.sh`), and the installer of the full member's Linux archive with the
@@ -107,8 +107,8 @@ curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/downloa
 ```
 
 `get.sh --lite` takes the release's static build for this architecture
-(`cbb-lite-linux-amd64.tar.gz`, `-arm64`, or `-armv6`, which also runs on ARMv7), checks it
-against `SHA256SUMS` and runs its `packaging/linux/install.sh`, the same installer as a full
+(`clipboardbridge-lite-linux-amd64.tar.gz`, `-arm64`, or `-armv6`, which also runs on
+ARMv7; releases before 0.5 called it `cbb-lite-linux-*`), checks it against `SHA256SUMS` and runs its `packaging/linux/install.sh`, the same installer as a full
 member's: the program as `/usr/local/bin/cbb`, the `clipboardbridge` user and group, the
 service `clipboardbridge.service`, the tmux configuration, and, with your consent, mDNS and
 the member port from the home network in the firewall. `--port N`, `--console`, `--express`
@@ -117,7 +117,7 @@ Running it again updates. It refuses to replace a full member, whose keys the li
 cannot use, and moves an install from before the rename (`cbb-lite`, its own user and
 paths) to the new names, keeping the device in its group. Without curl, or for a binary you
 built, unpack the archive (or make one with `sh packaging/archive.sh`) and run
-`sudo sh cbb-lite/packaging/linux/install.sh cbb-lite/cbb`. To remove it:
+`sudo sh clipboardbridge-lite/packaging/linux/install.sh clipboardbridge-lite/cbb`. To remove it:
 `sudo sh /usr/local/share/clipboardbridge/uninstall.sh` (`--purge` also deletes the keys).
 
 The service waits until the device joins a group. Join as the service's user, so that it

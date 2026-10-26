@@ -6,7 +6,7 @@
 #
 #   sh packaging/release-notes.sh v1.2.3
 #
-# what clipboardbridge is, the version's section of CHANGELOG.md, how to install
+# what Clipboard Bridge is, the version's section of CHANGELOG.md, how to install
 # it, how to verify the files, where the source and the license are, and
 # where to report problems. The release workflow publishes them; GitHub
 # appends the list of merged pull requests.
@@ -36,7 +36,7 @@ if [ -z "$(printf '%s' "$changes" | tr -d '[:space:]')" ]; then
 fi
 
 cat <<NOTES
-clipboardbridge is one clipboard for your Apple devices and every Linux machine on your home
+Clipboard Bridge is one clipboard for your Apple devices and every Linux machine on your home
 network: copy on one device, paste on another. It works only on the local network, with
 no cloud, accounts or telemetry, and all traffic is end-to-end encrypted between paired
 devices.
@@ -53,7 +53,7 @@ curl -fsSL $repo/releases/download/$tag/get.sh | sudo sh
 \`\`\`
 
 \`get.sh\` downloads the archive for the machine, checks it against \`SHA256SUMS\`, installs
-the service and, when ufw is active, allows clipboardbridge's ports from the home network only.
+the service and, when ufw is active, allows Clipboard Bridge's ports from the home network only.
 
 **macOS** (Apple silicon; \`amd64\` instead of \`arm64\` for Intel), in Terminal:
 
@@ -77,7 +77,7 @@ the watch (with \`adb install\` over the watch's wireless debugging).
 curl -fsSL $repo/releases/download/$tag/get.sh | sudo CBB_VERSION=$tag sh -s -- --lite
 \`\`\`
 
-Its command is \`cbb\` too; \`cbb-lite/README.md\` in its archive has the rest.
+Its command is \`cbb\` too; \`clipboardbridge-lite/README.md\` in its archive has the rest.
 
 Then follow the [quick start]($repo/blob/$tag/docs/guide/quickstart.md): \`sudo cbb pair\` on each
 computer, and the phone app scans its QR code. Without the app, \`cbb new\` on the first computer
@@ -106,9 +106,9 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`clipboardbridge-darwin-amd64.tar.gz\` | macOS, Intel |
 | \`clipboardbridge-windows-amd64.zip\` | Windows 10 (1809 or later) and 11, x86-64 |
 | \`clipboardbridge-windows-arm64.zip\` | Windows 10 (1809 or later) and 11, ARM64 |
-| \`cbb-lite-linux-amd64.tar.gz\` | the lite member for small Linux devices, x86-64, static |
-| \`cbb-lite-linux-arm64.tar.gz\` | the lite member, ARM64, static |
-| \`cbb-lite-linux-armv6.tar.gz\` | the lite member, ARMv6 and ARMv7 (Raspberry Pi Zero, 1, 2), static |
+| \`clipboardbridge-lite-linux-amd64.tar.gz\` | the lite member for small Linux devices, x86-64, static |
+| \`clipboardbridge-lite-linux-arm64.tar.gz\` | the lite member, ARM64, static |
+| \`clipboardbridge-lite-linux-armv6.tar.gz\` | the lite member, ARMv6 and ARMv7 (Raspberry Pi Zero, 1, 2), static |
 | \`clipboardbridge-$version.apk\` | Android 10 and later, signed with the project's release key |
 | \`clipboardbridge-wear-$version.apk\` | Wear OS 3 and later, through the paired Android phone, signed with the same key |
 | \`get.sh\` | the installer for Linux (\`--lite\` for the lite member) and macOS |
@@ -116,13 +116,14 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |
 
 Each archive holds \`clipboardbridge/\`: the program, \`LICENSE\`, \`THIRD_PARTY_NOTICES\` with
-the licenses of the code it is built from, and \`packaging/\` with the installer for its system. Each \`cbb-lite\` archive holds \`cbb-lite/\`: the program \`cbb\`, \`LICENSE\`,
-\`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\`, and
+the licenses of the code it is built from, and \`packaging/\` with the installer for its
+system. Each \`clipboardbridge-lite\` archive holds \`clipboardbridge-lite/\`: the program
+\`cbb\`, \`LICENSE\`, \`THIRD_PARTY_NOTICES\` with the licenses of the crates it is built from, \`README.md\`, and
 \`packaging/\` with the Linux installer and the lite member's systemd unit.
 
 ## Source and license
 
-clipboardbridge is free software under the [GNU Affero General Public License, version 3
+Clipboard Bridge is free software under the [GNU Affero General Public License, version 3
 only]($repo/blob/$tag/LICENSE). The complete source of this release is the tag
 [\`$tag\`]($repo/tree/$tag) and the source archives below, from which these files are built
 by [the release workflow]($repo/blob/$tag/.github/workflows/release.yml).

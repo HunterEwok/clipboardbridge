@@ -6,8 +6,8 @@
 #
 #   sudo sh install.sh [--console] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
 #
-# The full member's archive and the lite member's (cbb-lite-linux-*) both
-# carry this script, each with its own systemd unit beside it; cbb version
+# The full member's archive and the lite member's
+# (clipboardbridge-lite-linux-*) both carry this script, each with its own systemd unit beside it; cbb version
 # tells the two apart. It installs the binary to /usr/local/bin, the service
 # user, the systemd unit, for the full member the desktop autostart entry,
 # and the tmux configuration, adds the user
@@ -153,7 +153,7 @@ if [ -e /usr/local/bin/clipbridge ] || [ -e /etc/systemd/system/clipbridge.servi
 	fi
 	userdel clipbridge 2>/dev/null || true
 	groupdel clipbridge 2>/dev/null || true
-	echo "Removed clipbridge, as clipboardbridge was called before; pair this device again."
+	echo "Removed clipbridge, as Clipboard Bridge was called before; pair this device again."
 fi
 
 # The lite member was the command cbb-lite, with its own user and paths. Its
@@ -267,9 +267,9 @@ yes) firewall=ask ;; # what get.sh passed before --express
 esac
 sh /usr/local/share/clipboardbridge/firewall.sh setup "$firewall" "$port"
 if [ "$port" != 8764 ]; then
-	echo "clipboardbridge uses TCP port $port instead of 8764. If a firewall on the network"
+	echo "Clipboard Bridge uses TCP port $port instead of 8764. If a firewall on the network"
 	echo "limits incoming connections, allow TCP $port from the home network. The iPhone shortcut"
-	echo "works only with 8764; the clipboardbridge app takes any port."
+	echo "works only with 8764; the Clipboard Bridge app takes any port."
 fi
 
 systemctl daemon-reload
@@ -288,7 +288,7 @@ if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away
 		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
 	fi
 fi
-echo "clipboardbridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
+echo "Clipboard Bridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
 if [ "$kind" = lite ]; then
 	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."
 else

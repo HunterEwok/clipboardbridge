@@ -55,7 +55,7 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	case peer == nil:
 		return "", fmt.Errorf("%s is not connected; it gets its admin CA over its connection, so start it and try again", d.Name)
 	case peer.AdminKey == nil:
-		return "", fmt.Errorf("%s offers no admin key; update clipboardbridge there", d.Name)
+		return "", fmt.Errorf("%s offers no admin key; update Clipboard Bridge there", d.Name)
 	}
 	k, err := x509.ParsePKIXPublicKey(peer.AdminKey)
 	pub, ok := k.(*ecdsa.PublicKey)

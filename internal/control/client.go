@@ -78,7 +78,7 @@ type Client struct {
 
 // Dial connects to the service.
 func Dial(path string) (*Client, error) {
-	return dial(path, "no permission to use the clipboardbridge service; "+permissionHint)
+	return dial(path, "no permission to use the Clipboard Bridge service; "+permissionHint)
 }
 
 func dial(path, denied string) (*Client, error) {
@@ -87,7 +87,7 @@ func dial(path, denied string) (*Client, error) {
 		if errors.Is(err, os.ErrPermission) {
 			return nil, &DialError{Msg: denied, Denied: true, Err: err}
 		}
-		return nil, &DialError{Msg: "the clipboardbridge service is not running (" + err.Error() + ")", Err: err}
+		return nil, &DialError{Msg: "the Clipboard Bridge service is not running (" + err.Error() + ")", Err: err}
 	}
 	return &Client{c: c, r: NewReader(c)}, nil
 }

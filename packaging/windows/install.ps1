@@ -182,7 +182,7 @@ foreach ($child in $computer.Children) {
 }
 if (-not $exists) {
 	$group = $computer.Create('group', $name)
-	$group.Put('Description', 'May use the clipboardbridge service: cbb and the clipboard agent.')
+	$group.Put('Description', 'May use the Clipboard Bridge service: cbb and the clipboard agent.')
 	$group.SetInfo()
 }
 $step = "adding $user to the $name group"
@@ -195,13 +195,14 @@ if ($r.Code -ne 0 -and $r.Out -notmatch '1378') {
 $step = 'creating the service'
 $binPath = "`"$cbb`" service"
 if (-not $service) {
-	New-Service -Name $name -BinaryPathName $binPath -DisplayName 'clipboardbridge' -StartupType Automatic `
+	New-Service -Name $name -BinaryPathName $binPath -DisplayName 'Clipboard Bridge' -StartupType Automatic `
 		-Description 'Shares the clipboard with the other devices at home.' | Out-Null
 }
-# The path through CIM, as Windows PowerShell 5.1 drops the quotes inside
+# The path and the display name (which installs before 0.5 set to
+# clipboardbridge) through CIM, as Windows PowerShell 5.1 drops the quotes inside
 # an argument that it passes to sc.exe.
 $change = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'" |
-	Invoke-CimMethod -MethodName Change -Arguments @{ PathName = $binPath }
+	Invoke-CimMethod -MethodName Change -Arguments @{ PathName = $binPath; DisplayName = 'Clipboard Bridge' }
 if ($change.ReturnValue -ne 0) {
 	throw "setting the service's path failed with $($change.ReturnValue)"
 }
@@ -280,7 +281,7 @@ if ($cgnat) {
 	$fromText = 'the local subnet and 100.64.0.0/10'
 	$fromArg = 'LocalSubnet, 100.64.0.0/10'
 }
-Write-Host "Firewall: Windows Firewall ($fwState). clipboardbridge requires these rules:"
+Write-Host "Firewall: Windows Firewall ($fwState). Clipboard Bridge requires these rules:"
 Write-Host "  1. Allow incoming TCP $Port from $fromText to $cbb. Purpose: connections from the group's devices."
 Write-Host "  2. Allow incoming UDP 5353 from $fromText to $cbb. Purpose: finding the group's devices (mDNS)."
 # The answer is kept in the service's key, which uninstall.ps1 removes.
@@ -299,7 +300,7 @@ if ($answer -eq 'ask') {
 	}
 }
 if ($answer -notin @('yes', 'no', 'express')) {
-	Write-Host 'With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall.'
+	Write-Host 'With Yes, Clipboard Bridge adds these rules, keeps them current on every update and removes them on uninstall.'
 	if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
 		$reply = Read-Host 'Add these rules now? [y/N]'
 		$how = ''
@@ -314,21 +315,21 @@ if ($answer -in @('yes', 'no', 'express')) {
 }
 $managed = $answer -in @('yes', 'express')
 if ($managed) {
-	New-NetFirewallRule -Group $name -DisplayName "clipboardbridge (TCP $Port)" -Direction Inbound -Action Allow `
+	New-NetFirewallRule -Group $name -DisplayName "Clipboard Bridge (TCP $Port)" -Direction Inbound -Action Allow `
 		-Protocol TCP -LocalPort $Port -Program $cbb -RemoteAddress $from -Profile Any `
 		-Description 'clipboardbridge members and phones at home connect here.' | Out-Null
-	New-NetFirewallRule -Group $name -DisplayName 'clipboardbridge mDNS (UDP 5353)' -Direction Inbound -Action Allow `
+	New-NetFirewallRule -Group $name -DisplayName 'Clipboard Bridge mDNS (UDP 5353)' -Direction Inbound -Action Allow `
 		-Protocol UDP -LocalPort 5353 -Program $cbb -RemoteAddress $from -Profile Any `
 		-Description 'clipboardbridge finds the other devices at home with mDNS.' | Out-Null
-	Write-Host "Added the rules above$how. clipboardbridge manages them from now on."
+	Write-Host "Added the rules above$how. Clipboard Bridge manages them from now on."
 } else {
-	Write-Host 'No firewall rules were added. clipboardbridge works only while the firewall allows the rules above.'
+	Write-Host 'No firewall rules were added. Clipboard Bridge works only while the firewall allows the rules above.'
 	Write-Host 'To add them by hand, run in an administrator PowerShell:'
-	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge (TCP $Port)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program '$cbb' -RemoteAddress $fromArg"
-	Write-Host "  New-NetFirewallRule -DisplayName 'clipboardbridge mDNS (UDP 5353)' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -Program '$cbb' -RemoteAddress $fromArg"
-	Write-Host 'To let clipboardbridge add and manage them, run the installer again with -Express ($env:CBB_FIREWALL = "express" for get.ps1).'
+	Write-Host "  New-NetFirewallRule -Group clipboardbridge -DisplayName 'Clipboard Bridge (TCP $Port)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program '$cbb' -RemoteAddress $fromArg"
+	Write-Host "  New-NetFirewallRule -Group clipboardbridge -DisplayName 'Clipboard Bridge mDNS (UDP 5353)' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -Program '$cbb' -RemoteAddress $fromArg"
+	Write-Host 'To let Clipboard Bridge add and manage them, run the installer again with -Express ($env:CBB_FIREWALL = "express" for get.ps1).'
 }
-Write-Host 'clipboardbridge also adds an outbound rule that keeps its service on the home network and, with cbb global on, its group''s servers.'
+Write-Host 'Clipboard Bridge also adds an outbound rule that keeps its service on the home network and, with cbb global on, its group''s servers.'
 
 $step = 'keeping the service on the home network'
 # The service may reach only the home network, as its systemd unit allows
@@ -352,9 +353,9 @@ if (-not $rule -or -not $granted) {
 		'fec0::-feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')
 	Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Where-Object { [string]$_.Direction -eq 'Outbound' } | Remove-NetFirewallRule
 	Remove-ItemProperty -Path $serviceKey -Name AwayAllow -ErrorAction SilentlyContinue
-	New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'clipboardbridge: only the home network' `
+	New-NetFirewallRule -Name "$name-home-only" -Group $name -DisplayName 'Clipboard Bridge: only the home network' `
 		-Direction Outbound -Action Block -Program $cbb -Service $name -RemoteAddress $outside -Profile Any `
-		-Description 'The clipboardbridge service reaches only the home network and its group''s servers; cbb global changes this rule.' | Out-Null
+		-Description 'The Clipboard Bridge service reaches only the home network and its group''s servers; cbb global changes this rule.' | Out-Null
 }
 # Whatever the rule allowed before (another -HomeCgnat, an earlier version
 # that lifted it for cbb global on), cbb global allow writes it for what the
@@ -392,7 +393,7 @@ New-Item -Force -Path $uninstallKey | Out-Null
 $uninstall = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $programDir 'uninstall.ps1')`""
 $v = ($version -split ' ')[1]
 foreach ($p in @(
-		@('DisplayName', 'clipboardbridge', 'String'),
+		@('DisplayName', 'Clipboard Bridge', 'String'),
 		@('DisplayVersion', $v, 'String'),
 		@('Publisher', 'HunterEwok', 'String'),
 		@('InstallLocation', $programDir, 'String'),
@@ -423,9 +424,9 @@ if ($LASTEXITCODE -ne 0) {
 	throw "cbb global allow exited with $LASTEXITCODE"
 }
 
-Write-Host "clipboardbridge $v is running on TCP port $Port; $user may use it."
+Write-Host "Clipboard Bridge $v is running on TCP port $Port; $user may use it."
 if ($Port -ne 8764) {
-	Write-Host 'The iPhone shortcut works only with port 8764; the clipboardbridge app takes any port.'
+	Write-Host 'The iPhone shortcut works only with port 8764; the Clipboard Bridge app takes any port.'
 }
 Write-Host 'Next, in a terminal opened as administrator: cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group''s root or an admin; or start a group: cbb new.'
-Write-Host 'To remove it: Settings, Apps, clipboardbridge, Uninstall.'
+Write-Host 'To remove it: Settings, Apps, Clipboard Bridge, Uninstall.'

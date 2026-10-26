@@ -898,12 +898,12 @@ jobs:
           CBB_ESP32_ON_LINUX="$PWD/lite/target/release/esp32-on-linux" go test -race ./internal/service -run TestEmbassyJoiner -v
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cbb-lite-linux-arm64
+          name: clipboardbridge-lite-linux-arm64
           path: lite/target/aarch64-unknown-linux-gnu/release/cbb
           retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cbb-lite-linux-armv6
+          name: clipboardbridge-lite-linux-armv6
           path: lite/target/arm-unknown-linux-musleabihf/release/cbb
           retention-days: 14
 

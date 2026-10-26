@@ -6,9 +6,10 @@
 #
 #   sh lite/packaging/archive.sh path/to/cbb TARGET NAME OUTDIR
 #
-# writes OUTDIR/cbb-lite-linux-<NAME>.tar.gz, which holds cbb-lite/ with the
-# binary cbb, LICENSE, README.md, THIRD_PARTY_NOTICES (the licenses of the
-# crates for TARGET; see notices.sh) and packaging/ laid out as in the full
+# writes OUTDIR/clipboardbridge-lite-linux-<NAME>.tar.gz, which holds
+# clipboardbridge-lite/ with the binary cbb, LICENSE, README.md,
+# THIRD_PARTY_NOTICES (the licenses of the crates for TARGET; see notices.sh)
+# and packaging/ laid out as in the full
 # member's Linux archive: the same install.sh, uninstall.sh and firewall.sh,
 # the tmux configuration, and the lite member's own systemd unit, so that
 # get.sh --lite and a manual install work as for a full member. The release
@@ -24,7 +25,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-dir=$work/cbb-lite
+dir=$work/clipboardbridge-lite
 mkdir -p "$dir/packaging/linux" "$out"
 out=$(cd "$out" && pwd)
 cp "$bin" "$dir/cbb"
@@ -34,5 +35,5 @@ cp "$root/packaging/linux/install.sh" "$root/packaging/linux/uninstall.sh" "$roo
 	"$root/packaging/linux/clipboardbridge.sysusers" "$root/lite/packaging/clipboardbridge.service" \
 	"$dir/packaging/linux/"
 cp -R "$root/packaging/tmux" "$dir/packaging/"
-tar -czf "$out/cbb-lite-linux-$name.tar.gz" -C "$work" cbb-lite
-echo "$out/cbb-lite-linux-$name.tar.gz"
+tar -czf "$out/clipboardbridge-lite-linux-$name.tar.gz" -C "$work" clipboardbridge-lite
+echo "$out/clipboardbridge-lite-linux-$name.tar.gz"

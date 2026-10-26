@@ -252,7 +252,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
                     out.flush().ok();
                     return;
                 }
-                println!("In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut");
+                println!("In the Clipboard Bridge app, tap \"Connect a new device\" (or run the shortcut");
                 println!("\"clipboardbridge: add a computer\") and scan this:\n");
                 print!("{}", qr(text));
                 println!("\nOr paste this into the app: {text}");

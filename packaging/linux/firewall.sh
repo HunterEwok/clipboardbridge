@@ -158,7 +158,7 @@ close() {
 				ufw --force delete "$n" >/dev/null
 			done
 			if [ -n "$ours" ]; then
-				echo "ufw: removed the clipboardbridge rules."
+				echo "ufw: removed the Clipboard Bridge rules."
 			fi
 		fi
 		;;
@@ -169,7 +169,7 @@ close() {
 			done
 			rm -f /etc/firewalld/services/clipboardbridge.xml
 			firewall-cmd --reload >/dev/null 2>&1 || true
-			echo "firewalld: removed the clipboardbridge rules and service."
+			echo "firewalld: removed the Clipboard Bridge rules and service."
 		fi
 		;;
 	esac
@@ -183,7 +183,7 @@ firewalld_service() {
 		echo '<!-- Written by clipboardbridge'"'"'s firewall.sh; removed with the rules. -->'
 		echo '<service>'
 		echo '  <short>clipboardbridge</short>'
-		echo '  <description>clipboardbridge shared clipboard between the devices at home.</description>'
+		echo '  <description>Clipboard Bridge shared clipboard between the devices at home.</description>'
 		for p in "$@"; do
 			echo "  <port protocol=\"tcp\" port=\"$(echo "$p" | tr : -)\"/>"
 		done
@@ -315,7 +315,7 @@ ask() {
 manual() {
 	k=$1
 	shift
-	echo "No firewall rules were added. clipboardbridge works only while the firewall allows the rules above."
+	echo "No firewall rules were added. Clipboard Bridge works only while the firewall allows the rules above."
 	echo "To add them by hand, run:"
 	commands "$k" "$@"
 	case $k in
@@ -341,7 +341,7 @@ setup() {
 		echo "If a firewall is turned on later, run the installer again."
 		return
 	fi
-	echo "Firewall: $k (active). clipboardbridge requires these rules:"
+	echo "Firewall: $k (active). Clipboard Bridge requires these rules:"
 	rules "$@"
 	case $k in
 	nftables | iptables)
@@ -367,14 +367,14 @@ setup() {
 			if present; then
 				yes=yes how=" (kept from an earlier installation)"
 			else
-				echo "With Yes, clipboardbridge adds these rules, keeps them current on every update and removes them on uninstall."
+				echo "With Yes, Clipboard Bridge adds these rules, keeps them current on every update and removes them on uninstall."
 				if ask "Add these rules now?"; then
 					yes=yes
 				elif [ $? -eq 2 ]; then
 					# Not an answer: nothing is added or removed, and the next run
 					# with a terminal asks again.
 					manual "$k" "$@"
-					echo "To let clipboardbridge add and manage them, run the installer again with --express."
+					echo "To let Clipboard Bridge add and manage them, run the installer again with --express."
 					return
 				else
 					yes=no
@@ -388,11 +388,11 @@ setup() {
 	chmod 0644 "$answer"
 	if [ "$yes" = yes ]; then
 		open "$@"
-		echo "Added the rules above$how. clipboardbridge manages them from now on."
+		echo "Added the rules above$how. Clipboard Bridge manages them from now on."
 	else
 		close
 		manual "$k" "$@"
-		echo "To let clipboardbridge add and manage them, run the installer again with --express."
+		echo "To let Clipboard Bridge add and manage them, run the installer again with --express."
 	fi
 }
 

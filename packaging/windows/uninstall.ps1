@@ -2,7 +2,7 @@
 # Copyright (C) 2026 HunterEwok
 
 # Removes what install.ps1 installed, in an administrator PowerShell, or
-# from Settings, Apps, clipboardbridge, Uninstall:
+# from Settings, Apps, Clipboard Bridge, Uninstall:
 #
 #   powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" [-Purge]
 #
@@ -87,8 +87,8 @@ if ($Purge) {
 	Remove-Item -Recurse -Force $dataDir -ErrorAction SilentlyContinue
 	# With errors allowed: Windows PowerShell 5.1 stops on a program's error output.
 	& { $ErrorActionPreference = 'Continue'; & net.exe localgroup $name /delete 2>&1 | Out-Null }
-	Write-Host "clipboardbridge is removed, with this device's keys; it left its group."
+	Write-Host "Clipboard Bridge is removed, with this device's keys; it left its group."
 } else {
 	Remove-Item -Recurse -Force (Join-Path $dataDir 'run') -ErrorAction SilentlyContinue
-	Write-Host "clipboardbridge is removed. Its keys stay in $dataDir for a reinstall; -Purge removes them."
+	Write-Host "Clipboard Bridge is removed. Its keys stay in $dataDir for a reinstall; -Purge removes them."
 }

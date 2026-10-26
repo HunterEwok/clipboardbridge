@@ -46,7 +46,7 @@ It prints a QR code, the start of a fingerprint and a six-digit code.
 
 1. Scan the QR code with the iPhone's camera and follow the page: install the profile.
 2. Check that the profile's fingerprint starts with the printed one (Settings, General,
-   VPN & Device Management, "clipboardbridge", More Details), then turn on full trust for it
+   VPN & Device Management, "Clipboard Bridge", More Details), then turn on full trust for it
    (Settings, General, About, Certificate Trust Settings).
 3. Add the shortcut "clipboardbridge" from the same page and run it once; it asks for the
    six-digit code.

@@ -58,7 +58,7 @@ they look, so both apps are built to the same plan.
    group).
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
-   QR code ("I already use clipboardbridge on another phone" on its Start screen) and this phone
+   QR code ("I already use Clipboard Bridge on another phone" on its Start screen) and this phone
    scans it.
 4. **Devices** (the tiles of Home, and a device's page): on its page a summary (type,
    operating system, role, its place in the group, online or not) and the actions below
