@@ -31,6 +31,8 @@ protocol GroupController: AnyObject {
     func rename(_ id: String, to name: String) async throws
     /// Sets the sync mode of a connected computer; only an admin phone does.
     func setMode(_ id: String, to mode: String) async throws
+    /// Puts text where a computer's focus is; only an admin phone does.
+    func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -71,6 +73,7 @@ extension GroupController {
     func unfreeze(_ id: String) async throws {}
     func rename(_ id: String, to name: String) async throws {}
     func setMode(_ id: String, to mode: String) async throws {}
+    func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
     func hubStatus() async -> AppModel.Hub? { nil }
@@ -614,6 +617,19 @@ final class AppModel: ObservableObject {
         }
         await group.refresh()
         devices = group.devices
+    }
+
+    /// Puts text where a computer's focus is; true when it did.
+    @discardableResult
+    func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async -> Bool {
+        do {
+            try await group.paste(id, text: text, method: method, enter: enter, secret: secret)
+            message = String(localized: "Pasted.", bundle: .app)
+            return true
+        } catch {
+            message = Self.describe(error)
+            return false
+        }
     }
 
     /// Makes a computer an admin.

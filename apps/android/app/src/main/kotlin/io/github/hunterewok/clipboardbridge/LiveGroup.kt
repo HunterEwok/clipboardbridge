@@ -782,6 +782,23 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Puts text where a computer's focus is (design.md, "Remote paste"): a
+     * paste command signed with this phone's root or admin key, passed on
+     * by a member connected to it when this phone is not; the computer
+     * answers once the text is in, or why not.
+     */
+    suspend fun paste(id: String, text: String, method: String, enter: Boolean, secret: Boolean) {
+        val ca = caSigner(R.string.reason_paste)
+        val g = copyOfState() ?: return
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        val c = g.pasteCommand(id, text, method, enter, secret, ca, Instant.now())
+        // The computer waits 5 s for its target, and 5 ms more for each typed byte.
+        val wait = 10_000L + if (method == "type") text.toByteArray().size * 5L else 0L
+        val r = withContext(Dispatchers.IO) { n.command(id, c, timeoutMS = wait, via = true) }
+        if (!r.done) throw CommandRefused(r.reason ?: r.status)
+    }
+
+    /**
      * Makes a connected admin computer the group's hub in place of this
      * phone (docs/protocol.md, section 11, "Moving the hub"): a hub command
      * signed with this phone's root or admin key hands it the clients' keys

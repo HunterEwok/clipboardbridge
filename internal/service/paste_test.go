@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/remotepaste"
 )
 
@@ -71,7 +72,7 @@ func TestRemotePaste(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := <-got
-	if string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter {
+	if string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter || m.Name != "pi" {
 		t.Errorf("the desktop got %q %+v", m.Payload, m.Header)
 	}
 	time.Sleep(time.Second) // one paste a second from one sender
@@ -119,9 +120,25 @@ func TestRemotePaste(t *testing.T) {
 	}
 }
 
-// TestPasteTargetHasNoClipboard checks that a tmux helper, which only
-// pastes, gets no writes: the next desktop connector still gets the text
-// that came while none was there.
+// TestPasteOnMacNeedsTheApp: without the app, a Mac says that it pastes
+// through it.
+func TestPasteOnMacNeedsTheApp(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	mac := startRole(t, &h, "mac", group.OSMacOS)
+	pairWith(t, pi, mac)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	if _, err := mac.do(t, control.Header{Op: control.OpReceive, Name: "on"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpPasteOn, Device: "mac"}, "ls"); err == nil || !strings.Contains(err.Error(), "a Mac pastes through the Clipboard Bridge app") {
+		t.Errorf("a paste on a Mac without the app: %v", err)
+	}
+}
+
+// TestPasteTargetHasNoClipboard checks that a tmux helper and the Mac app,
+// which only paste, get no writes: the next desktop connector still gets
+// the text that came while none was there.
 func TestPasteTargetHasNoClipboard(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
@@ -133,23 +150,30 @@ func TestPasteTargetHasNoClipboard(t *testing.T) {
 	if _, err := tm.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetTmux}, Payload: []byte("not a clipboard")}); err != nil {
 		t.Fatal(err)
 	}
+	app := deck.dial(t)
+	defer app.Close()
+	if _, err := app.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetDesktop, PasteOnly: true}, Payload: []byte("not a clipboard")}); err != nil {
+		t.Fatal(err)
+	}
 	writes := make(chan *control.Message, 4)
-	go func() {
-		for {
-			m, err := tm.Receive()
-			if err != nil {
-				return
+	for _, c := range []*control.Client{tm, app} {
+		go func() {
+			for {
+				m, err := c.Receive()
+				if err != nil {
+					return
+				}
+				writes <- m
 			}
-			writes <- m
-		}
-	}()
+		}()
+	}
 	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "from pi"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "deck has the text", func() bool { return deck.paste(t) == "from pi" })
 	select {
 	case m := <-writes:
-		t.Errorf("the tmux helper got %q %q", m.Op, m.Payload)
+		t.Errorf("a paste target got %q %q", m.Op, m.Payload)
 	case <-time.After(500 * time.Millisecond):
 	}
 	w := deck.dial(t)

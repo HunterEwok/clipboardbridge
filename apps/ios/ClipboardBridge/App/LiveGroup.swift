@@ -569,6 +569,21 @@ final class LiveGroup: GroupController {
         if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 
+    /// Puts text where the focus of a computer is (design.md, "Remote
+    /// paste"): a paste command signed with this phone's root or admin key
+    /// after Face ID, passed on by a member connected to it when this phone
+    /// is not; the computer answers once the text is in, or why not.
+    func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {
+        guard let node else { throw MemberNode.Failure.notConnected }
+        let ca = try await caSigner(reason: String(localized: "Paste on a device", bundle: .app))
+        guard let g = state else { return }
+        let c = try g.pasteCommand(to: id, text: text, method: method, enter: enter, secret: secret, caSigner: ca, now: Date())
+        // The computer waits 5 s for its target, and 5 ms more for each typed byte.
+        let wait = 10 + (method == "type" ? Double(text.utf8.count) * 0.005 : 0)
+        let r = try await node.command(c, to: id, timeout: wait, via: true)
+        if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
+    }
+
     /// Makes a computer an admin (docs/protocol.md, section 10, "A computer
     /// as admin"): the root key, after Face ID, certifies the admin key the
     /// computer offers; the computer gets its admin CA and every member the

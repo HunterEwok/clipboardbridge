@@ -262,6 +262,17 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * A paste command that puts text where the focus of the member to is
+     * (docs/protocol.md, section 15; design.md, "Remote paste"), by method
+     * "paste" or "type", then Enter when enter is set; signed as
+     * modeCommand.
+     */
+    fun pasteCommand(to: String, text: String, method: String, enter: Boolean, secret: Boolean, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        return Commands.paste(to, text, method, enter, if (secret) "secret" else "text", tag, device, now, caSigner, adminCA)
+    }
+
+    /**
      * A hub command that makes the admin computer to the group's hub in
      * place of this phone (docs/protocol.md, section 11, "Moving the hub"),
      * signed with this phone's root or admin key, with the hub's clients

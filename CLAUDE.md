@@ -67,7 +67,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   to the hub's member port, and the kits dial it with their own member TLS.
 - Windows: `cmd/cbb/platform_windows.go` (the Windows service, logs),
   `internal/service/control_windows.go` (the socket's access list),
-  `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `packaging/windows`
+  `internal/pasteboard/pasteboard_windows.go` (the Win32 clipboard), `internal/winpaste` (remote paste:
+  Ctrl+V or SendInput's Unicode keys, the secure desktop and integrity checks), `packaging/windows`
   (`install.ps1`, `uninstall.ps1`, `get.ps1`); CI's `windows installer` job runs them.
 - `apps/ios/ClipboardBridgeKit`: the phone's protocol core: `Pairing*`, `Member`, `SyncEngine`,
   `MemberNode`, `Records`, `Certificates`, `PhoneGroup`, `Discovery`/`BonjourBrowser`,
@@ -99,7 +100,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   runs the parser's tests on the host).
 - `apps/macos`: the Mac app (SwiftUI, XcodeGen) over the service's control socket
   (`Control.swift`), admin actions through `cbb` with administrator privileges (`Admin.swift`),
-  the iPhone app's `Theme` shared; CI's `Mac app` job.
+  the Mac's remote paste target (`PasteTarget.swift`: a paste-only watch, Cmd+V or Unicode key
+  events), the iPhone app's `Theme` shared; CI's `Mac app` job.
 - `apps/desktop`: the tray app for Linux and Windows (Go module of its own, Wails 3 beta,
   GTK 4/WebKitGTK; `desk.go` over `internal/control`, `admin_*.go` run cbb through pkexec or
   UAC, `frontend/` plain HTML/JS with `tokens.js` from `tools/tokens` and `l10n/ru.json`);

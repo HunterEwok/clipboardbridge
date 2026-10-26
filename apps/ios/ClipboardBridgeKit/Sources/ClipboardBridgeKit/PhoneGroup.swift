@@ -252,6 +252,16 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
     }
 
+    /// A paste command that puts text where the focus of the member device
+    /// to is (section 15; design.md, "Remote paste"), by method "paste" or
+    /// "type", then Enter when enter is set; signed as modeCommand.
+    public func pasteCommand(to device: String, text: String, method: String, enter: Bool, secret: Bool,
+                             caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        return try Commands.paste(to: device, text: text, method: method, enter: enter, kind: secret ? "secret" : "text",
+                                  group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+    }
+
     /// A hub command that makes the admin computer to the group's hub in
     /// place of this phone (section 11, "Moving the hub"), signed with this
     /// phone's root or admin key, with the hub's clients and its forwarder.

@@ -41,9 +41,6 @@ const (
 )
 
 const (
-	// restoreAfter is how long the program with the focus has to read the
-	// pasted text before the clipboard gets its text back.
-	restoreAfter = 500 * time.Millisecond
 	// keyPause lets the programs take a keymap change, and a key, before
 	// the next.
 	keyPause = 3 * time.Millisecond
@@ -104,7 +101,7 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 	defer keys.release(b)
 	switch method {
 	case "paste":
-		err = pasteThrough(b, text, secret, func() error { return keys.press(b, ksInsert, true) })
+		err = connector.PasteThrough(b, text, secret, func() error { return keys.press(b, ksInsert, true) })
 	case "type":
 		err = b.typeText(ctx, keys, text)
 	default:
@@ -131,7 +128,7 @@ func (b *X11) locked() string {
 	return ""
 }
 
-func (b *X11) holds(text string) bool {
+func (b *X11) Holds(text string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.owned && b.text == text

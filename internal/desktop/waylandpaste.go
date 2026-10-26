@@ -91,7 +91,7 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	var err error
 	switch method {
 	case "paste":
-		err = pasteThrough(w, text, secret, func() error {
+		err = connector.PasteThrough(w, text, secret, func() error {
 			if err := w.sync(); err != nil { // the selection is set before the keys
 				return err
 			}
@@ -108,7 +108,7 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	return err
 }
 
-func (w *Wayland) holds(text string) bool {
+func (w *Wayland) Holds(text string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.own != 0 && w.item.Text == text

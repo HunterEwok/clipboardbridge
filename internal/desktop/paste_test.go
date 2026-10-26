@@ -49,7 +49,7 @@ func (b *memBoard) ClearIfUnchanged() error {
 	return nil
 }
 
-func (b *memBoard) holds(text string) bool {
+func (b *memBoard) Holds(text string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.own && b.item.Text == text
