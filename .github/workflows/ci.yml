@@ -219,10 +219,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: install sway, Xvfb and the clipboard tools
+      - name: install sway, Xvfb, xterm, foot and the clipboard tools
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sway wl-clipboard xvfb xclip >/dev/null
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sway wl-clipboard xvfb xclip xterm foot >/dev/null
       - name: Wayland data-control under headless sway, and X11 under Xvfb
         run: |
           go test -c -o "$RUNNER_TEMP/desktop.test" ./internal/desktop
@@ -237,6 +237,11 @@ jobs:
           done
           export WAYLAND_DISPLAY DISPLAY=:5
           CBB_TEST_WAYLAND=1 CBB_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.v
+      - name: the uinput keyboard against the kernel
+        run: |
+          go test -c -o "$RUNNER_TEMP/uinput.test" ./internal/uinput
+          sudo modprobe uinput
+          sudo CBB_TEST_UINPUT=1 "$RUNNER_TEMP/uinput.test" -test.v -test.run TestKeyboard
 
   packaging:
     name: packaging
@@ -348,12 +353,19 @@ jobs:
           sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
           grep -qx 'CBB_PORT=9000' /etc/clipboardbridge/clipboardbridge.env
           sudo CBB_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
-          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 8764 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 8764'
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --console --uinput --port 8764 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 8764'
+          systemctl is-enabled -q clipboardbridge-console.service
+          systemctl is-enabled -q clipboardbridge-uinput.service
+          grep -qx uinput /etc/modules-load.d/clipboardbridge-uinput.conf
+          # The helper holds its keyboard and listens for the desktop connectors.
+          for _ in $(seq 1 50); do [ -S /run/clipboardbridge-keys/keys ] && break; sleep 0.2; done
+          test -S /run/clipboardbridge-keys/keys || { journalctl -u clipboardbridge-uinput --no-pager; exit 1; }
           test ! -e /etc/clipboardbridge/clipboardbridge.env
           # The desktop agent's user unit, enabled for every user's graphical session.
           test -L /etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service
           sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
-          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge \
+          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-console.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge \
+            /etc/systemd/system/clipboardbridge-uinput.service /etc/modules-load.d/clipboardbridge-uinput.conf /run/clipboardbridge-keys \
             /etc/systemd/user/clipboardbridge-agent.service /etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service; do
             if [ -e "$f" ]; then
               echo "uninstall.sh left $f" >&2

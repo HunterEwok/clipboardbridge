@@ -78,7 +78,13 @@ they look, so both apps are built to the same plan.
    `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A connected computer's page shows its sync mode and, on an admin phone,
    offers "Sync mode": the phone signs a `mode` command (docs/protocol.md, section 15) after
-   Face ID or the fingerprint and sends it to that computer, which answers done or why it refused. A phone that is not an admin shows the list without
+   Face ID or the fingerprint and sends it to that computer, which answers done or why it refused.
+   On an admin phone, the page of a computer or a lite member also offers "Paste on it…"
+   (docs/design.md, "Remote paste"): a text, typed or taken from the clipboard (on the iPhone
+   through the system's Paste button, which asks nothing), pasted or typed key by key, with
+   Enter after it and as a secret if asked. The phone signs a `paste` command after Face ID or
+   the fingerprint, and a member connected to the computer passes it on when the phone is not.
+   The computer answers once the text is in, or why it would not. A phone that is not an admin shows the list without
    actions and says which phones are admins.
 5. **Settings**: the theme (System, Dark or Light) and one of ten colours, language, about (seven taps on the version show the switch "Show
    error details", which puts the error itself under each error message; it is on in debug
@@ -225,13 +231,21 @@ keep syncing without it. It speaks the service's control socket (`Control`, the 
   bottom. "+" gives the commands that add a device.
 - **The menu bar item**: how many devices are online, send, fetch, the window, Settings.
 - **Settings**: the colour and the appearance of the phones (`Theme.swift` and `Tokens.swift`
-  of the iPhone app, shared), this Mac's sync mode (`cbb mode`), and error details (on in debug builds, off in release ones, and
+  of the iPhone app, shared), this Mac's sync mode (`cbb mode`), whether the app may press keys for remote paste, and error details (on in debug builds, off in release ones, and
   the `ShowErrorDetails` default either way).
 - What changes the group (rename, remove, make an admin, freeze, unfreeze, sync away from
   home, the sync mode of this Mac or, on an admin, of another computer: `cbb mode -on`) goes only through the admin socket, which only root reaches, so the app runs
   `cbb` with administrator privileges (`Admin`, `do shell script … with administrator
   privileges`): macOS asks for the password, as `sudo cbb` does in Terminal. With error
   details on, `CBB_DEBUG=1` makes cbb name the error underneath.
+- **Remote paste**: only an app may press keys on a Mac, once its user allowed it in
+  Accessibility, so the app is the Mac's paste target (`PasteTarget`), not the service or its
+  agent. While it is open it keeps a `watch` connection with `inject` `desktop` and
+  `paste_only` (docs/protocol.md, section 8). A paste goes through the pasteboard, marked
+  `org.nspasteboard.TransientType` so the agent does not sync it, and Cmd+V; after half a
+  second the pasteboard gets its items back, unless the user copied meanwhile. Typing posts
+  Unicode key events, which no layout changes. It refuses without the permission, on the lock
+  screen, in a session not on the screen, and under Secure Event Input.
 - Pairing runs in Terminal for now (`cbb pair`); the Developer ID app of roadmap item 22
   carries the service itself and a Network Extension.
 

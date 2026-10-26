@@ -568,7 +568,8 @@ func cmdAgent(args []string, stderr io.Writer) int {
 	if _, _, err := b.Read(); errors.Is(err, pasteboard.ErrUnsupported) {
 		return fail(stderr, err)
 	}
-	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: pasteboard.NewWatch(b), Logf: logf}); err != nil {
+	w := pasteboard.NewWatch(b)
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Logf: logf}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0

@@ -455,3 +455,64 @@ func TestRefusedThenWatches(t *testing.T) {
 		t.Fatal("the connector never watched")
 	}
 }
+
+// fakeTarget pastes into a list, and refuses what says "locked".
+type fakeTarget struct {
+	name string
+	got  chan string
+}
+
+func (f *fakeTarget) Target() string { return f.name }
+
+func (f *fakeTarget) Inject(_ context.Context, text, method string, enter, secret bool) error {
+	switch {
+	case strings.Contains(text, "locked"):
+		return &Refusal{Reason: "the session is locked"}
+	case strings.Contains(text, "broken"):
+		return errors.New("XTEST went away")
+	}
+	f.got <- method + ":" + text
+	return nil
+}
+
+// TestTarget runs a connector with a paste target and no clipboard, as
+// the tmux helper does: it offers the target, answers each inject, and
+// ignores writes.
+func TestTarget(t *testing.T) {
+	socket := socketPath(t)
+	f := listenFake(t, socket)
+	tgt := &fakeTarget{name: "tmux", got: make(chan string, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { Run(ctx, Config{Socket: socket, Target: tgt, Logf: t.Logf}); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	s := f.next(t)
+	if s.watch.Inject != "tmux" || len(s.watch.Payload) != 0 {
+		t.Errorf("the watch request: %+v %q", s.watch.Header, s.watch.Payload)
+	}
+	s.write(t, control.Header{Seq: 1}, "a write")
+	for i, tt := range []struct {
+		text, method string
+		want         control.Header
+	}{
+		{"ls", "type", control.Header{}},
+		{"locked", "paste", control.Header{Error: "the session is locked", Refused: true}},
+		{"broken", "paste", control.Header{Error: "the tmux target could not paste", Detail: "XTEST went away"}},
+	} {
+		seq := uint64(i + 1)
+		h := control.Header{Op: control.OpInject, Seq: seq, Method: tt.method}
+		if err := control.Write(s.c, &control.Message{Header: h, Payload: []byte(tt.text)}); err != nil {
+			t.Fatal(err)
+		}
+		m, err := s.r.Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Op != control.OpInjected || m.Seq != seq || m.Error != tt.want.Error || m.Refused != tt.want.Refused || m.Detail != tt.want.Detail {
+			t.Errorf("%s: answered %+v", tt.text, m.Header)
+		}
+	}
+	if got := <-tgt.got; got != "type:ls" {
+		t.Errorf("the target got %q", got)
+	}
+}

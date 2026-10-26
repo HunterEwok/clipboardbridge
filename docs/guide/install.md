@@ -17,6 +17,11 @@ Then log out and in again once, so your user may use `cbb` without `sudo`. A mac
 without a desktop gets copy and paste inside tmux with `--console`
 (`... | sudo sh -s -- --console`).
 
+Remote paste on GNOME and KDE asks once, in a dialog on the computer, before an admin's
+first paste may press the keys. To skip the dialog, add `--uinput`: a small helper then
+presses the paste keys (Shift+Insert and Enter) for whoever uses the screen, never on a
+login or lock screen.
+
 Small devices that should only sync, such as a router or a Raspberry Pi Zero, can take the
 lighter [lite member](../../lite/README.md) instead: `... | sudo sh -s -- --lite`.
 

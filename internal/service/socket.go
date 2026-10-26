@@ -775,11 +775,20 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 }
 
 // watcher is a desktop connector or pasteboard agent connected to the
-// socket.
+// socket, or a paste target without a clipboard: the tmux or console
+// helper, or the Mac app.
 type watcher struct {
-	out     chan node.Write
-	inject  string       // the target it offers for remote paste; "" for none
-	injects chan *inject // remote pastes for it
+	out       chan node.Write
+	inject    string       // the target it offers for remote paste; "" for none
+	pasteOnly bool         // it holds no clipboard, whatever its target
+	injects   chan *inject // remote pastes for it
+}
+
+// board says whether the watcher holds a clipboard: the tmux and console
+// helpers and the Mac app only paste, so they get no writes and report no
+// copies.
+func (w *watcher) board() bool {
+	return !w.pasteOnly && w.inject != targetTmux && w.inject != targetConsole
 }
 
 // send queues a write. A watcher that does not keep up loses its oldest
@@ -810,6 +819,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	default:
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
+	w.pasteOnly = m.PasteOnly
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -818,7 +828,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		return
 	}
 	replay := false
-	if p := s.pending; p != nil {
+	if p := s.pending; p != nil && w.board() {
 		text, _, _, ok := eng.Local()
 		replay = ok && text == p.Text
 		s.pending = nil
@@ -826,7 +836,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			w.send(*p)
 		}
 	}
-	if !replay && len(m.Payload) > 0 {
+	if !replay && len(m.Payload) > 0 && w.board() {
 		if kind, _, err := parseKind(m.Kind, m.Via); err != nil {
 			s.logf("cbb: a watcher reported a clipboard that is not understood: %v", err)
 		} else {
@@ -876,6 +886,10 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 				answer(m.Seq, res)
 				continue
 			}
+			if !w.board() {
+				s.logf("cbb: the %s paste target sent %q, which it does not send", w.inject, m.Op)
+				continue
+			}
 			kind, via, err := parseKind(m.Kind, m.Via)
 			if err != nil {
 				s.logf("cbb: a watcher's report is not understood: %v", err)
@@ -919,7 +933,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			injMu.Lock()
 			injected[injSeq] = in
 			injMu.Unlock()
-			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind}
+			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By)}
 			if control.Write(c, &control.Message{Header: h, Payload: []byte(in.text)}) != nil {
 				answer(injSeq, node.Result{Status: node.ResultFailed, Reason: "the connection to the paste target closed"})
 				return

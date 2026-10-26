@@ -18,8 +18,11 @@ final class MacModel: ObservableObject {
     /// The outcome of the last action, for a line under it.
     @Published var message: String?
     @Published private(set) var busy = false
+    /// Whether macOS lets the app press keys for remote paste.
+    @Published private(set) var pasteAllowed = Injector.allowed
 
     private let client = ControlClient()
+    private let pasteTarget = PasteTarget()
     private var timer: Timer?
 
     var inGroup: Bool { status?.group?.isEmpty == false && status?.removed != true }
@@ -37,6 +40,7 @@ final class MacModel: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
+        pasteTarget.start()
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
@@ -44,6 +48,7 @@ final class MacModel: ObservableObject {
     }
 
     func refresh() async {
+        pasteAllowed = Injector.allowed
         do {
             let (answer, _) = try await client.request(.init(op: "status"))
             status = answer.status
@@ -56,6 +61,12 @@ final class MacModel: ObservableObject {
         } catch {
             problem = Self.describe(error)
         }
+    }
+
+    /// Asks macOS to let the app press keys for remote paste.
+    func allowPaste() {
+        Injector.askLeave()
+        pasteAllowed = Injector.allowed
     }
 
     /// Sends what the pasteboard holds to the group, as a copy on this Mac.

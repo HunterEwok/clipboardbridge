@@ -60,8 +60,43 @@ All notable changes to clipboardbridge are documented in this file. The format f
   paste-receive on`, with `-enter` and `-console` as separate switches) hands the cleaned
   text to a watcher that offers to paste, within one a second and 30 a minute per sender,
   and keeps a log of the last 100 pastes without their texts. Any admin turns it off on a
-  member or on all (`cbb paste-receive off -on DEVICE`, `-all`). The targets that put the
-  text in come next (docs/protocol.md, sections 8 and 15).
+  member or on all (`cbb paste-receive off -on DEVICE`, `-all`) (docs/protocol.md,
+  sections 8 and 15).
+- Remote paste targets on Linux: the desktop connector of an X11 session pastes through
+  the clipboard and Shift+Insert, or types with XTEST in any layout, and refuses while the
+  session is locked or the screen saver is on; in tmux, `cbb paste-helper tmux`, which
+  clipboardbridge.conf starts, pastes into the active pane of the client used last, and
+  refuses when no one is attached. On Wayland compositors with virtual keyboards (sway,
+  Hyprland, labwc), the desktop connector pastes through data-control and Shift+Insert, or
+  types any character through a keymap of its own; it also refuses while swaylock or
+  another locker runs. On the text console, `cbb paste-helper console`, which `install.sh
+  --console` runs as the `clipboardbridge-console` unit with `CAP_SYS_ADMIN` alone, types
+  into the active console where a user is logged in. A text with a line break goes to tmux,
+  a console or the keys only when the user allowed Enter, since it would run there.
+- Remote paste on GNOME and KDE: the desktop connector presses the keys through the
+  RemoteDesktop portal (the ei protocol, `internal/ei`). The first paste opens the portal's
+  dialog on the device and is refused until the user allows it; the portal's restore token
+  keeps the consent. It pastes and presses Enter, and refuses typing, whose keys would follow
+  the user's layout. In a Wayland session the X11 connector of XWayland uses it too, since
+  XTEST's keys reach only X11 programs there.
+- `install.sh --uinput` (and `get.sh --uinput`) adds the uinput helper, `cbb paste-helper
+  uinput` in the `clipboardbridge-uinput` unit: a virtual keyboard that presses only
+  Shift+Insert and Enter for the desktop connector of the session on the screen, so that
+  remote paste works on GNOME and KDE without the portal's dialog. It presses them only for
+  the user of the active graphical session, and never on a login or lock screen.
+- Remote paste on Windows: the clipboard agent pastes into the window with the focus
+  through the clipboard and Ctrl+V, or types any character with SendInput's Unicode keys.
+  It refuses on the lock screen and under an administrator prompt, and when the window with
+  the focus runs as administrator, since Windows drops keys sent to it.
+- Remote paste on a Mac, through the Mac app, which macOS lets press keys once its user
+  allows it in Accessibility: it pastes through the pasteboard and Cmd+V, marked so the
+  agent does not sync it, and gives the pasteboard its items back, or types with Unicode key
+  events. It refuses on the lock screen and while Secure Keyboard Entry or a password field
+  holds the keyboard. Without the app, a Mac says it needs it. The app's Settings show
+  whether it may press keys.
+- "Paste on it…" in the iPhone and Android apps: an admin phone puts a text where a
+  computer's focus is, pasted or typed, with Enter or as a secret if asked, after Face ID or
+  the fingerprint.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

@@ -88,6 +88,14 @@ func (w *Watch) Write(text string, secret bool) error {
 	return nil
 }
 
+// Holds reports whether the pasteboard still holds the last write, for a
+// paste that gives it its text back (connector.PasteBoard).
+func (w *Watch) Holds(string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.own != 0 && w.b.ChangeCount() == w.own
+}
+
 // ClearIfUnchanged empties the pasteboard if it still holds the last write.
 func (w *Watch) ClearIfUnchanged() error {
 	w.mu.Lock()

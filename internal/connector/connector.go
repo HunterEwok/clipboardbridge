@@ -13,6 +13,11 @@
 // again with a growing pause; while the service refuses to be watched, as
 // on a device in no group yet, it asks again every refusedWait, so the
 // first text after the device joins reaches the clipboard soon.
+//
+// A connector whose Board is also a Target, or that has a Target of its
+// own, offers it for remote paste: the service sends it the pastes an
+// admin signed for this device (design.md, "Remote paste"). The tmux and
+// console helpers run a connector with a Target and no Board.
 package connector
 
 import (
@@ -51,11 +56,42 @@ type Board interface {
 	ClearIfUnchanged() error
 }
 
+// A Target puts a text where the focus is, for remote paste.
+type Target interface {
+	// Target names what it pastes into, as the watch request offers it:
+	// "desktop", "tmux" or "console"; "" offers nothing, as an X11 board
+	// in a Wayland session, whose windows its keys would not reach.
+	Target() string
+	// Inject puts text where the focus is, by method "paste" (through the
+	// clipboard and the paste keys) or "type" (key by key), then presses
+	// Enter if enter is set. It checks first that the session is not
+	// locked. A secret leaves no copy behind. An error that is a *Refusal
+	// says why it would not; any other says how it failed.
+	Inject(ctx context.Context, text, method string, enter, secret bool) error
+}
+
+// A Refusal is a Target's reason not to paste, such as a locked session.
+type Refusal struct{ Reason string }
+
+func (r *Refusal) Error() string { return r.Reason }
+
 // Config configures Run.
 type Config struct {
 	Socket string // the control socket
-	Board  Board
+	Board  Board  // nil for a paste target without a clipboard
+	Target Target // nil to use Board's when it is one
 	Logf   func(format string, args ...any)
+}
+
+// target returns the paste target the connector offers, or nil.
+func (cfg Config) target() Target {
+	if cfg.Target != nil {
+		return cfg.Target
+	}
+	if t, ok := cfg.Board.(Target); ok && t.Target() != "" {
+		return t
+	}
+	return nil
 }
 
 const (
@@ -77,7 +113,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
 	}
-	exp := &expiry{b: cfg.Board, logf: cfg.Logf}
+	var exp *expiry
+	if cfg.Board != nil {
+		exp = &expiry{b: cfg.Board, logf: cfg.Logf}
+	}
 	backoff := minBackoff
 	refused := "" // the last refusal logged, so a waiting connector logs it once
 	for {
@@ -126,6 +165,9 @@ type expiry struct {
 
 // set starts the timer for a secret just written, or stops it for a text.
 func (e *expiry) set(secret bool, ttl time.Duration) {
+	if e == nil {
+		return
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.t != nil {
@@ -141,6 +183,9 @@ func (e *expiry) stop() { e.set(false, 0) }
 
 // now gives up a pending secret at once.
 func (e *expiry) now() {
+	if e == nil {
+		return
+	}
 	e.mu.Lock()
 	pending := e.t != nil && e.t.Stop()
 	e.t = nil
@@ -165,9 +210,15 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 	}
 	defer c.Close()
 	watchReq := &control.Message{Header: control.Header{Op: control.OpWatch}}
-	if it, ok, err := cfg.Board.Current(); err == nil && ok {
-		if m := report(control.OpClipboard, it); m != nil {
-			watchReq.Kind, watchReq.Via, watchReq.Payload = m.Kind, m.Via, m.Payload
+	tgt := cfg.target()
+	if tgt != nil {
+		watchReq.Inject = tgt.Target()
+	}
+	if cfg.Board != nil {
+		if it, ok, err := cfg.Board.Current(); err == nil && ok {
+			if m := report(control.OpClipboard, it); m != nil {
+				watchReq.Kind, watchReq.Via, watchReq.Payload = m.Kind, m.Via, m.Payload
+			}
 		}
 	}
 	if m, err := c.Do(watchReq); err != nil {
@@ -188,8 +239,10 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 		return c.Send(m)
 	}
 	errc := make(chan error, 2)
-	go func() { errc <- watch(ctx, cfg.Board, send, cfg.Logf) }()
-	go func() { errc <- apply(ctx, cfg.Board, c, exp, cfg.Logf) }()
+	if cfg.Board != nil {
+		go func() { errc <- watch(ctx, cfg.Board, send, cfg.Logf) }()
+	}
+	go func() { errc <- apply(ctx, cfg.Board, tgt, c, send, exp, cfg.Logf) }()
 	err = <-errc
 	cancel()
 	return err
@@ -237,8 +290,9 @@ func watch(ctx context.Context, b Board, send func(*control.Message) error, logf
 }
 
 // apply writes what the service sends into the clipboard, in order, and
-// sets the expiry of a secret.
-func apply(ctx context.Context, b Board, c *control.Client, exp *expiry, logf func(string, ...any)) error {
+// sets the expiry of a secret; it hands remote pastes to the target, one
+// at a time, and answers each.
+func apply(ctx context.Context, b Board, tgt Target, c *control.Client, send func(*control.Message) error, exp *expiry, logf func(string, ...any)) error {
 	var last uint64
 	for {
 		m, err := c.Receive()
@@ -248,7 +302,13 @@ func apply(ctx context.Context, b Board, c *control.Client, exp *expiry, logf fu
 			}
 			return err
 		}
-		if m.Op != control.OpWrite || m.Seq <= last {
+		if m.Op == control.OpInject {
+			if err := send(injected(ctx, tgt, m, logf)); err != nil {
+				return err
+			}
+			continue
+		}
+		if b == nil || m.Op != control.OpWrite || m.Seq <= last {
 			continue
 		}
 		last = m.Seq
@@ -263,4 +323,25 @@ func apply(ctx context.Context, b Board, c *control.Client, exp *expiry, logf fu
 		}
 		exp.set(secret, ttl)
 	}
+}
+
+// injected carries out an inject and makes its answer. A refusal's reason
+// is for the sender as it is; a failure keeps its cause in Detail.
+func injected(ctx context.Context, tgt Target, m *control.Message, logf func(string, ...any)) *control.Message {
+	ans := &control.Message{Header: control.Header{Op: control.OpInjected, Seq: m.Seq}}
+	if tgt == nil {
+		ans.Error, ans.Refused = "this watcher does not paste", true
+		return ans
+	}
+	err := tgt.Inject(ctx, string(m.Payload), m.Method, m.Enter, m.Kind == control.KindSecret)
+	var r *Refusal
+	switch {
+	case err == nil:
+	case errors.As(err, &r):
+		ans.Error, ans.Refused = r.Reason, true
+	default:
+		ans.Error, ans.Detail = "the "+tgt.Target()+" target could not paste", err.Error()
+		logf("cbb: a remote paste failed: %v", err)
+	}
+	return ans
 }

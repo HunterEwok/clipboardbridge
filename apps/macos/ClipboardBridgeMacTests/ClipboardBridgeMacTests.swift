@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import Carbon.HIToolbox
 import XCTest
 @testable import CBB
 
@@ -69,5 +70,32 @@ final class ClipboardBridgeMacTests: XCTestCase {
         XCTAssertEqual(spots.count, 8)
         XCTAssertEqual(spots[0].x, 0, accuracy: 1e-9)
         XCTAssertEqual(spots[0].y, -10, accuracy: 1e-9)
+    }
+
+    /// The watch request of the paste target names its target and that it
+    /// holds no clipboard, as the service reads them.
+    func testWatchRequest() throws {
+        var h = Control.Header(op: "watch")
+        h.inject = "desktop"
+        h.pasteOnly = true
+        let text = String(decoding: try Control.encode(h), as: UTF8.self)
+        XCTAssertEqual(text, "{\"inject\":\"desktop\",\"len\":0,\"op\":\"watch\",\"paste_only\":true}\n")
+        let line = #"{"op":"inject","seq":7,"method":"type","enter":true,"kind":"secret","name":"pi"}"#
+        let (m, _, _) = try XCTUnwrap(try Control.decode(Data((line + "\n").utf8)))
+        XCTAssertEqual(m.seq, 7)
+        XCTAssertEqual(m.method, "type")
+        XCTAssertEqual(m.enter, true)
+        XCTAssertEqual(m.name, "pi")
+    }
+
+    /// Typing makes Return and Tab keys, and Unicode events of at most 20
+    /// units that never split a surrogate pair.
+    func testStrokes() {
+        let strokes = Injector.strokes(for: "ab\n\tc")
+        XCTAssertEqual(strokes, [.text(Array("ab".utf16)), .key(CGKeyCode(kVK_Return)), .key(CGKeyCode(kVK_Tab)), .text(Array("c".utf16))])
+        let long = String(repeating: "x", count: 19) + "\u{1F600}"
+        let split = Injector.strokes(for: long)
+        XCTAssertEqual(split, [.text(Array(String(repeating: "x", count: 19).utf16)), .text(Array("\u{1F600}".utf16))])
+        XCTAssertTrue(Injector.strokes(for: "").isEmpty)
     }
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -34,6 +35,10 @@ type X11 struct {
 	atoms map[string]xproto.Atom
 	chunk int // the largest property this server takes in one piece
 	logf  func(string, ...any)
+	inj   x11Inject
+	// kb presses a paste's keys in a Wayland session, whose compositor
+	// takes no keys from XWayland's XTEST; nil without a way.
+	kb keyboard
 
 	mu      sync.Mutex
 	text    string // what this client owns the selections with
@@ -134,6 +139,9 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 		x.Close()
 		return nil, err
 	}
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		b.kb = pasteKeys(logf)
+	}
 	go b.loop()
 	// Read what the clipboard holds now; it is not reported as a change.
 	b.request(func() {
@@ -145,6 +153,7 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 
 // Close closes the connection.
 func (b *X11) Close() error {
+	closeKeys(b.kb)
 	b.x.Close()
 	return nil
 }

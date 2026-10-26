@@ -859,6 +859,7 @@ Header fields (all omitted when empty):
 | `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
 | `all` | bool | `paste-receive off`: on every device of the group |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
+| `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
 | `refused` | bool | `injected`: the target refused, rather than failed |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
@@ -882,7 +883,7 @@ A connection carries one request: the service reads the first message and dispat
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
-| `watch` | `{kind, via, inject?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `watch` | `{kind, via, inject?, paste_only?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -906,12 +907,18 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
 - Service to watcher, for remote paste, only to a watcher whose watch request named an
-  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`). The watcher checks
+  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, and `name`, the
+  sender's device name). The watcher checks
   that its session is active and not locked, puts the text in, presses Enter when `enter`
   is set, clears the clipboard after a `secret`, shows a notification with the sender, and
   answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),
   with `refused` when it would not (a locked session, an administrator's window, a missing
-  permission) rather than could not. The service waits 5 s for it. `status` shows the
+  permission) rather than could not. The service waits 5 s for it, and 5 ms more for each
+  byte it types. A watcher whose target is `tmux` or `console`, or whose watch request
+  set `paste_only`, holds no clipboard: the service sends it no `write` and takes no report
+  from it. On a Mac only the app pastes (a `desktop` watcher with `paste_only`): macOS lets
+  an app press keys once its user allowed it in Accessibility, and the service and its
+  pasteboard agent are not apps; without it the member refuses with a reason that says so. `status` shows the
   switches and the targets of the connected watchers as `paste: {on, enter, console,
   targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
@@ -1919,7 +1926,10 @@ with `enter`, allowed Enter; and beyond one a second and 30 a minute from one si
 receiver cleans the text (newlines and tabs stay; other control characters, terminal escape
 sequences and bytes that are not UTF-8 go; CR LF and CR become LF), hands it to a target
 (the watcher protocol's `inject`, section 8: a desktop session first, then tmux, then a text
-console only where the user allowed consoles), and answers `done` when the target put it
+console only where the user allowed consoles). A line break runs the text where keys go
+straight to a shell, so unless the user allowed Enter, a typed text with a line break is
+refused, and a pasted one goes only to a desktop session, whose terminals take it
+bracketed. The receiver answers `done` when the target put it
 in, `refused` with its reason (for example a locked session) or `failed`. It keeps the last
 100 pastes in a log (sender, time, length, way, result, never the text), but no `secret`
 one. A `paste-off` command turns remote paste off, Enter and consoles too; only the

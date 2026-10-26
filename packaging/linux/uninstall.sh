@@ -44,6 +44,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
+	systemctl disable --now clipboardbridge-console.service >/dev/null 2>&1 || true
+	systemctl disable --now clipboardbridge-uinput.service >/dev/null 2>&1 || true
 	systemctl disable --now clipboardbridge.service >/dev/null 2>&1 || true
 fi
 # The desktop agent runs in each user's session, from the user unit or the
@@ -68,7 +70,9 @@ fi
 rm -f /etc/systemd/system/clipboardbridge.service.d/away.conf /etc/systemd/system/clipboardbridge.service.d/cgnat.conf \
 	/etc/systemd/system/clipboardbridge.service.d/tpm.conf
 rmdir /etc/systemd/system/clipboardbridge.service.d 2>/dev/null || true
-rm -f /etc/systemd/system/clipboardbridge.service /etc/xdg/autostart/clipboardbridge-desktop.desktop \
+rm -f /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-console.service \
+	/etc/systemd/system/clipboardbridge-uinput.service /etc/modules-load.d/clipboardbridge-uinput.conf \
+	/etc/xdg/autostart/clipboardbridge-desktop.desktop \
 	/etc/systemd/user/clipboardbridge-agent.service \
 	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb
 if command -v systemctl >/dev/null 2>&1; then

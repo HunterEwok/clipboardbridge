@@ -111,6 +111,26 @@
         }
       }
     },
+    "A paste suits most apps; typing suits those that take no paste, and only up to 4 KB. Enter runs a command in a terminal, so the computer takes it only when its user allowed that. A secret leaves no trace in the computer's log or clipboard." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставка подходит большинству приложений, а набор по клавишам нужен тем, что вставку не принимают, и только до 4 КБ. Enter в терминале запускает команду, поэтому компьютер примет его, только если его пользователь это разрешил. Секрет не остаётся ни в журнале компьютера, ни в его буфере."
+          }
+        }
+      }
+    },
+    "A secret" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Секрет"
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "ru": {
@@ -480,6 +500,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключи лежат в файле на компьютере: кто скопирует этот файл, сможет действовать как админ, пока другой админ его не удалит. Делайте так только для компьютера, который надёжно защищён."
+          }
+        }
+      }
+    },
+    "It goes where %@'s keyboard focus is, once its user turned remote paste on there." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текст попадёт туда, где фокус клавиатуры устройства %@, если его пользователь включил там удалённую вставку."
           }
         }
       }
@@ -864,12 +894,62 @@
         }
       }
     },
+    "Paste" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставить"
+          }
+        }
+      }
+    },
+    "Paste on %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставить на %@"
+          }
+        }
+      }
+    },
+    "Paste on a device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставить на устройстве"
+          }
+        }
+      }
+    },
+    "Paste on it…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставить на нём…"
+          }
+        }
+      }
+    },
     "Paste the text of the QR code of cbb pair.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Вставьте текст QR-кода cbb pair."
+          }
+        }
+      }
+    },
+    "Pasted." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вставлено."
           }
         }
       }
@@ -900,6 +980,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Наведите камеру на QR-код cbb pair или на код, который показывает ваш другой телефон."
+          }
+        }
+      }
+    },
+    "Press Enter after it" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нажать Enter после него"
           }
         }
       }
@@ -1184,6 +1274,16 @@
         }
       }
     },
+    "Text" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текст"
+          }
+        }
+      }
+    },
     "This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.": {
       "localizations": {
         "ru": {
@@ -1420,6 +1520,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тип"
+          }
+        }
+      }
+    },
+    "Type it key by key" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Набрать по клавишам"
           }
         }
       }
