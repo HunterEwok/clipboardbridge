@@ -45,8 +45,8 @@ var countryLanguages = map[string][]string{
 // where a country has several, else the browser's own, else English. have
 // is the site's languages.
 func chooseLanguage(have []string, picked, country, acceptLanguage string) string {
-	if slices.Contains(have, picked) {
-		return picked
+	if i := slices.Index(have, picked); i >= 0 {
+		return have[i]
 	}
 	browser := browserLanguages(acceptLanguage)
 	var local []string

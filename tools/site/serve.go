@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sync/atomic"
 	"syscall"
@@ -22,8 +21,14 @@ import (
 // langCookie keeps the language a visitor picked, and nothing else.
 const langCookie = "lang"
 
-// pageName is a page the language menu may send a visitor back to.
-var pageName = regexp.MustCompile(`^[a-z-]+\.html$`)
+// pageFiles are the pages the language menu may send a visitor back to.
+var pageFiles = func() []string {
+	var files []string
+	for _, p := range pages {
+		files = append(files, p+".html")
+	}
+	return files
+}()
 
 // chooser answers "/" with a redirect to a language of the site. It logs
 // no visitor: their address is used for the country and then forgotten.
@@ -37,11 +42,14 @@ func (c *chooser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	q := r.URL.Query()
-	page := q.Get("p")
-	if !pageName.MatchString(page) {
-		page = ""
+	// The redirect is built from the site's own names only, never from
+	// what the request says.
+	page := ""
+	if i := slices.Index(pageFiles, q.Get("p")); i >= 0 {
+		page = pageFiles[i]
 	}
-	if picked := q.Get("lang"); slices.Contains(c.langs, picked) {
+	if i := slices.Index(c.langs, q.Get("lang")); i >= 0 {
+		picked := c.langs[i]
 		http.SetCookie(w, &http.Cookie{
 			Name: langCookie, Value: picked, Path: "/", MaxAge: 365 * 24 * 3600,
 			Secure: r.TLS != nil || c.proxy, HttpOnly: true, SameSite: http.SameSiteLaxMode,
