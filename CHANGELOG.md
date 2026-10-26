@@ -6,6 +6,26 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+### Added
+
+- Signed releases: `keys.json`, `release.json` and `stable.json` describe each release and
+  are signed by release keys that two offline root keys certify (docs/protocol.md, section
+  16). `tools/release-sign` makes and signs them with a key in a file, on a YubiKey or in
+  the Mac's Secure Enclave, and `get.sh` and `get.ps1` check them before they install, once
+  the project's root keys are pinned (`CBB_VERIFY=skip` installs unchecked).
+- Where a device keeps its keys: hellos say `key_store` and device records `store`, a file
+  or hardware, and `cbb status` shows it in a KEYS column (docs/protocol.md, section 17).
+- The Android app makes its keys with an attestation challenge, so the Keystore can later
+  prove that they live in its hardware.
+
+### Changed
+
+- A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
+  admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
+  means. `cbb new` warns that the root key is a file.
+- `get.ps1` no longer stops in Windows PowerShell 5.1 when `gh` is installed but not signed
+  in.
+
 ## [0.5.0] - 2026-10-26
 
 ### Added

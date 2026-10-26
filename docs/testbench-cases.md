@@ -199,7 +199,8 @@ Pass: the certificate is renewed by an admin, `cbb status` shows the new expiry,
 Fail: it expires or sync stops.
 
 **L5. Admin computer (layout A).** Runs: manual.
-1. On the hub (root) `cbb admin WIN`; `cbb status` marks the Windows member as admin.
+1. On the hub (root) `cbb admin WIN` is refused, since its keys sit in a file; `cbb admin
+   -allow-file-key WIN` makes it one, and `cbb status` marks the Windows member as admin.
 2. On the Windows admin `cbb pair` and admit a new device; then revoke it there.
 3. Turn the hub off; the Windows admin still admits a device and serves the shortcut.
 4. Turn the hub on; on it `cbb revoke WIN`.
@@ -209,8 +210,8 @@ nothing else re-pairs. Fail: an admin cannot admit, or a non-admin can.
 **L6. Takeover (layout A).** Runs: manual.
 1. Turn the hub (root) off.
 2. On the Windows admin `cbb takeover HUB`.
-3. Copy on each remaining device; it arrives everywhere. On the new root `cbb admin` another
-   computer.
+3. Copy on each remaining device; it arrives everywhere. On the new root `cbb admin
+   -allow-file-key` another computer.
 4. Turn the old root on.
 Pass: the Windows computer is root; nobody but the shortcut iPhones pairs again; the old root is
 refused by every member. Fail: any member follows the old root.
@@ -518,7 +519,7 @@ group's CA keys, and they stay off a container.
 5. Only as an explicit choice for the run, since it puts an admin key in a file
    (the key levels of docs/roadmap.md, level 3): first `cbb admin nas` on `desktop`, which must
    be refused ("offers no admin key"); then `CBB_KEYS_IN_FILE: "yes"` in the compose file
-   and `docker compose up -d`; on `desktop` `cbb admin nas`; on `nas` `cbb
+   and `docker compose up -d`; on `desktop` `cbb admin -allow-file-key nas`; on `nas` `cbb
    global on` (it asks about the keys in files), `cbb global hub HOST_ADDRESS:8764 -firewall
    no`, and on the host the rule it prints for the UDP port. `remote` joins sync away from home
    (P11) and syncs with `desktop` through the container's tunnel. At the end `desktop` revokes

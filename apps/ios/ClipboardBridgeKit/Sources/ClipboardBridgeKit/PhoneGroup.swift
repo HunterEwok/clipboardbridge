@@ -120,7 +120,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let cert = try GroupCertificates.member(device: device, publicKey: memberKey, ca: ca, caSigner: caSigner, now: now)
         var g = PhoneGroup(device: device, groupCA: ca, memberCert: cert, computers: [])
         _ = try g.record(device: device, name: Self.validName(name), role: "phone", os: "ios", key: Records.keyHash(spki: memberKey),
-                         caSigner: caSigner, now: now)
+                         store: Records.hardware, caSigner: caSigner, now: now)
         return g
     }
 
@@ -148,7 +148,12 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return g
     }
 
-    public enum Failure: Error, Equatable { case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName }
+    /// fileKey: the computer keeps its keys in a file, which a thief with
+    /// it can copy and then act as an admin; the user allows it after a
+    /// warning (docs/protocol.md, section 17).
+    public enum Failure: Error, Equatable {
+        case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey
+    }
 
     /// Adds records from other members, then follows the roots they lead
     /// to when they differ from this phone's; returns the new records.
@@ -169,9 +174,9 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
 
     /// Signs and adds a device record.
     mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
-                         caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+                         store: String? = nil, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, group: tag, by: self.device,
+        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, store: store, group: tag, by: self.device,
                                    now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)
         return r
@@ -292,7 +297,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
         return try record(device: device, name: name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
-                          caSigner: caSigner, now: now)
+                          store: d.store, caSigner: caSigner, now: now)
     }
 
     /// Unfreezes an admin computer that another admin froze (section 10,
@@ -311,16 +316,20 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// root issues an admin CA for the admin key the computer's hello
     /// offered (a SubjectPublicKeyInfo) and signs its device record again,
     /// naming that CA. It returns the admin CA, for the admin message, and
-    /// the record to send. Only the root makes admins.
-    public mutating func makeAdmin(device: String, adminKey: Data, rootSigner: CertificateSigner,
-                                   now: Date) throws -> (adminCA: Data, record: Member.Record) {
+    /// the record to send. Only the root makes admins. keyStore is where
+    /// the computer's hello says its keys live; one that keeps them in a
+    /// file becomes an admin only with allowFileKey, else Failure.fileKey.
+    public mutating func makeAdmin(device: String, adminKey: Data, rootSigner: CertificateSigner, now: Date,
+                                   keyStore: String? = nil, allowFileKey: Bool = false) throws -> (adminCA: Data, record: Member.Record) {
         guard isRoot else { throw Failure.notRoot }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
         guard d.role == "full" else { throw Failure.notAComputer }
         guard !d.frozen else { throw Failure.frozen }
+        let store = Records.store(keyStore, role: d.role)
+        guard store == Records.hardware || allowFileKey else { throw Failure.fileKey }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
-                           caSigner: rootSigner, now: now)
+                           store: store, caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
         return (ca, r)
     }
@@ -370,7 +379,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let name = Self.validName(admitted.info.name), key = try Records.keyHash(cert: admitted.cert)
         if admitted.info.isPhone {
             _ = try record(device: admitted.device, name: name, role: "phone", os: admitted.info.os, key: key,
-                           admin: adminKey.map(Records.keyHash(spki:)),
+                           admin: adminKey.map(Records.keyHash(spki:)), store: Records.hardware,
                            caSigner: caSigner, now: now)
             return admitted
         }

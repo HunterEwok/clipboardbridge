@@ -46,7 +46,7 @@ refuses to make a group, and it offers no admin key, so the root cannot make it 
 
 That also keeps it from being the hub for sync away from home, since the members take the
 hub's offer from the root or an admin only. If you accept the risk and guard the volume,
-set `CBB_KEYS_IN_FILE: "yes"` in its `environment`, make it an admin (`cbb admin` on the
+set `CBB_KEYS_IN_FILE: "yes"` in its `environment`, make it an admin (`cbb admin -allow-file-key` on the
 root), turn on sync away from home and run `cbb global hub -firewall no`, which prints the
 rule the host needs for its UDP port.
 

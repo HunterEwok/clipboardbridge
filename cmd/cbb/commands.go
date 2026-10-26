@@ -260,6 +260,9 @@ func cmdNew(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "Created the group %s; this computer is its root.\n", m.Status.Group)
+	// Until the service keeps its keys in the TPM or the Secure Enclave
+	// (docs/protocol.md, section 17), the root key is a file.
+	fmt.Fprintln(stdout, "Its root key is a file here: guard this computer, since whoever copies the file can act as the group's root. A group made on a phone keeps its root key in the phone's hardware.")
 	fmt.Fprintln(stdout, "Add a computer: cbb pair here, then cbb pair on the new computer.")
 	fmt.Fprintln(stdout, "Add an iPhone with the shortcut: cbb pair -phone.")
 	return 0

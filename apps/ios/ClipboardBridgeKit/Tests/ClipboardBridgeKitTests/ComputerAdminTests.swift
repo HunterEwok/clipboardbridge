@@ -41,7 +41,7 @@ final class ComputerAdminTests: XCTestCase {
     func testRename() throws {
         let t = try group()
         var g = t.g
-        let (ca, _) = try g.makeAdmin(device: t.pi, adminKey: SoftwareSigner().publicKeyDER, rootSigner: t.root, now: t1)
+        let (ca, _) = try g.makeAdmin(device: t.pi, adminKey: SoftwareSigner().publicKeyDER, rootSigner: t.root, now: t1, allowFileKey: true)
         let r = try g.rename(device: t.pi, to: "  living room pi ", caSigner: t.root, now: t1.addingTimeInterval(1))
         XCTAssertTrue(g.records.records.contains(r))
         let d = try XCTUnwrap(g.devices.first { $0.id == t.pi })
@@ -66,10 +66,19 @@ final class ComputerAdminTests: XCTestCase {
         var g = t.g
         let (root, pi, piKey) = (t.root, t.pi, t.piKey)
         let adminKey = SoftwareSigner()
-        let (ca, r) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1)
+        // A computer whose keys sit in a file, or that does not say, needs
+        // the user's consent.
+        for store in [nil, Records.file] {
+            XCTAssertThrowsError(try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1, keyStore: store)) {
+                XCTAssertEqual($0 as? PhoneGroup.Failure, .fileKey)
+            }
+        }
+        let (ca, r) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1, allowFileKey: true)
         XCTAssertEqual(try CertificateInfo(der: ca).publicKey, adminKey.publicKeyDER)
         let d = try XCTUnwrap(g.devices.first { $0.id == pi })
         XCTAssertTrue(d.admin)
+        XCTAssertEqual(d.store, Records.file)
+        XCTAssertEqual(g.devices.first { $0.id == g.device }?.store, Records.hardware)
         XCTAssertEqual(d.adminKey, try Records.keyHash(cert: ca))
         XCTAssertEqual(d.key, piKey)
         XCTAssertTrue(g.records.records.contains(r))
@@ -81,15 +90,15 @@ final class ComputerAdminTests: XCTestCase {
         try g.save(to: url)
         XCTAssertEqual(try PhoneGroup.load(from: url)?.computerAdmins, g.computerAdmins)
 
-        XCTAssertThrowsError(try g.makeAdmin(device: g.device, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0)) {
+        XCTAssertThrowsError(try g.makeAdmin(device: g.device, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0, allowFileKey: true)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .notAComputer)
         }
-        XCTAssertThrowsError(try g.makeAdmin(device: SyncEngine.newID(), adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0)) {
+        XCTAssertThrowsError(try g.makeAdmin(device: SyncEngine.newID(), adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0, allowFileKey: true)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .unknownDevice)
         }
         var notRoot = g
         notRoot.isRoot = false
-        XCTAssertThrowsError(try notRoot.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0)) {
+        XCTAssertThrowsError(try notRoot.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t0, allowFileKey: true)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .notRoot)
         }
 
@@ -145,7 +154,7 @@ final class ComputerAdminTests: XCTestCase {
         var g = t.g
         let (root, pi) = (t.root, t.pi)
         let adminKey = SoftwareSigner()
-        let (ca, _) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1)
+        let (ca, _) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1, allowFileKey: true)
         struct Out: Encodable {
             var group_ca: Data
             var device: String

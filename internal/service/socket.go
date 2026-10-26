@@ -143,7 +143,7 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpAdmin:
-		name, err := s.makeAdmin(m.Name)
+		name, err := s.makeAdmin(m.Name, m.Consent)
 		if err != nil {
 			fail(c, err)
 			return

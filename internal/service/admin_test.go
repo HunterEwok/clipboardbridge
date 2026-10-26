@@ -226,6 +226,25 @@ func TestAdminPeerNeedsARealAdminCA(t *testing.T) {
 	}
 }
 
+// The root makes a computer whose keys sit in a file an admin only when
+// the user allows it, and its record says where its keys live.
+func TestAdminOfFileKeys(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "deck is connected to the root", func() bool { return len(pi.status(t).Peers) == 1 })
+	if _, err := pi.do(t, control.Header{Op: control.OpAdmin, Name: "deck"}, ""); err == nil || !strings.Contains(err.Error(), "-allow-file-key") {
+		t.Fatalf("admin without consent: %v", err)
+	}
+	makeAdmin(t, pi, deck)
+	for _, d := range pi.devices(t) {
+		if d.Name == "deck" && (!d.Admin || d.Store != group.StoreFile) {
+			t.Errorf("deck after admin: %+v", d)
+		}
+	}
+}
+
 // An admin renames any device with a newer device record, which every
 // member takes; the device keeps its role and whether it is an admin.
 func TestRename(t *testing.T) {

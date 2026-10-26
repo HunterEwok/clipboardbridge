@@ -358,6 +358,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `tunnel_psk` | string or absent | with `tunnel_key`: the WireGuard preshared key the sender chose for its tunnels, 32 bytes in base64, which every hub of the group uses for it (section 11, "Several hubs"); absent from a version before 0.5 |
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member before 0.5, which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
+| `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 
 ### Device
 
@@ -988,7 +989,8 @@ computer can act as an admin until another admin removes it.
   PKCS #8). Until it holds an admin CA, its hello carries `admin_key`: the key's
   SubjectPublicKeyInfo.
 - The root makes it an admin, the root phone with "Make it an admin" and the root computer
-  with `cbb admin NAME`: it issues the member's admin CA for that key (the profile above, CN
+  with `cbb admin NAME`, after the user allows a computer whose keys sit in a file (section
+  17): it issues the member's admin CA for that key (the profile above, CN
   `clipboardbridge admin <device ID>`), signs a `device` record for the member that names
   that admin CA in `admin`, and sends `{"t":"admin","admin_ca":...}` on its connection to
   the member. The member must be connected.
@@ -1052,7 +1054,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root: a takeover in a group with a root, or `cbb upgrade` in a legacy group |
 | `freeze` | `keys` (the SHA-256 of admin CAs' SubjectPublicKeyInfos), `records` (array of record IDs: the records of those admins that stay) | stops admin computers until the root or an admin phone decides (rule 4) |
@@ -1935,3 +1937,40 @@ that nobody can give it older files later. A file it downloads must have the siz
 SHA-256 that `release.json` lists. A device below `min_from` updates to `min_from` first.
 A release key that is lost or stolen is dropped from the next `keys.json`; a device that has
 taken it no longer accepts anything that key signs.
+
+## 17. Key stores
+
+Where a device keeps its keys decides what a thief with the device gets: a key in a file can
+be copied and used elsewhere until an admin removes the device, a key in hardware (the
+Secure Enclave, the Android Keystore with StrongBox or the TEE, a TPM) signs only on that
+device. The roadmap's key levels (item 31) build on this; this section is what 0.6 has so
+far.
+
+- A **hello** says where the sender's keys live in `key_store` (section 4): the phones send
+  `hardware`, the computers and the lite member `file`. A device that cannot tell sends
+  `file`.
+- A **device record** says it in `store`: `file`, `hardware`, or `proven` once a proof of
+  hardware (an attestation) is checked; until then a reader counts `proven` as `hardware`.
+  The signer writes what the device's hello said when it made the record, and a record
+  that renames a device keeps its `store`. A record without `store`, made before 0.6, or
+  with a value the reader does not know, counts as `hardware` for a `phone` and as `file`
+  for every other role, which is where those versions kept the keys. `cbb status` and the
+  apps' device pages show it.
+- **Admins.** By default a device whose keys sit in a file does not become an admin: the
+  root asks the user first, who allows it after a warning that whoever copies the file acts
+  as an admin until another admin removes it (`cbb admin -allow-file-key`, and the warning
+  in the phones' "Make it an admin" dialog). The root then signs the device record with
+  `store` `file`. Moving the hub to such a computer makes it an admin only through that
+  dialog.
+- **The root.** `cbb new` on a computer warns that its root key is a file. The computers
+  keep their keys in a file until the service uses the TPM and the Secure Enclave (roadmap,
+  D-44); from then on making a group or an admin with keys in a file asks first too.
+- **The attestation challenge.** An Android key is made with the attestation challenge
+  `SHA-256("cbb attest v1" || field(group tag) || field(member key) || salt)`, where
+  `field` is a two-byte big-endian length followed by the bytes, the group tag is empty
+  while the phone is in no group, the member key is the SubjectPublicKeyInfo of the
+  device's member key (empty for the member key itself), and `salt` is 16 random bytes kept
+  with the key. The key itself is bound by the attestation's leaf certificate, and whoever
+  presents the key proves holding it in member TLS, so the proof needs no live nonce: it is
+  made with the key, offline, and shown later with its salt and group tag. A Keystore that
+  cannot attest at that moment still makes the key, which then has no proof.

@@ -57,7 +57,11 @@ struct DeviceDetailView: View {
                 Task { await model.makeAdmin(id) }
             } label: { Text("Make it an admin") }
         } message: {
-            Text("It can then add and remove devices with cbb pair and cbb revoke. Its key is a file on the computer, so do this only for a computer you keep safe.")
+            if device?.keysInFile != false {
+                Text("It can then add and remove devices with cbb pair and cbb revoke. Its keys sit in a file on the computer: whoever copies that file can act as an admin until another admin removes it. Do this only for a computer you keep safe.")
+            } else {
+                Text("It can then add and remove devices with cbb pair and cbb revoke. Its keys are in its hardware, which never lets them out.")
+            }
         }
         .alert(Text("Rename \(device?.name ?? "")"), isPresented: $renaming) {
             TextField(text: $newName) { Text("Name") }

@@ -140,6 +140,12 @@ class MemberNode(
             conns.mapNotNull { c -> val p = c.peer; val k = c.adminKey; if (p != null && k != null) p to k else null }.toMap()
         }
 
+    /** Where the connected members' hellos say their keys live, by device ID, where the caller of serve named them. */
+    val keyStores: Map<String, String>
+        get() = synchronized(lock) {
+            conns.mapNotNull { c -> val p = c.peer; val s = c.keyStore; if (p != null && s != null) p to s else null }.toMap()
+        }
+
     /**
      * What the connected members' hellos say about their devices, their
      * invalid fields dropped, by device ID where the caller of serve named them.
@@ -229,7 +235,11 @@ class MemberNode(
         synchronized(lock) {
             conns.add(c)
             val keys = tunnelKey()
-            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device, mode = mode())
+            // A phone's keys are in the Secure Enclave or the Keystore.
+            val hello = engine.hello(name).copy(
+                records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device, mode = mode(),
+                keyStore = Records.HARDWARE,
+            )
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()
@@ -248,6 +258,7 @@ class MemberNode(
                     records?.refused(t.peerChain)?.let { why -> throw ProtocolException("the peer is refused: $why") }
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
+                        c.keyStore = m.hello.keyStore
                         c.device = m.hello.device?.cleaned
                         c.mode = m.hello.mode
                         c.peerRole = m.role
@@ -359,6 +370,9 @@ class MemberNode(
 
         /** The admin key the peer's hello offered. */
         @Volatile var adminKey: ByteArray? = null
+
+        /** Where the peer's hello says its keys live. */
+        @Volatile var keyStore: String? = null
         @Volatile var device: Member.DeviceInfo? = null
         @Volatile var mode: String? = null
 

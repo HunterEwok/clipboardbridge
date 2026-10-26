@@ -96,7 +96,7 @@ type Header struct {
 	RelayKey     string   `json:"relay_key,omitempty"`
 	Obfuscate    bool     `json:"obfuscate,omitempty"` // away hub: speak AmneziaWG instead of plain WireGuard
 	VLESS        bool     `json:"vless,omitempty"`     // away hub: the clients come only over VLESS to the forwarder
-	Consent      bool     `json:"consent,omitempty"`   // away on, join with an invitation: the user agreed to what the warning says; answer: yes
+	Consent      bool     `json:"consent,omitempty"`   // away on, join with an invitation, admin of a device with file keys: the user agreed to what the warning says; answer: yes
 	Invite       string   `json:"invite,omitempty"`    // the text of a remote invitation: made by invite, used by join
 	Joining      *Joining `json:"joining,omitempty"`   // invite: a device to confirm, before it is admitted
 	Status       *Status  `json:"status,omitempty"`
@@ -189,6 +189,7 @@ type Device struct {
 	Name   string `json:"name,omitempty"`
 	Role   string `json:"role,omitempty"`
 	OS     string `json:"os,omitempty"`      // its operating system; "" when unknown
+	Store  string `json:"store,omitempty"`   // where its keys live: group.StoreFile or group.StoreHardware; "" before 0.6
 	SkewMS int64  `json:"skew_ms,omitempty"` // how far its clock is ahead of this one
 	// Form, OSVersion, Version and MAC are what its hello says about its
 	// device; "" when it says nothing or is not connected.

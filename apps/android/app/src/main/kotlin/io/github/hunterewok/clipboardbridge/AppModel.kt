@@ -560,10 +560,10 @@ class AppModel(private val app: Context) {
         update()
     }
 
-    /** Makes a computer an admin. */
+    /** Makes a computer an admin, after the dialog that warns when its keys sit in a file. */
     suspend fun makeAdmin(id: String) {
         message = try {
-            group.makeAdmin(id)
+            group.makeAdmin(id, allowFileKey = true)
             Note(R.string.made_admin)
         } catch (e: CancellationException) {
             throw e
@@ -609,6 +609,7 @@ class AppModel(private val app: Context) {
             is PairingMember.Failure ->
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
             is PhoneGroup.Failure -> R.string.error_generic
+            is PhoneGroup.FileKey -> R.string.error_file_key
             is PairingJoiner.Failure -> R.string.error_join
             is Keys.NoScreenLock -> R.string.error_no_screen_lock
             is Authenticator.Cancelled -> R.string.error_not_authenticated
