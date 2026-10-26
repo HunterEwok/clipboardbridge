@@ -183,8 +183,13 @@ type Service struct {
 	attMu       sync.Mutex
 	attRevoked  map[string]bool
 	attEvidence map[group.DeviceID]peerEvidence
-	recMu       sync.Mutex     // guards records; taken after mu, never before
-	records     *group.Records // the group's device records; nil while in no group
+	// tpmMu guards this device's TPM attestation and, on the root, the
+	// credentials sent to peers (evidence_tpm.go); taken alone.
+	tpmMu      sync.Mutex
+	tpmAtt     *tpmAttestation
+	tpmPending map[group.DeviceID]tpmPending
+	recMu      sync.Mutex     // guards records; taken after mu, never before
+	records    *group.Records // the group's device records; nil while in no group
 
 	tunMu      sync.Mutex            // guards tunnel and the rest of the tun fields; taken after mu, before recMu
 	tunnel     *tunnel.State         // the tunnel keys (tunnel.go); nil while sync away from home is off
@@ -376,7 +381,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
-		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived,
+		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived, Evidence: s.ownEvidence(id),
 	})
 	// Every member listens, so that phones and lite members reach it, and
 	// the other full members when it has the lower device ID.

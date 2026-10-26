@@ -316,12 +316,22 @@ func (s *Service) ensureListed() {
 		body := group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key, Store: store}
 		if d, ok := listed[key]; ok {
 			// A computer whose record names no system or another one, as a
-			// Windows PC that joined as a Linux member: record what its
-			// hello says, keeping the rest of its record.
-			if d.Role != group.RoleFull || os == "" || d.OS == os {
+			// Windows PC that joined as a Linux member, or that its record
+			// has in a file while its hello says hardware, as a computer
+			// with its keys in a TPM recorded when it was admitted: record
+			// what its hello says, keeping the rest of its record.
+			newOS := os != "" && d.OS != os
+			newStore := d.Store == group.StoreFile && store == group.StoreHardware
+			if d.Role != group.RoleFull || !newOS && !newStore {
 				return
 			}
-			body.Name, body.Admin, body.Store, body.Kind, body.Proof = d.Name, d.AdminKey, d.Store, d.Kind, d.Proof
+			body.Name, body.Admin, body.Kind, body.Proof = d.Name, d.AdminKey, d.Kind, d.Proof
+			if !newOS {
+				body.OS = d.OS
+			}
+			if !newStore {
+				body.Store = d.Store
+			}
 		}
 		if !group.ValidName(body.Name) {
 			body.Name = defaultName(role, dev)

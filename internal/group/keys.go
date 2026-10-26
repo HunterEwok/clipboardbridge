@@ -29,6 +29,15 @@ func theTPM() (*tpmkey.TPM, error) {
 	return tpm, tpmErr
 }
 
+// ReopenTPM closes the TPM, which opens again when next used: for the tests
+// that start a simulator (tpmtest.Start) after another test used the TPM.
+func ReopenTPM() {
+	if tpm != nil {
+		tpm.Close()
+	}
+	tpmOnce, tpm, tpmErr = sync.Once{}, nil, nil
+}
+
 // NewDeviceKey makes a member or admin key: in the TPM when the machine has
 // one that this program may use (docs/protocol.md, section 17), and in
 // memory, to be saved in the identity file, otherwise.

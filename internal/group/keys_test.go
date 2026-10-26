@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -18,14 +17,8 @@ import (
 // useTPM points the package at the TPM that tpmtest started, for one test.
 func useTPM(t *testing.T) {
 	tpmtest.Start(t)
-	reset := func() {
-		if tpm != nil {
-			tpm.Close()
-		}
-		tpmOnce, tpm, tpmErr = sync.Once{}, nil, nil
-	}
-	reset()
-	t.Cleanup(reset)
+	ReopenTPM()
+	t.Cleanup(ReopenTPM)
 }
 
 // TestKeysInTPM checks that a new identity's member key and a computer's

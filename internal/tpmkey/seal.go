@@ -45,13 +45,17 @@ func (t *TPM) Seal(data []byte) (Blob, error) {
 	if err != nil {
 		return Blob{}, err
 	}
-	rsp, err := tpm2.Create{
-		ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
-		InSensitive: tpm2.TPM2BSensitiveCreate{Sensitive: &tpm2.TPMSSensitiveCreate{
-			Data: tpm2.NewTPMUSensitiveCreate(&tpm2.TPM2BSensitiveData{Buffer: data}),
-		}},
-		InPublic: tpm2.New2B(sealTemplate),
-	}.Execute(t.t, s)
+	var rsp *tpm2.CreateResponse
+	err = t.room(func() (err error) {
+		rsp, err = tpm2.Create{
+			ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
+			InSensitive: tpm2.TPM2BSensitiveCreate{Sensitive: &tpm2.TPMSSensitiveCreate{
+				Data: tpm2.NewTPMUSensitiveCreate(&tpm2.TPM2BSensitiveData{Buffer: data}),
+			}},
+			InPublic: tpm2.New2B(sealTemplate),
+		}.Execute(t.t, s)
+		return err
+	})
 	if err != nil {
 		return Blob{}, fmt.Errorf("tpmkey: sealing: %w", err)
 	}
@@ -77,11 +81,15 @@ func (t *TPM) Unseal(b Blob) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj, err := tpm2.Load{
-		ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
-		InPublic:     *pub,
-		InPrivate:    *priv,
-	}.Execute(t.t)
+	var obj *tpm2.LoadResponse
+	err = t.room(func() (err error) {
+		obj, err = tpm2.Load{
+			ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
+			InPublic:     *pub,
+			InPrivate:    *priv,
+		}.Execute(t.t)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("tpmkey: loading the sealed object, which another TPM may have made: %w", err)
 	}

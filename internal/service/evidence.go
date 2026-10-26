@@ -62,14 +62,29 @@ type statusKept struct {
 // record when that differs from what the record says (docs/protocol.md,
 // section 17, "Evidence"). Other members ignore it.
 func (s *Service) evidenceReceived(peer group.DeviceID, chain []*x509.Certificate, e node.Evidence) error {
-	s.mu.Lock()
-	id, nd := s.id, s.nd
-	s.mu.Unlock()
-	if id == nil || !id.IsRoot() || len(chain) == 0 {
-		return nil
-	}
-	if e.Format != node.EvidenceAndroid || e.Key != node.EvidenceMember {
+	if len(chain) == 0 || e.Key != node.EvidenceMember {
 		return nil // from a newer version
+	}
+	switch e.Format {
+	case node.EvidenceAndroid:
+		return s.androidEvidence(peer, chain, e)
+	case node.EvidenceTPM:
+		return s.tpmEvidence(peer, chain, e)
+	case node.EvidenceTPMCredential:
+		return s.tpmCredential(peer, e)
+	case node.EvidenceTPMActivated:
+		return s.tpmActivated(peer, chain, e)
+	}
+	return nil
+}
+
+// androidEvidence checks an Android Key Attestation on the root.
+func (s *Service) androidEvidence(peer group.DeviceID, chain []*x509.Certificate, e node.Evidence) error {
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	if id == nil || !id.IsRoot() {
+		return nil
 	}
 	s.attMu.Lock()
 	if s.attEvidence == nil {
@@ -100,11 +115,23 @@ func (s *Service) evidenceReceived(peer group.DeviceID, chain []*x509.Certificat
 		leaf := sha256.Sum256(e.Chain[0])
 		proof = hex.EncodeToString(leaf[:])
 	}
+	return s.recordEvidence(peer, chain[0], res, proof)
+}
+
+// recordEvidence records on the root what an attestation of peer's member
+// key showed, when the device's record says otherwise.
+func (s *Service) recordEvidence(peer group.DeviceID, cert *x509.Certificate, res attest.Result, proof string) error {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || !id.IsRoot() {
+		return nil
+	}
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
 	rec := s.deviceRecord(peer)
 	switch {
-	case rec == nil || rec.Key != group.KeyHashOf(chain[0]):
+	case rec == nil || rec.Key != group.KeyHashOf(cert):
 		return nil // not listed yet; it sends the evidence again when it next connects
 	case res.Kind == "" && res.Store == group.StoreHardware:
 		// Revoked: only a record that says proven changes.
