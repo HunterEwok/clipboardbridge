@@ -109,7 +109,7 @@ public enum Pairing {
 
     /// The error codes that travel in frames. Anything else means "refused".
     public enum ErrorCode: String {
-        case wrongCode = "wrong-code", closed, busy, expired, tooMany = "too-many", taken, refused
+        case wrongCode = "wrong-code", closed, busy, expired, tooMany = "too-many", taken, declined, refused
         public init(wire: String) { self = ErrorCode(rawValue: wire) ?? .refused }
     }
 

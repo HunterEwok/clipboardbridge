@@ -1264,6 +1264,60 @@ func (s *Records) RootMember() (DeviceID, KeyHash) {
 	return best.body.Device, *best.body.Key
 }
 
+// MayHost reports whether the device dev may be the group's hub for sync
+// away from home by the records alone: the root's own device, whose key is
+// not revoked, or a device listed as an admin (docs/protocol.md, section
+// 11). A peer's offer is also checked against the key of its certificate;
+// this is for a hub that a hub moving names (section 11, "Moving the hub").
+func (s *Records) MayHost(dev DeviceID) bool {
+	if root, key := s.RootMember(); root == dev && !s.Revoked(key) {
+		return true
+	}
+	for _, d := range s.Devices() {
+		if d.ID == dev && d.Admin {
+			return true
+		}
+	}
+	return false
+}
+
+// HubOrder returns the devices that may be the group's hubs, in the order
+// in which they serve (docs/protocol.md, section 11, "Several hubs"):
+// first the phones, whose keys are in hardware, then the others, and in
+// each part the root's own device first, then by device ID. Every member
+// gets the same order from the same records.
+func (s *Records) HubOrder() []DeviceID {
+	root, key := s.RootMember()
+	if root != "" && s.Revoked(key) {
+		root = ""
+	}
+	type hub struct {
+		id    DeviceID
+		phone bool
+	}
+	var hubs []hub
+	for _, d := range s.Devices() {
+		if d.ID == root || d.Admin {
+			hubs = append(hubs, hub{d.ID, d.Role == RolePhone})
+		}
+	}
+	sort.Slice(hubs, func(i, j int) bool {
+		a, b := hubs[i], hubs[j]
+		switch {
+		case a.phone != b.phone:
+			return a.phone
+		case (a.id == root) != (b.id == root):
+			return a.id == root
+		}
+		return a.id < b.id
+	})
+	out := make([]DeviceID, len(hubs))
+	for i, h := range hubs {
+		out[i] = h.id
+	}
+	return out
+}
+
 // Known reports whether a valid device record names the device dev, with
 // any key and whether or not it counts: an ID a new device may not take
 // (docs/protocol.md, section 6).

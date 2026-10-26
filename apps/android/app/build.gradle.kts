@@ -82,6 +82,7 @@ dependencies {
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     // The Wear OS watch (../wear) through the Wearable Data Layer of Google Play services, the
     // only way to a watch; without Play services there is no watch and the rest works as before.
     implementation("com.google.android.gms:play-services-wearable:20.0.1")

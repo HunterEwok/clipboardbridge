@@ -99,7 +99,9 @@ separated by spaces; the short form is the first 8 bytes (23 characters).
 ## 3. Discovery (mDNS)
 
 Full members (Linux, Windows and macOS computers) and lite members publish and browse;
-phones and joining devices only browse. Only a full member that holds the iPhone CA key
+phones and joining devices only browse, except a phone that is the group's hub, which
+publishes `v=1`, `g=<tag>`, `r=phone` while its app is open (design.md, "The phone as the
+hub"). Only a full member that holds the iPhone CA key
 publishes a holder priority (`h`) and may hold `clipboardbridge.local`.
 RFC 6762 and RFC 6763 apply where this section is silent. Source: `internal/mdns`; a lite
 member publishes and browses with the `mdns-sd` crate (`lite/src/discovery.rs`), which
@@ -132,7 +134,7 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
-| `r` | `lite` | present only on a lite member, which the full members do not dial (section 4) |
+| `r` | `lite` or `phone` | `lite` on a lite member, which the full members do not dial (section 4); `phone` on a phone that is the group's hub while its app is open, which no member dials: it dials them |
 | `h` | `1` or `2` | the holder priority, present only on a full member that may hold `clipboardbridge.local`: `1` first, `2` only as a fallback |
 
 The Go code publishes them in the order `v=1`, `g=<tag>`, `h=<priority>` (if any), `p=1`; a
@@ -234,7 +236,9 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   member whose device ID is greater than its own; it accepts the others and phones.
 - A phone app dials every found member with a matching `g`. Phones accept nothing and never
   connect to each other; so a phone syncs with a lite member or any one computer with
-  no other on.
+  no other on. A phone that is the group's hub is the exception: while its app is open it
+  accepts members on the home network and through the tunnel, publishes `r=phone`, and the
+  other phones dial it; the full and lite members do not, since it dials them.
 - Members on another network than the home one (another subnet, where mDNS does not reach)
   reach the hub through the group's WireGuard tunnel (section 11; design.md, "Sync away from
   home"); so do the phone apps and the lite member on Linux, as clients. A lite member can
@@ -283,7 +287,7 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca` or `tunnel` |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -306,7 +310,7 @@ Message object:
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
 2. Then events follow, in any number, interleaved with pings, records messages, `admin`,
-   `phone_ca` and `tunnel` messages and at most one `cert`.
+   `phone_ca`, `tunnel`, `hubs`, `command` and `result` messages and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -350,7 +354,8 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
-| `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hub (section 11) |
+| `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hubs (section 11) |
+| `tunnel_psk` | string or absent | with `tunnel_key`: the WireGuard preshared key the sender chose for its tunnels, 32 bytes in base64, which every hub of the group uses for it (section 11, "Several hubs"); absent from a version before 0.5 |
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member without sync modes (a phone, a lite member, a version before 0.5), which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 
@@ -1266,15 +1271,18 @@ and then syncs at home only ("Through the tunnel" below).
   by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
   rest of this section's state. The lite member keeps its own `tunnel.json` there: `v` (1),
-  `group` (the group tag), `key` (its private key, base64) and, once the hub offered,
-  `to_hub` (`device`, `key`, `psk`, `endpoints`). Every computer and the lite member keep
+  `group` (the group tag), `key` (its private key, base64), `psk` (the preshared key it chose)
+  and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`); it reads the single
+  `to_hub` of earlier versions into `hubs`. Every computer and the lite member keep
   their keys in files, so `cbb global on` asks for the user's consent there (`consent` in the
   request).
-- Each member's hello carries `tunnel_key`: its public key, 32 bytes. A member where sync
-  away from home is off, or whose tunnel state cannot be read, sends none, and syncs at home
-  only.
-- The group's hub is one member, chosen on that member (`cbb global hub`; `is_hub`,
-  `endpoints`, `listen_port` and `forwarder` in its `tunnel.json`). When
+- Each member's hello carries `tunnel_key`, its public key, and `tunnel_psk`, a preshared
+  key of 32 random bytes it made with the key pair: 32 bytes each. A member where sync
+  away from home is off, or whose tunnel state cannot be read, sends neither, and syncs at
+  home only.
+- A hub is a member chosen on that member (`cbb global hub`; `is_hub`,
+  `endpoints`, `listen_port` and `forwarder` in its `tunnel.json`); a group can have several
+  ("Several hubs" below). When
   a peer's hello carries `tunnel_key`, the hub admits it for the peer's device ID together
   with the certificate chain the peer presented in this connection's TLS handshake, and
   answers with `{"t":"tunnel","tunnel":{"hub_key":...,"psk":...,"endpoints":[...]}}`:
@@ -1282,24 +1290,29 @@ and then syncs at home only ("Through the tunnel" below).
 | Field | Type | Meaning |
 |-------|------|---------|
 | `hub_key` | bytes | the hub's public key, 32 bytes |
-| `psk` | bytes | the member's own WireGuard preshared key, 32 random bytes |
+| `psk` | bytes | the member's own WireGuard preshared key, 32 bytes: the one its hello offered |
 | `endpoints` | array of strings or absent | the hub's addresses away from home, `ip:port` or `[ipv6]:port`, at most 8; its forwarder's last (section 13) |
 | `obfuscation` | object or absent | the group's AmneziaWG settings ("Obfuscation" below); absent for plain WireGuard |
 | `vless` | object or absent | the way to the hub's forwarder over VLESS ("VLESS" below); with it, the only way to the hub |
+| `hub` | string or absent | in an offer one hub passes on for another: that hub's device ID ("Several hubs", "Moving the hub" below) |
+| `moved` | bool or absent | `true` when the sender is no hub any more and hands its clients over to `hub` |
 
-- The hub keeps one preshared key per device and makes a new one when the device offers a
-  new key. It refuses a key that another device or the hub itself has, and keeps at most
-  256 devices. It sends the offer on every connection whose hello carries a key, so a member
-  learns new endpoints and a new preshared key the next time it connects.
+- The hub keeps one preshared key per device: the one the device's hello offers, so every
+  hub of the group uses the same. From a member without `tunnel_psk` it keeps the one it
+  had, and makes a new one for a new key. It refuses a key that another device or the hub
+  itself has, and keeps at most 256 devices. It sends the offer on every connection whose
+  hello carries a key, so a member learns new endpoints the next time it connects.
 - A member keeps an offer only from the group's root or an admin (by its records, or an
-  admin CA in its verified chain), with the hub's device ID. The record that makes the peer
-  the root or an admin must name the key of the certificate it presented, not only its
-  device ID, and never the role its hello claims. Once it keeps one, it ignores offers from
-  any other device until it turns sync away from home off and on again; a new offer from the
-  same hub replaces the old one. An offer that does not decode is ignored and changes
-  nothing. Go, both kits and the lite member all apply these rules. `cbb global hub` refuses on a device that is no
-  admin. A hub ignores offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed
-  by the first 96 bits of the ID), so the offer does not carry them.
+  admin CA in its verified chain). The record that makes the peer the root or an admin must
+  name the key of the certificate it presented, not only its device ID, and never the role
+  its hello claims. It keeps one offer per hub, by the hub's device ID: the sender's, or the
+  one its `hub` names when the records make that device the root or an admin and it is not
+  the member itself, which it ignores. A new offer for a hub replaces that hub's earlier one;
+  `moved` also makes the member forget the sender's own. An offer that does not decode is
+  ignored and changes nothing. Go, both kits and the lite member all apply these rules.
+  `cbb global hub` refuses on a device that is no admin. A phone that is the hub ignores
+  offers. The tunnel addresses follow from the device IDs (fd00:cbb::/32 followed by the
+  first 96 bits of the ID), so the offer does not carry them.
 - A phone can be the hub while its app is open ([design.md](design.md), "The phone as the
   hub", D-64): its kit listens for member connections (`MemberListener`, on the loopback
   address, where `mobile/cbbtun`'s `Hub` leads each connection through the tunnel) and
@@ -1313,6 +1326,76 @@ and then syncs at home only ("Through the tunnel" below).
   No signed record binds the key: the member certificate already does.
 - A member that moves to another group turns sync away from home off: it deletes
   `tunnel.json` (whose `group` names the old group), and the user turns it on again.
+
+### Moving the hub
+
+The hub, a computer or a phone, hands its role to an admin computer ([design.md](design.md),
+"The phone as the hub"): `cbb global move DEVICE [-forwarder ADDR -forwarder-key KEY]
+[address:port...]` on a computer, "Move the hub to a computer" in both apps. Implemented in
+Go (`internal/service/movehub.go`), both kits (`Commands.hub`, `PhoneHub.movedOffer`) and
+both apps; `TestMoveHub` moves a hub with a client away from home.
+
+1. The old hub sends the new one a `hub` command (section 15) with the new hub's forwarder
+   and addresses, by default its own forwarder, and every client it keeps: device ID, public
+   key and preshared key. It includes itself, with its own keys as a client.
+2. The new hub must be an admin with sync away from home on and without a relay; it refuses
+   otherwise. It becomes the hub with that forwarder and those addresses, takes each client
+   whose device its records list, with the keys it was given and no certificate chain yet,
+   and answers `done` with its offer (`tunnel` in the result, without `psk`). A client
+   without a chain stays while the records list its device; its chain is filled in on its
+   first hello.
+3. The old hub sends each client connected to it the new hub's offer with that client's own
+   preshared key, `hub`, the new hub's device ID, and `moved`. After 2 s it stops being the
+   hub and becomes the new hub's client with its own keys.
+
+A client keeps the new hub's offer by the rules above and forgets the old hub's. A client
+that was away from home and not connected at the move gets the new hub's offer on its next
+connection to it, or to any other hub that passes it on.
+
+When an admin phone takes the group over from a lost root phone that was the hub, it turns
+its own hub on; the clients keep its offer as any hub's.
+
+### Several hubs
+
+The group's root and admins with a hub set up are its hubs, in an order every member
+derives from the records alone: phones first (a phone is the hub while its app is open,
+so it serves whenever it is there), then computers; within each, the root first, then by
+device ID. The vectors in `testdata/interop/go-hubs.json` (Go's `TestGoHubVectors`) give an
+order that Go (`Records.HubOrder`), both kits (`RecordSet.hubOrder`) and the lite member
+(`hub_order`) must all derive. A signed table of main hubs, which the user orders, comes
+later (D-65 in [design.md](design.md)).
+
+- A member keeps every hub's offer and, away from home, uses the first hub in the order that
+  answers: it tries them in turn, each at the next of its endpoints. On a hub below the
+  first it ends the connection after 5 minutes and tries the hubs above again. A hub found
+  on the home network, or connected directly, counts as answering. Hubs outside the order
+  are not tried.
+- Since every member offers its own preshared key, a hub can serve a member it never met,
+  given the member's public key. A hub sends each peer that may be a hub, after the hello,
+  `{"t":"hubs","hubs":{...}}`:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `serving` | bool or absent | `true` while the sender serves its clients as the hub |
+| `offer` | object or absent | the sender's offer, without `psk` |
+| `clients` | array or absent | the sender's clients, each `device`, `key` and `psk`, the sender itself among them, without the receiver; at most 256 |
+
+- The receiver takes the message only from the group's root or an admin, by the same check
+  as an offer. On a hub it takes each client its records list, other than itself, as it
+  takes the clients a hub command hands over ("Moving the hub"): a client it met keeps its
+  own keys. Every receiver keeps the sender's offer with its own preshared key, as that
+  hub's. A hub sends the message again to the connected hubs when it starts or stops
+  serving.
+- A computer's hub serves only while no hub above it answers, and is otherwise a client of
+  the first that does. Starting, it tries the hubs above it once, then serves. It stops
+  serving when a hub above it says it serves, or offers its tunnel; once it loses the hub
+  above, it tries the hubs above for a minute and then serves again. While it serves with
+  hubs above it, it tries them as a client every 15 minutes.
+- A hub passes the other hubs' offers on to its clients, each with the client's own
+  preshared key and `hub`, so a client that met only one hub learns them all.
+- A phone that is the hub shares its clients, takes the others' and passes their offers on,
+  but does not yet stop serving for a hub above it, nor become another hub's client; as
+  phones come first in the order, the computers' hubs give way to it.
 
 ### Obfuscation
 
@@ -1370,10 +1453,11 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
 - After the member TLS handshake the hub checks that the device ID of the client
   certificate gives the tunnel address the connection came from, and closes it otherwise,
   so a device cannot use another device's tunnel key.
-- A member that keeps a hub's offer runs the other end, with the hub as its only peer and
-  a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member TLS
-  whenever the hub is not connected on the home network, trying the offer's endpoints in
-  turn, with the dialers' backoff (1 s, doubling to 30 s). A hub that discovery finds holds
+- A member that keeps hubs' offers runs the other end, with the hub it tries as its only
+  peer and a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member
+  TLS whenever no hub is connected on the home network, trying the hubs in order and each
+  offer's endpoints in turn ("Several hubs" above), with the dialers' backoff (1 s, doubling
+  to 30 s). A hub that discovery finds holds
   this off for 30 s only: anyone on a network can announce the hub's name and the group's
   tag, so after that only a connection to the hub counts. The relay path (section 14) and
   the dialers through the hub follow the same rule.
@@ -1389,11 +1473,13 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
 A device that shares no network with the group joins through the hub's tunnel with a remote
 invitation ([design.md](design.md), "Joining from another network"). Implemented in Go
 (`internal/invite`, `internal/service/invite.go`, `cbb invite`, `cbb pair -invite`) for
-computers; the phones neither make nor use invitations yet.
+computers, and made and served on a phone that is the group's hub (mobile/cbbtun's
+`Hub.Invite`, the kits' `InvitationWindow`); the phones do not use invitations yet.
 
 ### The invitation
 
-Made on the hub, by the control operation `invite` (`cbb invite`). Its text is
+Made on the hub, by the control operation `invite` (`cbb invite`), or in the app of a phone
+that is the hub, whose endpoints are its forwarder's. Its text is
 `clipboardbridge://invite#` followed by base64url without padding of this JSON (byte strings
 in it as in the rest of this document):
 
@@ -1445,6 +1531,21 @@ the admin cancels it.
    answers with its offer.
 4. With the offer, the device closes the guest tunnel and from then on reaches the hub
    through the tunnel with its own key, as any member.
+
+### On a phone that is the hub
+
+The phone makes the invitation in its app while it is registered with its forwarder; its
+`ep` is the forwarder's endpoint. cbbtun's hub adds the guest peer and joins each
+connection through the guest tunnel to a loopback port of the kit's pairing window
+(`InvitationWindow`), and once the window admitted the device, to the member listener, for
+the device's first hello. The window runs the exchange of section 6 as the server, with the
+secret as the password: the device confirms first, the phone asks its user to confirm the
+device by its name, system and fingerprint, then unlocks its signing key (Face ID or the
+screen lock) and sends the welcome with its own tag. It gives no CA keys and makes no admin.
+It takes one attempt at a time, ends after three failures, and the guest goes at expiry,
+when the user cancels, or 2 minutes after the device was admitted. The invitation's file
+goes through the phone's share sheet. Go's `TestSwiftHubAdmitsInvitedGoJoiner` runs `cbb`'s
+joiner against the window of both kits.
 
 
 ## 13. The forwarder
@@ -1706,8 +1807,9 @@ which a hub would not let out; what the devices send each other it cannot read.
 ## 15. Commands
 
 An admin orders one member to do something with a **command**: signed like a record (section
-10) and never stored. The only one so far is `mode`, which sets the receiver's sync mode
-(design.md, "Sync modes"); the remote paste of 0.6 will be another.
+10) and never stored. `mode` sets the receiver's sync mode (design.md, "Sync modes"); `hub`
+makes the receiver the group's hub (section 11, "Moving the hub"); the remote paste of 0.6
+will be another.
 
 ### The command
 
@@ -1716,7 +1818,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `v` | integer | `1` |
-| `type` | string | `mode` |
+| `type` | string | `mode` or `hub` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
@@ -1724,6 +1826,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send` |
+| `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
 or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
@@ -1738,8 +1841,9 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 The sender sends the command on its own connection to the receiver, which answers with a
 `result`: its `id` is the command's, its `status` `done`, `refused` (the receiver does not take
 it) or `failed` (it took it and could not carry it out), and `reason` says why for the last
-two. A member without commands, such as one before 0.5, ignores the message, so the sender
-gives up after 10 s.
+two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
+commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
+(20 s for `hub`).
 
 The receiver takes a command only when:
 
@@ -1751,6 +1855,6 @@ The receiver takes a command only when:
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
   until they expire (at most 4096 at a time).
 
-A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
+A body is at most 64 KiB. A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
 and logs who sent it.
 

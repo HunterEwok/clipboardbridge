@@ -19,11 +19,14 @@ public final class MemberListener: @unchecked Sendable {
     private var task: Task<Void, Never>?
 
     /// chain is what follows the identity's certificate, as TLSTransport
-    /// takes it; onError gets why a connection failed, for the log.
+    /// takes it; on the home network (loopback false) service publishes it
+    /// by Bonjour, as TLSListener does; onError gets why a connection
+    /// failed, for the log.
     public init(node: MemberNode, identity: SecIdentity, chain: [Data] = [], trusted: @escaping @Sendable () -> [Data],
-                port: UInt16 = 0, loopback: Bool = true, onError: @escaping @Sendable (Error) -> Void = { _ in }) throws {
+                port: UInt16 = 0, loopback: Bool = true, service: (name: String, txt: [String: String])? = nil,
+                onError: @escaping @Sendable (Error) -> Void = { _ in }) throws {
         (self.node, self.trusted, self.onError) = (node, trusted, onError)
-        listener = try TLSListener(port: port, alpn: Member.alpn, identity: identity, chain: chain, loopback: loopback) {
+        listener = try TLSListener(port: port, alpn: Member.alpn, identity: identity, chain: chain, loopback: loopback, service: service) {
             Self.peer($0, trusted()) != nil
         }
     }

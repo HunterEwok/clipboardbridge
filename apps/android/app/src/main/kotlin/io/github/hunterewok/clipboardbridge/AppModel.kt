@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.MemberNode
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
@@ -19,9 +20,13 @@ import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.time.Instant
 
 /**
  * What the app shows and does; the screens only read it and call it. Its
@@ -78,6 +83,52 @@ class AppModel(private val app: Context) {
     /** What turning it on or off said, when it failed. */
     var awayNote by mutableStateOf<Note?>(null)
         private set
+
+    /**
+     * The phone as the group's hub as Settings and Home show it: null on a
+     * phone that cannot be the hub. home tells whether the phone is on one
+     * of the hub's home networks now.
+     */
+    data class Hub(
+        val on: Boolean,
+        val status: HubOnPhone.Status,
+        val error: Note? = null,
+        val forwarder: HubState.Forwarder? = null,
+        val background: Boolean = false,
+        val home: Boolean = false,
+        val clients: Int = 0,
+        /** The connected computers the hub can move to: admins, or computers the root can make admins; by ID, with their names. */
+        val computers: List<Pair<String, String>> = emptyList(),
+        /** The computer that is always on which the app suggests as the hub, unless the user chose to keep the phone. */
+        val suggested: Pair<String, String>? = null,
+    )
+
+    var hub by mutableStateOf<Hub?>(null)
+        private set
+
+    /** What the last change to the hub said, when it failed. */
+    var hubNote by mutableStateOf<Note?>(null)
+        private set
+
+    /** The registration's last error, logged once. */
+    private var hubError: String? = null
+
+    /**
+     * A remote invitation as Settings shows it: when it expires, the file to
+     * share, and the device waiting for the user's answer.
+     */
+    data class Invite(val expires: Instant, val file: File, val request: PairingMember.Request? = null)
+
+    var invite by mutableStateOf<Invite?>(null)
+        private set
+
+    /** How the last invitation ended, or why it did not open. */
+    var inviteNote by mutableStateOf<Note?>(null)
+        private set
+
+    private var invitation: LiveGroup.Invitation? = null
+    private var answer: CompletableDeferred<Boolean>? = null
+    private val main = Handler(Looper.getMainLooper())
 
     fun choose(color: String) {
         settings.color = color
@@ -228,7 +279,150 @@ class AppModel(private val app: Context) {
             // AwayFromHome logs each failure itself.
             Away(a.isOn, a.status, e?.let { describe(it, R.string.away_error, log = false) })
         }
+        hub = withContext(Dispatchers.IO) {
+            group.phoneHub?.let { h ->
+                val (status, error) = h.status(paused = !group.inForeground && !h.background)
+                if (error != hubError) {
+                    hubError = error
+                    if (error != null) Log.w(TAG, "the hub: $error")
+                }
+                Hub(
+                    h.isOn, status,
+                    error?.let { Note(R.string.hub_failed, if (settings.showsErrorDetails) it else null, error = true) },
+                    h.forwarder, h.background, group.onHomeNetwork, h.clients.size,
+                    computers = if (h.isOn && h.forwarder != null) {
+                        group.computers.filter { it.online && it.role == "full" && (it.admin || it.canMakeAdmin) }.map { it.id to it.name }
+                    } else {
+                        emptyList()
+                    },
+                    suggested = group.suggestedHub?.takeIf { h.forwarder != null && !settings.keepsPhoneHub }?.let { it.id to it.name },
+                )
+            }
+        }
         WatchLink.update(app, this)
+    }
+
+    /** Makes this phone the group's hub, or stops it being the hub. */
+    suspend fun setHub(on: Boolean) = hubChange { group.setPhoneHub(on) }
+
+    /**
+     * Makes a connected computer the hub in place of this phone
+     * (docs/protocol.md, section 11, "Moving the hub"); the reason it
+     * refused, if it does, shows under the message.
+     */
+    suspend fun moveHub(id: String) {
+        hubNote = try {
+            group.moveHub(id)
+            Note(R.string.hub_moved)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LiveGroup.CommandRefused) {
+            Log.e(TAG, app.getString(R.string.hub_move_refused), e)
+            Note(R.string.hub_move_refused, e.reason, error = true)
+        } catch (e: HubOnPhone.NotRunning) {
+            describe(e, R.string.hub_move_not_running)
+        } catch (e: MemberNode.ProtocolException) {
+            describe(e, R.string.error_no_answer)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /** Keeps this phone as the hub: the app no longer suggests a computer. */
+    suspend fun keepPhoneHub() {
+        settings.keepsPhoneHub = true
+        update()
+    }
+
+    /** Sets the hub's forwarder; both empty for a hub at home only. */
+    suspend fun setForwarder(address: String, pin: String) = hubChange {
+        if ((address.isBlank() || pin.isBlank()) && !(address.isBlank() && pin.isBlank())) throw IllegalArgumentException("both or neither")
+        if (pin.isNotBlank() && !HubState.validPin(pin.trim())) throw IllegalArgumentException("not a pin")
+        group.setForwarder(address, pin)
+    }
+
+    /** Lets the hub run in the background, at the battery's cost. */
+    suspend fun setHubInBackground(on: Boolean) = hubChange { group.setHubInBackground(on) }
+
+    /** Remembers the network the phone is on as home. */
+    suspend fun addHomeNetwork() = hubChange { group.addHomeNetwork() }
+
+    private suspend fun hubChange(f: () -> Unit) {
+        hubNote = try {
+            withContext(Dispatchers.IO) { f() }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            describe(e, R.string.hub_bad_forwarder)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /**
+     * Opens a remote invitation for a device far away (docs/protocol.md,
+     * section 12), valid for an hour: Settings shares its file, and asks
+     * the user about the device that uses it.
+     */
+    suspend fun openInvite() {
+        if (invite != null) return
+        inviteNote = try {
+            val inv = withContext(Dispatchers.IO) { group.invite(INVITE_SECONDS, ::ask) { r -> main.post { inviteEnded(r) } } }
+            val file = withContext(Dispatchers.IO) { Invitations.write(app, inv.text) }
+            invitation = inv
+            invite = Invite(inv.expires, file)
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HubOnPhone.NotRunning) {
+            describe(e, R.string.invite_no_hub)
+        } catch (e: Exception) {
+            describe(e)
+        }
+    }
+
+    /** Asks the user about a device that used the invitation, for up to 5 minutes. */
+    private suspend fun ask(req: PairingMember.Request): Boolean = withContext(Dispatchers.Main) {
+        val d = CompletableDeferred<Boolean>()
+        answer = d
+        invite = invite?.copy(request = req)
+        val yes = withTimeoutOrNull(CONFIRM_MS) { d.await() } ?: false
+        invite = invite?.copy(request = null)
+        yes
+    }
+
+    /** The user's answer about the device that used the invitation. */
+    fun answer(yes: Boolean) {
+        answer?.complete(yes)
+        answer = null
+    }
+
+    /** Cancels the open invitation. */
+    fun cancelInvite() {
+        invitation?.cancel?.invoke()
+    }
+
+    private fun inviteEnded(r: Result<String>) {
+        invite?.file?.let(Invitations::delete)
+        invite = null
+        invitation = null
+        answer?.complete(false)
+        answer = null
+        inviteNote = r.fold(
+            { Note(R.string.invite_admitted) },
+            { e ->
+                val code = (e as? InvitationWindow.Ended)?.code
+                when (code) {
+                    Pairing.ErrorCode.CLOSED -> null
+                    Pairing.ErrorCode.EXPIRED -> Note(R.string.invite_expired)
+                    Pairing.ErrorCode.TOO_MANY -> Note(R.string.invite_too_many, error = true)
+                    else -> describe(e as? Exception ?: Exception(e))
+                }
+            },
+        )
     }
 
     /** Turns sync away from home on or off; the hub's answer comes on the next connection at home. */
@@ -324,6 +518,12 @@ class AppModel(private val app: Context) {
 
     companion object {
         private const val TAG = "clipboardbridge"
+
+        /** How long an invitation from the phone is valid: an hour, as cbb invite's default. */
+        const val INVITE_SECONDS = 3600
+
+        /** How long the user may take to confirm a device that used an invitation (docs/protocol.md, section 12). */
+        const val CONFIRM_MS = 5 * 60_000L
 
         /** Reads what the camera saw, or what the user pasted: the text of the QR code of cbb pair or of another phone. */
         fun read(text: String): JoinCode? {

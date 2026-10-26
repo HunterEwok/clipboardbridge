@@ -182,6 +182,8 @@ type Service struct {
 	tunSelf    string                // this device's ID, for its tunnel address
 	tunRun     *tunRun               // the hub or the link to it, while it runs
 	tunThrough bool                  // connected to the hub through the tunnel now
+	tunUsing   string                // the hub this member uses now; "" while it reaches none
+	tunServing bool                  // on a hub: it serves now, since no hub above it answers
 	tunErr     string                // what went wrong last, for status; "" if nothing
 	tunDetail  string                // the underlying error
 	tunFwd     *control.Forwarder    // on the hub: its registration with its forwarder; nil without one
@@ -356,12 +358,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunnel, s.tunCtx, s.tunSelf = tun, gctx, string(id.ID)
 	s.guardLocked()
 	s.tunMu.Unlock()
+	tunKey, tunPSK := tunnelKey(tun)
 	nd := node.New(node.Config{
 		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
-		TunnelKey: tunnelKey(tun), OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
+		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
+		HubShare: s.hubShare, OnHubs: s.hubsShared,
 	})
 	// Every member listens, so that phones and lite members reach it, and
 	// the other full members when it has the lower device ID.

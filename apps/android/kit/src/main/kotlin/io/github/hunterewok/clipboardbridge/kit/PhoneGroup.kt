@@ -252,6 +252,24 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * A hub command that makes the admin computer to the group's hub in
+     * place of this phone (docs/protocol.md, section 11, "Moving the hub"),
+     * signed with this phone's root or admin key, with the hub's clients
+     * and its forwarder ("ip:port" and the pin of its key).
+     */
+    fun hubCommand(
+        to: String,
+        forwarder: Pair<String, String>?,
+        clients: List<PhoneHub.Client>,
+        caSigner: CertificateSigner,
+        now: Instant,
+    ): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        if (!records.mayHost(to)) throw Failure("only the group's root or an admin can be its hub")
+        return Commands.hub(to, forwarder, emptyList(), clients.filter { it.device != to }, tag, device, now, caSigner, adminCA)
+    }
+
+    /**
      * Unfreezes an admin computer that another admin froze (section 10,
      * rule 4): a thaw record that ends every freeze of it. The root and the
      * admin phones do it; Remove takes the computer out for good instead.
@@ -302,7 +320,10 @@ class PhoneGroup internal constructor(
      * the root and makeAdmin is set: it gets an admin CA for that key. On
      * success a computer is in computers, where one admitted again replaces
      * its entry, and every device has its record. A computer keeps those of
-     * addrs that are on a home network, where the phone dialed it.
+     * addrs that are on a home network, where the phone dialed it. With
+     * invitation, the device dialed this phone, the hub, with a remote
+     * invitation (section 12): code is unused and the device never becomes
+     * an admin.
      */
     fun admit(
         t: FrameTransport,
@@ -313,6 +334,7 @@ class PhoneGroup internal constructor(
         now: Instant,
         makeAdmin: Boolean = true,
         addrs: List<String> = emptyList(),
+        invitation: PairingMember.Invitation? = null,
     ): PairingMember.Admitted {
         if (!isAdmin) throw Failure("this phone is no admin")
         val first = groupCA
@@ -320,10 +342,10 @@ class PhoneGroup internal constructor(
         val root = currentRoot
         val ca = signingCA
         val issuer = adminCA
-        val canMakeAdmins = isRoot
+        val canMakeAdmins = isRoot && invitation == null
         var adminKey: ByteArray? = null
         val taken = { dev: String -> dev == device || records.knows(dev) }
-        val admitted = PairingMember.admit(t, code, memberCert, joinerCert, sessionID, Pairing.MemberAD(device, tag), taken) { dev, publicKey, info ->
+        val admitted = PairingMember.admit(t, code, memberCert, joinerCert, sessionID, Pairing.MemberAD(device, tag), taken, invitation) { dev, publicKey, info ->
             val cert = GroupCertificates.member(dev, publicKey, ca, caSigner, now)
             val key = info.adminKey
             val forAdmin = if (Pairing.Info.isPhone(info.os) && key != null && makeAdmin && canMakeAdmins) {

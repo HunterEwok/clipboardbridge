@@ -197,6 +197,14 @@ private fun Summary(model: AppModel) {
         style = MaterialTheme.typography.bodyMedium,
         color = LocalPalette.current.textDim,
     )
+    // The phone as the hub works while the app is open: Home says so, as a fact, not a fault.
+    model.hub?.takeIf { it.on }?.let { h ->
+        Text(
+            stringResource(if (h.background) R.string.hub_home_background else R.string.hub_home_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalPalette.current.textDim,
+        )
+    }
 }
 
 @Composable

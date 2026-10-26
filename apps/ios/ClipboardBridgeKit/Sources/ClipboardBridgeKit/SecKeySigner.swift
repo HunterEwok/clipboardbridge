@@ -28,5 +28,15 @@ public struct SecKeySigner: CertificateSigner {
         }
         return sig // DER, as X9.62 specifies
     }
+
+    /// An ECDSA signature, DER, of a SHA-256 digest: the member key signs
+    /// the hub's TLS to its forwarder so (cbbtun's Signer).
+    public func signature(digest: Data) throws -> Data {
+        var error: Unmanaged<CFError>?
+        guard let sig = SecKeyCreateSignature(key, .ecdsaSignatureDigestX962SHA256, digest as CFData, &error) as Data? else {
+            throw error!.takeRetainedValue() as Error
+        }
+        return sig
+    }
 }
 #endif

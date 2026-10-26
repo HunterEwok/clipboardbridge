@@ -21,8 +21,31 @@ extension FrameTransport {
 
 /// The admitting side of pairing, which the phone, as the root of the
 /// group, plays: it dials a listening computer and confirms the code first
-/// (docs/protocol.md, section 6, "The joiner listens").
+/// (docs/protocol.md, section 6, "The joiner listens"), or, as the group's
+/// hub, takes a device that dialed it with a remote invitation (section
+/// 12), which confirms first.
 public enum PairingMember {
+    /// A device that proved it knows an invitation's secret, for the admin
+    /// to confirm.
+    public struct Request: Equatable {
+        public var device: String
+        public var info: Pairing.Info
+        public var fingerprint: String
+    }
+
+    /// A remote invitation's side of the exchange: its secret in place of
+    /// the code, and confirm, which asks the admin whether to admit the
+    /// device (up to 5 minutes, docs/protocol.md, section 12) once it
+    /// proved that it knows the secret, and before the certificate is made.
+    public struct Invitation: Sendable {
+        public var secret: Data
+        public var confirm: @Sendable (Request) async -> Bool
+
+        public init(secret: Data, confirm: @escaping @Sendable (Request) async -> Bool) {
+            (self.secret, self.confirm) = (secret, confirm)
+        }
+    }
+
     public struct Admitted: Equatable {
         public var device: String
         public var info: Pairing.Info
@@ -45,9 +68,12 @@ public enum PairingMember {
     /// the QR code's fingerprint; sessionID is the TLS exporter's output.
     /// issue makes the welcome for the joiner's device ID, public key and
     /// description; it is called only after the joiner proved it knows the
-    /// code.
+    /// code. With invitation, the device dialed this phone: code is unused,
+    /// the device confirms the secret first, and the admin confirms the
+    /// device.
     public static func admit(over t: FrameTransport, code: String, memberCert: Data, joinerCert: Data,
                              sessionID: [UInt8], memberAD: Pairing.MemberAD, taken: (String) -> Bool = { _ in false },
+                             invitation: Invitation? = nil,
                              issue: (String, Data, Pairing.Info) throws -> Pairing.Welcome) async throws -> Admitted {
         let joiner = try CertificateInfo(der: joinerCert)
         guard let device = joiner.commonName, GroupCertificates.isDeviceID(device) else {
@@ -65,19 +91,26 @@ public enum PairingMember {
             throw Failure.protocolError("bad first frame")
         }
         let adb = try JSONEncoder().encode(memberAD)
-        var st = try CPace(role: .responder, password: Array(code.utf8),
+        var st = try CPace(role: .responder, password: invitation.map { Array($0.secret) } ?? Array(code.utf8),
                            channelID: Pairing.channelID(memberCert: memberCert, joinerCert: joinerCert),
                            sessionID: sessionID, ad: Array(adb))
         _ = try st.finish(peerMessage: Array(ya), peerAD: Array(ada))
-        try await t.writeFrame(Pairing.Frame(msg: Data(st.message), ad: adb, tag: Data(st.confirmationTag!)))
+        // Invited, the device confirms first: this side shows nothing of the
+        // secret to a device that does not know it.
+        try await t.writeFrame(Pairing.Frame(msg: Data(st.message), ad: adb, tag: invitation == nil ? Data(st.confirmationTag!) : nil))
         let confirm = try await t.readFrame()
         if let code = confirm.error { throw Failure.refused(Pairing.ErrorCode(wire: code)) }
         guard let tag = confirm.tag, (try? st.verify(peerTag: Array(tag))) != nil else {
             try? await t.writeFrame(Pairing.Frame(error: Pairing.ErrorCode.wrongCode.rawValue))
             throw Failure.refused(.wrongCode)
         }
+        if let invitation,
+           !(await invitation.confirm(Request(device: device, info: info, fingerprint: Pairing.fingerprint(cert: joinerCert)))) {
+            try? await t.writeFrame(Pairing.Frame(error: Pairing.ErrorCode.declined.rawValue))
+            throw Failure.refused(.declined)
+        }
         let welcome = try issue(device, joiner.publicKey, info)
-        try await t.writeFrame(Pairing.Frame(welcome: welcome))
+        try await t.writeFrame(Pairing.Frame(tag: invitation == nil ? nil : Data(st.confirmationTag!), welcome: welcome))
         // The welcome went out: the computer counts as admitted now.
         let done = try? await t.readFrame()
         return Admitted(device: device, info: info, cert: welcome.cert, confirmed: done?.ok == true)

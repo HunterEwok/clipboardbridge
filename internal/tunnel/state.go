@@ -44,22 +44,27 @@ func (k *Key) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// State is a member's tunnel state: its own WireGuard key, the hub it
-// reaches away from home, and, on the hub, its clients. The member learns
+// State is a member's tunnel state: its own WireGuard key, the hubs it
+// reaches away from home, and, on a hub, its clients. The member learns
 // all of it inside the member protocol's TLS (docs/protocol.md, section 11).
 type State struct {
 	Key Key // this device's private key; it never leaves the device
+
+	// PSK is this device's own preshared key, which its hello gives the
+	// group's hubs, so that every hub uses the same one for it.
+	PSK Key
 
 	// Group is the tag of the group the rest belongs to; ForGroup clears
 	// the rest when the device is in another group.
 	Group string
 
-	// ToHub is the hub this device reaches away from home; nil until a
-	// hub offered its tunnel.
-	ToHub *HubLink
+	// Hubs are the offers of the group's hubs this device keeps, one per
+	// hub, in the order they came; the member uses the first of them in
+	// the group's order of hubs that answers (section 11, "Several hubs").
+	Hubs []HubLink
 
-	// IsHub tells whether this member is the group's hub, which admits
-	// the other members' keys. Endpoints are the hub's addresses that it
+	// IsHub tells whether this member is one of the group's hubs, which
+	// admit the other members' keys. Endpoints are the hub's addresses that it
 	// gives its clients, and ListenPort the UDP port it listens on (0 for
 	// Port).
 	IsHub      bool
@@ -117,9 +122,9 @@ func (s *State) HubEndpoints() []netip.AddrPort {
 }
 
 // Destinations returns the addresses on the internet that this device's
-// tunnel reaches: a hub's forwarder, a client's hub and the forwarder it
-// reaches over VLESS, or the relay. A hub answers its clients wherever they
-// are, but only those that proved the group's keys.
+// tunnel reaches: a hub's forwarder, the hubs it keeps offers of and the
+// forwarders it reaches over VLESS, or the relay. A hub answers its clients
+// wherever they are, but only those that proved the group's keys.
 func (s *State) Destinations() []netip.Addr {
 	var out []netip.Addr
 	add := func(ep netip.AddrPort) {
@@ -127,28 +132,28 @@ func (s *State) Destinations() []netip.Addr {
 			out = append(out, a)
 		}
 	}
-	switch {
-	case s.IsHub:
-		if s.Forwarder != nil {
-			add(s.Forwarder.Endpoint)
-			if v := s.Forwarder.VLESS; v != nil {
-				add(v.Endpoint)
-			}
-		}
-	case s.Relay != nil:
+	if s.Relay != nil {
 		add(s.Relay.Endpoint)
-	case s.ToHub != nil:
-		for _, ep := range s.ToHub.Endpoints {
+		return out
+	}
+	if s.IsHub && s.Forwarder != nil {
+		add(s.Forwarder.Endpoint)
+		if v := s.Forwarder.VLESS; v != nil {
+			add(v.Endpoint)
+		}
+	}
+	for _, h := range s.Hubs {
+		for _, ep := range h.Endpoints {
 			add(ep)
 		}
-		if v := s.ToHub.VLESS; v != nil {
+		if v := h.VLESS; v != nil {
 			add(v.Endpoint)
 		}
 	}
 	return out
 }
 
-// HubLink is what a client keeps of its hub.
+// HubLink is what a client keeps of a hub's offer.
 type HubLink struct {
 	Device       string
 	PublicKey    Key
@@ -160,7 +165,10 @@ type HubLink struct {
 
 // Member is a client as its hub keeps it: its WireGuard key, its own
 // preshared key, and the certificate chain it presented when it sent the
-// key, so that the hub drops it when the group's records revoke it.
+// key, so that the hub drops it when the group's records revoke it. A
+// client that another hub handed over or shared has no chain until it meets
+// this hub (docs/protocol.md, section 11, "Moving the hub" and "Several
+// hubs"); the hub then keeps it by its device's records.
 type Member struct {
 	Device       string
 	PublicKey    Key
@@ -171,8 +179,10 @@ type Member struct {
 type stateFile struct {
 	Version    int              `json:"v"`
 	Key        Key              `json:"key"`
+	PSK        *Key             `json:"psk,omitempty"`
 	Group      string           `json:"group,omitempty"`
-	ToHub      *hubFile         `json:"to_hub,omitempty"`
+	ToHub      *hubFile         `json:"to_hub,omitempty"` // read from a state before several hubs
+	Hubs       []hubFile        `json:"hubs,omitempty"`
 	IsHub      bool             `json:"is_hub,omitempty"`
 	Endpoints  []netip.AddrPort `json:"endpoints,omitempty"`
 	ListenPort int              `json:"listen_port,omitempty"`
@@ -207,17 +217,21 @@ type memberFile struct {
 	Chain        [][]byte `json:"chain"`
 }
 
-// NewState returns a state with a new private key.
+// NewState returns a state with a new private key and preshared key.
 func NewState() (*State, error) {
 	k, err := NewPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: making the key: %w", err)
 	}
-	return &State{Key: k}, nil
+	psk, err := NewPresharedKey()
+	if err != nil {
+		return nil, fmt.Errorf("tunnel: making the key: %w", err)
+	}
+	return &State{Key: k, PSK: psk}, nil
 }
 
 // LoadState reads the state in dir. Without a state file it makes one with
-// a new key.
+// a new key; a state from before several hubs gets its own preshared key.
 func LoadState(dir string) (*State, error) {
 	data, err := os.ReadFile(filepath.Join(dir, StateFile))
 	if errors.Is(err, os.ErrNotExist) {
@@ -240,8 +254,10 @@ func LoadState(dir string) (*State, error) {
 	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile,
 		Obfuscation: f.Obfuscation}
 	if f.ToHub != nil {
-		s.ToHub = &HubLink{Device: f.ToHub.Device, PublicKey: f.ToHub.PublicKey, PresharedKey: f.ToHub.PresharedKey, Endpoints: f.ToHub.Endpoints,
-			Obfuscation: f.ToHub.Obfuscation, VLESS: f.ToHub.VLESS}
+		f.Hubs = append([]hubFile{*f.ToHub}, f.Hubs...)
+	}
+	for _, h := range f.Hubs {
+		s.Hubs = append(s.Hubs, HubLink(h))
 	}
 	for _, c := range f.Members {
 		s.Members = append(s.Members, Member(c))
@@ -255,6 +271,16 @@ func LoadState(dir string) (*State, error) {
 	if err := s.check(); err != nil {
 		return nil, fmt.Errorf("%s: %w", StateFile, err)
 	}
+	if f.PSK != nil {
+		s.PSK = *f.PSK
+	} else {
+		if s.PSK, err = NewPresharedKey(); err != nil {
+			return nil, err
+		}
+		if err := s.Save(dir); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -262,9 +288,11 @@ func LoadState(dir string) (*State, error) {
 func (s *State) Save(dir string) error {
 	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
 		Obfuscation: s.Obfuscation}
-	if h := s.ToHub; h != nil {
-		f.ToHub = &hubFile{Device: h.Device, PublicKey: h.PublicKey, PresharedKey: h.PresharedKey, Endpoints: h.Endpoints,
-			Obfuscation: h.Obfuscation, VLESS: h.VLESS}
+	if !s.PSK.IsZero() {
+		f.PSK = &s.PSK
+	}
+	for _, h := range s.Hubs {
+		f.Hubs = append(f.Hubs, hubFile(h))
 	}
 	for _, c := range s.Members {
 		f.Members = append(f.Members, memberFile(c))
@@ -312,7 +340,7 @@ func (s *State) check() error {
 		if !r.Endpoint.IsValid() || r.Endpoint.Port() == 0 || r.Pin == "" {
 			return errors.New("a bad relay")
 		}
-		if s.IsHub || s.ToHub != nil {
+		if s.IsHub || len(s.Hubs) > 0 {
 			return errors.New("a device with a relay is neither a hub nor a hub's client")
 		}
 	}
@@ -327,13 +355,21 @@ func (s *State) check() error {
 	if s.ListenPort < 0 || s.ListenPort > 65535 {
 		return fmt.Errorf("a bad listen port %d", s.ListenPort)
 	}
-	if h := s.ToHub; h != nil {
+	hubs := make(map[string]bool, len(s.Hubs))
+	for _, h := range s.Hubs {
 		if err := h.check(); err != nil {
 			return err
 		}
 		if h.PublicKey == s.Key.Public() {
-			return errors.New("the hub has this device's key")
+			return errors.New("a hub has this device's key")
 		}
+		if hubs[h.Device] {
+			return fmt.Errorf("the hub %s is there twice", h.Device)
+		}
+		hubs[h.Device] = true
+	}
+	if len(s.Hubs) > maxMembers {
+		return errors.New("too many hubs")
 	}
 	if len(s.Members) > maxMembers {
 		return errors.New("too many clients")
@@ -344,9 +380,6 @@ func (s *State) check() error {
 			return fmt.Errorf("the client %s is there twice", c.Device)
 		}
 		devices[c.Device] = true
-		if len(c.Chain) == 0 {
-			return fmt.Errorf("the client %s has no certificate", c.Device)
-		}
 	}
 	_, err := s.peers()
 	return err
@@ -389,7 +422,7 @@ func (s *State) ForGroup(group string) (changed bool) {
 	if s.Group == group {
 		return false
 	}
-	*s = State{Key: s.Key, Group: group}
+	*s = State{Key: s.Key, PSK: s.PSK, Group: group}
 	return true
 }
 
@@ -419,11 +452,12 @@ func (s *State) peers() ([]Peer, error) {
 	return peers, nil
 }
 
-// Admit adds or updates the client device with the WireGuard key it sent
-// and the certificate chain it presented, and returns the client as the
-// hub keeps it. A client that keeps its key keeps its preshared key; a new
-// key gets a new one. changed tells whether the state must be saved.
-func (s *State) Admit(device string, pub Key, chain [][]byte) (c Member, changed bool, err error) {
+// Admit adds or updates the client device with the WireGuard key and the
+// preshared key it sent and the certificate chain it presented, and
+// returns the client as the hub keeps it. A zero psk, from a member before
+// several hubs, keeps the preshared key the client has, or makes one for a
+// new key. changed tells whether the state must be saved.
+func (s *State) Admit(device string, pub, psk Key, chain [][]byte) (c Member, changed bool, err error) {
 	if _, err := Addr(device); err != nil {
 		return Member{}, false, err
 	}
@@ -441,29 +475,70 @@ func (s *State) Admit(device string, pub Key, chain [][]byte) (c Member, changed
 	}
 	if i >= 0 {
 		c := &s.Members[i]
-		if c.PublicKey == pub && slices.EqualFunc(c.Chain, chain, bytes.Equal) {
+		if c.PublicKey == pub && (psk.IsZero() || c.PresharedKey == psk) && slices.EqualFunc(c.Chain, chain, bytes.Equal) {
 			return *c, false, nil
 		}
-		if c.PublicKey != pub {
-			psk, err := NewPresharedKey()
-			if err != nil {
+		switch {
+		case !psk.IsZero():
+			c.PresharedKey = psk
+		case c.PublicKey != pub:
+			if c.PresharedKey, err = NewPresharedKey(); err != nil {
 				return Member{}, false, err
 			}
-			c.PublicKey, c.PresharedKey = pub, psk
 		}
-		c.Chain = chain
+		c.PublicKey, c.Chain = pub, chain
 		return *c, true, nil
 	}
 	if len(s.Members) >= maxMembers {
 		return Member{}, false, errors.New("tunnel: the hub has too many clients")
 	}
-	psk, err := NewPresharedKey()
-	if err != nil {
-		return Member{}, false, err
+	if psk.IsZero() {
+		if psk, err = NewPresharedKey(); err != nil {
+			return Member{}, false, err
+		}
 	}
 	c = Member{Device: device, PublicKey: pub, PresharedKey: psk, Chain: chain}
 	s.Members = append(s.Members, c)
 	return c, true, nil
+}
+
+// Take adds a client that another hub handed over or shared, with the key
+// and the preshared key it has and no chain yet (docs/protocol.md, section
+// 11, "Moving the hub" and "Several hubs"). A client this hub met itself
+// stays as it is; one only handed over or shared before takes the new
+// keys. changed tells whether the state must be saved.
+func (s *State) Take(device string, pub, psk Key) (changed bool, err error) {
+	if _, err := Addr(device); err != nil {
+		return false, err
+	}
+	switch {
+	case pub.IsZero() || psk.IsZero():
+		return false, errors.New("tunnel: a client without a key")
+	case pub == s.Key.Public():
+		return false, fmt.Errorf("tunnel: %s has the hub's own key", device)
+	}
+	i := -1
+	for j, o := range s.Members {
+		switch {
+		case o.Device == device:
+			i = j
+		case o.PublicKey == pub:
+			return false, fmt.Errorf("tunnel: %s has the key of %s", device, o.Device)
+		}
+	}
+	if i >= 0 {
+		c := &s.Members[i]
+		if len(c.Chain) > 0 || c.PublicKey == pub && c.PresharedKey == psk {
+			return false, nil
+		}
+		c.PublicKey, c.PresharedKey = pub, psk
+		return true, nil
+	}
+	if len(s.Members) >= maxMembers {
+		return false, errors.New("tunnel: the hub has too many clients")
+	}
+	s.Members = append(s.Members, Member{Device: device, PublicKey: pub, PresharedKey: psk})
+	return true, nil
 }
 
 // Prune forgets the clients keep refuses and returns their devices.
@@ -479,8 +554,8 @@ func (s *State) Prune(keep func(Member) bool) []string {
 	return gone
 }
 
-// SetHub keeps the hub that offered its tunnel. changed tells whether the
-// state must be saved.
+// SetHub keeps the offer of a hub, in place of that hub's earlier one.
+// changed tells whether the state must be saved.
 func (s *State) SetHub(h HubLink) (changed bool, err error) {
 	if err := h.check(); err != nil {
 		return false, fmt.Errorf("tunnel: %w", err)
@@ -488,11 +563,44 @@ func (s *State) SetHub(h HubLink) (changed bool, err error) {
 	if h.PublicKey == s.Key.Public() {
 		return false, errors.New("tunnel: the hub offered this device's own key")
 	}
-	if o := s.ToHub; o != nil && o.Device == h.Device && o.PublicKey == h.PublicKey &&
-		o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) && o.Obfuscation.Equal(h.Obfuscation) && o.VLESS.Equal(h.VLESS) {
+	h.Endpoints = slices.Clone(h.Endpoints)
+	i := slices.IndexFunc(s.Hubs, func(o HubLink) bool { return o.Device == h.Device })
+	if i < 0 {
+		if len(s.Hubs) >= maxMembers {
+			return false, errors.New("tunnel: too many hubs")
+		}
+		s.Hubs = append(s.Hubs, h)
+		return true, nil
+	}
+	if o := s.Hubs[i]; o.PublicKey == h.PublicKey && o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) &&
+		o.Obfuscation.Equal(h.Obfuscation) && o.VLESS.Equal(h.VLESS) {
 		return false, nil
 	}
-	h.Endpoints = slices.Clone(h.Endpoints)
-	s.ToHub = &h
+	s.Hubs[i] = h
 	return true, nil
+}
+
+// Hub returns the offer of the hub device that this device keeps; nil for
+// none.
+func (s *State) Hub(device string) *HubLink {
+	for i := range s.Hubs {
+		if s.Hubs[i].Device == device {
+			return &s.Hubs[i]
+		}
+	}
+	return nil
+}
+
+// ForgetHubs forgets the offers of the hubs keep refuses and returns
+// their devices.
+func (s *State) ForgetHubs(keep func(HubLink) bool) []string {
+	var gone []string
+	s.Hubs = slices.DeleteFunc(s.Hubs, func(h HubLink) bool {
+		if keep(h) {
+			return false
+		}
+		gone = append(gone, h.Device)
+		return true
+	})
+	return gone
 }

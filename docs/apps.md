@@ -98,6 +98,24 @@ they look, so both apps are built to the same plan.
    obfuscated, its offer carries the AmneziaWG settings, and when it has its clients come
    over VLESS, the way there; both apps keep them with the offer and give them to the
    tunnel, which then reaches the hub only over VLESS. Nothing changes on the screen.
+   On a root or admin phone, "This phone as the hub" comes first (docs/design.md, "The
+   phone as the hub"): a switch, on from the start in a group the phone made; where it
+   stands (at home only without a forwarder, registering, registered, or why the forwarder
+   refuses it, with the error underneath when details are on); whether the network the
+   phone is on is one of the hub's home networks, with "This is my home network" when it
+   is not; the forwarder's address and key, as `cbb forward` prints them; and on Android
+   "Keep the hub running in the background", which lets the foreground service keep it.
+   While the phone is the hub, the switch for its own sync away from home is hidden: a hub
+   is nobody's client. Home says "This phone is the hub: sync works while the app is open".
+   The hub's WireGuard key, its forwarder, its home networks and its clients sit with the
+   away state (Android: a file sealed by a Keystore key; iPhone: the keychain). The kits'
+   `PhoneHub` and `MemberListener` do the work, the Android app's `HubOnPhone` and the Swift
+   kit's `HubOnPhone` drive cbbtun's hub, and the hub publishes itself on a home network
+   with `r=phone` (docs/protocol.md, section 3). While the hub is registered, "Invite a
+   device from afar" makes a remote invitation for an hour (docs/protocol.md, section 12):
+   the phone shares the file `clipboardbridge.cbbinvite`, the other side runs
+   `cbb pair -invite` with it, and the phone asks "Admit …?" with the device's fingerprint,
+   which `cbb` shows too; on yes it unlocks the group's key and admits it.
 
 The lost phone case is one path, and the app says so in plain words: "Lost a phone? Open
 Devices on your other phone and remove it." When the group has a single admin, Devices

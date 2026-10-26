@@ -197,8 +197,11 @@ public final class TLSListener: @unchecked Sendable {
 
     /// Listens on port, or on one the system picks when it is 0; only on
     /// the loopback address when loopback is true. chain is what follows
-    /// the identity's certificate, as TLSTransport takes it.
+    /// the identity's certificate, as TLSTransport takes it. With service it
+    /// publishes itself by Bonjour under that name with that TXT record, in
+    /// the type of the members (docs/protocol.md, section 3).
     public init(port: UInt16 = 0, alpn: String, identity: SecIdentity, chain: [Data] = [], loopback: Bool = false,
+                service: (name: String, txt: [String: String])? = nil,
                 verifyChain: @escaping @Sendable ([Data]) -> Bool) throws {
         let tls = TLSTransport.options(alpn: alpn, identity: identity, chain: chain, server: true, verifyChain: verifyChain)
         let params = NWParameters(tls: tls)
@@ -207,6 +210,10 @@ public final class TLSListener: @unchecked Sendable {
             params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port == 0 ? .any : NWEndpoint.Port(rawValue: port)!)
         }
         listener = try port == 0 ? NWListener(using: params) : NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
+        if let service {
+            listener.service = NWListener.Service(name: service.name, type: Discovery.serviceType, domain: nil,
+                                                  txtRecord: NWTXTRecord(service.txt))
+        }
         (connections, yield) = AsyncStream.makeStream(of: TLSTransport.self)
     }
 

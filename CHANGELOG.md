@@ -8,6 +8,36 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The phone as the group's hub while its app is open, on Android and the iPhone: on from the
+  start in a group made on the phone, and a switch in Settings on a root or admin phone. At
+  home the other phones, TVs and lite members connect to it; it takes them and publishes
+  itself (`r=phone`) only on the home networks it remembers. With a forwarder set in
+  Settings (its address and key, as `cbb forward` prints them) it registers there by its
+  member key, and devices away from home reach it. On Android it may keep running in the
+  foreground service. The computers and the lite member do not dial a phone that publishes
+  itself, since it dials them.
+- Remote invitations from a phone that is the hub: Settings makes one for an hour while the
+  hub is registered with its forwarder, shares its file, and asks whether to admit the
+  device that uses it, by its fingerprint, which `cbb pair -invite` shows too
+  (docs/protocol.md, section 12).
+- Moving the hub to an admin computer: `cbb global move DEVICE` on a computer that is the
+  hub, and "Move the hub to a computer" in Settings on a phone that is the hub, which
+  suggests a computer that is always on and makes it an admin first if it is not one. The
+  old hub hands over its clients' keys in a signed command and passes the new hub's offer to
+  its connected clients, so devices far away follow without coming home; the old hub then
+  becomes a client. An admin phone that takes the group over from a lost root phone that was
+  the hub becomes the hub (docs/protocol.md, section 11).
+- Several hubs: the root and every admin with a hub set up are the group's hubs, in an order
+  every device takes from the records (phones first, then the root, then by device ID).
+  Each device keeps every hub's offer and, away from home, uses the first that answers,
+  trying the ones above again every 5 minutes. Each device offers its own preshared key, and
+  the hubs share their clients and pass each other's offers on, so any hub can serve any
+  device. A computer that is a hub serves only while no hub above it answers and is that
+  hub's client otherwise; a phone that is the hub does not yet give way (docs/protocol.md,
+  section 11, "Several hubs"). In `cbb`, the lite member and both phone apps.
+- A client away from home tries a phone hub at least every 5 s, since it is there only while
+  its app is open; a computer hub is still tried up to every 30 s. In `cbb`, the lite member
+  and both phone apps.
 - Docker: an image of the full service for a NAS or a home server, built from scratch with
   only `cbb` in it, for amd64, arm64 and armv7; it runs as its own user without
   capabilities, on a read-only root file system, with its state in one volume. Compose files

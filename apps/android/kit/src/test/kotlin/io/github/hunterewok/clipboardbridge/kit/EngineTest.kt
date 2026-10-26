@@ -168,7 +168,7 @@ class EngineTest {
         val offers = LinkedBlockingQueue<Pair<String?, Member.TunnelOffer>>()
         val phone = MemberNode(
             SyncEngine(SyncEngine.newID(), HybridClock()), "Pixel",
-            tunnelKey = { key },
+            tunnelKey = { key to ByteArray(32) { 4 } },
             onTunnel = { from, o -> offers.put(from to o) },
         )
         val hub = SyncEngine.newID()
@@ -176,6 +176,7 @@ class EngineTest {
         val task = Background { phone.serve(a, hub) }
         val hello = assertIs<Member.Message.Hello>(Member.decode(b.read(Member.length(b.read(4)))))
         assertContentEquals(key, hello.hello.tunnelKey)
+        assertContentEquals(ByteArray(32) { 4 }, hello.hello.tunnelPSK)
         b.write(Member.encode(Member.Message.Hello(Member.Role.FULL, Member.Hello(0))))
         // A bad offer is dropped; a good one reaches onTunnel.
         b.write(Member.encode(Member.Message.Tunnel(Member.TunnelOffer(ByteArray(31), ByteArray(32)))))

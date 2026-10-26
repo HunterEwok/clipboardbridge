@@ -345,13 +345,13 @@ func (s *Service) joinInvite(ctx context.Context, c net.Conn, j *pair.Joiner, m 
 		s.mu.Lock()
 		nd := s.nd
 		s.mu.Unlock()
-		_, key, err := s.awayLocked(&control.Message{Header: control.Header{Name: "on", Consent: true}}, group.Tag(id.GroupCA.Cert))
+		_, key, psk, err := s.awayLocked(&control.Message{Header: control.Header{Name: "on", Consent: true}}, group.Tag(id.GroupCA.Cert))
 		if err != nil || nd == nil {
 			s.logf("cbb: turning sync away from home on: %v", err)
 			gc.Close()
 			return
 		}
-		nd.SetTunnelKey(key)
+		nd.SetTunnelKey(key, psk)
 		hub := group.DeviceID(in.Hub)
 		s.keepUntilHub(hub, "through the invitation's guest tunnel", func(ctx context.Context, nd *node.Node) error {
 			dctx, cancel := context.WithTimeout(ctx, 2*handshakeTimeout)

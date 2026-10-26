@@ -31,6 +31,17 @@ class MainActivity : ComponentActivity() {
         setContent { Root(model) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // The phone is the group's hub while the app is open (D-64).
+        model.group.setForeground(true)
+    }
+
+    override fun onStop() {
+        model.group.setForeground(false)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         // The prompt before the group's keys sign needs an activity in front.

@@ -1613,6 +1613,426 @@
           }
         }
       }
+    },
+    "This phone is the group's hub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон — хаб группы"
+          }
+        }
+      }
+    },
+    "Off: this phone is no hub.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключено: этот телефон не хаб."
+          }
+        }
+      }
+    },
+    "Waiting for the app: the hub works while the app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждём приложение: хаб работает, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "The hub at home only: add a forwarder for sync away from home.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хаб только дома: добавьте форвардер для синхронизации вне дома."
+          }
+        }
+      }
+    },
+    "Registering with the forwarder…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Регистрация на форвардере…"
+          }
+        }
+      }
+    },
+    "Registered with the forwarder: devices away from home reach this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зарегистрирован на форвардере: устройства вне дома видят этот телефон."
+          }
+        }
+      }
+    },
+    "The forwarder does not take this phone. Check its address and key.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Форвардер не принимает этот телефон. Проверьте его адрес и ключ."
+          }
+        }
+      }
+    },
+    "On a home network: devices here connect to this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Домашняя сеть: устройства здесь подключаются к этому телефону."
+          }
+        }
+      }
+    },
+    "This network is not one of the hub's home networks: devices here do not see this phone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта сеть не входит в домашние сети хаба: устройства здесь не видят этот телефон."
+          }
+        }
+      }
+    },
+    "This is my home network": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это моя домашняя сеть"
+          }
+        }
+      }
+    },
+    "Forwarder address, such as 198.51.100.9:8764": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Адрес форвардера, например 198.51.100.9:8764"
+          }
+        }
+      }
+    },
+    "Forwarder key, sha256:…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ форвардера, sha256:…"
+          }
+        }
+      }
+    },
+    "Save the forwarder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить форвардер"
+          }
+        }
+      }
+    },
+    "This phone as the hub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон как хаб"
+          }
+        }
+      }
+    },
+    "While the app is open, this phone is the hub of a group without a computer: the other phones, TVs and lite members on the home network connect to it, and with a forwarder they reach it from afar too. The forwarder only passes encrypted packets; it learns the group's tag, this phone's tunnel key and the addresses, never what is copied. A computer that is always on is the better hub; until then this phone does it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока приложение открыто, этот телефон служит хабом группы без компьютера: к нему подключаются другие телефоны, телевизоры и лайт-участники в домашней сети, а с форвардером и издалека. Форвардер только передаёт зашифрованные пакеты: он узнаёт метку группы, ключ туннеля этого телефона и адреса, но никогда не видит, что копируется. Лучший хаб — компьютер, который всегда включён; пока его нет, хабом будет этот телефон."
+          }
+        }
+      }
+    },
+    "This phone is the hub: sync works while the app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот телефон — хаб: синхронизация работает, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "Give the forwarder's address with its port and its key, as cbb forward prints them, or leave both empty.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Укажите адрес форвардера с портом и его ключ, как их выводит cbb forward, или оставьте оба поля пустыми."
+          }
+        }
+      }
+    },
+    "Invite a device from afar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пригласить устройство издалека"
+          }
+        }
+      }
+    },
+    "For a device that is not on your network, such as a parent's computer: share the invitation file with its owner, who joins with cbb pair -invite. It works once, for an hour, while this app is open.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для устройства не из вашей сети, например компьютера родителей: отправьте файл приглашения его владельцу, он подключится командой cbb pair -invite. Приглашение работает один раз, в течение часа, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "Make an invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать приглашение"
+          }
+        }
+      }
+    },
+    "The invitation is open until %@. Share its file only with the person who joins: anyone who has it can ask to join.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приглашение действует до %@. Отправьте файл только тому, кто подключается: любой, у кого он есть, может попросить доступ."
+          }
+        }
+      }
+    },
+    "Share the invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить приглашение"
+          }
+        }
+      }
+    },
+    "Cancel the invitation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить приглашение"
+          }
+        }
+      }
+    },
+    "Admit %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Принять %@?"
+          }
+        }
+      }
+    },
+    "Admit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Принять"
+          }
+        }
+      }
+    },
+    "Not this one": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не это"
+          }
+        }
+      }
+    },
+    "A device (%@) used the invitation. Admit it only if the device shows the same fingerprint:\n\n%@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство (%1$@) воспользовалось приглашением. Принимайте его, только если оно показывает такой же отпечаток:\n\n%2$@"
+          }
+        }
+      }
+    },
+    "The device joined the group; it appears in the list once it connects.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство вошло в группу; оно появится в списке, когда подключится."
+          }
+        }
+      }
+    },
+    "The invitation expired without being used.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок приглашения истёк, им никто не воспользовался."
+          }
+        }
+      }
+    },
+    "The invitation closed after three failed attempts. Make a new one.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приглашение закрыто после трёх неудачных попыток. Создайте новое."
+          }
+        }
+      }
+    },
+    "An invitation needs the hub registered with its forwarder. Check the forwarder above.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для приглашения хаб должен быть зарегистрирован у форвардера. Проверьте форвардер выше."
+          }
+        }
+      }
+    },
+    "%@ is always on. Make it the hub, so that sync away from home works while this app is closed?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ всегда включён. Сделать его хабом, чтобы синхронизация вне дома работала, пока приложение закрыто?"
+          }
+        }
+      }
+    },
+    "Make it the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом"
+          }
+        }
+      }
+    },
+    "Keep this phone" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оставить телефон"
+          }
+        }
+      }
+    },
+    "Make %@ the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом %@"
+          }
+        }
+      }
+    },
+    "Move the hub to a computer" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести хаб на компьютер"
+          }
+        }
+      }
+    },
+    "A computer that is always on keeps sync away from home working while this app is closed. The devices that reach this phone from afar move with it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Компьютер, который всегда включён, держит синхронизацию вне дома, пока приложение закрыто. Устройства, которые подключаются к этому телефону издалека, переходят вместе с хабом."
+          }
+        }
+      }
+    },
+    "Make %@ the hub?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать хабом %@?"
+          }
+        }
+      }
+    },
+    "Move the hub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести хаб"
+          }
+        }
+      }
+    },
+    "The devices that reach this phone from afar move to %@, and this phone becomes its client. Sync away from home must be on there (cbb global on)." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Устройства, которые подключаются к этому телефону издалека, перейдут на %@, а телефон станет его клиентом. Там должна быть включена синхронизация вне дома (cbb global on)."
+          }
+        }
+      }
+    },
+    "The computer is the hub now; this phone reaches it from afar." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Теперь хаб — компьютер; телефон подключается к нему издалека."
+          }
+        }
+      }
+    },
+    "The hub can move only while it runs with a forwarder." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Хаб можно перенести, только пока он работает с форвардером."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

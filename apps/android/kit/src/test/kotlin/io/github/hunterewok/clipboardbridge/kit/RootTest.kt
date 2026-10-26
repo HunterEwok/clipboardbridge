@@ -150,6 +150,29 @@ class RootTest {
         assertEquals(g.b.roots.map { Key(it) }, PhoneGroup.joined(j).roots.map { Key(it) })
     }
 
+    /**
+     * What a phone hub shows its forwarder: the records of the root's own device and of the admins, and every
+     * record that is no device record, never the records that name the computers.
+     */
+    @Test
+    fun authorityRecords() {
+        val g = Group(t0)
+        fun names(rs: List<Member.Record>) = rs.mapNotNull { Records.Body.decode(it.body) }.filter { it.type == "device" }.map { it.name }.toSet()
+        assertEquals(setOf("Lost", "B"), names(g.root.records.authorityRecords))
+        val rs = g.b.takeOver(g.root.device, g.adminKey, g.newRootKey, t0)
+        val after = g.b.records.authorityRecords
+        assertEquals(setOf("Lost", "B"), names(after))
+        val ids = after.map { Key(Records.id(it)) }.toSet()
+        assertTrue(rs.all { Key(Records.id(it)) in ids }, "the takeover's records")
+        assertTrue(g.b.records.pathRecords.all { Key(Records.id(it)) in ids }, "the path")
+        assertEquals(ids.size, after.size)
+        // A forwarder that knows only these sees the same roots and the lost phone removed.
+        val forwarder = RecordSet()
+        forwarder.addAll(after.shuffled(), g.root.groupCA)
+        assertEquals(g.b.roots.map { Key(it) }, forwarder.roots.map { Key(it) })
+        assertNotNull(forwarder.refused(listOf(g.root.memberCert)))
+    }
+
     /** Writes swift-root.json for internal/group's TestSwiftRoot: a takeover as this kit signs it. */
     @Test
     fun takeOverForGo() {

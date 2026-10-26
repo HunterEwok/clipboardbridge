@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CommandsTest {
     private val now = Instant.now()
@@ -40,6 +41,32 @@ class CommandsTest {
         assertEquals(g.device, o.optString("by"))
         assertEquals("receive", o.optString("mode"))
         assertNull(c.chain)
+    }
+
+    /** A hub command carries the forwarder and the clients; a result carries the new hub's offer. */
+    @Test
+    fun hubCommand() {
+        val root = SoftwareSigner()
+        val client = PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })
+        val c = Commands.hub(pc, "203.0.113.9:8764" to "sha256:AAAA", emptyList(), listOf(client), "tag", "by", now, root)
+        val o = Wire.parse(c.body)!!
+        assertEquals("hub", o.optString("type"))
+        val order = o.optObject("hub")!!
+        assertEquals("203.0.113.9:8764", order.optObject("forwarder")!!.optString("endpoint"))
+        assertEquals(1, order.optArray("clients")!!.size)
+        assertFailsWith<IllegalArgumentException> { Commands.hub(pc, null, emptyList(), listOf(client), "tag", "by", now, root) }
+        val r = Member.decode(
+            """{"t":"result","result":{"id":"ab","status":"done","tunnel":{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","endpoints":["203.0.113.9:8764"]}}}""".toByteArray(),
+        ) as Member.Message.Result
+        assertEquals(listOf("203.0.113.9:8764"), r.result.tunnel?.endpoints)
+        val hub = PhoneHub(ByteArray(32) { 9 }, listOf(client))
+        val moved = hub.movedOffer(client.device, pc, r.result.tunnel!!)!!
+        assertEquals(pc, moved.hub)
+        assertTrue(moved.moved)
+        assertEquals(client.psk.toList(), moved.psk.toList())
+        assertNull(hub.movedOffer(pc, pc, r.result.tunnel!!))
+        val back = Member.decode(Member.encode(Member.Message.Tunnel(moved)).let { it.copyOfRange(4, it.size) }) as Member.Message.Tunnel
+        assertEquals(moved, back.offer)
     }
 
     /** A command and its result through the frames, as Go sends and reads them. */
@@ -96,6 +123,16 @@ class CommandsTest {
                 listOf(
                     Commands.mode(pc, "receive", tag, by, now, root).toJson(),
                     Commands.mode(pc, "receive", tag, by, now, admin, adminCA).toJson(),
+                    Commands.hub(
+                        pc,
+                        "203.0.113.9:8764" to "sha256:AAAA",
+                        emptyList(),
+                        listOf(PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })),
+                        tag,
+                        by,
+                        now,
+                        root,
+                    ).toJson(),
                 ),
             ),
         )

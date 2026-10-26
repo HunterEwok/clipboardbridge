@@ -916,6 +916,34 @@ impl Records {
         self.devices().iter().any(|d| d.id == dev && d.key == key && d.admin)
     }
 
+    /// Whether the device `dev` may be the group's hub by the records
+    /// alone, as Go's Records.MayHost: the root's own device, whose key is
+    /// not revoked, or a device listed as an admin. For the hub that a hub
+    /// moving names (docs/protocol.md, section 11, "Moving the hub"); a
+    /// peer's own offer is checked with [`Records::admin_peer`].
+    pub fn may_host(&self, dev: &str) -> bool {
+        if self.root_member().is_some_and(|(id, k)| id == dev && !self.revoked(&k)) {
+            return true;
+        }
+        self.devices().iter().any(|d| d.id == dev && d.admin)
+    }
+
+    /// The devices that may be the group's hubs, in the order in which
+    /// they serve, as Go's Records.HubOrder (docs/protocol.md, section 11,
+    /// "Several hubs"): the phones first, then the others, and in each part
+    /// the root's own device first, then by device ID.
+    pub fn hub_order(&self) -> Vec<String> {
+        let root = self.root_member().filter(|(_, k)| !self.revoked(k)).map(|(id, _)| id);
+        let mut hubs: Vec<(bool, bool, String)> = self
+            .devices()
+            .into_iter()
+            .filter(|d| d.admin || root.as_deref() == Some(d.id.as_str()))
+            .map(|d| (d.role != "phone", root.as_deref() != Some(d.id.as_str()), d.id))
+            .collect();
+        hubs.sort();
+        hubs.into_iter().map(|(_, _, id)| id).collect()
+    }
+
     /// Every record, sorted by ID.
     pub fn all(&self) -> Vec<Record> {
         self.by_id.values().map(|r| r.record.clone()).collect()

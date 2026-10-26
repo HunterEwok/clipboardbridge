@@ -61,3 +61,55 @@ func TestCommands(t *testing.T) {
 		t.Error("a command that lives an hour was signed")
 	}
 }
+
+func TestHubCommand(t *testing.T) {
+	pg := newPhoneGroup(t)
+	s := NewRecords(pg.root.Cert)
+	to, now := NewDeviceID(), time.UnixMilli(1_761_400_000_000)
+	key := make([]byte, 32)
+	order := func() *HubOrder {
+		return &HubOrder{Forwarder: &HubForwarder{Endpoint: "203.0.113.9:8764", Key: "pin"},
+			Clients: []HubClient{{Device: NewDeviceID(), Key: key, PSK: key}}}
+	}
+	body := func(o *HubOrder) CommandBody {
+		return CommandBody{Type: CommandHub, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Hub: o}
+	}
+	c, err := SignCommand(body(order()), pg.root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.VerifyCommand(c, to, now)
+	if err != nil || got.Hub == nil || len(got.Hub.Clients) != 1 || got.Hub.Forwarder.Endpoint != "203.0.113.9:8764" {
+		t.Fatalf("the hub command: %+v, %v", got.Hub, err)
+	}
+	// Many clients fit, since a hub command is no record that is stored.
+	many := order()
+	for len(many.Clients) < MaxHubClients {
+		many.Clients = append(many.Clients, HubClient{Device: NewDeviceID(), Key: key, PSK: key})
+	}
+	if c, err := SignCommand(body(many), pg.root.Key); err != nil {
+		t.Error(err)
+	} else if _, err := s.VerifyCommand(c, to, now); err != nil {
+		t.Errorf("%d clients: %v", len(many.Clients), err)
+	}
+	one := order().Clients
+	for what, o := range map[string]*HubOrder{
+		"no order":            nil,
+		"nowhere to reach":    {Clients: order().Clients},
+		"short keys":          {Endpoints: []string{"203.0.113.7:8764"}, Clients: []HubClient{{Device: NewDeviceID(), Key: key[:31], PSK: key}}},
+		"a client twice":      {Endpoints: []string{"203.0.113.7:8764"}, Clients: append(one, one...)},
+		"too many clients":    {Endpoints: []string{"203.0.113.7:8764"}, Clients: append(many.Clients, order().Clients...)},
+		"a bad device":        {Endpoints: []string{"203.0.113.7:8764"}, Clients: []HubClient{{Device: "x", Key: key, PSK: key}}},
+		"a forwarder w/o key": {Forwarder: &HubForwarder{Endpoint: "203.0.113.9:8764"}},
+	} {
+		if _, err := SignCommand(body(o), pg.root.Key); err == nil {
+			t.Errorf("%s: signed", what)
+		}
+	}
+	mixed := body(order())
+	mixed.Mode = "own"
+	if _, err := SignCommand(mixed, pg.root.Key); err == nil {
+		t.Error("a hub command with a mode was signed")
+	}
+}

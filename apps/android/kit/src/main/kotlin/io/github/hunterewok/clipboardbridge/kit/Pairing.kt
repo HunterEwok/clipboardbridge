@@ -174,7 +174,7 @@ object Pairing {
 
     /** The error codes that travel in frames. Anything else means "refused". */
     enum class ErrorCode(val wire: String) {
-        WRONG_CODE("wrong-code"), CLOSED("closed"), BUSY("busy"), EXPIRED("expired"), TOO_MANY("too-many"), TAKEN("taken"), REFUSED("refused");
+        WRONG_CODE("wrong-code"), CLOSED("closed"), BUSY("busy"), EXPIRED("expired"), TOO_MANY("too-many"), TAKEN("taken"), DECLINED("declined"), REFUSED("refused");
 
         companion object {
             fun of(wire: String): ErrorCode = entries.firstOrNull { it.wire == wire } ?: REFUSED

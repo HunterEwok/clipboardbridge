@@ -46,6 +46,10 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
 		"                                      -vless for clients that reach the forwarder only over VLESS\n" +
+		"       cbb global move DEVICE [-forwarder address:port -forwarder-key KEY] [address:port...]\n" +
+		"                                      on the hub: make DEVICE, an admin computer with sync away from\n" +
+		"                                      home on, the hub in its place, reached through this hub's\n" +
+		"                                      forwarder unless others are given; its clients move with it\n" +
 		"       cbb global relay address:port -key KEY\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
 		"                                      without a hub\n" +
@@ -118,6 +122,25 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 		h.Port, h.Addrs, h.Forwarder, h.ForwarderKey, h.Obfuscate, h.VLESS = *port, fs.Args(), *fwd, *fwdKey, *obfuscate, *vlessOnly
+	case "move":
+		if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		fs := flag.NewFlagSet("global move", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		fwd := fs.String("forwarder", "", "the forwarder through which the new hub is reached (default: this hub's)")
+		fwdKey := fs.String("forwarder-key", "", "the forwarder's key, which cbb forward prints")
+		if fs.Parse(args[2:]) != nil {
+			return 2
+		}
+		if *fwd != "" {
+			var err error
+			if *fwd, err = resolveAddrPort(*fwd, stdout); err != nil {
+				return fail(stderr, err)
+			}
+		}
+		h.Device, h.Addrs, h.Forwarder, h.ForwarderKey = args[1], fs.Args(), *fwd, *fwdKey
 	case "relay":
 		if err := checkAwayNet(); err != nil {
 			return fail(stderr, err)

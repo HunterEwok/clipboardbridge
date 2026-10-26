@@ -2,6 +2,7 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import kotlinx.serialization.json.JsonArray
 import java.time.Instant
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -57,6 +58,56 @@ class PhoneHubTest {
         assertEquals(listOf(b), hub.clients.map { it.device })
     }
 
+    /** The client's own preshared key, the clients other hubs share, and their offers passed on (section 11, "Several hubs"). */
+    @Test
+    fun sharesWithTheOtherHubs() {
+        val hub = PhoneHub(key(1))
+        hub.endpoints = listOf("203.0.113.1:8764")
+        val a = SyncEngine.newID()
+        val b = SyncEngine.newID()
+        val other = SyncEngine.newID()
+
+        // A client's own preshared key; an older one's stays when it offers none.
+        val (c, _) = hub.admit(a, key(2), key(3))
+        assertContentEquals(key(3), c.psk)
+        assertFalse(hub.admit(a, key(2)).second)
+        assertTrue(hub.admit(a, key(2), key(4)).second)
+        assertContentEquals(key(4), hub.clients.single().psk)
+
+        // A shared client is taken, and takes new keys, but one met here stays.
+        assertTrue(hub.take(PhoneHub.Client(b, key(5), key(6))))
+        assertFalse(hub.take(PhoneHub.Client(b, key(5), key(6))))
+        assertTrue(hub.take(PhoneHub.Client(b, key(7), key(6))))
+        assertFalse(hub.take(PhoneHub.Client(a, key(9), key(9))))
+        assertFailsWith<PhoneHub.Refused> { hub.take(PhoneHub.Client(other, key(7), key(6))) }
+        assertFailsWith<PhoneHub.Refused> { hub.take(PhoneHub.Client(other, key(1), key(6))) }
+        assertTrue(hub.admit(b, key(7), key(6)).second, "met now")
+        assertTrue(hub.clients.all { it.met })
+        assertEquals(hub.clients.map { it.met }, PhoneHub.clientsFromJson(JsonArray(hub.clients.map { it.toJson(keep = true) }).toString()).map { it.met })
+        assertFalse(PhoneHub.clientsFromJson(hub.clientsJson).any { it.met }, "cbbtun gets no met")
+
+        // Another hub's offer goes to the clients with their own preshared keys.
+        hub.setOther(other, Member.TunnelOffer(key(10), ByteArray(0), listOf("198.51.100.1:8764")))
+        val offers = hub.offers(hub.clients.first { it.device == a })
+        assertEquals(2, offers.size)
+        assertNull(offers[0].hub)
+        assertEquals(other, offers[1].hub)
+        assertContentEquals(key(4), offers[1].psk)
+        assertTrue(offers.all { it.isValid })
+        hub.setOther(other, null)
+        assertEquals(1, hub.offers(hub.clients.first()).size)
+
+        // What it shares goes through a frame and back.
+        val share = assertNotNull(hub.share())
+        val e = Member.encode(Member.Message.Hubs(share))
+        assertEquals(Member.Message.Hubs(share), Member.decode(e.copyOfRange(4, e.size)))
+        val go = """{"t":"hubs","hubs":{"serving":true,"offer":{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":null},""" +
+            """"clients":[{"device":"$a","key":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","psk":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}]}}"""
+        val got = (Member.decode(go.toByteArray()) as Member.Message.Hubs).share
+        assertTrue(got.serving)
+        assertContentEquals(key(3), got.clients.single().psk)
+    }
+
     @Test
     fun keepsAtMost256Clients() {
         val hub = PhoneHub(key(1))
@@ -98,14 +149,19 @@ class PhoneHubTest {
         val saved = LinkedBlockingQueue<List<PhoneHub.Client>>()
         val phone = MemberNode(
             SyncEngine(phoneID, HybridClock()), "Pixel",
-            tunnelKey = { key(5) },
+            tunnelKey = { key(5) to key(6) },
             onTunnel = { _, _ -> error("the hub took an offer") },
-            hub = { device, k, _ -> hub.offer(device, k, changed = { saved.add(it) }) },
+            hub = { device, k, psk, _ -> hub.offers(device, k, psk, emptyList(), changed = { saved.add(it) }) },
+            hubShare = { _, _ -> hub.share() },
         )
         val errors = LinkedBlockingQueue<Exception>()
         val listener = MemberListener(phone, phoneKey.keyPair.private, listOf(phoneCert), { listOf(ca) }, onError = { errors.add(it) })
         val offers = LinkedBlockingQueue<Pair<String?, Member.TunnelOffer>>()
-        val pc = MemberNode(SyncEngine(pcID, HybridClock()), "PC", role = Member.Role.FULL, tunnelKey = { key(2) }, onTunnel = { p, o -> offers.add(p to o) })
+        val shares = LinkedBlockingQueue<Member.HubShare>()
+        val pc = MemberNode(
+            SyncEngine(pcID, HybridClock()), "PC", role = Member.Role.FULL, tunnelKey = { key(2) to key(8) },
+            onTunnel = { p, o -> offers.add(p to o) }, onHubs = { _, _, h -> shares.add(h) },
+        )
         try {
             val t = TLSTransport.dial("127.0.0.1", listener.port, Member.ALPN, pcKey.keyPair.private, listOf(pcCert)) {
                 runCatching { GroupCertificates.verifyMember(it, listOf(ca), now) }.getOrNull() == phoneID
@@ -118,6 +174,11 @@ class PhoneHubTest {
             val client = assertNotNull(saved.poll(1, TimeUnit.SECONDS)).single()
             assertEquals(pcID, client.device)
             assertContentEquals(client.psk, offer.psk)
+            assertContentEquals(key(8), offer.psk, "the client's own preshared key")
+            val share = assertNotNull(shares.poll(10, TimeUnit.SECONDS))
+            assertTrue(share.serving)
+            assertEquals(listOf(pcID), share.clients.map { it.device })
+            assertEquals(0, share.offer?.psk?.size)
             waitUntil { phone.connected == setOf(pcID) }
             pc.closeAll()
             dialled.join()

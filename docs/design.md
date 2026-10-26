@@ -814,17 +814,21 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   background, if the user turns it on and accepts the battery cost; iOS gives an app no way
   to do that.
 - **Moving the hub to a computer.** When a computer that can be the hub joins (Linux,
-  Windows, a Mac with its listening mode), above all one that is always on (no battery, as
-  the holder setting judges), the app suggests making it the hub, once, with the reason in
-  plain words: sync away from home then works with the app closed. The user may keep the
-  phone as the hub; the app then does not ask again, and Settings keeps the choice. When the
-  user agrees, the phone, still the hub, passes the new hub its clients' tunnel keys and
-  preshared keys inside member TLS and tells its connected clients the new hub's offer
-  through the tunnel, so devices far away (a parent's TV in another city) move without
-  coming home. The new hub admits each key only for a device whose certificate is valid in
-  the group's records.
+  Windows, a Mac with its listening mode), above all one that is always on (a desktop, a
+  server, a board or a router, by the form its hello gives), the app suggests making it the
+  hub in Settings, with the reason in plain words: sync away from home then works with the
+  app closed. The user may keep the phone as the hub; the app then does not ask again, and
+  can still move the hub to any computer there. A computer that is no admin yet is made one
+  first, on the root phone. The phone, still the hub, passes the new hub its clients' tunnel
+  keys and preshared keys in a signed `hub` command inside member TLS and tells its
+  connected clients the new hub's offer through the tunnel, so devices far away (a parent's
+  TV in another city) move without coming home; then it becomes the new hub's client. The
+  new hub admits each key only for a device the group's records list. A computer that is
+  the hub moves the role the same way (`cbb global move`). Built in 0.5 (docs/protocol.md,
+  section 11, "Moving the hub").
 - **Losing the phone.** When the root phone that is the hub is lost, the admin phone that
-  takes the group over (`PhoneGroup.takeOver`) becomes its hub too. Clients at home learn
+  takes the group over (`PhoneGroup.takeOver`) becomes its hub too, and the clients take
+  its offer because the records no longer make the lost phone an admin. Clients at home learn
   the new hub there; a client far away cannot learn it from a lost phone and joins again
   with a new remote invitation. That is one more reason for a second phone as an admin,
   which the app already suggests.
@@ -840,7 +844,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
 | Phones only, or phones and Android TVs or other Android devices | nothing syncs, at home or away: all of them only dial | a phone with its app open is the hub; the others sync while they run (Android in its foreground service, an iPhone with its app open) |
 | A phone and lite members | syncs at home, where lite members listen; not away from home | the same at home; from afar, the phone with its app open is the hub |
 | The whole group away together (a trip, a hotel Wi-Fi that isolates its clients, mobile data) | nothing syncs unless the hub at home is reached | the phone hub, through the forwarder |
-| A computer is the hub but is off, broken or offline | nothing syncs away from home | several hubs with a priority (below): the next hub that is on, such as the phone with its app open, serves |
+| A computer is the hub but is off, broken or offline | another hub of the group serves: the root and every admin with a hub set up, phones first (docs/protocol.md, section 11, "Several hubs") | the user's main hubs in a signed table (D-65) |
 | The hub's home has no public address and the project's forwarder is not reached | nothing syncs away from home | the same; a forwarder or relay of the user's own (`cbb forward`, `cbb relay`) |
 | A network blocks WireGuard | AmneziaWG, then VLESS | AmneziaWG for the phone hub as for any hub; VLESS for the phone hub's own registration is to be checked |
 | The root phone that is the hub is lost | | an admin phone takes over and is the hub; devices far away are invited again |
@@ -849,8 +853,19 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   tunnels, the member port that leads to the kit's member listener on the loopback address,
   and the registration with the forwarder by the member key, with the forwarder's check of
   it; in both kits the member listener (`MemberListener`) and the hub's answer to a hello's
-  tunnel key (`PhoneHub`, by the rules of a computer's hub). The apps, the clients' short
-  retries, remote invitations on the phone and moving the hub come next (roadmap item 30).
+  tunnel key (`PhoneHub`, by the rules of a computer's hub); in both apps the phone as the
+  hub, on by default in a group made on the phone, its registration with the forwarder set
+  in Settings, its status on Home, its member port and Bonjour service (`r=phone`) only on
+  the home networks it remembers (the gateway's address and the network of the phone's
+  address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
+  option; the clients' short retries for a phone hub (5 s); and remote invitations made
+  and served on the phone (docs/protocol.md, section 12); moving the hub to an admin
+  computer, from a phone or a computer, and the hub moving with a takeover; several hubs
+  in the order the records give (phones first, then the root, then by device ID), every
+  client keeping each hub's offer and its own preshared key, the hubs sharing their
+  clients, and a computer's hub giving way to a hub above it and coming back when that one
+  goes (docs/protocol.md, section 11, "Several hubs"). Still to do: the phone hub giving way
+  to a hub above it, and the signed table of main hubs (D-65).
 
 ### Reaching the hub
 
@@ -998,8 +1013,9 @@ the pairing itself; the third is planned.
   group. An admin makes it: the root or an admin phone, a Linux member that admits devices
   or an admin computer (`cbb invite`). Built so far for computers, made on the hub itself
   when the hub can admit devices: `cbb invite` there, `cbb pair -invite FILE` on the new
-  computer (docs/protocol.md, section 12). Handing an invitation made on another admin to
-  the hub, and the phones' part, are still planned. It is never typed: it comes only as a QR code or as
+  computer (docs/protocol.md, section 12), and on a phone that is the hub, from its
+  Settings. Handing an invitation made on another admin to the hub, and using one on a
+  phone, are still planned. It is never typed: it comes only as a QR code or as
   a file to open (`.cbbinvite`), and holds the group's tag, the hub's WireGuard public key
   and addresses (and the forwarder's), a one-time WireGuard key pair with its preshared key
   for a guest tunnel, a 128-bit one-time secret and the time it expires. It serves one
@@ -1196,7 +1212,8 @@ only adds to it.
    making and opening remote invitations. Done: the tunnel, `mobile/cbbtun`, bound by
    gomobile into an AAR and an xcframework; the tunnel offer in both kits; both apps'
    switch, which keeps the hub's offer and reaches the hub through the tunnel while it is not
-   found at home. The invitations follow.
+   found at home; remote invitations made and served on a phone that is the hub. Using an
+   invitation on a phone follows.
 8. Blocked networks: AmneziaWG, then VLESS with REALITY. Done: `cbb` and the phones' tunnel
    run on amneziawg-go; obfuscation per group between computers (`cbb global hub
    -obfuscate`), in the hub's offer and in invitations, on both phones, and through the
@@ -1758,3 +1775,6 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |
 | D-63 | A full member publishes itself by mDNS and takes connections on the member port only on networks where it met its group (by the interface's networks and its gateway's link-layer address); elsewhere it only browses, so a laptop in a café is not tracked by its host label and group tag. |
 | D-64 | A group made on a phone has the phone as its hub while the app is open: at home it accepts member connections, from afar it registers with the forwarder over an outgoing connection, and its clients retry often; the app suggests once moving the hub to a computer that is always on, the old hub passing its clients' keys to the new one, and the user may keep the phone as the hub. Everyone has a phone, not everyone a computer, so the phone does what it can until a better device takes over. |
+| D-65 | A group may have several hubs in an order the user sets; clients keep every hub's offer and use the first that answers, the hubs share the clients' keys, and a lower hub yields to a higher one, so there is one star at a time. Every capable device with sync away from home on is a hub, in a table signed by the root or an admin that all devices share: the user's main hubs first, then devices with keys in hardware, then devices with keys in files where the key level allows them (D-66); the first one online serves. |
+| D-66 | Who may be the root, an admin or a hub follows the group's key level, which the user picks: proven hardware only (attestation, asking Apple, Google's public lists and some TPM makers, which the guide names; the one exception to D-47, by the user's choice), hardware by the device's own word (the default, so no device is disclosed to anyone outside the group), or files too, each time after a warning. |
+| D-67 | A forwarder and a relay see credentials made for them, not the group's records: the hubs' and the members' key hashes with a version and an expiry, signed by the root or a listed admin, so no device ID, name, system or date leaves the group. |

@@ -83,6 +83,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -420,7 +423,8 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
         if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
-        if (model.phase == AppModel.Phase.HOME) model.away?.let { AwayFromHomeSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -560,6 +564,167 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
             Text(stringResource(R.string.away_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
+}
+
+/**
+ * The phone as the group's hub: the switch, where it stands, the
+ * forwarder, the home networks and, on Android, the background.
+ */
+@Composable
+private fun HubSection(model: AppModel, hub: AppModel.Hub) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    fun act(f: suspend () -> Unit) {
+        busy = true
+        scope.launch {
+            f()
+            busy = false
+        }
+    }
+    Section(stringResource(R.string.hub_title)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHub(!hub.on) } },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.hub_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = hub.on, onCheckedChange = null, enabled = !busy)
+            }
+            val status = when (hub.status) {
+                HubOnPhone.Status.OFF -> R.string.hub_off
+                HubOnPhone.Status.PAUSED -> R.string.hub_paused
+                HubOnPhone.Status.HOME_ONLY -> R.string.hub_home_only
+                HubOnPhone.Status.REGISTERING -> R.string.hub_registering
+                HubOnPhone.Status.REGISTERED -> R.string.hub_registered
+                HubOnPhone.Status.FAILED -> R.string.hub_failed
+            }
+            Text(stringResource(status), color = if (hub.status == HubOnPhone.Status.REGISTERED) palette.accent else palette.textDim)
+            // The registration's error underneath, when details are on.
+            hub.error?.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.textDim) }
+            if (hub.on) {
+                Text(
+                    stringResource(if (hub.home) R.string.hub_on_home else R.string.hub_not_home),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.textDim,
+                )
+                if (!hub.home) QuietButton(stringResource(R.string.hub_add_home), onClick = { if (!busy) act { model.addHomeNetwork() } })
+                var address by rememberSaveable(hub.forwarder) { mutableStateOf(hub.forwarder?.endpoint ?: "") }
+                var pin by rememberSaveable(hub.forwarder) { mutableStateOf(hub.forwarder?.pin ?: "") }
+                Text(stringResource(R.string.hub_forwarder), fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.hub_forwarder_address)) },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.hub_forwarder_key)) },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val changed = address != (hub.forwarder?.endpoint ?: "") || pin != (hub.forwarder?.pin ?: "")
+                AccentButton(stringResource(R.string.hub_forwarder_save), enabled = changed && !busy, onClick = { act { model.setForwarder(address, pin) } })
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHubInBackground(!hub.background) } },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.hub_background), modifier = Modifier.weight(1f))
+                    Switch(checked = hub.background, onCheckedChange = null, enabled = !busy)
+                }
+                if (hub.status == HubOnPhone.Status.REGISTERED) InviteFromAfar(model)
+                if (hub.computers.isNotEmpty()) MoveHub(model, hub)
+            }
+            model.hubNote?.let { NoteText(it) }
+            Text(stringResource(R.string.hub_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        }
+    }
+}
+
+/**
+ * Moving the hub to a computer (docs/design.md, "Moving the hub to a
+ * computer"): the suggestion of one that is always on, once, and a button
+ * for each computer the hub can move to, each asking first.
+ */
+@Composable
+private fun MoveHub(model: AppModel, hub: AppModel.Hub) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var asking by remember { mutableStateOf<Pair<String, String>?>(null) }
+    Text(stringResource(R.string.hub_move_title), fontWeight = FontWeight.SemiBold)
+    hub.suggested?.let { s ->
+        Text(stringResource(R.string.hub_suggest, s.second), style = MaterialTheme.typography.bodyMedium)
+        AccentButton(stringResource(R.string.hub_suggest_yes), onClick = { asking = s })
+        QuietButton(stringResource(R.string.hub_suggest_keep), onClick = { scope.launch { model.keepPhoneHub() } })
+    }
+    Text(stringResource(R.string.hub_move_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+    for (c in hub.computers.filter { it != hub.suggested }) {
+        QuietButton(stringResource(R.string.hub_move_to, c.second), onClick = { asking = c })
+    }
+    asking?.let { c ->
+        AlertDialog(
+            onDismissRequest = { asking = null },
+            title = { Text(stringResource(R.string.hub_move_confirm_title, c.second)) },
+            text = { Text(stringResource(R.string.hub_move_confirm_body, c.second)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = null
+                    scope.launch { model.moveHub(c.first) }
+                }) { Text(stringResource(R.string.hub_move_confirm), color = palette.accent) }
+            },
+            dismissButton = { TextButton(onClick = { asking = null }) { Text(stringResource(R.string.cancel)) } },
+            containerColor = palette.surface,
+            titleContentColor = palette.text,
+            textContentColor = palette.textDim,
+        )
+    }
+}
+
+/**
+ * A remote invitation for a device far away (docs/protocol.md, section 12):
+ * the button that opens it, then its file to share, and the question about
+ * the device that used it, with the fingerprint to compare.
+ */
+@Composable
+private fun InviteFromAfar(model: AppModel) {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Text(stringResource(R.string.invite_title), fontWeight = FontWeight.SemiBold)
+    val invite = model.invite
+    if (invite == null) {
+        Text(stringResource(R.string.invite_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        QuietButton(stringResource(R.string.invite_open), onClick = { scope.launch { model.openInvite() } })
+    } else {
+        val until = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(invite.expires.atZone(ZoneId.systemDefault()))
+        Text(stringResource(R.string.invite_open_until, until), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        AccentButton(stringResource(R.string.invite_share), onClick = { context.startActivity(Invitations.share(context, invite.file)) })
+        QuietButton(stringResource(R.string.invite_cancel), onClick = model::cancelInvite)
+        invite.request?.let { req ->
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text(stringResource(R.string.invite_ask_title, req.info.name)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+                        Text(stringResource(R.string.invite_ask_body, req.info.os))
+                        Text(req.fingerprint, fontFamily = FontFamily.Monospace, color = palette.text)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { model.answer(true) }) { Text(stringResource(R.string.invite_admit), color = palette.accent) } },
+                dismissButton = { TextButton(onClick = { model.answer(false) }) { Text(stringResource(R.string.invite_decline)) } },
+                containerColor = palette.surface,
+                titleContentColor = palette.text,
+                textContentColor = palette.textDim,
+            )
+        }
+    }
+    model.inviteNote?.let { NoteText(it) }
 }
 
 @Composable

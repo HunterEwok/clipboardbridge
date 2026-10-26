@@ -67,7 +67,13 @@ pub struct Peer {
 }
 
 /// Called with a tunnel offer and the device that sent it.
-pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value) + Send + Sync>;
+/// Gets a tunnel offer from the group's root or an admin, and whether the
+/// records make a device the root or an admin, by its ID alone.
+pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value, &dyn Fn(&str) -> bool) + Send + Sync>;
+
+/// The tunnel key and preshared key a hello offers; None while sync away
+/// from home is off.
+type TunnelKeys = Option<(Vec<u8>, Vec<u8>)>;
 
 /// The lite member's set of connections.
 pub struct Node {
@@ -80,9 +86,9 @@ pub struct Node {
     on_write: Box<dyn Fn(WriteReq) + Send + Sync>,
     log: Arc<dyn Fn(&str) + Send + Sync>,
     closed: AtomicBool,
-    /// The tunnel key the hellos offer the group's hub; None while sync away
-    /// from home is off.
-    tunnel_key: Arc<RwLock<Option<Vec<u8>>>>,
+    /// The tunnel key and preshared key the hellos offer the group's hubs;
+    /// None while sync away from home is off.
+    tunnel_key: Arc<RwLock<TunnelKeys>>,
     on_tunnel: RwLock<Option<OnTunnel>>,
     /// The members discovery finds on the home network now.
     /// The devices discovery finds on the home network, by the uptime they
@@ -134,9 +140,10 @@ impl Node {
         }
     }
 
-    /// Sets the tunnel key the hellos offer from now on, and connects to
-    /// the full members again, so that the group's hub gets it.
-    pub fn set_tunnel_key(&self, key: Option<Vec<u8>>) {
+    /// Sets the tunnel key and preshared key the hellos offer from now on,
+    /// and connects to the full members again, so that the group's hubs get
+    /// them.
+    pub fn set_tunnel_key(&self, key: TunnelKeys) {
         *self.tunnel_key.write().unwrap() = key;
         for c in self.conns.lock().unwrap().values() {
             if c.peer.lock().unwrap().as_ref().is_some_and(|(role, _, _)| role == "full") {
@@ -196,6 +203,19 @@ impl Node {
     /// The devices list from the records.
     pub fn devices(&self) -> Vec<crate::records::Device> {
         self.records.lock().unwrap().devices()
+    }
+
+    /// The group's order of hubs (docs/protocol.md, section 11, "Several
+    /// hubs").
+    pub fn hub_order(&self) -> Vec<String> {
+        self.records.lock().unwrap().hub_order()
+    }
+
+    /// Ends the connection to the member id, if there is one, with bye.
+    pub fn disconnect(&self, id: &DeviceId) {
+        if let Some(c) = self.conns.lock().unwrap().get(id) {
+            c.close(true);
+        }
     }
 
     /// Makes an event from a deliberate action and sends it.
@@ -460,7 +480,7 @@ impl Node {
                             c.id
                         ));
                     } else if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
-                        f(&c.id, v);
+                        f(&c.id, v, &|dev| self.records.lock().unwrap().may_host(dev));
                     }
                 }
                 "bye" => return Ok(()),
@@ -589,7 +609,7 @@ fn writer(
     rx: mpsc::Receiver<Out>,
     records: &Mutex<Records>,
     name: &str,
-    key: &RwLock<Option<Vec<u8>>>,
+    key: &RwLock<TunnelKeys>,
     log: &(dyn Fn(&str) + Send + Sync),
 ) {
     let message = |o: Out| -> Option<Message> {
@@ -604,7 +624,7 @@ fn writer(
                     name,
                     "linux",
                     crate::device::own(),
-                    key.read().unwrap().as_deref(),
+                    key.read().unwrap().as_ref().map(|(k, p)| (k.as_slice(), p.as_slice())),
                 ))
             }
             Out::Event(mut ev, queued) => {

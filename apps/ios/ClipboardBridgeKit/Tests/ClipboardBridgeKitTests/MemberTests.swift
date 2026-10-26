@@ -321,6 +321,9 @@ final class Pipe: ClosableTransport, @unchecked Sendable {
     /// What a TLS transport would report as the peer's certificate.
     var peerCertificate: Data?
 
+    /// Whether either end closed it.
+    var isClosed: Bool { lock.withLock { closed } }
+
     static func pair() -> (Pipe, Pipe) {
         let a = Pipe(), b = Pipe()
         (a.peer, b.peer) = (b, a)

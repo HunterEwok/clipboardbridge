@@ -1,0 +1,474 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package service
+
+import (
+	"context"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/netip"
+	"slices"
+	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/netguard"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	"github.com/HunterEwok/clipboardbridge/internal/uptime"
+	"github.com/HunterEwok/clipboardbridge/internal/vless"
+)
+
+// Several hubs (docs/protocol.md, section 11, "Several hubs"): the group's
+// root and admins with a hub set are its hubs, in the order the records
+// give (group.Records.HubOrder). Every member keeps the offers of all of
+// them and uses the first in that order that answers; a hub serves its
+// clients only while no hub above it answers, and is that hub's client
+// otherwise. The hubs share their clients' keys, so each can take every
+// client, and pass each other's offers on to their clients.
+
+var (
+	// upCheck is how long a member stays on a hub that is not the first
+	// in the order before it tries the ones above again.
+	upCheck = 5 * time.Minute
+	// hubRecheck is how often a hub that serves, with hubs above it, tries
+	// them as a client: a hub above that came back serves then.
+	hubRecheck = 15 * time.Minute
+	// standbyGrace is how long a hub that lost the hub above it keeps
+	// trying the hubs above before it serves again.
+	standbyGrace = time.Minute
+)
+
+// hubOrder returns the group's order of hubs.
+func (s *Service) hubOrder() []group.DeviceID {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.HubOrder()
+}
+
+// rankOf returns where dev is in order; len(order) when it is not there.
+func rankOf(order []group.DeviceID, dev string) int {
+	if i := slices.Index(order, group.DeviceID(dev)); i >= 0 {
+		return i
+	}
+	return len(order)
+}
+
+// hubsToTry returns, in the group's order, the offers this member tries:
+// every hub it keeps an offer of, or, on a hub, those above it.
+func hubsToTry(order []group.DeviceID, self string, st *tunnel.State) []tunnel.HubLink {
+	limit := len(order)
+	if st.IsHub {
+		limit = rankOf(order, self)
+	}
+	var out []tunnel.HubLink
+	for _, h := range st.Hubs {
+		if r := rankOf(order, h.Device); r < limit && h.Device != self && len(h.Endpoints)+boolInt(h.VLESS != nil) > 0 {
+			out = append(out, h)
+		}
+	}
+	slices.SortFunc(out, func(a, b tunnel.HubLink) int { return rankOf(order, a.Device) - rankOf(order, b.Device) })
+	return out
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// reachHubs connects through the tunnel, whenever this member is away
+// from the hubs, to the first hub in the group's order that answers, and
+// tries the hubs above it again every upCheck. On a hub (standby true) it
+// tries only the hubs above this one, and when none answers, this hub
+// serves. A hub found on the home network, or connected directly,
+// counts as answering.
+func (s *Service) reachHubs(ctx context.Context, run *tunRun, standby bool) {
+	backoff := minBackoff
+	// When this hub last had a hub above it: a hub that just started
+	// serves after one round of tries, one that lost its hub after
+	// standbyGrace.
+	lost := uptime.Now() - standbyGrace
+	selfAddr, _ := tunnel.Addr(s.tunSelf)
+	for ctx.Err() == nil {
+		s.tunMu.Lock()
+		st := s.tunnel
+		if st == nil || s.tunRun != run {
+			s.tunMu.Unlock()
+			return
+		}
+		hubs := hubsToTry(s.hubOrder(), s.tunSelf, st)
+		s.tunMu.Unlock()
+		s.mu.Lock()
+		nd := s.nd
+		var home []tunnel.HubLink
+		for _, h := range hubs {
+			if s.nearLocked(group.DeviceID(h.Device)) {
+				home = append(home, h)
+			}
+		}
+		s.mu.Unlock()
+		if nd == nil {
+			return
+		}
+		for _, p := range nd.Peers() {
+			if i := slices.IndexFunc(hubs, func(h tunnel.HubLink) bool { return h.Device == string(p.ID) }); i >= 0 && p.Local != selfAddr {
+				home = append(home, hubs[i])
+			}
+		}
+		if len(home) > 0 {
+			// At home with a hub: the members sync there, without the
+			// tunnel, and a hub with one above it waits as its client.
+			s.setUsing(run, home[0].Device, false)
+			lost = uptime.Now()
+			if !wait(ctx, awayCheck) {
+				return
+			}
+			continue
+		}
+		reached := false
+		for i, h := range hubs {
+			if s.tryHub(ctx, run, nd, h, i > 0) {
+				reached = true
+				break
+			}
+			if ctx.Err() != nil {
+				return
+			}
+		}
+		if reached {
+			backoff, lost = minBackoff, uptime.Now()
+			continue
+		}
+		s.setUsing(run, "", false)
+		if standby && (uptime.Now()-lost >= standbyGrace || len(hubs) == 0) {
+			s.serveHub(run)
+			return
+		}
+		top := maxBackoff
+		if len(hubs) > 0 {
+			top = s.hubWait(group.DeviceID(hubs[0].Device))
+		}
+		if !wait(ctx, backoff) {
+			return
+		}
+		backoff = min(2*backoff, top)
+	}
+}
+
+// wait waits for d, and reports whether ctx is still going.
+func wait(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// setUsing keeps, for status, the hub this member uses now and whether it
+// is connected through the tunnel.
+func (s *Service) setUsing(run *tunRun, hub string, through bool) {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	if s.tunRun == run {
+		s.tunUsing, s.tunThrough = hub, through
+	}
+}
+
+// tryHub starts the tunnel to the hub h and tries its addresses in turn;
+// when one answers, it serves the member connection to the hub until it
+// ends, or until upCheck when up is true, so the hubs above are tried
+// again. It reports whether it reached the hub.
+func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunnel.HubLink, up bool) bool {
+	self, err := tunnel.Addr(s.tunSelf)
+	if err != nil {
+		return false
+	}
+	hubAddr, err := tunnel.Addr(h.Device)
+	if err != nil {
+		return false
+	}
+	s.tunMu.Lock()
+	st := s.tunnel
+	if st == nil || s.tunRun != run {
+		s.tunMu.Unlock()
+		return false
+	}
+	key, psk := st.Key, h.PresharedKey
+	s.tunMu.Unlock()
+	eps := h.Endpoints
+	var vc *vless.Client
+	if h.VLESS != nil {
+		// The only way to the hub is VLESS to its forwarder.
+		if vc, err = vless.Dial(*h.VLESS); err != nil {
+			s.tunReport(run, "the way over VLESS to the hub's forwarder could not start", err)
+			return false
+		}
+		defer vc.Close()
+		eps = []netip.AddrPort{vc.Addr()}
+	}
+	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
+		HubPublicKey: h.PublicKey, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
+		Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
+	if err != nil {
+		s.tunReport(run, "the tunnel to the hub could not start", err)
+		return false
+	}
+	defer c.Close()
+	s.tunMu.Lock()
+	if s.tunRun != run {
+		s.tunMu.Unlock()
+		return false
+	}
+	run.client = c
+	s.tunMu.Unlock()
+	defer func() {
+		s.tunMu.Lock()
+		if run.client == c {
+			run.client = nil
+		}
+		s.tunMu.Unlock()
+	}()
+	hub := group.DeviceID(h.Device)
+	for _, ep := range eps {
+		var raw net.Conn
+		err := c.SetEndpoint(ep)
+		if err == nil {
+			dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+			raw, err = c.Dial(dctx)
+			cancel()
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+			s.tunReport(run, fmt.Sprintf("no answer through the tunnel from %s at %v: the hub is off or cannot be reached, or the forwarder on the way is down", h.Device, ep), err)
+			continue
+		}
+		s.setUsing(run, h.Device, true)
+		s.tunReport(run, "", nil)
+		cctx, cancel := ctx, context.CancelFunc(func() {})
+		if up {
+			cctx, cancel = context.WithTimeout(ctx, upCheck)
+		}
+		err = nd.DialConn(cctx, hub, raw)
+		cancel()
+		s.setUsing(run, "", false)
+		if err != nil && ctx.Err() == nil && cctx.Err() == nil {
+			s.logf("cbb: the connection to the hub %s through the tunnel ended: %v", hub, err)
+		}
+		return true
+	}
+	return false
+}
+
+// tunReport keeps what went wrong for status, while run is the tunnel at
+// work.
+func (s *Service) tunReport(run *tunRun, msg string, err error) {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	if s.tunRun == run {
+		s.tunFailedLocked(msg, err)
+	}
+}
+
+// serveHub makes this hub serve, in place of run, its link to the hubs
+// above it, none of which answers.
+func (s *Service) serveHub(run *tunRun) {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	if s.tunRun != run || s.tunnel == nil || !s.tunnel.IsHub {
+		return
+	}
+	s.logf("cbb: no hub above this one answers; this device serves as the group's hub")
+	s.tunServing = true
+	s.stopTunnelLocked()
+	s.runTunnelLocked()
+	s.shareLocked()
+}
+
+// standbyLocked makes this hub, while it serves, try the hubs above it, as
+// their client; it serves again when none answers.
+func (s *Service) standbyLocked(why string) {
+	st := s.tunnel
+	if st == nil || !st.IsHub || !s.tunServing {
+		return
+	}
+	if len(hubsToTry(s.hubOrder(), s.tunSelf, st)) == 0 {
+		return
+	}
+	s.logf("cbb: %s; this hub tries the hubs above it", why)
+	s.tunServing = false
+	s.stopTunnelLocked()
+	s.runTunnelLocked()
+	s.shareLocked()
+}
+
+// recheckHubs makes the hub that serves try the hubs above it every
+// hubRecheck.
+func (s *Service) recheckHubs(ctx context.Context) {
+	t := time.NewTicker(hubRecheck)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.tunMu.Lock()
+			s.standbyLocked("it is time to look for the hubs above this one")
+			s.tunMu.Unlock()
+		}
+	}
+}
+
+// hubOffersLocked returns the offers this hub sends a client with the
+// preshared key psk: its own, then those of the group's other hubs it
+// keeps, passed on, but not the client's own.
+func (s *Service) hubOffersLocked(st *tunnel.State, client group.DeviceID, psk []byte) []node.TunnelOffer {
+	own := s.hubOfferLocked(st, psk)
+	if own == nil {
+		return nil
+	}
+	out := []node.TunnelOffer{*own}
+	order := s.hubOrder()
+	for _, h := range st.Hubs {
+		if h.Device == string(client) || rankOf(order, h.Device) == len(order) {
+			continue
+		}
+		o := offerOf(h)
+		o.PSK, o.Hub = psk, group.DeviceID(h.Device)
+		out = append(out, o)
+	}
+	return out
+}
+
+// offerOf is the offer a member keeps as h, without its preshared key.
+func offerOf(h tunnel.HubLink) node.TunnelOffer {
+	o := node.TunnelOffer{HubKey: h.PublicKey[:]}
+	for _, ep := range h.Endpoints {
+		o.Endpoints = append(o.Endpoints, ep.String())
+	}
+	if h.Obfuscation != nil {
+		o.Obfuscation, _ = json.Marshal(h.Obfuscation)
+	}
+	if h.VLESS != nil {
+		o.VLESS, _ = json.Marshal(h.VLESS)
+	}
+	return o
+}
+
+// hubShare is what this hub shares with peer, a device that may be a hub:
+// its offer, whether it serves, and its clients, itself among them; nil
+// when this device is no hub or peer may not be one.
+func (s *Service) hubShare(peer group.DeviceID) *node.HubShare {
+	if !s.mayHost(peer) {
+		return nil
+	}
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	return s.hubShareLocked(peer)
+}
+
+func (s *Service) hubShareLocked(peer group.DeviceID) *node.HubShare {
+	st := s.tunnel
+	if st == nil || !st.IsHub || string(peer) == s.tunSelf {
+		return nil
+	}
+	h := &node.HubShare{Serving: s.tunServing, Offer: s.hubOfferLocked(st, nil)}
+	pub := st.Key.Public()
+	h.Clients = append(h.Clients, group.HubClient{Device: group.DeviceID(s.tunSelf), Key: pub[:], PSK: st.PSK[:]})
+	for _, m := range st.Members {
+		if m.Device != string(peer) && len(h.Clients) < group.MaxHubClients {
+			h.Clients = append(h.Clients, group.HubClient{Device: group.DeviceID(m.Device), Key: m.PublicKey[:], PSK: m.PresharedKey[:]})
+		}
+	}
+	return h
+}
+
+// shareLocked sends the connected devices that may be hubs what this hub
+// shares, once it starts or stops serving; it does so on its own, since
+// the locks it takes come before tunMu.
+func (s *Service) shareLocked() {
+	go func() {
+		s.mu.Lock()
+		nd := s.nd
+		s.mu.Unlock()
+		if nd != nil {
+			nd.SendHubs(s.hubShare)
+		}
+	}()
+}
+
+// hubsShared takes what another hub shared: its clients, on this hub, and
+// its offer, which this member keeps as it keeps any hub's. A hub above
+// this one that serves makes this hub, while it serves, its client.
+func (s *Service) hubsShared(from group.DeviceID, chain []*x509.Certificate, h node.HubShare) error {
+	if !s.adminPeer(from, chain) {
+		return errors.New("only the group's root or an admin can be its hub; ignored")
+	}
+	order := s.hubOrder()
+	listed := map[group.DeviceID]bool{}
+	s.recMu.Lock()
+	if s.records != nil {
+		for _, d := range s.records.Devices() {
+			listed[d.ID] = true
+		}
+	}
+	s.recMu.Unlock()
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	st := s.tunnel
+	if st == nil || st.Relay != nil {
+		return nil
+	}
+	save, peers := false, false
+	if st.IsHub {
+		for _, c := range h.Clients {
+			if string(c.Device) == s.tunSelf || !listed[c.Device] || len(c.Key) != 32 || len(c.PSK) != 32 {
+				continue
+			}
+			var pub, psk tunnel.Key
+			copy(pub[:], c.Key)
+			copy(psk[:], c.PSK)
+			changed, err := st.Take(string(c.Device), pub, psk)
+			if err != nil {
+				s.logf("cbb: a client %s shared: %v", from, err)
+				continue
+			}
+			save, peers = save || changed, peers || changed
+		}
+	}
+	if h.Offer != nil {
+		o := *h.Offer
+		o.PSK = st.PSK[:]
+		link, err := hubLink(from, o)
+		if err != nil {
+			return fmt.Errorf("its offer: %w", err)
+		}
+		changed, err := st.SetHub(link)
+		if err != nil {
+			return err
+		}
+		save = save || changed
+	}
+	if save {
+		if err := st.Save(s.cfg.StateDir); err != nil {
+			return fmt.Errorf("saving the tunnel state: %w", err)
+		}
+	}
+	if peers {
+		s.hubPeersLocked()
+	}
+	if h.Serving && rankOf(order, string(from)) < rankOf(order, s.tunSelf) {
+		s.standbyLocked(fmt.Sprintf("%s, a hub above this one, serves", from))
+	}
+	return nil
+}

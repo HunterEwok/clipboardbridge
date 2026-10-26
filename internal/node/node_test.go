@@ -1012,40 +1012,51 @@ func TestChunkRecords(t *testing.T) {
 	}
 }
 
-// TestTunnelKeyAndOffer checks that a member offers its tunnel key in its
-// hello, that the hub's OnTunnelKey gets it with the chain the member
-// presented, and that the member's OnTunnel gets the hub's offer.
+// TestTunnelKeyAndOffer checks that a member offers its tunnel key and
+// preshared key in its hello, that the hub's OnTunnelKey gets them with the
+// chain the member presented, that the member's OnTunnel gets the hub's
+// offers, its own and one it passes on, and that OnHubs gets what the hub
+// shares.
 func TestTunnelKeyAndOffer(t *testing.T) {
 	type offered struct {
-		peer  group.DeviceID
-		chain []*x509.Certificate
-		key   []byte
+		peer     group.DeviceID
+		chain    []*x509.Certificate
+		key, psk []byte
 	}
 	keys := make(chan offered, 4)
 	offers := make(chan TunnelOffer, 4)
 	from := make(chan group.DeviceID, 4)
-	offer := TunnelOffer{HubKey: bytes.Repeat([]byte{1}, 32), PSK: bytes.Repeat([]byte{2}, 32), Endpoints: []string{"192.0.2.1:8764"}}
+	shares := make(chan HubShare, 4)
+	offer := TunnelOffer{HubKey: bytes.Repeat([]byte{1}, 32), PSK: bytes.Repeat([]byte{5}, 32), Endpoints: []string{"192.0.2.1:8764"}}
+	other := TunnelOffer{HubKey: bytes.Repeat([]byte{6}, 32), PSK: bytes.Repeat([]byte{5}, 32), Endpoints: []string{"192.0.2.6:8764"},
+		Hub: "cccccccccccccccccccccccccccccccc"}
+	share := HubShare{Serving: true, Offer: &TunnelOffer{HubKey: offer.HubKey, Endpoints: offer.Endpoints}}
 	hub := newMember(t, Full, func(_ *clip.Config, nc *Config) {
 		nc.TunnelKey = bytes.Repeat([]byte{3}, 32)
-		nc.OnTunnelKey = func(peer group.DeviceID, chain []*x509.Certificate, key []byte) *TunnelOffer {
-			keys <- offered{peer, chain, key}
-			return &offer
+		nc.OnTunnelKey = func(peer group.DeviceID, chain []*x509.Certificate, key, psk []byte) []TunnelOffer {
+			keys <- offered{peer, chain, key, psk}
+			return []TunnelOffer{offer, other}
 		}
+		nc.HubShare = func(group.DeviceID) *HubShare { return &share }
 	})
 	mac := newMember(t, Full, func(_ *clip.Config, nc *Config) {
-		nc.TunnelKey = bytes.Repeat([]byte{4}, 32)
-		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte) *TunnelOffer { return nil }
+		nc.TunnelKey, nc.TunnelPSK = bytes.Repeat([]byte{4}, 32), bytes.Repeat([]byte{5}, 32)
+		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte, []byte) []TunnelOffer { return nil }
 		nc.OnTunnel = func(id group.DeviceID, _ []*x509.Certificate, o TunnelOffer) error {
 			from <- id
 			offers <- o
+			return nil
+		}
+		nc.OnHubs = func(_ group.DeviceID, _ []*x509.Certificate, h HubShare) error {
+			shares <- h
 			return nil
 		}
 	})
 	link(t, mac, hub)
 	select {
 	case k := <-keys:
-		if k.peer != mac.id.ID || !bytes.Equal(k.key, bytes.Repeat([]byte{4}, 32)) {
-			t.Errorf("the hub got key %x from %s", k.key, k.peer)
+		if k.peer != mac.id.ID || !bytes.Equal(k.key, bytes.Repeat([]byte{4}, 32)) || !bytes.Equal(k.psk, bytes.Repeat([]byte{5}, 32)) {
+			t.Errorf("the hub got key %x and psk %x from %s", k.key, k.psk, k.peer)
 		}
 		if len(k.chain) == 0 || !k.chain[0].Equal(mac.id.Cert) {
 			t.Error("the hub did not get the member's certificate")
@@ -1064,6 +1075,23 @@ func TestTunnelKeyAndOffer(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("OnTunnel was not called")
 	}
+	select {
+	case o := <-offers:
+		<-from
+		if o.Hub != other.Hub || !bytes.Equal(o.HubKey, other.HubKey) {
+			t.Errorf("the offer passed on is %+v, want %+v", o, other)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the offer passed on did not arrive")
+	}
+	select {
+	case h := <-shares:
+		if !h.Serving || h.Offer == nil || !bytes.Equal(h.Offer.HubKey, offer.HubKey) {
+			t.Errorf("the member got the share %+v", h)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnHubs was not called")
+	}
 	// The member's own OnTunnelKey answered nil: the hub gets no offer.
 	noOffer := time.After(200 * time.Millisecond)
 	select {
@@ -1078,7 +1106,7 @@ func TestTunnelKeyAndOffer(t *testing.T) {
 func TestNoTunnelKey(t *testing.T) {
 	called := make(chan struct{}, 1)
 	pi := newMember(t, Full, func(_ *clip.Config, nc *Config) {
-		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte) *TunnelOffer {
+		nc.OnTunnelKey = func(group.DeviceID, []*x509.Certificate, []byte, []byte) []TunnelOffer {
 			called <- struct{}{}
 			return nil
 		}

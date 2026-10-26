@@ -45,6 +45,22 @@ protocol GroupController: AnyObject {
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)?
     /// Turns sync away from home on or off.
     func setAwayFromHome(_ on: Bool) async throws
+    /// The phone as the group's hub; nil on a phone that cannot be it.
+    func hubStatus() async -> AppModel.Hub?
+    /// Makes this phone the group's hub, or stops it being the hub.
+    func setPhoneHub(_ on: Bool) async throws
+    /// Sets the hub's forwarder; both empty for a hub at home only.
+    func setForwarder(address: String, pin: String) async throws
+    /// Remembers the network the phone is on as a home network of the hub.
+    func addHomeNetwork() async throws
+    /// Tells the group whether the app is in front, where the hub works.
+    func setForeground(_ on: Bool)
+    /// Opens a remote invitation on this phone, the hub, for a device far
+    /// away; ask asks the user about the device that uses it, ended gets
+    /// its name or why it ended without one.
+    func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
+                ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation
+    func moveHub(to id: String) async throws
 }
 
 extension GroupController {
@@ -53,6 +69,16 @@ extension GroupController {
     func setMode(_ id: String, to mode: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
+    func hubStatus() async -> AppModel.Hub? { nil }
+    func setPhoneHub(_ on: Bool) async throws {}
+    func setForwarder(address: String, pin: String) async throws {}
+    func addHomeNetwork() async throws {}
+    func setForeground(_ on: Bool) {}
+    func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
+                ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation {
+        throw HubOnPhone.Failure.notRunning
+    }
+    func moveHub(to id: String) async throws { throw HubOnPhone.Failure.notRunning }
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -120,6 +146,61 @@ final class AppModel: ObservableObject {
     @Published private(set) var away: Away?
     /// What turning it on or off said, when it failed.
     @Published private(set) var awayNote: String?
+
+    /// The phone as the group's hub as Settings and Home show it: nil on a
+    /// phone that cannot be the hub. home tells whether the phone is on
+    /// one of the hub's home networks now.
+    struct Hub: Equatable {
+        var on: Bool
+        var status: HubOnPhone.Status
+        /// Why the forwarder does not take it, as cbbtun says.
+        var error: String?
+        var forwarder: HubState.Forwarder?
+        var home = false
+        var clients = 0
+        /// The connected computers the hub can move to: admins, or
+        /// computers the root can make admins.
+        var computers: [Target] = []
+        /// The computer that is always on which the app suggests as the
+        /// hub, unless the user chose to keep the phone.
+        var suggested: Target?
+
+        struct Target: Equatable, Identifiable {
+            let id: String
+            let name: String
+        }
+    }
+
+    @Published private(set) var hub: Hub?
+    /// What the last change to the hub said, when it failed.
+    @Published private(set) var hubNote: String?
+
+    /// An open remote invitation: its text, when it expires, and how to
+    /// cancel it.
+    struct Invitation {
+        var text: String
+        var expires: Date
+        var cancel: () -> Void
+    }
+
+    /// A remote invitation as Settings shows it: when it expires, the file
+    /// to share, and the device waiting for the user's answer.
+    struct Invite {
+        var expires: Date
+        var file: URL
+        var request: PairingMember.Request?
+    }
+
+    @Published private(set) var invite: Invite?
+    /// How the last invitation ended, or why it did not open.
+    @Published private(set) var inviteNote: String?
+    private var invitation: Invitation?
+    private var answer: CheckedContinuation<Bool, Never>?
+    /// How long an invitation from the phone is valid: an hour, as cbb
+    /// invite's default.
+    static let inviteLifetime = 3600
+    /// The registration's last error, logged once.
+    private var hubError: String?
 
     let group: GroupController
     private let defaults: UserDefaults
@@ -261,6 +342,7 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         await refreshAway()
+        await refreshHub()
         if notifies {
             Notifier.shared.observe(devices)
             WatchLink.shared.update(self)
@@ -286,6 +368,137 @@ final class AppModel: ObservableObject {
         away = Away(on: a.on, status: a.status, error: failing.map {
             Self.describe($0, summary: String(localized: "The hub does not answer through the tunnel.", bundle: .app), log: false)
         })
+    }
+
+    private func refreshHub() async {
+        let h = await group.hubStatus()
+        if h?.error != hubError {
+            hubError = h?.error
+            if let e = hubError { log.error("the hub: \(e, privacy: .public)") }
+        }
+        hub = h
+    }
+
+    /// Makes this phone the group's hub, or stops it being the hub.
+    func setHub(_ on: Bool) async { await hubChange { try await self.group.setPhoneHub(on) } }
+
+    /// Makes a connected computer the hub in place of this phone
+    /// (docs/protocol.md, section 11, "Moving the hub").
+    func moveHub(to id: String) async {
+        do {
+            try await group.moveHub(to: id)
+            hubNote = String(localized: "The computer is the hub now; this phone reaches it from afar.", bundle: .app)
+        } catch HubOnPhone.Failure.notRunning {
+            hubNote = Self.describe(HubOnPhone.Failure.notRunning,
+                                    summary: String(localized: "The hub can move only while it runs with a forwarder.", bundle: .app))
+        } catch {
+            hubNote = Self.describe(error)
+        }
+        await refreshHub()
+    }
+
+    /// Keeps this phone as the hub: the app no longer suggests a computer.
+    func keepPhoneHub() async {
+        UserDefaults.standard.set(true, forKey: LiveGroup.keepsPhoneHubKey)
+        await refreshHub()
+    }
+
+    /// Sets the hub's forwarder; both empty for a hub at home only.
+    func setForwarder(address: String, pin: String) async {
+        await hubChange {
+            let a = address.trimmingCharacters(in: .whitespaces), p = pin.trimmingCharacters(in: .whitespaces)
+            guard a.isEmpty == p.isEmpty, p.isEmpty || HubState.validPin(p) else { throw HubOnPhone.Failure.badForwarder }
+            try await self.group.setForwarder(address: a, pin: p)
+        }
+    }
+
+    /// Remembers the network the phone is on as home.
+    func addHomeNetwork() async { await hubChange { try await self.group.addHomeNetwork() } }
+
+    private func hubChange(_ f: () async throws -> Void) async {
+        do {
+            try await f()
+            hubNote = nil
+        } catch HubOnPhone.Failure.badForwarder {
+            hubNote = Self.describe(HubOnPhone.Failure.badForwarder, summary: String(
+                localized: "Give the forwarder's address with its port and its key, as cbb forward prints them, or leave both empty.",
+                bundle: .app))
+        } catch {
+            hubNote = Self.describe(error)
+        }
+        await refreshHub()
+    }
+
+    /// Opens a remote invitation for a device far away (docs/protocol.md,
+    /// section 12), valid for an hour: Settings shares its file, and asks
+    /// the user about the device that uses it.
+    func openInvite() async {
+        guard invite == nil else { return }
+        do {
+            let inv = try await group.invite(lifetime: Self.inviteLifetime, ask: { [weak self] req in
+                await self?.ask(req) ?? false
+            }, ended: { [weak self] r in self?.inviteEnded(r) })
+            let file = try Self.inviteFile(inv.text)
+            (invitation, invite, inviteNote) = (inv, Invite(expires: inv.expires, file: file), nil)
+        } catch HubOnPhone.Failure.notRunning {
+            inviteNote = Self.describe(HubOnPhone.Failure.notRunning, summary: String(
+                localized: "An invitation needs the hub registered with its forwarder. Check the forwarder above.", bundle: .app))
+        } catch {
+            inviteNote = Self.describe(error)
+        }
+    }
+
+    /// The invitation as a file of one line, clipboardbridge.cbbinvite, as
+    /// cbb pair -invite reads it; it goes when the invitation ends.
+    private static func inviteFile(_ text: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("invites", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("clipboardbridge.cbbinvite")
+        try Data((text + "\n").utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        return url
+    }
+
+    /// Asks the user about a device that used the invitation, for up to 5
+    /// minutes (docs/protocol.md, section 12).
+    private func ask(_ req: PairingMember.Request) async -> Bool {
+        answer?.resume(returning: false)
+        invite?.request = req
+        let timeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(300))
+            if !Task.isCancelled { self?.answer(false) }
+        }
+        defer { timeout.cancel() }
+        let yes = await withCheckedContinuation { answer = $0 }
+        invite?.request = nil
+        return yes
+    }
+
+    /// The user's answer about the device that used the invitation.
+    func answer(_ yes: Bool) {
+        answer?.resume(returning: yes)
+        answer = nil
+    }
+
+    /// Cancels the open invitation.
+    func cancelInvite() { invitation?.cancel() }
+
+    private func inviteEnded(_ r: Result<String, Error>) {
+        if let f = invite?.file { try? FileManager.default.removeItem(at: f) }
+        answer(false)
+        (invite, invitation) = (nil, nil)
+        switch r {
+        case .success:
+            inviteNote = String(localized: "The device joined the group; it appears in the list once it connects.", bundle: .app)
+            Task { await refresh() }
+        case .failure(InvitationWindow.Ended.cancelled):
+            inviteNote = nil
+        case .failure(InvitationWindow.Ended.expired):
+            inviteNote = String(localized: "The invitation expired without being used.", bundle: .app)
+        case .failure(InvitationWindow.Ended.tooManyAttempts):
+            inviteNote = String(localized: "The invitation closed after three failed attempts. Make a new one.", bundle: .app)
+        case .failure(let e):
+            inviteNote = Self.describe(e)
+        }
     }
 
     /// Turns sync away from home on or off; the hub's answer comes on the

@@ -129,9 +129,17 @@ struct HomeView: View {
     /// How many devices are online, of how many.
     private var summary: some View {
         let online = model.devices.filter(\.online).count
-        return Text("\(online) of \(model.devices.count) online")
-            .font(.subheadline)
-            .foregroundStyle(palette.textDim)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("\(online) of \(model.devices.count) online")
+                .font(.subheadline)
+                .foregroundStyle(palette.textDim)
+            // The phone as the hub works while the app is open: Home says so, as a fact, not a fault.
+            if model.hub?.on == true {
+                Text("This phone is the hub: sync works while the app is open.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textDim)
+            }
+        }
     }
 
     private var menu: some View {

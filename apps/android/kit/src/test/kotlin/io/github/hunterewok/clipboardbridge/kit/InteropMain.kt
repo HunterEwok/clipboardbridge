@@ -2,14 +2,22 @@
 
 // The Kotlin twin of clipboardbridge-interop (apps/ios/ClipboardBridgeKit): it
 // plays the Android phone against the Go code in tests, with the same
-// commands, so Go's TestSwiftMemberAdmitsGoJoiner, TestSwiftMemberAdmitsGoJoinerTLS
-// and TestSwiftMemberTLS run it too. Gradle's interopScript task writes a
-// script that starts it.
+// commands, so Go's TestSwiftMemberAdmitsGoJoiner, TestSwiftMemberAdmitsGoJoinerTLS,
+// TestSwiftHubAdmitsInvitedGoJoiner and TestSwiftMemberTLS run it too. Gradle's
+// interopScript task writes a script that starts it.
 //
 //   admit HOST PORT CODE                 pairing over plain TCP, certificates exchanged in place of TLS
 //   admit-tls HOST PORT CODE FINGERPRINT pairing over TLS
 //
 // print the group CA in base64 on success.
+//
+//   invite-window SECRET yes|no
+//
+// opens a remote invitation's pairing window on the loopback address with
+// SECRET (base64), as the phone that is the hub does, and prints
+// "port N"; for the device that proves it knows the secret it prints
+// "fingerprint F" and admits it or not; then it prints the group CA in
+// base64 and ends, or fails with the first failed attempt.
 //
 //   member-tls HOST PORT PEER
 //
@@ -105,6 +113,31 @@ private fun memberTLS(host: String, port: Int, peer: String) {
     serving.join()
 }
 
+private fun inviteWindow(secret: ByteArray, yes: Boolean) {
+    val now = Instant.now()
+    val caSigner = SoftwareSigner()
+    val memberKey = SoftwareSigner()
+    val group = PhoneGroup.create(caSigner, memberKey.publicKeyDER, now)
+    val ended = LinkedBlockingQueue<Result<PairingMember.Admitted>>()
+    val invitation = PairingMember.Invitation(secret) { req ->
+        println("fingerprint ${req.fingerprint}")
+        System.out.flush()
+        yes
+    }
+    val window = InvitationWindow(
+        memberKey.keyPair.private, group.memberCert, now.plusSeconds(60),
+        admit = { t, joinerCert, sid -> group.admit(t, "", joinerCert, sid, caSigner, Instant.now(), invitation = invitation) },
+        onEnd = { ended.add(it) },
+        onError = { ended.add(Result.failure(it)) },
+    )
+    println("port ${window.port}")
+    System.out.flush()
+    val result = ended.poll(30, TimeUnit.SECONDS) ?: fail("no attempt within 30 s")
+    val admitted = result.getOrElse { fail("$it") }
+    if (!admitted.confirmed || group.computers.map { it.device } != listOf(admitted.device)) fail("the joiner did not confirm")
+    println(Base64.getEncoder().encodeToString(group.groupCA))
+}
+
 fun main(args: Array<String>) {
     try {
         val port = args.getOrNull(2)?.toIntOrNull()
@@ -112,8 +145,9 @@ fun main(args: Array<String>) {
             args.size == 4 && args[0] == "member-tls" && port != null -> memberTLS(args[1], port, args[3])
             args.size == 4 && args[0] == "admit" && port != null -> admit(args[1], port, args[3], null)
             args.size == 5 && args[0] == "admit-tls" && port != null -> admit(args[1], port, args[3], args[4])
+            args.size == 3 && args[0] == "invite-window" -> inviteWindow(Base64.getDecoder().decode(args[1]), args[2] == "yes")
             else -> {
-                System.err.println("usage: clipboardbridge-interop admit HOST PORT CODE | admit-tls HOST PORT CODE FINGERPRINT | member-tls HOST PORT PEER")
+                System.err.println("usage: clipboardbridge-interop admit HOST PORT CODE | admit-tls HOST PORT CODE FINGERPRINT | invite-window SECRET yes|no | member-tls HOST PORT PEER")
                 exitProcess(2)
             }
         }

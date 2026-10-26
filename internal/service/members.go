@@ -169,7 +169,7 @@ func (s *Service) found(peers []mdns.Peer) {
 				s.prio[id] = n
 			}
 		}
-		if r, _ := p.TXTValue("r"); strings.EqualFold(r, "lite") {
+		if r, _ := p.TXTValue("r"); strings.EqualFold(r, "lite") || strings.EqualFold(r, "phone") {
 			continue // it dials the full members
 		}
 		want[id] = target{addresses(p), id < s.id.ID}
@@ -343,7 +343,7 @@ func (s *Service) keepUntil(ctx context.Context, id group.DeviceID, where string
 	knowsHub := func() bool {
 		s.tunMu.Lock()
 		defer s.tunMu.Unlock()
-		return s.tunnel != nil && s.tunnel.ToHub != nil
+		return s.tunnel != nil && len(s.tunnel.Hubs) > 0
 	}
 	// The connection ends too once the hub's offer came, so the tunnel
 	// takes over.

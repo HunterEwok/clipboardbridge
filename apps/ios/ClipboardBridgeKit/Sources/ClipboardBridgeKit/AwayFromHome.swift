@@ -4,24 +4,86 @@
 import Foundation
 
 /// What sync away from home keeps on the phone (docs/protocol.md, section
-/// 11): its WireGuard private key, made on the phone, and the last offer of
-/// the group's hub with the hub's device ID.
+/// 11): its WireGuard private key, made on the phone, the preshared key it
+/// chose for its tunnels, which its hellos offer every hub, and the last
+/// offer of each of the group's hubs, by the hub's device ID.
 public struct AwayState: Codable, Equatable, Sendable {
-    public var key: Data
-    public var hub: String?
-    public var offer: Member.TunnelOffer?
+    /// A hub's offer, as the phone keeps it.
+    public struct Hub: Codable, Equatable, Sendable {
+        public var device: String
+        public var offer: Member.TunnelOffer
 
-    public init(key: Data, hub: String? = nil, offer: Member.TunnelOffer? = nil) {
-        (self.key, self.hub, self.offer) = (key, hub, offer)
+        public init(device: String, offer: Member.TunnelOffer) { (self.device, self.offer) = (device, offer) }
+    }
+
+    /// The most hubs whose offers the phone keeps.
+    public static let maxHubs = 255
+
+    public var key: Data
+    public var psk: Data
+    public var hubs: [Hub]
+
+    public init(key: Data, psk: Data = AwayState.newPSK(), hubs: [Hub] = []) {
+        (self.key, self.psk, self.hubs) = (key, psk, hubs)
+    }
+
+    /// The offer of the hub hub, or nil.
+    public func offer(_ hub: String) -> Member.TunnelOffer? { hubs.first { $0.device == hub }?.offer }
+
+    /// The same with offer as hub's, in place of its earlier one.
+    public func with(_ hub: String, offer: Member.TunnelOffer) -> AwayState {
+        var s = self
+        if let i = s.hubs.firstIndex(where: { $0.device == hub }) {
+            s.hubs[i].offer = offer
+        } else {
+            s.hubs = Array((s.hubs + [Hub(device: hub, offer: offer)]).suffix(Self.maxHubs))
+        }
+        return s
+    }
+
+    /// The same without the offer of hub.
+    public func without(_ hub: String) -> AwayState {
+        var s = self
+        s.hubs.removeAll { $0.device == hub }
+        return s
+    }
+
+    enum CodingKeys: String, CodingKey { case key, psk, hubs, hub, offer }
+
+    /// Earlier versions kept one hub's offer, as hub and offer, and no
+    /// preshared key of the phone's own: it gets one now.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(Data.self, forKey: .key)
+        psk = try c.decodeIfPresent(Data.self, forKey: .psk) ?? Self.newPSK()
+        if let hubs = try c.decodeIfPresent([Hub].self, forKey: .hubs) {
+            self.hubs = hubs
+        } else if let offer = try c.decodeIfPresent(Member.TunnelOffer.self, forKey: .offer) {
+            hubs = [Hub(device: try c.decode(String.self, forKey: .hub), offer: offer)]
+        } else {
+            hubs = []
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(key, forKey: .key)
+        try c.encode(psk, forKey: .psk)
+        try c.encode(hubs, forKey: .hubs)
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }
 
     /// The state in data, or nil when it is not one this version wrote.
     public static func decode(_ data: Data) -> AwayState? {
-        guard let s = try? JSONDecoder().decode(AwayState.self, from: data), s.key.count == 32 else { return nil }
-        if let o = s.offer, !o.isValid || s.hub == nil { return nil }
+        guard let s = try? JSONDecoder().decode(AwayState.self, from: data), s.key.count == 32, s.psk.count == 32,
+              s.hubs.allSatisfy(\.offer.isValid) else { return nil }
         return s
+    }
+
+    public static func newPSK() -> Data {
+        var rng = SystemRandomNumberGenerator()
+        return Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &rng) })
     }
 }
 
@@ -45,11 +107,13 @@ public protocol Tunnels: Sendable {
 }
 
 /// Sync away from home on this phone: off until the user turns it on. Then
-/// the hellos offer the phone's WireGuard key, the hub's answer is kept, and
-/// while the hub is not on the home network the phone reaches it through
-/// the tunnel, in the app's own process, with the same member TLS as at
-/// home (docs/design.md, "Sync away from home"). It fails closed: without a
-/// tunnel there is no connection.
+/// the hellos offer the phone's WireGuard key and its preshared key, every
+/// hub's answer is kept, and while no hub is on the home network the phone
+/// reaches the first hub in the group's order that answers through the
+/// tunnel, in the app's own process, with the same member TLS as at home
+/// (docs/design.md, "Sync away from home"; docs/protocol.md, section 11,
+/// "Several hubs"). On a hub below the first it tries the ones above again
+/// every upCheck. It fails closed: without a tunnel there is no connection.
 public actor AwayFromHome {
     /// What the screens show.
     public enum Status: Sendable { case off, waitingForHub, atHome, connecting, connected }
@@ -64,13 +128,25 @@ public actor AwayFromHome {
     private let dial: Dial
     private let serve: Serve
     private let mayHost: @Sendable (String) -> Bool
+    private let order: @Sendable () -> [String]
     private let log: @Sendable (String, Error) -> Void
     private let firstWait: Duration
     private let maxWait: Duration
+    private let isPhone: @Sendable (String) -> Bool
+    private let phoneWait: Duration
     private let homeCheck: Duration
+    private let upCheck: Duration
 
     private var state: AwayState?
     private var tunnel: OpenTunnel?
+    /// The hub and offer the open tunnel goes to.
+    private var tunnelTo: AwayState.Hub?
+    /// The hub the phone reaches now, through the tunnel or at home.
+    private var using: String?
+    /// Which of each hub's endpoints the next try takes.
+    private var endpointOf: [String: Int] = [:]
+    /// The connection to the hub in use, which a new offer closes.
+    private var conn: ClosableTransport?
     private var runner: Task<Void, Never>?
     private var nap: Task<Void, Never>?
 
@@ -78,31 +154,43 @@ public actor AwayFromHome {
     public private(set) var lastError: Error?
 
     /// state is what load read; save keeps each change, nil when it is
-    /// turned off. atHome tells whether the hub is found on the home
+    /// turned off. atHome tells whether a hub is found on the home
     /// network, where it is dialed directly; dial reaches the hub's member
     /// TLS through the loopback port, checking that the peer is the hub;
     /// serve runs a connection until it ends; mayHost tells whether a device
-    /// may be the hub: the group's root or an admin (RecordSet.mayHost).
+    /// may be a hub: the group's root or an admin (RecordSet.mayHost);
+    /// order gives the group's hubs, highest first (RecordSet.hubOrder),
+    /// and only these are tried; isPhone tells whether a hub is a phone,
+    /// there only while its app is open (docs/design.md, "The phone as the
+    /// hub"), tried at least every phoneWait; upCheck is how long the phone
+    /// stays on a hub below the first before it tries the ones above again.
     public init(device: String, tunnels: Tunnels, state: AwayState?, save: @escaping @Sendable (AwayState?) throws -> Void,
                 atHome: @escaping @Sendable (String) async -> Bool, dial: @escaping Dial, serve: @escaping Serve,
                 mayHost: @escaping @Sendable (String) -> Bool,
+                order: @escaping @Sendable () -> [String],
                 log: @escaping @Sendable (String, Error) -> Void = { _, _ in },
-                firstWait: Duration = .seconds(1), maxWait: Duration = .seconds(30), homeCheck: Duration = .seconds(5)) {
+                firstWait: Duration = .seconds(1), maxWait: Duration = .seconds(30),
+                isPhone: @escaping @Sendable (String) -> Bool = { _ in false }, phoneWait: Duration = .seconds(5),
+                homeCheck: Duration = .seconds(5), upCheck: Duration = .seconds(300)) {
         (self.device, self.tunnels, self.state, self.save) = (device, tunnels, state, save)
-        (self.atHome, self.dial, self.serve, self.log, self.mayHost) = (atHome, dial, serve, log, mayHost)
-        (self.firstWait, self.maxWait, self.homeCheck) = (firstWait, maxWait, homeCheck)
+        (self.atHome, self.dial, self.serve, self.log, self.mayHost, self.order) = (atHome, dial, serve, log, mayHost, order)
+        (self.firstWait, self.maxWait, self.homeCheck, self.upCheck) = (firstWait, maxWait, homeCheck, upCheck)
+        (self.isPhone, self.phoneWait) = (isPhone, phoneWait)
     }
 
     public var isOn: Bool { state != nil }
 
-    /// The public key the hellos offer the hub; nil while it is off.
+    /// The public key the hellos offer the hubs; nil while it is off.
     public var publicKey: Data? {
         guard let k = state?.key else { return nil }
         return try? tunnels.publicKey(k)
     }
 
-    /// Turns it on with a new key; the hub's offer comes at home, on the
-    /// next connection to it.
+    /// The preshared key the hellos offer with the public key; nil while it is off.
+    public var psk: Data? { state?.psk }
+
+    /// Turns it on with new keys; the hubs' offers come at home, on the
+    /// next connection to them.
     public func turnOn() throws {
         let s = AwayState(key: try tunnels.newKey())
         try save(s)
@@ -110,7 +198,7 @@ public actor AwayFromHome {
         poke()
     }
 
-    /// Turns it off: forgets the key and the offer and closes the tunnel.
+    /// Turns it off: forgets the keys and the offers and closes the tunnel.
     public func turnOff() throws {
         try save(nil)
         state = nil
@@ -118,24 +206,40 @@ public actor AwayFromHome {
         poke()
     }
 
-    /// Keeps the offer a peer, the group's hub, sent for this phone's key.
-    /// Only the group's root or an admin may be the hub, and once a hub is
-    /// kept, offers from another device are ignored: the hub changes only
-    /// when the user turns sync away from home off and on again.
-    public func keep(from: String?, offer: Member.TunnelOffer) {
-        guard let from, offer.isValid, var s = state, s.hub == nil || s.hub == from, s.hub != from || s.offer != offer,
-              mayHost(from) else { return }
-        s.hub = from
-        s.offer = offer
-        state = s
-        // A new preshared key or new endpoints: start again with them.
-        closeTunnel()
-        poke()
-        do { try save(s) } catch { log("cannot keep the hub's offer", error) }
+    /// Keeps the offer a peer sent for this phone's key (docs/protocol.md,
+    /// section 11, "Several hubs"): from a hub, the group's root or an
+    /// admin, its own or another hub's that it passes on, for each hub in
+    /// place of its earlier one. An offer marked moved makes the phone
+    /// forget the sender's own. A new offer for the hub in use, or one for
+    /// a hub above it, starts the tunnel again.
+    public func keep(from: String?, offer received: Member.TunnelOffer) {
+        guard let from, received.isValid, mayHost(from), let s = state else { return }
+        let hub = received.hub ?? from
+        guard hub != device, mayHost(hub) else { return }
+        let offer = received.with(psk: received.psk, hub: nil)
+        let forgot = received.moved && from != hub && s.offer(from) != nil
+        var n = forgot ? s.without(from) : s
+        if n.offer(hub) != offer { n = n.with(hub, offer: offer) }
+        guard n != s else { return }
+        state = n
+        let o = order()
+        if using == nil || using == hub || Self.rank(o, hub) < Self.rank(o, using ?? "") || forgot && using == from {
+            // The hub in use changed, or one above it came: try again.
+            closeTunnel()
+            poke()
+        }
+        do { try save(n) } catch { log("cannot keep the hub's offer", error) }
     }
 
-    /// Starts the loop that reaches the hub through the tunnel while it is
-    /// away.
+    /// The hub the phone reaches now, or else the first in the group's
+    /// order whose offer it keeps; nil without one.
+    public var hub: String? {
+        guard let s = state else { return nil }
+        return using ?? Self.hubsToTry(order(), s).first?.device ?? s.hubs.first?.device
+    }
+
+    /// Starts the loop that reaches a hub through the tunnel while the hubs
+    /// are away.
     public func start() {
         guard runner == nil else { return }
         runner = Task { await self.run() }
@@ -149,67 +253,123 @@ public actor AwayFromHome {
     }
 
     private func closeTunnel() {
+        conn?.close()
+        conn = nil
         tunnel?.close()
         tunnel = nil
+        tunnelTo = nil
     }
 
     private func run() async {
         var wait = firstWait
-        var endpoint = 0
         while !Task.isCancelled {
             guard let s = state else {
                 status = .off
+                using = nil
                 await idle(nil)
                 continue
             }
-            guard let hub = s.hub, let offer = s.offer, !offer.endpoints.isEmpty else {
+            let hubs = Self.hubsToTry(order(), s)
+            guard !hubs.isEmpty else {
                 status = .waitingForHub
+                using = nil
+                closeTunnel()
                 await idle(nil)
                 continue
             }
-            let home = await atHome(hub)
+            var home: String?
+            for h in hubs {
+                if await atHome(h.device) {
+                    home = h.device
+                    break
+                }
+            }
             guard state == s, !Task.isCancelled else { continue }
-            if home {
+            if let home {
+                // At home with a hub: the phone dials the members directly.
                 status = .atHome
+                using = home
                 closeTunnel()
                 wait = firstWait
                 await idle(homeCheck)
                 continue
             }
-            status = .connecting
-            let t: OpenTunnel
-            if let open = tunnel {
-                t = open
-            } else {
-                do {
-                    t = try tunnels.start(privateKey: s.key, psk: offer.psk, hubKey: offer.hubKey, device: device, hub: hub,
-                                          endpoint: offer.endpoints[endpoint % offer.endpoints.count],
-                                          obfuscation: try offer.obfuscation?.jsonText() ?? "",
-                                          vless: try offer.vless?.jsonText() ?? "")
-                } catch {
-                    fail("the tunnel to the hub could not start", error)
-                    wait = await backoff(wait)
-                    continue
-                }
-                tunnel = t
-            }
-            let started = ContinuousClock.now
-            do {
-                let conn = try await dial(t.port, hub)
-                status = .connected
-                lastError = nil
-                try await serve(conn, hub)
-                if ContinuousClock.now - started > maxWait { wait = firstWait }
-            } catch {
-                fail("the hub does not answer through the tunnel", error)
-                // The next of the hub's endpoints, in turn.
-                endpoint += 1
-                try? t.setEndpoint(offer.endpoints[endpoint % offer.endpoints.count])
+            var served: Duration?
+            for (i, h) in hubs.enumerated() {
+                served = await tryHub(s, h, up: i > 0)
+                if served != nil || Task.isCancelled || state != s { break }
             }
             if Task.isCancelled { break }
-            wait = await backoff(wait)
+            if let served {
+                // A connection that lasted starts the waits again; one that
+                // ended at once waits as a failure.
+                if served > maxWait { wait = firstWait } else { wait = await backoff(wait, hubs[0].device) }
+                continue
+            }
+            using = nil
+            if state != s { continue }
+            wait = await backoff(wait, hubs[0].device)
         }
         status = .off
+    }
+
+    /// Reaches the hub h through the tunnel at the next of its endpoints
+    /// and serves the connection until it ends, or for upCheck when up is
+    /// set, so the hubs above are tried again; returns how long it served
+    /// the connection, or nil when it did not reach the hub.
+    private func tryHub(_ s: AwayState, _ h: AwayState.Hub, up: Bool) async -> Duration? {
+        status = .connecting
+        let n = endpointOf[h.device] ?? 0
+        let offer = h.offer
+        let t: OpenTunnel
+        if let open = tunnel, tunnelTo == h {
+            t = open
+        } else {
+            closeTunnel()
+            do {
+                t = try tunnels.start(privateKey: s.key, psk: offer.psk, hubKey: offer.hubKey, device: device, hub: h.device,
+                                      endpoint: offer.endpoints[n % offer.endpoints.count],
+                                      obfuscation: try offer.obfuscation?.jsonText() ?? "",
+                                      vless: try offer.vless?.jsonText() ?? "")
+            } catch {
+                fail("the tunnel to the hub could not start", error)
+                return nil
+            }
+            guard state == s, !Task.isCancelled else {
+                t.close()
+                return nil
+            }
+            (tunnel, tunnelTo) = (t, h)
+        }
+        let c: ClosableTransport
+        do {
+            c = try await dial(t.port, h.device)
+        } catch {
+            fail("the hub does not answer through the tunnel", error)
+            // The next of the hub's endpoints, in turn, on the same tunnel.
+            endpointOf[h.device] = n + 1
+            try? t.setEndpoint(offer.endpoints[(n + 1) % offer.endpoints.count])
+            return nil
+        }
+        guard state == s, tunnel === t, !Task.isCancelled else {
+            c.close()
+            return nil
+        }
+        (conn, using, status, lastError) = (c, h.device, .connected, nil)
+        // On a hub below the first, the connection ends after upCheck.
+        let check = upCheck
+        let timer = up ? Task {
+            if (try? await Task.sleep(for: check)) != nil { c.close() }
+        } : nil
+        let began = ContinuousClock.now
+        do {
+            try await serve(c, h.device)
+        } catch {
+            fail("the connection to the hub ended", error)
+        }
+        timer?.cancel()
+        if conn === c { conn = nil }
+        return ContinuousClock.now - began
     }
 
     private func fail(_ what: String, _ error: Error) {
@@ -217,9 +377,9 @@ public actor AwayFromHome {
         log(what, error)
     }
 
-    private func backoff(_ wait: Duration) async -> Duration {
+    private func backoff(_ wait: Duration, _ hub: String) async -> Duration {
         await idle(wait)
-        return min(wait * 2, maxWait)
+        return min(wait * 2, isPhone(hub) ? phoneWait : maxWait)
     }
 
     /// Waits for d, or until something changes; nil waits for a change only.
@@ -233,4 +393,13 @@ public actor AwayFromHome {
 
     /// Ends the current wait, after a change.
     private func poke() { nap?.cancel() }
+
+    /// Where hub is in order; order.count when it is not there.
+    static func rank(_ order: [String], _ hub: String) -> Int { order.firstIndex(of: hub) ?? order.count }
+
+    /// The kept offers the phone tries, of the hubs in the group's order and
+    /// with endpoints, highest first.
+    static func hubsToTry(_ order: [String], _ s: AwayState) -> [AwayState.Hub] {
+        s.hubs.filter { rank(order, $0.device) < order.count && !$0.offer.endpoints.isEmpty }.sorted { rank(order, $0.device) < rank(order, $1.device) }
+    }
 }

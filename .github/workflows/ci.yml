@@ -666,7 +666,7 @@ jobs:
           security default-keychain -s ci.keychain
           security unlock-keychain -p ci ci.keychain
           security set-keychain-settings ci.keychain
-          CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/pair -run 'TestSwiftMemberAdmitsGoJoinerTLS|TestSwiftHubAdmitsInvitedGoJoiner' -v
           CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
 
   app:
@@ -786,7 +786,7 @@ jobs:
           (cd apps/android && ./gradlew --no-daemon -p kit interopScript)
           tool="$PWD/apps/android/kit/build/interop/clipboardbridge-interop"
           CBB_SWIFT_INTEROP="$tool" go test ./internal/pair -run 'TestSwiftMemberAdmitsGoJoiner$' -v
-          CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/pair -run TestSwiftMemberAdmitsGoJoinerTLS -v
+          CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/pair -run 'TestSwiftMemberAdmitsGoJoinerTLS|TestSwiftHubAdmitsInvitedGoJoiner' -v
           CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
       - name: build the app and the Wear OS app, and run their unit tests
         working-directory: apps/android

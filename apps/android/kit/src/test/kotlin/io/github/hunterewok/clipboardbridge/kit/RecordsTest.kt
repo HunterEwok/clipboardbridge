@@ -106,6 +106,16 @@ class RecordsTest {
         }
     }
 
+    /** testdata/interop/go-hubs.json, from Go's TestGoHubVectors: the order of the group's hubs. */
+    @Test
+    fun goHubOrder() {
+        val v = Interop.read("go-hubs.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        val set = RecordSet()
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        assertEquals(v.getValue("hub_order").jsonArray.map { it.jsonPrimitive.content }, set.hubOrder)
+    }
+
     /**
      * testdata/interop/go-admins.json, from Go's TestGoAdminVectors: a
      * computer's admin CA removes a device but neither the admin phone nor

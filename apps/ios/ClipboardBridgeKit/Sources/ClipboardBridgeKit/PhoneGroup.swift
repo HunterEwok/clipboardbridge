@@ -245,6 +245,16 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
     }
 
+    /// A hub command that makes the admin computer to the group's hub in
+    /// place of this phone (section 11, "Moving the hub"), signed with this
+    /// phone's root or admin key, with the hub's clients and its forwarder.
+    public func hubCommand(to device: String, forwarder: (endpoint: String, pin: String)?, clients: [PhoneHub.Client],
+                           caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin, records.mayHost(device) else { throw Failure.notAdmin }
+        return try Commands.hub(to: device, forwarder: forwarder, clients: clients.filter { $0.device != device }, group: tag, by: self.device,
+                                now: now, signer: caSigner, adminCA: adminCA)
+    }
+
     /// Removes a device from the group: signs a revocation of its key,
     /// which every member then refuses, and returns the record to send. For
     /// an admin phone it revokes its admin key too and keeps the devices
@@ -332,17 +342,21 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// that key. On success a computer is in computers, where one admitted
     /// again replaces its entry, and every device has its record. A
     /// computer keeps those of addrs that are on a home network, where the
-    /// phone dialed it.
+    /// phone dialed it. With invitation, the device dialed this phone, the
+    /// hub, with a remote invitation (section 12): code is unused and the
+    /// device never becomes an admin.
     public mutating func admit(over t: FrameTransport, code: String, joinerCert: Data, sessionID: [UInt8],
                                caSigner: CertificateSigner, makeAdmin: Bool = true, addrs: [String] = [],
-                               now: Date) async throws -> PairingMember.Admitted {
+                               invitation: PairingMember.Invitation? = nil, now: Date) async throws -> PairingMember.Admitted {
         guard isAdmin else { throw Failure.notAdmin }
-        let (first, later, root, ca, issuer, canMakeAdmins) = (groupCA, roots, currentRoot, signingCA, adminCA, isRoot)
+        let (first, later, root, ca, issuer) = (groupCA, roots, currentRoot, signingCA, adminCA)
+        let canMakeAdmins = isRoot && invitation == nil
         let pathRecords = later.isEmpty ? nil : records.pathRecords
         var adminKey: Data?
         let admitted = try await PairingMember.admit(
             over: t, code: code, memberCert: memberCert, joinerCert: joinerCert, sessionID: sessionID,
-            memberAD: Pairing.MemberAD(device: device, group: tag), taken: { [device, records] in $0 == device || records.knows($0) }
+            memberAD: Pairing.MemberAD(device: device, group: tag), taken: { [device, records] in $0 == device || records.knows($0) },
+            invitation: invitation
         ) { dev, publicKey, info in
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
                                     groupCA: first, issuer: issuer)

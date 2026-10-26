@@ -24,6 +24,32 @@ final class CommandTests: XCTestCase {
         XCTAssertThrowsError(try Commands.mode(to: pc, mode: "everything", group: "tag", by: "by", now: now, signer: root))
     }
 
+    /// A hub command carries the forwarder and the clients; a result
+    /// carries the new hub's offer, which the old hub passes on.
+    func testHubCommand() throws {
+        let root = SoftwareSigner()
+        let client = PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32), psk: Data(repeating: 2, count: 32))
+        let c = try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "sha256:AAAA"), clients: [client], group: "tag", by: "by",
+                                 now: now, signer: root)
+        let b = try JSONDecoder().decode(Commands.Body.self, from: c.body)
+        XCTAssertEqual(b.type, "hub")
+        XCTAssertNil(b.mode)
+        XCTAssertEqual(b.hub?.forwarder?.endpoint, "203.0.113.9:8764")
+        XCTAssertEqual(b.hub?.clients, [client])
+        XCTAssertThrowsError(try Commands.hub(to: pc, forwarder: nil, clients: [client], group: "tag", by: "by", now: now, signer: root))
+        let m = try Member.decode(body: Data(
+            #"{"t":"result","result":{"id":"ab","status":"done","tunnel":{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","endpoints":["203.0.113.9:8764"]}}}"#.utf8))
+        guard case let .result(r) = m, let offer = r.tunnel else { return XCTFail("no result with an offer") }
+        XCTAssertEqual(offer.endpoints, ["203.0.113.9:8764"])
+        let hub = PhoneHub(publicKey: Data(repeating: 9, count: 32), clients: [client])
+        let moved = try XCTUnwrap(hub.movedOffer(device: client.device, newHub: pc, offer: offer))
+        XCTAssertEqual(moved.hub, pc)
+        XCTAssertTrue(moved.moved)
+        XCTAssertEqual(moved.psk, client.psk)
+        XCTAssertNil(hub.movedOffer(device: pc, newHub: pc, offer: offer))
+        XCTAssertEqual(try Member.decode(body: Data(Member.encode(.tunnel(moved)).dropFirst(4))), .tunnel(moved))
+    }
+
     /// A command and its result through the frames, as Go sends and reads them.
     func testMessages() throws {
         let c = Member.Record(body: Data("{}".utf8), sig: Data([1, 2]), chain: [Data([3])])
@@ -83,6 +109,10 @@ final class CommandTests: XCTestCase {
         let out = Out(group_ca: ca, to: pc, commands: [
             try Commands.mode(to: pc, mode: "receive", group: tag, by: by, now: now, signer: root),
             try Commands.mode(to: pc, mode: "receive", group: tag, by: by, now: now, signer: admin, adminCA: adminCA),
+            try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "sha256:AAAA"),
+                             clients: [PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32),
+                                                       psk: Data(repeating: 2, count: 32))],
+                             group: tag, by: by, now: now, signer: root),
         ])
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

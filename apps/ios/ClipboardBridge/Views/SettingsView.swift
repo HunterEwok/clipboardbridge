@@ -11,6 +11,9 @@ struct SettingsView: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var model: AppModel
     @State private var switching = false
+    @State private var moving: AppModel.Hub.Target?
+    @State private var forwarderAddress = ""
+    @State private var forwarderKey = ""
     /// Taps on the version; seven show the error details switch, as
     /// Android's build number shows its developer options.
     @State private var versionTaps = 0
@@ -41,7 +44,16 @@ struct SettingsView: View {
                 Text("Language")
             }
             .listRowBackground(palette.surface)
-            if let away = model.away {
+            if let hub = model.hub {
+                hubSection(hub)
+                if hub.on, hub.status == .registered {
+                    inviteSection
+                }
+                if !hub.computers.isEmpty {
+                    moveHubSection(hub)
+                }
+            }
+            if let away = model.away, model.hub?.on != true {
                 awaySection(away)
             }
             NotificationSettings()
@@ -84,6 +96,147 @@ struct SettingsView: View {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// Moving the hub to a computer (docs/design.md, "Moving the hub to a
+    /// computer"): the suggestion of one that is always on, once, and a
+    /// button for each computer the hub can move to, each asking first.
+    private func moveHubSection(_ hub: AppModel.Hub) -> some View {
+        Section {
+            if let s = hub.suggested {
+                Text("\(s.name) is always on. Make it the hub, so that sync away from home works while this app is closed?")
+                Button { moving = s } label: { Text("Make it the hub") }
+                Button { Task { await model.keepPhoneHub() } } label: { Text("Keep this phone") }
+            }
+            ForEach(hub.computers.filter { $0 != hub.suggested }) { c in
+                Button { moving = c } label: { Text("Make \(c.name) the hub") }
+            }
+        } header: {
+            Text("Move the hub to a computer")
+        } footer: {
+            Text("A computer that is always on keeps sync away from home working while this app is closed. The devices that reach this phone from afar move with it.")
+        }
+        .listRowBackground(palette.surface)
+        .alert(Text("Make \(moving?.name ?? "") the hub?"), isPresented: Binding(
+            get: { moving != nil }, set: { if !$0 { moving = nil } }
+        )) {
+            Button {
+                if let c = moving {
+                    Task { await model.moveHub(to: c.id) }
+                }
+                moving = nil
+            } label: { Text("Move the hub") }
+            Button(role: .cancel) { moving = nil } label: { Text("Cancel") }
+        } message: {
+            Text("The devices that reach this phone from afar move to \(moving?.name ?? ""), and this phone becomes its client. Sync away from home must be on there (cbb global on).")
+        }
+    }
+
+    /// A remote invitation for a device far away (docs/protocol.md,
+    /// section 12): the button that opens it, then its file to share, and
+    /// the question about the device that used it, with the fingerprint to
+    /// compare.
+    private var inviteSection: some View {
+        Section {
+            if let invite = model.invite {
+                Text("The invitation is open until \(invite.expires.formatted(date: .omitted, time: .shortened)). Share its file only with the person who joins: anyone who has it can ask to join.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textDim)
+                ShareLink(item: invite.file) { Text("Share the invitation") }
+                Button(role: .destructive) { model.cancelInvite() } label: { Text("Cancel the invitation") }
+            } else {
+                Button { Task { await model.openInvite() } } label: { Text("Make an invitation") }
+            }
+            if let note = model.inviteNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(palette.textDim)
+            }
+        } header: {
+            Text("Invite a device from afar")
+        } footer: {
+            Text("For a device that is not on your network, such as a parent's computer: share the invitation file with its owner, who joins with cbb pair -invite. It works once, for an hour, while this app is open.")
+        }
+        .listRowBackground(palette.surface)
+        .alert(Text("Admit \(model.invite?.request?.info.name ?? "")?"), isPresented: Binding(
+            get: { model.invite?.request != nil }, set: { if !$0 { model.answer(false) } }
+        )) {
+            Button { model.answer(true) } label: { Text("Admit") }
+            Button(role: .cancel) { model.answer(false) } label: { Text("Not this one") }
+        } message: {
+            Text("A device (\(model.invite?.request?.info.os ?? "")) used the invitation. Admit it only if the device shows the same fingerprint:\n\n\(model.invite?.request?.fingerprint ?? "")")
+        }
+    }
+
+    /// The phone as the group's hub: the switch, where it stands, the
+    /// forwarder and the home networks.
+    private func hubSection(_ hub: AppModel.Hub) -> some View {
+        Section {
+            Toggle(isOn: Binding(get: { hub.on }, set: { on in
+                switching = true
+                Task {
+                    await model.setHub(on)
+                    switching = false
+                }
+            })) {
+                Text("This phone is the group's hub")
+            }
+            .disabled(switching)
+            hubStatus(hub)
+                .foregroundStyle(hub.status == .registered ? palette.accent : palette.textDim)
+            // The registration's error underneath, when details are on.
+            if let error = hub.error, AppModel.showsErrorDetails {
+                Text(verbatim: error).font(.caption).foregroundStyle(palette.textDim)
+            }
+            if hub.on {
+                Text(hub.home ? "On a home network: devices here connect to this phone."
+                     : "This network is not one of the hub's home networks: devices here do not see this phone.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textDim)
+                if !hub.home {
+                    Button { Task { await model.addHomeNetwork() } } label: { Text("This is my home network") }
+                }
+                TextField(text: $forwarderAddress) { Text("Forwarder address, such as 198.51.100.9:8764") }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                TextField(text: $forwarderKey) { Text("Forwarder key, sha256:…") }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(.body, design: .monospaced))
+                Button {
+                    switching = true
+                    Task {
+                        await model.setForwarder(address: forwarderAddress, pin: forwarderKey)
+                        switching = false
+                    }
+                } label: {
+                    Text("Save the forwarder")
+                }
+                .disabled(switching || (forwarderAddress == (hub.forwarder?.endpoint ?? "") && forwarderKey == (hub.forwarder?.pin ?? "")))
+            }
+            if let note = model.hubNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(palette.danger)
+            }
+        } header: {
+            Text("This phone as the hub")
+        } footer: {
+            Text("While the app is open, this phone is the hub of a group without a computer: the other phones, TVs and lite members on the home network connect to it, and with a forwarder they reach it from afar too. The forwarder only passes encrypted packets; it learns the group's tag, this phone's tunnel key and the addresses, never what is copied. A computer that is always on is the better hub; until then this phone does it.")
+        }
+        .listRowBackground(palette.surface)
+        .onAppear {
+            forwarderAddress = hub.forwarder?.endpoint ?? ""
+            forwarderKey = hub.forwarder?.pin ?? ""
+        }
+    }
+
+    private func hubStatus(_ hub: AppModel.Hub) -> Text {
+        switch hub.status {
+        case .off: return Text("Off: this phone is no hub.")
+        case .paused: return Text("Waiting for the app: the hub works while the app is open.")
+        case .homeOnly: return Text("The hub at home only: add a forwarder for sync away from home.")
+        case .registering: return Text("Registering with the forwarder…")
+        case .registered: return Text("Registered with the forwarder: devices away from home reach this phone.")
+        case .failed: return Text("The forwarder does not take this phone. Check its address and key.")
         }
     }
 

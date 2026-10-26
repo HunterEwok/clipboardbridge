@@ -157,11 +157,23 @@ The order may change.
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See
     "Secure updates" below.
-30. **Planned for 0.5; step 1 is built.** The phone as the hub while its app is open: a
+30. **Planned for 0.5; steps 1 to 5 are built.** The phone as the hub while its app is open: a
     group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
     afar while the app is open, through the project's forwarder; once a computer that is
     always on joins, the app suggests moving the hub there, and the user may keep it on the
     phone. See "The phone as the hub" below.
+31. **Planned for 0.6.** Key levels: the user picks who may be the group's root, an admin
+    or a hub: only devices whose hardware key is proven by attestation, devices with a key in
+    hardware (the default), or, after a warning, devices with a key in a file too. See "Key
+    levels" below and the guide "Keys and attestation", which comes with it.
+32. **Planned for 0.6.** What the forwarder and the relay learn, cut to what they need: short
+    credentials made for them (the hubs' credential, the members' credential) in place of
+    the group's records, so they see no device ID, name, system, role or dates. See "What
+    the servers learn" below, with the research of what is left to hide (the addresses
+    and online times, stable pseudonyms, the group tag, the count of devices).
+33. **To research in 0.6.** The iPhone as a hub in the background: the hub run as a
+    Network Extension (a packet tunnel provider), which iOS does not suspend while the
+    tunnel is on. See "Research: the iPhone hub in a Network Extension" below.
 
 ## OpenWrt routers
 
@@ -583,7 +595,7 @@ device and Android would need more rights than the app should hold.
 
 ## The phone as the hub
 
-Planned for 0.5; steps 1 and 2 are done. The design, and the other cases of a group without a
+Planned for 0.5; steps 1 to 5 are done. The design, and the other cases of a group without a
 working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open-planned-for-05) (D-64).
 
 Everyone has a phone; not everyone has a computer. A group made on a phone gets a hub at once,
@@ -602,26 +614,68 @@ better hub, so the app suggests it when there is one, and the user decides.
    protocol (`PhoneHub`, MemberNode's `hub`): it admits a client by the tunnel key its hello
    offers, by the rules of a computer's hub, and answers with its offer; tested over member
    TLS in the Kotlin kit and over a pipe in the Swift kit.
-3. The phone hub in both apps: on by default in a group made on a phone, `StartHub` with the
-   member listener's port, `Register` with the group's forwarder, its status on Home and in
-   the away screen, mDNS publishing of the member port on the home network, and on Android
-   the option to keep it running in the foreground service; tests of the whole way, a
-   computer and the lite member through the forwarder to a phone, on the bench.
-4. Clients for a hub that comes and goes: short retries in `cbb`, the lite member and both
-   kits, the interval measured for phone batteries and the forwarder's load.
-5. Remote invitations made and served on the phone (step 7 of the order of work in
-   [design.md](design.md#order-of-work)), so that a device far away, such as a parent's TV,
-   joins.
-6. Moving the hub: the suggestion when a computer that is always on joins, the old hub
-   passing its clients' keys to the new one and its offer to the clients; and the hub moving
-   with an admin phone's takeover.
-7. Several hubs with a priority (D-65, in the plan for 0.5): the hubs' list in the group,
-   the clients keeping every hub's offer, the hubs passing each other the clients' keys,
-   the lower hub yielding to the higher one, and tests of switching both ways.
+3. Done: the phone hub in both apps: on by default in a group made on a phone, `StartHub`
+   with the member listener's port, `Register` with the forwarder set in Settings and the
+   group's authority records, its status on Home and in Settings, publishing of the member
+   port (`r=phone`) on the home networks the phone remembers, and on Android the option to
+   keep it running in the foreground service. Still to do on the bench: a computer and the
+   lite member through the forwarder to a phone.
+4. Done: clients for a hub that comes and goes: a hub whose device record says `phone` is
+   tried at least every 5 s instead of up to 30 s, in `cbb`, the lite member and both apps.
+   Still to measure on real phones: the battery cost and the forwarder's load.
+5. Done: remote invitations made and served on the phone (step 7 of the order of work in
+   [design.md](design.md#order-of-work)): cbbtun's guest tunnel (`Hub.Invite`), the kits'
+   `InvitationWindow`, and in both apps "Invite a device from afar", which shares the file
+   and asks the user to confirm the device; tested against `cbb`'s joiner. Still to do:
+   using an invitation on a phone or a TV, so that a parent's TV joins.
+6. Done: moving the hub to an admin computer (docs/protocol.md, section 11, "Moving the
+   hub"): the `hub` command with the clients' keys, the old hub passing the new hub's offer
+   to its clients with their own preshared keys, the clients' rules for following it in
+   `cbb`, the lite member and both kits, `cbb global move`, and in both apps "Move the hub
+   to a computer" with the suggestion of a computer that is always on, and the hub moving
+   with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
+   Still to do on the bench: moving from a phone to the deck with the lite member far away.
+7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
+   the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
+   member), the clients keeping every hub's offer with a preshared key of their own, the
+   hubs sharing their clients and passing each other's offers on, and a computer's hub
+   yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both
+   ways. Still to do: the phone hub yielding to a hub above it, the signed table of main
+   hubs the user orders, and a bench run with two computers as hubs.
 
 Not yet verified on real devices: how long iOS keeps the forwarder registration and the
 tunnel up while the app is open and the screen locks, the battery cost of the clients'
 retries, and the Android foreground service as a hub across battery savers.
+
+### Research: the iPhone hub in a Network Extension
+
+To research in 0.6, no release chosen. Today the iPhone is the hub only while its app is open; iOS
+suspends the app soon after it leaves the screen. Android can keep the hub running in the
+foreground service, at a battery cost. The one way known for the iPhone is to run the hub as
+a Network Extension, a packet tunnel provider, a separate process that iOS keeps running
+while the tunnel is on. What the hub needs fits it on paper: an outgoing registration with
+the forwarder, WireGuard for the clients (the WireGuard app runs wireguard-go the same way),
+and member connections; it needs no clipboard. Questions to answer before any work:
+
+1. Whether it works: whether the extension may run cbbtun's hub (WireGuard, gVisor's
+   netstack, the registration) and the kit's member node within its memory limit (about
+   50 MB), reach the member key in the keychain (a shared access group) and the group's
+   state (an App Group), and route nothing of the phone's own traffic (only the tunnel's
+   prefix, or none). Also whether it may listen on the home network and publish itself by
+   Bonjour, or serves only through the forwarder.
+2. iOS allows one VPN at a time: a user who keeps another VPN on, common where a VPN is needed
+   to reach the internet, cannot run both. Check what happens when the other one starts, and
+   say it in the app.
+3. Apple's rules: the App Review Guidelines (section 5.4) allow VPN apps only through
+   NEVPNManager and, as we read them, only from developers enrolled as an organization, with
+   a clear account of what data the app sees; background use must be for the stated purpose
+   (2.5.4). Check the current text, whether the owner's developer account qualifies, and
+   whether review accepts a tunnel that carries only the group's own sync.
+4. The cost: the battery with the extension always on, measured on a real iPhone, against the
+   hub moving to a computer that is always on (step 6 above).
+
+The answers decide whether this becomes a step of the plan, an option the user turns on, or
+is dropped in favour of a computer or a second hub (D-65).
 
 ## Secure updates
 
@@ -716,6 +770,90 @@ token cannot slip in another build or an older one.
 7. Sparkle in the Mac app, after the Apple account.
 8. On the bench: an update from the previous release on every device (L9), a refused
    downgrade and a refused unsigned build.
+
+## Key levels
+
+Planned for 0.6 (D-66). The owner's rule: the root, the admins and the hub hold keys in
+hardware. A key in hardware cannot be copied, even from a device that is broken into; it
+can only be misused on that device while the attacker holds it. A key in a file can be
+copied once and used anywhere, for as long as nobody removes the device.
+
+The user picks one of three levels for the group, at its root:
+
+1. **Proven hardware only.** A device may be the root, an admin or a hub only when
+   attestation proves its key is in hardware: Android's Key Attestation, a TPM with its
+   maker's certificate, the iPhone through App Attest. This asks outside servers, and the
+   guide says which: Apple's for each iPhone that makes a key, Google's public list of
+   revoked attestation keys, and for some TPMs their maker's server. The public lists are
+   mirrored on cbb.tools, signed like the releases (item 29), so the devices ask only us;
+   the per-device requests (Apple, the TPM makers) cannot be mirrored. This level is the
+   one exception to D-47, and only for a group whose user chose it.
+2. **Hardware (the default).** The device's own word that its key is in hardware: the
+   phones, a Mac's Secure Enclave, a TPM without its maker's certificate. Nothing about the
+   device leaves the group, which is why it is the default (D-47).
+3. **Files allowed.** A device whose key is in a file may also be an admin or the hub, each
+   time after the user allows it, with a warning that the key can be copied and must be
+   watched. A group of computers only, while they have no TPM or Secure Enclave support
+   (D-44), works only at this level.
+
+- A device that shows signs of being broken into (a jailbreak or root, an unlocked
+  bootloader, a Keystore in software, which attestation reports) counts as a key in a file,
+  and the devices list marks it.
+- Groups made before 0.6 keep working; one whose root or admins hold keys in files shows a
+  warning and suggests moving the root to a phone.
+- The guide "Keys and attestation" (docs/guide) says all of this plainly.
+
+## What the servers learn
+
+Planned for 0.6 (D-67). A forwarder and a relay now see the group's authority records,
+which name the root's and the admins' devices with their names, systems and dates, and the
+removals with who made them and when. Signed records cannot be cut, so the servers get
+credentials made for them instead, signed with the group's keys:
+
+- **The hubs' credential**, signed by the root (the several hubs' table, D-65): the group
+  tag, a version, an expiry, and the hubs' member key hashes with their priority. The
+  forwarder keeps only the newest version of each group and refuses older ones; a hub
+  removed is left out of the next version. The hub's TLS to the forwarder presents a
+  certificate without its device ID.
+- **The members' credential**, for a relay: the group tag, a version, an expiry and the
+  members' key hashes, signed by the root or an admin the hubs' credential lists. Tunnel
+  addresses on a relay come from a key the group keeps, not from the device ID, so the
+  relay sees pseudonyms only.
+- Roots after a takeover: the chain from the old root to the new, without the device that
+  took over.
+- What stays: the group tag and root certificate, key hashes (stable pseudonyms), how many
+  hubs or members there are, addresses, timing and sizes.
+- Face ID is asked only when the credentials change (a device admitted or removed, a hub
+  set) and once per expiry. Inside the group cbb keeps using the full records.
+
+### Research for 0.6: what is left to hide
+
+To research in 0.6, with the credentials above and the several hubs (D-65). Even with them,
+the servers see something. From the most to the least revealing:
+
+1. the addresses of the hub and its clients, the times they are online, and the volume;
+2. a stable pseudonym per device (its key hash);
+3. the group tag;
+4. how many devices there are;
+5. when the root changes (a takeover);
+6. the root certificate.
+
+Proposals to study:
+
+- **No logs on cbb.tools**: the forwarder and the relay we run keep no logs and no
+  addresses on disk; say so in the docs, and check it on the test bench.
+- **The address**: document that a system VPN hides the user's address from cbb.tools;
+  maybe a setting to reach cbb.tools through a proxy or a VPN of the user's choice.
+- **The hub's online times**: optionally keep the hub registered all the time, so its
+  hours are not seen. On Android in the foreground service, at a battery cost; on the
+  iPhone only as a Network Extension (item 33, "Research: the iPhone hub in a Network
+  Extension").
+- **Rotating pseudonyms**: new device pseudonyms and a new group tag with each renewal of
+  the credentials (about every 30 days), derived from a group secret the servers do not
+  know. Today the forwarder sees the hub's member key, which never changes, so this needs
+  a separate short-lived key for the servers, signed by the root.
+- **Padding**: the credentials' lists padded to 4, 8 or 16 entries, so the count of
+  devices shows only roughly.
 
 ## Device keys in hardware
 

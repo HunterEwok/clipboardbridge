@@ -12,6 +12,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1027,8 +1028,10 @@ func TestSwiftCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
-	if len(v.Commands) != 2 {
-		t.Fatalf("%d commands, want 2", len(v.Commands))
+	// Two mode commands, by the root and by an admin, then a hub command
+	// by the root with one client.
+	if len(v.Commands) != 3 {
+		t.Fatalf("%d commands, want 3", len(v.Commands))
 	}
 	for i, c := range v.Commands {
 		var b CommandBody
@@ -1039,11 +1042,99 @@ func TestSwiftCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command %d: %v", i, err)
 		}
-		if got.Type != CommandMode || got.Mode != "receive" {
+		if i < 2 && (got.Type != CommandMode || got.Mode != "receive") {
 			t.Errorf("command %d: %+v", i, got)
+		}
+		if i == 2 && (got.Type != CommandHub || got.Hub.Forwarder == nil || got.Hub.Forwarder.Endpoint != "203.0.113.9:8764" ||
+			len(got.Hub.Clients) != 1 || len(got.Hub.Clients[0].PSK) != 32) {
+			t.Errorf("the hub command: %+v", got.Hub)
 		}
 		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
 			t.Errorf("command %d was taken by another device", i)
 		}
+	}
+}
+
+type hubVectors struct {
+	GroupCA  []byte     `json:"group_ca"`
+	Records  []Record   `json:"records"`
+	HubOrder []DeviceID `json:"hub_order"`
+}
+
+// TestGoHubVectors writes (with -update) and checks
+// testdata/interop/go-hubs.json: the order of a group's hubs
+// (docs/protocol.md, section 11, "Several hubs"), the phones first and the
+// root's own device first among them, then the admin computers by device
+// ID, without a plain computer or a removed admin, for the phone kits and
+// the lite member to agree with.
+func TestGoHubVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-hubs.json")
+	if *update {
+		pg := newPhoneGroup(t)
+		g := pg.root.Cert
+		rootMember := member(t, pg.root)
+		rootDev := DeviceID(rootMember.Subject.CommonName)
+		key := KeyHashOf(rootMember)
+		own, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, By: rootDev,
+			Device: rootDev, Name: "root phone", Role: RolePhone, Key: &key}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pcOne, pcTwo, gone := adminCA(t, pg.root), adminCA(t, pg.root), adminCA(t, pg.root)
+		all := []Record{
+			own,
+			adminRecord(t, g, pg.root, nil, member(t, pg.root), "admin phone", KeyHashOf(pg.a.Cert)),
+			computerAdminRecord(t, pg, member(t, pg.root), "pc one", KeyHashOf(pcOne.Cert)),
+			computerAdminRecord(t, pg, member(t, pg.root), "pc two", KeyHashOf(pcTwo.Cert)),
+			computerAdminRecord(t, pg, member(t, pg.root), "removed pc", KeyHashOf(gone.Cert)),
+			deviceRecord(t, g, pg.root, nil, member(t, pg.root), "plain pc", 1),
+			revokeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(gone.Cert)}, nil),
+		}
+		s := NewRecords(g)
+		if _, errs := s.AddAll(all); len(errs) != 0 {
+			t.Fatal(errs)
+		}
+		v := hubVectors{GroupCA: g.Raw, Records: all, HubOrder: s.HubOrder()}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v hubVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	got := s.HubOrder()
+	if !slices.Equal(got, v.HubOrder) {
+		t.Errorf("HubOrder = %v, the file has %v", got, v.HubOrder)
+	}
+	names := map[DeviceID]string{}
+	for _, d := range s.Devices() {
+		names[d.ID] = d.Name
+	}
+	var gotNames []string
+	for _, d := range got {
+		gotNames = append(gotNames, names[d])
+	}
+	if len(gotNames) != 4 || gotNames[0] != "root phone" || gotNames[1] != "admin phone" || !slices.Contains(gotNames[2:], "pc one") || !slices.Contains(gotNames[2:], "pc two") {
+		t.Errorf("the hubs are %v", gotNames)
+	}
+	if string(got[2]) > string(got[3]) {
+		t.Error("the computers are not in the order of their device IDs")
 	}
 }
