@@ -77,7 +77,7 @@ final class ShareModel: ObservableObject {
 
     /// The most an image or files may take together here: the extension
     /// holds them in its memory, which iOS keeps small.
-    static let maxShared = 50 << 20
+    nonisolated static let maxShared = 50 << 20
 
     struct TooLarge: Error {}
 
@@ -111,11 +111,12 @@ final class ShareModel: ObservableObject {
     /// The name and bytes of a shared file.
     static func file(_ p: NSItemProvider) async -> (String, Data)? {
         let type = p.registeredContentTypes.first { $0.conforms(to: .data) } ?? .data
+        let suggested = p.suggestedName
         return await withCheckedContinuation { c in
             _ = p.loadFileRepresentation(for: type, openInPlace: false) { url, _, _ in
                 guard let url, let d = try? Data(contentsOf: url) else { return c.resume(returning: nil) }
                 // The suggested name may lack the file's extension.
-                var name = p.suggestedName ?? url.lastPathComponent
+                var name = suggested ?? url.lastPathComponent
                 if !url.pathExtension.isEmpty, (name as NSString).pathExtension.isEmpty { name += "." + url.pathExtension }
                 c.resume(returning: (name, d))
             }
