@@ -112,7 +112,8 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		if err := globalShows(ctx, hub, "this device is the hub", 2*time.Minute); err != nil {
 			return err
 		}
-		return globalNot(ctx, admin, "this device is the hub", 3*time.Minute)
+		// The admin stands by as the root's client: cbb global says so.
+		return globalShows(ctx, admin, "stands by as its client", 3*time.Minute)
 	}) != nil {
 		return
 	}
@@ -141,7 +142,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 	})
 	started := time.Now()
 	if r.Do("away/P36/"+admin.Name+"/gives-way", func() error {
-		return globalNot(ctx, admin, "this device is the hub", 6*time.Minute)
+		return globalShows(ctx, admin, "stands by as its client", 6*time.Minute)
 	}) == nil {
 		fmt.Fprintf(r.out, "     %s gave way %v after the root came back\n", admin.Name, time.Since(started).Round(time.Second))
 	}
@@ -150,18 +151,4 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 			bothWays(ctx, r, g, "away/P36/"+d.Name+"/after/", d, timeout)
 		}
 	}
-}
-
-// globalNot waits until cbb global on the device no longer prints text.
-func globalNot(ctx context.Context, d *Device, text string, timeout time.Duration) error {
-	return eventually(ctx, timeout, func() error {
-		out, err := Run(ctx, d, cbbCmd(d)+" global", "")
-		if err != nil {
-			return err
-		}
-		if strings.Contains(out, text) {
-			return fmt.Errorf("cbb global on %s still says %q", d.Name, text)
-		}
-		return nil
-	})
 }
