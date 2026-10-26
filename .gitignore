@@ -49,5 +49,4 @@ go.work.sum
 /Cbbtun.xcframework/
 /apps/ios/Cbbtun.xcframework/
 /site/out-lighthouse/
-/site/.lighthouseci/
 /site/node_modules/

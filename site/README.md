@@ -46,7 +46,8 @@ go run ./tools/site serve -preview            # http://127.0.0.1:8780
 `go test ./tools/site` builds the site and checks every page: one `h1`, canonical links,
 `noindex` only on the error pages, valid schema.org data, the sitemap, and that every link
 within the site leads to a file the build wrote. CI's `website` job also validates the HTML
-and runs Lighthouse on a few pages; it fails below 0.9 for performance and SEO and 0.95 for
+and runs Lighthouse three times on each of a few pages (`go run ./tools/site lighthouse`);
+it fails when a page's median is below 0.9 for performance and SEO and 0.95 for
 accessibility. To run it here (`CHROME_PATH` if Chrome is not found by itself):
 
 ```sh
@@ -106,14 +107,15 @@ installs and changes it; nothing here does it by itself.
    sudo useradd --system --home-dir /var/lib/goatcounter --shell /usr/sbin/nologin goatcounter
    sudo install -d -o goatcounter -g goatcounter /var/lib/goatcounter
    sudo -u goatcounter goatcounter db create site -db sqlite+/var/lib/goatcounter/db.sqlite3 \
-       -createdb -vhost localhost -user.email YOU@EXAMPLE.COM   # asks for the password
+       -createdb -vhost stats.localhost -user.email YOU@EXAMPLE.COM   # asks for the password
    ```
 
    copy [`deploy/cbb-site-stats.service`](deploy/cbb-site-stats.service) to
    `/etc/systemd/system`, `sudo systemctl daemon-reload` and `sudo systemctl enable --now
    cbb-site-stats.service`. It listens only on `127.0.0.1:8781`, and its dashboard is not on
    the internet: open it through SSH with `ssh -L 8781:127.0.0.1:8781 SERVER` and
-   <http://localhost:8781>. The buttons that count presses carry
+   <http://stats.localhost:8781> (GoatCounter wants a name of two labels, and browsers send
+   every `*.localhost` name to this computer). The buttons that count presses carry
    `data-goatcounter-click`.
 6. The pages: `go run ./tools/site build`, then copy `site/out/` to `/srv/cbb.tools/www/`;
    `sudo nginx -t && sudo systemctl reload nginx`.
