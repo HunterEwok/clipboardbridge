@@ -25,6 +25,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   attestation keys every day (`attest-status.json`, with a status key that `keys.json`
   certifies only for it), and the group's root, a computer or a phone, takes it and records a
   phone whose chain was revoked as only in hardware (docs/protocol.md, section 17).
+- Keys in the TPM: a Linux computer with a TPM 2.0 makes its member and admin keys in it
+  when it joins a group, the identity file keeps only the TPM's blob, and the device counts
+  as hardware (`internal/tpmkey`, docs/protocol.md, section 17). The installer lets the
+  service reach `/dev/tpmrm0`; `CBB_TPM=off` keeps new keys in a file.
 - The guide "Keys and attestation" (docs/guide/keys.md): where each device keeps its keys,
   how Android phones prove it, and the three key levels.
 

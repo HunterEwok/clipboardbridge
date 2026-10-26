@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
-	"github.com/google/go-tpm/tpm2/transport/linuxtpm"
 	"github.com/google/go-tpm/tpm2/transport/tcp"
 )
 
@@ -49,12 +48,9 @@ func Open() (*TPM, error) {
 	if addr := os.Getenv(simEnv); addr != "" {
 		return openSimulator(addr)
 	}
-	if _, err := os.Stat(Device); err != nil {
-		return nil, ErrNoTPM
-	}
-	t, err := linuxtpm.Open(Device)
+	t, err := openDevice()
 	if err != nil {
-		return nil, fmt.Errorf("tpmkey: %w", err)
+		return nil, err
 	}
 	return &TPM{t: t}, nil
 }

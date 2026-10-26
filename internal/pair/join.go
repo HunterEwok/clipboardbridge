@@ -53,7 +53,7 @@ func NewJoiner(info Info) (*Joiner, error) {
 	if err := info.check(); err != nil {
 		return nil, err
 	}
-	key, err := group.NewKey()
+	key, err := group.NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
 )
 
 // FileName is the name of the identity file in the state directory.
@@ -71,7 +72,7 @@ type Identity struct {
 // Create creates a new group on this device, its root: a device ID, a key,
 // the root CA, the iPhone CA and the device's certificates.
 func Create(now time.Time) (*Identity, error) {
-	key, err := NewKey()
+	key, err := NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +85,11 @@ func Create(now time.Time) (*Identity, error) {
 		return nil, err
 	}
 	id := NewDeviceID()
-	cert, err := groupCA.IssueMember(id, &key.PublicKey, now)
+	cert, err := groupCA.IssueMember(id, PublicKey(key), now)
 	if err != nil {
 		return nil, err
 	}
-	phone, err := phoneCA.IssuePhone(&key.PublicKey, now)
+	phone, err := phoneCA.IssuePhone(PublicKey(key), now)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +177,7 @@ func (id *Identity) WithAdminKey() (*Identity, error) {
 	if !id.NeedsAdminKey() {
 		return nil, errors.New("group: only a member of a group with a root, not the root, and without one gets an admin key")
 	}
-	key, err := NewKey()
+	key, err := NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +596,7 @@ func renewable(c, ca *x509.Certificate, now time.Time, before time.Duration) boo
 type identityFile struct {
 	Version    int      `json:"v"`
 	Device     string   `json:"device"`
-	Key        []byte   `json:"key"`
+	Key        []byte   `json:"key,omitempty"`
 	Cert       []byte   `json:"cert"`
 	Issuer     []byte   `json:"issuer,omitempty"`
 	GroupCA    []byte   `json:"group_ca"`
@@ -607,6 +608,10 @@ type identityFile struct {
 	Phone      []byte   `json:"phone,omitempty"`
 	AdminKey   []byte   `json:"admin_key,omitempty"`
 	AdminCA    []byte   `json:"admin_ca,omitempty"`
+	// KeyTPM and AdminKeyTPM stand for Key and AdminKey when those live
+	// in the TPM: the blob that only this machine's TPM loads.
+	KeyTPM      *tpmkey.Blob `json:"key_tpm,omitempty"`
+	AdminKeyTPM *tpmkey.Blob `json:"admin_key_tpm,omitempty"`
 }
 
 const fileVersion = 1
@@ -631,8 +636,10 @@ func (id *Identity) Save(dir string) error {
 		f.Roots = append(f.Roots, r.Raw)
 	}
 	var err error
-	if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
-		return err
+	if f.KeyTPM = keyBlob(id.Key); f.KeyTPM == nil {
+		if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
+			return err
+		}
 	}
 	if id.GroupCA.Key != nil {
 		if f.GroupCAKey, err = x509.MarshalPKCS8PrivateKey(id.GroupCA.Key); err != nil {
@@ -653,8 +660,10 @@ func (id *Identity) Save(dir string) error {
 		}
 	}
 	if id.AdminKey != nil {
-		if f.AdminKey, err = x509.MarshalPKCS8PrivateKey(id.AdminKey); err != nil {
-			return err
+		if f.AdminKeyTPM = keyBlob(id.AdminKey); f.AdminKeyTPM == nil {
+			if f.AdminKey, err = x509.MarshalPKCS8PrivateKey(id.AdminKey); err != nil {
+				return err
+			}
 		}
 	}
 	if id.AdminCA != nil {
@@ -694,7 +703,12 @@ func parseIdentity(data []byte) (*Identity, error) {
 	}
 	id := &Identity{ID: DeviceID(f.Device)}
 	var err error
-	if id.Key, err = parseKey(f.Key); err != nil {
+	if f.KeyTPM != nil {
+		id.Key, err = loadTPMKey(f.KeyTPM)
+	} else {
+		id.Key, err = parseKey(f.Key)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if id.Cert, err = x509.ParseCertificate(f.Cert); err != nil {
@@ -730,7 +744,12 @@ func parseIdentity(data []byte) (*Identity, error) {
 			return nil, err
 		}
 	}
-	if f.AdminKey != nil {
+	switch {
+	case f.AdminKeyTPM != nil:
+		if id.AdminKey, err = loadTPMKey(f.AdminKeyTPM); err != nil {
+			return nil, err
+		}
+	case f.AdminKey != nil:
 		if id.AdminKey, err = parseKey(f.AdminKey); err != nil {
 			return nil, err
 		}

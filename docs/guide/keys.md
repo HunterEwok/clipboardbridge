@@ -11,8 +11,8 @@ can check it, and which level of strictness to choose. The exact rules are in th
 
 | Where | Devices | What a thief gets |
 |---|---|---|
-| **In a file** | computers today, the lite member | a copy of the file, which works anywhere until an admin removes the device |
-| **In hardware** | iPhones (Secure Enclave), Android phones (Keystore: StrongBox or the TEE), computers with a TPM or a Secure Enclave | nothing to copy: the key signs only on that device, and the root's and admins' keys only after your face, fingerprint or passcode |
+| **In a file** | Macs and Windows PCs today, Linux computers without a TPM, the lite member | a copy of the file, which works anywhere until an admin removes the device |
+| **In hardware** | iPhones (Secure Enclave), Android phones (Keystore: StrongBox or the TEE), Linux computers with a TPM | nothing to copy: the key signs only on that device, and on a phone the root's and admins' keys only after your face, fingerprint or passcode |
 | **Proven hardware** | an Android phone whose key the group's root checked | the same as hardware, and the group knows it is true, not only that the device says so |
 
 The devices list in the apps and `cbb status` (the KEYS column) show which one each device
@@ -35,7 +35,9 @@ hardware can prove it:
   server of the project, `cbb.tools`, copies it once a day and signs the copy. The group's
   root fetches that copy, so your devices never ask Google. A phone on the list drops from
   proven to hardware.
-- **Computers with a TPM** and **Apple devices** (App Attest) come later in 0.6.
+- **Linux computers with a TPM** keep their member and admin keys in it, so the keys count
+  as hardware. Proving them (the TPM's certificate) and **Apple devices** (App Attest) come
+  later in 0.6.
 
 ## The three levels
 
@@ -54,8 +56,8 @@ the root, an admin or the hub.
    file for everyone.
 3. **Files allowed (least safe).** A device with keys in a file may be an admin too, after a
    warning: whoever copies the file acts as an admin until another admin removes the device.
-   Until computers keep their keys in a TPM or the Secure Enclave, a computer becomes an
-   admin only this way (`cbb admin -allow-file-key`, or the warning in the phone's "Make it an
+   A computer whose keys are not in a TPM or the Secure Enclave becomes an admin only this
+   way (`cbb admin -allow-file-key`, or the warning in the phone's "Make it an
    admin" dialog).
 
 Level 2 is the default because it keeps keys out of files wherever the hardware allows,
@@ -76,5 +78,7 @@ This page describes 0.6 as planned. Today:
   copy on `cbb.tools` starts once the project's signing keys exist.
 - The levels are not a setting yet. Groups work as at level 2, and a computer becomes an
   admin only with the warning of level 3.
-- Computers keep their keys in files. TPM, the Mac's Secure Enclave and App Attest come
+- Linux computers with a TPM keep their member and admin keys in it, from the moment they
+  join a group; a computer that joined earlier keeps its file until it joins again. The
+  group's root key on a computer, Macs (the Secure Enclave), Windows PCs and App Attest come
   later in 0.6.

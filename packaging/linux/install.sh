@@ -255,6 +255,28 @@ else
 	rmdir "${cgnatconf%/*}" 2>/dev/null || true
 fi
 
+# A TPM keeps the member and admin keys (docs/guide/keys.md). The unit's
+# sandbox hides the devices, so a drop-in lets the service open the kernel's
+# resource manager, which the group tss may use. CBB_TPM=off in the
+# environment file keeps new keys in the file.
+tpmconf=/etc/systemd/system/clipboardbridge.service.d/tpm.conf
+if [ "$kind" = full ] && [ -c /dev/tpmrm0 ] && getent group tss >/dev/null 2>&1; then
+	install -d -m 0755 "${tpmconf%/*}"
+	{
+		echo "# Written by clipboardbridge's install.sh: the member and admin keys live in the TPM."
+		echo "[Service]"
+		echo "PrivateDevices=no"
+		echo "DevicePolicy=closed"
+		echo "DeviceAllow=/dev/tpmrm0 rw"
+		echo "SupplementaryGroups=tss"
+	} >"$tpmconf"
+	chmod 0644 "$tpmconf"
+	echo "New member and admin keys of this device go into its TPM."
+else
+	rm -f "$tpmconf"
+	rmdir "${tpmconf%/*}" 2>/dev/null || true
+fi
+
 # A firewall drops what it does not allow, and clipboardbridge needs mDNS and its
 # port from the other devices at home: firewall.sh adds them with the user's
 # consent, after taking away what it opened before, so a changed port leaves
