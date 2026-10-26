@@ -33,9 +33,40 @@ var pageFiles = func() []string {
 // chooser answers "/" with a redirect to a language of the site. It logs
 // no visitor: their address is used for the country and then forgotten.
 type chooser struct {
+	// dir is the built site, read again on every request: a language
+	// whose pages arrive after the start is offered at once. langs is
+	// what the start found, and all there is without dir.
+	dir   string
 	langs []string
 	geo   atomic.Pointer[geoDB]
 	proxy bool // trust X-Real-IP
+}
+
+// languages returns the site's languages now: the directories of dir with
+// an index.html, or what the start found if dir can't be read.
+func (c *chooser) languages() []string {
+	if c.dir == "" {
+		return c.langs
+	}
+	if langs := siteLanguages(c.dir); slices.Contains(langs, "en") {
+		return langs
+	}
+	return c.langs
+}
+
+// siteLanguages returns the directories of dir with an index.html.
+func siteLanguages(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var langs []string
+	for _, e := range entries {
+		if _, err := os.Stat(filepath.Join(dir, e.Name(), "index.html")); e.IsDir() && err == nil {
+			langs = append(langs, e.Name())
+		}
+	}
+	return langs
 }
 
 func (c *chooser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,8 +79,9 @@ func (c *chooser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if i := slices.Index(pageFiles, q.Get("p")); i >= 0 {
 		page = pageFiles[i]
 	}
-	if i := slices.Index(c.langs, q.Get("lang")); i >= 0 {
-		picked := c.langs[i]
+	langs := c.languages()
+	if i := slices.Index(langs, q.Get("lang")); i >= 0 {
+		picked := langs[i]
 		http.SetCookie(w, &http.Cookie{
 			Name: langCookie, Value: picked, Path: "/", MaxAge: 365 * 24 * 3600,
 			Secure: r.TLS != nil || c.proxy, HttpOnly: true, SameSite: http.SameSiteLaxMode,
@@ -65,7 +97,7 @@ func (c *chooser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if addr, ok := c.visitor(r); ok {
 		country = c.geo.Load().country(addr)
 	}
-	lang := chooseLanguage(c.langs, picked, country, r.Header.Get("Accept-Language"))
+	lang := chooseLanguage(langs, picked, country, r.Header.Get("Accept-Language"))
 	http.Redirect(w, r, "/"+lang+"/"+page, http.StatusFound)
 }
 
@@ -84,16 +116,10 @@ func (c *chooser) visitor(r *http.Request) (netip.Addr, bool) {
 // languages are its directories with an index.html; with preview it serves
 // the site's files too.
 func serve(addr, dir, geo string, proxy, preview bool) error {
-	c := &chooser{proxy: proxy}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if _, err := os.ReadDir(dir); err != nil {
 		return err
 	}
-	for _, e := range entries {
-		if _, err := os.Stat(filepath.Join(dir, e.Name(), "index.html")); e.IsDir() && err == nil {
-			c.langs = append(c.langs, e.Name())
-		}
-	}
+	c := &chooser{dir: dir, langs: siteLanguages(dir), proxy: proxy}
 	if !slices.Contains(c.langs, "en") {
 		return errors.New(dir + ": no en/index.html; is it the built site?")
 	}

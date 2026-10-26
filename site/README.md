@@ -99,7 +99,10 @@ installs and changes it; nothing here does it by itself.
    [`deploy/cbb-site-geo.service`](deploy/cbb-site-geo.service) and
    [`deploy/cbb-site-geo.timer`](deploy/cbb-site-geo.timer) to `/etc/systemd/system`, then
    `sudo systemctl daemon-reload`, `sudo systemctl start cbb-site-geo.service` (the first
-   database), `sudo systemctl enable --now cbb-site.service cbb-site-geo.timer`.
+   database), `sudo systemctl enable --now cbb-site.service cbb-site-geo.timer`. It
+   starts only once `/srv/cbb.tools/www/en/index.html` is there (step 6), and looks at the
+   languages in `/srv/cbb.tools/www` on every request, so a copy of the pages needs no
+   restart.
 5. The visit counter, [GoatCounter](https://github.com/arp242/goatcounter): download the
    `linux-amd64` binary of its latest release to `/usr/local/bin/goatcounter`, then
 
