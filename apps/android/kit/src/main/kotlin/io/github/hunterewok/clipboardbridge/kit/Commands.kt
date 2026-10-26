@@ -5,6 +5,7 @@ package io.github.hunterewok.clipboardbridge.kit
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import java.security.SecureRandom
 import java.time.Instant
 
@@ -12,7 +13,9 @@ import java.time.Instant
  * Commands (docs/protocol.md, section 15): an admin's order for one member,
  * signed like a record and never stored, as internal/group/command.go makes
  * them: one sets the receiver's sync mode, another makes the receiver, an
- * admin computer, the group's hub in place of this phone.
+ * admin computer, the group's hub in place of this phone; a paste command
+ * puts a text where the receiver's focus is, and paste-off turns remote
+ * paste off on the receiver (design.md, "Remote paste").
  */
 object Commands {
     /** How long after signing a command expires; the receivers take at most 30 s. */
@@ -95,17 +98,107 @@ object Commands {
         return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
     }
 
+    /** The longest text of a paste command, in bytes of UTF-8, and of one typed key by key. */
+    const val MAX_PASTE_TEXT = 1 shl 20
+    const val MAX_TYPE_TEXT = 4 shl 10
+
+    /**
+     * A paste command for the device to: put text where its focus is, by
+     * method "paste" (the clipboard and the paste keys) or "type", then
+     * press Enter when enter is set; kind is "text" or "secret". Signed as
+     * mode.
+     */
+    fun paste(
+        to: String,
+        text: String,
+        method: String = "paste",
+        enter: Boolean = false,
+        kind: String = "text",
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray? = null,
+        id: String = newID(),
+    ): Member.Record {
+        val limit = when (method) {
+            "paste" -> MAX_PASTE_TEXT
+            "type" -> MAX_TYPE_TEXT
+            else -> throw IllegalArgumentException("a paste is paste or type, not $method")
+        }
+        require(kind == "text" || kind == "secret") { "a paste is text or secret, not $kind" }
+        val n = text.toByteArray().size
+        require(n in 1..limit) { "the text is empty or longer than $limit bytes" }
+        val ms = now.toEpochMilli()
+        val body = Wire.encode(
+            Wire.obj(
+                "v" to Wire.num(Records.VERSION.toLong()),
+                "type" to Wire.str("paste"),
+                "group" to Wire.str(group),
+                "by" to Wire.str(by),
+                "to" to Wire.str(to),
+                "id" to Wire.str(id),
+                "time_ms" to Wire.num(ms),
+                "expires_ms" to Wire.num(ms + LIFETIME_MS),
+                "mode" to Wire.str(method),
+                "enter" to if (enter) JsonPrimitive(true) else null,
+                "kind" to Wire.str(kind),
+                "text" to Wire.str(text),
+            ),
+        )
+        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+    }
+
+    /** A paste-off command for the device to: it turns remote paste off there. Signed as mode. */
+    fun pasteOff(
+        to: String,
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray? = null,
+        id: String = newID(),
+    ): Member.Record {
+        val ms = now.toEpochMilli()
+        val body = Wire.encode(
+            Wire.obj(
+                "v" to Wire.num(Records.VERSION.toLong()),
+                "type" to Wire.str("paste-off"),
+                "group" to Wire.str(group),
+                "by" to Wire.str(by),
+                "to" to Wire.str(to),
+                "id" to Wire.str(id),
+                "time_ms" to Wire.num(ms),
+                "expires_ms" to Wire.num(ms + LIFETIME_MS),
+            ),
+        )
+        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+    }
+
     /** The most clients a hub command hands over, as many as a hub keeps. */
     const val MAX_HUB_CLIENTS = 256
 
     /** How far ahead of the receiver's clock a command's time may be. */
     const val AHEAD_MS = 60_000L
 
-    /** The most bytes of a command's body, as Go takes: a hub command carries up to 256 clients' keys. */
+    /** The most bytes of a command's body, as Go takes: a hub command carries up to 256 clients' keys, a paste up to 1 MiB of text. */
     private const val MAX_BODY = 64 shl 10
+    private const val MAX_PASTE_BODY = 2 shl 20
 
-    /** What a command orders, as its receiver checked it. mode is set for a mode command. */
-    data class Body(val type: String, val group: String, val by: String, val to: String, val id: String, val timeMS: Long, val expiresMS: Long, val mode: String?)
+    /** What a command orders, as its receiver checked it. mode is set for a mode or paste command, enter, kind and text for a paste. */
+    data class Body(
+        val type: String,
+        val group: String,
+        val by: String,
+        val to: String,
+        val id: String,
+        val timeMS: Long,
+        val expiresMS: Long,
+        val mode: String?,
+        val enter: Boolean = false,
+        val kind: String? = null,
+        val text: String? = null,
+    )
 
     /** Why a command was refused, in words for the sender. */
     class Refused(message: String) : Exception(message)
@@ -118,9 +211,10 @@ object Commands {
      * command's mode is not checked against [Member.MODES] here.
      */
     fun verify(c: Member.Record, records: RecordSet, self: String, nowMS: Long): Body {
-        if (c.body.size > MAX_BODY) throw Refused("the command is too large")
+        if (c.body.size > MAX_PASTE_BODY) throw Refused("the command is too large")
         val o = Wire.parse(c.body) ?: throw Refused("the command is not valid")
         val type = o.optString("type")
+        if (type != "paste" && c.body.size > MAX_BODY) throw Refused("the command is too large")
         val b = Body(
             type = type ?: "",
             group = o.optString("group") ?: "",
@@ -130,12 +224,29 @@ object Commands {
             timeMS = o.optLong("time_ms") ?: 0,
             expiresMS = o.optLong("expires_ms") ?: 0,
             mode = o.optString("mode"),
+            enter = o.optBool("enter") ?: false,
+            kind = o.optString("kind"),
+            text = o.optString("text"),
         )
         if (o.optLong("v") != Records.VERSION.toLong()) throw Refused("unknown command version")
         if (b.id.length != 32 || b.id.any { it !in "0123456789abcdef" }) throw Refused("the command has no valid ID")
+        if (type != "paste" && (b.enter || b.kind != null || b.text != null)) throw Refused("a $type command carries a paste")
         when (type) {
             "mode" -> if (b.mode.isNullOrEmpty() || o.opt("hub") != null) throw Refused("a mode command names no mode")
             "hub" -> if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
+            "paste-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a paste-off command carries an order")
+            "paste" -> {
+                val limit = when (b.mode) {
+                    "paste" -> MAX_PASTE_TEXT
+                    "type" -> MAX_TYPE_TEXT
+                    else -> throw Refused("a paste command's way is not paste or type")
+                }
+                if (o.opt("hub") != null) throw Refused("a paste command carries a hub order")
+                if (b.kind != "text" && b.kind != "secret") throw Refused("a paste command's kind is not text or secret")
+                val n = b.text?.toByteArray()?.size ?: 0
+                if (n == 0) throw Refused("a paste command has no text")
+                if (n > limit) throw Refused("a paste command's text is longer than $limit bytes")
+            }
             else -> throw Refused("unknown command type $type")
         }
         if (b.to.length != 32 || b.to.any { it !in "0123456789abcdef" }) throw Refused("the command names no valid device")

@@ -59,8 +59,13 @@ public actor MemberNode {
     let engine: SyncEngine
     private var conns: [ObjectIdentifier: Conn] = [:]
     /// The commands sent that wait for their result, by command ID, with
-    /// the connection they went on.
-    private var waiting: [String: (conn: ObjectIdentifier, waiter: Waiter)] = [:]
+    /// their receiver and the connections they went on.
+    private var waiting: [String: (peer: String, conns: Set<ObjectIdentifier>, waiter: Waiter)] = [:]
+    /// The commands passed on for other members, by command ID, until they
+    /// expire (section 15): from is nil once the result went back.
+    private var passed: [String: (from: ObjectIdentifier?, to: String, expiresMS: Int64)] = [:]
+    /// The most commands passed on at a time, as Go.
+    private static let maxPassed = 4096
     private let onChange: @Sendable (Member.Event) -> Void
     private let onCert: @Sendable (Data) -> Void
     private let records: RecordStore?
@@ -195,19 +200,20 @@ public actor MemberNode {
         return out
     }
 
-    /// Sends the connected member peer a command signed for it (section 15)
-    /// and waits for its result, at most timeout seconds. It throws when
-    /// peer is not connected, the connection ends first or no result comes
-    /// in time.
-    public func command(_ command: Member.Record, to peer: String, timeout: TimeInterval = 10) async throws -> Member.CommandResult {
+    /// Sends the member peer a command signed for it (section 15) and waits
+    /// for its result, at most timeout seconds: on the connection to peer,
+    /// or, with via and without one, to every connected member, one of
+    /// which passes it on. It throws when it reaches no member, the
+    /// connection to peer ends first or no result comes in time.
+    public func command(_ command: Member.Record, to peer: String, timeout: TimeInterval = 10, via: Bool = false) async throws -> Member.CommandResult {
         guard let id = Commands.id(of: command) else { throw Failure.refused("the command has no ID") }
-        guard let found = conns.first(where: { $0.value.peer == peer && $0.value.peerRole != nil }) else {
-            throw Failure.notConnected
-        }
-        let (cid, c) = (found.key, found.value)
+        let helloed = conns.filter { $0.value.peer != nil && $0.value.peerRole != nil }
+        var to = helloed.filter { $0.value.peer == peer }
+        if to.isEmpty, via { to = helloed }
+        guard !to.isEmpty else { throw Failure.notConnected }
         let w = Waiter()
-        waiting[id] = (cid, w)
-        c.enqueue(.command(command))
+        waiting[id] = (peer, Set(to.keys), w)
+        for c in to.values { c.enqueue(.command(command)) }
         let timer = Task {
             try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             w.resolve(.failure(Failure.timedOut))
@@ -284,7 +290,7 @@ public actor MemberNode {
         let watchdog = Task { await c.runWatchdog() }
         defer {
             conns[id] = nil
-            for w in waiting.values where w.conn == id { w.waiter.resolve(.failure(Failure.closed)) }
+            for w in waiting.values where w.conns == [id] { w.waiter.resolve(.failure(Failure.closed)) }
             c.finish()
             writer.cancel()
             watchdog.cancel()
@@ -348,16 +354,44 @@ public actor MemberNode {
                     }
                 }
             case let .command(r):
-                c.enqueue(.result(onCommand?(c.peer, r)
-                        ?? Member.CommandResult(id: Commands.id(of: r) ?? "", status: "refused", reason: "this device takes no commands")))
+                if let to = Commands.to(of: r), to != engine.device {
+                    pass(r, from: id, to: to)
+                } else {
+                    var res = onCommand?(c.peer, r)
+                        ?? Member.CommandResult(id: Commands.id(of: r) ?? "", status: "refused", reason: "this device takes no commands")
+                    res.by = engine.device
+                    c.enqueue(.result(res))
+                }
             case let .result(r):
-                if let w = waiting[r.id], w.conn == id { w.waiter.resolve(.success(r)) }
+                // A member the command went to so that it passes it on
+                // answers only with the receiver's result.
+                if let w = waiting[r.id], w.conns.contains(id), c.peer == w.peer || r.by == w.peer {
+                    w.waiter.resolve(.success(r))
+                } else if let p = passed[r.id], p.to == c.peer, let from = p.from {
+                    passed[r.id]?.from = nil
+                    conns[from]?.enqueue(.result(r))
+                }
             case .bye:
                 return
             default:
                 break // a ping, an event that did not decode, or a newer type
             }
         }
+    }
+
+    /// Passes a command for the member to on, once by its ID, when to is
+    /// connected, and later its result back (section 15). The receiver
+    /// checks the signature, so this node can neither forge nor change it.
+    private func pass(_ command: Member.Record, from: ObjectIdentifier, to: String) {
+        let now = Records.ms(Date())
+        passed = passed.filter { $0.value.expiresMS > now }
+        guard let id = Commands.id(of: command), let exp = Commands.expires(of: command),
+              exp > now, exp - now <= Commands.lifetimeMS + Commands.aheadMS,
+              passed[id] == nil, passed.count < Self.maxPassed,
+              let dst = conns.first(where: { $0.value.peer == to && $0.value.peerRole != nil }), dst.key != from
+        else { return }
+        passed[id] = (from, to, exp)
+        dst.value.enqueue(.command(command))
     }
 
     /// Says goodbye on every connection and closes it.

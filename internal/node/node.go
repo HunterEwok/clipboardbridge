@@ -676,7 +676,7 @@ func (n *Node) SendCommand(ctx context.Context, dev group.DeviceID, cmd group.Re
 		from[c.id] = true
 	}
 	n.mu.Lock()
-	n.waiting[id] = waiter{from, got}
+	n.waiting[id] = waiter{dev, from, got}
 	n.mu.Unlock()
 	defer func() {
 		n.mu.Lock()
@@ -773,12 +773,16 @@ func (c *conn) command(cmd *group.Record) {
 	if res.ID == "" {
 		res.ID = b.ID
 	}
+	if self := c.n.identity(); self != nil {
+		res.By = self.ID
+	}
 	c.enqueue(outgoing{result: &res})
 }
 
 // waiter is a command sent, waiting for its result from one of the
 // members it went to.
 type waiter struct {
+	dev  group.DeviceID
 	from map[group.DeviceID]bool
 	got  chan Result
 }
@@ -795,7 +799,10 @@ func (n *Node) result(from group.DeviceID, r *Result) {
 		n.passed[r.ID] = passing{to: p.to, expires: p.expires}
 	}
 	n.mu.Unlock()
-	if ok && w.from[from] {
+	// A member that the command went to so that it passes it on answers
+	// only with the receiver's result; one that refuses the command for
+	// itself, such as a member before 0.6, is not the receiver.
+	if ok && w.from[from] && (from == w.dev || r.By == w.dev) {
 		select {
 		case w.got <- *r:
 		default:

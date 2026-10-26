@@ -1877,7 +1877,7 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 
 ```
 {"t":"command","command":{"body":"...","sig":"...","chain":["..."]}}
-{"t":"result","result":{"id":"...","status":"done"}}
+{"t":"result","result":{"id":"...","by":"...","status":"done"}}
 ```
 
 The sender sends the command on its own connection to the receiver, which answers with a
@@ -1892,7 +1892,10 @@ command to every member it is connected to (a `hub` command only goes directly).
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
 command expires, at most 4096), and passes the receiver's `result` back to the member it
-came from, once; a member not connected to `to` drops it. The signature, not the
+came from, once; a member not connected to `to` drops it. The receiver names itself in the
+result's `by`, so that a sender takes a result from a member in between only when `by` is
+the receiver: a member before 0.6, or the lite member, refuses a command for another device
+for itself instead of passing it on. The signature, not the
 connection, says who sent a command, so the member in between can neither forge nor change
 it; it could withhold a command or forge a `result`, as any member could drop messages.
 

@@ -64,6 +64,79 @@ final class CommandTests: XCTestCase {
         XCTAssertNil(oddHello.mode)
     }
 
+    /// A paste command carries its way, Enter, kind and text, within the
+    /// limits; paste-off carries nothing.
+    func testPasteCommand() throws {
+        let root = SoftwareSigner()
+        let c = try Commands.paste(to: pc, text: "ls <dir>", enter: true, kind: "secret", group: "tag", by: pc, now: now, signer: root)
+        let b = try JSONDecoder().decode(Commands.Body.self, from: c.body)
+        XCTAssertEqual(b.type, "paste")
+        XCTAssertEqual(b.mode, "paste")
+        XCTAssertEqual(b.text, "ls <dir>")
+        XCTAssertEqual(b.kind, "secret")
+        XCTAssertEqual(b.enter, true)
+        XCTAssertTrue(String(decoding: c.body, as: UTF8.self).contains("ls <dir>"))
+        XCTAssertThrowsError(try Commands.paste(to: pc, text: "", group: "tag", by: pc, now: now, signer: root))
+        XCTAssertThrowsError(try Commands.paste(to: pc, text: String(repeating: "x", count: Commands.maxTypeText + 1), method: "type",
+                                                group: "tag", by: pc, now: now, signer: root))
+        XCTAssertThrowsError(try Commands.paste(to: pc, text: "x", method: "drop", group: "tag", by: pc, now: now, signer: root))
+        let off = try JSONDecoder().decode(Commands.Body.self, from: Commands.pasteOff(to: pc, group: "tag", by: pc, now: now, signer: root).body)
+        XCTAssertEqual(off.type, "paste-off")
+        XCTAssertNil(off.text)
+    }
+
+    /// A command for a member this one is not connected to goes through
+    /// one that is, and the result comes back, once.
+    func testCommandPassedOn() async throws {
+        let (ia, ib, ih) = (String(repeating: "a", count: 32), String(repeating: "b", count: 32), String(repeating: "c", count: 32))
+        final class Got: @unchecked Sendable {
+            let lock = NSLock()
+            var names: [String] = []
+            func add(_ n: String) { lock.withLock { names.append(n) } }
+            var all: [String] { lock.withLock { names } }
+        }
+        let got = Got()
+        let a = MemberNode(engine: SyncEngine(device: ia, clock: HybridClock()), name: "iPhone")
+        let hub = MemberNode(engine: SyncEngine(device: ih, clock: HybridClock()), name: "Hub", onCommand: { _, r in
+            got.add("hub")
+            return Member.CommandResult(id: Commands.id(of: r) ?? "", status: "done")
+        })
+        let b = MemberNode(engine: SyncEngine(device: ib, clock: HybridClock()), name: "Phone two", onCommand: { _, r in
+            got.add("b")
+            return Member.CommandResult(id: Commands.id(of: r) ?? "", status: "done")
+        })
+        let (p1, p2) = Pipe.pair()
+        let (p3, p4) = Pipe.pair()
+        let ts = [
+            Task { try await a.serve(p1, peer: ih) },
+            Task { try await hub.serve(p2, peer: ia) },
+            Task { try await b.serve(p3, peer: ih) },
+            Task { try await hub.serve(p4, peer: ib) },
+        ]
+        for _ in 0..<300 {
+            if await a.peers == 1, await b.peers == 1, await hub.peers == 2 { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let c = try Commands.mode(to: ib, mode: "own", group: "tag", by: ia, now: Date(), signer: SoftwareSigner())
+        do {
+            _ = try await a.command(c, to: ib)
+            XCTFail("sent to a device that is not connected, without via")
+        } catch MemberNode.Failure.notConnected {}
+        let r = try await a.command(c, to: ib, via: true)
+        XCTAssertEqual(r.status, "done")
+        XCTAssertEqual(r.by, ib)
+        XCTAssertEqual(got.all, ["b"])
+        do {
+            _ = try await a.command(c, to: ib, timeout: 0.3, via: true)
+            XCTFail("the hub passed the same command on twice")
+        } catch MemberNode.Failure.timedOut {}
+        XCTAssertEqual(got.all, ["b"])
+        await a.closeAll()
+        await b.closeAll()
+        await hub.closeAll()
+        for t in ts { try await t.value }
+    }
+
     /// A command goes to the named peer, and its result comes back; a phone
     /// refuses commands.
     func testCommandRoundTrip() async throws {
@@ -113,6 +186,9 @@ final class CommandTests: XCTestCase {
                              clients: [PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32),
                                                        psk: Data(repeating: 2, count: 32))],
                              group: tag, by: by, now: now, signer: root),
+            try Commands.paste(to: pc, text: "echo <ok> & \"done\"\n", method: "type", enter: true, group: tag, by: by, now: now,
+                               signer: admin, adminCA: adminCA),
+            try Commands.pasteOff(to: pc, group: tag, by: by, now: now, signer: root),
         ])
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -140,13 +216,16 @@ final class CommandTests: XCTestCase {
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-commands.json")))
         var set = RecordSet()
         XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(v.commands.count, 11)
+        XCTAssertEqual(v.commands.count, 14)
         for c in v.commands {
             let got = Result { try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms) }
             switch got {
             case let .success(b):
                 XCTAssertTrue(c.ok, c.name)
                 XCTAssertEqual(b.mode, c.mode, c.name)
+                if b.type == "paste" {
+                    XCTAssertTrue(b.enter == true && b.kind == "text" && b.text?.hasSuffix("\"done\"\n") == true, c.name)
+                }
             case let .failure(e):
                 XCTAssertFalse(c.ok, "\(c.name): \(e)")
             }

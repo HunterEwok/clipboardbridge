@@ -213,9 +213,12 @@ public enum Member {
         /// In the result of a hub command, the new hub's offer without a
         /// preshared key (section 11, "Moving the hub").
         public var tunnel: TunnelOffer?
+        /// The device that answered, the command's receiver; a member that
+        /// passes the result back leaves it as it is.
+        public var by: String?
 
-        public init(id: String, status: String, reason: String? = nil, tunnel: TunnelOffer? = nil) {
-            (self.id, self.status, self.reason, self.tunnel) = (id, status, reason, tunnel)
+        public init(id: String, status: String, reason: String? = nil, tunnel: TunnelOffer? = nil, by: String? = nil) {
+            (self.id, self.status, self.reason, self.tunnel, self.by) = (id, status, reason, tunnel, by)
         }
 
         public var done: Bool { status == "done" }
