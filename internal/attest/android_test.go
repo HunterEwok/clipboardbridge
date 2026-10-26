@@ -4,6 +4,7 @@
 package attest
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -63,11 +64,13 @@ type chain struct {
 	certs [][]byte
 	key   *ecdsa.PrivateKey // the attested key
 	root  []byte            // the root's SubjectPublicKeyInfo
+	att   *ecdsa.PrivateKey // the attestation key
+	attC  *x509.Certificate // and its certificate
 }
 
 var serials int64
 
-func issue(t *testing.T, tmpl *x509.Certificate, pub any, parent *x509.Certificate, signer *ecdsa.PrivateKey) (*x509.Certificate, []byte) {
+func issue(t *testing.T, tmpl *x509.Certificate, pub any, parent *x509.Certificate, signer crypto.Signer) (*x509.Certificate, []byte) {
 	t.Helper()
 	serials++
 	tmpl.SerialNumber = big.NewInt(0x1000 + serials)
@@ -95,9 +98,16 @@ func newKey(t *testing.T) *ecdsa.PrivateKey {
 // provisioning extension of RKP when rkp) and a leaf for a new key.
 func makeChain(t *testing.T, d description, rkp bool) chain {
 	t.Helper()
-	rootKey, attKey, key := newKey(t), newKey(t), newKey(t)
+	return makeChainUnder(t, newKey(t), d, rkp)
+}
+
+// makeChainUnder makes the chain of makeChain under a root with the key
+// rootKey, an ECDSA or RSA key as Google's roots are.
+func makeChainUnder(t *testing.T, rootKey crypto.Signer, d description, rkp bool) chain {
+	t.Helper()
+	attKey, key := newKey(t), newKey(t)
 	ca := &x509.Certificate{Subject: pkix.Name{CommonName: "root"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
-	root, _ := issue(t, ca, &rootKey.PublicKey, nil, rootKey)
+	root, _ := issue(t, ca, rootKey.Public(), nil, rootKey)
 	inter := &x509.Certificate{Subject: pkix.Name{CommonName: "attestation key"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	if rkp {
 		inter.ExtraExtensions = []pkix.Extension{{Id: oidProvisioning, Value: []byte{0xa0, 0x00}}}
@@ -106,7 +116,7 @@ func makeChain(t *testing.T, d description, rkp bool) chain {
 	leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "Android Keystore Key"}, KeyUsage: x509.KeyUsageDigitalSignature,
 		ExtraExtensions: []pkix.Extension{{Id: oidKeyDescription, Value: d.der(t)}}}
 	_, leafDER := issue(t, leaf, &key.PublicKey, att, attKey)
-	return chain{certs: [][]byte{leafDER, attDER}, key: key, root: root.RawSubjectPublicKeyInfo}
+	return chain{certs: [][]byte{leafDER, attDER}, key: key, root: root.RawSubjectPublicKeyInfo, att: attKey, attC: att}
 }
 
 func spki(t *testing.T, k *ecdsa.PrivateKey) []byte {

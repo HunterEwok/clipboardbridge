@@ -9,7 +9,7 @@ import java.security.SecureRandom
  * The challenge a phone's key is made with, so that the key's attestation
  * (Android's Key Attestation, later Apple's App Attest) proves it belongs
  * to this device and, when there is one, this group
- * (docs/protocol.md, "Key evidence"). It is no live nonce: the key itself
+ * (docs/protocol.md, section 17). It is no live nonce: the key itself
  * is bound by the attestation's leaf certificate, and whoever presents the
  * key proves holding it in member TLS, so the proof can be made with the
  * key, offline, and shown later.

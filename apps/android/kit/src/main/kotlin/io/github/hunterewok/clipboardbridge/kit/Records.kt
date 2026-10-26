@@ -130,6 +130,9 @@ object Records {
     const val FILE = "file"
     const val HARDWARE = "hardware"
 
+    /** A key in hardware whose attestation a signer checked. */
+    const val PROVEN = "proven"
+
     /**
      * Where a device's keys live, as its record's store field says
      * (docs/protocol.md, section 17): HARDWARE for "hardware", and for
@@ -138,7 +141,7 @@ object Records {
      * keys are in hardware and any other device's in a file.
      */
     fun storeOf(store: String?, role: String): String = when (store) {
-        HARDWARE, "proven" -> HARDWARE
+        HARDWARE, PROVEN -> HARDWARE
         FILE -> FILE
         else -> if (role == "phone") HARDWARE else FILE
     }
