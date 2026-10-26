@@ -73,6 +73,22 @@ func RunFor(ctx context.Context, d *Device, cmd, stdin string, timeout time.Dura
 	return out.String(), nil
 }
 
+// CopyTo copies a local file to path on a device with scp.
+func CopyTo(ctx context.Context, d *Device, local, path string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	args := append(append([]string{"-q"}, sshArgs...), local, d.SSH+":"+path)
+	c := exec.CommandContext(ctx, "scp", args...)
+	c.Env = noLocale(os.Environ())
+	if out, err := c.CombinedOutput(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			err = fmt.Errorf("no answer within %s: %w", timeout, err)
+		}
+		return &RunError{Device: d.Name, Cmd: "scp " + local + " " + path, Err: err, Output: string(out)}
+	}
+	return nil
+}
+
 // Stream starts a command on a device and hands each line it prints to
 // lines, until it exits or ctx ends. It returns once the command exits.
 func Stream(ctx context.Context, d *Device, cmd string, lines func(string)) error {

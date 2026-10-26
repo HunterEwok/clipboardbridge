@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -359,28 +358,32 @@ func stage(ctx context.Context, d *Device, b *Build) (string, error) {
 	return strings.TrimSuffix(strings.TrimSpace(firstLine(out)), "/"), nil
 }
 
-// stageWindows is stage on Windows: the zip goes over as Base64, as a
-// PowerShell command reads its input as text, and is unpacked in the bench
-// user's LOCALAPPDATA. It returns the directory that holds cbb.exe.
+// stageWindows is stage on Windows: the zip goes over with scp, as the
+// standard input of a PowerShell command over Windows' OpenSSH stalls after
+// a few megabytes, and is unpacked in the bench user's LOCALAPPDATA. It
+// returns the directory that holds cbb.exe.
 func stageWindows(ctx context.Context, d *Device, b *Build, name, sum string) (string, error) {
 	dir := winStateBase + "\\" + sum[:16]
 	if _, err := Run(ctx, d, "if (-not (Test-Path \""+dir+"\\ok\")) { exit 1 }", ""); err != nil {
-		data, err := os.ReadFile(filepath.Join(b.dir, name))
+		// A fresh directory, and its path as scp takes it: /C:/Users/...
+		out, err := Run(ctx, d, `$d = "`+dir+`"
+if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+'/' + (New-Item -ItemType Directory -Force $d).FullName.Replace('\', '/')`, "")
 		if err != nil {
+			return "", err
+		}
+		if err := CopyTo(ctx, d, filepath.Join(b.dir, name), strings.TrimSpace(out)+"/archive.zip", 10*time.Minute); err != nil {
 			return "", err
 		}
 		// Keep the newest three builds on the device.
 		cmd := `$d = "` + dir + `"
-if (Test-Path $d) { Remove-Item -Recurse -Force $d }
-New-Item -ItemType Directory -Force $d | Out-Null
 $zip = Join-Path $d 'archive.zip'
-[IO.File]::WriteAllBytes($zip, [Convert]::FromBase64String([Console]::In.ReadToEnd()))
 if ((Get-FileHash -Algorithm SHA256 $zip).Hash -ne '` + sum + `') { throw 'the archive arrived damaged' }
 Expand-Archive -Path $zip -DestinationPath $d
 Remove-Item $zip
 New-Item -ItemType File (Join-Path $d 'ok') | Out-Null
 Get-ChildItem "` + winStateBase + `" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 | Remove-Item -Recurse -Force`
-		if _, err := RunFor(ctx, d, cmd, base64.StdEncoding.EncodeToString(data), 10*time.Minute); err != nil {
+		if _, err := RunFor(ctx, d, cmd, "", 5*time.Minute); err != nil {
 			return "", err
 		}
 	}
