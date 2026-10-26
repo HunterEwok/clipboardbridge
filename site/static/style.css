@@ -355,7 +355,7 @@ thead th { font: 500 13px/1.3 var(--f-mono); letter-spacing: .06em; text-transfo
 :root:not([data-skin="deco"]) .card {
   background: linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 24px 24px, linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px, var(--raised);
 }
-.lead, .page p, .page li, section > p { max-width: 75ch; }
+.lead { max-width: 36em; }
 .card p { margin: 0 0 10px; color: var(--dim); }
 .card h3 + p { margin-top: 4px; }
 .card ul { padding-inline-start: 20px; margin: 12px 0 0; }
@@ -512,3 +512,9 @@ thead th { font: 500 13px/1.3 var(--f-mono); letter-spacing: .06em; text-transfo
 .soon img { display: block; }
 .soon h1 { margin-top: 20px; }
 .soon p { margin: 6px 0; }
+
+/* Deco centres the headings, so a page's title, its lead and the closing
+   block are centred with them, and the text under them spans the width. */
+[data-skin="deco"] .page > h1, [data-skin="deco"] .page > .lead, [data-skin="deco"] .page > .lead + .dim { text-align: center; margin-inline: auto; }
+[data-skin="deco"] .page .final { text-align: center; }
+[data-skin="deco"] .page .final .actions { justify-content: center; }

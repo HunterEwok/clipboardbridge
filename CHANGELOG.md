@@ -43,7 +43,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   "Slate drawing" (the icon's brass clipboard holding a slate or paper sheet with a line
   drawing, light and dark) and "Art deco and neon" (a gold sunburst and neon devices). Its
   fonts (Old Standard TT, IBM Plex Sans and Mono, Forum, Jost, under the OFL) are served by
-  the site itself, so nginx allows `font-src 'self'`.
+  the site itself, so nginx allows `font-src 'self'`. In Deco the text under the centred
+  headings spans the page's width, and the pages' titles and closing blocks are centred.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`
