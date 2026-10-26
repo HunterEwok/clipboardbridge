@@ -814,8 +814,9 @@ token cannot slip in another build or an older one.
 - The check refuses a signature that fails, an expired `keys.json` or `stable.json`, a
   version lower than the highest the device has ever seen (not only the installed one), and
   a file whose SHA-256 differs. `get.sh` and `get.ps1` carry the root keys and check the
-  manifest with openssl or .NET; without openssl they warn and go on unless
-  `CBB_VERIFY=require`.
+  manifest with openssl or .NET (macOS and nearly every Linux have openssl, Windows has
+  .NET). Without a way to check they stop, since the sums come from the same server as the
+  archives; `CBB_VERIFY=skip` installs unchecked for whoever chooses to.
 
 ### Where updates come from
 
