@@ -4,6 +4,8 @@
 package service
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -17,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/attest"
+	"github.com/HunterEwok/clipboardbridge/internal/attest/attesttest"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
@@ -278,4 +282,58 @@ func TestRename(t *testing.T) {
 			t.Errorf("after the rename: %+v", d)
 		}
 	}
+}
+
+// TestEvidence checks that the group's root records what a device's
+// attestation proves: proven for a valid chain of its member key, nothing
+// for a chain of another key.
+func TestEvidence(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "deck is listed", func() bool { return listed(pi.devices(t)) == "deck pi" })
+	deck.stop()
+	id, err := group.Load(deck.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt := make([]byte, 16)
+	challenge, _ := attest.Challenge("", nil, salt)
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	wrong, wrongRoot, err := attesttest.Android(&other.PublicKey, challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain, root, err := attesttest.Android(id.Cert.PublicKey, challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attestRoots = [][]byte{wrongRoot, root}
+	t.Cleanup(func() { attestRoots = nil })
+
+	p := &fakePhone{t: t, id: id}
+	p.dial(&h, mustLoad(t, pi.dir))
+	ev := func(chain [][]byte) map[string]any {
+		return map[string]any{"t": "evidence", "evidence": map[string]any{"format": "android-key", "key": "member", "salt": salt, "chain": chain}}
+	}
+	p.send(ev(wrong))
+	p.send(ev(chain))
+	waitFor(t, "the root records the deck's keys as proven", func() bool {
+		for _, d := range pi.devices(t) {
+			if d.Name == "deck" {
+				return d.Store == group.StoreProven
+			}
+		}
+		return false
+	})
+}
+
+func mustLoad(t *testing.T, dir string) *group.Identity {
+	t.Helper()
+	id, err := group.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

@@ -287,7 +287,7 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15) |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -297,6 +297,7 @@ Message object:
 | `admin_ca` | string | admin | from the group's root, a phone or a computer: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string | phone_ca | from the root or an admin of a group a computer created: the group's iPhone CA, DER in base64 (section 10, "Admins") |
 | `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
+| `evidence` | object | evidence | an attestation of one of the sender's keys (section 17, "Evidence") |
 
 ```json
 {"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -1949,10 +1950,12 @@ far.
 - A **hello** says where the sender's keys live in `key_store` (section 4): the phones send
   `hardware`, the computers and the lite member `file`. A device that cannot tell sends
   `file`.
-- A **device record** says it in `store`: `file`, `hardware`, or `proven` once a proof of
-  hardware (an attestation) is checked; until then a reader counts `proven` as `hardware`.
-  The signer writes what the device's hello said when it made the record, and a record
-  that renames a device keeps its `store`. A record without `store`, made before 0.6, or
+- A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
+  root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
+  of hardware (`android-tee`, `android-strongbox`), and `proof`, the hex SHA-256 of the
+  attestation's leaf certificate. The signer writes what the device's hello said when it
+  made the record, and a record that renames a device, or that makes it an admin, keeps its
+  `store`, `kind` and `proof`. A record without `store`, made before 0.6, or
   with a value the reader does not know, counts as `hardware` for a `phone` and as `file`
   for every other role, which is where those versions kept the keys. `cbb status` and the
   apps' device pages show it.
@@ -1974,3 +1977,34 @@ far.
   presents the key proves holding it in member TLS, so the proof needs no live nonce: it is
   made with the key, offline, and shown later with its salt and group tag. A Keystore that
   cannot attest at that moment still makes the key, which then has no proof.
+
+### Evidence
+
+A device whose keys an attestation proves sends an `evidence` message to each peer after the
+hellos, once per connection:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `format` | string | `android-key`: Android's Key Attestation |
+| `key` | string | `member`: the attested key is the member key of the sender's TLS certificate |
+| `group_tag` | string or absent | the group tag the key was made with; absent for a key made outside a group |
+| `salt` | string | the 16 bytes of the challenge, base64 |
+| `chain` | array of strings | the Keystore's certificate chain, leaf first, DER in base64 |
+
+Only the group's root acts on it; every other member ignores it, as it ignores a `format` or
+`key` it does not know. The root checks that `group_tag` is absent or the group's own, that
+the chain leads to one of Google's attestation roots without a revoked certificate, that the
+leaf certifies the key of the sender's TLS certificate and carries the challenge made with
+`group_tag`, an empty member key and `salt`, and reads the leaf's key description:
+
+- a key in software: `file`;
+- a key in the TEE or StrongBox of a phone with a locked bootloader and a verified boot:
+  `proven`, of kind `android-tee` or `android-strongbox` (StrongBox only when both levels of
+  the description say it);
+- a key in hardware otherwise (an unlocked bootloader, a system signed with its own key as
+  GrapheneOS, a boot not verified, no root of trust): `hardware`.
+
+When that differs from the `store` or `kind` of the device's record, the root signs a new
+device record that keeps the rest and says what the attestation shows. A chain that proves
+nothing is logged and changes nothing.
+

@@ -17,6 +17,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   or hardware, and `cbb status` shows it in a KEYS column (docs/protocol.md, section 17).
 - The Android app makes its keys with an attestation challenge, so the Keystore can later
   prove that they live in its hardware.
+- Proven keys: a phone sends the attestation of its member key in an `evidence` message,
+  and the group's root checks the Android Key Attestation chain (both Google roots, the
+  phone's verified boot) and records the device's keys as `proven`, which `cbb status`
+  shows as "proven hardware" (docs/protocol.md, section 17, "Evidence").
 
 ### Changed
 

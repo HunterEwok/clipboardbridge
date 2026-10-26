@@ -371,7 +371,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
-		HubShare: s.hubShare, OnHubs: s.hubsShared,
+		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived,
 	})
 	// Every member listens, so that phones and lite members reach it, and
 	// the other full members when it has the lower device ID.

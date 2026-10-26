@@ -72,6 +72,8 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 // copies the file holds them.
 func keys(d control.Device) string {
 	switch d.Store {
+	case group.StoreProven:
+		return "proven hardware"
 	case group.StoreHardware:
 		return "hardware"
 	case group.StoreFile:

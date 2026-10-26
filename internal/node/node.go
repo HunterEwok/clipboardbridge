@@ -55,6 +55,12 @@ type Config struct {
 	// KeyStore is where this device's keys live (group.StoreFile or
 	// group.StoreHardware), sent in the hello; "" sends group.StoreFile.
 	KeyStore string
+	// Evidence, if set, is sent to every peer after its hello: the
+	// attestations of this device's keys.
+	Evidence []Evidence
+	// OnEvidence, if set, is called with the evidence a peer sent and
+	// the certificate chain it presented. An error is logged.
+	OnEvidence func(peer group.DeviceID, chain []*x509.Certificate, e Evidence) error
 	// Device is this device's form, versions and MAC address, sent in the
 	// hello for the others to show.
 	Device group.DeviceInfo
@@ -832,6 +838,7 @@ type outgoing struct {
 	command *group.Record     // a command for the peer
 	result  *Result           // the answer to the peer's command
 	hubs    *HubShare         // what this hub shares with the peer
+	evid    *Evidence         // an attestation of this member's key
 	queued  time.Duration
 }
 
@@ -1004,6 +1011,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeResult, Result: o.result}, nil
 	case o.hubs != nil:
 		return &message{Type: typeHubs, Hubs: o.hubs}, nil
+	case o.evid != nil:
+		return &message{Type: typeEvid, Evidence: o.evid}, nil
 	case o.phoneCA != nil:
 		key, err := x509.MarshalPKCS8PrivateKey(o.phoneCA.Key)
 		if err != nil {
@@ -1145,6 +1154,9 @@ func (c *conn) reader() error {
 			c.n.offerRecords(c, extra.Records)
 			c.n.offerTunnel(c, extra.TunnelKey, extra.TunnelPSK)
 			c.n.sharePhoneCA(c)
+			for i := range c.n.cfg.Evidence {
+				c.enqueue(outgoing{evid: &c.n.cfg.Evidence[i]})
+			}
 			continue
 		}
 		switch m.Type {
@@ -1194,6 +1206,13 @@ func (c *conn) reader() error {
 			}
 			if err := c.n.cfg.OnHubs(c.id, c.peerChain, *m.Hubs); err != nil {
 				c.n.cfg.Logf("node: what the hub %s shared: %v", c.id, err)
+			}
+		case typeEvid:
+			if c.n.cfg.OnEvidence == nil || m.Evidence == nil {
+				continue
+			}
+			if err := c.n.cfg.OnEvidence(c.id, c.peerChain, *m.Evidence); err != nil {
+				c.n.cfg.Logf("node: the evidence from %s: %v", c.id, err)
 			}
 		case typeRecs:
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {
