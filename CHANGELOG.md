@@ -35,6 +35,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the whole site in the owner's browsers. CI validates its HTML and runs Lighthouse on it;
   the download page takes the latest version from this changelog; TLS 1.2 and 1.3 only,
   pre-compressed files, a long-cached stylesheet, `security.txt` and a web manifest.
+  Devices on the start page are drawn in vector 3D (isometric SVG in the theme's colours):
+  a laptop and a phone passing a clip in the first screen, and each kind of group as
+  devices around its heart with flowing links; glass surfaces and soft glows; on a phone a
+  sideways menu, the languages in a sheet from the bottom and a floating glass dock.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`
