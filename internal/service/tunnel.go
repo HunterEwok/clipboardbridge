@@ -210,7 +210,7 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 	switch {
 	case st.IsHub && s.tunServing:
 		if r < rankOf(order, s.tunSelf) {
-			s.standbyLocked(fmt.Sprintf("%s, a hub above this one, offered its tunnel", hub))
+			s.giveWayLocked(hub, &o)
 		}
 	case s.tunUsing == "" || s.tunUsing == string(hub) || r < rankOf(order, s.tunUsing) || forgot && s.tunUsing == string(from):
 		// The hub in use changed, or one above it came: try again.

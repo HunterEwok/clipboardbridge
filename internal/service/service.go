@@ -189,6 +189,7 @@ type Service struct {
 	tunThrough bool                  // connected to the hub through the tunnel now
 	tunUsing   string                // the hub this member uses now; "" while it reaches none
 	tunServing bool                  // on a hub: it serves now, since no hub above it answers
+	givingWay  bool                  // on a hub that serves: it passes a hub above's offer on before it gives way
 	tunErr     string                // what went wrong last, for status; "" if nothing
 	tunDetail  string                // the underlying error
 	tunFwd     *control.Forwarder    // on the hub: its registration with its forwarder; nil without one

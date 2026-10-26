@@ -108,6 +108,12 @@ if ! "$bin" version >/dev/null 2>&1; then
 	echo "install.sh: $bin does not run on this Mac" >&2
 	exit 1
 fi
+# A build without cgo has no pasteboard: its agent would only exit, and
+# launchd start it again, over and over.
+if "$bin" version | grep -q 'no pasteboard support'; then
+	echo "install.sh: $bin was built without cgo, so it cannot link this Mac's clipboard; use a release build, or build it with CGO_ENABLED=1" >&2
+	exit 1
+fi
 
 # Up to 0.2.0 clipboardbridge was called clipbridge, and its protocol does
 # not reach this one: remove it, with its keys and user, so this Mac pairs

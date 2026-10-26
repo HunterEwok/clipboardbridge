@@ -394,6 +394,14 @@ func writeAway(w io.Writer, a *control.Away) {
 		}
 	}
 	switch {
+	case a.Hub && a.Standby:
+		// A hub above this one serves, or this one looks for those: it is
+		// their client meanwhile, and its own hub and forwarder rest.
+		if a.HubDevice != "" {
+			fmt.Fprintf(w, "Sync away from home: on; this device is one of the group's hubs. The hub %s, above it, serves, so this one stands by as its client.\n", a.HubDevice)
+		} else {
+			fmt.Fprintln(w, "Sync away from home: on; this device is one of the group's hubs. It looks for the hubs above it, and serves if none answers.")
+		}
 	case a.Hub:
 		fmt.Fprintf(w, "Sync away from home: on; this device is the hub, on UDP port %d, for %d devices.\n", a.Port, a.Clients)
 		if a.Obfuscated {

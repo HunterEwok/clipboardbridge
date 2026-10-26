@@ -81,6 +81,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 		fmt.Fprintln(stdout, version.String())
+		if w := noPasteboard(); w != "" {
+			fmt.Fprintln(stdout, w)
+		}
 		return 0
 	case "copy":
 		return cmdCopy(rest, stdin, stdout, stderr)

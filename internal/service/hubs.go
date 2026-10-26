@@ -468,7 +468,58 @@ func (s *Service) hubsShared(from group.DeviceID, chain []*x509.Certificate, h n
 		s.hubPeersLocked()
 	}
 	if h.Serving && rankOf(order, string(from)) < rankOf(order, s.tunSelf) {
-		s.standbyLocked(fmt.Sprintf("%s, a hub above this one, serves", from))
+		s.giveWayLocked(from, h.Offer)
 	}
 	return nil
+}
+
+// giveWayLocked makes this hub, while it serves, the client of from, a hub
+// above it that serves or offered its tunnel. A client far from home may know only this hub,
+// for instance after the hub moved here, so the hub first passes from's
+// offer on to its connected clients and waits for the ones it reaches
+// through its tunnel to leave, as a hub that moves does; it gives way
+// after that.
+func (s *Service) giveWayLocked(from group.DeviceID, offer *node.TunnelOffer) {
+	st := s.tunnel
+	why := fmt.Sprintf("%s, a hub above this one, serves", from)
+	if st == nil || !st.IsHub || !s.tunServing || s.givingWay {
+		return
+	}
+	if offer == nil {
+		s.standbyLocked(why)
+		return
+	}
+	psks := map[group.DeviceID][]byte{}
+	for _, m := range st.Members {
+		if m.Device != string(from) {
+			psks[group.DeviceID(m.Device)] = m.PresharedKey[:]
+		}
+	}
+	s.givingWay = true
+	run, ctx, self := s.tunRun, s.tunCtx, group.DeviceID(s.tunSelf)
+	o := *offer
+	go func() {
+		s.mu.Lock()
+		nd := s.nd
+		s.mu.Unlock()
+		if nd != nil && ctx != nil {
+			sent := nd.SendTunnel(func(dev group.DeviceID) *node.TunnelOffer {
+				psk, ok := psks[dev]
+				if !ok {
+					return nil
+				}
+				c := o
+				c.PSK, c.Hub, c.Moved = psk, from, false
+				return &c
+			})
+			s.logf("cbb: passed the offer of %s, a hub above this one, on to %d connected clients", from, len(sent))
+			s.waitClientsLeft(ctx, nd, self, sent)
+		}
+		s.tunMu.Lock()
+		defer s.tunMu.Unlock()
+		s.givingWay = false
+		if s.tunRun == run {
+			s.standbyLocked(why)
+		}
+	}()
 }

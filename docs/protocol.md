@@ -1388,8 +1388,10 @@ later (D-65 in [design.md](design.md)).
   serving.
 - A computer's hub serves only while no hub above it answers, and is otherwise a client of
   the first that does. Starting, it tries the hubs above it once, then serves. It stops
-  serving when a hub above it says it serves, or offers its tunnel; once it loses the hub
-  above, it tries the hubs above for a minute and then serves again. While it serves with
+  serving when a hub above it says it serves, or offers its tunnel: first it passes that
+  hub's offer on to its connected clients and waits for those through its tunnel to leave, as
+  a hub that moves does, since a client far from home may know only this hub. Once it loses
+  the hub above, it tries the hubs above for a minute and then serves again. While it serves with
   hubs above it, it tries them as a client every 15 minutes.
 - A hub passes the other hubs' offers on to its clients, each with the client's own
   preshared key and `hub`, so a client that met only one hub learns them all.
