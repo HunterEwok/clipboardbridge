@@ -37,6 +37,8 @@ var countryLanguages = map[string][]string{
 	"IL": {"he", "ar", "ru", "en"},
 	// Swahili.
 	"TZ": {"sw"}, "KE": {"sw", "en"}, "UG": {"en", "sw"},
+	// Hindi, and English, which many people in India read on the web.
+	"IN": {"hi", "en"},
 }
 
 // chooseLanguage picks the language of the site for a visitor: the one

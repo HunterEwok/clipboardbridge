@@ -18,7 +18,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The Android app makes its keys with an attestation challenge, so the Keystore can later
   prove that they live in its hardware.
 - The website for cbb.tools (`site/`, built by `tools/site`): the start page, download, and
-  security and privacy, in English, Chinese, Spanish, Russian, Arabic, Swahili and Hebrew
+  security and privacy, in English, Chinese, Hindi, Spanish, Russian, Arabic, Swahili and Hebrew
   (right to left for Arabic and Hebrew). It presents the two kinds of group, with a
   computer at its heart and phones only, and says plainly why a computer is simpler. "/"
   picks the visitor's language by the language they picked before, their country (a local

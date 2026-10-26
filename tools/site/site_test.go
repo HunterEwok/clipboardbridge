@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-var siteLangs = []string{"en", "ru", "zh", "es", "ar", "sw", "he"}
+var siteLangs = []string{"en", "ru", "zh", "es", "ar", "sw", "he", "hi"}
 
 func TestChooseLanguage(t *testing.T) {
 	for _, tc := range []struct {
@@ -31,6 +31,8 @@ func TestChooseLanguage(t *testing.T) {
 		{"Kenya in English", "", "KE", "en-KE,en", "en"},
 		{"Kenya in Swahili", "", "KE", "", "sw"},
 		{"Hebrew's old code", "", "", "iw", "he"},
+		{"India in Hindi", "", "IN", "hi-IN,en;q=0.5", "hi"},
+		{"India in English", "", "IN", "en-IN", "en"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := chooseLanguage(siteLangs, tc.picked, tc.country, tc.accept); got != tc.want {
