@@ -635,6 +635,19 @@ func (n *Node) SendAdmin(dev group.DeviceID, adminCA *x509.Certificate) bool {
 	return false
 }
 
+// SendEvidence sends the connected member dev an evidence message, as the
+// steps of a TPM's attestation (docs/protocol.md, section 17, "TPM
+// evidence"). It reports whether dev is connected.
+func (n *Node) SendEvidence(dev group.DeviceID, e Evidence) bool {
+	for _, c := range n.helloed() {
+		if c.id == dev {
+			c.enqueue(outgoing{evid: &e})
+			return true
+		}
+	}
+	return false
+}
+
 // errNotConnected is SendCommand's error for a member that is not connected.
 var errNotConnected = errors.New("the device is not connected to this one; it must be on and in reach")
 

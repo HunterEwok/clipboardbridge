@@ -311,6 +311,7 @@ func TestEvidence(t *testing.T) {
 		defer listMu.Unlock()
 		f := keysFile
 		if r.URL.Path == "/attest-status.json" {
+			var err error
 			if f, err = release.Sign(list, statusKey); err != nil {
 				t.Error(err)
 			}

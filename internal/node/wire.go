@@ -123,15 +123,38 @@ type Evidence struct {
 	Key string `json:"key"`
 	// GroupTag and Salt made the attestation challenge with the key
 	// (attest.Challenge); GroupTag is "" for a key made outside a group.
-	GroupTag string   `json:"group_tag,omitempty"`
-	Salt     []byte   `json:"salt"`
-	Chain    [][]byte `json:"chain"`
+	GroupTag string `json:"group_tag,omitempty"`
+	// Salt and Chain are never null, for the kits' decoders: an empty
+	// salt and chain in the formats without them.
+	Salt  []byte   `json:"salt"`
+	Chain [][]byte `json:"chain"`
+	// TPM, in EvidenceTPM, is the TPM's attestation of the key.
+	TPM *TPMEvidence `json:"tpm,omitempty"`
+	// Credential and Secret, in EvidenceTPMCredential, are what the root
+	// encrypted to the sender's EK for its AK; Secret, in
+	// EvidenceTPMActivated, is what the TPM recovered of it.
+	Credential []byte `json:"credential,omitempty"`
+	Secret     []byte `json:"secret,omitempty"`
+}
+
+// TPMEvidence is a TPM's attestation of a key (docs/protocol.md, section
+// 17, "TPM evidence"): Chain holds the EK certificate and the
+// certificates the device has between it and its maker.
+type TPMEvidence struct {
+	EK        []byte `json:"ek"`
+	AK        []byte `json:"ak"`
+	Key       []byte `json:"key"`
+	Attest    []byte `json:"attest"`
+	Signature []byte `json:"signature"`
 }
 
 // The formats and keys of Evidence.
 const (
-	EvidenceAndroid = "android-key"
-	EvidenceMember  = "member"
+	EvidenceAndroid       = "android-key"
+	EvidenceTPM           = "tpm"
+	EvidenceTPMCredential = "tpm-credential"
+	EvidenceTPMActivated  = "tpm-activated"
+	EvidenceMember        = "member"
 )
 
 // HubShare is what a hub tells another device that may be a hub: its offer

@@ -400,7 +400,7 @@ func (s *Service) takeOver(target string) (string, error) {
 	}
 	key := group.KeyHashOf(id.Cert)
 	var rs []group.Record
-	for _, body := range []group.RecordBody{revoke, {Type: group.RecordDevice, Device: id.ID, Name: name, Role: group.RoleFull, OS: s.cfg.OS, Key: &key}} {
+	for _, body := range []group.RecordBody{revoke, {Type: group.RecordDevice, Device: id.ID, Name: name, Role: group.RoleFull, OS: s.cfg.OS, Key: &key, Store: group.KeyStoreOf(id.Key)}} {
 		r, err := s.signRecord(next, body)
 		if err != nil {
 			return "", err
