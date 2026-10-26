@@ -381,6 +381,9 @@ func (s *Service) newGroup() (*group.Identity, error) {
 	case busy:
 		return nil, errors.New("this device is joining a group")
 	}
+	if err := s.keysAllowed(); err != nil {
+		return nil, err
+	}
 	return s.createGroup()
 }
 

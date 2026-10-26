@@ -52,6 +52,24 @@ kind = "openwrt"
 		t.Fatal("Select took an unknown device")
 	}
 
+	os.WriteFile(path, []byte("[device.nas]\nos = \"docker\"\nssh = \"a@b\"\nroles = [\"hub\"]\n"), 0o600)
+	if _, err := LoadInventory(path); err == nil || !strings.Contains(err.Error(), "ordinary member") {
+		t.Fatalf("a container as the hub: %v", err)
+	}
+	os.WriteFile(path, []byte("[device.nas]\nos = \"docker\"\nssh = \"a@b\"\n"), 0o600)
+	inv, err = LoadInventory(path)
+	if err != nil || inv.Device["nas"].Container != "clipboardbridge" || cbbCmd(inv.Device["nas"]) != "docker exec -i clipboardbridge cbb" {
+		t.Fatalf("a container: %+v, %v", inv, err)
+	}
+	os.WriteFile(path, []byte("[device.nas]\nos = \"docker\"\nssh = \"a@b\"\nclipboard = \"x11\"\n"), 0o600)
+	if _, err := LoadInventory(path); err == nil {
+		t.Fatal("a container with a desktop clipboard")
+	}
+	os.WriteFile(path, []byte("[device.x]\nos = \"linux\"\nssh = \"a@b\"\ncontainer = \"c\"\n"), 0o600)
+	if _, err := LoadInventory(path); err == nil {
+		t.Fatal("a container name on a device that is not one")
+	}
+
 	os.WriteFile(path, []byte("[device.x]\nos = \"plan9\"\nssh = \"a@b\"\n"), 0o600)
 	if _, err := LoadInventory(path); err == nil || !strings.Contains(err.Error(), "plan9") {
 		t.Fatalf("an unknown os: %v", err)
@@ -146,5 +164,35 @@ func TestSeen(t *testing.T) {
 		if got := seen(text, c.from, c.to); got != c.want {
 			t.Errorf("seen(%q, %s, %s) = %q, want %q", text, c.from.OS, c.to.OS, got, c.want)
 		}
+	}
+}
+
+func TestContainer(t *testing.T) {
+	// As docker inspect prints the container of compose.home.yaml.
+	good := "false|true|[ALL]|65532:65532|[no-new-privileges:true]|host|unless-stopped"
+	if err := checkLockedDown(good); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		"true|true|[ALL]|65532:65532|[no-new-privileges:true]|host|unless-stopped",
+		"false|false|[ALL]|65532:65532|[no-new-privileges:true]|host|unless-stopped",
+		"false|true|[]|65532:65532|[no-new-privileges:true]|host|unless-stopped",
+		"false|true|[ALL]|0|[no-new-privileges:true]|host|unless-stopped",
+		"false|true|[ALL]||[no-new-privileges:true]|host|unless-stopped",
+		"false|true|[ALL]|65532:65532|[]|host|unless-stopped",
+		"false|true|[ALL]|65532:65532|[no-new-privileges:true]|bridge|unless-stopped",
+		"false|true|[ALL]|65532:65532|[no-new-privileges:true]|host|no",
+		"false|true",
+	} {
+		if checkLockedDown(bad) == nil {
+			t.Errorf("checkLockedDown took %q", bad)
+		}
+	}
+	if got, want := recreateCmd("cbb|/srv/cbb/compose.home.yaml|clipboardbridge"),
+		"docker compose -p 'cbb' -f '/srv/cbb/compose.home.yaml' up -d --force-recreate 'clipboardbridge'"; got != want {
+		t.Errorf("recreateCmd = %s, want %s", got, want)
+	}
+	if got := recreateCmd("||"); got != "" {
+		t.Errorf("recreateCmd without compose = %q", got)
 	}
 }

@@ -55,7 +55,7 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	case peer == nil:
 		return "", fmt.Errorf("%s is not connected; it gets its admin CA over its connection, so start it and try again", d.Name)
 	case peer.AdminKey == nil:
-		return "", fmt.Errorf("%s offers no admin key; update Clipboard Bridge there", d.Name)
+		return "", fmt.Errorf("%s offers no admin key: it runs an older Clipboard Bridge, or in a container that may not hold the group's keys (its log says so)", d.Name)
 	}
 	k, err := x509.ParsePKIXPublicKey(peer.AdminKey)
 	pub, ok := k.(*ecdsa.PublicKey)
@@ -304,6 +304,9 @@ func (s *Service) findDevice(target string) (control.Device, error) {
 // old root admitted and every other admin, records itself as the group's
 // root, and replaces the iPhone CA, which the lost root held.
 func (s *Service) takeOver(target string) (string, error) {
+	if err := s.keysAllowed(); err != nil {
+		return "", err
+	}
 	d, err := s.findDevice(target)
 	if err != nil {
 		return "", err

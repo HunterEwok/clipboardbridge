@@ -38,6 +38,14 @@ ssh = "user@vps.example.net"
 clipboard = "none"
 roles = ["away"]
 
+# The Docker image on a host, started with packaging/docker/compose.home.yaml:
+# the bench runs cbb in it with docker exec. tools/bench/setup-docker.sh
+# prepares the host and starts the container.
+[device.nas]
+os = "docker"
+ssh = "user@pi4.lan"
+roles = ["member"]
+
 [router]
 ssh = "root@router.lan"
 kind = "openwrt"

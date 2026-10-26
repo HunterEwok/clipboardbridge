@@ -72,6 +72,11 @@ func Full(ctx context.Context, r *Report, devices []*Device, timeout time.Durati
 	burst(ctx, r, g, timeout)
 	race(ctx, r, g, timeout)
 	killService(ctx, r, g, timeout)
+	for _, d := range g.members {
+		if d.OS == "docker" {
+			containerCases(ctx, r, g, d, timeout)
+		}
+	}
 }
 
 // emptyText (C4): an empty text is refused by cbb copy and changes no
@@ -242,6 +247,122 @@ func killCmd(d *Device) string {
 		// launchd starts the daemon again (KeepAlive). The bench's
 		// sudoers rule allows exactly this command (docs/testbench.md).
 		return "sudo -n /bin/launchctl kill KILL system/io.github.hunterewok.clipboardbridge"
+	case "docker":
+		// The process dies as a crash would, not by docker kill, which
+		// Docker counts as stopping it by hand: its restart policy
+		// (unless-stopped) starts it again. It runs as the image's user,
+		// so root kills it, through the one helper that setup-docker.sh
+		// allows without a password.
+		return "sudo -n /usr/local/sbin/cbbbench-kill-container " + d.Container
 	}
 	return ""
+}
+
+// lockedDown is what docs/roadmap.md, "Docker", promises of the container,
+// as docker inspect prints it, one field between bars: not privileged, a
+// read-only root, every capability dropped, the image's own user, no new
+// privileges, the host's network and a restart policy.
+const lockedDown = `{{.HostConfig.Privileged}}|{{.HostConfig.ReadonlyRootfs}}|{{.HostConfig.CapDrop}}|{{.Config.User}}|{{.HostConfig.SecurityOpt}}|{{.HostConfig.NetworkMode}}|{{.HostConfig.RestartPolicy.Name}}`
+
+// The labels docker compose puts on the containers it starts.
+const composeLabels = `{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.service"}}`
+
+// containerCases (P35) check an ordinary member in a container: it runs locked down
+// as the compose file sets it, and a restart or a new container from the
+// same volume keeps its group, its mode and its sync.
+func containerCases(ctx context.Context, r *Report, g *benchGroup, d *Device, timeout time.Duration) {
+	prefix := "full/P35-container/" + d.Name + "/"
+	r.Do(prefix+"locked", func() error {
+		out, err := Run(ctx, d, "docker inspect -f '"+lockedDown+"' "+d.Container, "")
+		if err != nil {
+			return err
+		}
+		return checkLockedDown(strings.TrimSpace(out))
+	})
+	recreate := ""
+	if out, err := Run(ctx, d, "docker inspect -f '"+composeLabels+"' "+d.Container, ""); err == nil {
+		recreate = recreateCmd(strings.TrimSpace(out))
+	}
+	for _, step := range []struct{ name, cmd string }{
+		{"restart", "docker restart " + d.Container},
+		// A new container from the image, as docker compose pull and up
+		// make after an update: the state is in the volume only.
+		{"recreate", recreate},
+	} {
+		if step.cmd == "" {
+			r.Skip(prefix+step.name, "docker compose did not start the container")
+			continue
+		}
+		if r.Do(prefix+step.name, func() error {
+			_, err := Run(ctx, d, step.cmd, "")
+			return err
+		}) != nil {
+			continue
+		}
+		if r.Do(prefix+step.name+"/back", func() error {
+			return eventually(ctx, 30*time.Second, func() error {
+				tag, err := groupOf(ctx, d)
+				if err == nil && tag != g.tag {
+					err = fmt.Errorf("%s came back in group %q, not %s", d.Name, tag, g.tag)
+				}
+				if err == nil {
+					var mode string
+					mode, err = Run(ctx, d, cbbCmd(d)+" mode", "")
+					if err == nil && !strings.HasPrefix(mode, "Sync mode shared") {
+						err = fmt.Errorf("%s came back with %q, not in mode shared", d.Name, firstLine(mode))
+					}
+				}
+				return err
+			})
+		}) != nil {
+			continue
+		}
+		from := g.members[len(g.members)-1]
+		if from == d {
+			from = g.members[0]
+		}
+		text := fmt.Sprintf("cbb-bench %s after the %s of %s", g.run, step.name, d.Name)
+		if r.Do(prefix+step.name+"/copy", func() error { return Copy(ctx, from, text) }) != nil {
+			continue
+		}
+		spread(ctx, r, prefix+step.name+"/sync/", g.members, from, text, 2*timeout)
+	}
+}
+
+// checkLockedDown checks docker inspect's line for lockedDown.
+func checkLockedDown(line string) error {
+	f := strings.Split(line, "|")
+	switch {
+	case len(f) != 7:
+		return fmt.Errorf("docker inspect printed %q", line)
+	case f[0] != "false":
+		return errors.New("the container is privileged")
+	case f[1] != "true":
+		return errors.New("the container's root file system is writable; set read_only")
+	case f[2] != "[ALL]":
+		return fmt.Errorf("the container keeps capabilities: cap_drop is %s, not [ALL]", f[2])
+	case f[3] != "65532:65532":
+		return fmt.Errorf("the container runs as %q, not the image's user 65532:65532", f[3])
+	case !strings.Contains(f[4], "no-new-privileges"):
+		return errors.New("the container may gain privileges: security_opt has no no-new-privileges")
+	case f[5] != "host":
+		return fmt.Errorf("the container's network is %q; a member at home needs the host's", f[5])
+	case f[6] != "unless-stopped" && f[6] != "always":
+		return fmt.Errorf("the container's restart policy is %q; the service would not come back", f[6])
+	}
+	return nil
+}
+
+// recreateCmd makes docker compose start a new container of the service,
+// from composeLabels' line, or is "" when docker compose did not start it.
+func recreateCmd(line string) string {
+	f := strings.Split(line, "|")
+	if len(f) != 3 || f[0] == "" || f[1] == "" || f[2] == "" {
+		return ""
+	}
+	cmd := "docker compose -p " + shellQuote(f[0])
+	for _, file := range strings.Split(f[1], ",") {
+		cmd += " -f " + shellQuote(file)
+	}
+	return cmd + " up -d --force-recreate " + shellQuote(f[2])
 }

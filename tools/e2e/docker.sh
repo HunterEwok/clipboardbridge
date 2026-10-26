@@ -54,12 +54,15 @@ eventually() {
 }
 
 # start runs the image as packaging/docker/compose.home.yaml does, on a
-# network of its own rather than the host's.
+# network of its own rather than the host's. The test's root, a, may hold
+# the group's keys in its volume (CBB_KEYS_IN_FILE); b may not.
 start() { # name, arguments...
 	n=$1
 	shift
+	keys=no
+	[ "$n" != a ] || keys=yes
 	docker run -d --name "$run-$n" --hostname "host-$n" --network "$net" \
-		--read-only --tmpfs /run/clipboardbridge:uid=65532,gid=65532,mode=0750 \
+		-e CBB_KEYS_IN_FILE=$keys --read-only --tmpfs /run/clipboardbridge:uid=65532,gid=65532,mode=0750 \
 		--cap-drop ALL --security-opt no-new-privileges \
 		-v "$run-$n:/var/lib/clipboardbridge" "$image" "$@" >/dev/null
 }
@@ -72,6 +75,10 @@ for m in $members; do
 done
 [ "$(docker exec "$run-a" cbb version | head -n 1)" != "" ] || fail "cbb version says nothing"
 [ "$(docker inspect -f '{{.Config.User}}' "$image")" = "65532:65532" ] || fail "the image does not run as its own user"
+
+say "b, a container whose user did not allow keys in a file, makes no group"
+cb b new >"$tmp/new.out" 2>&1 && fail "b created a group in a container"
+grep -q CBB_KEYS_IN_FILE=yes "$tmp/new.out" || fail "b's refusal does not say how to allow it: $(cat "$tmp/new.out")"
 
 say "a creates the group and admits b"
 cb a new >/dev/null || fail "a could not create the group"

@@ -125,7 +125,7 @@ The order may change.
     difference between the computers, and it goes away with the app. The app's window and menu bar
     item over the installed service are there already (`apps/macos`, [apps.md](apps.md#the-mac-app));
     the signed app that carries the service waits for the account.
-23. **Built: the image, its compose files and its publishing with each release; a container as the hub on the bench is next.** Docker: an image with the full service for a NAS or a home server, as an
+23. **Built: the image, its compose files, its publishing with each release, and a container on the bench.** Docker: an image with the full service for a NAS or a home server, as an
     always-on member, the hub for sync away from home, a `cbb forward` forwarder or a
     `cbb relay` on a VPS. See "Docker" below.
 24. **Planned for 0.6.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
@@ -262,19 +262,22 @@ Later, if wanted: a LuCI page with the status and the QR code for joining.
 
 ## Docker
 
-Planned for 0.5; steps 1 and 2 are done ([packaging/docker](../packaging/docker/README.md)).
+Built for 0.5 ([packaging/docker](../packaging/docker/README.md)).
 
 An image with the full service, for the machines that are always on but have no desktop: a
 NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
 infrastructure, not a place to copy and paste:
 
-- **An always-on member and the hub.** At home it keeps the group's events while no
-  computer is on and holds `clipboardbridge.local`; with `cbb global hub` it is the hub for
-  sync away from home.
+- **An always-on member, and the hub only by choice.** At home it keeps the group's events
+  while no computer is on and holds `clipboardbridge.local`. Only the root or an admin can be
+  the hub, so a container is the hub for sync away from home only once the user made it an
+  admin, with its keys in a file in the volume: the least safe of the key levels (item 31),
+  which the user must allow explicitly. The service enforces it already: in the image
+  (`CBB_CONTAINER`) it makes no group and offers no admin key unless `CBB_KEYS_IN_FILE=yes`.
 - **A forwarder or a relay on a VPS.** `cbb forward` and `cbb relay` hold no group keys, so
   a container on a rented server is the natural way to run them.
-- **Never the creator or an admin.** It joins as an ordinary full member; CA keys stay on
-  the devices the user holds.
+- **Never the creator, and an admin only by choice.** It joins as an ordinary full member;
+  CA keys stay on the devices the user holds.
 
 What the image needs:
 
@@ -304,7 +307,9 @@ Steps, one pull request each, smaller ones together:
    group and sync.
 2. Done. The release workflow publishes the multi-arch image with its attestations; README and
    the installer pages say how to run it on the common NAS systems.
-3. The bench gets a container as the hub, with cases for it in [testbench.md](testbench.md).
+3. Done. The bench takes a container as a device (`os = "docker"`), an ordinary member that
+   never makes the group, with the case P35 in [testbench.md](testbench.md); as the hub it
+   is a manual step, by the owner's choice.
 
 ## FreeBSD
 

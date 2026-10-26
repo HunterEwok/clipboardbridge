@@ -98,6 +98,10 @@ func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
 	if !id.NeedsAdminKey() {
 		return id
 	}
+	if s.keysAllowed() != nil {
+		s.logf("cbb: this device runs in a container, so it offers no admin key and cannot be made an admin; set %s=yes in its environment to allow it", keysInFileEnv)
+		return id
+	}
 	next, err := id.WithAdminKey()
 	if err == nil {
 		err = next.Save(s.cfg.StateDir)
@@ -120,6 +124,9 @@ func (s *Service) becomeAdmin(der []byte) error {
 	}
 	if s.id.AdminCA != nil && bytes.Equal(s.id.AdminCA.Raw, der) {
 		return nil
+	}
+	if err := s.keysAllowed(); err != nil {
+		return err
 	}
 	if err := s.adoptRootsLocked(); err != nil {
 		return err

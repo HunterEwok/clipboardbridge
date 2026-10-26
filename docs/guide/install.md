@@ -58,8 +58,9 @@ cbb install           # in the administrator terminal; again after each winget u
 
 ## Docker
 
-For a NAS or a home server that is always on, and a good hub
-([image's README](../../packaging/docker/README.md); published with each release from 0.5):
+For a NAS or a home server that is always on
+([image's README](../../packaging/docker/README.md); published with each release from 0.5).
+It joins as an ordinary member: make the group on the phone or a computer you hold.
 
 ```sh
 docker compose -f packaging/docker/compose.home.yaml up -d

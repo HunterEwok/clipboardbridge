@@ -6,6 +6,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-26
+
 ### Added
 
 - An open blind relay: `cbb relay -open` serves every group that registers, as the project's
@@ -86,8 +88,23 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (docs/protocol.md, section 13). Both phone kits listen for member connections
   (`MemberListener`) and, as the hub, admit a client by the tunnel key its hello offers and
   answer with the offer (`PhoneHub`).
+- The hardware bench takes a member in a container (`os = "docker"` in its inventory),
+  reached by `docker exec` on its host. It joins as an ordinary member and never makes the
+  group, whose CA keys stay off a container; `full` checks that it runs locked down as
+  `compose.home.yaml` sets it, and that a crash, a restart and a new container from the
+  same volume keep its group, its mode and its sync (P35 in docs/testbench.md).
+  `tools/bench/setup-docker.sh` prepares the container's host and starts a container of the
+  build under test.
 
 ### Changed
+
+- A member in the Docker image holds none of the group's keys: `cbb new`, `cbb upgrade` and
+  `cbb takeover` refuse there, and it offers no admin key, so the root cannot make it an
+  admin and it cannot be the hub, since its keys would be in a file in the volume. The
+  refusal says how to allow it anyway: `CBB_KEYS_IN_FILE=yes` in the container's
+  environment.
+- The home compose file names its container `clipboardbridge`, so `docker exec -it
+  clipboardbridge cbb pair` works as the documentation says.
 
 - `cbb global relay` first says what a relay learns (which devices are online and from
   where, which talk, when and how much) and asks you to type yes, or takes `-yes`; the
@@ -872,7 +889,8 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
