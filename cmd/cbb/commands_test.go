@@ -45,6 +45,10 @@ func fakeHandler(t *testing.T, handle func(m *control.Message, r *control.Reader
 	got := make(chan *control.Message, 8)
 	for _, path := range []string{socket, control.AdminSocketFor(socket)} {
 		admin := path != socket
+		// On Windows the admin socket is in a directory of its own.
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
 		ln, err := net.Listen("unix", path)
 		if err != nil {
 			t.Fatal(err)
