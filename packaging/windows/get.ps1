@@ -130,13 +130,13 @@
 			throw "$version has no signed release files; not installing it (CBB_VERIFY=skip installs it unchecked)"
 		}
 		$nowMS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-		$keys = Open-ReleaseFile (Join-Path $tmp 'keys.json') 'keys' @($roots | ForEach-Object { , [Convert]::FromBase64String($_) })
+		$keys = Open-ReleaseFile -path (Join-Path $tmp 'keys.json') -type 'keys' -keys @($roots | ForEach-Object { , [Convert]::FromBase64String($_) })
 		if ([long]$keys.Value.expires_ms -le $nowMS) { throw 'keys.json has expired; check the clock, or try again later' }
 		$releaseKeys = @($keys.Value.keys | ForEach-Object { , [Convert]::FromBase64String($_.key) })
-		$rel = Open-ReleaseFile (Join-Path $tmp 'release.json') 'release' $releaseKeys
+		$rel = Open-ReleaseFile -path (Join-Path $tmp 'release.json') -type 'release' -keys $releaseKeys
 		if ($version -eq 'latest') {
 			Get-ReleaseFile "$base/stable.json" (Join-Path $tmp 'stable.json')
-			$ch = Open-ReleaseFile (Join-Path $tmp 'stable.json') 'channel' $releaseKeys
+			$ch = Open-ReleaseFile -path (Join-Path $tmp 'stable.json') -type 'channel' -keys $releaseKeys
 			if ($ch.Value.channel -ne 'stable') { throw "stable.json is not the stable channel's" }
 			if ([long]$ch.Value.expires_ms -le $nowMS) { throw 'stable.json has expired; check the clock, or try again later' }
 			$sum = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($rel.Bytes) | ForEach-Object { $_.ToString('x2') })
@@ -220,7 +220,7 @@
 			# the download is whole. The signed release files show that the
 			# project signed this release (docs/protocol.md, section 16).
 			$step = "checking the release's signature"
-			Test-Release $base $version $archive $got $tmp
+			Test-Release -base $base -version $version -archive $archive -got $got -tmp $tmp
 
 			# The attestation shows that this repository's release workflow
 			# built the archive.
