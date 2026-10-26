@@ -22,6 +22,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`
   shows as "proven hardware" (docs/protocol.md, section 17, "Evidence").
 
+- The guide "Keys and attestation" (docs/guide/keys.md): where each device keeps its keys,
+  how Android phones prove it, and the three key levels.
+
 ### Changed
 
 - Revoked attestations: a mirror on cbb.tools signs Google's revocation list of Android

@@ -10,6 +10,7 @@
 | [Installing](guide/install.md) | every system, Homebrew, winget, Docker, the firewall, updating, removing |
 | [Away from home](guide/away-from-home.md) | the hub, a forwarder, invitations |
 | [Networks that block VPNs](guide/blocked-networks.md) | AmneziaWG and VLESS with REALITY |
+| [Keys and attestation](guide/keys.md) | where each device keeps its keys, how Android phones prove it, the three levels |
 | [The apps](guide/apps.md) | the phone, watch and desktop apps |
 | [Without the app](guide/without-app.md) | a group held by a computer, the iPhone shortcut, joining over SSH or a VPN |
 | [Troubleshooting](guide/troubleshooting.md) | logs, the firewall, pairing, other networks |
