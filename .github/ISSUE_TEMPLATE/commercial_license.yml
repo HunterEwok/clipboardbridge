@@ -1,0 +1,23 @@
+name: Commercial license
+description: Ask for a license without the GNU AGPL's obligations.
+title: "Commercial license"
+labels: ["commercial license"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues are public. Write only a few words here; the maintainer continues in private.
+  - type: textarea
+    id: who
+    attributes:
+      label: Who you are
+      description: A person or a company, and how the maintainer can reach you.
+    validations:
+      required: true
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need
+      description: For example, the lite member in a router or another device.
+    validations:
+      required: true

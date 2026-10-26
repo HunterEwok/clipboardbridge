@@ -1756,7 +1756,7 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 
 | ID   | Decision                                                                                   |
 |------|--------------------------------------------------------------------------------------------|
-| D-1  | License: AGPL-3.0-only. Code contributions are not accepted, so no contributor agreement is needed. |
+| D-1  | License: AGPL-3.0-only. Code contributions are not accepted, so no contributor agreement is needed, and the one author can also offer a commercial license without the AGPL's obligations (README, "License"). |
 | D-2  | Language: Go, for reliable ARMv6 builds, TLS and networking in the standard library, and development speed. |
 | D-3  | A group of equal members instead of a central server; any member may be off.              |
 | D-4  | Encryption with the project's own TLS and pairing instead of an overlay VPN, which on iOS would conflict with other VPN apps. |
@@ -1831,3 +1831,6 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-73 | The iPhone is not the hub in the background as a Network Extension: App Review allows VPN apps only from organizations, iOS runs one VPN at a time, Apple advises against a listener in a packet tunnel, and the extension has 50 MiB. The phone stays the hub only while its app is open (D-64). |
 | D-74 | Prompt notifications on the iPhone may come through Apple's push, sent by a stateless sender at `cbb.tools` with the content encrypted to the phone's key and opened only on the phone; Apple learns that a push was sent and when, `cbb.tools` the push token, the hub's address and the time, and the user agrees to that before it is used. |
 | D-75 | Servers learn as little as can be kept from them: the forwarder keeps on disk only a hash of each group's tag with the version of its newest credential (D-67), the relay holds pseudonyms rather than device IDs, the credentials' lists are padded, and each device talks to the servers with its own key renewed every 30 days and signed by the root, so a server cannot link a device across renewals. No transparency report or warrant canary: the defence is that the servers hold almost nothing. |
+| D-76 | Official builds are told apart by the release signatures and the provenance attestation, not by the name: "Clipboard Bridge" is used by other, unrelated projects, so the project claims no exclusive right to it. BRAND.md asks builds with changes not to use the icon, `cbb.tools` as their default or an official look, and to take their own name and app identifiers. |
+| D-77 | The text of docs/protocol.md is under CC BY 4.0, so compatible implementations may use any license; the code stays under AGPL-3.0-only. |
+| D-78 | No additional permission for app stores for now: one can be added at any time but not taken back from released versions; whoever needs a store asks for a commercial license. |
