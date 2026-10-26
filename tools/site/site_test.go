@@ -224,7 +224,8 @@ func TestSite(t *testing.T) {
 	if len(sm.URLs) != len(pages)*len(langs) || len(sm.URLs[0].Links) != len(langs) {
 		t.Errorf("sitemap: %d pages, want %d, each with %d languages", len(sm.URLs), len(pages)*len(langs), len(langs))
 	}
-	for _, name := range []string{"robots.txt", "soon.html"} {
+	checkLinks(t, out)
+	for _, name := range []string{"robots.txt", "soon.html", ".well-known/security.txt", "site.webmanifest", "en/index.html.gz"} {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
 			t.Error(err)
 		}
@@ -244,5 +245,47 @@ func TestTranslate(t *testing.T) {
 	}
 	if got, _ := tr.t("Missing"); got != "Missing" || !tr.missing["Missing"] {
 		t.Errorf("a missing text gave %q and was not recorded", got)
+	}
+}
+
+// served are the paths nginx answers without a file in the build: the
+// language chooser, the visit counter, the revocation mirror.
+var served = regexp.MustCompile(`^/(\?.*)?$|^/count(\.js)?$|^/attest/`)
+
+// checkLinks fails for every link of a built page to a page or file of the
+// site that the build did not write.
+func checkLinks(t *testing.T, out string) {
+	t.Helper()
+	attr := regexp.MustCompile(`(?:href|src|srcset)="([^"]+)"`)
+	err := filepath.WalkDir(out, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".html") {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		for _, m := range attr.FindAllStringSubmatch(string(data), -1) {
+			link := strings.ReplaceAll(m[1], "&amp;", "&")
+			if strings.Contains(link, "://") || strings.HasPrefix(link, "#") || strings.HasPrefix(link, "mailto:") || served.MatchString(link) {
+				continue
+			}
+			link, _, _ = strings.Cut(link, "#")
+			target := filepath.Join(filepath.Dir(p), filepath.FromSlash(link))
+			if strings.HasPrefix(link, "/") {
+				target = filepath.Join(out, filepath.FromSlash(link))
+			}
+			if strings.HasSuffix(link, "/") {
+				target = filepath.Join(target, "index.html")
+			}
+			if _, err := os.Stat(target); err != nil {
+				rel, _ := filepath.Rel(out, p)
+				t.Errorf("%s: link to %s, which the build did not write", rel, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

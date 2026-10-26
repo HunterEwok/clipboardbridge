@@ -21,9 +21,10 @@
 <meta property="og:image:alt" content="{{t "Clipboard Bridge: copy on one device, paste on another."}}">
 <meta name="twitter:card" content="summary_large_image">
 {{end}}<meta name="theme-color" content="#0A7A3E">
-<link rel="stylesheet" href="/static/style.css">
-<link rel="icon" href="/static/icon.png">
-<link rel="apple-touch-icon" href="/static/icon.png">
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="icon" href="/static/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <script data-goatcounter="https://cbb.tools/count" async src="/count.js"></script>
 {{block "head" .}}{{end}}</head>
 <body>
@@ -41,7 +42,7 @@
       <a href="https://github.com/HunterEwok/clipboardbridge">GitHub</a>
     </nav>
     <details class="langs">
-      <summary aria-label="{{t "Language"}}">{{.Lang.Name}}</summary>
+      <summary><span class="sr">{{t "Language"}}: </span>{{.Lang.Name}}</summary>
       <ul>
         {{range .Langs}}<li><a href="/?lang={{.Code}}&amp;p={{$.Page}}" lang="{{.Tag}}" hreflang="{{.Tag}}"{{if eq .Code $.Lang.Code}} aria-current="true"{{end}}>{{.Name}}</a></li>
         {{end}}

@@ -5,6 +5,9 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +20,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 // pages are the site's pages, each site/templates/<page>.html inside
@@ -103,6 +107,42 @@ type page struct {
 	Page  string // the page's file name, "download.html"
 	Path  string // its path in links: "download.html", "" for the home page
 	Error bool   // an error page: not to be indexed
+	Release
+}
+
+// Release is the latest release, from CHANGELOG.md.
+type Release struct {
+	Version string // "0.5.0"
+	Date    string // "2026-10-26"
+}
+
+// releaseHeading is a release's heading in CHANGELOG.md.
+var releaseHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$`)
+
+// latestRelease reads the first release of the changelog next to site/.
+func latestRelease(root string) (Release, error) {
+	data, err := os.ReadFile(filepath.Join(root, "..", "CHANGELOG.md"))
+	if err != nil {
+		return Release{}, err
+	}
+	m := releaseHeading.FindSubmatch(data)
+	if m == nil {
+		return Release{}, errors.New("CHANGELOG.md: no release")
+	}
+	return Release{Version: string(m[1]), Date: string(m[2])}, nil
+}
+
+// assets maps a file of site/static to the name it is published under:
+// the stylesheet's carries a hash of its contents, so browsers may keep it
+// for good and still get each new version.
+func assets(root string) (map[string]string, map[string][]byte, error) {
+	css, err := os.ReadFile(filepath.Join(root, "static", "style.css"))
+	if err != nil {
+		return nil, nil, err
+	}
+	sum := sha256.Sum256(css)
+	name := "static/style." + hex.EncodeToString(sum[:4]) + ".css"
+	return map[string]string{"style.css": "/" + name}, map[string][]byte{name: css}, nil
 }
 
 // URL returns the absolute address of this page in lang.
@@ -250,7 +290,20 @@ func render(root string) (map[string][]byte, []*translator, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	out := map[string][]byte{}
+	release, err := latestRelease(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	names, out, err := assets(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	asset := template.FuncMap{"asset": func(name string) (string, error) {
+		if n, ok := names[name]; ok {
+			return n, nil
+		}
+		return "", fmt.Errorf("asset %q: not hashed", name)
+	}}
 	var trs []*translator
 	var soon []soonLine
 	for _, lang := range langs {
@@ -274,14 +327,14 @@ func render(root string) (map[string][]byte, []*translator, error) {
 		}
 		soon = append(soon, line)
 		for _, name := range append(slices.Clone(pages), errorPages...) {
-			tmpl, err := template.New("layout.html").Funcs(funcs).Funcs(perLang).ParseFiles(
+			tmpl, err := template.New("layout.html").Funcs(funcs).Funcs(perLang).Funcs(asset).ParseFiles(
 				filepath.Join(root, "templates", "layout.html"),
 				filepath.Join(root, "templates", name+".html"))
 			if err != nil {
 				return nil, nil, err
 			}
 			var b bytes.Buffer
-			p := page{Lang: lang, Langs: langs, Page: name + ".html", Path: pagePath(name), Error: slices.Contains(errorPages, name)}
+			p := page{Lang: lang, Langs: langs, Page: name + ".html", Path: pagePath(name), Error: slices.Contains(errorPages, name), Release: release}
 			if err := tmpl.Execute(&b, p); err != nil {
 				return nil, nil, fmt.Errorf("%s/%s.html: %w", lang.Code, name, err)
 			}
@@ -290,7 +343,7 @@ func render(root string) (map[string][]byte, []*translator, error) {
 	}
 	// Without the language chooser, "/" falls back to English.
 	out["index.html"] = []byte(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=en/"><title>Clipboard Bridge</title><a href="en/">Clipboard Bridge</a>` + "\n")
-	tmpl, err := template.ParseFiles(filepath.Join(root, "templates", "soon.html"))
+	tmpl, err := template.New("soon.html").Funcs(asset).ParseFiles(filepath.Join(root, "templates", "soon.html"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -300,11 +353,67 @@ func render(root string) (map[string][]byte, []*translator, error) {
 	}
 	out["soon.html"] = b.Bytes()
 	out["sitemap.xml"] = sitemap(langs)
+	out[".well-known/security.txt"] = securityTxt(release)
+	if out["site.webmanifest"], err = manifest(); err != nil {
+		return nil, nil, err
+	}
 	out["robots.txt"] = []byte("User-agent: *\n" +
 		"# \"/\" only redirects; \"/?lang=\" sets a cookie.\n" +
 		"Disallow: /?\n" +
 		"Sitemap: " + siteURL + "/sitemap.xml\n")
 	return out, trs, nil
+}
+
+// securityTxt tells security researchers where to report (RFC 9116). It
+// expires a year after the latest release, so a site nobody keeps up says
+// so.
+func securityTxt(r Release) []byte {
+	released, err := time.Parse(time.DateOnly, r.Date)
+	if err != nil {
+		released = time.Now()
+	}
+	return []byte("Contact: https://github.com/HunterEwok/clipboardbridge/security/advisories/new\n" +
+		"Policy: https://github.com/HunterEwok/clipboardbridge/blob/main/SECURITY.md\n" +
+		"Preferred-Languages: en, ru\n" +
+		"Canonical: " + siteURL + "/.well-known/security.txt\n" +
+		"Expires: " + released.AddDate(1, 0, 0).Format(time.RFC3339) + "\n")
+}
+
+// manifest describes the site to a phone that keeps it on its home screen.
+func manifest() ([]byte, error) {
+	return json.MarshalIndent(map[string]any{
+		"name":             "Clipboard Bridge",
+		"short_name":       "Clipboard Bridge",
+		"start_url":        "/",
+		"display":          "browser",
+		"theme_color":      "#0A7A3E",
+		"background_color": "#E8EFEF",
+		"icons": []map[string]string{
+			{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+			{"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+		},
+	}, "", "  ")
+}
+
+// compressible are the files build also writes gzipped, for nginx's
+// gzip_static.
+var compressible = []string{".html", ".css", ".xml", ".txt", ".webmanifest"}
+
+// gzipped returns data compressed as well as gzip can, with no name or time
+// in its header, so a build is the same each time.
+func gzipped(data []byte) ([]byte, error) {
+	var b bytes.Buffer
+	w, err := gzip.NewWriterLevel(&b, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 // sitemap lists every page in every language, each with its translations
@@ -376,6 +485,15 @@ func build(root, dir string) error {
 	})
 	if err != nil {
 		return err
+	}
+	for _, name := range sortedKeys(files) {
+		if slices.Contains(compressible, filepath.Ext(name)) {
+			gz, err := gzipped(files[name])
+			if err != nil {
+				return err
+			}
+			files[name+".gz"] = gz
+		}
 	}
 	for _, name := range sortedKeys(files) {
 		p := filepath.Join(dir, filepath.FromSlash(name))

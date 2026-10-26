@@ -32,7 +32,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
   by GoatCounter on the same server, without cookies and without storing addresses. Until the
   launch the site is closed: everyone sees "the website opens soon", and a secret link opens
-  the whole site in the owner's browsers.
+  the whole site in the owner's browsers. CI validates its HTML and runs Lighthouse on it;
+  the download page takes the latest version from this changelog; TLS 1.2 and 1.3 only,
+  pre-compressed files, a long-cached stylesheet, `security.txt` and a web manifest.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

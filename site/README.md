@@ -41,6 +41,24 @@ go run ./tools/site serve -preview            # http://127.0.0.1:8780
 `serve` picks the language as on the server, from the browser's languages; with
 `-geo dbip-country-lite-YYYY-MM.csv.gz` by country too.
 
+## Checks
+
+`go test ./tools/site` builds the site and checks every page: one `h1`, canonical links,
+`noindex` only on the error pages, valid schema.org data, the sitemap, and that every link
+within the site leads to a file the build wrote. CI's `website` job also validates the HTML
+and runs Lighthouse on a few pages; it fails below 0.9 for performance and SEO and 0.95 for
+accessibility. To run it here (`CHROME_PATH` if Chrome is not found by itself):
+
+```sh
+go run ./tools/site build
+cd site && npm ci --ignore-scripts && npm run validate && npm run lighthouse
+```
+
+The build also writes a gzipped copy of each text file for nginx's `gzip_static`, names the
+stylesheet by a hash of its contents so browsers can keep it for good, takes the latest
+version on the download page from `CHANGELOG.md`, and writes `.well-known/security.txt`
+(RFC 9116, expiring a year after the latest release) and `site.webmanifest`.
+
 ## How the language is chosen
 
 `/` is the one address that is not a file. nginx passes it to `tools/site serve`, which

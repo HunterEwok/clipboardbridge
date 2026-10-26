@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "description": "Checks of the built website in CI: HTML validity and Lighthouse (see README.md).",
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "@lhci/cli": "0.15.1",
+    "html-validate": "11.17.0"
+  },
+  "scripts": {
+    "validate": "html-validate --config .htmlvalidate.json \"out/**/*.html\"",
+    "lighthouse": "lhci autorun --config=lighthouserc.json"
+  }
+}

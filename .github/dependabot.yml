@@ -10,6 +10,7 @@
 # update of their dependencies must change both lock files in one pull request (group-by
 # dependency-name), or the firmware's `cargo build --locked` fails. esp-hal and its crates are
 # pinned to a git commit on purpose and are left alone. gradle covers the Android app and its kit.
+# npm covers only the checks of the website in CI (site/package.json).
 # The cooldown waits a week after a release before proposing it, so a compromised release
 # has time to be noticed and pulled.
 version: 2
@@ -79,4 +80,16 @@ updates:
       default-days: 7
     groups:
       gradle:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    groups:
+      website-checks:
         patterns: ["*"]

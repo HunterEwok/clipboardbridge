@@ -63,11 +63,13 @@
   <p>{{t "A message to yourself works, but it takes several steps every time, and your text stays on someone else's server. A clipboard built into one system works only within it."}}</p>
   <div class="table">
   <table class="compare">
-    <tr><th></th><th>{{t "Just copy and paste"}}</th><th>{{t "Text stays on your devices"}}</th><th>{{t "Between any systems"}}</th></tr>
-    <tr class="us"><th>Clipboard Bridge</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th>{{t "A message to yourself"}}</th><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th>{{t "A cloud clipboard app"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th>{{t "The clipboard of one system"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td></tr>
+    <thead><tr><td></td><th scope="col">{{t "Just copy and paste"}}</th><th scope="col">{{t "Text stays on your devices"}}</th><th scope="col">{{t "Between any systems"}}</th></tr></thead>
+    <tbody>
+    <tr class="us"><th scope="row">Clipboard Bridge</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "A message to yourself"}}</th><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "A cloud clipboard app"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "The clipboard of one system"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td></tr>
+    </tbody>
   </table>
   </div>
 </section>
