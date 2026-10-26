@@ -16,7 +16,9 @@ mod identity;
 mod next;
 mod node;
 mod pair;
+mod pastehelper;
 mod records;
+mod remotepaste;
 mod service;
 mod tls;
 mod tunnel;
@@ -60,6 +62,14 @@ Commands:
                        through the group's own WireGuard tunnel to its hub.
   watch [-0]           Print every text the group sends here, one per line
                        (with -0, each followed by a zero byte).
+  paste-receive [on [-enter] [-console] | off]
+                       Show remote paste here, or turn it on or off: whether
+                       the group's admins may put a text into tmux, or with
+                       -console into the active text console, here (-enter:
+                       and press Enter after it).
+  paste-helper tmux|console
+                       The paste targets: tmux starts the one for tmux, the
+                       clipboardbridge-console unit the one for the console.
   next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
                        in frames its Z80 reads (lite/README.md).
   version              Print the version and that this is the lite member.
@@ -118,6 +128,8 @@ fn main() {
                 "global" => cmd_global(&g, rest),
                 "watch" => cmd_watch(&g, rest),
                 "mode" => cmd_mode(&g, rest),
+                "paste-receive" => cmd_paste_receive(&g, rest),
+                "paste-helper" => pastehelper::run(&g.socket, rest),
                 "version" | "-version" | "--version" => {
                     println!(
                         "cbb {} ({}/{}), the lite member",
@@ -563,6 +575,46 @@ fn mode_line(mode: &str) -> String {
         "" => "This lite member's service does not know sync modes yet; update it.".into(),
         m => format!("Sync mode {m}."),
     }
+}
+
+fn cmd_paste_receive(g: &Global, args: &[String]) -> Result<()> {
+    let usage = || Error::msg("usage: cbb paste-receive [on [-enter] [-console] | off]");
+    let mut h = control::Header { op: "status".into(), ..Default::default() };
+    for (i, a) in args.iter().enumerate() {
+        match (i, a.as_str(), flag(a)) {
+            (0, "on" | "off", _) => {
+                h.op = "paste-receive".into();
+                h.name = a.clone();
+            }
+            (1.., _, Some("enter")) if h.name == "on" => h.enter = true,
+            (1.., _, Some("console")) if h.name == "on" => h.console = true,
+            _ => return Err(usage()),
+        }
+    }
+    let m = request(g, &control::Message::new(h, Vec::new()))?;
+    let p = m.header.status.and_then(|s| s.paste).ok_or_else(|| Error::msg("this device is in no group"))?;
+    println!("{}", paste_line(&p));
+    Ok(())
+}
+
+/// How remote paste stands here, as cbb paste-receive on a full member says
+/// it.
+fn paste_line(p: &control::Paste) -> String {
+    if !p.on {
+        return "Remote paste is off: the group's admins cannot paste here.".into();
+    }
+    let line = match (p.enter, p.console) {
+        (true, true) => "Remote paste is on: the group's admins may paste here, press Enter, and reach text consoles.",
+        (true, false) => "Remote paste is on: the group's admins may paste here and press Enter.",
+        (false, true) => {
+            "Remote paste is on: the group's admins may paste here and reach text consoles, without Enter."
+        }
+        (false, false) => "Remote paste is on: the group's admins may paste here, without Enter.",
+    };
+    if p.targets.is_empty() {
+        return format!("{line} Nothing here can paste yet: the tmux and console helpers do it.");
+    }
+    line.into()
 }
 
 /// What a user agrees to before the lite member, whose keys sit in files,

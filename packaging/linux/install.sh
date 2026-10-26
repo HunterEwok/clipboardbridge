@@ -12,8 +12,8 @@
 # user, the systemd unit, for the full member the desktop autostart entry and user unit,
 # and the tmux configuration, adds the user
 # who ran sudo to the clipboardbridge group, and starts or restarts the service.
-# --console also starts tmux after a login on the text console and, for the
-# full member, the console helper for remote paste there. --uinput, for the
+# --console also starts tmux after a login on the text console and the
+# console helper for remote paste there. --uinput, for the
 # full member, adds the uinput helper, which presses the keys of a remote
 # paste on desktops without another way (GNOME and KDE without the portal's
 # dialog), and loads the uinput module at boot. --port moves
@@ -211,9 +211,7 @@ if ! grep -qsF "$line" /etc/tmux.conf; then
 fi
 if [ "$console" = yes ]; then
 	install -m 0644 "$here/../tmux/clipboardbridge-console.sh" /etc/profile.d/clipboardbridge-console.sh
-	if [ "$kind" = full ]; then
-		install -m 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
-	fi
+	install -m 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
 fi
 if [ "$uinput" = yes ]; then
 	if [ "$kind" != full ]; then
