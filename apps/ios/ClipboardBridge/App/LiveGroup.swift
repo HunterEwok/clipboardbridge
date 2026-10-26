@@ -15,6 +15,7 @@ private let relayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge",
 private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
 private let modeLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "mode")
 private let keysLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "keys")
+private let imageLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "images")
 
 /// The phone's own group (docs/protocol.md, section 9): its root CA key in
 /// the Secure Enclave, signing only after Face ID or the passcode (a
@@ -75,6 +76,8 @@ final class LiveGroup: GroupController {
     private let attestStatus: AttestStatus
     private(set) var state: PhoneGroup?
     private var node: MemberNode?
+    /// The images this phone copied, which the computers fetch from it.
+    private let content = MemoryContent(maxBytes: 2 * Images.maxCopy)
     private var browser: BonjourBrowser?
     private var dialer: MemberDialer?
     private var relay: Relay?
@@ -740,7 +743,17 @@ final class LiveGroup: GroupController {
                               // mode that takes the group's copies, while the app runs.
                               onChange: { [weak self] e in
                                   guard Member.receives(modeBox.mode), !e.isMark, e.origin != device, e.ageMS < recent else { return }
-                                  Task { @MainActor in self?.write(e.text, kind: e.kind) }
+                                  if let part = Images.part(of: e.media) {
+                                      Task { @MainActor in
+                                          do {
+                                              try await self?.receive(e, image: part)
+                                          } catch {
+                                              imageLog.error("fetching an image: \(String(reflecting: error), privacy: .public)")
+                                          }
+                                      }
+                                  } else if !e.text.isEmpty {
+                                      Task { @MainActor in self?.write(e.text, kind: e.kind) }
+                                  }
                               },
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } },
                               onHubs: { from, _, share in
@@ -764,7 +777,8 @@ final class LiveGroup: GroupController {
                               },
                               onEvidence: { [weak self] peer, chain, e in
                                   Task { @MainActor in await self?.evidenceReceived(from: peer, chain: chain, e) }
-                              })
+                              },
+                              content: content)
         nodeRef.value = node
         let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
@@ -1338,23 +1352,40 @@ final class LiveGroup: GroupController {
         guard let node, let g = state else { throw PendingGroup.Failure.noComputers }
         online = await node.connected
         let pb = UIPasteboard.general
-        let board = pb.hasStrings ? pb.string : nil
-        if board == nil, pb.numberOfItems > 0 {
+        // A text first, as most copies with an image carry its text too;
+        // an image compares by its hash.
+        let text = pb.hasStrings ? pb.string : nil
+        let image = text == nil ? Images.read(pb) : nil
+        if text == nil, image == nil, pb.numberOfItems > 0 {
             throw ClipboardUnreadable(items: pb.numberOfItems, hasStrings: pb.hasStrings, types: pb.types, changeCount: pb.changeCount)
         }
+        let board = image?.key ?? text
         let cur = await node.current
-        let usable = await node.usable
+        let curImage = Images.part(of: cur?.media)
+        var usable = await node.usable
+        if let sum = curImage?.sha256 { usable = (Images.key(sum), .media) }
+        func fetch() async throws {
+            if let cur, let curImage {
+                try await receive(cur, image: curImage)
+            } else if let u = usable {
+                write(u.text, kind: u.kind)
+            }
+        }
         if let cur, let u = usable, cur.origin != g.device, cur.via == .copy, cur.ageMS < Self.recentCopyMS, u.text != board {
-            write(u.text, kind: u.kind)
+            try await fetch()
             return .fetched
         }
         if let t = board, !t.isEmpty, t != usable?.text {
             guard await connected(node) else { throw PendingGroup.Failure.noComputers }
-            await node.send(text: t, kind: .text)
+            if let image {
+                await node.send(text: "", kind: .text, media: Content.manifest(store: content, data: [(image.type, image.data)]))
+            } else {
+                await node.send(text: t, kind: .text)
+            }
             return .sent
         }
         if let u = usable, u.text != board {
-            write(u.text, kind: u.kind)
+            try await fetch()
             return .fetched
         }
         if !(await connected(node)) { throw PendingGroup.Failure.noComputers }
@@ -1371,6 +1402,14 @@ final class LiveGroup: GroupController {
             if !online.isEmpty || ContinuousClock.now >= deadline { return !online.isEmpty }
             try? await Task.sleep(for: .milliseconds(250))
         }
+    }
+
+    /// Fetches a computer's image whole and puts it on this phone's
+    /// clipboard, with its text.
+    private func receive(_ e: Member.Event, image part: Media.Part) async throws {
+        guard let node else { throw PendingGroup.Failure.noComputers }
+        let data = try await Content.data(from: node, event: e, part: part, limit: Images.maxCopy)
+        Images.write(data, type: part.type ?? "image/png", alt: e.text)
     }
 
     /// Puts a text into the phone's clipboard; a secret stays on this phone

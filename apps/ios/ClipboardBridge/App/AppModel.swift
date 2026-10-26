@@ -729,6 +729,12 @@ final class AppModel: ObservableObject {
             default: break
             }
         }
+        if let f = error as? Content.Failure, case .tooLarge = f {
+            return String(localized: "This image is larger than 100 MB, so it stays on the computer.", bundle: .app)
+        }
+        if error is Content.Failure || (error as? MemberNode.Failure) == .missing {
+            return String(localized: "Could not get the image from the computers. Copy it there again, then try again.", bundle: .app)
+        }
         if error is LiveGroup.ClipboardUnreadable {
             return String(localized: "Could not read the clipboard, so it was left as it is. Allow pasting for Clipboard Bridge, or copy the text again.", bundle: .app)
         }

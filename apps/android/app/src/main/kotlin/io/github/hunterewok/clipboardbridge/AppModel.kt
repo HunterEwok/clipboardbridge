@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.MemberNode
@@ -45,6 +46,7 @@ class AppModel(private val app: Context) {
     }
     val group = LiveGroup(app).also { g ->
         g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
+        g.onImage = { file, alt -> Clipboard.writeImage(app, file, alt) }
         // In the background too: the service keeps the connections that bring the records.
         // Off the node's thread, which may hold its own lock while it hands records over.
         g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
@@ -247,9 +249,12 @@ class AppModel(private val app: Context) {
     suspend fun sync() {
         busy = true
         try {
-            val board = Clipboard.readForSync(app)
-            val (result, fetched) = withContext(Dispatchers.IO) { group.sync(board) }
-            fetched?.let { (text, kind) -> Clipboard.write(app, text, kind) }
+            val (result, fetched) = withContext(Dispatchers.IO) { group.sync(Clipboard.readForSync(app)) }
+            when (fetched) {
+                is LiveGroup.Got.Text -> Clipboard.write(app, fetched.text, fetched.kind)
+                is LiveGroup.Got.Image -> Clipboard.writeImage(app, fetched.file, fetched.alt)
+                null -> {}
+            }
             message = Note(
                 when (result) {
                     LiveGroup.SyncResult.SENT -> R.string.sent
@@ -652,6 +657,8 @@ class AppModel(private val app: Context) {
                 LiveGroup.Failure.Kind.NO_SCREEN, LiveGroup.Failure.Kind.UNREACHABLE -> R.string.error_unreachable
             }
             is Clipboard.Unreadable -> R.string.error_clipboard_unreadable
+            is Content.TooLarge -> R.string.error_image_too_large
+            is MemberNode.MissingException, is MemberNode.ProtocolException -> R.string.error_image_unavailable
             is PairingMember.Failure ->
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
             is PhoneGroup.Failure -> R.string.error_generic
