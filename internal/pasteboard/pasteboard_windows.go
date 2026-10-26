@@ -5,6 +5,7 @@ package pasteboard
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image/png"
@@ -35,7 +36,9 @@ const Supported = true
 // An image is read when the clipboard holds no text: the "PNG" format that
 // browsers and Office put there, else the bitmap as a PNG. One is written
 // as a PNG and as a bitmap with alpha, CF_DIBV5, from which Windows makes
-// the older bitmap formats. A copy of files in Explorer is no image.
+// the older bitmap formats. A copy of files in Explorer, CF_HDROP, is read
+// as their paths before anything else; files are written the same way,
+// with the drop effect that tells Explorer to copy them, never move them.
 
 var (
 	user32   = windows.NewLazySystemDLL("user32.dll")
@@ -75,11 +78,13 @@ var (
 	formatsOnce                                   sync.Once
 	cfExclude, cfViewerIgnore, cfHistory, cfCloud uintptr
 	cfPNG                                         uintptr // an image as a PNG file
+	cfDropEffect                                  uintptr // whether pasted files are copied or moved
 )
 
 func registerFormats() {
 	formatsOnce.Do(func() {
 		cfPNG = register("PNG")
+		cfDropEffect = register("Preferred DropEffect")
 		cfExclude = register("ExcludeClipboardContentFromMonitorProcessing")
 		cfViewerIgnore = register("Clipboard Viewer Ignore")
 		cfHistory = register("CanIncludeInClipboardHistory")
@@ -125,6 +130,11 @@ func (b *Board) Read() (Item, bool, error) {
 		}
 		defer procCloseClipboard.Call()
 		it.Change = b.ChangeCount()
+		if available(cfHDrop) {
+			var err error
+			ok, err = readFiles(&it)
+			return err
+		}
 		if !available(cfUnicodeText) {
 			var err error
 			ok, err = readImage(&it)
@@ -185,13 +195,117 @@ func (b *Board) Write(text string, secret bool) (int64, error) {
 	return b.ChangeCount(), nil
 }
 
-// readImage reads the open clipboard's image, if it holds one and no files.
+// dropFiles is the size of DROPFILES, the header of CF_HDROP: the offset
+// of the paths, a point, and two BOOLs, the last saying the paths are
+// UTF-16.
+const dropFiles = 20
+
+// readFiles reads the open clipboard's files: CF_HDROP's paths, each
+// ended by a NUL, the list by another.
+func readFiles(it *Item) (bool, error) {
+	h, _, err := procGetClipboardData.Call(cfHDrop)
+	if h == 0 {
+		return false, fmt.Errorf("pasteboard: reading the clipboard's files: %w", err)
+	}
+	data, err := globalBytes(h, clip.MaxPaths*4)
+	if err != nil {
+		return false, err
+	}
+	paths, err := parseDrop(data)
+	if err != nil {
+		return false, err
+	}
+	it.Files = paths
+	return len(paths) > 0, nil
+}
+
+// parseDrop reads the paths of a CF_HDROP block.
+func parseDrop(data []byte) ([]string, error) {
+	if len(data) < dropFiles {
+		return nil, errors.New("pasteboard: a CF_HDROP too short")
+	}
+	off := int(binary.LittleEndian.Uint32(data))
+	wide := binary.LittleEndian.Uint32(data[16:]) != 0
+	if off < dropFiles || off > len(data) {
+		return nil, errors.New("pasteboard: a CF_HDROP whose paths are outside it")
+	}
+	var paths []string
+	rest := data[off:]
+	for {
+		var p string
+		if wide {
+			u := make([]uint16, 0, 64)
+			for len(rest) >= 2 {
+				c := binary.LittleEndian.Uint16(rest)
+				rest = rest[2:]
+				if c == 0 {
+					break
+				}
+				u = append(u, c)
+			}
+			p = string(utf16.Decode(u))
+		} else {
+			i := bytes.IndexByte(rest, 0)
+			if i < 0 {
+				i = len(rest)
+			}
+			p, rest = string(rest[:i]), rest[min(i+1, len(rest)):]
+		}
+		if p == "" {
+			return paths, nil
+		}
+		paths = append(paths, p)
+	}
+}
+
+// dropData is the CF_HDROP block of paths.
+func dropData(paths []string) []byte {
+	data := make([]byte, dropFiles)
+	binary.LittleEndian.PutUint32(data, dropFiles)
+	binary.LittleEndian.PutUint32(data[16:], 1)
+	for _, p := range paths {
+		for _, c := range utf16.Encode([]rune(p)) {
+			data = binary.LittleEndian.AppendUint16(data, c)
+		}
+		data = append(data, 0, 0)
+	}
+	return append(data, 0, 0)
+}
+
+// WriteFiles puts files on the clipboard, as Explorer copies them, and
+// returns the new change counter.
+func (b *Board) WriteFiles(paths []string) (int64, error) {
+	if len(paths) == 0 {
+		return 0, errors.New("pasteboard: no files")
+	}
+	for _, p := range paths {
+		if strings.IndexByte(p, 0) >= 0 {
+			return 0, errors.New("pasteboard: a path with a NUL")
+		}
+	}
+	registerFormats()
+	err := onThread(func(hwnd uintptr) error {
+		if err := open(hwnd); err != nil {
+			return err
+		}
+		defer procCloseClipboard.Call()
+		if r, _, err := procEmptyClipboard.Call(); r == 0 {
+			return fmt.Errorf("pasteboard: emptying the clipboard: %w", err)
+		}
+		// DROPEFFECT_COPY: a paste copies the files.
+		return errors.Join(set(cfHDrop, dropData(paths)), set(cfDropEffect, []byte{1, 0, 0, 0}))
+	})
+	if err != nil {
+		return 0, err
+	}
+	return b.ChangeCount(), nil
+}
+
+// readImage reads the open clipboard's image, if it holds one.
 func readImage(it *Item) (bool, error) {
 	registerFormats()
 	format := uintptr(0)
 	switch {
-	case available(cfHDrop):
-		return false, nil
 	case available(cfPNG):
 		format = cfPNG
 	case available(cfDIBV5):
@@ -222,7 +336,7 @@ func readImage(it *Item) (bool, error) {
 func globalBytes(h uintptr, limit int) ([]byte, error) {
 	n, _, _ := procGlobalSize.Call(h)
 	if int64(n) > int64(limit) {
-		return nil, errors.New("pasteboard: the image is larger than the group carries")
+		return nil, errors.New("pasteboard: the clipboard holds more than the group carries")
 	}
 	p, _, err := procGlobalLock.Call(h)
 	if p == 0 {

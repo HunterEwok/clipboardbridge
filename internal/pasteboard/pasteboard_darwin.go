@@ -15,6 +15,7 @@ import "C"
 
 import (
 	"errors"
+	"strings"
 	"unsafe"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
@@ -48,9 +49,12 @@ func (b *Board) Release() {
 // every change of its contents.
 func (b *Board) ChangeCount() int64 { return int64(C.cb_change_count(b.name)) }
 
-// Read returns the pasteboard's item, and false if it holds no text or
-// image.
+// Read returns the pasteboard's item, and false if it holds no text, image
+// or files.
 func (b *Board) Read() (Item, bool, error) {
+	if it, ok, err := b.readFiles(); ok || err != nil {
+		return it, ok, err
+	}
 	var text *C.char
 	var n C.long
 	var flags C.int
@@ -90,6 +94,45 @@ func (b *Board) readImage(flags C.int) (Item, bool, error) {
 	it.Image = C.GoBytes(data, C.int(n))
 	C.free(data)
 	return it, true, nil
+}
+
+// readFiles returns the pasteboard's files, as the Finder copies them.
+func (b *Board) readFiles() (Item, bool, error) {
+	var paths *C.char
+	var n C.long
+	var change C.long
+	switch C.cb_read_files(b.name, &paths, &n, &change) {
+	case -1:
+		return Item{}, false, errors.New("pasteboard: out of memory")
+	case 0:
+		return Item{}, false, nil
+	}
+	all := C.GoStringN(paths, C.int(n))
+	C.free(unsafe.Pointer(paths))
+	it := Item{Change: int64(change), Files: strings.Split(strings.TrimSuffix(all, "\x00"), "\x00")}
+	return it, true, nil
+}
+
+// WriteFiles puts files on the pasteboard, as the Finder copies them, and
+// returns the new change counter.
+func (b *Board) WriteFiles(paths []string) (int64, error) {
+	if len(paths) == 0 {
+		return 0, errors.New("pasteboard: no files")
+	}
+	var all strings.Builder
+	for _, p := range paths {
+		if strings.IndexByte(p, 0) >= 0 {
+			return 0, errors.New("pasteboard: a path with a NUL")
+		}
+		all.WriteString(p + "\x00")
+	}
+	cp := C.CString(all.String())
+	defer C.free(unsafe.Pointer(cp))
+	change := C.cb_write_files(b.name, cp, C.long(all.Len()))
+	if change < 0 {
+		return 0, errors.New("pasteboard: the files could not be written")
+	}
+	return int64(change), nil
 }
 
 // WriteImage puts an image of a type on the pasteboard, as itself and as a

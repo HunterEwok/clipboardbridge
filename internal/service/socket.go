@@ -837,6 +837,7 @@ type watcher struct {
 	pasteOnly bool         // it holds no clipboard, whatever its target
 	act       bool         // it runs the quick actions in its session
 	images    bool         // its clipboard takes and gives images
+	files     bool         // and files
 	injects   chan *inject // remote pastes for it
 }
 
@@ -845,6 +846,15 @@ type watcher struct {
 // copies.
 func (w *watcher) board() bool {
 	return !w.pasteOnly && w.inject != targetTmux && w.inject != targetConsole
+}
+
+// takes says whether the watcher's clipboard takes the copy m whole:
+// files, or an image.
+func (w *watcher) takes(m *clip.Manifest) bool {
+	if m.Files() {
+		return w.files
+	}
+	return w.images && imageCopy(m)
 }
 
 // send queues a write. A watcher that does not keep up loses its oldest
@@ -875,7 +885,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	default:
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
-	w.pasteOnly, w.act, w.images = m.PasteOnly, m.Act, m.Images
+	w.pasteOnly, w.act, w.images, w.files = m.PasteOnly, m.Act, m.Images, m.Files
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {

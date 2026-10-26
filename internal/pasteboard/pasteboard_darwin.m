@@ -179,6 +179,59 @@ long cb_write_image(const char *name, const void *data, long len, int type, cons
 	}
 }
 
+// cb_read_files reads the pasteboard's file URLs, as the Finder copies
+// files: their paths, each ended by a NUL, in *paths, which the caller
+// frees. It returns 1, 0 for no files and -1 out of memory.
+int cb_read_files(const char *name, char **paths, long *len, long *change) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		*change = (long)[pb changeCount];
+		*paths = NULL;
+		*len = 0;
+		NSArray<NSURL *> *urls = [pb readObjectsForClasses:@[ [NSURL class] ]
+		                                           options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+		NSMutableData *out = [NSMutableData data];
+		for (NSURL *u in urls) {
+			const char *p = [u fileSystemRepresentation];
+			if (p != NULL) {
+				[out appendBytes:p length:strlen(p) + 1];
+			}
+		}
+		if ([out length] == 0) {
+			return 0;
+		}
+		*paths = malloc([out length]);
+		if (*paths == NULL) {
+			return -1;
+		}
+		memcpy(*paths, [out bytes], [out length]);
+		*len = (long)[out length];
+		return 1;
+	}
+}
+
+// cb_write_files puts file URLs on the pasteboard, as the Finder copies
+// files, from paths that each end with a NUL.
+long cb_write_files(const char *name, const char *paths, long len) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		NSMutableArray<NSURL *> *urls = [NSMutableArray array];
+		for (long i = 0; i < len;) {
+			NSString *p = [NSString stringWithUTF8String:paths + i];
+			if (p == nil) {
+				return -1;
+			}
+			[urls addObject:[NSURL fileURLWithPath:p]];
+			i += (long)strlen(paths + i) + 1;
+		}
+		[pb clearContents];
+		if (![pb writeObjects:urls]) {
+			return -1;
+		}
+		return (long)[pb changeCount];
+	}
+}
+
 long cb_clear(const char *name) {
 	@autoreleasepool {
 		return (long)[board(name) clearContents];

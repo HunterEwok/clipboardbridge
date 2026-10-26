@@ -596,8 +596,13 @@ multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
 
-Steps 1 and 2 are built (docs/protocol.md, section 4, "Media" and "Content", and the
-watcher protocol in section 8); the rest follows.
+Steps 1 to 3 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
+over the control socket and saves them in the user's cache (`~/.cache/clipboardbridge/received`,
+`~/Library/Caches` on a Mac, `%LocalAppData%` on Windows), a folder for each copy readable
+only by the user; it empties the folder when it starts. A Flatpak app gets written files
+through the FileTransfer portal; files a Flatpak app copies are under the document portal's
+`/run/user/UID/doc`, which the host reads.
 
 1. The `media` event, the content cache, `get` and `chunk`, priorities and limits in Go;
    interop vectors for the Swift and Kotlin kits and the lite core (which learns to ignore

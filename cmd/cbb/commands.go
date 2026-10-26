@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -589,7 +590,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	w := pasteboard.NewWatch(b)
-	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Commands: true, Logf: logf}); err != nil {
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Commands: true, Files: receivedFiles(), Logf: logf}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
@@ -621,6 +622,17 @@ func fail(stderr io.Writer, err error) int {
 		fmt.Fprintln(stderr, "  Detail:", re.Detail)
 	}
 	return 1
+}
+
+// receivedFiles is the folder where the agent keeps the files the group
+// copies, a folder for each copy, in the user's cache: ~/.cache on Linux,
+// ~/Library/Caches on a Mac, %LocalAppData% on Windows. "" takes no files.
+func receivedFiles() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "clipboardbridge", "received")
 }
 
 // hostOS names this computer's operating system as device records do.

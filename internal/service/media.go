@@ -27,9 +27,9 @@ import (
 // engine writes a media event, the service fetches every part it lacks,
 // from the origin if it can, else from any peer that serves content,
 // checks each against its hash and keeps it in the cache. A newer write
-// stops the fetch. The watchers whose clipboard takes images get an image
-// copy once it has arrived; the others, and every watcher for files until
-// the connectors take them, get the copy's plain-text alternative.
+// stops the fetch. The watchers whose clipboard takes images or files get
+// such a copy once it has arrived; the others get the copy's plain-text
+// alternative.
 
 const (
 	// fetchFor bounds a fetch; a copy that has not arrived by then is
@@ -139,7 +139,7 @@ func (s *Service) setMedia(m *clip.Manifest, origin group.DeviceID, ctx context.
 		s.mediaMu.Unlock()
 		close(run.done)
 		if !errors.Is(err, context.Canceled) {
-			s.imageArrived(m, err == nil)
+			s.mediaArrived(m, err == nil)
 		}
 	}()
 }

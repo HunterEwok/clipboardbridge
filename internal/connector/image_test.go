@@ -27,8 +27,8 @@ func (b *imageBoard) WriteImage(img Image, text string) error {
 	return nil
 }
 
-// sendMedia copies an image on the service as cbb copy -type does.
-func sendMedia(t *testing.T, socket string, img Image, text string) {
+// copyImage copies an image on the service as cbb copy -type does.
+func copyImage(t *testing.T, socket string, img Image, text string) {
 	t.Helper()
 	c, err := control.Dial(socket)
 	if err != nil {
@@ -60,12 +60,12 @@ func TestImages(t *testing.T) {
 	rand.Read(png.Data)
 	b.copyOn(Item{Image: &png})
 	waitFor(t, "the desktop's image", func() bool {
-		img, _, err := fetchImage(t.Context(), socket)
-		return err == nil && bytes.Equal(img.Data, png.Data)
+		got, err := fetchMedia(t.Context(), socket, nil)
+		return err == nil && got.image != nil && bytes.Equal(got.image.Data, png.Data)
 	})
 
 	jpeg := Image{Type: clip.TypeJPEG, Data: []byte("not really a JPEG")}
-	sendMedia(t, socket, jpeg, "a photo")
+	copyImage(t, socket, jpeg, "a photo")
 	select {
 	case img := <-b.images:
 		if img.Type != jpeg.Type || !bytes.Equal(img.Data, jpeg.Data) {

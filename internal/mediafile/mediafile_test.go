@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-package main
+package mediafile
 
 import (
 	"os"
@@ -25,7 +25,7 @@ func TestCollect(t *testing.T) {
 		os.Symlink("/etc/passwd", filepath.Join(tree, "link"))
 		links = 1
 	}
-	parts, skipped, err := collect([]string{tree, single})
+	parts, skipped, err := Collect([]string{tree, single})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,15 +45,15 @@ func TestCollect(t *testing.T) {
 			t.Errorf("part %d = %+v, want %+v", i, p.Part, want[i])
 		}
 	}
-	if _, _, err := collect([]string{single, single}); err == nil {
+	if _, _, err := Collect([]string{single, single}); err == nil {
 		t.Error("the same file twice was taken")
 	}
 	for _, p := range []control.Part{{Path: "../x"}, {Path: "/etc/x"}, {Type: "image/gif"}} {
-		if _, err := savedName(p); err == nil {
-			t.Errorf("savedName(%+v) succeeded", p)
+		if _, err := SavedName(p); err == nil {
+			t.Errorf("SavedName(%+v) succeeded", p)
 		}
 	}
-	if name, err := savedName(control.Part{Type: "image/png"}); err != nil || name != "image.png" {
+	if name, err := SavedName(control.Part{Type: "image/png"}); err != nil || name != "image.png" {
 		t.Errorf("savedName of an image = %q, %v", name, err)
 	}
 }

@@ -32,6 +32,9 @@ func item(it Item) connector.Item {
 	if it.ImageType != "" {
 		ci.Image = &connector.Image{Type: it.ImageType, Data: it.Image}
 	}
+	if len(it.Files) > 0 {
+		ci = connector.Item{Files: it.Files}
+	}
 	return ci
 }
 
@@ -95,6 +98,19 @@ func (w *Watch) Write(text string, secret bool) error {
 // WriteImage puts an image on the pasteboard, with its text, if any.
 func (w *Watch) WriteImage(img connector.Image, text string) error {
 	change, err := w.b.WriteImage(img.Type, img.Data, text)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.own, w.seen = change, change
+	w.mu.Unlock()
+	return nil
+}
+
+// WriteFiles puts files on the pasteboard, as copied in Finder or
+// Explorer.
+func (w *Watch) WriteFiles(paths []string) error {
+	change, err := w.b.WriteFiles(paths)
 	if err != nil {
 		return err
 	}

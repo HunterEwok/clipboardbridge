@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,7 +77,8 @@ type Wayland struct {
 	seat   uint32
 	vkm    uint32 // the virtual keyboard manager, 0 if the compositor has none
 	inj    waylandInject
-	kb     keyboard // a paste's keys on GNOME and KDE, which have no virtual keyboard; nil without a way
+	kb     keyboard  // a paste's keys on GNOME and KDE, which have no virtual keyboard; nil without a way
+	files  transfers // the written files, for Flatpak apps
 
 	mu         sync.Mutex
 	offers     map[uint32][]string // the types of each live offer
@@ -103,7 +105,7 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 		d.Close()
 		return nil, err
 	}
-	w := &Wayland{d: d, logf: logf, offers: map[uint32][]string{}, sources: map[uint32]bool{},
+	w := &Wayland{d: d, logf: logf, offers: map[uint32][]string{}, sources: map[uint32]bool{}, files: transfers{logf: logf},
 		changes: make(chan connector.Item, 4), errc: make(chan error, 1)}
 	var mgr wl.Global
 	found := false
@@ -151,6 +153,7 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 // Close closes the connection.
 func (w *Wayland) Close() error {
 	closeKeys(w.kb)
+	w.files.close()
 	return w.d.Close()
 }
 
@@ -273,9 +276,22 @@ func (w *Wayland) selection(id uint32) {
 	}()
 }
 
-// read receives the text of an offer through a pipe, or its image if it
-// has no text.
+// read receives the text of an offer, or its files, as a file manager
+// copies them, or its image if it has no text.
 func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) {
+	for _, t := range fileTypes {
+		if !slices.Contains(types, t) {
+			continue
+		}
+		data, err := w.receive(id, t, maxFileList, readTimeout)
+		if err != nil {
+			return connector.Item{}, false, err
+		}
+		if paths := filePaths(t, data); len(paths) > 0 {
+			return connector.Item{Files: paths}, true, nil
+		}
+		break // links, not files: the text, if any
+	}
 	mime, image, limit := "", "", maxText
 	for _, t := range textTypes {
 		if slices.Contains(types, t) {
@@ -291,9 +307,26 @@ func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) 
 	if mime == "" {
 		return connector.Item{}, false, nil
 	}
+	timeout := readTimeout
+	if image != "" {
+		timeout = imageTimeout
+	}
+	data, err := w.receive(id, mime, limit, timeout)
+	if err != nil {
+		return connector.Item{}, false, err
+	}
+	if image != "" {
+		return connector.Item{Image: &connector.Image{Type: image, Data: data}}, len(data) > 0, nil
+	}
+	return connector.Item{Text: string(data), Secret: slices.Contains(types, secretType)}, len(data) > 0, nil
+}
+
+// receive reads the offer's data of the type mime through a pipe, at most
+// limit bytes within timeout; none when the offer is gone.
+func (w *Wayland) receive(id uint32, mime string, limit int, timeout time.Duration) ([]byte, error) {
 	var p [2]int
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
-		return connector.Item{}, false, err
+		return nil, err
 	}
 	// Only a non-blocking descriptor takes a deadline, so a program that
 	// never writes or never closes cannot hold the read.
@@ -310,28 +343,18 @@ func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) 
 	}
 	w.mu.Unlock()
 	unix.Close(p[1])
-	if !live {
-		return connector.Item{}, false, nil
-	}
-	if err != nil {
-		return connector.Item{}, false, err
-	}
-	timeout := readTimeout
-	if image != "" {
-		timeout = imageTimeout
+	if !live || err != nil {
+		return nil, err
 	}
 	r.SetReadDeadline(time.Now().Add(timeout))
 	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
 	if err != nil {
-		return connector.Item{}, false, err
+		return nil, err
 	}
 	if len(data) > limit {
-		return connector.Item{}, false, fmt.Errorf("the clipboard holds more than %d bytes", limit)
+		return nil, fmt.Errorf("the clipboard holds more than %d bytes", limit)
 	}
-	if image != "" {
-		return connector.Item{Image: &connector.Image{Type: image, Data: data}}, len(data) > 0, nil
-	}
-	return connector.Item{Text: string(data), Secret: slices.Contains(types, secretType)}, len(data) > 0, nil
+	return data, nil
 }
 
 // Current returns what the clipboard holds.
@@ -364,27 +387,40 @@ func (w *Wayland) Next(ctx context.Context) (connector.Item, bool, error) {
 // Write sets the clipboard and the primary selection, so Ctrl+V works in
 // applications and Shift+Insert and the middle button in terminals.
 func (w *Wayland) Write(text string, secret bool) error {
-	return w.write(connector.Item{Text: text, Secret: secret})
+	return w.write(connector.Item{Text: text, Secret: secret}, nil, nil)
 }
 
 // WriteImage sets the clipboard and the primary selection to the image,
 // with its text, if any.
 func (w *Wayland) WriteImage(img connector.Image, text string) error {
-	return w.write(connector.Item{Text: text, Image: &img})
+	return w.write(connector.Item{Text: text, Image: &img}, map[string][]byte{img.Type: img.Data}, []string{img.Type})
 }
 
-func (w *Wayland) write(it connector.Item) error {
-	var types []string
-	if it.Image != nil {
-		types = append(types, it.Image.Type)
+// WriteFiles sets the clipboard and the primary selection to the files,
+// as a file manager copies them, with their paths as text.
+func (w *Wayland) WriteFiles(paths []string) error {
+	data := fileData(paths, w.files.start(paths))
+	types := []string{uriListType, gnomeFilesType}
+	if _, ok := data[portalFilesType]; ok {
+		types = append(types, portalFilesType)
 	}
-	if it.Image == nil || it.Text != "" {
+	return w.write(connector.Item{Text: strings.Join(paths, "\n"), Files: paths}, data, types)
+}
+
+// write sets the selections to the item: its text, if any, and data of
+// other types, the first of types the best.
+func (w *Wayland) write(it connector.Item, data map[string][]byte, types []string) error {
+	if it.Files == nil {
+		w.files.stop()
+	}
+	types = slices.Clone(types)
+	if len(types) == 0 || it.Text != "" {
 		types = append(types, textTypes...)
 	}
 	if it.Secret {
 		types = append(types, secretType)
 	}
-	src, err := w.source(it, types)
+	src, err := w.source(it, data, types)
 	if err != nil {
 		return err
 	}
@@ -402,7 +438,7 @@ func (w *Wayland) write(it connector.Item) error {
 		w.mu.Unlock()
 		return err
 	}
-	if primary, err := w.source(it, types); err == nil {
+	if primary, err := w.source(it, data, types); err == nil {
 		w.mu.Lock()
 		w.ownPrimary = primary
 		w.mu.Unlock()
@@ -414,8 +450,9 @@ func (w *Wayland) write(it connector.Item) error {
 	return nil
 }
 
-// source makes a data source that serves the item for the types.
-func (w *Wayland) source(it connector.Item, types []string) (uint32, error) {
+// source makes a data source that serves the item's text and data for the
+// types.
+func (w *Wayland) source(it connector.Item, data map[string][]byte, types []string) (uint32, error) {
 	var id uint32
 	id = w.d.NewID(func(op uint16, a *wl.Args) error {
 		switch op {
@@ -433,9 +470,9 @@ func (w *Wayland) source(it connector.Item, types []string) (uint32, error) {
 				case mime == secretType:
 					f.SetWriteDeadline(time.Now().Add(writeTimeout))
 					f.WriteString("secret")
-				case it.Image != nil && mime == it.Image.Type:
+				case data[mime] != nil:
 					f.SetWriteDeadline(time.Now().Add(imageTimeout))
-					f.Write(it.Image.Data)
+					f.Write(data[mime])
 				default:
 					f.SetWriteDeadline(time.Now().Add(writeTimeout))
 					f.WriteString(it.Text)

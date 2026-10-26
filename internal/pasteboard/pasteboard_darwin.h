@@ -15,5 +15,7 @@ int cb_read(const char *name, char **text, long *len, int *flags, long *change);
 long cb_write(const char *name, const char *text, long len, int secret);
 int cb_read_image(const char *name, void **data, long *len, int *type, long *change, long max);
 long cb_write_image(const char *name, const void *data, long len, int type, const char *text, long textlen);
+int cb_read_files(const char *name, char **paths, long *len, long *change);
+long cb_write_files(const char *name, const char *paths, long len);
 long cb_clear(const char *name);
 void cb_release(const char *name);

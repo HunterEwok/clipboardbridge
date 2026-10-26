@@ -154,6 +154,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   step. On the control socket a watcher asks for images with `images`, gets a `write` of
   kind `media` once the copy is in the cache, and reports its own with `copied-media`
   (docs/protocol.md, section 8).
+- Files and folders in the desktop connectors (design.md, "Images and files", step 3):
+  files copied in a file manager go to the group, and a received copy is saved in the
+  user's cache, a folder for each copy readable only by the user and removed 10 minutes
+  after a newer copy, and put into the clipboard as copied files. Wayland and X11 read and
+  write `text/uri-list` and `x-special/gnome-copied-files` with the paths as text, and
+  offer written files to Flatpak apps through the FileTransfer portal; the Mac reads and
+  writes file URLs, as the Finder copies them; Windows reads and writes `CF_HDROP`, with the
+  drop effect that makes Explorer copy them. A cut is taken as a copy. Received files carry
+  the quarantine mark on a Mac and the Mark of the Web on Windows, also those `cbb paste -o`
+  saves, and nothing is made executable. A watch request asks for files with `files`.
 
 ### Changed
 

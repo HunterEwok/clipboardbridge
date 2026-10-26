@@ -937,6 +937,7 @@ Header fields (all omitted when empty):
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
 | `images` | bool | `watch`: the watcher writes images, so the service sends it copies with images as a `write` of kind `media` |
+| `files` | bool | `watch`: the same for copies of files and folders |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
@@ -968,7 +969,7 @@ A connection carries one request: the service reads the first message and dispat
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
-| `watch` | `{kind, via, inject?, paste_only?, act?, images?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -991,15 +992,18 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   last one it applied. `ttl_ms` is the secret's remaining lifetime (60 s minus its age, at
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
-- A copy of images or files: a watcher whose watch request set `images` gets, once every
-  part is in the cache, a `write` with `kind` `media` whose payload is the plain-text
-  alternative; it fetches the parts with `paste-media` on a connection of its own and writes
-  the image (with the text next to it) into the clipboard, or the text alone when the copy
-  holds no image or the fetch fails. Other watchers get the plain-text alternative as a
-  `text` write when there is one, and nothing otherwise. A watcher reports a copied image
-  with `copied-media` on a connection of its own (one `png` or `jpeg` part, the text as the
-  payload), never as `copied`; a clipboard that holds a text and an image is reported as
-  text, and files on the clipboard are not reported yet.
+- A copy of images or files: a watcher whose watch request set `images` (for a copy with an
+  image) or `files` (for a copy of files and folders) gets, once every part is in the cache,
+  a `write` with `kind` `media` whose payload is the plain-text alternative. It fetches the
+  parts with `paste-media` on a connection of its own and writes the image (with the text
+  next to it) into the clipboard, or saves the files in a new folder of its own and puts
+  their paths there, or writes the text alone when the fetch fails. Other watchers get the
+  plain-text alternative as a `text` write when there is one, and nothing otherwise. A
+  watcher reports a copied image or copied files with `copied-media` on a connection of its
+  own (one `png` or `jpeg` part with the text as the payload, or the files and folders as
+  `cbb copy` sends them, without a text), never as `copied`; a clipboard that holds a text
+  and an image is reported as text, and one that holds files as the files. A newer copy
+  stops a report or a fetch still running.
 - Service to watcher, for a quick action (section 15), only to a watcher whose watch request
   set `act`: `act` (`seq`, `name`, the action, and for an action of the user's own
   `command`, its program by full path and its arguments, as the device's user set them).
