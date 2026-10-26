@@ -15,6 +15,7 @@ import (
 	"slices"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
 )
 
 // StateFile holds a member's tunnel state, next to its identity.
@@ -90,7 +91,23 @@ type State struct {
 	// although this device keeps its keys in files, not in hardware
 	// (docs/design.md, "Turning it on, step by step").
 	KeysInFile bool
+
+	// sealed is Key sealed by the TPM, as the state file keeps it, and
+	// sealedKey the key it holds, so that a new key is sealed again.
+	sealed    *tpmkey.Blob
+	sealedKey Key
 }
+
+// A Sealer keeps secrets in the device's TPM (docs/protocol.md, section
+// 17): Seal returns nil, nil where secrets stay in files.
+type Sealer interface {
+	Seal(secret []byte) (*tpmkey.Blob, error)
+	Unseal(*tpmkey.Blob) ([]byte, error)
+}
+
+// KeySealer seals the private key in the state file; nil keeps it in the
+// file. The service sets it.
+var KeySealer Sealer
 
 // ForwarderLink is a hub's forwarder: its address, for UDP and TCP, and the
 // pin of its key.
@@ -178,7 +195,8 @@ type Member struct {
 
 type stateFile struct {
 	Version    int              `json:"v"`
-	Key        Key              `json:"key"`
+	Key        *Key             `json:"key,omitempty"`
+	KeyTPM     *tpmkey.Blob     `json:"key_tpm,omitempty"`
 	PSK        *Key             `json:"psk,omitempty"`
 	Group      string           `json:"group,omitempty"`
 	ToHub      *hubFile         `json:"to_hub,omitempty"` // read from a state before several hubs
@@ -251,8 +269,17 @@ func LoadState(dir string) (*State, error) {
 	if f.Version != 1 {
 		return nil, fmt.Errorf("%s: unknown version %d", StateFile, f.Version)
 	}
-	s := &State{Key: f.Key, Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile,
+	s := &State{Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile,
 		Obfuscation: f.Obfuscation}
+	switch {
+	case f.KeyTPM != nil:
+		if s.Key, err = unsealKey(f.KeyTPM); err != nil {
+			return nil, fmt.Errorf("%s: %w", StateFile, err)
+		}
+		s.sealed, s.sealedKey = f.KeyTPM, s.Key
+	case f.Key != nil:
+		s.Key = *f.Key
+	}
 	if f.ToHub != nil {
 		f.Hubs = append([]hubFile{*f.ToHub}, f.Hubs...)
 	}
@@ -281,13 +308,30 @@ func LoadState(dir string) (*State, error) {
 			return nil, err
 		}
 	}
+	if f.KeyTPM == nil && KeySealer != nil {
+		// Move a key from the file into the TPM, when there is one.
+		if err := s.seal(); err != nil {
+			return nil, err
+		}
+		if s.sealed != nil {
+			if err := s.Save(dir); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return s, nil
 }
 
 // Save writes the state to dir, readable only by its owner.
 func (s *State) Save(dir string) error {
-	f := stateFile{Version: 1, Key: s.Key, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
+	if err := s.seal(); err != nil {
+		return err
+	}
+	f := stateFile{Version: 1, KeyTPM: s.sealed, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
 		Obfuscation: s.Obfuscation}
+	if s.sealed == nil {
+		f.Key = &s.Key
+	}
 	if !s.PSK.IsZero() {
 		f.PSK = &s.PSK
 	}
@@ -308,6 +352,40 @@ func (s *State) Save(dir string) error {
 		return err
 	}
 	return atomicfile.Write(filepath.Join(dir, StateFile), append(data, '\n'), 0o600)
+}
+
+// seal seals the key with KeySealer once, and again when it changed. A
+// key that was in the file moves to the TPM when the device has one.
+func (s *State) seal() error {
+	if s.sealed != nil && s.sealedKey == s.Key {
+		return nil
+	}
+	s.sealed = nil
+	if KeySealer == nil || s.Key.IsZero() {
+		return nil
+	}
+	b, err := KeySealer.Seal(s.Key[:])
+	if err != nil {
+		return fmt.Errorf("tunnel: sealing the key: %w", err)
+	}
+	s.sealed, s.sealedKey = b, s.Key
+	return nil
+}
+
+func unsealKey(b *tpmkey.Blob) (Key, error) {
+	if KeySealer == nil {
+		return Key{}, errors.New("the key is sealed by a TPM, which this program does not use")
+	}
+	data, err := KeySealer.Unseal(b)
+	if err != nil {
+		return Key{}, err
+	}
+	var k Key
+	if len(data) != len(k) {
+		return Key{}, errors.New("the sealed key has the wrong length")
+	}
+	copy(k[:], data)
+	return k, nil
 }
 
 // check refuses a state that would break the tunnel's rules.

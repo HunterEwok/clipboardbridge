@@ -1274,7 +1274,8 @@ and then syncs at home only ("Through the tunnel" below).
   the user turns it on there (`cbb global on`, the control operation `away`). Go turns it on
   by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
-  rest of this section's state. The lite member keeps its own `tunnel.json` there: `v` (1),
+  rest of this section's state; on a Linux computer with a TPM the private key is sealed by
+  it (`key_tpm` in place of `key`, section 17). The lite member keeps its own `tunnel.json` there: `v` (1),
   `group` (the group tag), `key` (its private key, base64), `psk` (the preshared key it chose)
   and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`); it reads the single
   `to_hub` of earlier versions into `hubs`. Every computer and the lite member keep
@@ -1971,6 +1972,11 @@ far.
   in `key_tpm` and `admin_key_tpm` instead of `key` and `admin_key`; the blob loads only in
   that TPM. `CBB_TPM=off` makes new keys in a file; a key already in a file stays there
   until the device joins again. The CA keys of a root computer stay in the file.
+- **The WireGuard key** (section 11) is sealed by the same TPM: a sealed data object under
+  the storage root key, its blob in `tunnel.json` as `key_tpm` in place of `key`. The key
+  crosses to and from the TPM in a session salted with the storage root key that encrypts
+  it, so it never shows on the chip's bus. A key in the file moves into the TPM when the
+  service next reads the state; WireGuard itself still uses it in memory.
   `CBB_TPM_SIMULATOR=host:port` points the service at a software TPM (swtpm), for tests.
 - A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
   root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind

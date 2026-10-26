@@ -28,7 +28,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Keys in the TPM: a Linux computer with a TPM 2.0 makes its member and admin keys in it
   when it joins a group, the identity file keeps only the TPM's blob, and the device counts
   as hardware (`internal/tpmkey`, docs/protocol.md, section 17). The installer lets the
-  service reach `/dev/tpmrm0`; `CBB_TPM=off` keeps new keys in a file.
+  service reach `/dev/tpmrm0`; `CBB_TPM=off` keeps new keys in a file. The TPM seals the
+  WireGuard key of sync away from home too, and a key already in `tunnel.json` moves in.
 - The guide "Keys and attestation" (docs/guide/keys.md): where each device keeps its keys,
   how Android phones prove it, and the three key levels.
 

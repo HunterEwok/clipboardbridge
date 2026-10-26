@@ -36,6 +36,9 @@ import (
 // None of it happens on a device where the user has not turned sync away
 // from home on.
 
+// The WireGuard key is sealed by the TPM where new member keys go into it.
+func init() { tunnel.KeySealer = group.Sealer{} }
+
 // loadTunnel reads the tunnel state for the group of id. Sync away from
 // home is off until the user turns it on, which writes the state file; until
 // then, or when the state cannot be read, the member offers no tunnel key and
