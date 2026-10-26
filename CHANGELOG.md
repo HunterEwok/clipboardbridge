@@ -101,6 +101,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   goes into the focused text field of another app through the accessibility service, pasted
   or typed, with Enter from Android 11. It refuses while the phone is locked, keeps a log of
   the last pastes without their text, and names the sender in a notification.
+- Remote paste onto the lite member: `sudo cbb paste-receive on` there lets the group's admins
+  put a text into the tmux pane in use, and with `-console` into the active text console,
+  through `cbb paste-helper tmux|console`, with the full member's rules, limits and log.
+  `install.sh --console` now installs the console helper's unit for the lite member too.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

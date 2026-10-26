@@ -48,6 +48,27 @@ pub struct Header {
     pub status: Option<Status>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<Device>,
+    /// Remote paste (docs/protocol.md, section 8): in an inject, paste or
+    /// type, and Enter after the text; in paste-receive, the switches.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub method: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enter: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub console: bool,
+    /// In a watch request, the paste target the watcher offers: desktop,
+    /// tmux or console.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub inject: String,
+    /// In a watch request: the watcher holds no clipboard and only pastes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paste_only: bool,
+    /// In an injected answer: error is a refusal, not a failure.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub refused: bool,
+    /// The underlying error of a failed inject, as Go's watchers send it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -77,6 +98,22 @@ pub struct Status {
     /// Sync away from home; None while it is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub away: Option<Away>,
+    /// Remote paste on this device; None when in no group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste: Option<Paste>,
+}
+
+/// Remote paste on this device: the switches its user set and the targets
+/// that run, with the names of the Go service's status.
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+pub struct Paste {
+    pub on: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enter: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub console: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<String>,
 }
 
 /// Sync away from home on a client of the group's hub, with the names of
@@ -200,7 +237,18 @@ pub fn failure(e: &Error) -> Message {
 pub fn is_admin(op: &str) -> bool {
     !matches!(
         op,
-        "copy" | "paste" | "status" | "devices" | "watch" | "copied" | "clipboard" | "answer" | "reply" | "write"
+        "copy"
+            | "paste"
+            | "status"
+            | "devices"
+            | "watch"
+            | "copied"
+            | "clipboard"
+            | "answer"
+            | "reply"
+            | "write"
+            | "inject"
+            | "injected"
     )
 }
 

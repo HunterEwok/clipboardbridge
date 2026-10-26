@@ -932,9 +932,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: the lite member joins by the phone and syncs with Go members
+      - name: the lite member joins by the phone, syncs with Go members and takes their remote pastes
         working-directory: .
-        run: CBB_LITE="$PWD/lite/target/release/cbb" go test -race ./internal/service -run TestLiteMember -v
+        run: CBB_LITE="$PWD/lite/target/release/cbb" go test -race ./internal/service -run 'TestLiteMember|TestLiteRemotePaste' -v
       - name: get.sh --lite installs the lite member, moves an old cbb-lite to it, and uninstall.sh removes it
         working-directory: .
         run: |
