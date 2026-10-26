@@ -277,6 +277,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
             pair::listen(&joiner, ln, (!addrs.is_empty()).then_some(addrs), &code, pair::LIFETIME, &shown, &save, &log)?
         }
     };
+    wait_for_group(g);
     if for_next {
         print!("CBB# joined the group {} as {}\r", id.tag(), id.id);
     } else {
@@ -288,6 +289,22 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Waits until a running service has taken the group that join saved: it
+/// looks for the identity every two seconds, and a command right after cbb
+/// join would otherwise find it in no group. A service that is not running
+/// takes the group when it starts.
+fn wait_for_group(g: &Global) {
+    let status = control::Message::new(control::Header { op: "status".into(), ..Default::default() }, Vec::new());
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        match request(g, &status) {
+            Ok(m) if m.header.status.as_ref().is_some_and(|s| !s.group.is_empty()) => return,
+            Ok(_) => std::thread::sleep(Duration::from_millis(200)),
+            Err(_) => return,
+        }
+    }
 }
 
 /// Draws text as a QR code with half blocks, black on white whatever the

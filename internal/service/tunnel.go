@@ -568,18 +568,10 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		if keysInFile && !m.Consent {
 			return false, nil, nil, errors.New("this device keeps its keys in files, so sync away from home needs your consent; run cbb global on and read what it says")
 		}
-		st, err := tunnel.NewState()
+		st, err := s.awayOnLocked(tag)
 		if err != nil {
 			return false, nil, nil, err
 		}
-		st.ForGroup(tag)
-		st.KeysInFile = keysInFile
-		if err := st.Save(s.cfg.StateDir); err != nil {
-			return false, nil, nil, fmt.Errorf("saving the tunnel state: %w", err)
-		}
-		s.tunnel = st
-		s.guardLocked()
-		s.logf("cbb: sync away from home is on")
 		k, p := tunnelKey(st)
 		return true, k, p, nil
 	case "off":
@@ -646,10 +638,6 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		k, p := tunnelKey(st)
 		return true, k, p, nil
 	case "relay":
-		st := s.tunnel
-		if st == nil {
-			return false, nil, nil, errors.New("sync away from home is off here; turn it on first: cbb global on")
-		}
 		ep, err := netip.ParseAddrPort(m.Relay)
 		if err != nil || ep.Port() == 0 {
 			return false, nil, nil, fmt.Errorf("%q is not the relay's address with a port, such as 203.0.113.9:8764", m.Relay)
@@ -661,6 +649,15 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		// hub of the group's own would not let out: the user agrees first.
 		if !m.Consent {
 			return false, nil, nil, errors.New("a relay learns which devices of the group talk, when and how much, and their addresses; run cbb global relay and read what it says")
+		}
+		// Meeting at a relay is sync away from home: it turns it on, and
+		// the consent covers the keys' warning that cbb global relay then
+		// shows too.
+		st := s.tunnel
+		if st == nil {
+			if st, err = s.awayOnLocked(tag); err != nil {
+				return false, nil, nil, err
+			}
 		}
 		old := *st
 		*st = tunnel.State{Key: st.Key, PSK: st.PSK, Group: st.Group, KeysInFile: st.KeysInFile,
@@ -676,6 +673,24 @@ func (s *Service) awayLocked(m *control.Message, tag string) (reconnect bool, ke
 		return true, k, p, nil
 	}
 	return false, nil, nil, fmt.Errorf("unknown away request %q", m.Name)
+}
+
+// awayOnLocked turns sync away from home on with new keys for the group
+// with the given tag.
+func (s *Service) awayOnLocked(tag string) (*tunnel.State, error) {
+	st, err := tunnel.NewState()
+	if err != nil {
+		return nil, err
+	}
+	st.ForGroup(tag)
+	st.KeysInFile = keysInFile
+	if err := st.Save(s.cfg.StateDir); err != nil {
+		return nil, fmt.Errorf("saving the tunnel state: %w", err)
+	}
+	s.tunnel = st
+	s.guardLocked()
+	s.logf("cbb: sync away from home is on")
+	return st, nil
 }
 
 // awayStatus describes sync away from home for status; nil while it is

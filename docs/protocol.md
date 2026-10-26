@@ -1732,7 +1732,8 @@ runs end to end between the two devices.
   every other; an open relay (`cbb relay -open`) serves every group whose device registers,
   within the limits below.
 - A device's service takes a relay only with the user's consent (`consent` on the control
-  socket's `away` request, section 8), after `cbb global relay` showed what the relay learns.
+  socket's `away` request, section 8), after `cbb global relay` showed what the relay learns;
+  where sync away from home is off, the same request turns it on with new keys.
 - A device keeps `relay: {endpoint, key}` in its `tunnel.json` (section 11), and then is
   neither a hub nor a hub's client: it ignores a hub's offer.
 

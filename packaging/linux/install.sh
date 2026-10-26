@@ -275,15 +275,25 @@ fi
 systemctl daemon-reload
 systemctl enable clipboardbridge.service
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
+# answers waits up to 10 s until the service answers on its socket: in no
+# group cbb status says so, which is an answer too. A command right after
+# the installer then finds it running.
+answers() { # cbb
+	i=0
+	while [ $i -lt 40 ]; do
+		out=$("$1" status 2>&1) && return 0
+		case $out in *"in a group"* | *"no group"*) return 0 ;; esac
+		sleep 0.25
+		i=$((i + 1))
+	done
+	echo "install.sh: the service did not answer within 10 s: $out" >&2
+	return 1
+}
+answers /usr/local/bin/cbb || true
 # A limit that cbb global wrote, perhaps by an earlier version (which let
 # the service reach every address), is brought in line with what the
 # service asks for now, once it answers.
 if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away.conf ]; then
-	i=0
-	until /usr/local/bin/cbb status >/dev/null 2>&1 || [ $i -ge 40 ]; do
-		sleep 0.25
-		i=$((i + 1))
-	done
 	if ! /usr/local/bin/cbb global allow; then
 		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
 	fi

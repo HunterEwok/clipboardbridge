@@ -188,6 +188,12 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		h.Relay, h.RelayKey = addr, *key
 		if !*yes {
 			fmt.Fprint(stdout, relayNotice)
+			// The relay turns sync away from home on where it is off, and
+			// the same yes agrees to that.
+			if st, err := statusNow(); err == nil && st.Away == nil {
+				fmt.Fprint(stdout, "This turns sync away from home on here as well.\n\n")
+				fmt.Fprint(stdout, keysWarning)
+			}
 			fmt.Fprint(stdout, "Type yes to meet at this relay: ")
 			line, err := readLine(stdin)
 			if err != nil {
@@ -261,7 +267,7 @@ func applyGrant(stdout io.Writer, g grant) error {
 		return err
 	}
 	if restarted {
-		c, err := waitService()
+		c, err := waitService(control.OpStatus)
 		if err != nil {
 			return err
 		}

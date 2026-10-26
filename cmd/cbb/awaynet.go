@@ -423,12 +423,13 @@ func runCmd(name string, args ...string) error {
 	return nil
 }
 
-// waitService waits until the restarted service answers on its socket.
-func waitService() (*control.Client, error) {
+// waitService waits until the restarted service answers on the socket
+// that takes op.
+func waitService(op string) (*control.Client, error) {
 	var err error
 	for deadline := time.Now().Add(15 * time.Second); ; {
 		var c *control.Client
-		if c, err = control.DialFor(control.OpStatus); err == nil {
+		if c, err = control.DialFor(op); err == nil {
 			return c, nil
 		}
 		if time.Now().After(deadline) {

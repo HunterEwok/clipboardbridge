@@ -317,6 +317,21 @@ restart() {
 }
 
 restart system "$daemon" "/Library/LaunchDaemons/$daemon.plist"
+# answers waits up to 10 s until the service answers on its socket: in no
+# group cbb status says so, which is an answer too. A command right after
+# the installer then finds it running.
+answers() { # cbb
+	i=0
+	while [ $i -lt 40 ]; do
+		out=$("$1" status 2>&1) && return 0
+		case $out in *"in a group"* | *"no group"*) return 0 ;; esac
+		sleep 0.25
+		i=$((i + 1))
+	done
+	echo "install.sh: the service did not answer within 10 s: $out" >&2
+	return 1
+}
+answers "$run" || true
 if [ -n "$user" ] && [ "$user" != root ]; then
 	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi
