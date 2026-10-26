@@ -663,6 +663,26 @@ func TestMoveHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the Mac has it", func() bool { return mac.paste(t) == "after the move" })
+
+	// The pi, the root, is a hub again: the Mac gives way, but first passes
+	// the pi's offer on to the deck, which knew only the Mac's since the
+	// move, so that the deck far away reaches the pi.
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: piPort, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", piPort)}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitUpTo(t, 60*time.Second, "the Mac gives way to the pi", func() bool {
+		a := mac.status(t).Away
+		return a != nil && a.Hub && a.Standby
+	})
+	waitUpTo(t, 60*time.Second, "the deck reaches the pi through the tunnel again", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.Through && st.Away.HubDevice == piID &&
+			slices.ContainsFunc(st.Peers, func(p control.Device) bool { return p.ID == piID })
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "the root is the hub again"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "the root is the hub again" })
 }
 
 // TestSeveralHubs runs two hubs, the pi, the root, above the Mac, an

@@ -16,6 +16,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Supported reports whether this build reaches the clipboard.
+const Supported = true
+
 // On Windows the pasteboard is the clipboard of the user's session, read
 // and written through the Win32 API. Its change counter is the clipboard
 // sequence number. A password manager marks a secret with the formats that

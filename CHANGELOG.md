@@ -154,6 +154,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `cbb global off` asks first on a device that reaches its hub only through the tunnel
   (`-yes` for scripts): its new keys reach the hub only on the home network, so it syncs
   again only once it is at home. `cbb global` says so while it waits for the hub.
+- A hub that gives way to a hub above it, as an admin computer does when the root is the
+  hub again after the hub moved to the admin, first passes the higher hub's offer on to its
+  clients and waits for those far from home to leave; they knew only its own offer, and were
+  cut off. `cbb global` on a hub that stands by says it is the higher hub's client, not that
+  it is the hub with a forwarder it does not run.
+- On a Mac, a `cbb` built without cgo, which has no pasteboard, says so in `cbb version` and
+  `cbb status`, and the installer refuses it; its agent only exited, over and over.
 - The lite member says that a user outside the `clipboardbridge` group must join it, not
   that the service may not be running; its unit keeps the service's memory out of swap
   (`MemorySwapMax=0`), as the full member's does.

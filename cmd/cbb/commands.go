@@ -178,9 +178,22 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// noPasteboard says, on a Mac, when this cbb was built without cgo and so
+// without the pasteboard: its agent cannot link the clipboard. It is ""
+// everywhere else.
+func noPasteboard() string {
+	if runtime.GOOS != "darwin" || pasteboard.Supported {
+		return ""
+	}
+	return "This cbb was built without cgo, so it has no pasteboard support: its agent cannot link this Mac's clipboard. Install a release build, or build with CGO_ENABLED=1."
+}
+
 // writeStatus prints this device, its group and the group's devices.
 func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
+	if np := noPasteboard(); np != "" {
+		fmt.Fprintln(w, np)
+	}
 	if st.Group == "" {
 		fmt.Fprintln(w, "Not in a group. Run cbb new here to start one, or cbb pair to join one.")
 		return

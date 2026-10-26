@@ -5,6 +5,10 @@
 
 package pasteboard
 
+// Supported reports whether this build reaches the pasteboard: a Mac's
+// needs cgo.
+const Supported = false
+
 // A Board is a pasteboard; this build has none.
 type Board struct{}
 

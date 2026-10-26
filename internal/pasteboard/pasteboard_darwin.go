@@ -18,6 +18,9 @@ import (
 	"unsafe"
 )
 
+// Supported reports whether this build reaches the pasteboard.
+const Supported = true
+
 // A Board is a pasteboard: the general one, or a private one for tests.
 type Board struct {
 	name *C.char // nil for the general pasteboard

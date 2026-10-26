@@ -334,6 +334,14 @@ func TestWriteAway(t *testing.T) {
 	if !strings.Contains(b.String(), "off") {
 		t.Errorf("off: %q", b.String())
 	}
+	// A hub that stands by for one above it says so, not that it is the
+	// hub with a forwarder that its hub does not run for.
+	b.Reset()
+	writeAway(&b, &control.Away{Hub: true, Standby: true, HubDevice: "deck", Port: 8764,
+		Forwarder: &control.Forwarder{Endpoint: "198.51.100.9:8764", Error: "the hub is not running"}})
+	if out := b.String(); !strings.Contains(out, "stands by as its client") || strings.Contains(out, "this device is the hub") || strings.Contains(out, "not running") {
+		t.Errorf("standby: %q", out)
+	}
 }
 
 func TestTakeover(t *testing.T) {
