@@ -73,7 +73,7 @@ pair() { # admin, joiner
 say "pairing: a creates the group and admits b, makes b an admin; b admits c"
 cb a new >/dev/null || fail "a could not create the group"
 pair a b
-eventually "a makes b an admin" cb a admin host-b
+eventually "a makes b an admin" cb a admin -allow-file-key host-b
 is_admin() { cb "$1" status | grep '(this device)' | grep -q ' admin '; }
 eventually "b is an admin" is_admin b
 pair b c

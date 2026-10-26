@@ -43,7 +43,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		if err != nil {
 			return err
 		}
-		if _, err := Run(ctx, hub, adminCmd(hub)+" admin "+id, ""); err != nil {
+		if _, err := Run(ctx, hub, adminCmd(hub)+" admin -allow-file-key "+id, ""); err != nil {
 			return noSudo(hub, err)
 		}
 		if _, err := Run(ctx, admin, adminCmd(admin)+" global on", "yes\n"); err != nil {
