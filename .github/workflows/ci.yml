@@ -305,6 +305,36 @@ jobs:
             echo "get.sh installed an archive that does not match SHA256SUMS" >&2
             exit 1
           fi
+      - name: get.sh checks the release's signature
+        run: |
+          # A release signed with throwaway keys (tools/release-sign drill).
+          rel="$RUNNER_TEMP/signed"
+          sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
+          export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/roots.pem"
+          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
+          refused() {
+            if sudo -E sh packaging/get.sh --no-firewall; then
+              echo "get.sh installed a release with $1" >&2
+              exit 1
+            fi
+          }
+          # The archive and SHA256SUMS changed together after signing.
+          cp "$rel/clipboardbridge-linux-amd64.tar.gz" "$RUNNER_TEMP/good.tar.gz"
+          echo tampered >>"$rel/clipboardbridge-linux-amd64.tar.gz"
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          refused "an archive that release.json does not list"
+          cp "$RUNNER_TEMP/good.tar.gz" "$rel/clipboardbridge-linux-amd64.tar.gz"
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          # Another project's roots.
+          mkdir "$RUNNER_TEMP/other" && echo other >"$RUNNER_TEMP/other/SHA256SUMS"
+          go run ./tools/release-sign drill "$RUNNER_TEMP/other" "$RUNNER_TEMP/other.pem"
+          CBB_RELEASE_ROOTS="$RUNNER_TEMP/other.pem" refused "keys.json from other roots"
+          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out"
+          rm "$rel/stable.json"
+          refused "no stable.json"
+          CBB_VERIFY=skip sudo -E sh packaging/get.sh --no-firewall | grep -q "Not checked"
       - name: install.sh keeps a port, and uninstall.sh removes it all
         run: |
           sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
@@ -481,6 +511,44 @@ jobs:
           Add-Content $zip 'tampered'
           Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression
           if ((Get-Item $cbb).LastWriteTimeUtc -ne $before) { throw 'get.ps1 installed an archive that does not match SHA256SUMS' }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: get.ps1 checks the release's signature, in Windows PowerShell
+        # Windows PowerShell 5.1 on .NET Framework, as most users run it, and
+        # not pwsh: the check builds its keys and signatures for both.
+        shell: powershell
+        env:
+          CBB_ERROR_DETAILS: "1"
+          CBB_FIREWALL: express
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $rel = Join-Path $env:RUNNER_TEMP 'signed'
+            New-Item -ItemType Directory $rel | Out-Null
+            $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
+            Copy-Item (Join-Path $env:RUNNER_TEMP 'release\clipboardbridge-windows-amd64.zip') $zip
+            "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
+            $roots = Join-Path $env:RUNNER_TEMP 'roots.pem'
+            # Through cmd: Windows PowerShell stops on a native program's stderr (go's "downloading").
+            cmd /c "go run ./tools/release-sign drill -version 0.6.0 `"$rel`" `"$roots`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
+            $env:CBB_RELEASE_DIR = $rel
+            $env:CBB_RELEASE_ROOTS = $roots
+            $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+            Write-Host $out
+            if ($out -notmatch 'signature checks out \(0\.6\.0\)' -or $out -match 'failed') { throw 'get.ps1 did not install the signed release' }
+            Remove-Item (Join-Path $rel 'stable.json')
+            $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+            Write-Host $out
+            if ($out -notmatch 'failed') { throw 'get.ps1 installed a release without stable.json' }
+          } catch {
+            Write-Host "$($_.Exception.Message)`n$($_.ScriptStackTrace)"
+            exit 1
+          }
+          # Not the exit code of the last program get.ps1 ran.
+          exit 0
       - name: install.ps1 keeps a port and the firewall rules follow it, and uninstall.ps1 removes it all
         env:
           CBB_ERROR_DETAILS: "1"

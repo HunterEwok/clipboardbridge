@@ -1874,3 +1874,64 @@ A body is at most 64 KiB. A `mode` command with an unknown mode is refused. One 
 and logs who sent it. Every member takes `mode` commands; only a computer takes `hub`, and the
 phones and the lite member refuse it.
 
+
+## 16. Signed releases
+
+Every release is described by signed files, so that a program updates only to a release the
+project signed, whichever server it came from (roadmap, "Secure updates"; D-69). The Go
+package `internal/release`, `lite/core` (`release.rs`) and the phone kits (`Releases`) check
+them alike, against `testdata/interop/go-release.json`.
+
+### Keys
+
+- Two **root keys**, P-256, each on its own hardware key kept offline. Every program pins
+  both (their SubjectPublicKeyInfos); either one signs `keys.json`.
+- **Release keys**, P-256, which `keys.json` certifies. A release key signs `release.json`
+  and the channel files.
+
+### The envelope
+
+Each file is JSON: `{"body": "...", "sig": "...", "key": "..."}`. `body` is the body's exact
+bytes (base64), signed as they are and never re-encoded; `sig` is ECDSA P-256 with SHA-256
+over them, DER (base64); `key` is SHA-256 of the signer's SubjectPublicKeyInfo (base64, 32
+bytes), which picks the key to verify with. A body is at most 256 KiB. Every body has `v`
+(`1`) and `type`, so one kind of file is never taken for another; unknown fields are ignored.
+
+| `type` | Signed by | Fields |
+|--------|-----------|--------|
+| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes)`}` |
+| `release` (`release.json`) | a release key | `version`, `channel`, `time_ms`, `min_from` (a version, optional), `files`: 1 to 256 of `{name, size, sha256, binaries?}`, `docker` (optional `{image, digest}`) |
+| `channel` (`stable.json`, ...) | a release key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
+
+- A version is `X.Y.Z` or, for a release candidate, `X.Y.Z-rc.N`: decimal numbers of at
+  most 6 digits without leading zeros (`N` from 1), compared number by number, a release
+  candidate before its release; tags add the `v`.
+- A channel name is 1-32 of `a-z`, `0-9` and `-`, starting with a letter.
+- A file `name` is 1-128 of `A-Z a-z 0-9 . _ -`, not starting with `.` or `-`, each name
+  once. `size` is its length in bytes and `sha256` its hash in lowercase hex. `binaries`, at
+  most 64, are the programs inside an archive: `name`, the path inside it (`/` allowed, no
+  `..`), and `sha256`.
+- `docker.digest` is `sha256:` and 64 hex digits.
+- A `keys` or `channel` file lives at most 100 days (`expires_ms` after `time_ms`, by at
+  most 8 640 000 000 ms). `keys.json` is signed again every 90 days, and a channel file
+  before it expires.
+
+### The check
+
+A device that looks for an update fetches `keys.json`, the channel file of its channel and
+the `release.json` that names, and takes the release only when:
+
+1. `keys.json` verifies under a pinned root key, decodes as a `keys` body, has not expired,
+   and its `seq` is not below the highest the device has taken;
+2. the channel file verifies under a release key of that `keys.json`, decodes as a `channel`
+   body for the device's channel, has not expired, and its `seq` is not below the highest
+   taken;
+3. `release.json` verifies under a release key of that `keys.json`, the SHA-256 of its body
+   is `release_sha256`, its `version` and `channel` are the channel file's, and its version is
+   not below the highest the device has taken.
+
+The device then keeps the highest `keys` and channel `seq` and version it has taken, so
+that nobody can give it older files later. A file it downloads must have the size and
+SHA-256 that `release.json` lists. A device below `min_from` updates to `min_from` first.
+A release key that is lost or stolen is dropped from the next `keys.json`; a device that has
+taken it no longer accepts anything that key signs.

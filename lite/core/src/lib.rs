@@ -27,6 +27,7 @@ pub mod hlc;
 pub mod identity;
 pub mod pair;
 pub mod records;
+pub mod release;
 pub mod store;
 pub mod sync;
 pub mod third_party {

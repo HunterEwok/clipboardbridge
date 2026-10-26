@@ -145,6 +145,93 @@ if [ "$lite" = yes ]; then
 	esac
 fi
 
+# The project's release root keys (docs/protocol.md, section 16), which sign
+# keys.json. None yet: until they are made, releases carry no signed files
+# and verify_release only says so.
+release_roots=''
+
+# field NAME FILE prints the string field NAME of the compact JSON in FILE,
+# number NAME FILE a number field: enough for the files Go's encoding/json
+# writes, which is all these are.
+field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" "$2" | head -n 1; }
+number() { sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p" "$2" | head -n 1; }
+
+# opened FILE NAME KEYS... checks the envelope in FILE with any of the PEM
+# keys KEYS, and leaves its body in $tmp/NAME.body; it fails when none
+# verifies or the body is not of the type NAME.
+opened() {
+	f=$1 kind=$2
+	shift 2
+	field body "$f" | openssl base64 -d -A >"$tmp/$kind.body" 2>/dev/null || return 1
+	field sig "$f" | openssl base64 -d -A >"$tmp/$kind.sig" 2>/dev/null || return 1
+	for k in "$@"; do
+		if openssl dgst -sha256 -verify "$k" -signature "$tmp/$kind.sig" "$tmp/$kind.body" >/dev/null 2>&1; then
+			[ "$(field type "$tmp/$kind.body")" = "$kind" ] || return 1
+			[ "$(number v "$tmp/$kind.body")" = 1 ] || return 1
+			return 0
+		fi
+	done
+	return 1
+}
+
+# verify_release checks keys.json against the root keys, release.json and,
+# for the latest release, stable.json against its release keys, and the
+# archive against release.json. Without openssl it stops unless
+# CBB_VERIFY=skip, since the sums come from the same server as the archive.
+verify_release() {
+	roots=$release_roots
+	if [ -n "${CBB_RELEASE_DIR:-}" ] && [ -n "${CBB_RELEASE_ROOTS:-}" ]; then
+		roots=$(cat "$CBB_RELEASE_ROOTS")
+	fi
+	if [ "${CBB_VERIFY:-}" = skip ]; then
+		echo "Not checked: the release's signature (CBB_VERIFY=skip)."
+		return
+	fi
+	if [ -z "$roots" ]; then
+		return
+	fi
+	command -v openssl >/dev/null 2>&1 ||
+		fail "openssl is required to check the release's signature (or CBB_VERIFY=skip to install it unchecked)"
+	printf '%s\n' "$roots" | awk -v d="$tmp" '/BEGIN/ { n++ } { print > (d "/root-" n ".pem") }'
+	latest=$repo/releases/latest/download
+	[ -z "${CBB_RELEASE_DIR:-}" ] || latest=$base
+	if ! fetch "$latest/keys.json" "$tmp/keys.json" || ! fetch "$base/release.json" "$tmp/release.json"; then
+		fail "$version has no signed release files; not installing it (CBB_VERIFY=skip installs it unchecked)"
+	fi
+	opened "$tmp/keys.json" keys "$tmp"/root-*.pem || fail "keys.json is not signed by the project's root key; not installing"
+	now_ms=$(($(date +%s) * 1000))
+	[ "$(number expires_ms "$tmp/keys.body")" -gt "$now_ms" ] || fail "keys.json has expired; check the clock, or try again later"
+	grep -o '"key":"[^"]*"' "$tmp/keys.body" | sed 's/^"key":"//; s/"$//' >"$tmp/keys.list"
+	n=0
+	while read -r k; do
+		n=$((n + 1))
+		printf '%s' "$k" | openssl base64 -d -A | openssl pkey -pubin -inform DER -out "$tmp/release-$n.pem" 2>/dev/null ||
+			fail "keys.json holds a key that is not valid"
+	done <"$tmp/keys.list"
+	[ "$n" -gt 0 ] || fail "keys.json holds no release key"
+	opened "$tmp/release.json" release "$tmp"/release-*.pem || fail "release.json is not signed by a release key; not installing"
+	got_version=$(field version "$tmp/release.body")
+	if [ "$version" = latest ]; then
+		fetch "$base/stable.json" "$tmp/stable.json" || fail "could not download $base/stable.json"
+		opened "$tmp/stable.json" channel "$tmp"/release-*.pem || fail "stable.json is not signed by a release key; not installing"
+		[ "$(field channel "$tmp/channel.body")" = stable ] || fail "stable.json is not the stable channel's"
+		[ "$(number expires_ms "$tmp/channel.body")" -gt "$now_ms" ] || fail "stable.json has expired; check the clock, or try again later"
+		if [ "$(field release_sha256 "$tmp/channel.body")" != "$(sha256 "$tmp/release.body")" ] ||
+			[ "$(field release "$tmp/channel.body")" != "$got_version" ]; then
+			fail "release.json is not the release stable.json names; not installing"
+		fi
+	else
+		[ "v$got_version" = "$version" ] || fail "release.json is for $got_version, not $version"
+	fi
+	entry=$(grep -o "{\"name\":\"$archive\",\"size\":[0-9]*,\"sha256\":\"[0-9a-f]*\"" "$tmp/release.body" | head -n 1)
+	[ -n "$entry" ] || fail "release.json does not list $archive"
+	printf '%s\n' "$entry" >"$tmp/entry"
+	if [ "$(field sha256 "$tmp/entry")" != "$got" ] || [ "$(number size "$tmp/entry")" != "$(wc -c <"$tmp/$archive" | tr -d ' ')" ]; then
+		fail "$archive does not match the signed release.json; not installing it"
+	fi
+	echo "The release's signature checks out ($got_version)."
+}
+
 tmp=$(mktemp -d)
 trap 'rc=$?; rm -rf "$tmp"; failed $rc' EXIT
 echo "Downloading $archive ($version)..."
@@ -155,8 +242,11 @@ got=$(sha256 "$tmp/$archive")
 [ -n "$want" ] || fail "SHA256SUMS does not list $archive"
 [ "$want" = "$got" ] || fail "$archive does not match SHA256SUMS; not installing it"
 # SHA256SUMS comes from the same release, so it shows only that the download
-# is whole. The attestation shows that this repository's release workflow
-# built the archive.
+# is whole. The signed release files show that the project signed this
+# release (docs/protocol.md, section 16).
+verify_release
+# The attestation shows that this repository's release workflow built the
+# archive.
 attestation=${CBB_ATTESTATION:-check}
 if [ -n "${CBB_RELEASE_DIR:-}" ] || [ "$attestation" = skip ]; then
 	:
