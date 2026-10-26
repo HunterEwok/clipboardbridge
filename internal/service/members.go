@@ -483,8 +483,8 @@ func (d *sleepDetector) check(up time.Duration, mono time.Time) (time.Duration, 
 	return slept, slept > sleepSlack
 }
 
-// write passes a write that the engine decided on to the watchers, in
-// order. When no watcher is connected, the next one gets it.
+// write passes a write that the engine decided on to the watchers that
+// hold a clipboard, in order. When none is connected, the next one gets it.
 func (s *Service) write(w node.Write) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -492,14 +492,18 @@ func (s *Service) write(w node.Write) {
 		return
 	}
 	s.lastSeq = w.Seq
-	if len(s.watchers) == 0 {
+	boards := 0
+	for wt := range s.watchers {
+		if wt.board() {
+			wt.send(w)
+			boards++
+		}
+	}
+	if boards == 0 {
 		s.pending = &w
 		return
 	}
 	s.pending = nil
-	for wt := range s.watchers {
-		wt.send(w)
-	}
 }
 
 // logConn logs how a connection to a member ended: with its error, or

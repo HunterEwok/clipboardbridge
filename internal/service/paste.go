@@ -31,8 +31,20 @@ const (
 	targetConsole = "console"
 )
 
-// injectWait bounds how long a watcher may take to inject.
-const injectWait = 5 * time.Second
+// injectWait bounds how long a watcher may take to inject; typing takes
+// typeWait more for each byte.
+const (
+	injectWait = 5 * time.Second
+	typeWait   = 5 * time.Millisecond
+)
+
+// injectTime is how long a watcher may take to inject body's text.
+func injectTime(body group.CommandBody) time.Duration {
+	if body.Mode == group.PasteByTyping {
+		return injectWait + time.Duration(len(body.Text))*typeWait
+	}
+	return injectWait
+}
 
 // An inject is a paste for a watcher, with where its answer goes.
 type inject struct {
@@ -129,7 +141,7 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			}
 			res.Status = r.Status
 			reasons = append(reasons, r.Reason)
-		case <-time.After(injectWait):
+		case <-time.After(injectTime(body)):
 			reasons = append(reasons, "the "+w.inject+" target did not answer")
 		}
 	}
@@ -280,7 +292,7 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second+injectTime(body))
 	defer cancel()
 	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
 	if err != nil {

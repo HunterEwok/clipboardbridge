@@ -34,6 +34,7 @@ type X11 struct {
 	atoms map[string]xproto.Atom
 	chunk int // the largest property this server takes in one piece
 	logf  func(string, ...any)
+	inj   x11Inject
 
 	mu      sync.Mutex
 	text    string // what this client owns the selections with

@@ -217,10 +217,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: install sway, Xvfb and the clipboard tools
+      - name: install sway, Xvfb, xterm and the clipboard tools
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sway wl-clipboard xvfb xclip >/dev/null
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sway wl-clipboard xvfb xclip xterm >/dev/null
       - name: Wayland data-control under headless sway, and X11 under Xvfb
         run: |
           go test -c -o "$RUNNER_TEMP/desktop.test" ./internal/desktop

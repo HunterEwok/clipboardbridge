@@ -775,12 +775,17 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 }
 
 // watcher is a desktop connector or pasteboard agent connected to the
-// socket.
+// socket, or a paste target without a clipboard: the tmux or console
+// helper.
 type watcher struct {
 	out     chan node.Write
 	inject  string       // the target it offers for remote paste; "" for none
 	injects chan *inject // remote pastes for it
 }
+
+// board says whether the watcher holds a clipboard: the tmux and console
+// helpers only paste, so they get no writes and report no copies.
+func (w *watcher) board() bool { return w.inject != targetTmux && w.inject != targetConsole }
 
 // send queues a write. A watcher that does not keep up loses its oldest
 // queued write, never the newest: the clipboard must end on the latest.
@@ -818,7 +823,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		return
 	}
 	replay := false
-	if p := s.pending; p != nil {
+	if p := s.pending; p != nil && w.board() {
 		text, _, _, ok := eng.Local()
 		replay = ok && text == p.Text
 		s.pending = nil
@@ -826,7 +831,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			w.send(*p)
 		}
 	}
-	if !replay && len(m.Payload) > 0 {
+	if !replay && len(m.Payload) > 0 && w.board() {
 		if kind, _, err := parseKind(m.Kind, m.Via); err != nil {
 			s.logf("cbb: a watcher reported a clipboard that is not understood: %v", err)
 		} else {
@@ -874,6 +879,10 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 					}
 				}
 				answer(m.Seq, res)
+				continue
+			}
+			if !w.board() {
+				s.logf("cbb: the %s paste target sent %q, which it does not send", w.inject, m.Op)
 				continue
 			}
 			kind, via, err := parseKind(m.Kind, m.Via)

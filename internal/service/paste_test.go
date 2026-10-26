@@ -118,3 +118,47 @@ func TestRemotePaste(t *testing.T) {
 		t.Errorf("deck pasted on pi: %v", err)
 	}
 }
+
+// TestPasteTargetHasNoClipboard checks that a tmux helper, which only
+// pastes, gets no writes: the next desktop connector still gets the text
+// that came while none was there.
+func TestPasteTargetHasNoClipboard(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	tm := deck.dial(t)
+	defer tm.Close()
+	if _, err := tm.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetTmux}, Payload: []byte("not a clipboard")}); err != nil {
+		t.Fatal(err)
+	}
+	writes := make(chan *control.Message, 4)
+	go func() {
+		for {
+			m, err := tm.Receive()
+			if err != nil {
+				return
+			}
+			writes <- m
+		}
+	}()
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "from pi"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "deck has the text", func() bool { return deck.paste(t) == "from pi" })
+	select {
+	case m := <-writes:
+		t.Errorf("the tmux helper got %q %q", m.Op, m.Payload)
+	case <-time.After(500 * time.Millisecond):
+	}
+	w := deck.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetDesktop}}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := w.Receive()
+	if err != nil || m.Op != control.OpWrite || string(m.Payload) != "from pi" {
+		t.Errorf("the desktop connector got %+v, %v", m, err)
+	}
+}

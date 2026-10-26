@@ -911,7 +911,9 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   is set, clears the clipboard after a `secret`, shows a notification with the sender, and
   answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),
   with `refused` when it would not (a locked session, an administrator's window, a missing
-  permission) rather than could not. The service waits 5 s for it. `status` shows the
+  permission) rather than could not. The service waits 5 s for it, and 5 ms more for each
+  byte it types. A watcher whose target is `tmux` or `console` holds no clipboard: the
+  service sends it no `write` and takes no report from it. `status` shows the
   switches and the targets of the connected watchers as `paste: {on, enter, console,
   targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.

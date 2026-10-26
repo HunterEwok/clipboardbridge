@@ -42,8 +42,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   paste-receive on`, with `-enter` and `-console` as separate switches) hands the cleaned
   text to a watcher that offers to paste, within one a second and 30 a minute per sender,
   and keeps a log of the last 100 pastes without their texts. Any admin turns it off on a
-  member or on all (`cbb paste-receive off -on DEVICE`, `-all`). The targets that put the
-  text in come next (docs/protocol.md, sections 8 and 15).
+  member or on all (`cbb paste-receive off -on DEVICE`, `-all`) (docs/protocol.md,
+  sections 8 and 15).
+- Remote paste targets on Linux: the desktop connector of an X11 session pastes through
+  the clipboard and Shift+Insert, or types with XTEST in any layout, and refuses while the
+  session is locked or the screen saver is on; in tmux, `cbb paste-helper tmux`, which
+  clipboardbridge.conf starts, pastes into the active pane of the client used last, and
+  refuses when no one is attached.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 
