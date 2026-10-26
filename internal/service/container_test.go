@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package service
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+)
+
+// TestContainerHoldsNoKeys checks a member in a container: it makes no
+// group, offers no admin key, so the root cannot make it an admin, and so
+// cannot be the hub; the user's CBB_KEYS_IN_FILE=yes allows all of it.
+func TestContainerHoldsNoKeys(t *testing.T) {
+	var h hub
+	inContainer := func(c *Config) { c.Container = true }
+	nas := startWith(t, &h, "nas", group.OSLinux, inContainer)
+	if _, err := nas.do(t, control.Header{Op: control.OpNew}, ""); err == nil || !strings.Contains(err.Error(), "container") || !strings.Contains(err.Error(), keysInFileEnv+"=yes") {
+		t.Fatalf("cbb new in a container: %v", err)
+	}
+
+	pi := startService(t, &h, "pi")
+	if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+		t.Fatal(err)
+	}
+	pairWith(t, pi, nas)
+	waitFor(t, "pi and nas connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	if id, err := group.Load(nas.dir); err != nil || id.AdminKey != nil {
+		t.Fatalf("the container made an admin key: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAdmin, Name: "nas"}, ""); err == nil || !strings.Contains(err.Error(), "offers no admin key") {
+		t.Fatalf("making the container an admin: %v", err)
+	}
+	if _, err := nas.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nas.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Addrs: []string{"127.0.0.1:1"}}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root or an admin") {
+		t.Fatalf("the container as the hub: %v", err)
+	}
+
+	// Allowed, the same container takes an admin key and becomes an admin.
+	allowed := startWith(t, &h, "nas2", group.OSLinux, func(c *Config) { c.Container, c.KeysInFile = true, true })
+	pairWith(t, pi, allowed)
+	makeAdmin(t, pi, allowed)
+}

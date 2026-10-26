@@ -567,7 +567,8 @@ func cmdService(args []string, stderr io.Writer) int {
 	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
 		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
-			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf})
+			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf,
+			Container: service.InContainer(), KeysInFile: service.KeysInFileAllowed()})
 	})
 }
 

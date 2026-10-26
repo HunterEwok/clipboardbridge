@@ -9,6 +9,9 @@ ARG TARGETVARIANT
 COPY --chown=65532:65532 rootfs/ /
 COPY cbb-${TARGETARCH}${TARGETVARIANT} /usr/local/bin/cbb
 USER 65532:65532
+# The service then makes no group and takes no admin key: their keys would
+# be in a file in the volume (README.md here, "Keys").
+ENV CBB_CONTAINER=docker
 VOLUME /var/lib/clipboardbridge
 ENTRYPOINT ["/usr/local/bin/cbb"]
 CMD ["service"]

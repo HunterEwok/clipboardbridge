@@ -37,11 +37,18 @@ Container Station call it "host", Unraid "Host", TrueNAS's apps "Host Network") 
 folder or volume for `/var/lib/clipboardbridge` that user 65532 may write; then run
 `cbb pair` in its terminal.
 
-It can be the hub for sync away from home only as an admin, since the members take the
-hub's offer from the root or an admin only. That puts an admin key in a file in the volume,
-where anyone who copies the volume has it: make it an admin (`cbb admin` on the root) only
-if you accept that and guard the volume, then turn on sync away from home and run `cbb
-global hub -firewall no`, which prints the rule the host needs for its UDP port.
+### Keys
+
+The container keeps its keys in a file in its volume, where anyone who copies the volume
+has them. So it holds none of the keys that admit and remove devices: `cbb new` there
+refuses to make a group, and it offers no admin key, so the root cannot make it an admin
+(the image sets `CBB_CONTAINER`). Make the group on the phone or on a computer you hold.
+
+That also keeps it from being the hub for sync away from home, since the members take the
+hub's offer from the root or an admin only. If you accept the risk and guard the volume,
+set `CBB_KEYS_IN_FILE: "yes"` in its `environment`, make it an admin (`cbb admin` on the
+root), turn on sync away from home and run `cbb global hub -firewall no`, which prints the
+rule the host needs for its UDP port.
 
 ## On a server
 

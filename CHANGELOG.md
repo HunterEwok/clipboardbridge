@@ -94,6 +94,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A member in the Docker image holds none of the group's keys: `cbb new`, `cbb upgrade` and
+  `cbb takeover` refuse there, and it offers no admin key, so the root cannot make it an
+  admin and it cannot be the hub, since its keys would be in a file in the volume. The
+  refusal says how to allow it anyway: `CBB_KEYS_IN_FILE=yes` in the container's
+  environment.
 - The home compose file names its container `clipboardbridge`, so `docker exec -it
   clipboardbridge cbb pair` works as the documentation says.
 

@@ -272,7 +272,8 @@ infrastructure, not a place to copy and paste:
   while no computer is on and holds `clipboardbridge.local`. Only the root or an admin can be
   the hub, so a container is the hub for sync away from home only once the user made it an
   admin, with its keys in a file in the volume: the least safe of the key levels (item 31),
-  which the user must allow explicitly.
+  which the user must allow explicitly. The service enforces it already: in the image
+  (`CBB_CONTAINER`) it makes no group and offers no admin key unless `CBB_KEYS_IN_FILE=yes`.
 - **A forwarder or a relay on a VPS.** `cbb forward` and `cbb relay` hold no group keys, so
   a container on a rented server is the natural way to run them.
 - **Never the creator, and an admin only by choice.** It joins as an ordinary full member;

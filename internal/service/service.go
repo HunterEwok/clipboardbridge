@@ -74,6 +74,11 @@ type Config struct {
 	// fallbackAfter is how long a full member waits for one with a lower
 	// device ID to dial it before it dials that one; fallbackDial if zero.
 	fallbackAfter time.Duration
+	// Container says that the service runs in the image (InContainer);
+	// there it makes no group and takes no admin key unless KeysInFile
+	// (KeysInFileAllowed).
+	Container, KeysInFile bool
+
 	// newMode is the sync mode of a device that makes or joins a group;
 	// clip.Own if nil. Tests that sync take clip.Shared.
 	newMode *clip.Mode

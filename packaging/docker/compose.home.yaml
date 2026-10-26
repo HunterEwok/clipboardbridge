@@ -24,6 +24,9 @@ services:
       - state:/var/lib/clipboardbridge
     # environment:
     #   CBB_PORT: "8764"
+    #   # Only to let it hold the group's keys, as an admin or the hub, in
+    #   # the volume where whoever copies it has them (README.md, "Keys"):
+    #   CBB_KEYS_IN_FILE: "yes"
 
 volumes:
   state:

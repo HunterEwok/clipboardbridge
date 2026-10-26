@@ -490,7 +490,9 @@ group's CA keys, and they stay off a container.
    --force-recreate`, as after `docker compose pull`). After each, `cbb status` shows the same
    group, `cbb mode` says shared, and a copy on another member arrives on `nas` and on the rest.
 5. Only as the owner's explicit choice for the run, since it puts an admin key in a file
-   (the key levels of docs/roadmap.md, level 3): on `deck` `cbb admin nas`; on `nas` `cbb
+   (the key levels of docs/roadmap.md, level 3): first `cbb admin nas` on `deck`, which must
+   be refused ("offers no admin key"); then `CBB_KEYS_IN_FILE: "yes"` in the compose file
+   and `docker compose up -d`; on `deck` `cbb admin nas`; on `nas` `cbb
    global on` (it asks about the keys in files), `cbb global hub HOST_ADDRESS:8764 -firewall
    no`, and on the host the rule it prints for the UDP port. `vps` joins sync away from home
    (P11) and syncs with `deck` through the container's tunnel. At the end `deck` revokes

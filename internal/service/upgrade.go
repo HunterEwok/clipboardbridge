@@ -31,6 +31,9 @@ const oldKeysFile = "oldkeys.json"
 // iPhone CA. The other key holders delete their copies of the old keys
 // when the records reach them.
 func (s *Service) upgrade() error {
+	if err := s.keysAllowed(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
