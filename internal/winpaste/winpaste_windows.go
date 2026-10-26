@@ -5,6 +5,7 @@ package winpaste
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -155,12 +156,30 @@ func integrity(p windows.Handle) (uint32, error) {
 	if err := windows.GetTokenInformation(tok, windows.TokenIntegrityLevel, &buf[0], n, &n); err != nil {
 		return 0, err
 	}
+	// The label's SID lies in buf after the TOKEN_MANDATORY_LABEL. It is
+	// read from buf by its offset: SID's accessors in x/sys return
+	// pointers that Windows computed, which checkptr (on with -race)
+	// rejects inside a Go allocation.
 	sid := (*windows.Tokenmandatorylabel)(unsafe.Pointer(&buf[0])).Label.Sid
-	c := sid.SubAuthorityCount()
+	return lastSubAuthority(buf, int(uintptr(unsafe.Pointer(sid))-uintptr(unsafe.Pointer(&buf[0]))))
+}
+
+// lastSubAuthority returns the last sub-authority of the SID at off in
+// buf: a revision byte, the count of sub-authorities, six bytes of
+// identifier authority, then the sub-authorities, little-endian uint32s.
+func lastSubAuthority(buf []byte, off int) (uint32, error) {
+	if off < 0 || off+8 > len(buf) {
+		return 0, errors.New("the integrity label lies outside the token's answer")
+	}
+	c := int(buf[off+1])
 	if c == 0 {
 		return 0, errors.New("the integrity label has no level")
 	}
-	return sid.SubAuthority(uint32(c - 1)), nil
+	end := off + 8 + 4*c
+	if end > len(buf) {
+		return 0, errors.New("the integrity label lies outside the token's answer")
+	}
+	return binary.LittleEndian.Uint32(buf[end-4:]), nil
 }
 
 // send presses the keys in batches; it stops early when ctx ends.
