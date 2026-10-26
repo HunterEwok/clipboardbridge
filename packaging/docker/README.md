@@ -26,7 +26,8 @@ docker compose -f compose.home.yaml up -d
 docker compose -f compose.home.yaml exec clipboardbridge cbb pair
 ```
 
-`cbb pair` shows the QR code for the phone app and takes the code of `cbb pair` on the
+The container is named `clipboardbridge`, so `docker exec -it clipboardbridge cbb pair` works
+too. `cbb pair` shows the QR code for the phone app and takes the code of `cbb pair` on the
 group's root or an admin. Join it as an ordinary member: the keys that admit devices belong
 on the devices you hold, not on a server. The container cannot change the host's firewall;
 let the home network reach TCP 8764 (or `CBB_PORT`) and UDP 5353.
@@ -36,8 +37,11 @@ Container Station call it "host", Unraid "Host", TrueNAS's apps "Host Network") 
 folder or volume for `/var/lib/clipboardbridge` that user 65532 may write; then run
 `cbb pair` in its terminal.
 
-With sync away from home on, it can be the hub (`cbb global hub -firewall no`, which prints
-the rule the host needs for its UDP port).
+It can be the hub for sync away from home only as an admin, since the members take the
+hub's offer from the root or an admin only. That puts an admin key in a file in the volume,
+where anyone who copies the volume has it: make it an admin (`cbb admin` on the root) only
+if you accept that and guard the volume, then turn on sync away from home and run `cbb
+global hub -firewall no`, which prints the rule the host needs for its UDP port.
 
 ## On a server
 

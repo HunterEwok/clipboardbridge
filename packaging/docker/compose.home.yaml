@@ -4,7 +4,7 @@
 # clipboardbridge as an always-on member at home, on a NAS or a home server:
 #
 #   docker compose -f compose.home.yaml up -d
-#   docker compose -f compose.home.yaml exec clipboardbridge cbb pair
+#   docker exec -it clipboardbridge cbb pair
 #
 # It needs the host's network: mDNS and the member port must be on the home
 # network, where Docker's bridge would hide them. The host's firewall stays
@@ -12,6 +12,7 @@
 services:
   clipboardbridge:
     image: ghcr.io/hunterewok/clipboardbridge:latest # pin a release by its digest
+    container_name: clipboardbridge
     restart: unless-stopped
     network_mode: host
     read_only: true

@@ -51,7 +51,8 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 
 | Name | Hardware / OS | Network | Role on the bench |
 |---|---|---|---|
-| `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test |
+| `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test, but the host of `nas` |
+| `nas` | the Docker image on `pi4` (`linux/arm64`), from `packaging/docker/compose.home.yaml` | home network (the host's) | an ordinary member in a container, as on a NAS or a home server (P35); never the root or an admin, since the CA keys stay off a container; no desktop clipboard |
 | `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | the lite member; cross-subnet case; must never lose Wi-Fi from a test |
 | `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
@@ -195,10 +196,11 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P32 | The tray app on the Linux members (GNOME, KDE, the Steam Deck) and on Windows: the tray item and the window, send and fetch, each layout, the group's changes after pkexec or UAC, the prompt dismissed, the service stopped, error details on and off, Russian | as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension) |
 | P33 | The Wear OS app with its Android phone: the devices, the away switch, the latest events; the phone out of reach; a phone without Google Play services | as P29; without Play services the phone app works as before |
 | P34 | Sync modes: own, receive, send and shared on `deck` with `win`; a restart; `cbb paste` in own | each mode lets through only what design.md says; the mode survives the restart and the others list it; in own `cbb paste` prints the group's text |
+| P35 | A member in a container (`nas`): it joins the hub's group; its settings; its process killed, a restart and a new container from the same volume; then, by the owner's explicit choice, an admin with its keys in a file and the hub for `vps` | it runs unprivileged as compose.home.yaml sets it; the group, the mode and sync survive each restart; as the hub `vps` syncs through its tunnel with no `NET_ADMIN` |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
-(`windows/amd64`), no ARMv7 Linux and no ARM64 Linux member (the Pi 4 is the controller);
-those builds are covered only by CI. It has no real Android phone and no iPhone app
+(`windows/amd64`) and no ARMv7 Linux; those builds are covered only by CI. The ARM64 Linux
+build runs on the bench only in the container on the Pi 4 (`nas`). It has no real Android phone and no iPhone app
 (section 3).
 
 
@@ -297,7 +299,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 | Suite | Contents | Time | When |
 |---|---|---|---|
 | smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
-| full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, and F1 (the Mac's service is skipped: killing it needs the owner's password) | ~2 h | before each release candidate |
+| full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, F1 (the Mac's service is skipped: killing it needs the owner's password), and P35 for a member in a container | ~2 h | before each release candidate |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
 
@@ -328,7 +330,7 @@ the repository: it names the home network's addresses and the keys. Its shape:
 controller = "pi4"
 
 [device.deck]
-os = "linux"           # linux, linux-lite, darwin, windows
+os = "linux"           # linux, linux-lite, darwin, windows, docker
 ssh = "user@deck.lan"     # the user signed in on the desktop
 clipboard = "wayland"  # wayland, x11, none (cbb copy and paste), macos, windows
 roles = ["member", "hub", "away"]
@@ -339,6 +341,12 @@ ssh = "user@win.lan"
 clipboard = "windows"
 vm = { host = "mac", vmx = "~/Virtual Machines.localized/win.vmwarevm", snapshot = "clean" }
 
+[device.nas]
+os = "docker"          # cbb in a container on the host ssh reaches
+ssh = "user@pi4.lan"   # a user in the docker group
+container = "clipboardbridge"  # the default, compose.home.yaml's name
+roles = ["member"]     # never hub: that device makes the group and holds its keys
+
 [router]
 ssh = "root@router.lan"
 kind = "openwrt"
@@ -348,7 +356,11 @@ away_network = "bench_away"   # the network the bench moves the away device to
 ssh = "root@relay.example.net"
 ```
 
-`address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
+A device with `os = "docker"` is the image running on a host: the bench calls `docker exec
+-i CONTAINER cbb` there, as the image's user, and copies and pastes with `cbb copy` and `cbb
+paste` (it has no desktop clipboard). Its SSH user is in the host's `docker` group, and for
+F1 may run `kill` as root without a password (the container's process belongs to the image's
+user). `address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
 find it; a lite member always joins at an address, which `cbb pair` prints.
 `tools/bench/inventory.example.toml` is a complete example. Each device needs the
 controller's SSH key for its desktop user; a Windows device also runs

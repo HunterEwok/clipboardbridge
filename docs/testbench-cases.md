@@ -23,7 +23,9 @@ Every device starts a run in no group; the bench never touches a group it did no
 1. Linux, macOS: `sudo ./uninstall.sh --purge` (or the installer's copy), then install the
    build under test with `install.sh` (or `get.sh`). Lite member: `get.sh --lite` after the
    purge. Windows: revert the VM to its clean snapshot, or `uninstall.ps1 -Purge`, then
-   `get.ps1`.
+   `get.ps1`. Container: `docker compose -f compose.home.yaml down -v` (the volume goes with
+   it), then `up -d` with the image under test (a release's, pinned by digest, or one built
+   from the CI artifacts with `context.sh`).
 2. On the Linux member with a desktop, sign out and in again (or reboot), so the desktop
    agent starts with the `clipboardbridge` group.
 3. `cbb version` shows the build under test; `cbb status` says "Not in a group" (the lite
@@ -62,6 +64,7 @@ What `smoke` and `full` do first.
 | Mac | `pbcopy` as the signed-in user | `pbpaste` |
 | Windows | the scheduled task `cbbbench-copy` (from `setup-windows.ps1`) puts a file on the clipboard inside the signed-in session | `cbbbench-paste` writes the clipboard to a file |
 | Lite member, away computer | `cbb copy` | `cbb paste` (or `cbb watch -0`) |
+| Container (`nas`) | `docker exec -i clipboardbridge cbb copy` on its host | `docker exec -i clipboardbridge cbb paste` |
 | Android emulator | the app's UI through UI Automator over `adb` | the app's UI |
 
 Every text carries the run ID, the case ID and the sender, so a stale clipboard never passes.
@@ -241,7 +244,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P34)
+## 3. Features and platforms (section 7, P1 to P35)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -471,6 +474,30 @@ logs once that there is no watch.
 Pass: in own neither copy crosses, and `cbb paste` on deck prints win's text; in receive only
 win's copy reaches deck, in send only deck's reaches win; the mode survives the restart and
 win lists it; in shared both cross (R5).
+
+**P35. A member in a container.** Runs: auto (`full`, steps 1 to 4, when the inventory has a
+device with `os = "docker"`), manual (step 5).
+Devices: `nas`, `deck` (the hub), `win`, `rpi0w`; `vps` for step 5. The container never makes
+the group: the bench refuses the role hub for it, since whoever runs `cbb new` holds the
+group's CA keys, and they stay off a container.
+1. `smoke` or `full`: `nas` joins `deck`'s group like the others (R2, `cbb` through `docker
+   exec`), and every text arrives everywhere (R5).
+2. `docker inspect` of the container: not privileged, a read-only root file system, cap_drop
+   ALL, the user 65532:65532, `no-new-privileges`, the host's network, a restart policy.
+3. F1 for `nas`: its process is killed from the host (`kill -KILL` of the PID that `docker
+   inspect` gives), as a crash would; Docker's restart policy starts it again.
+4. `docker restart`; then a new container from the same volume (`docker compose up -d
+   --force-recreate`, as after `docker compose pull`). After each, `cbb status` shows the same
+   group, `cbb mode` says shared, and a copy on another member arrives on `nas` and on the rest.
+5. Only as the owner's explicit choice for the run, since it puts an admin key in a file
+   (the key levels of docs/roadmap.md, level 3): on `deck` `cbb admin nas`; on `nas` `cbb
+   global on` (it asks about the keys in files), `cbb global hub HOST_ADDRESS:8764 -firewall
+   no`, and on the host the rule it prints for the UDP port. `vps` joins sync away from home
+   (P11) and syncs with `deck` through the container's tunnel. At the end `deck` revokes
+   `nas` (R3), which takes its admin key with it.
+Pass: steps 1 to 4 as written, with no step needing more than the compose file gives (no
+`NET_ADMIN`, no `/dev/net/tun`, no `--privileged`); in step 5 a copy on `vps` arrives on
+`deck` and back (R5), and `cbb status` on `vps` names `nas` as its hub.
 
 ## 4. Failure cases (section 8)
 

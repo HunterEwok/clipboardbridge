@@ -189,7 +189,7 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 	}
 
 	if r.Do(suite+"/"+hub.Name+"/new", func() error {
-		_, err := Run(ctx, hub, "cbb new", "")
+		_, err := Run(ctx, hub, cbbCmd(hub)+" new", "")
 		if err == nil {
 			err = shareClipboard(ctx, hub)
 		}
@@ -350,7 +350,7 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 	done := make(chan error, 1)
 	go func() {
 		var w window
-		done <- Stream(ctx, hub, "cbb pair", func(line string) {
+		done <- Stream(ctx, hub, cbbCmd(hub)+" pair", func(line string) {
 			if m := addrRE.FindStringSubmatch(line); m != nil {
 				w.addr = m[1]
 			}

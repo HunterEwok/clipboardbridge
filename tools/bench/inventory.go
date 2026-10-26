@@ -24,12 +24,13 @@ type Inventory struct {
 // Device is one device under test.
 type Device struct {
 	Name      string   `toml:"-"`
-	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows
+	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows, docker
 	SSH       string   `toml:"ssh"`       // user@host; the user is the one signed in on the desktop
 	Clipboard string   `toml:"clipboard"` // wayland, x11, none, macos, windows
 	Roles     []string `toml:"roles"`     // member, hub, away
 	Address   string   `toml:"address"`   // host:port others dial to pair with it, when mDNS cannot find it
 	VM        *VM      `toml:"vm"`
+	Container string   `toml:"container"` // os docker: the container's name on the host ssh reaches
 }
 
 // VM names a virtual machine that the bench may revert to a snapshot.
@@ -47,7 +48,7 @@ type Host struct {
 }
 
 var (
-	knownOS        = []string{"linux", "linux-lite", "darwin", "windows"}
+	knownOS        = []string{"linux", "linux-lite", "darwin", "windows", "docker"}
 	knownClipboard = []string{"wayland", "x11", "none", "macos", "windows"}
 )
 
@@ -77,6 +78,24 @@ func LoadInventory(path string) (*Inventory, error) {
 		}
 		if !slices.Contains(knownClipboard, d.Clipboard) {
 			return nil, fmt.Errorf("device %s: clipboard %q is not one of %s", name, d.Clipboard, strings.Join(knownClipboard, ", "))
+		}
+		if d.OS == "docker" {
+			// A container has no desktop: the bench copies and pastes with
+			// cbb inside it.
+			if d.Clipboard != "none" {
+				return nil, fmt.Errorf("device %s: a container has no clipboard but cbb's; leave out clipboard", name)
+			}
+			if d.Container == "" {
+				d.Container = "clipboardbridge"
+			}
+			// The hub makes the group with cbb new and so holds its CA
+			// keys, which never go into a container (docs/roadmap.md,
+			// "Docker"): it joins as an ordinary member.
+			if d.Has("hub") {
+				return nil, fmt.Errorf("device %s: a container joins as an ordinary member and never holds the group's keys; give the role hub to another device", name)
+			}
+		} else if d.Container != "" {
+			return nil, fmt.Errorf("device %s: container is only for os docker", name)
 		}
 	}
 	return &inv, nil

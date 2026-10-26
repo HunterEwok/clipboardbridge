@@ -23,10 +23,15 @@ const winBench = `C:\ProgramData\cbbbench`
 const x11Env = `DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1)} `
 
 // cbbCmd is how the bench calls cbb, the full or the lite member, on a
-// device.
+// device. In a container cbb runs as the image's user, the service's own,
+// so it reaches the control socket; the bench user on the host is in the
+// docker group.
 func cbbCmd(d *Device) string {
-	if d.OS == "windows" {
+	switch d.OS {
+	case "windows":
 		return `& "$env:ProgramFiles\clipboardbridge\cbb.exe"`
+	case "docker":
+		return "docker exec -i " + d.Container + " cbb"
 	}
 	return "cbb"
 }

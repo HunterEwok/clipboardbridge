@@ -86,8 +86,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (docs/protocol.md, section 13). Both phone kits listen for member connections
   (`MemberListener`) and, as the hub, admit a client by the tunnel key its hello offers and
   answer with the offer (`PhoneHub`).
+- The hardware bench takes a member in a container (`os = "docker"` in its inventory),
+  reached by `docker exec` on its host. It joins as an ordinary member and never makes the
+  group, whose CA keys stay off a container; `full` checks that it runs locked down as
+  `compose.home.yaml` sets it, and that a crash, a restart and a new container from the
+  same volume keep its group, its mode and its sync (P35 in docs/testbench.md).
 
 ### Changed
+
+- The home compose file names its container `clipboardbridge`, so `docker exec -it
+  clipboardbridge cbb pair` works as the documentation says.
 
 - `cbb global relay` first says what a relay learns (which devices are online and from
   where, which talk, when and how much) and asks you to type yes, or takes `-yes`; the
