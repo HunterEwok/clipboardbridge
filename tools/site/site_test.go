@@ -163,6 +163,41 @@ func TestChooser(t *testing.T) {
 	}
 }
 
+// TestChooserNewLanguage checks that a language whose pages arrive after the
+// chooser started can be picked at once: on cbb.tools the chooser may start
+// before every page has been copied.
+func TestChooserNewLanguage(t *testing.T) {
+	dir := t.TempDir()
+	addLang := func(code string) {
+		if err := os.MkdirAll(filepath.Join(dir, code), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, code, "index.html"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addLang("en")
+	c := &chooser{dir: dir, langs: siteLanguages(dir)}
+	pick := func() string {
+		w := httptest.NewRecorder()
+		c.ServeHTTP(w, httptest.NewRequest("GET", "/?lang=ru", nil))
+		return w.Header().Get("Location")
+	}
+	if got := pick(); got != "/en/" {
+		t.Fatalf("before ru: %q, want /en/", got)
+	}
+	addLang("ru")
+	if got := pick(); got != "/ru/" {
+		t.Errorf("after ru: %q, want /ru/", got)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := pick(); got != "/en/" {
+		t.Errorf("without the directory: %q, want what the start found, /en/", got)
+	}
+}
+
 // TestSite checks the real site: every page renders in every language and
 // every translation is complete, as CI's "site check" does.
 func TestSite(t *testing.T) {
