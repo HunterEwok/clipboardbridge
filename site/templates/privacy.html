@@ -1,0 +1,50 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+{{define "title"}}{{t "Security and privacy"}}: Clipboard Bridge{{end}}
+{{define "description"}}{{t "What protects your clipboard in Clipboard Bridge, and what each server can and cannot see."}}{{end}}
+
+{{define "content"}}
+<section class="wrap page">
+  <h1>{{t "Security and privacy"}}</h1>
+  <p class="lead">{{t "What you copy goes only to your own devices. Here is what protects it, and what each server along the way can and cannot see."}}</p>
+
+  <h2>{{t "Your clipboard"}}</h2>
+  <ul>
+    <li>{{t "There are no accounts, no cloud and no telemetry. Clipboard Bridge does not report to anyone."}}</li>
+    <li>{{t "Only devices you let in belong to your group, and they talk only to each other. Every connection is encrypted with TLS, and each device proves it is in the group."}}</li>
+    <li>{{t "A phone keeps its keys in its security chip (the Secure Enclave, Android's Keystore); they never leave it. A computer keeps its keys in files that only Clipboard Bridge can read."}}</li>
+    <li>{{t "What password managers mark as secret is not synced automatically."}}</li>
+  </ul>
+
+  <h2>{{t "What each server can see"}}</h2>
+  <p>{{t "At home there is no server at all: the devices talk directly. Away from home, one of these joins them."}}</p>
+  <div class="table">
+  <table>
+    <thead><tr><td></td><th scope="col">{{t "Reads the clipboard"}}</th><th scope="col">{{t "Knows which of your devices talk, and when"}}</th><th scope="col">{{t "Whose it is"}}</th></tr></thead>
+    <tbody>
+    <tr><th scope="row">{{t "Hub"}}</th><td>{{t "yes, it is one of your devices"}}</td><td>{{t "yes"}}</td><td>{{t "yours: a computer, or a phone while its app is open"}}</td></tr>
+    <tr><th scope="row">{{t "Forwarder"}}</th><td>{{t "no"}}</td><td>{{t "no: it only passes encrypted packets to your hub"}}</td><td>{{t "yours; the project's at cbb.tools is not open yet"}}</td></tr>
+    <tr><th scope="row">{{t "Blind relay"}}</th><td>{{t "no"}}</td><td>{{t "yes"}}</td><td>{{t "yours; the project's at cbb.tools is not open yet"}}</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>{{t "The servers at cbb.tools keep no logs. The details are in %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/how-it-works.md" (t "how it works"))}}</p>
+
+  <h2 id="site">{{t "This website"}}</h2>
+  <ul>
+    <li>{{t "It loads nothing from other sites: no trackers, no fonts or scripts from elsewhere."}}</li>
+    <li>{{t "It counts visits with %s on our own server: which pages are opened, which site you came from, your country, browser and screen size, and which buttons are pressed. It sets no cookies and stores neither your address nor a profile of you; we see only totals." (link "https://www.goatcounter.com" "GoatCounter")}}</li>
+    <li>{{t "When you open %s, the server looks up the country of your address in a database on the server itself, to pick a language for you. It does not ask anyone else, does not store your address and keeps no log of visits." (code "cbb.tools")}}</li>
+    <li>{{t "It sets one cookie, %s, only when you pick a language yourself, so it can open in that language next time. It holds nothing but the language." (code "lang")}}</li>
+    <li>{{t "The country database is IP to Country Lite by %s, under the Creative Commons Attribution 4.0 license." (link "https://db-ip.com" "DB-IP")}}</li>
+  </ul>
+
+  <h2>{{t "Found a problem?"}}</h2>
+  <p>{{t "Please report a vulnerability privately, as %s describes, and not in a public issue." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/SECURITY.md" "SECURITY.md")}}</p>
+
+  <div class="final">
+    <h2>{{t "Try it on your devices"}}</h2>
+    <p>{{t "It takes a few minutes and costs nothing."}}</p>
+    <p class="actions"><a class="button accent go" href="download.html">{{t "Download for free"}}</a></p>
+  </div>
+</section>
+{{end}}

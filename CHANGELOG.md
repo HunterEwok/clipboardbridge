@@ -17,6 +17,24 @@ All notable changes to clipboardbridge are documented in this file. The format f
   or hardware, and `cbb status` shows it in a KEYS column (docs/protocol.md, section 17).
 - The Android app makes its keys with an attestation challenge, so the Keystore can later
   prove that they live in its hardware.
+- The website for cbb.tools (`site/`, built by `tools/site`): the start page, download, and
+  security and privacy, in English, Chinese, Hindi, Spanish, Russian, Arabic, Swahili and Hebrew
+  (right to left for Arabic and Hebrew). It presents the two kinds of group, with a
+  computer at its heart and phones only, and says plainly why a computer is simpler. "/"
+  picks the visitor's language by the language they picked before, their country (a local
+  DB-IP database on the server, nothing logged) and their browser; English otherwise.
+  The start page leads with what it does, then the platforms, a comparison with sending
+  yourself a message, three steps to start, uses and questions; every page ends with a next
+  step, and a phone keeps a "Download" button at the bottom of the screen. Short CSS-only
+  motion, off for those who ask for less motion; no scripts. Error pages (404, 5xx) in the
+  visitor's language, Open Graph, canonical and hreflang links, `sitemap.xml`, `robots.txt`
+  and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
+  HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
+  by GoatCounter on the same server, without cookies and without storing addresses. Until the
+  launch the site is closed: everyone sees "the website opens soon", and a secret link opens
+  the whole site in the owner's browsers. CI validates its HTML and runs Lighthouse on it;
+  the download page takes the latest version from this changelog; TLS 1.2 and 1.3 only,
+  pre-compressed files, a long-cached stylesheet, `security.txt` and a web manifest.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

@@ -1,0 +1,15 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+{{define "title"}}{{t "Page not found"}}: Clipboard Bridge{{end}}
+{{define "description"}}{{t "This page does not exist, or it has moved."}}{{end}}
+
+{{define "content"}}
+<section class="wrap page oops">
+  <p class="code" aria-hidden="true">404</p>
+  <h1>{{t "Page not found"}}</h1>
+  <p class="lead">{{t "This page does not exist, or it has moved."}}</p>
+  <p class="actions">
+    <a class="button accent go" href="/{{.Lang.Code}}/">{{t "Go to the home page"}}</a>
+    <a class="button" href="/{{.Lang.Code}}/download.html">{{t "Download"}}</a>
+  </p>
+</section>
+{{end}}

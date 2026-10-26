@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# DB-IP publishes the Lite database at the start of each month.
+
+[Unit]
+Description=Update the cbb.tools country database every month
+
+[Timer]
+OnCalendar=*-*-03 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

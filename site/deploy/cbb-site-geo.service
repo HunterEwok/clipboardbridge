@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# Fetches this month's DB-IP "IP to Country Lite" for the language chooser:
+# /etc/systemd/system/cbb-site-geo.service, run by cbb-site-geo.timer.
+
+[Unit]
+Description=Update the cbb.tools country database
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=cbb-site
+ExecStart=/bin/sh -ec 'f=dbip-country-lite-$(date -u +%%Y-%%m).csv.gz; cd "$STATE_DIRECTORY"; curl -fsSL -o new.csv.gz "https://download.db-ip.com/free/$f"; gzip -t new.csv.gz; mv new.csv.gz dbip-country-lite.csv.gz'
+ExecStartPost=+/bin/systemctl reload-or-restart cbb-site.service

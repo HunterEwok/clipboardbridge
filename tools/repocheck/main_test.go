@@ -44,6 +44,7 @@ func TestCheck(t *testing.T) {
 			want: []string{"strings.xml:1: Cyrillic letter"},
 		},
 		{name: "a tray app translation", file: "apps/desktop/frontend/l10n/ru.json", content: `{"Fetch":"` + cyrillicWord + `"}`},
+		{name: "a website translation", file: "site/l10n/ru.json", content: `{"Download":"` + cyrillicWord + `"}`},
 		{
 			name: "the tray app's script", file: "apps/desktop/frontend/app.js", content: `t("` + cyrillicWord + `")`,
 			want: []string{"app.js:1: Cyrillic letter"},

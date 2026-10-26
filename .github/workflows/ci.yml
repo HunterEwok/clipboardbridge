@@ -56,6 +56,8 @@ jobs:
         run: go run ./tools/tokens -check
       - name: app icon up to date
         run: go run ./tools/icon -check
+      - name: website pages and translations
+        run: go run ./tools/site check
 
   test:
     name: test (${{ matrix.os }})
@@ -1208,10 +1210,35 @@ jobs:
       - name: two containers pair and sync, and a forwarder starts
         run: sh tools/e2e/docker.sh clipboardbridge:ci
 
+  website:
+    name: website
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # nothing to download; leaves the shared cache key to the check job
+      - name: build the website
+        run: go run ./tools/site build
+      # The tools are pinned by site/package-lock.json; the runner's Node and Chrome run them.
+      - name: install the checks
+        working-directory: site
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: valid HTML
+        working-directory: site
+        run: npm run validate
+      - name: Lighthouse (performance, accessibility, SEO)
+        working-directory: site
+        run: npm run lighthouse
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
+    needs: [check, website, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

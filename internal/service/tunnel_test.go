@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -464,21 +465,36 @@ func TestAwayThroughRelay(t *testing.T) {
 // listens. It picks it below the systems' ephemeral ranges (Linux from
 // 32768, macOS and Windows from 49152): a port the kernel handed out and
 // took back could go to a socket of another test package before the hub
-// binds it.
+// binds it. It never hands out a port twice: a test that takes two ports
+// before binding either, such as one for each of two hubs, would otherwise
+// get the same port now and then, and one hub's packets would go to the
+// other.
 func freeUDP(t *testing.T) int {
 	t.Helper()
+	udpPorts.Lock()
+	defer udpPorts.Unlock()
 	for range 100 {
 		port := 20000 + mrand.IntN(10000)
+		if udpPorts.given[port] {
+			continue
+		}
 		c, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
 		if err != nil {
 			continue
 		}
 		c.Close()
+		udpPorts.given[port] = true
 		return port
 	}
 	t.Fatal("no free UDP port")
 	return 0
 }
+
+// udpPorts holds the ports freeUDP handed out.
+var udpPorts = struct {
+	sync.Mutex
+	given map[int]bool
+}{given: map[int]bool{}}
 
 // TestJoinByAddress checks that a device that joined at an address, as
 // through an SSH forward or a VPN, keeps a member connection to the member
