@@ -56,6 +56,9 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
+# Secrets live only in memory; none of it goes to swap (where the kernel has no
+# memory controller, systemd leaves this out).
+MemorySwapMax=0
 
 # No IPAddressDeny/IPAddressAllow: the BPF maps they need fail on small
 # boards such as the Pi Zero, and the member port itself takes only home

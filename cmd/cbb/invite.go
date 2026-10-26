@@ -169,11 +169,16 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	joined = true
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
-	// The group's servers as the service knows them now that it joined,
-	// asked on a connection of its own: each takes one request.
-	if st, err := statusNow(); err != nil {
+	// The group's servers as the service knows them now that it joined. Until
+	// it has heard them, the invitation's addresses stay allowed: they are
+	// how it reaches the hub to hear them at all.
+	if !confined() {
+		// Nothing limits where the service goes.
+	} else if st, err := statusNow(); err != nil {
 		fmt.Fprintf(stderr, "cbb: cannot ask the service for the group's servers: %v; %s\n", err, allowHint)
-	} else if err := applyGrant(stdout, grantFor(st.Away)); err != nil {
+	} else if a := waitServers(st.Away); !knowsServers(a) {
+		fmt.Fprintf(stdout, "The service may reach the invitation's addresses until it hears the group's servers; once cbb status shows the hub, %s.\n", allowHint)
+	} else if err := applyGrant(stdout, grantFor(a)); err != nil {
 		fmt.Fprintf(stderr, "cbb: the service's network did not follow the group's servers: %v; %s\n", err, allowHint)
 	}
 	fmt.Fprintln(stdout, "Joined the group. It syncs through the group's hub wherever this device is;")

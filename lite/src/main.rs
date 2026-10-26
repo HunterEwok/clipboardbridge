@@ -369,6 +369,20 @@ fn cmd_run(g: &Global, args: &[String]) -> Result<()> {
     service::run(cfg)
 }
 
+/// Connects to the service's control socket, which only the members of the
+/// clipboardbridge group may use.
+fn connect(g: &Global) -> Result<UnixStream> {
+    match UnixStream::connect(&g.socket) {
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(Error::msg(
+            "no permission to use the Clipboard Bridge service; add your user to the clipboardbridge group and log in again",
+        )),
+        c => c.context(format!(
+            "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
+            g.socket.display()
+        )),
+    }
+}
+
 /// Sends one request to the service and returns its answer.
 fn request(g: &Global, m: &control::Message) -> Result<control::Message> {
     let conn = if control::is_admin(&m.header.op) {
@@ -385,10 +399,7 @@ fn request(g: &Global, m: &control::Message) -> Result<control::Message> {
             ))?,
         }
     } else {
-        UnixStream::connect(&g.socket).context(format!(
-            "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
-            g.socket.display()
-        ))?
+        connect(g)?
     };
     let mut w = conn.try_clone().context("cannot reach the service")?;
     control::write(&mut w, m)?;
@@ -630,10 +641,7 @@ fn cmd_watch(g: &Global, args: &[String]) -> Result<()> {
         [a] if a == "-0" => true,
         _ => return Err(Error::msg("usage: cbb watch [-0]")),
     };
-    let conn = UnixStream::connect(&g.socket).context(format!(
-        "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
-        g.socket.display()
-    ))?;
+    let conn = connect(g)?;
     let mut w = conn.try_clone().context("cannot reach the service")?;
     control::write(
         &mut w,

@@ -55,7 +55,7 @@ whose operator you trust with this; the project's relay keeps none of it in logs
 func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb global                     show sync away from home\n" +
 		"       cbb global on                  turn it on here\n" +
-		"       cbb global off                 turn it off here and forget its keys\n" +
+		"       cbb global off [-yes]          turn it off here and forget its keys\n" +
 		"       cbb global hub [-port N] [-firewall ask|yes|no] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
@@ -95,13 +95,36 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		h.Consent = true
 	case "off":
-		if len(args) != 1 {
+		fs := flag.NewFlagSet("global off", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		yes := fs.Bool("yes", false, "turn it off without asking, even where it cuts this device off (for scripts)")
+		if fs.Parse(args[1:]) != nil {
+			return 2
+		}
+		if fs.NArg() != 0 {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
 		if granted(grant{}).on {
 			if err := checkAwayNet(); err != nil {
 				return fail(stderr, err)
+			}
+		}
+		// The keys go with it, and new ones reach the hub only on the home
+		// network: a device that meets the hub only through the tunnel would
+		// be cut off from its group until it is at home again.
+		if st, err := statusNow(); err == nil && st.Away != nil && st.Away.Through && !st.Away.Hub && !*yes {
+			fmt.Fprintf(stdout, "This device reaches the hub %s only through the tunnel now. Turning sync away\n", st.Away.HubDevice)
+			fmt.Fprintln(stdout, "from home off forgets its keys; new ones reach the hub only on the home network, so")
+			fmt.Fprintln(stdout, "it syncs with its group again only once it is at home, even after cbb global on.")
+			fmt.Fprint(stdout, "Type yes to turn it off anyway: ")
+			line, err := readLine(stdin)
+			if err != nil {
+				return fail(stderr, err)
+			}
+			if !strings.EqualFold(strings.TrimSpace(line), "yes") {
+				fmt.Fprintln(stdout, "Nothing changed.")
+				return 1
 			}
 		}
 	case "allow":
@@ -221,7 +244,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if m.Status != nil {
 		a := m.Status.Away
 		if args[0] == "on" && confined() {
-			a = waitServers(c, a)
+			a = waitServers(a)
 		}
 		g := grantFor(a)
 		if err := applyGrant(stdout, g); err != nil {
@@ -243,19 +266,29 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// serverWait is how long waitServers waits; tests shorten it.
+var serverWait = 10 * time.Second
+
 // waitServers waits a little for a client that has just turned sync away
 // from home on to hear its hub's offer, which names the hub's addresses,
-// so that the system's limit can let them through at once.
-func waitServers(c *control.Client, a *control.Away) *control.Away {
-	for deadline := time.Now().Add(10 * time.Second); a != nil && !a.Hub && a.Relay == nil && len(a.Allow) == 0 && time.Now().Before(deadline); {
+// so that the system's limit can let them through at once. Each status is
+// asked on a connection of its own: the service takes one request on each.
+func waitServers(a *control.Away) *control.Away {
+	for deadline := time.Now().Add(serverWait); !knowsServers(a) && a != nil && time.Now().Before(deadline); {
 		time.Sleep(500 * time.Millisecond)
-		m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}})
-		if err != nil || m.Status == nil {
+		st, err := statusNow()
+		if err != nil {
 			break
 		}
-		a = m.Status.Away
+		a = st.Away
 	}
 	return a
+}
+
+// knowsServers reports whether the service knows the group's servers: it
+// is a hub, meets at a relay, or has heard its hub's offer.
+func knowsServers(a *control.Away) bool {
+	return a != nil && (a.Hub || a.Relay != nil || len(a.Allow) > 0)
 }
 
 // applyGrant lets the service reach g and says so. When the service
@@ -409,7 +442,8 @@ func writeAway(w io.Writer, a *control.Away) {
 			}
 		}
 	case a.HubDevice == "":
-		fmt.Fprintln(w, "Sync away from home: on; waiting to meet the group's hub on the home network.")
+		fmt.Fprintln(w, "Sync away from home: on; waiting to meet the group's hub on the home network. The hub")
+		fmt.Fprintln(w, "learns this device's keys there, so away from home it syncs only after that.")
 	case a.Through:
 		fmt.Fprintf(w, "Sync away from home: on; connected to the hub %s through the tunnel.\n", a.HubDevice)
 	case a.VLESS:
