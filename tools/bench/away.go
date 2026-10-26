@@ -99,7 +99,9 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 		}
 		synced = append(synced, d)
 		if r.Do("away/P11/"+d.Name+"/off-on", func() error {
-			if _, err := Run(ctx, d, adminCmd(d)+" global off", ""); err != nil {
+			// cbb global off asks before it cuts off a device that meets
+			// the hub only through the tunnel; yes answers it.
+			if _, err := Run(ctx, d, adminCmd(d)+" global off", "yes\n"); err != nil {
 				return err
 			}
 			if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
@@ -211,7 +213,7 @@ func bothWays(ctx context.Context, r *Report, g *benchGroup, prefix string, d *D
 
 func globalOff(ctx context.Context, r *Report, suite string, d *Device) {
 	r.Do(suite+"/"+d.Name+"/global-off", func() error {
-		_, err := Run(ctx, d, adminCmd(d)+" global off", "")
+		_, err := Run(ctx, d, adminCmd(d)+" global off", "yes\n")
 		return noSudo(d, err)
 	})
 }

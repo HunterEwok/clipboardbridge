@@ -321,7 +321,8 @@ fails for a reason a real phone would share.
 3. On the away computer `sudo cbb pair -invite FILE`; compare the fingerprints on both sides;
    type `yes` on the hub.
 4. Copy each way between the away computer and the home members.
-5. `cbb global off` and `on` on the away computer; repeat step 4.
+5. `cbb global off` (it asks first, since the away computer meets the hub only through the
+   tunnel; `yes`) and `on` on the away computer; repeat step 4.
 6. A hub with only an IPv6 address; a hub behind CGNAT (only the forwarder).
 Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing.
 

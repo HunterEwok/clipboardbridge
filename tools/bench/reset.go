@@ -147,7 +147,7 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 			if err != nil {
 				return noSudo(d, err)
 			}
-			return restartAgent(ctx, d)
+			return nil
 		}
 		if d.Firewall != "yes" && d.Firewall != "no" {
 			return fmt.Errorf("%s: set firewall = \"yes\" (the installer opens the member port) or \"no\" (it leaves the firewall alone) in the inventory", d.Name)
@@ -167,7 +167,7 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		if _, err := RunFor(ctx, d, "sudo -n env CBB_FIREWALL= sh "+dir+"/packaging/linux/install.sh "+opt+" "+dir+"/cbb", "", 2*time.Minute); err != nil {
 			return err
 		}
-		return restartAgent(ctx, d)
+		return agentRuns(ctx, r, d)
 	case "darwin":
 		// Only the helper runs as root here; it installs only an archive
 		// whose checksum is signed by the bench's key or trusted (setup-mac.sh).
@@ -277,14 +277,31 @@ func uninstalled(ctx context.Context, d *Device) error {
 	return nil
 }
 
-// restartAgent starts the desktop agent again in the signed-in session, so
-// that nobody has to sign out and in after a reinstall: the uninstaller
-// stops it, and only a sign-in starts it otherwise. The SSH session has the
-// clipboardbridge group that the installer gave the user.
-func restartAgent(ctx context.Context, d *Device) error {
+// agentRuns checks that the installer started the desktop agent in the
+// signed-in session, so that nobody has to sign out and in after an install;
+// when it did not, the case fails and the bench starts the agent itself, so
+// the run can go on.
+func agentRuns(ctx context.Context, r *Report, d *Device) error {
 	if d.OS != "linux" || (d.Clipboard != "x11" && d.Clipboard != "wayland") {
 		return nil
 	}
+	if r.Do("reset/"+d.Name+"/agent", func() error {
+		return eventually(ctx, 10*time.Second, func() error {
+			_, err := Run(ctx, d, `pgrep -x -u "$(id -u)" cbb >/dev/null`, "")
+			if err != nil {
+				return errors.New("the installer did not start the desktop agent in the signed-in session")
+			}
+			return nil
+		})
+	}) == nil {
+		return nil
+	}
+	return restartAgent(ctx, d)
+}
+
+// restartAgent starts the desktop agent in the signed-in session. The SSH
+// session has the clipboardbridge group that the installer gave the user.
+func restartAgent(ctx context.Context, d *Device) error {
 	_, err := Run(ctx, d, `id -nG | grep -qw clipboardbridge || { echo "the user is not in the clipboardbridge group; sign in again" >&2; exit 1; }
 pkill -x -u "$(id -u)" cbb; sleep 0.5
 env=$(systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP)=')
