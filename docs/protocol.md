@@ -286,13 +286,15 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 Each frame is a 4-byte big-endian length followed by that many bytes of a JSON object (UTF-8,
 no trailing newline). A frame MUST NOT exceed 7 MiB (7 340 032 bytes); a larger length closes
 the connection. The Go code writes JSON without HTML escaping; receivers MUST accept any valid
-JSON.
+JSON. A length with its top bit set (0x80000000) marks a binary `chunk` frame instead, which
+carries content of images and files ("Content", below) and comes only to a member that sent
+`get`.
 
 Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17) |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17), `get` or `missing` ("Content", below) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -303,6 +305,7 @@ Message object:
 | `phone_ca` | string | phone_ca | from the root or an admin of a group a computer created: the group's iPhone CA, DER in base64 (section 10, "Admins") |
 | `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
 | `evidence` | object | evidence | an attestation of one of the sender's keys (section 17, "Evidence") |
+| `get` | object | get, missing | a range of a part of images or files: Get ("Content", below) |
 
 ```json
 {"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -366,6 +369,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 | `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
+| `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
 
 ### Device
 
@@ -390,14 +394,85 @@ and of the program.
 | `via` | string | `copy` (copied on that member), `phone` (sent from a phone: the app, iPhone or Android, or the iPhone shortcut's button) or `universal-clipboard` (reached a Mac through Universal Clipboard). Omitted for `copy`; absent means `copy`. Receivers also take `iphone`, the name of `phone` before phones other than the iPhone |
 | `time` | string | hybrid timestamp `"<wall>.<logical>"` (section 5) |
 | `age_ms` | integer | milliseconds since the copy, as of the moment the frame is written |
-| `kind` | string | `text` or `secret`; always present |
-| `text` | string | the text; `""` only in the mark of a secret |
+| `kind` | string | `text`, `secret` or `media` (images or files, from 0.6); always present |
+| `text` | string | the text; `""` only in the mark of a secret, and in media without a plain-text alternative |
+| `media` | object | in a `media` event only: its Manifest ("Media", below) |
 
 Validation (`Event.Validate`): `id` and `origin` are 32 lowercase hex characters; `time` is
 not `0.0` and its wall time is at most 253402300799999; `kind` and `via` are known;
-`age_ms` is not negative; and, unless the event is a mark (kind `secret` with empty text),
-`text` is non-empty, at most 1 MiB (1 048 576 bytes) and valid UTF-8. Unknown fields are
-ignored.
+`age_ms` is not negative; a `media` event has a valid manifest and no other has one; and,
+unless the event is a mark (kind `secret` with empty text), `text` is non-empty, at most
+1 MiB (1 048 576 bytes) and valid UTF-8, except that in a `media` event it may be empty and is
+at most 256 KiB (262 144 bytes). Unknown fields are ignored. A member before 0.6 does not
+decode a `media` event: it drops it, and as a hello's `current` takes it as none.
+
+### Media
+
+A `media` event (design.md, "Images and files") carries a manifest of its content instead of
+the bytes, so it travels in events and hellos like a text and the sync model of section 5
+applies unchanged. Its `text` is a plain-text alternative, such as the text a browser copies
+next to an image, or `""`.
+
+Manifest:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `size` | integer | the parts' sizes together, at most 1 GiB (1 073 741 824 bytes) |
+| `parts` | array | 1 to 10 000 Parts |
+
+Part:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `type` | string or absent | clipboard data: `image/png`, `image/jpeg` or `text/html`, each at most once, at most 8 parts |
+| `path` | string or absent | a copy of files: the file's or folder's path, names joined by `/`, each path once |
+| `dir` | bool or absent | with `path`: `true` for a folder, which has no `size` or `sha256` |
+| `size` | integer or absent | the part's bytes; absent means 0 |
+| `sha256` | string | the SHA-256 of the part's bytes, 32 bytes in base64; absent only for a folder |
+
+A manifest holds either clipboard data (every part has `type`) or files (every part has
+`path`), never both. A path is at most 4096 bytes, and all paths together at most 512 KiB; a
+file's path does not go through another file. Each name in a path is valid UTF-8 of 1 to 255
+bytes, not `.` or `..`, without control characters (C0, DEL, C1) or `/ \ : * ? " < > |`, not
+ending in a dot or a space, and not a name Windows reserves (`CON`, `PRN`, `AUX`, `NUL`,
+`COM1` to `COM9`, `LPT1` to `LPT9`, in any case, before the first dot), so that every system
+can hold a received copy. The Go code is `internal/clip/media.go`.
+
+```json
+{"t":"event","event":{"id":"77aa...","origin":"3b1e...","time":"1761024002000.0","age_ms":5,"kind":"media","text":"trip","media":{"size":1234,"parts":[{"path":"trip","dir":true},{"path":"trip/a.jpg","size":1234,"sha256":"AQEB..."}]}}}
+```
+
+A member that does not take images or files (the lite member) takes
+the event like any other, so the group converges, forwards it, and writes only its `text`, as
+a text, to its clipboard; with no text it keeps its clipboard.
+
+### Content
+
+A member that wants the bytes of a part asks a connected member whose hello says `media` for
+them, by hash, and gets them in binary frames. The Go code is `internal/node/content.go`.
+
+- `{"t":"get","get":{"sha256":"...","offset":0,"length":1048576}}` asks for `length` bytes
+  of the part from `offset`. `length` is 1 to 1 MiB; a receiver drops a get that is not
+  valid. `length` 0 cancels every get of that part from the sender: what is queued is
+  dropped and the range being served ends with its next chunk. A receiver keeps at most 64
+  gets per connection and closes a connection that asks for more.
+- `{"t":"missing","get":{...}}` answers a get for a part the member does not hold whole, or
+  that it could not read, and ends that fetch.
+- A `chunk` frame: the 4-byte length with its top bit set (the rest is the length of what
+  follows), the part's SHA-256 (32 bytes), the offset (8 bytes, big-endian), the data's
+  length (4 bytes, big-endian, at most 256 KiB), the data, and zeros up to a multiple of
+  16 KiB, so the network learns less of the parts' sizes. A frame longer than a chunk with
+  its padding (278 528 bytes) closes the connection.
+- The server answers the gets of a connection in order, a chunk at a time, and writes a chunk
+  only while no other message waits; chunks do not count against the 256-message queue, so
+  events keep flowing during a large transfer.
+- A fetch asks for at most 4 MiB ahead, in gets of 1 MiB, more as chunks arrive. Chunks come
+  in order for each part; one at an offset the fetch does not wait for is left from a fetch
+  that was cancelled and is dropped. The receiver checks the whole part against its
+  `sha256` before it uses it, and continues from what it has after a reconnect.
+- The receiver's limit decides: by default 100 MiB a copy at home and 25 MiB from a member
+  reached through the group's tunnel (`cbb config max-copy` and `max-copy-away`, 1 MiB to
+  1 GiB). A copy over it is not fetched, and `cbb status` says so.
 
 Ages: a sender adds the time an event waited in its outgoing queue to `age_ms` (saturating at
 the largest int64). A receiver caps `age_ms` at 365 days and turns it into a local time:
@@ -827,8 +902,8 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied`, `clipboard`,
-`injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
+`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices` and `watch` (with
+the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
 the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
@@ -843,7 +918,7 @@ Header fields (all omitted when empty):
 | Field | Type | Meaning |
 |-------|------|---------|
 | `op` | string | the operation |
-| `kind` | string | `text` (default) or `secret` |
+| `kind` | string | `text` (default), `secret`, or `media` for the images or files of a copy |
 | `via` | string | `copy` (default), `phone` or `universal-clipboard`; `iphone` is taken as `phone` |
 | `seq` | integer | order of writes |
 | `ttl_ms` | integer | how long a written secret may stay in the clipboard |
@@ -866,11 +941,15 @@ Header fields (all omitted when empty):
 | `all` | bool | `paste-receive off`: on every device of the group |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
+| `images` | bool | `watch`: the watcher writes images, so the service sends it copies with images as a `write` of kind `media` |
+| `files` | bool | `watch`: the same for copies of files and folders |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
+| `part` | object | `copy-media`'s `part` messages and `paste-media`'s answers: `{type?, path?, dir?, size?}`, a part of images or files without its hash |
+| `value` | string | `config`: the setting's new value |
 
 A connection carries one request: the service reads the first message and dispatches on
 `op`; an unknown `op` fails. Every answer has `op` `reply`. A failure is
@@ -881,7 +960,11 @@ A connection carries one request: the service reads the first message and dispat
 | `op` | Request | Answers |
 |------|---------|---------|
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
-| `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret |
+| `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret, and one that names `cbb paste -o` for images or files without a text |
+| `copy-media` | payload = the plain-text alternative, or none; then for each part `{"op":"part", part}`, followed for a file or clipboard data by `{"op":"data"}` messages whose payloads, at most 1 MiB each, are exactly its `size` bytes; last `{"op":"part", done}` | `{done}`: the parts are in the cache and the copy went to the group as a `media` event (section 4, "Media"), also written to the member's own clipboard. An error when the copy is over this device's limit, its manifest is not valid or the bytes do not come as said. `cbb copy FILE...` reads the files as the user and sends them |
+| `copied-media` | as `copy-media` | as `copy-media`, but a watcher's report that its clipboard changed: the copy goes to the group as an event when the engine decides so (section 5) and is not written back to the member's own clipboard |
+| `paste-media` | none | once every part of the member's own images or files (in mode `own` the group's) is in the cache, fetched first if it is not: `{kind: "media"}` + payload = the plain-text alternative; then for each part `{part}` and its bytes in answers of at most 1 MiB; last `{done}`. An error when the clipboard holds none, or they did not arrive. `cbb paste -o DIR` writes them |
+| `config` | `{name?, value?}`: `max-copy` or `max-copy-away` and a size such as `200MiB` | `{status, done}`, with the setting saved first when `name` is given; `status.media` = `{max_copy, max_copy_away, fetching?, fetched?, from?, failed?}`, in bytes, also in `status` |
 | `status` | none | `{status, done}`; `status` = `{device, group, role, os, holder, peers: [{id, role, os, skew_ms}], unreached?, port, away?, version}`; `unreached` lists the members at home that could not connect to this one and synced only because it dialed them back, `port` is the member port; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
 | `new` | none | `{status, done}`: the device creates a group and is its root (section 10). Only on a device in no group |
 | `pair` | none | first `{code, expires: 300, address}` (the member port at the first private IPv4 address), then `{name: <joined device name>, done}` or an error. Only on the group's root or an admin; elsewhere the error names them. Hanging up closes the window |
@@ -891,7 +974,7 @@ A connection carries one request: the service reads the first message and dispat
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
-| `watch` | `{kind, via, inject?, paste_only?, act?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -914,6 +997,18 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   last one it applied. `ttl_ms` is the secret's remaining lifetime (60 s minus its age, at
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
+- A copy of images or files: a watcher whose watch request set `images` (for a copy with an
+  image) or `files` (for a copy of files and folders) gets, once every part is in the cache,
+  a `write` with `kind` `media` whose payload is the plain-text alternative. It fetches the
+  parts with `paste-media` on a connection of its own and writes the image (with the text
+  next to it) into the clipboard, or saves the files in a new folder of its own and puts
+  their paths there, or writes the text alone when the fetch fails. Other watchers get the
+  plain-text alternative as a `text` write when there is one, and nothing otherwise. A
+  watcher reports a copied image or copied files with `copied-media` on a connection of its
+  own (one `png` or `jpeg` part with the text as the payload, or the files and folders as
+  `cbb copy` sends them, without a text), never as `copied`; a clipboard that holds a text
+  and an image is reported as text, and one that holds files as the files. A newer copy
+  stops a report or a fetch still running.
 - Service to watcher, for a quick action (section 15), only to a watcher whose watch request
   set `act`: `act` (`seq`, `name`, the action, and for an action of the user's own
   `command`, its program by full path and its arguments, as the device's user set them).

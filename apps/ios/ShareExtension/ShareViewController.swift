@@ -8,10 +8,11 @@ import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "share")
 
-/// Share and the text selection menu's Share: sends the text or the link
-/// to the group's computers at home, as the app's Home button sends the
-/// clipboard (docs/apps.md, "Share"). It dials the computers it finds with
-/// the phone's own member key and closes once they have it.
+/// Share and the text selection menu's Share: sends the text, the link, an
+/// image or files to the group's computers at home, as the app's Home
+/// button sends the clipboard (docs/apps.md, "Share"). It dials the
+/// computers it finds with the phone's own member key and closes once they
+/// have it: for an image or files, once they fetched them from the phone.
 final class ShareViewController: UIViewController {
     private let model = ShareModel()
 
@@ -42,12 +43,22 @@ final class ShareModel: ObservableObject {
     @Published var state = State.sending
 
     func send(_ items: [NSExtensionItem]) async {
-        guard let text = await Self.text(of: items), !text.isEmpty else {
-            state = .failed(String(localized: "There is no text to send."))
+        let what: OneShot.What
+        do {
+            if let media = try await Self.media(of: items) {
+                what = media
+            } else if let text = await Self.text(of: items), !text.isEmpty {
+                what = .text(text)
+            } else {
+                state = .failed(String(localized: "There is no text to send."))
+                return
+            }
+        } catch {
+            state = .failed(String(localized: "What you shared is larger than 50 MB, more than Share can carry. Send less at a time."))
             return
         }
         do {
-            try await OneShot.send(text)
+            try await OneShot.send(what)
             state = .sent
         } catch {
             let summary: String
@@ -55,11 +66,60 @@ final class ShareModel: ObservableObject {
             case OneShot.Failure.noGroup: summary = String(localized: "This phone is in no group yet: open Clipboard Bridge to make one or join one.")
             case OneShot.Failure.noKey: summary = String(localized: "Open Clipboard Bridge once, then share again.")
             case OneShot.Failure.noComputers: summary = String(localized: "No computer of your group answered. Are they on, and is this phone on the home network?")
+            case OneShot.Failure.notFetched: summary = String(localized: "The computers did not fetch it within a minute. Try again, or send fewer files.")
             default: summary = String(localized: "Sending failed.")
             }
             let detail = String(reflecting: error)
             log.error("\(summary, privacy: .public) \(detail, privacy: .public)")
             state = .failed(Shared.showsErrorDetails ? summary + "\n\n" + detail : summary)
+        }
+    }
+
+    /// The most an image or files may take together here: the extension
+    /// holds them in its memory, which iOS keeps small.
+    nonisolated static let maxShared = 50 << 20
+
+    struct TooLarge: Error {}
+
+    /// The shared image or files, nil when only a text or a link is shared.
+    /// A single image goes as an image, so a computer can paste it.
+    static func media(of items: [NSExtensionItem]) async throws -> OneShot.What? {
+        let providers = items.flatMap { $0.attachments ?? [] }
+        let isText = { (p: NSItemProvider) in
+            p.hasItemConformingToTypeIdentifier(UTType.url.identifier) && !p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                || p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        }
+        let media = providers.filter { !isText($0) && ($0.hasItemConformingToTypeIdentifier(UTType.image.identifier) || $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)) }
+        guard !media.isEmpty else { return nil }
+        let store = ServedContent()
+        if media.count == 1, media[0].hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+            guard let image = await Images.load(media[0]), image.data.count <= maxShared else { throw TooLarge() }
+            return .media(Content.manifest(store: store.memory, data: [(image.type, image.data)]), store)
+        }
+        var files: [(name: String, bytes: Data)] = []
+        var total = 0
+        for p in media {
+            guard let (name, data) = await file(p) else { continue }
+            total += data.count
+            if total > maxShared { throw TooLarge() }
+            files.append((name, data))
+        }
+        guard !files.isEmpty else { return nil }
+        return .media(Content.files(store: store.memory, files: files), store)
+    }
+
+    /// The name and bytes of a shared file.
+    static func file(_ p: NSItemProvider) async -> (String, Data)? {
+        let type = p.registeredContentTypes.first { $0.conforms(to: .data) } ?? .data
+        let suggested = p.suggestedName
+        return await withCheckedContinuation { c in
+            _ = p.loadFileRepresentation(for: type, openInPlace: false) { url, _, _ in
+                guard let url, let d = try? Data(contentsOf: url) else { return c.resume(returning: nil) }
+                // The suggested name may lack the file's extension.
+                var name = suggested ?? url.lastPathComponent
+                if !url.pathExtension.isEmpty, (name as NSString).pathExtension.isEmpty { name += "." + url.pathExtension }
+                c.resume(returning: (name, d))
+            }
         }
     }
 
@@ -112,19 +172,27 @@ struct ShareView: View {
 /// app does, and hands them the text once one is connected.
 @MainActor
 enum OneShot {
-    enum Failure: Error { case noGroup, noKey, noComputers }
+    enum Failure: Error { case noGroup, noKey, noComputers, notFetched }
+
+    /// What Share sends: a text, or images or files with the store that
+    /// serves them.
+    enum What {
+        case text(String)
+        case media(Media.Manifest, ServedContent)
+    }
 
     /// Holds the dialer for the browser's callback, which comes first.
     private final class DialerRef: @unchecked Sendable { var dialer: MemberDialer? }
 
-    static func send(_ text: String, wait: Duration = .seconds(8)) async throws {
+    static func send(_ what: What, wait: Duration = .seconds(8), fetchWait: Duration = .seconds(60)) async throws {
         guard let g = try PhoneGroup.load(from: Shared.groupFile) else { throw Failure.noGroup }
         guard let key = try KeychainIdentity.loadKey(label: Shared.memberLabel) else { throw Failure.noKey }
         KeychainIdentity.removeCertificates(label: Shared.memberLabel)
         let id = try KeychainIdentity.identity(certificate: g.memberCert, key: key, label: Shared.memberLabel, storeKey: false)
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Member.DeviceInfo(form: UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone",
-                                                        osVersion: UIDevice.current.systemVersion))
+                                                        osVersion: UIDevice.current.systemVersion),
+                              content: { () -> ContentStore? in if case let .media(_, s) = what { return s } else { return nil } }())
         let ref = DialerRef()
         let browser = BonjourBrowser { found in Task { await ref.dialer?.update(found) } }
         let dialer = MemberDialer(node: node, group: g.tag,
@@ -137,14 +205,58 @@ enum OneShot {
             try? await Task.sleep(for: .milliseconds(200))
             online = await node.connected
         }
+        var fetched = true
         if !online.isEmpty {
-            _ = await node.send(text: text, kind: .text)
-            // The event goes out on the connections; give them a moment.
-            try? await Task.sleep(for: .seconds(1))
+            switch what {
+            case let .text(text):
+                _ = await node.send(text: text, kind: .text)
+                // The event goes out on the connections; give them a moment.
+                try? await Task.sleep(for: .seconds(1))
+            case let .media(m, store):
+                _ = await node.send(text: "", kind: .text, media: m)
+                // The computers fetch the parts from this phone.
+                let end = ContinuousClock.now + fetchWait
+                while !store.served(m), ContinuousClock.now < end { try? await Task.sleep(for: .milliseconds(200)) }
+                fetched = store.served(m)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
         }
         await dialer.stop()
         browser.stop()
         await node.closeAll()
         if online.isEmpty { throw Failure.noComputers }
+        if !fetched { throw Failure.notFetched }
+    }
+}
+
+/// The parts Share sends, which notes how far each was read, so the
+/// extension stays until a computer fetched them all.
+final class ServedContent: ContentStore, @unchecked Sendable {
+    let memory = MemoryContent(maxBytes: Int64(ShareModel.maxShared))
+    private let lock = NSLock()
+    private var ends: [Data: Int64] = [:]
+
+    func open(sha256: Data) -> ContentSource? {
+        memory.open(sha256: sha256).map { Source(inner: $0, sum: sha256, store: self) }
+    }
+
+    func note(_ sum: Data, end: Int64) { lock.withLock { ends[sum] = max(ends[sum] ?? 0, end) } }
+
+    /// Whether every part of m with content was read to its end.
+    func served(_ m: Media.Manifest) -> Bool {
+        lock.withLock { m.parts.allSatisfy { p in p.dir || p.size == 0 || p.sha256.map { (ends[$0] ?? 0) >= p.size } == true } }
+    }
+
+    struct Source: ContentSource {
+        let inner: ContentSource
+        let sum: Data
+        let store: ServedContent
+        var size: Int64 { inner.size }
+        func read(offset: Int64, length: Int) throws -> Data {
+            let d = try inner.read(offset: offset, length: length)
+            store.note(sum, end: offset + Int64(length))
+            return d
+        }
+        func close() { inner.close() }
     }
 }

@@ -28,7 +28,14 @@ type Watch struct {
 func NewWatch(b *Board) *Watch { return &Watch{b: b, seen: b.ChangeCount()} }
 
 func item(it Item) connector.Item {
-	return connector.Item{Text: it.Text, Secret: it.Secret, Remote: it.Remote}
+	ci := connector.Item{Text: it.Text, Secret: it.Secret, Remote: it.Remote}
+	if it.ImageType != "" {
+		ci.Image = &connector.Image{Type: it.ImageType, Data: it.Image}
+	}
+	if len(it.Files) > 0 {
+		ci = connector.Item{Files: it.Files}
+	}
+	return ci
 }
 
 // Current returns what the pasteboard holds now.
@@ -79,6 +86,31 @@ func (w *Watch) Next(ctx context.Context) (connector.Item, bool, error) {
 // Write puts a text on the pasteboard.
 func (w *Watch) Write(text string, secret bool) error {
 	change, err := w.b.Write(text, secret)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.own, w.seen = change, change
+	w.mu.Unlock()
+	return nil
+}
+
+// WriteImage puts an image on the pasteboard, with its text, if any.
+func (w *Watch) WriteImage(img connector.Image, text string) error {
+	change, err := w.b.WriteImage(img.Type, img.Data, text)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.own, w.seen = change, change
+	w.mu.Unlock()
+	return nil
+}
+
+// WriteFiles puts files on the pasteboard, as copied in Finder or
+// Explorer.
+func (w *Watch) WriteFiles(paths []string) error {
+	change, err := w.b.WriteFiles(paths)
 	if err != nil {
 		return err
 	}

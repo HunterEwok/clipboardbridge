@@ -77,6 +77,9 @@ public actor MemberNode {
     private let onHubs: @Sendable (String, [Data], Member.HubShare) -> Void
     private let onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)?
     private let onEvidence: @Sendable (String?, [Data], Member.Evidence) -> Void
+    /// The images and files this phone holds whole, which it serves to its
+    /// peers (section 4, "Content"); the hellos say so. nil serves none.
+    private let content: ContentStore?
     /// This phone's sync mode, which the hellos state; nil for a phone
     /// without one, which shares.
     public private(set) var mode: String?
@@ -122,7 +125,8 @@ public actor MemberNode {
     /// serve named the peer by, and returns the result the peer gets;
     /// without it every command is refused; onEvidence gets the evidence a
     /// peer sent (section 17, "Evidence"), with the device ID it was named
-    /// by and its certificate chain.
+    /// by and its certificate chain; content holds the images and files
+    /// this phone serves (section 4, "Content").
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, device: Member.DeviceInfo? = nil,
                 records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
@@ -137,11 +141,13 @@ public actor MemberNode {
                 onHubs: @escaping @Sendable (String, [Data], Member.HubShare) -> Void = { _, _, _ in },
                 mode: String? = nil,
                 onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil,
-                onEvidence: @escaping @Sendable (String?, [Data], Member.Evidence) -> Void = { _, _, _ in }) {
+                onEvidence: @escaping @Sendable (String?, [Data], Member.Evidence) -> Void = { _, _, _ in },
+                content: ContentStore? = nil) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
         (self.tunnelKey, self.tunnelPSK, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, tunnelPSK, onTunnel, hub, os, device?.cleaned)
         (self.hubShare, self.onHubs, self.mode, self.onCommand, self.onEvidence) = (hubShare, onHubs, mode, onCommand, onEvidence)
+        self.content = content
     }
 
     /// Replaces the sync mode that the next connections' hellos state.
@@ -198,6 +204,12 @@ public actor MemberNode {
         var out: [String: Member.DeviceInfo] = [:]
         for c in conns.values { if let p = c.peer, let d = c.device { out[p] = d } }
         return out
+    }
+
+    /// The device IDs of the connected members whose hellos say they serve
+    /// images and files, where the caller of serve named them.
+    public var mediaPeers: [String] {
+        conns.values.compactMap { $0.peerRole != nil && $0.peerMedia ? $0.peer : nil }
     }
 
     /// The sync modes the connected members' hellos report, by device ID
@@ -269,10 +281,12 @@ public actor MemberNode {
         for c in conns.values where c.peer == peer && c.peerRole != nil { c.enqueue(.admin(adminCA)) }
     }
 
-    /// Sends a text this phone copied to every connected member.
+    /// Sends a text this phone copied to every connected member, or with
+    /// media images or files whose content this phone's ContentStore
+    /// holds, text their plain-text alternative.
     @discardableResult
-    public func send(text: String, kind: Member.Kind, via: Member.Via = .phone) -> Member.Event {
-        let e = engine.local(text: text, kind: kind, via: via)
+    public func send(text: String, kind: Member.Kind, via: Member.Via = .phone, media: Media.Manifest? = nil) -> Member.Event {
+        let e = engine.local(text: text, kind: kind, via: via, media: media)
         for c in conns.values { c.enqueue(.event(e)) }
         return e
     }
@@ -293,6 +307,7 @@ public actor MemberNode {
         hello.mode = mode
         // A phone's keys are in the Secure Enclave or the Keystore.
         hello.keyStore = Records.hardware
+        hello.media = content != nil
         c.enqueue(.hello(role, hello))
         let writer = Task { await c.runWriter() }
         let watchdog = Task { await c.runWatchdog() }
@@ -300,6 +315,7 @@ public actor MemberNode {
             conns[id] = nil
             for w in waiting.values where w.conns == [id] { w.waiter.resolve(.failure(Failure.closed)) }
             c.finish()
+            c.endFetches()
             writer.cancel()
             watchdog.cancel()
             t.close()
@@ -321,6 +337,7 @@ public actor MemberNode {
                 c.actions = h.actions
                 c.device = h.device?.cleaned
                 c.mode = h.mode
+                c.peerMedia = h.media
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
@@ -380,10 +397,181 @@ public actor MemberNode {
                     passed[r.id]?.from = nil
                     conns[from]?.enqueue(.result(r))
                 }
+            case let .get(g):
+                try get(g, on: c)
+            case let .missing(g):
+                c.fetching(g.sha256)?.end(Failure.missing)
+            case let .chunk(ch):
+                c.fetching(ch.sha256)?.push(ch)
             case .bye:
                 return
             default:
                 break // a ping, an event that did not decode, or a newer type
+            }
+        }
+    }
+
+    /// Fetches the part whose SHA-256 is sha256 and whose size is size from
+    /// the connected peer, from offset on, and passes each piece to sink in
+    /// order; it returns once the part is complete and throws when the peer
+    /// does not hold it (Failure.missing), the connection ends, or the task
+    /// is cancelled, which cancels it with the peer. It checks nothing of
+    /// the content: the caller hashes what sink got. One fetch of a part
+    /// runs on a connection at a time.
+    public nonisolated func fetch(from peer: String, sha256 sum: Data, size: Int64, offset: Int64 = 0,
+                                  sink: (Int64, Data) throws -> Void) async throws {
+        guard let c = await conn(to: peer) else { throw Failure.notConnected }
+        guard c.peerMedia else { throw Failure.refused("the device serves no images or files") }
+        let f = Fetching()
+        guard c.startFetch(sum, f) else { throw Failure.refused("this part is already being fetched from that device") }
+        defer { c.stopFetch(sum, f) }
+        let cancel = { c.enqueue(.get(Member.Get(sha256: sum, offset: 0, length: 0))) }
+        var at = offset
+        var asked = offset // the end of the ranges asked for
+        func ask() {
+            while asked < size, asked - at < Self.fetchAhead {
+                let l = min(Member.getWindow, size - asked)
+                c.enqueue(.get(Member.Get(sha256: sum, offset: asked, length: l)))
+                asked += l
+            }
+        }
+        ask()
+        while at < size {
+            if Task.isCancelled {
+                cancel()
+                throw CancellationError()
+            }
+            let ch: Member.Chunk
+            do {
+                ch = try await withTaskCancellationHandler { try await f.next() } onCancel: { f.end(CancellationError()) }
+            } catch is CancellationError {
+                cancel()
+                throw CancellationError()
+            }
+            guard !ch.data.isEmpty, ch.offset + Int64(ch.data.count) <= size else {
+                cancel()
+                throw Failure.refused("the device sent a chunk that is not valid")
+            }
+            // Left from a fetch of the part cancelled before: the peer
+            // serves gets in order, so the piece wanted comes later.
+            guard ch.offset == at else { continue }
+            do {
+                try sink(at, ch.data)
+            } catch {
+                cancel()
+                throw error
+            }
+            at += Int64(ch.data.count)
+            ask()
+        }
+    }
+
+    /// The most bytes a fetch keeps asked for ahead of what it has.
+    static let fetchAhead: Int64 = 4 << 20
+    /// The most gets a peer may have waiting on one connection.
+    static let maxGets = 64
+    /// How many chunks a connection holds ready to write.
+    static let chunkQueue = 8
+
+    private func conn(to peer: String) -> Conn? {
+        conns.values.first { $0.peer == peer && $0.peerRole != nil }
+    }
+
+    /// Serves a peer's get: it queues the range for the connection's
+    /// server, or cancels the queued ranges of the part.
+    private func get(_ g: Member.Get, on c: Conn) throws {
+        guard g.isValid else { return } // dropped, as Go does
+        if g.length == 0 {
+            c.cancelGets(g.sha256)
+            return
+        }
+        guard let content, let src = content.open(sha256: g.sha256) else {
+            c.enqueue(.missing(g))
+            return
+        }
+        let size = src.size
+        src.close()
+        guard g.offset < size else {
+            c.enqueue(.missing(g))
+            return
+        }
+        switch c.queueGet(g) {
+        case .tooMany: throw Failure.refused("the peer asks for too much at once")
+        case .queued: break
+        case .start: Task.detached { await Self.serveGets(on: c, from: content) }
+        }
+    }
+
+    /// Reads the ranges the peer asked for, in order, and hands their
+    /// chunks to the writer, until none is left or the connection ends.
+    private static func serveGets(on c: Conn, from content: ContentStore) async {
+        while let (g, cancels) = c.nextGet() {
+            guard let src = content.open(sha256: g.sha256) else {
+                c.enqueue(.missing(g))
+                continue
+            }
+            defer { src.close() }
+            let end = min(src.size, g.offset + g.length)
+            var off = g.offset
+            while off < end, !c.cancelled(g.sha256, since: cancels) {
+                let n = Int(min(Int64(Member.chunkSize), end - off))
+                guard let data = try? src.read(offset: off, length: n) else {
+                    c.enqueue(.missing(g))
+                    break
+                }
+                guard await c.put(chunk: Member.Chunk(sha256: g.sha256, offset: off, data: data)) else { return }
+                off += Int64(n)
+            }
+        }
+    }
+
+    /// A fetch in progress on a connection: the chunks of its part, until
+    /// the peer says it has none or the connection ends.
+    final class Fetching: @unchecked Sendable {
+        private let lock = NSLock()
+        private var chunks: [Member.Chunk] = []
+        private var ended: Error?
+        private var waiter: CheckedContinuation<Void, Never>?
+
+        func push(_ c: Member.Chunk) {
+            wake {
+                // The fetch asks for at most fetchAhead; a peer that sends
+                // much more ends it.
+                if chunks.count > Int(MemberNode.fetchAhead) / Member.chunkSize * 2 {
+                    ended = ended ?? Failure.refused("the device sent chunks nobody asked for")
+                } else {
+                    chunks.append(c)
+                }
+            }
+        }
+
+        func end(_ e: Error) { wake { ended = ended ?? e } }
+
+        private func wake(_ f: () -> Void) {
+            let w: CheckedContinuation<Void, Never>? = lock.withLock {
+                f()
+                defer { waiter = nil }
+                return waiter
+            }
+            w?.resume()
+        }
+
+        func next() async throws -> Member.Chunk {
+            while true {
+                let (c, e): (Member.Chunk?, Error?) = lock.withLock {
+                    if !chunks.isEmpty { return (chunks.removeFirst(), nil) }
+                    return (nil, ended)
+                }
+                if let c { return c }
+                if let e { throw e }
+                await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
+                    let ready = lock.withLock {
+                        if !chunks.isEmpty || ended != nil { return true }
+                        waiter = k
+                        return false
+                    }
+                    if ready { k.resume() }
+                }
             }
         }
     }
@@ -449,7 +637,11 @@ public actor MemberNode {
         if r.changed, let cur = engine.currentEvent { onChange(cur) }
     }
 
-    public enum Failure: Error { case noHello, timedOut, refused(String), notConnected, closed }
+    public enum Failure: Error, Equatable {
+        case noHello, timedOut, refused(String), notConnected, closed
+        /// The peer does not hold the part whole.
+        case missing
+    }
 
     /// A command's result, which comes from the peer, a timeout or the end
     /// of the connection, whichever is first.
@@ -488,7 +680,28 @@ public actor MemberNode {
         let peer: String?
         private let lock = NSLock()
         private var queue: [Member.Message] = []
+        /// The chunks ready to write, which go out only while no message
+        /// waits; a server waits in space while chunkQueue are there.
+        private var chunks: [Member.Chunk] = []
         private var waiter: CheckedContinuation<Void, Never>?
+        private var space: CheckedContinuation<Void, Never>?
+        /// The peer's gets waiting to be served, each with its part's
+        /// cancels when it came, and whether a server runs.
+        private var gets: [(Member.Get, Int)] = []
+        private var serving = false
+        /// The peer's cancels of each part, so that a range queued before a
+        /// cancel ends with its next chunk, while one asked for after it
+        /// goes on.
+        private var cancels: [Data: Int] = [:]
+        /// The fetches of this side waiting for chunks, by their part's
+        /// SHA-256.
+        private var fetches: [Data: Fetching] = [:]
+        /// Whether the peer's hello says it serves content.
+        var peerMedia: Bool {
+            get { lock.withLock { _peerMedia } }
+            set { lock.withLock { _peerMedia = newValue } }
+        }
+        private var _peerMedia = false
         private var done = false
         private var sayBye = false
         private var lastRead = ProcessInfo.processInfo.systemUptime
@@ -541,6 +754,94 @@ public actor MemberNode {
             w?.resume()
         }
 
+        /// Queues a chunk, waiting while chunkQueue wait; it returns false
+        /// once the connection ended.
+        func put(chunk: Member.Chunk) async -> Bool {
+            while true {
+                let (added, isDone): (Bool, Bool) = lock.withLock {
+                    if done { return (false, true) }
+                    if chunks.count < MemberNode.chunkQueue {
+                        chunks.append(chunk)
+                        return (true, false)
+                    }
+                    return (false, false)
+                }
+                if isDone { return false }
+                if added {
+                    let w: CheckedContinuation<Void, Never>? = lock.withLock {
+                        defer { waiter = nil }
+                        return waiter
+                    }
+                    w?.resume()
+                    return true
+                }
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    let ready = lock.withLock {
+                        if done || chunks.count < MemberNode.chunkQueue { return true }
+                        space = c
+                        return false
+                    }
+                    if ready { c.resume() }
+                }
+            }
+        }
+
+        enum Queued { case start, queued, tooMany }
+
+        /// Queues a get for the server; start says to start one.
+        func queueGet(_ g: Member.Get) -> Queued {
+            lock.withLock {
+                guard gets.count < MemberNode.maxGets else { return .tooMany }
+                gets.append((g, cancels[g.sha256] ?? 0))
+                if serving { return .queued }
+                serving = true
+                return .start
+            }
+        }
+
+        /// The next get to serve, or nil when none is left, which ends the
+        /// server.
+        func nextGet() -> (Member.Get, Int)? {
+            lock.withLock {
+                if gets.isEmpty || done {
+                    serving = false
+                    cancels = [:]
+                    return nil
+                }
+                return gets.removeFirst()
+            }
+        }
+
+        /// Drops the queued gets of a part, and ends the one being served.
+        func cancelGets(_ sum: Data) {
+            lock.withLock {
+                gets.removeAll { $0.0.sha256 == sum }
+                if serving { cancels[sum, default: 0] += 1 }
+            }
+        }
+
+        func cancelled(_ sum: Data, since n: Int) -> Bool { lock.withLock { (cancels[sum] ?? 0) != n } }
+
+        func fetching(_ sum: Data) -> Fetching? { lock.withLock { fetches[sum] } }
+
+        func startFetch(_ sum: Data, _ f: Fetching) -> Bool {
+            lock.withLock {
+                if done { f.end(Failure.closed) }
+                guard fetches[sum] == nil else { return false }
+                fetches[sum] = f
+                return true
+            }
+        }
+
+        func stopFetch(_ sum: Data, _ f: Fetching) {
+            lock.withLock { if fetches[sum] === f { fetches[sum] = nil } }
+        }
+
+        /// Ends the fetches waiting on this connection.
+        func endFetches() {
+            for f in lock.withLock({ Array(fetches.values) }) { f.end(Failure.closed) }
+        }
+
         /// Whether this side ended the connection.
         var closing: Bool { lock.withLock { sayBye } }
 
@@ -551,25 +852,32 @@ public actor MemberNode {
         }
 
         func finish() {
-            let w: CheckedContinuation<Void, Never>? = lock.withLock {
+            let (w, s): (CheckedContinuation<Void, Never>?, CheckedContinuation<Void, Never>?) = lock.withLock {
                 done = true
-                defer { waiter = nil }
-                return waiter
+                defer { (waiter, space) = (nil, nil) }
+                return (waiter, space)
             }
             w?.resume()
+            s?.resume()
         }
 
         private func next() async -> Member.Message? {
             while true {
-                let (m, isDone): (Member.Message?, Bool) = lock.withLock {
-                    if !queue.isEmpty { return (queue.removeFirst(), false) }
-                    return (nil, done)
+                let (m, isDone, s): (Member.Message?, Bool, CheckedContinuation<Void, Never>?) = lock.withLock {
+                    if !queue.isEmpty { return (queue.removeFirst(), false, nil) }
+                    if done { return (nil, true, nil) }
+                    if !chunks.isEmpty {
+                        defer { space = nil }
+                        return (.chunk(chunks.removeFirst()), false, space)
+                    }
+                    return (nil, false, nil)
                 }
+                s?.resume()
                 if let m { return m }
                 if isDone { return nil }
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                     let ready = lock.withLock {
-                        if !queue.isEmpty || done { return true }
+                        if !queue.isEmpty || !chunks.isEmpty || done { return true }
                         waiter = c
                         return false
                     }
@@ -613,10 +921,10 @@ public actor MemberNode {
         }
 
         func readMessage() async throws -> Member.Message {
-            let n = try Member.length(header: try await transport.read(exactly: 4))
+            let (n, binary) = try Member.header(try await transport.read(exactly: 4))
             let body = try await transport.read(exactly: n)
             lock.withLock { lastRead = ProcessInfo.processInfo.systemUptime }
-            return try Member.decode(body: body)
+            return binary ? .chunk(try Member.decodeChunk(body: body)) : try Member.decode(body: body)
         }
     }
 }

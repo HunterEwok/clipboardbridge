@@ -15,7 +15,10 @@ import "C"
 
 import (
 	"errors"
+	"strings"
 	"unsafe"
+
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 )
 
 // Supported reports whether this build reaches the pasteboard.
@@ -46,8 +49,12 @@ func (b *Board) Release() {
 // every change of its contents.
 func (b *Board) ChangeCount() int64 { return int64(C.cb_change_count(b.name)) }
 
-// Read returns the pasteboard's item, and false if it holds no text.
+// Read returns the pasteboard's item, and false if it holds no text, image
+// or files.
 func (b *Board) Read() (Item, bool, error) {
+	if it, ok, err := b.readFiles(); ok || err != nil {
+		return it, ok, err
+	}
 	var text *C.char
 	var n C.long
 	var flags C.int
@@ -56,7 +63,7 @@ func (b *Board) Read() (Item, bool, error) {
 	case -1:
 		return Item{}, false, errors.New("pasteboard: out of memory")
 	case 0:
-		return Item{Change: int64(change)}, false, nil
+		return b.readImage(flags)
 	}
 	it := Item{Secret: flags&C.CB_SECRET != 0, Remote: flags&C.CB_REMOTE != 0, Change: int64(change)}
 	if text != nil {
@@ -64,6 +71,93 @@ func (b *Board) Read() (Item, bool, error) {
 		C.free(unsafe.Pointer(text))
 	}
 	return it, true, nil
+}
+
+// readImage returns the pasteboard's image, if it holds no text.
+func (b *Board) readImage(flags C.int) (Item, bool, error) {
+	var data unsafe.Pointer
+	var n C.long
+	var typ C.int
+	var change C.long
+	switch C.cb_read_image(b.name, &data, &n, &typ, &change, C.long(clip.MaxMedia)) {
+	case -1:
+		return Item{}, false, errors.New("pasteboard: out of memory")
+	case -2:
+		return Item{Change: int64(change)}, false, errors.New("pasteboard: the image is larger than the group carries")
+	case 0:
+		return Item{Change: int64(change)}, false, nil
+	}
+	it := Item{Secret: flags&C.CB_SECRET != 0, Remote: flags&C.CB_REMOTE != 0, Change: int64(change), ImageType: clip.TypePNG}
+	if typ == C.CB_JPEG {
+		it.ImageType = clip.TypeJPEG
+	}
+	it.Image = C.GoBytes(data, C.int(n))
+	C.free(data)
+	return it, true, nil
+}
+
+// readFiles returns the pasteboard's files, as the Finder copies them.
+func (b *Board) readFiles() (Item, bool, error) {
+	var paths *C.char
+	var n C.long
+	var change C.long
+	switch C.cb_read_files(b.name, &paths, &n, &change) {
+	case -1:
+		return Item{}, false, errors.New("pasteboard: out of memory")
+	case 0:
+		return Item{}, false, nil
+	}
+	all := C.GoStringN(paths, C.int(n))
+	C.free(unsafe.Pointer(paths))
+	it := Item{Change: int64(change), Files: strings.Split(strings.TrimSuffix(all, "\x00"), "\x00")}
+	return it, true, nil
+}
+
+// WriteFiles puts files on the pasteboard, as the Finder copies them, and
+// returns the new change counter.
+func (b *Board) WriteFiles(paths []string) (int64, error) {
+	if len(paths) == 0 {
+		return 0, errors.New("pasteboard: no files")
+	}
+	var all strings.Builder
+	for _, p := range paths {
+		if strings.IndexByte(p, 0) >= 0 {
+			return 0, errors.New("pasteboard: a path with a NUL")
+		}
+		all.WriteString(p + "\x00")
+	}
+	cp := C.CString(all.String())
+	defer C.free(unsafe.Pointer(cp))
+	change := C.cb_write_files(b.name, cp, C.long(all.Len()))
+	if change < 0 {
+		return 0, errors.New("pasteboard: the files could not be written")
+	}
+	return int64(change), nil
+}
+
+// WriteImage puts an image of a type on the pasteboard, as itself and as a
+// TIFF, with its text, if any, and returns the new change counter.
+func (b *Board) WriteImage(typ string, data []byte, text string) (int64, error) {
+	if len(data) == 0 {
+		return 0, errors.New("pasteboard: an empty image")
+	}
+	t := C.int(C.CB_PNG)
+	switch typ {
+	case clip.TypePNG:
+	case clip.TypeJPEG:
+		t = C.CB_JPEG
+	default:
+		return 0, errors.New("pasteboard: no image of type " + typ)
+	}
+	ct := C.CString(text)
+	defer C.free(unsafe.Pointer(ct))
+	cd := C.CBytes(data)
+	defer C.free(cd)
+	change := C.cb_write_image(b.name, cd, C.long(len(data)), t, ct, C.long(len(text)))
+	if change < 0 {
+		return 0, errors.New("pasteboard: the image could not be written")
+	}
+	return int64(change), nil
 }
 
 // Write puts a text on the pasteboard and returns the new change counter.

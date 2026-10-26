@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- The files the app shares: only an open remote invitation (Invitations.kt). -->
+<!-- The files the app shares: an open remote invitation (Invitations.kt) and the images it received (Images.kt). -->
 <paths>
     <cache-path name="invites" path="invites/" />
+    <cache-path name="received" path="received/" />
 </paths>

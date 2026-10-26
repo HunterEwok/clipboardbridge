@@ -13,6 +13,7 @@ import android.provider.Settings as SystemSettings
 import android.util.Log
 import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
 import io.github.hunterewok.clipboardbridge.kit.Commands
+import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.Discovery
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
 import io.github.hunterewok.clipboardbridge.kit.GroupCertificates
@@ -20,10 +21,12 @@ import io.github.hunterewok.clipboardbridge.kit.HybridClock
 import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.LocalAddresses
+import io.github.hunterewok.clipboardbridge.kit.Media
 import io.github.hunterewok.clipboardbridge.kit.Member
 import io.github.hunterewok.clipboardbridge.kit.MemberDialer
 import io.github.hunterewok.clipboardbridge.kit.MemberListener
 import io.github.hunterewok.clipboardbridge.kit.MemberNode
+import io.github.hunterewok.clipboardbridge.kit.MemoryContent
 import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
 import io.github.hunterewok.clipboardbridge.kit.PairingMember
@@ -163,6 +166,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /** The IDs of the commands carried out, until they expire: the replay cache (docs/protocol.md, section 15). */
     private val commands = mutableMapOf<String, Long>()
+
+    /** The images this phone copied, which the computers fetch from it. */
+    private val content = MemoryContent(maxBytes = 2 * Images.MAX_COPY)
 
     /** The node, read under the lock; its methods are called outside it, as it calls back into the group under its own. */
     private val currentNode: MemberNode? get() = synchronized(lock) { node }
@@ -1021,14 +1027,21 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             renew = ::renew,
             evidence = ::ownEvidence,
             onEvidence = ::evidenceReceived,
+            content = content,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a
             // hello brings it on connecting, would overwrite what the phone
             // copied since.
             // Only in a sync mode that takes the group's copies.
             onChange = { e ->
-                if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS && Member.receives(syncMode)) {
-                    onCopy?.invoke(e.text, e.kind)
+                if (!e.isMark && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS && Member.receives(syncMode)) {
+                    val image = Images.part(e.media)
+                    if (image != null) {
+                        // Fetched off the node's thread, which reads the chunks.
+                        onImage?.let { f -> Thread({ fetchImage(e, image)?.let { f(it, e.text) } }, "image").start() }
+                    } else if (e.text.isNotEmpty()) {
+                        onCopy?.invoke(e.text, e.kind)
+                    }
                 }
             },
             tunnelKey = { if (isHub) null else a.keys },
@@ -1235,14 +1248,37 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * The one button, by SyncRule: given what the phone's clipboard holds
      * now, sends it or returns the text to put there.
      */
-    fun sync(board: String?): Pair<SyncResult, Pair<String, Member.Kind>?> {
+    fun sync(board: Clipboard.Board?): Pair<SyncResult, Got?> {
         val (n, device) = synchronized(lock) { (node ?: throw Failure(Failure.Kind.NO_COMPUTERS)) to (state?.device ?: "") }
-        val usable = n.usable
-        return when (SyncRule.decide(board, n.current, usable, device)) {
-            SyncRule.Action.FETCH -> SyncResult.FETCHED to usable
+        val current = n.current
+        val image = Images.part(current?.media)
+        val files = current?.media?.takeIf { it.isFiles }
+        // An image compares by its hash, a text by itself; files count
+        // until the button saved them once.
+        val usable = when {
+            image != null -> Images.key(image.sha256!!) to Member.Kind.MEDIA
+            files != null -> if (current.id == savedFiles) null else "\u0000files:" + current.id to Member.Kind.MEDIA
+            else -> n.usable
+        }
+        return when (SyncRule.decide(board?.key, current, usable, device)) {
+            SyncRule.Action.FETCH -> {
+                if (files != null) {
+                    if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
+                    val saved = Files.save(context, n, current, files)
+                    savedFiles = current.id
+                    return SyncResult.FETCHED to Got.Files(saved)
+                }
+                if (image == null) return SyncResult.FETCHED to usable?.let { Got.Text(it.first, it.second) }
+                if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
+                val f = fetchImage(current!!, image, quiet = false) ?: throw Failure(Failure.Kind.NO_COMPUTERS)
+                SyncResult.FETCHED to Got.Image(f, current.text)
+            }
             SyncRule.Action.SEND -> {
                 if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
-                n.send(board!!, Member.Kind.TEXT)
+                when (board!!) {
+                    is Clipboard.Board.Text -> n.send(board.text, Member.Kind.TEXT)
+                    is Clipboard.Board.Image -> sendImage(n, board.image)
+                }
                 SyncResult.SENT to null
             }
             SyncRule.Action.NOTHING -> {
@@ -1269,6 +1305,49 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /** Whether a computer is connected now. */
     val online: Boolean get() = currentNode?.connected?.isNotEmpty() == true
 
+    /** What the button fetched for the phone's clipboard: a text, or an image in the app's cache with its text. */
+    sealed class Got {
+        data class Text(val text: String, val kind: Member.Kind) : Got()
+
+        data class Image(val file: File, val alt: String) : Got()
+
+        /** Files saved in Downloads/Clipboard Bridge. */
+        data class Files(val count: Int) : Got()
+    }
+
+    /** The files event the button saved last, so it does not save them again. */
+    @Volatile private var savedFiles: String? = null
+
+    /** Sends what the user shared with the app: an image, or files, which the computers fetch from this phone. */
+    fun sendShared(shared: Files.Shared): SyncResult {
+        val n = currentNode ?: throw Failure(Failure.Kind.NO_COMPUTERS)
+        if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
+        when (shared) {
+            is Files.Shared.Image -> sendImage(n, shared.image)
+            is Files.Shared.Many -> n.send("", Member.Kind.TEXT, media = Content.files(content, shared.files))
+        }
+        return SyncResult.SENT
+    }
+
+    /** Sends an image the phone copied: the computers fetch it from this phone. */
+    private fun sendImage(n: MemberNode, image: Images.Copied) {
+        n.send("", Member.Kind.TEXT, media = Content.manifest(content, listOf(image.type to image.bytes)))
+    }
+
+    /**
+     * Fetches a received image into the app's cache; null, with the reason
+     * in the log, when it cannot, or the error when not quiet.
+     */
+    private fun fetchImage(e: Member.Event, part: Media.Part, quiet: Boolean = true): File? {
+        val n = currentNode ?: return null
+        return try {
+            Images.fetch(context, n, e, part)
+        } catch (x: Exception) {
+            Log.w(TAG, "fetching an image", x)
+            if (quiet) null else throw x
+        }
+    }
+
     /** Sends a text the user shared or selected, unless it is the group's current text already. */
     fun send(text: String): SyncResult {
         val n = currentNode ?: throw Failure(Failure.Kind.NO_COMPUTERS)
@@ -1283,6 +1362,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * phone's clipboard; on the node's thread.
      */
     @Volatile var onCopy: ((String, Member.Kind) -> Unit)? = null
+
+    /** Gets each image a computer copied, fetched into the app's cache, with its text; on a thread of its own. */
+    @Volatile var onImage: ((File, String) -> Unit)? = null
 
     /** Called when an admin changed this phone's sync mode, on the node's thread. */
     @Volatile var onModeChanged: (() -> Unit)? = null

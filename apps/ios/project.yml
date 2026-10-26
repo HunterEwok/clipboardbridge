@@ -55,6 +55,9 @@ targets:
         NSLocalNetworkUsageDescription: Clipboard Bridge finds your computers on the home network and keeps their clipboard in sync with this phone.
         NSCameraUsageDescription: Clipboard Bridge scans the QR code a computer shows, to add it to your group.
         NSFaceIDUsageDescription: Clipboard Bridge asks for Face ID before it signs with your group's key, to add or remove a device.
+        # Files a computer copied, saved by the button, show in the Files app.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge
@@ -74,6 +77,7 @@ targets:
     sources:
       - ShareExtension
       - Shared/Shared.swift
+      - Shared/Images.swift
     dependencies:
       - package: ClipboardBridgeKit
     info:
@@ -91,6 +95,8 @@ targets:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 10
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge.share

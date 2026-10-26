@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Saved in Files, On My iPhone, Clipboard Bridge.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранено в «Файлах»: «На iPhone», Clipboard Bridge."
+          }
+        }
+      }
+    },
+    "Could not get the image from the computers. Copy it there again, then try again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось получить картинку с компьютеров. Скопируйте её там ещё раз и повторите."
+          }
+        }
+      }
+    },
+    "This image is larger than 100 MB, so it stays on the computer.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Картинка больше 100 МБ, поэтому она осталась на компьютере."
+          }
+        }
+      }
+    },
     "%@ is an admin now.": {
       "localizations": {
         "ru": {

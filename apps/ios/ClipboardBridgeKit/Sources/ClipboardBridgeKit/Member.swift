@@ -11,6 +11,21 @@ public enum Member {
     public static let alpn = "clipboardbridge/1"
     /// Frames larger than this close the connection.
     public static let maxFrame = 7 << 20
+    /// The most bytes of a part one chunk carries (section 4, "Content").
+    public static let chunkSize = 256 << 10
+    /// The most bytes one get asks for.
+    public static let getWindow: Int64 = 1 << 20
+    /// A chunk's frame is padded to a multiple of this, so the network
+    /// learns less of the parts' sizes.
+    public static let chunkPad = 16 << 10
+    /// The start of a chunk's frame: the part's SHA-256, the offset and the
+    /// data's length.
+    public static let chunkHead = 32 + 8 + 4
+    /// The largest chunk frame, padding included; a longer one closes the
+    /// connection.
+    public static let maxChunkFrame = (chunkHead + chunkSize + chunkPad - 1) / chunkPad * chunkPad
+    /// The top bit of a frame's length marks a binary chunk frame.
+    static let binaryFrame: UInt32 = 1 << 31
     /// A side that wrote nothing for this long sends a ping.
     public static let pingEvery: TimeInterval = 5
     /// A connection silent for this long is dead.
@@ -23,8 +38,9 @@ public enum Member {
     /// Windows or macOS); its system is the hello's `os`.
     public enum Role: String, Codable, Sendable { case full, phone, lite }
 
-    /// The kind of a text: a secret is kept only briefly (section 5).
-    public enum Kind: String, Codable, Sendable { case text, secret }
+    /// The kind of an event: a secret is kept only briefly (section 5);
+    /// media is images or files, of which the kit takes the text.
+    public enum Kind: String, Codable, Sendable { case text, secret, media }
 
     /// How a text reached the member that made the event.
     public enum Via: String, Codable, Sendable {
@@ -93,13 +109,18 @@ public enum Member {
         /// Milliseconds since the copy, as of the moment the frame is written.
         public var ageMS: Int64
         public var kind: Kind
-        /// The text; "" only in the mark of a secret.
+        /// The text; "" only in the mark of a secret, and in images or files
+        /// without one.
         public var text: String
+        /// The content of a media event, which only it has.
+        public var media: Media.Manifest?
 
-        enum CodingKeys: String, CodingKey { case id, origin, via, time, ageMS = "age_ms", kind, text }
+        enum CodingKeys: String, CodingKey { case id, origin, via, time, ageMS = "age_ms", kind, text, media }
 
-        public init(id: String, origin: String, via: Via = .copy, time: Timestamp, ageMS: Int64 = 0, kind: Kind, text: String) {
+        public init(id: String, origin: String, via: Via = .copy, time: Timestamp, ageMS: Int64 = 0, kind: Kind, text: String,
+                    media: Media.Manifest? = nil) {
             (self.id, self.origin, self.via, self.time, self.ageMS, self.kind, self.text) = (id, origin, via, time, ageMS, kind, text)
+            self.media = media
         }
 
         public init(from decoder: Decoder) throws {
@@ -111,6 +132,7 @@ public enum Member {
             ageMS = try c.decodeIfPresent(Int64.self, forKey: .ageMS) ?? 0
             kind = try c.decode(Kind.self, forKey: .kind)
             text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+            media = try c.decodeIfPresent(Media.Manifest.self, forKey: .media)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -122,6 +144,7 @@ public enum Member {
             try c.encode(ageMS, forKey: .ageMS)
             try c.encode(kind, forKey: .kind)
             try c.encode(text, forKey: .text)
+            try c.encodeIfPresent(media, forKey: .media)
         }
 
         /// Whether it is the mark of a secret: the event without its text.
@@ -140,7 +163,12 @@ public enum Member {
         public var isValid: Bool {
             guard GroupCertificates.isDeviceID(id), GroupCertificates.isDeviceID(origin),
                   !time.isZero, time.wall <= Timestamp.maxWall, ageMS >= 0 else { return false }
-            return isMark || (!text.isEmpty && text.utf8.count <= Member.maxText)
+            if (kind == .media) != (media != nil) { return false }
+            if isMark { return true }
+            if let media {
+                return media.isValid && (text.isEmpty || text.utf8.count <= Media.maxAltText)
+            }
+            return !text.isEmpty && text.utf8.count <= Member.maxText
         }
 
         /// Whether it sorts after f: by time, then by ID, so every member
@@ -187,13 +215,16 @@ public enum Member {
         /// The sender's quick actions that are on, for the buttons
         /// (section 15); empty from a member before 0.6.
         public var actions: [String]
+        /// Whether the sender serves the content of media events (section
+        /// 4, "Content").
+        public var media: Bool
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
                     adminKey: Data? = nil, tunnelKey: Data? = nil, tunnelPSK: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil,
-                    keyStore: String? = nil, actions: [String] = []) {
+                    keyStore: String? = nil, actions: [String] = [], media: Bool = false) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
-            (self.tunnelPSK, self.device, self.mode, self.keyStore, self.actions) = (tunnelPSK, device, mode, keyStore, actions)
+            (self.tunnelPSK, self.device, self.mode, self.keyStore, self.actions, self.media) = (tunnelPSK, device, mode, keyStore, actions, media)
         }
     }
 
@@ -442,6 +473,36 @@ public enum Member {
     }
 
     /// One message of the protocol.
+    /// A range of a part of images or files, by its SHA-256 (section 4,
+    /// "Content"); length 0 cancels the sender's gets of the part.
+    public struct Get: Codable, Equatable, Sendable {
+        public var sha256: Data
+        public var offset: Int64
+        public var length: Int64
+
+        public init(sha256: Data, offset: Int64, length: Int64) { (self.sha256, self.offset, self.length) = (sha256, offset, length) }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sha256 = try c.decodeIfPresent(Data.self, forKey: .sha256) ?? Data()
+            offset = try c.decodeIfPresent(Int64.self, forKey: .offset) ?? 0
+            length = try c.decodeIfPresent(Int64.self, forKey: .length) ?? 0
+        }
+
+        /// Whether a server takes it: a 32-byte hash and a range of at most
+        /// getWindow.
+        public var isValid: Bool { sha256.count == 32 && offset >= 0 && (0...Member.getWindow).contains(length) }
+    }
+
+    /// A piece of a part, in a binary frame.
+    public struct Chunk: Equatable, Sendable {
+        public var sha256: Data
+        public var offset: Int64
+        public var data: Data
+
+        public init(sha256: Data, offset: Int64, data: Data) { (self.sha256, self.offset, self.data) = (sha256, offset, data) }
+    }
+
     public enum Message: Equatable, Sendable {
         case hello(Role, Hello)
         /// An event; nil when it did not decode, for example from a newer
@@ -470,6 +531,13 @@ public enum Member {
         case result(CommandResult)
         /// An attestation of one of the sender's keys (section 17).
         case evidence(Evidence)
+        /// Asks for a range of a part the receiver serves.
+        case get(Get)
+        /// Answers a get for a part the sender does not hold whole, and
+        /// ends that fetch.
+        case missing(Get)
+        /// A piece of a part, in a binary frame.
+        case chunk(Chunk)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -478,8 +546,10 @@ public enum Member {
         case tooLarge, short, notAMessage, badHello(String)
     }
 
-    /// Encodes a message as a frame: the length, then the JSON.
+    /// Encodes a message as a frame: the length, then the JSON, or for a
+    /// chunk its binary frame.
     public static func encode(_ m: Message) throws -> Data {
+        if case let .chunk(c) = m { return try encode(chunk: c) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         let body = try enc.encode(WireOut(m))
@@ -496,6 +566,47 @@ public enum Member {
         return n
     }
 
+    /// The length a member frame's header announces and whether it is a
+    /// binary chunk frame, or an error when too large for its kind.
+    public static func header(_ header: Data) throws -> (length: Int, binary: Bool) {
+        guard header.count == 4 else { throw WireError.short }
+        let n = header.reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+        if n & binaryFrame != 0 {
+            let l = Int(n & ~binaryFrame)
+            guard l <= maxChunkFrame else { throw WireError.tooLarge }
+            return (l, true)
+        }
+        guard n <= maxFrame else { throw WireError.tooLarge }
+        return (Int(n), false)
+    }
+
+    /// The frame of a chunk: the binary length, the part's SHA-256, the
+    /// offset and the data's length, the data, and zeros up to a multiple
+    /// of chunkPad.
+    public static func encode(chunk c: Chunk) throws -> Data {
+        guard c.sha256.count == 32, c.data.count <= chunkSize, c.offset >= 0 else { throw WireError.notAMessage }
+        let padded = (chunkHead + c.data.count + chunkPad - 1) / chunkPad * chunkPad
+        var f = Data(capacity: 4 + padded)
+        func put<T: FixedWidthInteger>(_ v: T) { withUnsafeBytes(of: v.bigEndian) { f.append(contentsOf: $0) } }
+        put(UInt32(padded) | binaryFrame)
+        f.append(c.sha256)
+        put(UInt64(c.offset))
+        put(UInt32(c.data.count))
+        f.append(c.data)
+        f.append(Data(count: 4 + padded - f.count))
+        return f
+    }
+
+    /// Reads the body of a chunk frame.
+    public static func decodeChunk(body: Data) throws -> Chunk {
+        let b = [UInt8](body)
+        guard b.count >= chunkHead else { throw WireError.short }
+        let offset = b[32..<40].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        let n = Int(b[40..<44].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
+        guard offset <= UInt64(Int64.max), n <= chunkSize, chunkHead + n <= b.count else { throw WireError.notAMessage }
+        return Chunk(sha256: Data(b[0..<32]), offset: Int64(offset), data: Data(b[chunkHead..<(chunkHead + n)]))
+    }
+
     /// Decodes the body of a frame. A hello whose role is unknown or whose
     /// hello object does not decode is an error; an event that does not
     /// decode is .event(nil).
@@ -509,7 +620,8 @@ public enum Member {
                                       os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, tunnelPSK: h.tunnel_psk, device: h.device?.value,
                                       mode: h.mode.flatMap { modes.contains($0) ? $0 : nil },
                                       keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware ? $0 : nil },
-                                      actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions))))
+                                      actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions)),
+                                      media: h.media ?? false))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -521,6 +633,8 @@ public enum Member {
         case "command": return w.command?.value.map { .command($0) } ?? .unknown(w.t)
         case "result": return w.result?.value.map { .result($0) } ?? .unknown(w.t)
         case "evidence": return w.evidence?.value.map { .evidence($0) } ?? .unknown(w.t)
+        case "get": return w.get?.value.map { .get($0) } ?? .unknown(w.t)
+        case "missing": return w.get?.value.map { .missing($0) } ?? .unknown(w.t)
         default: return .unknown(w.t)
         }
     }
@@ -545,6 +659,7 @@ public enum Member {
         var mode: String?
         var key_store: String?
         var actions: Lenient<[String]>?
+        var media: Bool?
     }
 
     struct WireIn: Decodable {
@@ -561,14 +676,15 @@ public enum Member {
         var command: Lenient<Record>?
         var result: Lenient<CommandResult>?
         var evidence: Lenient<Evidence>?
+        var get: Lenient<Get>?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence, get }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, media }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -589,6 +705,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.mode, forKey: .mode)
                 try hc.encodeIfPresent(h.keyStore, forKey: .key_store)
                 if !h.actions.isEmpty { try hc.encode(h.actions, forKey: .actions) }
+                if h.media { try hc.encode(true, forKey: .media) }
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)
@@ -619,6 +736,14 @@ public enum Member {
             case let .evidence(e):
                 try c.encode("evidence", forKey: .t)
                 try c.encode(e, forKey: .evidence)
+            case let .get(g):
+                try c.encode("get", forKey: .t)
+                try c.encode(g, forKey: .get)
+            case let .missing(g):
+                try c.encode("missing", forKey: .t)
+                try c.encode(g, forKey: .get)
+            case .chunk:
+                throw WireError.notAMessage // a binary frame
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }

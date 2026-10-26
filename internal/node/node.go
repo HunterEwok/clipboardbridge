@@ -17,6 +17,7 @@ package node
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -68,6 +69,10 @@ type Config struct {
 	// hello for the others to show.
 	Device group.DeviceInfo
 	Engine *clip.Engine
+	// Content, if set, holds the images and files this member serves;
+	// the hello then says it serves content, and Fetch works with peers
+	// that do.
+	Content Content
 
 	// OnWrite puts a text into this member's own clipboard. Writes carry
 	// growing sequence numbers; a write with a smaller one than the last
@@ -163,12 +168,23 @@ type RecordStore interface {
 	Settle(fresh []group.Record)
 }
 
-// Write is a text to put into the member's own clipboard.
+// Write is a text, or images or files, to put into the member's own
+// clipboard.
 type Write struct {
 	Text string
 	Kind clip.Kind
 	Via  clip.Via
 	Seq  uint64
+	// Media, with Kind clip.Media, is the content to fetch first, with
+	// the event's ID and origin; Text is its plain-text alternative.
+	Media  *clip.Manifest
+	ID     string
+	Origin group.DeviceID
+}
+
+// write makes the Write of an event.
+func write(ev *clip.Event, seq uint64) Write {
+	return Write{Text: ev.Text, Kind: ev.Kind, Via: ev.Via, Seq: seq, Media: ev.Media, ID: ev.ID, Origin: group.DeviceID(ev.Origin)}
 }
 
 // Peer is a connected member.
@@ -194,7 +210,9 @@ type Peer struct {
 	KeyStore string
 	// Actions are the quick actions its hello says are on.
 	Actions []string
-	Since   time.Duration // uptime when the connection started
+	// Media tells that its hello says it serves content.
+	Media bool
+	Since time.Duration // uptime when the connection started
 	// Local is this end's address of the connection; invalid when it is
 	// not an IP connection.
 	Local netip.Addr
@@ -329,6 +347,7 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 		return errors.New("node: the peer's certificate was not verified")
 	}
 	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: chain[0], peerChain: chain, out: make(chan outgoing, queueLen),
+		chunks: make(chan chunk, chunkQueue), fetches: make(map[[sha256.Size]byte]*fetching),
 		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
 	defer close(c.finished)
 
@@ -407,9 +426,34 @@ func (n *Node) Send(text string, kind clip.Kind, via clip.Via) error {
 	}
 	n.forward(ev, nil)
 	if res.Write {
-		n.cfg.OnWrite(Write{Text: ev.Text, Kind: ev.Kind, Via: ev.Via, Seq: res.Seq})
+		n.cfg.OnWrite(write(&ev, res.Seq))
 	}
 	return nil
+}
+
+// SendMedia makes a media event from a deliberate action, whose content
+// the caller put in Content first, as Send does a text.
+func (n *Node) SendMedia(m *clip.Manifest, text string, via clip.Via) error {
+	ev, res, err := n.cfg.Engine.SendMedia(m, text, via)
+	if err != nil {
+		return err
+	}
+	n.forward(ev, nil)
+	if res.Write {
+		n.cfg.OnWrite(write(&ev, res.Seq))
+	}
+	return nil
+}
+
+// CopiedMedia passes images or files that a clipboard watcher reported,
+// whose content the caller put in Content first, as Copied does a text.
+func (n *Node) CopiedMedia(m *clip.Manifest, text string, via clip.Via) (bool, error) {
+	ev, ok, err := n.cfg.Engine.CopiedMedia(m, text, via)
+	if err != nil || !ok {
+		return false, err
+	}
+	n.forward(ev, nil)
+	return true, nil
 }
 
 // Rejoin tells the engine that the member was away: the service started, or
@@ -494,11 +538,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode, store, acts := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions
+			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Since: c.since, Local: local.Addr().Unmap()})
+				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -887,8 +931,7 @@ func (n *Node) apply(res clip.Result, from *conn) {
 	}
 	n.forward(*res.Forward, from)
 	if res.Write {
-		ev := res.Forward
-		n.cfg.OnWrite(Write{Text: ev.Text, Kind: ev.Kind, Via: ev.Via, Seq: res.Seq})
+		n.cfg.OnWrite(write(res.Forward, res.Seq))
 	}
 }
 
@@ -915,6 +958,13 @@ type conn struct {
 	peerChain []*x509.Certificate
 	since     time.Duration
 	out       chan outgoing
+	// chunks are the chunks of content ready to write, which go out only
+	// while out is empty; serving is the peer's gets, fetches the fetches
+	// of this member that wait for chunks, by their part's SHA-256.
+	chunks  chan chunk
+	serving serving
+	fetchMu sync.Mutex
+	fetches map[[sha256.Size]byte]*fetching
 	// lowerDialed says the member with the lower device ID dialed it.
 	lowerDialed bool
 
@@ -932,6 +982,7 @@ type conn struct {
 	peerMode     string   // the sync mode its hello reports; "" when none or unknown
 	peerKeyStore string   // where its hello says its keys live; "" when it says neither
 	peerActions  []string // the quick actions its hello says are on
+	peerMedia    bool     // its hello says it serves content
 	certSent     bool     // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
@@ -954,6 +1005,8 @@ type outgoing struct {
 	result  *Result           // the answer to the peer's command
 	hubs    *HubShare         // what this hub shares with the peer
 	evid    *Evidence         // an attestation of this member's key
+	get     *Get              // asks the peer for content
+	missing *Get              // tells the peer this member lacks what it asked for
 	queued  time.Duration
 }
 
@@ -1084,6 +1137,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if c.n.cfg.Actions != nil {
 			out.Actions = c.n.cfg.Actions()
 		}
+		out.Media = c.n.cfg.Content != nil
 		if d := c.n.cfg.Device.Clean(); !d.IsZero() {
 			out.Device = &d
 		}
@@ -1131,6 +1185,10 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeHubs, Hubs: o.hubs}, nil
 	case o.evid != nil:
 		return &message{Type: typeEvid, Evidence: o.evid}, nil
+	case o.get != nil:
+		return &message{Type: typeGet, Get: o.get}, nil
+	case o.missing != nil:
+		return &message{Type: typeMissing, Get: o.missing}, nil
 	case o.phoneCA != nil:
 		key, err := x509.MarshalPKCS8PrivateKey(o.phoneCA.Key)
 		if err != nil {
@@ -1151,12 +1209,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 func (c *conn) writer() {
 	ping := time.NewTimer(c.n.cfg.PingEvery)
 	defer ping.Stop()
-	write := func(m *message, deadline bool) bool {
-		f, err := frame(m)
-		if err != nil {
-			c.n.cfg.Logf("node: to %s: %v", c.id, err)
-			return true // drop this one message
-		}
+	put := func(f []byte, deadline bool) bool {
 		if deadline {
 			c.setDeadline(false, time.Now().Add(c.n.cfg.Timeout+transferTime(len(f))))
 		}
@@ -1169,6 +1222,15 @@ func (c *conn) writer() {
 		}
 		ping.Reset(c.n.cfg.PingEvery)
 		return true
+	}
+	writeFrame := func(f []byte) bool { return put(f, true) }
+	write := func(m *message, deadline bool) bool {
+		f, err := frame(m)
+		if err != nil {
+			c.n.cfg.Logf("node: to %s: %v", c.id, err)
+			return true // drop this one message
+		}
+		return put(f, deadline)
 	}
 	send := func(o outgoing, deadline bool) bool {
 		m, err := c.message(o)
@@ -1204,9 +1266,22 @@ func (c *conn) writer() {
 			return
 		default:
 		}
+		// Content goes only while no other message waits.
 		select {
 		case o := <-c.out:
 			if !send(o, true) {
+				return
+			}
+			continue
+		default:
+		}
+		select {
+		case o := <-c.out:
+			if !send(o, true) {
+				return
+			}
+		case ch := <-c.chunks:
+			if !writeFrame(encodeChunk(ch)) {
 				return
 			}
 		case <-ping.C:
@@ -1263,6 +1338,7 @@ func (c *conn) reader() error {
 					c.peerActions = append(c.peerActions, a)
 				}
 			}
+			c.peerMedia = extra.Media
 			c.peerMode = ""
 			if _, err := clip.ParseMode(extra.Mode); err == nil {
 				c.peerMode = extra.Mode
@@ -1353,6 +1429,16 @@ func (c *conn) reader() error {
 			if m.Result != nil {
 				c.n.result(c.id, m.Result)
 			}
+		case typeGet:
+			if m.Get != nil {
+				c.get(*m.Get)
+			}
+		case typeMissing:
+			if m.Get != nil {
+				c.gotMissing(*m.Get)
+			}
+		case typeChunk:
+			c.received(*m.chunk)
 		case typeBye:
 			return nil
 		}

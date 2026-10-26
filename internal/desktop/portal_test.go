@@ -101,6 +101,28 @@ func (f *fakePortal) server() *eitest.Server {
 // bus's address.
 func startPortal(t *testing.T, version uint32) (*fakePortal, string) {
 	t.Helper()
+	addr := startBus(t)
+	conn, err := dbus.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	f := &fakePortal{t: t, conn: conn}
+	if err := conn.Export(f, portalPath, portalRemote); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prop.Export(conn, portalPath, prop.Map{portalRemote: {"version": {Value: version}}}); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := conn.RequestName(portalBus, dbus.NameFlagDoNotQueue); err != nil || r != dbus.RequestNameReplyPrimaryOwner {
+		t.Fatalf("taking the portal's name: %v %v", r, err)
+	}
+	return f, addr
+}
+
+// startBus runs a private session bus and returns its address.
+func startBus(t *testing.T) string {
+	t.Helper()
 	if _, err := exec.LookPath("dbus-daemon"); err != nil {
 		t.Skip("no dbus-daemon")
 	}
@@ -120,23 +142,7 @@ func startPortal(t *testing.T, version uint32) (*fakePortal, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	addr = strings.TrimSpace(addr)
-	conn, err := dbus.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	f := &fakePortal{t: t, conn: conn}
-	if err := conn.Export(f, portalPath, portalRemote); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := prop.Export(conn, portalPath, prop.Map{portalRemote: {"version": {Value: version}}}); err != nil {
-		t.Fatal(err)
-	}
-	if r, err := conn.RequestName(portalBus, dbus.NameFlagDoNotQueue); err != nil || r != dbus.RequestNameReplyPrimaryOwner {
-		t.Fatalf("taking the portal's name: %v %v", r, err)
-	}
-	return f, addr
+	return strings.TrimSpace(addr)
 }
 
 func openPortal(t *testing.T, addr string) *portal {

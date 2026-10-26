@@ -8,6 +8,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import kotlinx.coroutines.MainScope
@@ -55,6 +56,11 @@ open class SendActivity : Activity() {
         val model = (application as ClipboardBridgeApp).model
         val text = sharedText(intent)
         val app = launchedBy()
+        val streams = if (text == null) sharedStreams(intent) else emptyList()
+        if (streams.isNotEmpty()) {
+            if (app != null && app in model.settings.allowedApps) sendStreams(streams) else askStreams(streams, app)
+            return
+        }
         when {
             app != null && app in model.settings.allowedApps -> send(text)
             // The launcher entry, from the home screen or Quick Tap.
@@ -95,6 +101,39 @@ open class SendActivity : Activity() {
             .show()
     }
 
+    /** Asks whether to send the images or files another app handed over. */
+    private fun askStreams(streams: List<Uri>, app: String?) {
+        val model = (application as ClipboardBridgeApp).model
+        var answered = false
+        val name = app?.let { label(it) } ?: getString(R.string.share_unknown_app)
+        val b = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(R.string.share_files_title)
+            .setMessage(getString(R.string.share_files_body, name, streams.size))
+            .setPositiveButton(R.string.share_allow) { _, _ ->
+                answered = true
+                sendStreams(streams)
+            }
+        if (app != null) {
+            b.setNeutralButton(R.string.share_always) { _, _ ->
+                answered = true
+                model.settings.allowedApps = model.settings.allowedApps + app
+                sendStreams(streams)
+            }
+        }
+        b.setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { if (!answered) finish() }
+            .show()
+    }
+
+    private fun sendStreams(streams: List<Uri>) {
+        val model = (application as ClipboardBridgeApp).model
+        scope.launch {
+            val note = model.sendShared(streams)
+            Toast.makeText(this@SendActivity, getString(note.text), Toast.LENGTH_LONG).show()
+            finish()
+        }
+    }
+
     /**
      * The package of the app that opened this activity, as Android recorded
      * it; null when the intent names a referrer itself, which any app may
@@ -133,6 +172,14 @@ open class SendActivity : Activity() {
     companion object {
         fun intent(context: Context): Intent =
             Intent(context, SendActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+
+        /** The images or files of Share, by their content URIs. */
+        @Suppress("DEPRECATION") // the typed getters are API 33+
+        fun sharedStreams(intent: Intent?): List<Uri> = when (intent?.action) {
+            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+            else -> emptyList()
+        }
 
         /** The text of Share or of the selection menu; null to use the clipboard. */
         fun sharedText(intent: Intent?): String? = when (intent?.action) {

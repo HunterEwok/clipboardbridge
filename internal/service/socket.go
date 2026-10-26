@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"slices"
@@ -77,6 +78,29 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
+	case control.OpCopyMedia, control.OpCopiedMedia:
+		if err := s.copyMedia(c, r, m); err != nil {
+			fail(c, err)
+			// Read what the client still sends before closing: closing a
+			// socket with unread data resets it, and on Windows the reset
+			// drops the reply before the client reads it.
+			c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			io.Copy(io.Discard, c)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
+	case control.OpPasteMedia:
+		if err := s.pasteMedia(ctx, c); err != nil {
+			fail(c, err)
+		}
+	case control.OpConfig:
+		if m.Name != "" {
+			if err := s.setConfig(m.Name, m.Value); err != nil {
+				fail(c, err)
+				return
+			}
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpPaste:
 		e := s.engine()
 		if e == nil {
@@ -85,6 +109,10 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		}
 		text, kind, ok := pasteText(e)
 		if !ok {
+			if hasMedia(e) {
+				fail(c, errors.New("the clipboard holds images or files without a text; cbb paste -o DIR saves them"))
+				return
+			}
 			fail(c, errors.New("the clipboard is empty"))
 			return
 		}
@@ -299,6 +327,7 @@ func (s *Service) status() *control.Status {
 	st.Away = s.awayStatus()
 	st.Paste = s.pasteStatusLocked()
 	st.Actions = s.actionStatus()
+	st.Media = s.mediaStatus()
 	return st
 }
 
@@ -807,6 +836,8 @@ type watcher struct {
 	inject    string       // the target it offers for remote paste; "" for none
 	pasteOnly bool         // it holds no clipboard, whatever its target
 	act       bool         // it runs the quick actions in its session
+	images    bool         // its clipboard takes and gives images
+	files     bool         // and files
 	injects   chan *inject // remote pastes for it
 }
 
@@ -815,6 +846,15 @@ type watcher struct {
 // copies.
 func (w *watcher) board() bool {
 	return !w.pasteOnly && w.inject != targetTmux && w.inject != targetConsole
+}
+
+// takes says whether the watcher's clipboard takes the copy m whole:
+// files, or an image.
+func (w *watcher) takes(m *clip.Manifest) bool {
+	if m.Files() {
+		return w.files
+	}
+	return w.images && imageCopy(m)
 }
 
 // send queues a write. A watcher that does not keep up loses its oldest
@@ -845,7 +885,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	default:
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
-	w.pasteOnly, w.act = m.PasteOnly, m.Act
+	w.pasteOnly, w.act, w.images, w.files = m.PasteOnly, m.Act, m.Images, m.Files
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -942,7 +982,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			// The clipboard will hold this text. A report that came in
 			// after the engine decided on it, such as the watch request
 			// itself, must not leave the engine thinking otherwise.
-			if e := s.engine(); e != nil {
+			if e := s.engine(); e != nil && wr.Kind != clip.Media {
 				if text, _, _, ok := e.Local(); !ok || text != wr.Text {
 					e.ClipboardIs(wr.Text, wr.Kind)
 				}

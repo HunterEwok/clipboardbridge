@@ -4,13 +4,16 @@
 package io.github.hunterewok.clipboardbridge
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import androidx.core.content.FileProvider
 import io.github.hunterewok.clipboardbridge.kit.Member
 import io.github.hunterewok.clipboardbridge.kit.SyncEngine
+import java.io.File
 
 /**
  * The phone's clipboard. Android lets an app read it only while the app has
@@ -44,11 +47,26 @@ object Clipboard {
      */
     class Unreadable(detail: String, cause: Throwable? = null) : Exception(detail, cause)
 
+    /** What the button found on the clipboard: a text, or an image as the group carries it. */
+    sealed class Board {
+        data class Text(val text: String) : Board()
+
+        class Image(val image: Images.Copied) : Board()
+
+        /** What the button compares with the group's copy. */
+        val key: String
+            get() = when (this) {
+                is Text -> text
+                is Image -> image.key
+            }
+    }
+
     /**
-     * The text on the clipboard for the button, or null when it is empty;
-     * throws Unreadable when it holds something else.
+     * What is on the clipboard for the button, or null when it is empty;
+     * throws Unreadable when it holds something else. An image is read
+     * whole, so call it off the main thread.
      */
-    fun readForSync(context: Context): String? {
+    fun readForSync(context: Context): Board? {
         val cm = context.getSystemService(ClipboardManager::class.java)
         val clip = try {
             cm.primaryClip
@@ -56,9 +74,39 @@ object Clipboard {
             throw Unreadable("the clipboard could not be read", e)
         } ?: return null
         if (clip.itemCount == 0) return null
-        clip.getItemAt(0).text?.let { return it.toString() }
+        val item = clip.getItemAt(0)
         val d = clip.description
+        val uri = item.uri
+        val type = uri?.let { u -> runCatching { context.contentResolver.getType(u) }.getOrNull() }
+            ?: (0 until d.mimeTypeCount).map { d.getMimeType(it) }.firstOrNull { it.startsWith("image/") }
+        if (uri != null && type != null && type.startsWith("image/")) {
+            val image = try {
+                context.contentResolver.openInputStream(uri)?.let { Images.read(type, it) }
+            } catch (e: Exception) {
+                throw Unreadable("the image on the clipboard could not be read", e)
+            } ?: throw Unreadable("the image on the clipboard is too large or not one Android can read: $type")
+            return Board.Image(image)
+        }
+        item.text?.let { return Board.Text(it.toString()) }
         throw Unreadable("items=${clip.itemCount} types=${(0 until d.mimeTypeCount).map { d.getMimeType(it) }}")
+    }
+
+    /**
+     * Puts a received image on the clipboard, through the app's
+     * FileProvider, so the app the user pastes into may read it; alt, its
+     * plain-text alternative, goes with it.
+     */
+    fun writeImage(context: Context, file: File, alt: String) {
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val type = if (file.extension == "png") "image/png" else "image/jpeg"
+        val clip = if (alt.isEmpty()) {
+            ClipData(ClipDescription("clipboardbridge", arrayOf(type)), ClipData.Item(uri))
+        } else {
+            ClipData(ClipDescription("clipboardbridge", arrayOf(type, ClipDescription.MIMETYPE_TEXT_PLAIN)), ClipData.Item(alt, null, uri))
+        }
+        cm.setPrimaryClip(clip)
+        changed()
     }
 
     /**

@@ -5,6 +5,7 @@ package node
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/tls"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,7 +34,8 @@ func TestSwiftMemberTLS(t *testing.T) {
 	if tool == "" {
 		t.Skip("CBB_SWIFT_INTEROP_TLS names no clipboardbridge-interop binary")
 	}
-	server := newMember(t, Full)
+	var store memContent
+	server := newMember(t, Full, withContent(&store))
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +101,39 @@ func TestSwiftMemberTLS(t *testing.T) {
 		fail("peers %+v, want the phone", p)
 	}
 	if err := server.Send("from go", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	if p := server.Peers(); len(p) != 1 || !p[0].Media {
+		fail("the phone's hello does not say it serves content")
+	}
+	// A picture each way: the phone fetches Go's and sends its bytes
+	// reversed, which Go fetches from the phone.
+	png := random(t, 300<<10+5)
+	part := store.put(png)
+	part.Type = clip.TypePNG
+	if err := server.SendMedia(&clip.Manifest{Size: part.Size, Parts: []clip.Part{part}}, "go picture", clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	var w Write
+	for timeout := time.After(15 * time.Second); w.Text != "phone picture"; {
+		select {
+		case w = <-server.writes:
+		case <-timeout:
+			fail("the phone sent no picture")
+		}
+	}
+	if w.Media == nil || len(w.Media.Parts) != 1 || w.Media.Parts[0].Type != clip.TypePNG {
+		fail("the phone's picture %+v", w)
+	}
+	got, err := fetchAll(context.Background(), server, &member{id: &group.Identity{ID: phoneID}}, w.Media.Parts[0], 0)
+	if err != nil {
+		fail("fetching the phone's picture: %v", err)
+	}
+	slices.Reverse(got)
+	if !bytes.Equal(got, png) {
+		fail("the phone's picture is not Go's reversed")
+	}
+	if err := server.Send("done", clip.Text, clip.Copy); err != nil {
 		t.Fatal(err)
 	}
 	if !lines.Scan() || lines.Text() != "ok" {

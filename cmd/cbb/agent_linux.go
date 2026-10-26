@@ -38,7 +38,7 @@ func runDesktop(ctx context.Context, logf func(string, ...any), stderr io.Writer
 		} else {
 			failures, backoff = 0, time.Second
 			logf("cbb: linked the clipboard through %s", how)
-			err = connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: b, Commands: true, Logf: logf})
+			err = connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: b, Commands: true, Files: receivedFiles(), Logf: logf})
 			b.Close()
 			if err == nil || !errors.Is(err, connector.ErrBoardGone) {
 				return 0
