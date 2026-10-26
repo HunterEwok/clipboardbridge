@@ -170,6 +170,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     var renaming by remember { mutableStateOf(false) }
     var choosingMode by remember { mutableStateOf(false) }
     var pasting by remember { mutableStateOf(false) }
+    var acting by remember { mutableStateOf(false) }
     if (choosingMode) ModeChoice(d, dismiss = { choosingMode = false }) { mode -> scope.launch { model.setMode(d.id, mode) } }
     // Every phone sets its own sync mode; an admin sets any other device's.
     if (!model.isAdmin) {
@@ -200,6 +201,11 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             HorizontalDivider(color = palette.line)
             Action("⌨", stringResource(R.string.paste_on_it)) { pasting = true }
         }
+        // Computers run quick actions; the lite member reboots and restarts.
+        if (!d.isSelf && d.online && (d.role == "full" || d.role == "lite")) {
+            HorizontalDivider(color = palette.line)
+            Action("⚡", stringResource(R.string.quick_actions)) { acting = true }
+        }
         if (!d.isSelf) {
             HorizontalDivider(color = palette.line)
             Action("✕", stringResource(R.string.remove), danger = true) { removing = true }
@@ -222,6 +228,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
     if (pasting) PasteOn(model, d, dismiss = { pasting = false })
+    if (acting) QuickActions(model, d, dismiss = { acting = false })
     if (renaming) Rename(d, dismiss = { renaming = false }) { name -> scope.launch { model.rename(d.id, name) } }
     if (thawing) {
         Confirm(
@@ -279,6 +286,91 @@ private fun PasteOn(model: AppModel, d: LiveGroup.Device, dismiss: () -> Unit) {
         titleContentColor = palette.text,
         textContentColor = palette.textDim,
     )
+}
+
+/** The title of a quick action: the presets in words, the user's own by name. */
+@Composable
+private fun actionTitle(name: String): String = when (name) {
+    "lock" -> stringResource(R.string.action_lock)
+    "sleep" -> stringResource(R.string.action_sleep)
+    "reboot" -> stringResource(R.string.action_reboot)
+    "shutdown" -> stringResource(R.string.action_shutdown)
+    "cancel-shutdown" -> stringResource(R.string.action_cancel)
+    "restart" -> stringResource(R.string.action_restart)
+    else -> name
+}
+
+/**
+ * The quick actions a computer's hello says are on (docs/protocol.md,
+ * section 15): one tap runs one, reboot and shut down ask again. The
+ * computer defines each; its user turns them on there, and any admin turns
+ * them all off from here.
+ */
+@Composable
+private fun QuickActions(model: AppModel, d: LiveGroup.Device, dismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var sending by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<String?>(null) }
+    var off by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { model.message = null }
+    fun run(name: String) {
+        sending = true
+        scope.launch {
+            val done = model.runAction(d.id, name)
+            sending = false
+            if (done) dismiss()
+        }
+    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.quick_actions_title, d.name)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (d.actions.isEmpty()) Text(stringResource(R.string.quick_actions_none, d.name))
+                for (a in d.actions) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !sending, role = Role.Button) {
+                            if (a == "reboot" || a == "shutdown") confirming = a else run(a)
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) { Text(actionTitle(a), color = palette.text) }
+                }
+                Text(stringResource(R.string.quick_actions_note), style = MaterialTheme.typography.bodySmall)
+                model.message?.takeIf { !sending }?.let { NoteText(it, dim = true) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !sending, onClick = { off = true }) { Text(stringResource(R.string.actions_off), color = palette.danger) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+        containerColor = palette.surface,
+        titleContentColor = palette.text,
+        textContentColor = palette.textDim,
+    )
+    confirming?.let { a ->
+        Confirm(
+            title = stringResource(R.string.action_confirm_title, actionTitle(a), d.name),
+            body = stringResource(R.string.action_confirm_body),
+            action = actionTitle(a),
+            dismiss = { confirming = null },
+        ) { run(a) }
+    }
+    if (off) {
+        Confirm(
+            title = stringResource(R.string.actions_off_title, d.name),
+            body = stringResource(R.string.actions_off_body),
+            action = stringResource(R.string.actions_off),
+            dismiss = { off = false },
+        ) {
+            sending = true
+            scope.launch {
+                val done = model.actionsOff(d.id)
+                sending = false
+                if (done) dismiss()
+            }
+        }
+    }
 }
 
 /** What the clipboard holds as text; the app may read it while it is in front. */

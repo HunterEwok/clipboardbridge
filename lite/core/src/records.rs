@@ -49,7 +49,7 @@ pub const COMMAND_AHEAD_MS: i64 = 60_000;
 pub struct Command {
     #[serde(default)]
     v: i64,
-    /// `mode`, `hub`, `paste` or `paste-off`.
+    /// `mode`, `hub`, `paste`, `paste-off`, `action` or `actions-off`.
     #[serde(rename = "type", default)]
     pub kind: String,
     #[serde(default)]
@@ -81,6 +81,23 @@ pub struct Command {
     /// In a paste command: the text.
     #[serde(default)]
     pub text: String,
+    /// In an action command: the name of the action, which the receiver
+    /// defines.
+    #[serde(default)]
+    pub action: String,
+}
+
+/// The longest name of a quick action.
+pub const MAX_ACTION_NAME: usize = 32;
+
+/// Whether name may name a quick action, as Go's ValidActionName: 1 to
+/// MAX_ACTION_NAME of a-z, 0-9 and -, starting with a letter.
+pub fn valid_action_name(name: &str) -> bool {
+    let b = name.as_bytes();
+    !b.is_empty()
+        && b.len() <= MAX_ACTION_NAME
+        && b[0].is_ascii_lowercase()
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
 }
 
 impl Command {
@@ -96,14 +113,26 @@ impl Command {
         if paste && self.kind != "paste" {
             return Err(Error::msg(format!("a {} command carries a paste", self.kind)));
         }
+        if self.kind != "action" && !self.action.is_empty() {
+            return Err(Error::msg(format!("a {} command names an action", self.kind)));
+        }
         match self.kind.as_str() {
             "mode" if self.mode.is_empty() || hub => return Err(Error::msg("a mode command names no mode")),
             "hub" if !hub || !self.mode.is_empty() => return Err(Error::msg("a hub command has no order")),
-            "paste-off" if hub || !self.mode.is_empty() => {
-                return Err(Error::msg("a paste-off command carries an order"));
+            "paste-off" | "actions-off" if hub || !self.mode.is_empty() => {
+                return Err(Error::msg(format!("a {} command carries an order", self.kind)));
+            }
+            "action" if hub || !self.mode.is_empty() => {
+                return Err(Error::msg("an action command carries an order"));
+            }
+            "action" if !valid_action_name(&self.action) => {
+                return Err(Error::msg(format!(
+                    "an action command's name {:?} is not 1 to {MAX_ACTION_NAME} of a-z, 0-9 and -, starting with a letter",
+                    self.action
+                )));
             }
             "paste" => self.check_paste(hub)?,
-            "mode" | "hub" | "paste-off" => {}
+            "mode" | "hub" | "paste-off" | "action" | "actions-off" => {}
             k => return Err(Error::msg(format!("unknown command type {k:?}"))),
         }
         if !certs::is_id(&self.to) {
@@ -178,6 +207,9 @@ struct Body {
     role: String,
     #[serde(default)]
     os: String,
+    /// Where the device's keys live: `file`, `hardware` or `proven`.
+    #[serde(default)]
+    store: String,
     #[serde(with = "b64::opt_hash", default)]
     key: Option<KeyHash>,
     #[serde(with = "b64::opt_hash", default)]
@@ -206,6 +238,17 @@ fn role(r: &str) -> &str {
         "linux" | "mac" => "full",
         "iphone" => "shortcut",
         r => r,
+    }
+}
+
+/// Where a device of role keeps its keys, as its record's store says, as
+/// Go's StoreOf: a record without one is from before the field, when a
+/// phone's keys were in hardware and every other device's in a file.
+pub fn store_of<'a>(store: &'a str, role: &str) -> &'a str {
+    match store {
+        "file" | "hardware" | "proven" => store,
+        _ if role == "phone" => "hardware",
+        _ => "file",
     }
 }
 
@@ -292,7 +335,11 @@ pub struct Device {
     /// Its operating system; empty when its record does not tell.
     pub os: String,
     pub key: KeyHash,
+    /// Where its keys live (store_of).
+    pub store: String,
     pub admin: bool,
+    /// The admin CA its record names, whether or not it still counts.
+    pub admin_key: Option<KeyHash>,
     /// An admin computer another admin froze: no admin, and refused.
     pub frozen: bool,
     /// Every key that a counting device record names for it and that is
@@ -971,7 +1018,9 @@ impl Records {
                 role: role(&r.body.role).to_string(),
                 os: os_of(&r.body).to_string(),
                 key: r.body.key.unwrap(),
+                store: store_of(&r.body.store, role(&r.body.role)).to_string(),
                 admin: r.body.admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
+                admin_key: r.body.admin,
                 frozen: self.frozen(&r.body.key.unwrap()) || r.body.admin.is_some_and(|a| self.frozen(&a)),
                 keys: keys.remove(id).unwrap_or_default(),
             })
@@ -1077,6 +1126,30 @@ impl Records {
             return Err(Error::msg("the command was signed in the future; check the clocks of both devices"));
         }
         Ok(body)
+    }
+
+    /// The device whose admin key signed the command c, which
+    /// verify_command took, as Go's CommandSigner: the device that holds
+    /// the group's root when the root's own key signed it (the bool is
+    /// true), or the device whose record names the admin CA that did. None
+    /// when no listed device holds the key, as for an admin phone whose own
+    /// record is not here yet.
+    pub fn command_signer(&self, c: &Record) -> (Option<Device>, bool) {
+        let Ok((signer, anchor)) = self.signer_of(c) else { return (None, false) };
+        let root = signer == anchor;
+        let id = if root {
+            match self.root_member() {
+                Some((id, _)) => Some(id),
+                None => return (None, true),
+            }
+        } else {
+            None
+        };
+        let d = self.devices().into_iter().find(|d| match &id {
+            Some(id) => &d.id == id,
+            None => d.admin_key == Some(signer),
+        });
+        (d, root)
     }
 
     /// The devices that may be the group's hubs, in the order in which

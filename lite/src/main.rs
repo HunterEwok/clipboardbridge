@@ -6,6 +6,7 @@
 //! dials the computers, joins by QR code through the
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
+mod actions;
 mod away;
 mod control;
 mod device;
@@ -67,6 +68,13 @@ Commands:
                        the group's admins may put a text into tmux, or with
                        -console into the active text console, here (-enter:
                        and press Enter after it).
+  action [enable NAME [-by root,phone,computer] [-any-key] [-yes] |
+         disable NAME | off]
+                       Show the quick actions here, or turn one on or off
+                       for the group's admins: reboot (a minute later, and
+                       only for keys in hardware unless -any-key),
+                       cancel-shutdown and restart. enable, with sudo, writes
+                       the polkit rule that lets the service reboot.
   paste-helper tmux|console
                        The paste targets: tmux starts the one for tmux, the
                        clipboardbridge-console unit the one for the console.
@@ -129,6 +137,7 @@ fn main() {
                 "watch" => cmd_watch(&g, rest),
                 "mode" => cmd_mode(&g, rest),
                 "paste-receive" => cmd_paste_receive(&g, rest),
+                "action" => cmd_action(&g, rest),
                 "paste-helper" => pastehelper::run(&g.socket, rest),
                 "version" | "-version" | "--version" => {
                     println!(
@@ -615,6 +624,141 @@ fn paste_line(p: &control::Paste) -> String {
         return format!("{line} Nothing here can paste yet: the tmux and console helpers do it.");
     }
     line.into()
+}
+
+const ACTION_USAGE: &str =
+    "usage: cbb action [enable NAME [-by root,phone,computer] [-any-key] [-yes] | disable NAME | off]";
+
+/// cbb action: shows this device's quick actions and sets them, as on a
+/// full member (docs/design.md, "Quick actions"). Enabling says what it lets
+/// the group's admins do and asks first; for reboot, as root, it writes the
+/// polkit rule that lets the service ask logind, and disabling takes it
+/// back.
+fn cmd_action(g: &Global, args: &[String]) -> Result<()> {
+    let usage = || Error::msg(ACTION_USAGE);
+    let (verb, name) = match args {
+        [] => {
+            let m = request(
+                g,
+                &control::Message::new(control::Header { op: "status".into(), ..Default::default() }, Vec::new()),
+            )?;
+            let st = m.header.status.ok_or_else(|| Error::msg("this device is in no group"))?;
+            for a in &st.actions {
+                println!("{:<16} {}", a.name, action_line(a));
+            }
+            return Ok(());
+        }
+        [v] if v == "off" => {
+            let m = request(
+                g,
+                &control::Message::new(control::Header { op: "actions-off".into(), ..Default::default() }, Vec::new()),
+            )?;
+            // The rights go too, when this runs as root here.
+            if let Err(e) = grant(&m)
+                && is_root()
+            {
+                eprintln!("cbb: the actions are off, but the rights stay: {}", e.for_user());
+            }
+            println!("The quick actions are off here.");
+            return Ok(());
+        }
+        [v, name, ..] if v == "enable" || v == "disable" => (v.as_str(), name.clone()),
+        _ => return Err(usage()),
+    };
+    let mut a = control::Action { name, on: verb == "enable", ..Default::default() };
+    let mut yes = false;
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        match flag(arg) {
+            Some("by") if a.on => a.by = actions::parse_kinds(rest.next().ok_or_else(usage)?)?,
+            Some("any-key") if a.on => a.any_key = true,
+            Some("yes") if a.on => yes = true,
+            _ => return Err(usage()),
+        }
+    }
+    if !actions::PRESETS.contains(&a.name.as_str()) {
+        return Err(Error::msg(format!(
+            "this device has no action {:?}: the lite member has reboot, cancel-shutdown and restart",
+            a.name
+        )));
+    }
+    if a.on && !yes {
+        print!("{}Type yes to turn it on: ", action_warning(&a));
+        std::io::stdout().flush().ok();
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).context("cannot read the answer")?;
+        if !line.trim().eq_ignore_ascii_case("yes") {
+            println!("Nothing changed.");
+            return Err(Error::msg("the action stays as it was"));
+        }
+    }
+    let h = control::Header { op: "action-set".into(), actions: vec![a.clone()], ..Default::default() };
+    let m = request(g, &control::Message::new(h, Vec::new()))?;
+    if let Err(e) = grant(&m) {
+        if a.on {
+            // Without the right the action would only fail; leave it off.
+            let off = control::Action { on: false, ..a.clone() };
+            let h = control::Header { op: "action-set".into(), actions: vec![off], ..Default::default() };
+            let _ = request(g, &control::Message::new(h, Vec::new()));
+        }
+        return Err(e.context(format!("giving the service the right to {}", a.name)));
+    }
+    println!("{}: {}.", a.name, action_line(&a));
+    Ok(())
+}
+
+/// Writes or removes the polkit rule for the actions a status says are on.
+fn grant(m: &control::Message) -> Result<()> {
+    let on: Vec<String> =
+        m.header.status.iter().flat_map(|s| &s.actions).filter(|a| a.on).map(|a| a.name.clone()).collect();
+    actions::grant(std::path::Path::new("/"), &on).map(|_| ())
+}
+
+fn is_root() -> bool {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    unsafe { libc::geteuid() == 0 }
+}
+
+/// How an action stands and who may run it, as on a full member.
+fn action_line(a: &control::Action) -> String {
+    if !a.on {
+        return "off".into();
+    }
+    let mut who = if a.by.is_empty() { "every admin".to_string() } else { a.by.join(", ") };
+    if actions::hardware_by_default(&a.name) && !a.any_key {
+        who += ", keys in hardware only";
+    }
+    format!("on, for {who}")
+}
+
+/// What turning a on lets the group's admins do, and the rights it grants
+/// here.
+fn action_warning(a: &control::Action) -> String {
+    let what = match a.name.as_str() {
+        actions::REBOOT => "reboot this device, a minute after they ask",
+        actions::CANCEL => "cancel a reboot that is pending",
+        _ => "restart the Clipboard Bridge service here",
+    };
+    let mut who = if a.by.is_empty() {
+        "the group's admins".to_string()
+    } else {
+        format!("the group's admins of the kinds {}", a.by.join(", "))
+    };
+    if actions::hardware_by_default(&a.name) && !a.any_key {
+        who += " whose keys are in hardware (phones, computers with the key in a TPM)";
+    }
+    let mut s = format!("Turning {} on lets {who} {what}, from wherever they are in the group.\n", a.name);
+    let rights = actions::rights(std::slice::from_ref(&a.name));
+    if !rights.is_empty() {
+        s += "It gives the Clipboard Bridge service these rights, in a polkit rule, and no others:\n";
+        for r in rights {
+            s += &format!("  {r}\n");
+        }
+        if !is_root() {
+            s += "Writing the rule needs root: run this with sudo.\n";
+        }
+    }
+    s + "Any admin can turn it off from afar, and only you turn it on again.\n\n"
 }
 
 /// What a user agrees to before the lite member, whose keys sit in files,

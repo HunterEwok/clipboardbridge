@@ -52,7 +52,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   them a locked session.
 - `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
   on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
-  rule); `internal/service/actions.go` takes `action` and `actions-off` commands.
+  rule, `session_darwin.go` and `session_windows.go` in the agent); `internal/service/actions.go`
+  takes `action` and `actions-off` commands and hands the presets to the agent on a Mac and Windows.
 - `internal/remotepaste`: remote paste on a member (the user's switches, cleaning the text, the
   limits per sender, the log); `internal/service/paste.go` takes `paste` commands and hands
   them to the watchers that offer a target.

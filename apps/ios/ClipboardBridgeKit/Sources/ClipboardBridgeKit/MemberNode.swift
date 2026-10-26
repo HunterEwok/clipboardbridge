@@ -175,6 +175,14 @@ public actor MemberNode {
         return out
     }
 
+    /// The quick actions the connected members' hellos say are on, by
+    /// device ID, where the caller of serve named them.
+    public var actions: [String: [String]] {
+        var out: [String: [String]] = [:]
+        for c in conns.values { if let p = c.peer, !c.actions.isEmpty { out[p] = c.actions } }
+        return out
+    }
+
     /// Where the connected members' hellos say their keys live, by device
     /// ID, where the caller of serve named them.
     public var keyStores: [String: String] {
@@ -310,6 +318,7 @@ public actor MemberNode {
                 if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
                 c.adminKey = h.adminKey
                 c.keyStore = h.keyStore
+                c.actions = h.actions
                 c.device = h.device?.cleaned
                 c.mode = h.mode
                 c.peerRole = peerRole
@@ -501,6 +510,12 @@ public actor MemberNode {
             set { lock.withLock { _keyStore = newValue } }
         }
         private var _keyStore: String?
+        /// The quick actions the peer's hello says are on.
+        var actions: [String] {
+            get { lock.withLock { _actions } }
+            set { lock.withLock { _actions = newValue } }
+        }
+        private var _actions: [String] = []
         /// What the peer's hello says about its device.
         var device: Member.DeviceInfo? {
             get { lock.withLock { _device } }

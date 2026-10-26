@@ -111,6 +111,8 @@ final class LiveGroup: GroupController {
     private var infos: [String: Member.DeviceInfo] = [:]
     /// The sync modes the connected members' hellos report.
     private var modes: [String: String] = [:]
+    /// The quick actions the connected members' hellos say are on.
+    private var actions: [String: [String]] = [:]
     /// This phone's own sync mode and the commands it took.
     let modeBox: ModeBox
 
@@ -194,7 +196,8 @@ final class LiveGroup: GroupController {
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
                   canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil,
                   keysInFile: Records.store(keyStores[$0.id] ?? $0.store, role: $0.role) == Records.file, frozen: $0.frozen,
-                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: $0.id == g.device ? modeBox.mode : modes[$0.id])
+                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: $0.id == g.device ? modeBox.mode : modes[$0.id],
+                  actions: actions[$0.id] ?? [])
         }
     }
 
@@ -202,6 +205,7 @@ final class LiveGroup: GroupController {
         online = await node?.connected ?? []
         infos = await node?.devices ?? [:]
         modes = await node?.modes ?? [:]
+        actions = await node?.actions ?? [:]
         offers = await node?.offeredAdminKeys ?? [:]
         keyStores = await node?.keyStores ?? [:]
     }
@@ -581,6 +585,31 @@ final class LiveGroup: GroupController {
         // The computer waits 5 s for its target, and 5 ms more for each typed byte.
         let wait = 10 + (method == "type" ? Double(text.utf8.count) * 0.005 : 0)
         let r = try await node.command(c, to: id, timeout: wait, via: true)
+        if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
+    }
+
+    /// Runs a quick action on a device (docs/protocol.md, section 15): an
+    /// action command, signed with this phone's root or admin key after Face
+    /// ID, names it; the device defines what it does and runs it only when
+    /// its user turned it on there.
+    func runAction(_ id: String, name: String) async throws {
+        guard let node else { throw MemberNode.Failure.notConnected }
+        let ca = try await caSigner(reason: String(localized: "Run a quick action", bundle: .app))
+        guard let g = state else { return }
+        let c = try g.actionCommand(to: id, name: name, caSigner: ca, now: Date())
+        // A preset may take 20 s to start, and an own action runs up to 15 s.
+        let r = try await node.command(c, to: id, timeout: 25, via: true)
+        if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
+    }
+
+    /// Turns every quick action off on a device; only its user turns them
+    /// on again.
+    func actionsOff(_ id: String) async throws {
+        guard let node else { throw MemberNode.Failure.notConnected }
+        let ca = try await caSigner(reason: String(localized: "Run a quick action", bundle: .app))
+        guard let g = state else { return }
+        let c = try g.actionsOffCommand(to: id, caSigner: ca, now: Date())
+        let r = try await node.command(c, to: id, via: true)
         if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 

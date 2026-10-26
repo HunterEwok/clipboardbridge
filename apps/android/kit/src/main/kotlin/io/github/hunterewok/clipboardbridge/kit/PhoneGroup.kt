@@ -273,6 +273,22 @@ class PhoneGroup internal constructor(
     }
 
     /**
+     * An action command that runs the quick action name on the member to,
+     * signed with this phone's root or admin key; the member defines what
+     * it does.
+     */
+    fun actionCommand(to: String, name: String, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        return Commands.action(to, name, tag, device, now, caSigner, adminCA)
+    }
+
+    /** An actions-off command that turns every quick action off on the member to. */
+    fun actionsOffCommand(to: String, caSigner: CertificateSigner, now: Instant): Member.Record {
+        if (!isAdmin) throw Failure("this phone is no admin")
+        return Commands.actionsOff(to, tag, device, now, caSigner, adminCA)
+    }
+
+    /**
      * A hub command that makes the admin computer to the group's hub in
      * place of this phone (docs/protocol.md, section 11, "Moving the hub"),
      * signed with this phone's root or admin key, with the hub's clients

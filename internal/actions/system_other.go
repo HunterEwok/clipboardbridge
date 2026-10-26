@@ -5,27 +5,15 @@
 
 package actions
 
-import (
-	"context"
-	"fmt"
-	"runtime"
-)
+// System returns the runner of this system, or nil where the presets run in
+// the signed-in user's session, through the agent (Session): on a Mac and
+// on Windows the service's own user has no right to lock, sleep or shut
+// down.
+func System() Runner { return nil }
 
-// System returns the runner of this system. The Mac and Windows run the
-// presets from the app and the agent, which come next; until then they
-// refuse every preset but restart.
-func System() Runner { return unsupported{} }
-
-type unsupported struct{}
-
-func (unsupported) Run(_ context.Context, name string) error {
-	return &Refusal{Reason: fmt.Sprintf("this version of Clipboard Bridge runs %s on Linux only, not on %s", name, runtime.GOOS)}
-}
-
-// Rights lists what the presets in on need on this system: nothing here
-// yet.
+// Rights lists what the presets in on need on this system beyond what the
+// signed-in user has: nothing here.
 func Rights(on []string) []string { return nil }
 
-// Grant gives the service the rights the presets in on need: nothing here
-// yet.
+// Grant gives the service the rights the presets in on need: nothing here.
 func Grant(on []string) (string, error) { return "", nil }

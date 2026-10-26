@@ -373,6 +373,54 @@ fn go_commands() {
     }
 }
 
+/// A lite member's hello names the quick actions that are on there, and
+/// leaves the field out when none is.
+#[test]
+fn hello_actions() {
+    let h = crate::clip::Hello { wall: 1, current: None };
+    let on = ["reboot".to_string(), "restart".to_string()];
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &on);
+    let (_, body) = wire::decode_hello(m.hello.as_ref()).unwrap();
+    assert_eq!(body.actions, on);
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &[]);
+    assert!(m.hello.unwrap().get("actions").is_none());
+}
+
+/// Quick action commands (docs/protocol.md, section 15), as Go's
+/// TestGoActionVectors writes them: which ones a member takes, and the
+/// signer each names, whose kind and keys the member's user may require.
+#[test]
+fn go_actions() {
+    let v = vectors("go-actions.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let (_, errs) = s.add_all(&records(&v["records"]));
+    assert!(errs.is_empty(), "{errs:?}");
+    let me = v["self"].as_str().unwrap();
+    let now = v["now_ms"].as_i64().unwrap();
+    let cs = v["commands"].as_array().unwrap();
+    assert_eq!(cs.len(), 6);
+    for c in cs {
+        let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
+        let got = s.verify_command(&r, me, now);
+        let name = c["name"].as_str().unwrap();
+        assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{name}: {got:?}");
+        let Ok(b) = got else { continue };
+        assert_eq!(b.action, c["action"].as_str().unwrap_or(""), "{name}");
+        let (d, root) = s.command_signer(&r);
+        let want = &c["signer"];
+        assert_eq!(root, want["root"].as_bool().unwrap_or(false), "{name}");
+        assert_eq!(d.is_some(), want["found"].as_bool().unwrap_or(false), "{name}");
+        if let Some(d) = d {
+            assert_eq!(d.role, want["role"].as_str().unwrap(), "{name}");
+            assert_eq!(d.store, want["store"].as_str().unwrap(), "{name}");
+        }
+    }
+    for (n, ok) in [("lock", true), ("a1-b", true), ("1a", false), ("Lock", false), ("", false), ("a_b", false)] {
+        assert_eq!(crate::records::valid_action_name(n), ok, "{n:?}");
+    }
+    assert!(crate::records::valid_action_name(&"a".repeat(32)) && !crate::records::valid_action_name(&"a".repeat(33)));
+}
+
 /// The signed files of a release (docs/protocol.md, section 16), as Go's
 /// TestReleaseVectors writes them: which combinations a device takes.
 #[test]

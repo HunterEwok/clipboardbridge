@@ -9,13 +9,16 @@
 package actions
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -60,6 +63,47 @@ type Action struct {
 	// action that hardware alone runs by default (reboot and shut down)
 	// takes only signers whose keys are in hardware.
 	AnyKey bool `json:"any_key,omitempty"`
+	// Command is the program and its arguments of the user's own action,
+	// which the agent runs as the user signed in; empty for a preset.
+	Command []string `json:"command,omitempty"`
+}
+
+// MaxOwn is how many actions of their own a device's user may add.
+const MaxOwn = 32
+
+// CommandWait bounds how long the agent waits for an action's program to
+// end, inside the service's wait for the result.
+const CommandWait = 15 * time.Second
+
+// CheckOwn says why name and command cannot be an action of the user's
+// own, or nil: a name that is not a preset, and a program by its full path,
+// so that nothing in PATH or a shell decides what runs.
+func CheckOwn(name string, command []string) error {
+	switch {
+	case !group.ValidActionName(name):
+		return fmt.Errorf("%q is not an action's name: 1 to %d of a-z, 0-9 and -, starting with a letter", name, group.MaxActionName)
+	case IsPreset(name):
+		return fmt.Errorf("%s is a preset; give your own action another name", name)
+	case len(command) == 0:
+		return errors.New("an action of your own needs a command: cbb action add NAME -- PROGRAM ARGS")
+	case !filepath.IsAbs(command[0]):
+		return fmt.Errorf("give the program by its full path, not %q", command[0])
+	}
+	return nil
+}
+
+// RunCommand runs an action's program, without a shell, and waits for it
+// up to CommandWait; only its exit status comes back.
+func RunCommand(ctx context.Context, command []string) error {
+	ctx, cancel := context.WithTimeout(ctx, CommandWait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s ran longer than %v; an action starts longer work in the background", filepath.Base(command[0]), CommandWait)
+	}
+	return err
 }
 
 // HardwareByDefault reports whether only admins with keys in hardware run
@@ -103,6 +147,30 @@ func Save(dir string, s Settings) error {
 		return err
 	}
 	return atomicfile.Write(filepath.Join(dir, settingsFile), append(b, '\n'), 0o600)
+}
+
+// Has reports whether this device has the action name: a preset, or one
+// of its user's own.
+func (s Settings) Has(name string) bool {
+	return IsPreset(name) || slices.ContainsFunc(s.Actions, func(a Action) bool { return a.Name == name })
+}
+
+// Own lists the user's own actions.
+func (s Settings) Own() []Action {
+	var out []Action
+	for _, a := range s.Actions {
+		if len(a.Command) > 0 {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Remove takes the user's own action name away.
+func (s *Settings) Remove(name string) bool {
+	n := len(s.Actions)
+	s.Actions = slices.DeleteFunc(s.Actions, func(a Action) bool { return a.Name == name && len(a.Command) > 0 })
+	return len(s.Actions) != n
 }
 
 // Get returns the action name: as its user set it, or off.

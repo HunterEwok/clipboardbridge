@@ -360,6 +360,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member before 0.5, which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 | `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
+| `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
 
 ### Device
 
@@ -821,8 +822,8 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied`, `clipboard`
-and `injected`) and refuses every other operation with an error; the admin socket takes them
+`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied`, `clipboard`,
+`injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
 the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
@@ -860,7 +861,9 @@ Header fields (all omitted when empty):
 | `all` | bool | `paste-receive off`: on every device of the group |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
-| `refused` | bool | `injected`: the target refused, rather than failed |
+| `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
+| `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
+| `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
 
@@ -883,7 +886,7 @@ A connection carries one request: the service reads the first message and dispat
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
-| `watch` | `{kind, via, inject?, paste_only?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `watch` | `{kind, via, inject?, paste_only?, act?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -906,6 +909,15 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   last one it applied. `ttl_ms` is the secret's remaining lifetime (60 s minus its age, at
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
+- Service to watcher, for a quick action (section 15), only to a watcher whose watch request
+  set `act`: `act` (`seq`, `name`, the action, and for an action of the user's own
+  `command`, its program by full path and its arguments, as the device's user set them).
+  The watcher runs it in its session, a `command` without a shell and for at most 15 s, and
+  answers `acted` with the same `seq`, as `injected` below: no `error` when it did, or
+  `error` (and `detail`), with `refused` when it would not. On a Mac and on Windows the
+  service's own user has no right to lock, sleep or shut down, so the service hands the
+  presets to the agent of the user signed in, waiting up to 20 s; on Linux it asks logind
+  itself.
 - Service to watcher, for remote paste, only to a watcher whose watch request named an
   `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, and `name`, the
   sender's device name). The watcher checks
@@ -1941,7 +1953,9 @@ An `action` command carries only the action's name: what it does is defined on t
 which knows the presets `lock` (lock the screen), `sleep`, `reboot` and `shutdown` (both a
 minute after the command, so that `cancel-shutdown` can stop them), `cancel-shutdown` and
 `restart` (the service ends and its service manager starts it again, after the result is
-sent). The receiver refuses it unless its user turned that action on there, and then:
+sent), and the actions its user added there, each a program with fixed arguments that the
+agent of the user signed in runs; nothing in the command reaches its arguments, and only
+the exit status comes back. The receiver refuses it unless its user turned that action on there, and then:
 
 - unless the signer is of a kind the user allowed for it, when the user named kinds: `root`
   (the root's own key signed it), `phone` or `computer` (the role of the signer's device, the
@@ -1954,8 +1968,8 @@ It answers `done` when the system took the action (a reboot that is scheduled co
 `refused` with the reason (the action is off, the signer is not allowed, the system refused
 it) or `failed`, and keeps the last 100 actions in a log (sender, time, action, result). An
 `actions-off` command turns every action off on the receiver, keeping who may run each; only
-the device's own user turns them on again. A member before 0.6 refuses both as an unknown
-type.
+the device's own user turns them on again. The lite member knows only `reboot`,
+`cancel-shutdown` and `restart`. A member before 0.6 refuses both as an unknown type.
 
 
 ## 16. Signed releases

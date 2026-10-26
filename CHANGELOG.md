@@ -120,7 +120,22 @@ All notable changes to clipboardbridge are documented in this file. The format f
   polkit rule for logind that it needs, and nothing more. Reboot and shutdown take only admins
   whose keys are in hardware unless the user allows keys in files. Limits per sender and a log
   of the last 100, as for remote paste; `cbb action off -on DEVICE` or `-all` turns them off
-  from afar. Linux runs every preset; a Mac and Windows only `restart` for now.
+  from afar. Linux runs them through logind; a Mac and Windows through the agent of the user
+  signed in (`pmset` and loginwindow's Apple events on a Mac, where the minute before a
+  reboot is the agent's; `LockWorkStation`, `SetSuspendState` and `InitiateSystemShutdownEx`
+  on Windows, which warns the users signed in).
+- Quick actions of the user's own: `sudo cbb action add NAME [-by KINDS] -- PROGRAM ARGS`
+  on a computer adds an action that runs PROGRAM, by its full path and with those arguments
+  only, as the user signed in, through the agent; only its exit status goes back, and it
+  must end within 15 s. `cbb action remove NAME` takes it away.
+- Quick actions on the phones: a member's hello names the actions that are on there
+  (`actions`), and an admin phone shows them on the page of a computer or a lite member, runs
+  one at a tap (reboot and shut down ask again) and turns them all off. The Swift and Kotlin
+  kits sign and check `action` and `actions-off` commands, with cross test vectors from Go.
+- Quick actions on the lite member: `reboot` (a minute later, through `shutdown -r +1` and a
+  polkit rule), `cancel-shutdown` and `restart`, each off until `sudo cbb action enable
+  NAME` there; its hello names the ones that are on, and `lite/core` checks action commands
+  and their signers against Go's vectors.
 
 ### Changed
 

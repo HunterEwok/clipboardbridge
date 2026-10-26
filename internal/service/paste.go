@@ -49,9 +49,10 @@ func injectTime(body group.CommandBody) time.Duration {
 
 // An inject is a paste for a watcher, with where its answer goes.
 type inject struct {
-	body group.CommandBody
-	text string
-	done chan node.Result
+	body    group.CommandBody
+	text    string
+	command []string // an action's: the user's own program and arguments
+	done    chan node.Result
 }
 
 // errPasteOff is the refusal of a member whose user did not turn remote

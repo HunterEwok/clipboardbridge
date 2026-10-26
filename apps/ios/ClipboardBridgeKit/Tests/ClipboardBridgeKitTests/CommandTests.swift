@@ -189,6 +189,8 @@ final class CommandTests: XCTestCase {
             try Commands.paste(to: pc, text: "echo <ok> & \"done\"\n", method: "type", enter: true, group: tag, by: by, now: now,
                                signer: admin, adminCA: adminCA),
             try Commands.pasteOff(to: pc, group: tag, by: by, now: now, signer: root),
+            try Commands.action(to: pc, name: "lock", group: tag, by: by, now: now, signer: admin, adminCA: adminCA),
+            try Commands.actionsOff(to: pc, group: tag, by: by, now: now, signer: root),
         ])
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -229,6 +231,53 @@ final class CommandTests: XCTestCase {
             case let .failure(e):
                 XCTAssertFalse(c.ok, "\(c.name): \(e)")
             }
+        }
+    }
+
+    /// Reads testdata/interop/go-actions.json, from Go's
+    /// TestGoActionVectors: action commands for a member, as Go checks them.
+    func testGoActions() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct C: Decodable {
+            var name: String
+            var command: Member.Record
+            var ok: Bool
+            var action: String?
+        }
+        struct V: Decodable {
+            var group_ca: Data
+            var records: [Member.Record]
+            var `self`: String
+            var now_ms: Int64
+            var commands: [C]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-actions.json")))
+        var set = RecordSet()
+        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
+        XCTAssertEqual(v.commands.count, 6)
+        for c in v.commands {
+            switch Result(catching: { try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms) }) {
+            case let .success(b):
+                XCTAssertTrue(c.ok, c.name)
+                XCTAssertEqual(b.action, c.action, c.name)
+            case let .failure(e):
+                XCTAssertFalse(c.ok, "\(c.name): \(e)")
+            }
+        }
+    }
+
+    func testActionCommands() throws {
+        let root = SoftwareSigner()
+        let ca = try GroupCertificates.groupCA(signer: root, now: now, pathLength: 1)
+        let c = try Commands.action(to: pc, name: "reboot", group: GroupCertificates.tag(groupCA: ca), by: pc, now: now, signer: root)
+        let b = try JSONDecoder().decode(Commands.Body.self, from: c.body)
+        XCTAssertEqual(b.type, "action")
+        XCTAssertEqual(b.action, "reboot")
+        XCTAssertThrowsError(try Commands.action(to: pc, name: "Reboot now", group: "g", by: pc, now: now, signer: root))
+        XCTAssertTrue(Commands.validActionName("cancel-shutdown"))
+        for bad in ["", "-x", "1x", "X", String(repeating: "a", count: 33), "a b", "é"] {
+            XCTAssertFalse(Commands.validActionName(bad), bad)
         }
     }
 }

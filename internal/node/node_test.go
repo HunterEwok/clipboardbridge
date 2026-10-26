@@ -248,6 +248,7 @@ func TestCopyReachesTheOtherMember(t *testing.T) {
 	// The Pi's hello says what it is; the invalid version is dropped.
 	device := func(_ *clip.Config, c *Config) {
 		c.Device = group.DeviceInfo{Form: "board", OSVersion: "Debian 13", Version: "bad\x00", MAC: "dc:a6:32:00:00:01"}
+		c.Actions = func() []string { return []string{"lock", "Not A Name", "backup"} }
 	}
 	mac, pi := newMember(t, Full), newMember(t, Full, device)
 	link(t, mac, pi)
@@ -256,6 +257,9 @@ func TestCopyReachesTheOtherMember(t *testing.T) {
 	if p := mac.Peers()[0]; p.ID != pi.id.ID || p.Role != Full ||
 		p.Device != (group.DeviceInfo{Form: "board", OSVersion: "Debian 13", MAC: "dc:a6:32:00:00:01"}) {
 		t.Errorf("the Mac sees %+v", p)
+	}
+	if p := mac.Peers()[0]; strings.Join(p.Actions, ",") != "lock,backup" {
+		t.Errorf("the Mac sees the actions %q", p.Actions)
 	}
 	if p := pi.Peers()[0]; !p.Device.IsZero() {
 		t.Errorf("the Pi sees a device %+v from a hello without one", p.Device)

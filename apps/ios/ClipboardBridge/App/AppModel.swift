@@ -33,6 +33,10 @@ protocol GroupController: AnyObject {
     func setMode(_ id: String, to mode: String) async throws
     /// Puts text where a computer's focus is; only an admin phone does.
     func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws
+    /// Runs a quick action on a device; only an admin phone does.
+    func runAction(_ id: String, name: String) async throws
+    /// Turns every quick action off on a device; only an admin phone does.
+    func actionsOff(_ id: String) async throws
     /// Admits the device whose QR code the user scanned.
     func admit(_ code: JoinCode) async throws
     /// Joins another phone's group: listens, hands show the QR code for the
@@ -74,6 +78,8 @@ extension GroupController {
     func rename(_ id: String, to name: String) async throws {}
     func setMode(_ id: String, to mode: String) async throws {}
     func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {}
+    func runAction(_ id: String, name: String) async throws {}
+    func actionsOff(_ id: String) async throws {}
     func awayStatus() async -> (on: Bool, status: AwayFromHome.Status, error: Error?)? { nil }
     func setAwayFromHome(_ on: Bool) async throws {}
     func hubStatus() async -> AppModel.Hub? { nil }
@@ -126,6 +132,8 @@ final class AppModel: ObservableObject {
         var device: Member.DeviceInfo?
         /// Its sync mode, as its hello says, while it is connected.
         var mode: String?
+        /// The quick actions its hello says are on, while it is connected.
+        var actions: [String] = []
     }
 
     enum SyncResult: Equatable { case sent, fetched, nothingNew }
@@ -630,6 +638,31 @@ final class AppModel: ObservableObject {
             message = Self.describe(error)
             return false
         }
+    }
+
+    /// Runs a quick action on a device; true when it did.
+    @discardableResult
+    func runAction(_ id: String, name: String) async -> Bool {
+        do {
+            try await group.runAction(id, name: name)
+            message = String(localized: "Done.", bundle: .app)
+            return true
+        } catch {
+            message = Self.describe(error)
+            return false
+        }
+    }
+
+    /// Turns every quick action off on a device.
+    func actionsOff(_ id: String) async {
+        do {
+            try await group.actionsOff(id)
+            message = String(localized: "The quick actions are off there.", bundle: .app)
+        } catch {
+            message = Self.describe(error)
+        }
+        await group.refresh()
+        devices = group.devices
     }
 
     /// Makes a computer an admin.

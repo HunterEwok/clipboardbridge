@@ -18,6 +18,8 @@ import (
 const actionUsage = `usage: cbb action                       list this device's quick actions
        cbb action enable NAME [-by root,phone,computer] [-any-key] [-yes]
        cbb action disable NAME
+       cbb action add NAME [-by root,phone,computer] [-yes] -- PROGRAM [ARGS...]
+       cbb action remove NAME
        cbb action -on DEVICE NAME        on an admin: run NAME on DEVICE
        cbb action off [-on DEVICE | -all]`
 
@@ -31,6 +33,10 @@ func cmdAction(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return cmdActionSet(args[0] == "enable", args[1:], stdin, stdout, stderr)
 		case "off":
 			return cmdActionsOff(args[1:], stdout, stderr)
+		case "add":
+			return cmdActionAdd(args[1:], stdin, stdout, stderr)
+		case "remove":
+			return cmdActionRemove(args[1:], stdout, stderr)
 		}
 	}
 	fs := flag.NewFlagSet("action", flag.ContinueOnError)
@@ -79,8 +85,12 @@ func showActions(stdout, stderr io.Writer) int {
 
 // actionLine says how an action stands and who may run it.
 func actionLine(a control.Action) string {
+	run := ""
+	if len(a.Command) > 0 {
+		run = ": " + strings.Join(a.Command, " ")
+	}
 	if !a.On {
-		return "off"
+		return "off" + run
 	}
 	who := "every admin"
 	if len(a.By) > 0 {
@@ -89,7 +99,7 @@ func actionLine(a control.Action) string {
 	if actions.HardwareByDefault(a.Name) && !a.AnyKey {
 		who += ", keys in hardware only"
 	}
-	return "on, for " + who
+	return "on, for " + who + run
 }
 
 // cmdActionSet serves cbb action enable and disable. Enabling asks the
@@ -112,9 +122,6 @@ func cmdActionSet(enable bool, args []string, stdin io.Reader, stdout, stderr io
 	if fs.NArg() != 0 || (!enable && (*by != "" || *anyKey || *yes)) {
 		fmt.Fprintln(stderr, actionUsage)
 		return 2
-	}
-	if !actions.IsPreset(name) {
-		return fail(stderr, fmt.Errorf("%q is not an action here; the presets are %s", name, strings.Join(actions.Presets, ", ")))
 	}
 	kinds, err := actions.ParseKinds(*by)
 	if err != nil {
@@ -183,6 +190,9 @@ func actionWarning(a control.Action) string {
 		actions.Cancel:   "cancel a reboot or shutdown that is pending",
 		actions.Restart:  "restart the Clipboard Bridge service here",
 	}[a.Name]
+	if len(a.Command) > 0 {
+		what = "run " + strings.Join(a.Command, " ") + " as the user signed in here"
+	}
 	who := "the group's admins"
 	if len(a.By) > 0 {
 		who = "the group's admins of the kinds " + strings.Join(a.By, ", ")
@@ -240,5 +250,64 @@ func cmdActionsOff(args []string, stdout, stderr io.Writer) int {
 	default:
 		fmt.Fprintln(stdout, "The quick actions are off here.")
 	}
+	return 0
+}
+
+// cmdActionAdd serves cbb action add: an action of the user's own, a
+// program with fixed arguments that the agent runs as the user signed in.
+// Nothing from the network reaches its arguments.
+func cmdActionAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("action add", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	by := fs.String("by", "", "the kinds of admins that may run it, of root, phone and computer (every kind if empty)")
+	yes := fs.Bool("yes", false, "do not ask")
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, actionUsage)
+		return 2
+	}
+	name := args[0]
+	if fs.Parse(args[1:]) != nil {
+		return 2
+	}
+	command := fs.Args()
+	if err := actions.CheckOwn(name, command); err != nil {
+		return fail(stderr, err)
+	}
+	kinds, err := actions.ParseKinds(*by)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	a := control.Action{Name: name, On: true, By: kinds, Command: command}
+	if !*yes {
+		fmt.Fprint(stdout, actionWarning(a))
+		fmt.Fprint(stdout, "Type yes to add it: ")
+		line, err := readLine(stdin)
+		if err != nil || !strings.EqualFold(strings.TrimSpace(line), "yes") {
+			fmt.Fprintln(stdout, "Nothing changed.")
+			return 1
+		}
+	}
+	if _, err := setAction(a); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "%s: %s.\n", name, actionLine(a))
+	return 0
+}
+
+// cmdActionRemove serves cbb action remove.
+func cmdActionRemove(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, actionUsage)
+		return 2
+	}
+	c, err := control.DialFor(control.OpActionDel)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpActionDel, Name: args[0]}}); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "The action %s is removed.\n", args[0])
 	return 0
 }

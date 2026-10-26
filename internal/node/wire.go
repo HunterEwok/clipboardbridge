@@ -245,6 +245,9 @@ type helloBody struct {
 	// KeyStore is where the sender says its keys live (group.StoreFile or
 	// group.StoreHardware); "" from a member before 0.6.
 	KeyStore string `json:"key_store,omitempty"`
+	// Actions are the sender's quick actions that are on, for the
+	// buttons; absent from a member before 0.6.
+	Actions []string `json:"actions,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -278,6 +281,9 @@ type helloOut struct {
 	// KeyStore is where this member's keys live, for the root that makes
 	// it an admin.
 	KeyStore string `json:"key_store,omitempty"`
+	// Actions are this member's quick actions that are on, for the
+	// admins' buttons.
+	Actions []string `json:"actions,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.
