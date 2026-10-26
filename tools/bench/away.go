@@ -98,19 +98,6 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			continue
 		}
 		synced = append(synced, d)
-		if r.Do("away/P11/"+d.Name+"/off-on", func() error {
-			// cbb global off asks before it cuts off a device that meets
-			// the hub only through the tunnel; yes answers it.
-			if _, err := Run(ctx, d, adminCmd(d)+" global off", "yes\n"); err != nil {
-				return err
-			}
-			if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
-				return err
-			}
-			return globalShows(ctx, d, "through the tunnel", 2*time.Minute)
-		}) == nil {
-			bothWays(ctx, r, g, "away/P11/"+d.Name+"/again/", d, timeout)
-		}
 	}
 	joined = synced
 	if len(joined) == 0 {
@@ -150,11 +137,48 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 
 	hubCases(ctx, r, g, fwd, joined, timeout)
 
-	if !stopForwarder {
+	if stopForwarder {
+		forwarderDown(ctx, r, g, fwd, joined, timeout)
+	} else {
 		r.Skip("away/F7", "stops the forwarder that others use; run with -stop-forwarder")
+	}
+	// Last, since it cuts the away devices off.
+	for _, d := range joined {
+		offAway(ctx, r, d)
+	}
+}
+
+// offAway (P11, step 5): on a device that meets the hub only through the
+// tunnel, cbb global off asks first, since its new keys would reach the
+// hub only on the home network; turned off anyway and on again, it says it
+// waits for the hub at home.
+func offAway(ctx context.Context, r *Report, d *Device) {
+	prefix := "away/P11/" + d.Name + "/off-on/"
+	r.Do(prefix+"asks", func() error {
+		_, err := Run(ctx, d, adminCmd(d)+" global off", "no\n")
+		var re *RunError
+		switch {
+		case err == nil:
+			return errors.New("cbb global off cut the device off without asking")
+		case !errors.As(err, &re):
+			return err
+		case !strings.Contains(re.Output, "only through the tunnel"):
+			return fmt.Errorf("cbb global off refused without saying why: %q", firstLine(re.Output))
+		}
+		return globalShows(ctx, d, "through the tunnel", 10*time.Second)
+	})
+	if r.Do(prefix+"off", func() error {
+		_, err := Run(ctx, d, adminCmd(d)+" global off", "yes\n")
+		return err
+	}) != nil {
 		return
 	}
-	forwarderDown(ctx, r, g, fwd, joined, timeout)
+	r.Do(prefix+"on-waits", func() error {
+		if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
+			return err
+		}
+		return globalShows(ctx, d, "on the home network", time.Minute)
+	})
 }
 
 // forwarderDown (F7): with the forwarder stopped, the away devices say so

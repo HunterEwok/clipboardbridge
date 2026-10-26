@@ -321,10 +321,13 @@ fails for a reason a real phone would share.
 3. On the away computer `sudo cbb pair -invite FILE`; compare the fingerprints on both sides;
    type `yes` on the hub.
 4. Copy each way between the away computer and the home members.
-5. `cbb global off` (it asks first, since the away computer meets the hub only through the
-   tunnel; `yes`) and `on` on the away computer; repeat step 4.
+5. Last, since it cuts the away computer off: `cbb global off` there asks first, since it
+   meets the hub only through the tunnel and its new keys would reach the hub only on the home
+   network; answer `no` (nothing changes), then `yes`; `cbb global on`.
 6. A hub with only an IPv6 address; a hub behind CGNAT (only the forwarder).
-Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing.
+Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing; in step
+5 `no` keeps it connected, and after `on` `cbb global` says it waits to meet the hub on the home
+network.
 
 **P12. Blind relay.** Runs: auto (`relay`: steps 2, 3 and 5 among the home members); steps 1 and 4 and the capture manual.
 Devices: `relay`, `desktop`, `remote`; the group of R2 without a hub (no `cbb global hub` on any
