@@ -22,13 +22,35 @@ import (
 // sender, with the sender's clients (section 11, "Moving the hub");
 // CommandPaste puts a text where the receiver's focus is, and
 // CommandPasteOff turns remote paste off on the receiver (design.md,
-// "Remote paste").
+// "Remote paste"); CommandAction runs one of the receiver's quick actions
+// by its name, and CommandActionsOff turns them all off there (design.md,
+// "Quick actions").
 const (
-	CommandMode     = "mode"
-	CommandHub      = "hub"
-	CommandPaste    = "paste"
-	CommandPasteOff = "paste-off"
+	CommandMode       = "mode"
+	CommandHub        = "hub"
+	CommandPaste      = "paste"
+	CommandPasteOff   = "paste-off"
+	CommandAction     = "action"
+	CommandActionsOff = "actions-off"
 )
+
+// MaxActionName bounds the name of a quick action.
+const MaxActionName = 32
+
+// ValidActionName reports whether name may name a quick action: 1 to
+// MaxActionName of a-z, 0-9 and -, starting with a letter. The name is all
+// the network carries; the member defines what it does.
+func ValidActionName(name string) bool {
+	if name == "" || len(name) > MaxActionName || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for _, c := range []byte(name) {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 // The ways a paste command puts its text in: PasteByClipboard writes the
 // clipboard and presses the paste keys, PasteByTyping types each character.
@@ -76,11 +98,12 @@ type CommandBody struct {
 	ID        string    `json:"id"` // 128 random bits in hex, for the receiver's replay cache
 	TimeMS    int64     `json:"time_ms"`
 	ExpiresMS int64     `json:"expires_ms"`
-	Mode      string    `json:"mode,omitempty"`  // mode: own, shared, receive or send; paste: PasteByClipboard or PasteByTyping
-	Hub       *HubOrder `json:"hub,omitempty"`   // hub: how the receiver is the hub
-	Enter     bool      `json:"enter,omitempty"` // paste: press Enter after the text
-	Kind      string    `json:"kind,omitempty"`  // paste: text or secret
-	Text      string    `json:"text,omitempty"`  // paste: what to put in
+	Mode      string    `json:"mode,omitempty"`   // mode: own, shared, receive or send; paste: PasteByClipboard or PasteByTyping
+	Hub       *HubOrder `json:"hub,omitempty"`    // hub: how the receiver is the hub
+	Enter     bool      `json:"enter,omitempty"`  // paste: press Enter after the text
+	Kind      string    `json:"kind,omitempty"`   // paste: text or secret
+	Text      string    `json:"text,omitempty"`   // paste: what to put in
+	Action    string    `json:"action,omitempty"` // action: the name of the action
 }
 
 // A HubOrder is what a hub command tells the new hub: where its clients
@@ -159,6 +182,9 @@ func (b *CommandBody) check() error {
 	if b.Type != CommandPaste && (b.Enter || b.Kind != "" || b.Text != "") {
 		return fmt.Errorf("group: a %s command carries a paste", b.Type)
 	}
+	if b.Type != CommandAction && b.Action != "" {
+		return fmt.Errorf("group: a %s command names an action", b.Type)
+	}
 	switch b.Type {
 	case CommandMode:
 		if b.Mode == "" || b.Hub != nil {
@@ -175,9 +201,16 @@ func (b *CommandBody) check() error {
 		if err := b.checkPaste(); err != nil {
 			return err
 		}
-	case CommandPasteOff:
+	case CommandPasteOff, CommandActionsOff:
 		if b.Mode != "" || b.Hub != nil {
-			return errors.New("group: a paste-off command carries an order")
+			return fmt.Errorf("group: a %s command carries an order", b.Type)
+		}
+	case CommandAction:
+		if b.Mode != "" || b.Hub != nil {
+			return errors.New("group: an action command carries an order")
+		}
+		if !ValidActionName(b.Action) {
+			return fmt.Errorf("group: an action command's name %q is not 1 to %d of a-z, 0-9 and -, starting with a letter", b.Action, MaxActionName)
 		}
 	default:
 		return fmt.Errorf("group: unknown command type %q", b.Type)
@@ -231,6 +264,31 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 		return body, errors.New("group: the command was signed in the future; check the clocks of both devices")
 	}
 	return body, nil
+}
+
+// CommandSigner returns the device whose admin key signed the command c,
+// which VerifyCommand took: the device that holds the group's root when
+// the root's own key signed it (root true), or the device whose record
+// names the admin CA that did. ok is false when no listed device holds the
+// key, as for an admin phone whose own record is not here yet.
+func (s *Records) CommandSigner(c Record) (dev Device, root, ok bool) {
+	signer, anchor, err := s.signerOf(c)
+	if err != nil {
+		return Device{}, false, false
+	}
+	var id DeviceID
+	if signer == anchor {
+		id, _ = s.RootMember()
+		if id == "" {
+			return Device{}, true, false
+		}
+	}
+	for _, d := range s.Devices() {
+		if (id != "" && d.ID == id) || (id == "" && d.AdminKey != nil && *d.AdminKey == signer) {
+			return d, signer == anchor, true
+		}
+	}
+	return Device{}, signer == anchor, false
 }
 
 func (b *CommandBody) maxBody() int {

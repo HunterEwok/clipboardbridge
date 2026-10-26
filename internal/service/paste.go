@@ -303,7 +303,7 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	}
 	ca, chain := id.Signer()
 	if ca == nil {
-		return errors.New("only an admin pastes on another device or turns its remote paste off: the group's root, an admin it made (cbb admin), or an admin phone")
+		return errors.New("only an admin pastes on another device, runs its actions or turns either off: the group's root, an admin it made (cbb admin), or an admin phone")
 	}
 	if s.frozen(id) {
 		return errFrozen
@@ -315,7 +315,11 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second+injectTime(body))
+	wait := injectTime(body)
+	if body.Type == group.CommandAction {
+		wait = actionWait
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second+wait)
 	defer cancel()
 	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
 	if err != nil {

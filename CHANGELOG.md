@@ -106,7 +106,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
   through `cbb paste-helper tmux|console`, with the full member's rules, limits and log.
   `install.sh --console` now installs the console helper's unit for the lite member too.
 - Commands reach a member this one is not connected to: a member connected to it, such as
-  the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
+  the hub, passes a `mode`, `paste`, `paste-off`, `action` or `actions-off` command on and its
+  result back.
+- Quick actions on the computers (docs/protocol.md, section 15): `cbb action -on DEVICE NAME`
+  on an admin runs a preset on another device, `lock`, `sleep`, `reboot`, `shutdown` (both a
+  minute later), `cancel-shutdown` or `restart`, and the command carries only its name. Each
+  is off until the device's own user runs `sudo cbb action enable NAME`, which says what it
+  allows, may limit it to the root, admin phones or admin computers, and on Linux writes the
+  polkit rule for logind that it needs, and nothing more. Reboot and shutdown take only admins
+  whose keys are in hardware unless the user allows keys in files. Limits per sender and a log
+  of the last 100, as for remote paste; `cbb action off -on DEVICE` or `-all` turns them off
+  from afar. Linux runs every preset; a Mac and Windows only `restart` for now.
 
 ### Changed
 

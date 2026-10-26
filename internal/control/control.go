@@ -56,6 +56,9 @@ const (
 	OpReceive   = "paste-receive" // client → service: Name "on" or "off": remote paste on this device, or off on Device or All
 	OpInject    = "inject"        // service → watcher: put the payload where the focus is, a remote paste
 	OpInjected  = "injected"      // watcher → service: how the inject with Seq ended: Error empty, or why not
+	OpActionSet = "action-set"    // client → service: set this device's quick action Actions[0]: on or off, and for whom
+	OpActionOn  = "action-on"     // client → service: as an admin, have the member Device run its action Name
+	OpActionOff = "actions-off"   // client → service: as an admin, turn every quick action off on Device or All
 	OpReply     = "reply"         // service → client: the answer to a request
 )
 
@@ -98,6 +101,9 @@ type Header struct {
 	Inject    string `json:"inject,omitempty"`
 	PasteOnly bool   `json:"paste_only,omitempty"`
 	Refused   bool   `json:"refused,omitempty"`
+
+	// Actions: in action-set, the one action to set.
+	Actions []Action `json:"actions,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
@@ -152,8 +158,22 @@ type Status struct {
 	Quiet []string `json:"quiet,omitempty"`
 	Away  *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
 	// Paste is remote paste on this device; nil when in no group.
-	Paste   *Paste `json:"paste,omitempty"`
-	Version string `json:"version"`
+	Paste *Paste `json:"paste,omitempty"`
+	// Actions are this device's quick actions, the presets first, as its
+	// user set them; empty when in no group.
+	Actions []Action `json:"actions,omitempty"`
+	Version string   `json:"version"`
+}
+
+// Action is a quick action on this device (design.md, "Quick actions"):
+// whether it is on, the kinds of admins that may run it (root, phone,
+// computer; every kind when empty), and whether admins whose keys are in
+// files may run one that hardware alone runs by default.
+type Action struct {
+	Name   string   `json:"name"`
+	On     bool     `json:"on,omitempty"`
+	By     []string `json:"by,omitempty"`
+	AnyKey bool     `json:"any_key,omitempty"`
 }
 
 // Paste describes remote paste on this device: the switches its user set
