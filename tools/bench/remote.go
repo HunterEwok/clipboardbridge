@@ -50,7 +50,13 @@ func (e *RunError) Details() string { return e.Output }
 // Run runs a shell command on a device and returns its standard output.
 // On Windows the command is PowerShell; elsewhere it is sh.
 func Run(ctx context.Context, d *Device, cmd string, stdin string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	return RunFor(ctx, d, cmd, stdin, runTimeout)
+}
+
+// RunFor is Run for a command that may take longer than runTimeout, such as
+// an upload or an install.
+func RunFor(ctx context.Context, d *Device, cmd, stdin string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	c := command(ctx, d, cmd)
 	if stdin != "" {
@@ -60,7 +66,7 @@ func Run(ctx context.Context, d *Device, cmd string, stdin string) (string, erro
 	c.Stdout, c.Stderr = &out, &errOut
 	if err := c.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			err = fmt.Errorf("no answer within %s: %w", runTimeout, err)
+			err = fmt.Errorf("no answer within %s: %w", timeout, err)
 		}
 		return out.String(), &RunError{Device: d.Name, Cmd: cmd, Err: err, Output: out.String() + errOut.String()}
 	}

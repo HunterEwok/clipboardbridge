@@ -192,7 +192,7 @@ func restartService(ctx context.Context, d *Device) error {
 // where the bench cannot (Windows so far).
 func asRoot(d *Device, cmd string) (string, bool) {
 	switch d.OS {
-	case "linux", "linux-lite", "darwin", "docker":
+	case "linux", "linux-lite", "docker":
 		return "sudo -n sh -c " + shellQuote(cmd), true
 	}
 	return "", false
@@ -274,6 +274,10 @@ func notOnDisk(ctx context.Context, d *Device, run string) error {
 		return err
 	}
 	cmd, ok := asRoot(d, "grep -r -l -F "+shellQuote(run)+" "+shellQuote(dir)+" /tmp 2>/dev/null; true")
+	if d.OS == "darwin" {
+		// On a Mac only the bench's helper runs as root.
+		cmd, ok = "sudo -n "+macHelper+" grep "+shellQuote(run), true
+	}
 	if !ok {
 		return Skipped("the bench cannot search this device's files")
 	}
@@ -297,7 +301,11 @@ func localAccess(ctx context.Context, r *Report, g *benchGroup) {
 			continue
 		}
 		r.Do(prefix+d.Name+"/stranger", func() error {
-			_, err := Run(ctx, d, "cd / && sudo -n -u nobody "+cbbCmd(d)+" status", "")
+			stranger := "cd / && sudo -n -u nobody " + cbbCmd(d) + " status"
+			if d.OS == "darwin" {
+				stranger = "sudo -n " + macHelper + " stranger"
+			}
+			_, err := Run(ctx, d, stranger, "")
 			var re *RunError
 			switch {
 			case err == nil:
@@ -337,9 +345,9 @@ func logsClean(ctx context.Context, r *Report, g *benchGroup, since time.Time) {
 		case "linux", "linux-lite":
 			// The service's unit and the agent's process only: sudo logs
 			// the bench's own commands, which name the run.
-			logs = "{ sudo -n journalctl -u clipboardbridge --since @" + at + " --no-pager -o cat; journalctl --user _COMM=cbb --since @" + at + " --no-pager -o cat 2>/dev/null; }"
+			logs = "{ sudo -n journalctl -u clipboardbridge --since @" + at + " --no-pager -o cat && { journalctl --user _COMM=cbb --since @" + at + " --no-pager -o cat 2>/dev/null || true; }; }"
 		case "darwin":
-			logs = "sudo -n cat /Library/Logs/clipboardbridge/service.log"
+			logs = "sudo -n " + macHelper + " logs"
 		case "docker":
 			logs = "docker logs --since " + at + " " + d.Container + " 2>&1"
 		default:
@@ -347,7 +355,9 @@ func logsClean(ctx context.Context, r *Report, g *benchGroup, since time.Time) {
 			continue
 		}
 		r.Do(prefix+d.Name, func() error {
-			out, err := Run(ctx, d, logs+" | grep -F -w "+pattern+" | head -3; true", "")
+			// The logs go to a file first, so that a log the bench cannot
+			// read fails the case instead of looking clean.
+			out, err := Run(ctx, d, "f=$(mktemp) && "+logs+" >$f && { grep -F -w "+pattern+" $f | head -3; rm -f $f; }", "")
 			if err != nil {
 				return noSudo(d, err)
 			}
@@ -370,6 +380,9 @@ func filesAtRest(ctx context.Context, r *Report, g *benchGroup) {
 				return err
 			}
 			cmd, ok := asRoot(d, "find "+shellQuote(dir)+" -mindepth 1 \\( -perm -g=r -o -perm -g=w -o -perm -o=r -o -perm -o=w \\)")
+			if d.OS == "darwin" {
+				cmd, ok = "sudo -n "+macHelper+" perms", true
+			}
 			if !ok {
 				return Skipped("the bench cannot list this device's files")
 			}

@@ -98,6 +98,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On a Linux desktop that starts `graphical-session.target` (GNOME, KDE Plasma) the desktop
+  agent runs as the user unit `clipboardbridge-agent.service`, which the installer starts
+  again in each running session after an update: the clipboard links again without logging
+  out and in. Other desktops keep the autostart entry, and a lock keeps it to one agent a
+  session.
 - A member in the Docker image holds none of the group's keys: `cbb new`, `cbb upgrade` and
   `cbb takeover` refuse there, and it offers no admin key, so the root cannot make it an
   admin and it cannot be the hub, since its keys would be in a file in the volume. The
@@ -142,6 +147,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   their final `cbb status`, which no longer says the service is not running on a clean
   install.
 - The Linux `uninstall.sh` stops the desktop agents running in users' sessions too.
+- After `cbb pair -invite` the service keeps the invitation's addresses until it knows the
+  group's servers; it lost them at once, and could then reach neither the hub nor the
+  forwarder. `cbb global on` really waits for the hub's addresses now: it asked again on a
+  connection the service had already answered.
+- `cbb global off` asks first on a device that reaches its hub only through the tunnel
+  (`-yes` for scripts): its new keys reach the hub only on the home network, so it syncs
+  again only once it is at home. `cbb global` says so while it waits for the hub.
+- The lite member says that a user outside the `clipboardbridge` group must join it, not
+  that the service may not be running; its unit keeps the service's memory out of swap
+  (`MemorySwapMax=0`), as the full member's does.
 - Moving the hub could leave a device far from home without a hub: the old hub stopped its
   tunnel two seconds after it queued the new hub's offer, whether or not the offer had gone
   out. It now says goodbye after the offer on each connection through its tunnel, waits up

@@ -8,3 +8,4 @@ Exec=/usr/local/bin/cbb agent
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 X-KDE-autostart-phase=1
+X-GNOME-HiddenUnderSystemd=true

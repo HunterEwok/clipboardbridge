@@ -123,4 +123,6 @@ Coming later: a blind relay at `cbb.tools` that any group can use.
 sudo cbb global off
 ```
 
-It forgets the tunnel's keys on that device. On a phone, turn the switch off in Settings.
+It forgets the tunnel's keys on that device. The new keys of a later `cbb global on` reach the
+hub only on the home network, so a device that is away now syncs again only once it is home.
+On a phone, turn the switch off in Settings.

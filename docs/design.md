@@ -376,8 +376,11 @@ and lifetimes. The installer enables what the device needs.
 
 ### 2. Desktop connector
 
-- A user process started with any graphical session (XDG autostart, which nearly every
-  desktop supports; a systemd user unit where needed). It links the desktop clipboard to the
+- A user process started with any graphical session: a systemd user unit bound to
+  `graphical-session.target` where the desktop starts it (GNOME, KDE Plasma), which the
+  installer restarts in each running session after an update; XDG autostart elsewhere, which
+  nearly every desktop supports (the entry is hidden where the unit runs, and a lock in the
+  user's runtime directory keeps it to one agent a session). It links the desktop clipboard to the
   service over the control socket. When the display connection drops, it reconnects with a
   backoff, and exits only when the session is gone.
 - Clipboard access, chosen automatically, in pure Go:

@@ -7,6 +7,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
@@ -18,6 +21,10 @@ import (
 // clipboard through Wayland or X11, and opens it again when the display
 // connection drops.
 func runDesktop(ctx context.Context, logf func(string, ...any), stderr io.Writer) int {
+	if !lockAgent() {
+		logf("cbb: another agent links this session's clipboard already")
+		return 0
+	}
 	backoff := time.Second
 	failures := 0
 	for ctx.Err() == nil {
@@ -46,3 +53,26 @@ func runDesktop(ctx context.Context, logf func(string, ...any), stderr io.Writer
 	}
 	return 0
 }
+
+// lockAgent reports whether this is the user's only agent: the user unit
+// and the autostart entry may both start one. The lock lasts as long as
+// the process; without a runtime directory, running twice beats not
+// running.
+func lockAgent() bool {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		return true
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "clipboardbridge-agent.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return true
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return !errors.Is(err, syscall.EWOULDBLOCK)
+	}
+	agentLockFile = f // kept open, and so locked, until the process ends
+	return true
+}
+
+var agentLockFile *os.File
