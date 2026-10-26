@@ -13,7 +13,10 @@ import java.time.Instant
  * address, where cbbtun's Hub joins each connection through the tunnel. It
  * accepts a peer whose chain (leaf first) is a member's of the group's
  * roots, which trusted gives for each handshake, and serves each connection
- * on a thread of its own, naming the peer by its device ID.
+ * on a thread of its own, naming the peer by its device ID. For a blind
+ * relay's calls, caller names the device each connection must be by its
+ * source port; a connection it does not know, or whose certificate names
+ * another device, is closed.
  */
 class MemberListener(
     private val node: MemberNode,
@@ -24,6 +27,8 @@ class MemberListener(
     address: InetAddress? = InetAddress.getLoopbackAddress(),
     /** Gets why a connection failed, for the log. */
     private val onError: (Exception) -> Unit = {},
+    /** For a relay's calls: the device each connection is by its source port, once (RelayOnPhone.caller). */
+    private val caller: ((Int) -> String?)? = null,
 ) {
     private val listener = TLSListener(port, Member.ALPN, key, chain, address) { peerID(it) != null }
 
@@ -51,13 +56,24 @@ class MemberListener(
                 try {
                     val t = handshake(TLSTransport.HANDSHAKE_TIMEOUT_MS)
                     val id = peerID(t.peerChain)
-                    if (id == null) t.close() else node.serve(t, id)
+                    when {
+                        id == null -> t.close()
+                        // The relay said who calls; the certificate must say the same.
+                        caller != null && caller.invoke(t.remotePort) != id -> {
+                            t.close()
+                            onError(NotTheCaller(id))
+                        }
+                        else -> node.serve(t, id)
+                    }
                 } catch (e: Exception) {
                     onError(e)
                 }
             }, "cbb-member").apply { isDaemon = true; start() }
         }
     }
+
+    /** A relay call whose certificate names another device than the relay said, or one the relay did not announce. */
+    class NotTheCaller(device: String) : Exception("the relay did not announce a call from $device on this connection")
 
     /** Stops listening; the connections it took go on until the node closes them. */
     fun stop() {

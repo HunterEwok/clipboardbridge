@@ -6,11 +6,13 @@ import kotlinx.serialization.json.JsonArray
 import java.time.Instant
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -209,6 +211,45 @@ class PhoneHubTest {
                 t.read(4)
             }
             assertEquals(0, phone.peers)
+        } finally {
+            listener.stop()
+        }
+    }
+
+    /** A relay's call is served only when the certificate names the device the relay announced for its port. */
+    @Test
+    fun servesOnlyTheAnnouncedCaller() {
+        val caKey = SoftwareSigner()
+        val ca = GroupCertificates.groupCA(caKey, now, pathLength = 1)
+        val phoneKey = SoftwareSigner()
+        val phoneID = SyncEngine.newID()
+        val phoneCert = GroupCertificates.member(phoneID, phoneKey.publicKeyDER, ca, caKey, now)
+        val pcKey = SoftwareSigner()
+        val pcID = SyncEngine.newID()
+        val pcCert = GroupCertificates.member(pcID, pcKey.publicKeyDER, ca, caKey, now)
+        val phone = MemberNode(SyncEngine(phoneID, HybridClock()), "Pixel")
+        val errors = LinkedBlockingQueue<Exception>()
+        val ports = LinkedBlockingQueue<Int>()
+        val announced = AtomicReference<String?>(SyncEngine.newID())
+        val listener = MemberListener(phone, phoneKey.keyPair.private, listOf(phoneCert), { listOf(ca) }, onError = { errors.add(it) },
+            caller = { port -> ports.add(port); announced.get() })
+        val pc = MemberNode(SyncEngine(pcID, HybridClock()), "PC", role = Member.Role.FULL)
+        try {
+            // Another device was announced: the connection closes.
+            val t = TLSTransport.dial("127.0.0.1", listener.port, Member.ALPN, pcKey.keyPair.private, listOf(pcCert)) { true }
+            assertFailsWith<java.io.IOException> { t.read(4) }
+            assertIs<MemberListener.NotTheCaller>(assertNotNull(errors.poll(10, TimeUnit.SECONDS)))
+            assertTrue(assertNotNull(ports.poll(1, TimeUnit.SECONDS)) > 0)
+            assertEquals(0, phone.peers)
+
+            announced.set(pcID)
+            val t2 = TLSTransport.dial("127.0.0.1", listener.port, Member.ALPN, pcKey.keyPair.private, listOf(pcCert)) {
+                runCatching { GroupCertificates.verifyMember(it, listOf(ca), now) }.getOrNull() == phoneID
+            }
+            val dialled = Background { pc.serve(t2, phoneID) }
+            waitUntil { phone.connected == setOf(pcID) }
+            pc.closeAll()
+            dialled.join()
         } finally {
             listener.stop()
         }

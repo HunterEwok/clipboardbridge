@@ -129,6 +129,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private var homeListener: MemberListener? = null
     private var publisher: NsdPublisher? = null
 
+    /** The phone at a blind relay, and while it runs its member listener on the loopback address, which serves the relay's calls. */
+    private var relayLink: RelayOnPhone? = null
+    private val relayFile = SealedFile(File(file.parentFile, "relay.bin"), "clipboardbridge.relay")
+    private var relayListener: MemberListener? = null
+
     /** The hub's work, one change at a time, off the main thread. */
     private val hubWork = Executors.newSingleThreadExecutor { r -> Thread(r, "phone hub").apply { isDaemon = true } }
 
@@ -269,7 +274,57 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         return HubOnPhone.networkKey(gw, la.address, la.prefixLength)
     }
 
-    private fun refreshHub() = hubWork.execute(::updateHub)
+    private fun refreshHub() = hubWork.execute {
+        updateHub()
+        updateRelay()
+    }
+
+    /** The phone at a blind relay: null without a group. */
+    val blindRelay: RelayOnPhone? get() = synchronized(lock) { relayLink }
+
+    /**
+     * Meets the group at the relay the user typed, after they read what a
+     * relay learns, or leaves it when both are empty; on the caller's IO
+     * thread, as a name is looked up.
+     */
+    fun setRelay(address: String, pin: String) {
+        val r = blindRelay ?: return
+        if (address.isBlank() && pin.isBlank()) {
+            r.turnOff()
+        } else {
+            val ep = HubState.resolve(address) ?: throw IllegalArgumentException("not an address")
+            r.turnOn(ep, pin.trim())
+        }
+        refreshHub()
+    }
+
+    /**
+     * Runs the link to the blind relay while it is on and the phone syncs,
+     * with its member listener on the loopback address, which serves only
+     * the calls the relay announced and only when the certificate names the
+     * caller; otherwise it stops them.
+     */
+    private fun updateRelay() {
+        val (r, n, g) = synchronized(lock) { Triple(relayLink, node, state) }
+        if (r == null || n == null || g == null || !r.isOn) {
+            stopRelay()
+            return
+        }
+        val member = runCatching { memberSigner() }.getOrNull() ?: return
+        val trusted = { synchronized(lock) { state?.trusted }.orEmpty() }
+        val loop = synchronized(lock) { relayListener } ?: runCatching {
+            MemberListener(n, member.privateKey, g.memberChain, trusted, onError = { e -> Log.w(TAG, "a call through the relay failed", e) },
+                caller = r::caller)
+        }.onFailure { Log.w(TAG, "the relay's calls cannot be taken", it) }.getOrNull()?.also { l -> synchronized(lock) { relayListener = l } } ?: return
+        // The relay takes the member chain and the group's roots after it, as a forwarder (docs/protocol.md, section 14).
+        r.start(HubOnPhone.Group(loop.port, g.memberChain + g.trusted, member::signDigest, g.records.authorityRecords))
+    }
+
+    private fun stopRelay() {
+        val l = synchronized(lock) { relayListener.also { relayListener = null } }
+        l?.stop()
+        synchronized(lock) { relayLink }?.stop()
+    }
 
     /**
      * Runs the hub's parts that the moment calls for: with the hub on, the
@@ -332,6 +387,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val ids = g.devices.map { it.id }.toSet()
         h.prune { it in ids }
         h.setRecords(g.records.authorityRecords)
+        synchronized(lock) { relayLink }?.setRecords(g.records.authorityRecords)
     }
 
     /**
@@ -864,6 +920,22 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             save = { s -> if (s == null) hubFile.delete() else hubFile.write(s.encode()) },
             log = { what, e -> Log.w(TAG, what, e) },
         )
+        // At a blind relay the phone dials the device the relay joined, with
+        // the same TLS as at home, while browsing does not find it here.
+        val rl = RelayOnPhone(
+            g.device,
+            GoRelayLinks,
+            load = { relayFile.read()?.let(RelaySettings::decode) },
+            save = { s -> if (s == null) relayFile.delete() else relayFile.write(s.encode()) },
+            dialPeer = { port, peer ->
+                TLSTransport.dial("127.0.0.1", port, Member.ALPN, member.privateKey, g.memberChain) { c ->
+                    runCatching { GroupCertificates.verifyMember(c, g.trusted, Instant.now()) }.getOrNull() == peer
+                }
+            },
+            serve = { t, peer -> currentNode?.serve(t, peer) ?: t.close() },
+            elsewhere = { peer -> synchronized(lock) { peer in foundAt } },
+            log = { what, e -> Log.w(TAG, what, e) },
+        )
         // The hub answers the tunnel keys of the hellos, shares its clients
         // with the group's other hubs and passes their offers on; it is no
         // client itself (docs/protocol.md, section 11, "Several hubs").
@@ -923,6 +995,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         browser = b
         away = a
         hub = h
+        relayLink = rl
         b
     }
 
@@ -946,7 +1019,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         // After any change of the hub's that is still running.
         hubWork.submit {
             stopHub()
-            synchronized(lock) { hub = null }
+            stopRelay()
+            synchronized(lock) {
+                hub = null
+                relayLink = null
+            }
         }.get()
         d?.stop()
         b?.stop()

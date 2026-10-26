@@ -425,6 +425,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
+        if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -563,6 +564,73 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
             model.awayNote?.let { NoteText(it) }
             Text(stringResource(R.string.away_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
+    }
+}
+
+/**
+ * The blind relay (docs/design.md, "Blind relay"): where the phone stands
+ * there, its address and key, and what it learns, which the user reads and
+ * accepts before the phone meets the group there.
+ */
+@Composable
+private fun BlindRelaySection(model: AppModel, relay: AppModel.BlindRelay) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
+    var address by rememberSaveable(relay.relay) { mutableStateOf(relay.relay?.endpoint ?: "") }
+    var pin by rememberSaveable(relay.relay) { mutableStateOf(relay.relay?.pin ?: "") }
+    fun save() {
+        busy = true
+        scope.launch {
+            model.setRelay(address, pin)
+            busy = false
+        }
+    }
+    Section(stringResource(R.string.relay_title)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            val status = when (relay.status) {
+                RelayOnPhone.Status.OFF -> stringResource(R.string.relay_off)
+                RelayOnPhone.Status.PAUSED -> stringResource(R.string.relay_paused)
+                RelayOnPhone.Status.CONNECTING -> stringResource(R.string.relay_connecting)
+                RelayOnPhone.Status.CONNECTED ->
+                    if (relay.online == 0) stringResource(R.string.relay_alone) else stringResource(R.string.relay_with, relay.online)
+                RelayOnPhone.Status.FAILED -> stringResource(R.string.relay_failed)
+            }
+            Text(status, color = if (relay.status == RelayOnPhone.Status.CONNECTED) palette.accent else palette.textDim)
+            // The relay's error underneath, when details are on.
+            relay.error?.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.textDim) }
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.relay_address)) },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { pin = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.relay_key)) },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            val empty = address.isBlank() && pin.isBlank()
+            val changed = address != (relay.relay?.endpoint ?: "") || pin != (relay.relay?.pin ?: "")
+            AccentButton(
+                stringResource(if (empty) R.string.relay_leave else R.string.relay_meet),
+                enabled = changed && !busy,
+                onClick = { if (empty) save() else asking = true },
+            )
+            model.relayNote?.let { NoteText(it) }
+            Text(stringResource(R.string.relay_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        }
+    }
+    if (asking) {
+        Confirm(stringResource(R.string.relay_ask_title), stringResource(R.string.relay_ask_body), stringResource(R.string.relay_meet),
+            dismiss = { asking = false }, confirm = ::save)
     }
 }
 
