@@ -308,7 +308,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 |---|---|---|---|
 | smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
 | full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, F1, P35 for a member in a container, P34 (sync modes), C6 and S10 (a secret copy), S11 (local access), S15 (logs) and S16 (files at rest) | ~2 h | before each release candidate |
-| away | P11 (the away devices join by invitation through the hub and its forwarder, sync both ways, `cbb global off` and `on`), F6 (the hub's service stopped); F7 (the forwarder stopped) only with `-stop-forwarder`, since other groups use it | ~15 min | before each release, after each change to the tunnel |
+| away | P11 (the away devices join by invitation through the hub and its forwarder, sync both ways, `cbb global off` and `on`), F6 (the hub's service stopped), P37 (the hub moved to an admin computer) and P36 (the root and the admin as several hubs); F7 (the forwarder stopped) only with `-stop-forwarder`, since other groups use it | ~15 min | before each release, after each change to the tunnel |
 | relay | P12: the members meet at the blind relay, sync, and a wrong key is refused | ~5 min | before each release, after each change to the relay |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |

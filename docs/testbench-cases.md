@@ -523,7 +523,7 @@ Pass: steps 1 to 4 as written, with no step needing more than the compose file g
 `NET_ADMIN`, no `/dev/net/tun`, no `--privileged`); in step 5 a copy on `vps` arrives on
 `deck` and back (R5), and `cbb status` on `vps` names `nas` as its hub.
 
-**P36. Several hubs.** Runs: manual.
+**P36. Several hubs.** Runs: auto (`away`, after P37, without the capture and with one copy each way instead of 20 minutes of copies).
 Devices: `deck` (the root), `mac` (an admin), `vps` (away), `relay` (the forwarder). The order
 of the hubs is the root first, then the others by device ID (docs/protocol.md, section 11,
 "Several hubs"); phones are out of this run.
@@ -540,7 +540,7 @@ copies resume on `mac`; in step 4 `mac` stops serving once `deck` says it serves
 back on `deck` within 5 minutes; no copy is lost (the last one wins everywhere); the capture
 shows only WireGuard to the forwarder or the hubs. The switch times go into the report.
 
-**P37. Moving the hub.** Runs: manual.
+**P37. Moving the hub.** Runs: auto (`away`, steps 1 to 4; the admin is the Mac, or another Linux member at home).
 Devices: `deck` (the root and the hub), `mac` (an admin with sync away from home on and no hub
 set up), `rpi0w`, `nas`, `vps` (away, connected through `deck`).
 1. The setup of P36 step 1 without the hub on `mac`.

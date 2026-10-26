@@ -254,6 +254,10 @@ func secretCopy(ctx context.Context, r *Report, g *benchGroup, timeout time.Dura
 	for _, d := range g.members {
 		r.Do(prefix+d.Name+"/gone", func() error {
 			got, err := Paste(ctx, d)
+			var re *RunError
+			if errors.As(err, &re) && strings.Contains(re.Output, "the clipboard is empty") {
+				return nil
+			}
 			if err == nil && strings.Contains(got, marker) {
 				err = fmt.Errorf("%s still has the secret 65 s after the copy", d.Name)
 			}
@@ -331,7 +335,9 @@ func logsClean(ctx context.Context, r *Report, g *benchGroup, since time.Time) {
 		var logs string
 		switch d.OS {
 		case "linux", "linux-lite":
-			logs = "{ sudo -n journalctl -u clipboardbridge --since @" + at + " --no-pager -o cat; journalctl --user --since @" + at + " --no-pager -o cat 2>/dev/null; }"
+			// The service's unit and the agent's process only: sudo logs
+			// the bench's own commands, which name the run.
+			logs = "{ sudo -n journalctl -u clipboardbridge --since @" + at + " --no-pager -o cat; journalctl --user _COMM=cbb --since @" + at + " --no-pager -o cat 2>/dev/null; }"
 		case "darwin":
 			logs = "sudo -n cat /Library/Logs/clipboardbridge/service.log"
 		case "docker":
