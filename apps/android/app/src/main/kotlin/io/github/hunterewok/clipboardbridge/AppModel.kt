@@ -45,7 +45,6 @@ class AppModel(private val app: Context) {
     }
     val group = LiveGroup(app).also { g ->
         g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
-        g.onModeChanged = { Handler(Looper.getMainLooper()).post { devices = g.devices } }
         // In the background too: the service keeps the connections that bring the records.
         // Off the node's thread, which may hold its own lock while it hands records over.
         g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
@@ -55,6 +54,11 @@ class AppModel(private val app: Context) {
         private set
     var devices by mutableStateOf(group.devices)
         private set
+
+    init {
+        // A command from an admin changes this phone's mode on the node's thread.
+        group.onModeChanged = { Handler(Looper.getMainLooper()).post { devices = group.devices } }
+    }
     val computers: List<LiveGroup.Device> get() = devices.filter { !it.isSelf }
     var message by mutableStateOf<Note?>(null)
     var busy by mutableStateOf(false)
