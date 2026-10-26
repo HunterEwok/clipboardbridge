@@ -5,8 +5,12 @@
 // real devices over SSH from the bench's controller and reports what passed.
 //
 //	go run ./tools/bench [-inventory FILE] [-report DIR] [-only a,b] check|smoke|full|away|relay
+//	go run ./tools/bench [-only a,b] -build DIR reset
+//	go run ./tools/bench [-only a,b] -quick reset
 //
-// check only reaches every device and prints what it finds; smoke makes a
+// check only reaches every device and prints what it finds; reset (R1)
+// installs the build under test on every device at once, in no group, or
+// with -quick only wipes the devices' state; smoke makes a
 // group of the devices and sends one text from each device to all the
 // others; full runs the sync matrix and the failure, mode and security
 // cases on top; away adds the devices away from home by invitation through
@@ -44,11 +48,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	only := fs.String("only", "", "comma-separated devices to use instead of all of them")
 	timeout := fs.Duration("timeout", 20*time.Second, "how long a text may take to arrive")
 	stopForwarder := fs.Bool("stop-forwarder", false, "away: also stop and start the forwarder (F7), which other groups may use")
+	buildDir := fs.String("build", "", "reset: the directory with the release archives (and SHA256SUMS) to install")
+	quick := fs.Bool("quick", false, "reset: keep each device's install and only remove its state")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|smoke|full|away|relay")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|away|relay")
 		return 2
 	}
 	inv, err := LoadInventory(*invPath)
@@ -76,6 +82,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Away(ctx, r, inv, devices, *timeout, *stopForwarder)
 	case "relay":
 		Relay(ctx, r, inv, devices, *timeout)
+	case "reset":
+		var b *Build
+		if *buildDir != "" {
+			if b, err = LoadBuild(*buildDir); err != nil {
+				fmt.Fprintf(stderr, "bench: %v\n", err)
+				return 1
+			}
+		}
+		Reset(ctx, r, devices, b, *quick)
 	default:
 		fmt.Fprintf(stderr, "bench: unknown suite %q\n", fs.Arg(0))
 		return 2

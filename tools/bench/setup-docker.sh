@@ -9,6 +9,8 @@
 #   sh tools/bench/setup-docker.sh setup        # once: Docker, the docker group, the kill helper
 #   sh tools/bench/setup-docker.sh up CBB       # a new container of the cbb binary CBB, its volume empty
 #   sh tools/bench/setup-docker.sh down         # the container and its volume go (R1, R3)
+#   sh tools/bench/setup-docker.sh teardown [--group]  # down, the image and the kill helper go;
+#                                               # --group also takes the user out of the docker group
 #
 # setup installs Docker and its compose plugin from the distribution, puts
 # the user in the docker group (sign in again for it to count) and installs
@@ -30,7 +32,7 @@ helper=/usr/local/sbin/cbbbench-kill-container
 image=clipboardbridge:bench
 
 usage() {
-	echo "usage: setup-docker.sh setup | up CBB | down" >&2
+	echo "usage: setup-docker.sh setup | up CBB | down | teardown [--group]" >&2
 	exit 2
 }
 
@@ -97,6 +99,17 @@ up)
 down)
 	[ $# -eq 1 ] || usage
 	[ ! -f "$dir/compose.yaml" ] || compose down -v
+	;;
+teardown)
+	[ $# -le 2 ] || usage
+	[ ! -f "$dir/compose.yaml" ] || compose down -v
+	rm -rf "$dir"
+	docker image rm "$image" >/dev/null 2>&1 || true
+	sudo rm -f "$helper" /etc/sudoers.d/cbbbench-docker
+	if [ "${2:-}" = --group ]; then
+		sudo gpasswd -d "$(id -un)" docker
+	fi
+	echo "The bench's container, image and kill helper are gone."
 	;;
 *)
 	usage

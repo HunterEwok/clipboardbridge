@@ -49,7 +49,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		if _, err := Run(ctx, admin, adminCmd(admin)+" global on", "yes\n"); err != nil {
 			return noSudo(admin, err)
 		}
-		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, admin) })
+		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, admin) })
 		return globalShows(ctx, admin, "through the tunnel", 2*time.Minute)
 	}) != nil {
 		r.Skip("away/P36", "the admin computer of P37 is not set up")

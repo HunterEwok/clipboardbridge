@@ -47,13 +47,15 @@ To keep the result honest, the audit observes these rules:
 
 | Target | What it is | Notes |
 |---|---|---|
-| `pi4` | Raspberry Pi 4 on the home network | also the audit box (attacker's machine) |
-| `deck` | Steam Deck, Linux member / hub | home network or the away network |
-| `win` | Windows 11 member | in the VM |
-| `rpi0w` | Pi Zero W, lite member | the IoT subnet |
+| `controller` | the bench's controller on the home network | also the audit box (attacker's machine) |
+| `desktop` | a Linux member with a desktop, the hub | home network or the away network |
+| `win` | Windows member | in a VM |
+| `lite` | the lite member | a second subnet |
 | `mac` | macOS member | home network |
 | `cbb.tools` | the project's production forwarder | **touch only `cbb`/`cbb forward`; never change `ufw` or any other service** |
-| `vpn.virmali.ru` | the away-client VPS | **touch only `cbb`; never change `ufw` or any other service** |
+| `remote` | a server away from home, also running other services | **touch only `cbb`; never change `ufw` or any other service** |
+
+The bench's inventory (docs/testbench.md, section 13) maps each role to a real device.
 
 Everything reachable on these targets may be probed. On the two VPSes the audit interacts
 only with Clipboard Bridge's own processes and ports; it does not stop, reconfigure or firewall

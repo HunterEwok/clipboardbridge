@@ -321,20 +321,21 @@ fails for a reason a real phone would share.
 3. On the away computer `sudo cbb pair -invite FILE`; compare the fingerprints on both sides;
    type `yes` on the hub.
 4. Copy each way between the away computer and the home members.
-5. `cbb global off` and `on` on the away computer; repeat step 4.
+5. `cbb global off` (it asks first, since the away computer meets the hub only through the
+   tunnel; `yes`) and `on` on the away computer; repeat step 4.
 6. A hub with only an IPv6 address; a hub behind CGNAT (only the forwarder).
 Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing.
 
 **P12. Blind relay.** Runs: auto (`relay`: steps 2, 3 and 5 among the home members); steps 1 and 4 and the capture manual.
-Devices: `relay`, `deck`, `vps`; the group of R2 without a hub (no `cbb global hub` on any
+Devices: `relay`, `desktop`, `remote`; the group of R2 without a hub (no `cbb global hub` on any
 device). The relay runs `cbb relay -open -listen :PORT` as its own service, on a port of its
 own (the forwarder keeps 8764), opened in the server's firewall for UDP and TCP.
 1. On `relay` `cbb relay -show-key` gives KEY.
-2. On `deck` and `vps` `sudo cbb global relay RELAY:PORT -key KEY`; read what it says the
+2. On `desktop` and `remote` `sudo cbb global relay RELAY:PORT -key KEY`; read what it says the
    relay learns, type `yes`; then `cbb global` on each.
-3. Copy each way between `vps` and `deck` (R4, R5); capture on the relay (R7).
-4. Restart `vps`'s service; copy again once it is back.
-5. Give `vps` a wrong `-key`.
+3. Copy each way between `remote` and `desktop` (R4, R5); capture on the relay (R7).
+4. Restart `remote`'s service; copy again once it is back.
+5. Give `remote` a wrong `-key`.
 Pass: they sync both ways, also after the restart (within the 60 s backoff); `cbb global`
 names the relay; the capture has only WireGuard UDP and the registration's TLS (no server
 name), no marker; with the wrong key nothing is sent and the error says the key does not
@@ -475,33 +476,33 @@ Pass: as P29, also with the phone app closed; without Play services the phone ap
 logs once that there is no watch.
 
 **P34. Sync modes.** Runs: auto (`full`: steps 1 to 4 on the hub against another member, the headless members of step 5, and `-on` of step 6); the Mac app and the refused and stopped targets of step 6 manual.
-1. On deck `cbb mode own`; copy on deck's desktop, then on win's.
-2. On deck `cbb paste`; then `cbb mode receive` and copy on deck and on win; then `cbb mode
+1. On desktop `cbb mode own`; copy on desktop's desktop, then on win's.
+2. On desktop `cbb paste`; then `cbb mode receive` and copy on desktop and on win; then `cbb mode
    send` and do the same.
-3. Restart deck's service (`sudo systemctl restart clipboardbridge`); `cbb mode` and `cbb
-   status` on deck, `cbb devices` on win.
-4. `cbb mode shared` on deck.
-Pass: in own neither copy crosses, and `cbb paste` on deck prints win's text; in receive only
-win's copy reaches deck, in send only deck's reaches win; the mode survives the restart and
+3. Restart desktop's service (`sudo systemctl restart clipboardbridge`); `cbb mode` and `cbb
+   status` on desktop, `cbb devices` on win.
+4. `cbb mode shared` on desktop.
+Pass: in own neither copy crosses, and `cbb paste` on desktop prints win's text; in receive only
+win's copy reaches desktop, in send only desktop's reaches win; the mode survives the restart and
 win lists it; in shared both cross (R5).
-5. On `rpi0w` `sudo cbb mode own`, copy on `deck`, then `cbb paste` on `rpi0w`; `sudo cbb
+5. On `lite` `sudo cbb mode own`, copy on `desktop`, then `cbb paste` on `lite`; `sudo cbb
    mode shared` and copy again. The same on `nas` through `docker exec`, and on `mac` in the
    Mac app's Settings.
-6. On `deck` (the root) `cbb mode -on mac receive`, then `cbb mode -on rpi0w send`; `cbb mode`
-   on each. On `win` before it is an admin `cbb mode -on deck own`. With `mac`'s service
-   stopped, `cbb mode -on mac shared` on `deck`.
+6. On `desktop` (the root) `cbb mode -on mac receive`, then `cbb mode -on lite send`; `cbb mode`
+   on each. On `win` before it is an admin `cbb mode -on desktop own`. With `mac`'s service
+   stopped, `cbb mode -on mac shared` on `desktop`.
 Pass (steps 5 and 6): the lite member keeps its mode in its `mode` file and prints the
-group's text in own; the container and the Mac follow the same rules as `deck`; the root's
+group's text in own; the container and the Mac follow the same rules as `desktop`; the root's
 commands are taken and each target's `cbb mode` shows the new mode; a member that is not an
 admin is refused with a clear message; a stopped target gives an error within 10 s and
 nothing changes.
 
 **P35. A member in a container.** Runs: auto (`full`, steps 1 to 4, when the inventory has a
 device with `os = "docker"`), manual (step 5).
-Devices: `nas`, `deck` (the hub), `win`, `rpi0w`; `vps` for step 5. The container never makes
+Devices: `nas`, `desktop` (the hub), `win`, `lite`; `remote` for step 5. The container never makes
 the group: the bench refuses the role hub for it, since whoever runs `cbb new` holds the
 group's CA keys, and they stay off a container.
-1. `smoke` or `full`: `nas` joins `deck`'s group like the others (R2, `cbb` through `docker
+1. `smoke` or `full`: `nas` joins `desktop`'s group like the others (R2, `cbb` through `docker
    exec`), and every text arrives everywhere (R5).
 2. `docker inspect` of the container: not privileged, a read-only root file system, cap_drop
    ALL, the user 65532:65532, `no-new-privileges`, the host's network, a restart policy.
@@ -511,45 +512,45 @@ group's CA keys, and they stay off a container.
 4. `docker restart`; then a new container from the same volume (`docker compose up -d
    --force-recreate`, as after `docker compose pull`). After each, `cbb status` shows the same
    group, `cbb mode` says shared, and a copy on another member arrives on `nas` and on the rest.
-5. Only as the owner's explicit choice for the run, since it puts an admin key in a file
-   (the key levels of docs/roadmap.md, level 3): first `cbb admin nas` on `deck`, which must
+5. Only as an explicit choice for the run, since it puts an admin key in a file
+   (the key levels of docs/roadmap.md, level 3): first `cbb admin nas` on `desktop`, which must
    be refused ("offers no admin key"); then `CBB_KEYS_IN_FILE: "yes"` in the compose file
-   and `docker compose up -d`; on `deck` `cbb admin nas`; on `nas` `cbb
+   and `docker compose up -d`; on `desktop` `cbb admin nas`; on `nas` `cbb
    global on` (it asks about the keys in files), `cbb global hub HOST_ADDRESS:8764 -firewall
-   no`, and on the host the rule it prints for the UDP port. `vps` joins sync away from home
-   (P11) and syncs with `deck` through the container's tunnel. At the end `deck` revokes
+   no`, and on the host the rule it prints for the UDP port. `remote` joins sync away from home
+   (P11) and syncs with `desktop` through the container's tunnel. At the end `desktop` revokes
    `nas` (R3), which takes its admin key with it.
 Pass: steps 1 to 4 as written, with no step needing more than the compose file gives (no
-`NET_ADMIN`, no `/dev/net/tun`, no `--privileged`); in step 5 a copy on `vps` arrives on
-`deck` and back (R5), and `cbb status` on `vps` names `nas` as its hub.
+`NET_ADMIN`, no `/dev/net/tun`, no `--privileged`); in step 5 a copy on `remote` arrives on
+`desktop` and back (R5), and `cbb status` on `remote` names `nas` as its hub.
 
 **P36. Several hubs.** Runs: auto (`away`, after P37, without the capture and with one copy each way instead of 20 minutes of copies).
-Devices: `deck` (the root), `mac` (an admin), `vps` (away), `relay` (the forwarder). The order
+Devices: `desktop` (the root), `mac` (an admin), `remote` (away), `relay` (the forwarder). The order
 of the hubs is the root first, then the others by device ID (docs/protocol.md, section 11,
 "Several hubs"); phones are out of this run.
-1. The group of R2. On `deck` `sudo cbb global on` and `cbb global hub -forwarder ...` (as in
-   P11); `cbb admin mac`; on `mac` the same two commands. `vps` joins by `cbb invite` from
-   `deck` (P11).
+1. The group of R2. On `desktop` `sudo cbb global on` and `cbb global hub -forwarder ...` (as in
+   P11); `cbb admin mac`; on `mac` the same two commands. `remote` joins by `cbb invite` from
+   `desktop` (P11).
 2. `cbb global` on all three.
-3. Stop `deck`'s service. Copy on `vps` every 10 s and watch `cbb global` on `vps` and `mac`.
-4. Start `deck`'s service; keep copying on `vps` for 20 minutes.
-5. Capture `vps`'s uplink during steps 3 and 4 (R7).
-Pass: in step 2 `deck` serves, `mac` is `deck`'s client and `vps` knows both hubs; in step 3
-`mac` serves within about a minute and `vps` reaches it with no new invitation, and the
-copies resume on `mac`; in step 4 `mac` stops serving once `deck` says it serves, and `vps` is
-back on `deck` within 5 minutes; no copy is lost (the last one wins everywhere); the capture
+3. Stop `desktop`'s service. Copy on `remote` every 10 s and watch `cbb global` on `remote` and `mac`.
+4. Start `desktop`'s service; keep copying on `remote` for 20 minutes.
+5. Capture `remote`'s uplink during steps 3 and 4 (R7).
+Pass: in step 2 `desktop` serves, `mac` is `desktop`'s client and `remote` knows both hubs; in step 3
+`mac` serves within about a minute and `remote` reaches it with no new invitation, and the
+copies resume on `mac`; in step 4 `mac` stops serving once `desktop` says it serves, and `remote` is
+back on `desktop` within 5 minutes; no copy is lost (the last one wins everywhere); the capture
 shows only WireGuard to the forwarder or the hubs. The switch times go into the report.
 
 **P37. Moving the hub.** Runs: auto (`away`, steps 1 to 4; the admin is the Mac, or another Linux member at home).
-Devices: `deck` (the root and the hub), `mac` (an admin with sync away from home on and no hub
-set up), `rpi0w`, `nas`, `vps` (away, connected through `deck`).
+Devices: `desktop` (the root and the hub), `mac` (an admin with sync away from home on and no hub
+set up), `lite`, `nas`, `remote` (away, connected through `desktop`).
 1. The setup of P36 step 1 without the hub on `mac`.
-2. On `deck` `cbb global move rpi0w`, then `cbb global move nas`.
-3. On `deck` `cbb global move mac`.
-4. Copy each way between `vps` and `mac`, and `deck`; `cbb global` on all three.
-5. Turn `vps`'s sync away from home off and on, and copy again.
+2. On `desktop` `cbb global move lite`, then `cbb global move nas`.
+3. On `desktop` `cbb global move mac`.
+4. Copy each way between `remote` and `mac`, and `desktop`; `cbb global` on all three.
+5. Turn `remote`'s sync away from home off and on, and copy again.
 Pass: step 2 is refused with a clear message (a lite member and a container cannot be the
-hub); after step 3 `mac` serves with `deck`'s forwarder, `deck` is its client, and `vps`
+hub); after step 3 `mac` serves with `desktop`'s forwarder, `desktop` is its client, and `remote`
 follows without coming home or a new invitation; copies arrive both ways (R5).
 
 **P38. The open relay's limits.** Runs: planned (a helper that starts throwaway groups in
@@ -573,7 +574,7 @@ once their last devices leave; the relay writes nothing to disk (as S8).
 3. Copy a marker on another member; wait for it (twice the usual time).
 Pass: the service manager restarted it and it gets the marker.
 
-**F2. Reboot.** Runs: manual (the Deck needs the owner at the boot menu and the disk password;
+**F2. Reboot.** Runs: manual (a device with an encrypted disk needs a person at its boot prompt;
 the lite member's power is pulled by hand).
 1. Reboot the Linux member, the Windows VM, the Mac; power-cycle the lite member.
 2. When each is back, copy each way.
@@ -726,10 +727,10 @@ Pass: no hit.
 Pass: only keys and certificates, owner-only permissions; no clipboard text anywhere.
 
 **S17. Commands.** Runs: manual (step 3 planned: a helper that captures and replays a command).
-Devices: `deck` (the root), `win` or `mac` (an admin), `rpi0w`.
-1. On the admin `cbb mode -on rpi0w own`; then on `deck` `cbb freeze` the admin and repeat;
+Devices: `desktop` (the root), `win` or `mac` (an admin), `lite`.
+1. On the admin `cbb mode -on lite own`; then on `desktop` `cbb freeze` the admin and repeat;
    `cbb unfreeze` it.
-2. Set `rpi0w`'s clock 2 minutes back, send a mode command, set the clock right.
+2. Set `lite`'s clock 2 minutes back, send a mode command, set the clock right.
 3. Send one command twice with the same `id`.
 Pass: the admin's command is taken, a frozen admin's is refused; a command more than 60 s
 ahead of the receiver's clock is refused; the second copy is refused by the replay cache;

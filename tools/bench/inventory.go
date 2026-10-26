@@ -32,6 +32,8 @@ type Device struct {
 	Address   string   `toml:"address"`   // host:port others dial to pair with it, when mDNS cannot find it
 	VM        *VM      `toml:"vm"`
 	Container string   `toml:"container"` // os docker: the container's name on the host ssh reaches
+	Firewall  string   `toml:"firewall"`  // linux, for reset: "yes" lets the installer open the member port, "no" leaves the firewall alone
+	Setup     string   `toml:"setup"`     // os docker, for reset: tools/bench/setup-docker.sh on the host
 }
 
 // VM names a virtual machine that the bench may revert to a snapshot.
