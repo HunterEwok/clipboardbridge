@@ -116,7 +116,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   polkit rule for logind that it needs, and nothing more. Reboot and shutdown take only admins
   whose keys are in hardware unless the user allows keys in files. Limits per sender and a log
   of the last 100, as for remote paste; `cbb action off -on DEVICE` or `-all` turns them off
-  from afar. Linux runs every preset; a Mac and Windows only `restart` for now.
+  from afar. Linux runs them through logind; a Mac and Windows through the agent of the user
+  signed in (`pmset` and loginwindow's Apple events on a Mac, where the minute before a
+  reboot is the agent's; `LockWorkStation`, `SetSuspendState` and `InitiateSystemShutdownEx`
+  on Windows, which warns the users signed in).
 
 ### Changed
 

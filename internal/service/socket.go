@@ -800,6 +800,7 @@ type watcher struct {
 	out       chan node.Write
 	inject    string       // the target it offers for remote paste; "" for none
 	pasteOnly bool         // it holds no clipboard, whatever its target
+	act       bool         // it runs the quick actions in its session
 	injects   chan *inject // remote pastes for it
 }
 
@@ -838,7 +839,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	default:
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
-	w.pasteOnly = m.PasteOnly
+	w.pasteOnly, w.act = m.PasteOnly, m.Act
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -891,7 +892,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			if err != nil {
 				return
 			}
-			if m.Op == control.OpInjected {
+			if m.Op == control.OpInjected || m.Op == control.OpActed {
 				res := node.Result{Status: node.ResultDone}
 				if m.Error != "" {
 					res.Status, res.Reason = node.ResultFailed, m.Error
@@ -953,6 +954,9 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			injected[injSeq] = in
 			injMu.Unlock()
 			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By)}
+			if in.body.Type == group.CommandAction {
+				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action}
+			}
 			if control.Write(c, &control.Message{Header: h, Payload: []byte(in.text)}) != nil {
 				answer(injSeq, node.Result{Status: node.ResultFailed, Reason: "the connection to the paste target closed"})
 				return

@@ -236,3 +236,48 @@ func (s *Service) actionsOffOn(ctx context.Context, m *control.Message) error {
 	}
 	return nil
 }
+
+// sessionRunner runs the presets in the signed-in user's session, through
+// the agent that offers them, as on a Mac and on Windows.
+type sessionRunner struct{ s *Service }
+
+func (r sessionRunner) Run(ctx context.Context, name string) error {
+	s := r.s
+	s.mu.Lock()
+	var ws []*watcher
+	for w := range s.watchers {
+		if w.act {
+			ws = append(ws, w)
+		}
+	}
+	s.mu.Unlock()
+	if len(ws) == 0 {
+		return &actions.Refusal{Reason: "nobody is signed in here with Clipboard Bridge's agent running, and the actions run in the user's session"}
+	}
+	body := group.CommandBody{Type: group.CommandAction, Action: name}
+	var reasons []string
+	for _, w := range ws {
+		in := &inject{body: body, done: make(chan node.Result, 1)}
+		select {
+		case w.injects <- in:
+		default:
+			continue
+		}
+		select {
+		case res := <-in.done:
+			switch res.Status {
+			case node.ResultDone:
+				return nil
+			case node.ResultRefused:
+				return &actions.Refusal{Reason: res.Reason}
+			}
+			reasons = append(reasons, res.Reason)
+		case <-ctx.Done():
+			return errors.New("the agent did not answer")
+		}
+	}
+	if len(reasons) == 0 {
+		return errors.New("the agent is busy")
+	}
+	return errors.New(joinReasons(reasons))
+}

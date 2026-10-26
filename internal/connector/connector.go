@@ -27,6 +27,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 )
@@ -80,7 +81,17 @@ type Config struct {
 	Socket string // the control socket
 	Board  Board  // nil for a paste target without a clipboard
 	Target Target // nil to use Board's when it is one
-	Logf   func(format string, args ...any)
+	// Actor runs the quick actions in this session; nil where the
+	// service runs them itself.
+	Actor Actor
+	Logf  func(format string, args ...any)
+}
+
+// An Actor runs a quick action (internal/actions) in the user's session.
+// An error that is an *actions.Refusal is a reason not to, for the sender;
+// any other is a failure.
+type Actor interface {
+	Run(ctx context.Context, name string) error
 }
 
 // target returns the paste target the connector offers, or nil.
@@ -214,6 +225,7 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 	if tgt != nil {
 		watchReq.Inject = tgt.Target()
 	}
+	watchReq.Act = cfg.Actor != nil
 	if cfg.Board != nil {
 		if it, ok, err := cfg.Board.Current(); err == nil && ok {
 			if m := report(control.OpClipboard, it); m != nil {
@@ -242,7 +254,7 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 	if cfg.Board != nil {
 		go func() { errc <- watch(ctx, cfg.Board, send, cfg.Logf) }()
 	}
-	go func() { errc <- apply(ctx, cfg.Board, tgt, c, send, exp, cfg.Logf) }()
+	go func() { errc <- apply(ctx, cfg.Board, tgt, cfg.Actor, c, send, exp, cfg.Logf) }()
 	err = <-errc
 	cancel()
 	return err
@@ -292,7 +304,7 @@ func watch(ctx context.Context, b Board, send func(*control.Message) error, logf
 // apply writes what the service sends into the clipboard, in order, and
 // sets the expiry of a secret; it hands remote pastes to the target, one
 // at a time, and answers each.
-func apply(ctx context.Context, b Board, tgt Target, c *control.Client, send func(*control.Message) error, exp *expiry, logf func(string, ...any)) error {
+func apply(ctx context.Context, b Board, tgt Target, act Actor, c *control.Client, send func(*control.Message) error, exp *expiry, logf func(string, ...any)) error {
 	var last uint64
 	for {
 		m, err := c.Receive()
@@ -304,6 +316,12 @@ func apply(ctx context.Context, b Board, tgt Target, c *control.Client, send fun
 		}
 		if m.Op == control.OpInject {
 			if err := send(injected(ctx, tgt, m, logf)); err != nil {
+				return err
+			}
+			continue
+		}
+		if m.Op == control.OpAct {
+			if err := send(acted(ctx, act, m, logf)); err != nil {
 				return err
 			}
 			continue
@@ -342,6 +360,27 @@ func injected(ctx context.Context, tgt Target, m *control.Message, logf func(str
 	default:
 		ans.Error, ans.Detail = "the "+tgt.Target()+" target could not paste", err.Error()
 		logf("cbb: a remote paste failed: %v", err)
+	}
+	return ans
+}
+
+// acted runs a quick action and makes its answer, as injected does for a
+// paste.
+func acted(ctx context.Context, act Actor, m *control.Message, logf func(string, ...any)) *control.Message {
+	ans := &control.Message{Header: control.Header{Op: control.OpActed, Seq: m.Seq}}
+	if act == nil {
+		ans.Error, ans.Refused = "this watcher runs no actions", true
+		return ans
+	}
+	err := act.Run(ctx, m.Name)
+	var r *actions.Refusal
+	switch {
+	case err == nil:
+	case errors.As(err, &r):
+		ans.Error, ans.Refused = r.Reason, true
+	default:
+		ans.Error, ans.Detail = "the session could not run "+m.Name, err.Error()
+		logf("cbb: the action %s failed: %v", m.Name, err)
 	}
 	return ans
 }

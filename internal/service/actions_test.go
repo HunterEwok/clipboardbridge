@@ -125,3 +125,58 @@ func TestQuickActions(t *testing.T) {
 		t.Error("deck did not restart")
 	}
 }
+
+// TestQuickActionsInSession: on a Mac and on Windows the agent runs the
+// presets in the user's session.
+func TestQuickActionsInSession(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startWith(t, &h, "deck", "linux", func(c *Config) { c.actInSession = true })
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	for _, name := range []string{actions.Lock, actions.Sleep} {
+		if _, err := deck.do(t, control.Header{Op: control.OpActionSet, Actions: []control.Action{{Name: name, On: true}}}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(name string) error {
+		time.Sleep(time.Second) // one action a second from one sender
+		_, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "deck", Name: name}, "")
+		return err
+	}
+	if err := run(actions.Lock); err == nil || !strings.Contains(err.Error(), "nobody is signed in here") {
+		t.Errorf("without an agent: %v", err)
+	}
+	w := deck.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Act: true}}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 4)
+	go func() {
+		for {
+			m, err := w.Receive()
+			if err != nil {
+				return
+			}
+			if m.Op != control.OpAct {
+				continue
+			}
+			got <- m.Name
+			ans := control.Header{Op: control.OpActed, Seq: m.Seq}
+			if m.Name == actions.Sleep {
+				ans.Error, ans.Refused = "the lid is closed", true
+			}
+			w.Send(&control.Message{Header: ans})
+		}
+	}()
+	if err := run(actions.Lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(actions.Sleep); err == nil || !strings.Contains(err.Error(), "the lid is closed") {
+		t.Errorf("sleep: %v", err)
+	}
+	if a, b := <-got, <-got; a != actions.Lock || b != actions.Sleep {
+		t.Errorf("the agent got %s and %s", a, b)
+	}
+}

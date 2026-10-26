@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -569,7 +570,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	w := pasteboard.NewWatch(b)
-	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Logf: logf}); err != nil {
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Logf: logf}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0

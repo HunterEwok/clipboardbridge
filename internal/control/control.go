@@ -59,6 +59,8 @@ const (
 	OpActionSet = "action-set"    // client → service: set this device's quick action Actions[0]: on or off, and for whom
 	OpActionOn  = "action-on"     // client → service: as an admin, have the member Device run its action Name
 	OpActionOff = "actions-off"   // client → service: as an admin, turn every quick action off on Device or All
+	OpAct       = "act"           // service → watcher: run the quick action Name in the watcher's session
+	OpActed     = "acted"         // watcher → service: how the act with Seq ended: Error empty, or why not
 	OpReply     = "reply"         // service → client: the answer to a request
 )
 
@@ -102,8 +104,11 @@ type Header struct {
 	PasteOnly bool   `json:"paste_only,omitempty"`
 	Refused   bool   `json:"refused,omitempty"`
 
-	// Actions: in action-set, the one action to set.
+	// Actions: in action-set, the one action to set. Act, in a watch
+	// request, says the watcher runs the quick actions in its session, as
+	// the agent does on a Mac and on Windows.
 	Actions []Action `json:"actions,omitempty"`
+	Act     bool     `json:"act,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
