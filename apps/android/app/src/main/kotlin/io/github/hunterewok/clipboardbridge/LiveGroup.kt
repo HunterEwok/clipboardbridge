@@ -855,9 +855,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private suspend fun takeOver(id: String) {
         val admin = signer(Keys.ADMIN, R.string.reason_take_over)
         val rs = withContext(Dispatchers.IO) {
-            // A root key left from a group this phone made before goes.
-            val root = Keys.create(context, Keys.ROOT)
             val g = copyOfState() ?: return@withContext null
+            // A root key left from a group this phone made before goes.
+            val root = Keys.create(context, Keys.ROOT, g.tag)
             val rs = g.takeOver(id, admin, root, Instant.now())
             adopt(g)
             rs
