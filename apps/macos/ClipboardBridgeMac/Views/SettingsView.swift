@@ -3,7 +3,8 @@
 import AppKit
 import SwiftUI
 
-/// The app's settings: the colour, light or dark, and error details.
+/// The app's settings: the colour, light or dark, the sync mode, remote
+/// paste, and error details.
 struct SettingsView: View {
     @EnvironmentObject private var model: MacModel
     @Environment(\.palette) private var palette
@@ -40,6 +41,19 @@ struct SettingsView: View {
                         .disabled(model.busy)
                 } header: { Text("This Mac's clipboard") } footer: {
                     Text("Own keeps this Mac's copies here and the group's away from its clipboard; Fetch still brings the group's text. Shared sends copies to the group and takes the group's. Receive only takes them, Send only sends them.")
+                }
+            }
+            if model.inGroup {
+                Section {
+                    LabeledContent {
+                        if model.pasteAllowed {
+                            Text("Allowed")
+                        } else {
+                            Button { model.allowPaste() } label: { Text("Allow…") }
+                        }
+                    } label: { Text("Pressing keys") }
+                } header: { Text("Remote paste") } footer: {
+                    Text("An admin's paste goes where this Mac's keyboard focus is, while this app is open. macOS asks you to allow the app in System Settings, Privacy & Security, Accessibility. Turn remote paste on with cbb paste-receive on.")
                 }
             }
             Section {

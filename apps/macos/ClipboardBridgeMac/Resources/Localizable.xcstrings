@@ -51,12 +51,42 @@
         }
       }
     },
+    "Allowed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешено"
+          }
+        }
+      }
+    },
+    "Allow…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешить…"
+          }
+        }
+      }
+    },
     "Amber": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Янтарь"
+          }
+        }
+      }
+    },
+    "An admin's paste goes where this Mac's keyboard focus is, while this app is open. macOS asks you to allow the app in System Settings, Privacy & Security, Accessibility. Turn remote paste on with cbb paste-receive on.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вставка от администратора попадает туда, где фокус клавиатуры этого Мака, пока приложение открыто. macOS попросит разрешить приложению это в Системных настройках, раздел «Конфиденциальность и безопасность», «Универсальный доступ». Удалённая вставка включается командой cbb paste-receive on."
           }
         }
       }
@@ -581,12 +611,32 @@
         }
       }
     },
+    "Pressing keys": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажатие клавиш"
+          }
+        }
+      }
+    },
     "Quit": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Выйти"
+          }
+        }
+      }
+    },
+    "Remote paste": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалённая вставка"
           }
         }
       }

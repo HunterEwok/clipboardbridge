@@ -136,6 +136,12 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	s.mu.Unlock()
 	if len(ws) == 0 {
 		res.Reason = "nothing on this device can paste: no desktop session, tmux or console helper of Clipboard Bridge runs here"
+		if s.cfg.OS == group.OSMacOS {
+			// Only the app pastes on a Mac: macOS lets an app press keys
+			// once its user allowed it in Accessibility, and the service
+			// and its pasteboard agent are not apps.
+			res.Reason = "a Mac pastes through the Clipboard Bridge app, and it is not open here; its user opens it and allows it in System Settings, Privacy & Security, Accessibility"
+		}
 		if lines && term {
 			res.Reason = "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
 		} else if console && !set.Console {

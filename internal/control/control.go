@@ -88,14 +88,16 @@ type Header struct {
 	// it; Console allows text consoles and root's tmux; All turns remote
 	// paste off on every member; Inject, in a watch request, is the target
 	// the watcher offers ("desktop", "tmux" or "console"), none if empty;
-	// Refused, in an injected answer, says the target refused rather than
-	// failed.
-	Method  string `json:"method,omitempty"`
-	Enter   bool   `json:"enter,omitempty"`
-	Console bool   `json:"console,omitempty"`
-	All     bool   `json:"all,omitempty"`
-	Inject  string `json:"inject,omitempty"`
-	Refused bool   `json:"refused,omitempty"`
+	// PasteOnly, in a watch request, says the watcher holds no clipboard
+	// and only pastes, like the Mac app; Refused, in an injected answer,
+	// says the target refused rather than failed.
+	Method    string `json:"method,omitempty"`
+	Enter     bool   `json:"enter,omitempty"`
+	Console   bool   `json:"console,omitempty"`
+	All       bool   `json:"all,omitempty"`
+	Inject    string `json:"inject,omitempty"`
+	PasteOnly bool   `json:"paste_only,omitempty"`
+	Refused   bool   `json:"refused,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code

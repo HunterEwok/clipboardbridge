@@ -88,6 +88,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   through the clipboard and Ctrl+V, or types any character with SendInput's Unicode keys.
   It refuses on the lock screen and under an administrator prompt, and when the window with
   the focus runs as administrator, since Windows drops keys sent to it.
+- Remote paste on a Mac, through the Mac app, which macOS lets press keys once its user
+  allows it in Accessibility: it pastes through the pasteboard and Cmd+V, marked so the
+  agent does not sync it, and gives the pasteboard its items back, or types with Unicode key
+  events. It refuses on the lock screen and while Secure Keyboard Entry or a password field
+  holds the keyboard. Without the app, a Mac says it needs it. The app's Settings show
+  whether it may press keys.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

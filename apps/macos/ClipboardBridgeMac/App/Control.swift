@@ -20,6 +20,20 @@ enum Control {
         var name: String?
         var status: Status?
         var devices: [Device]?
+        /// Remote paste (internal/control): the target a watcher offers,
+        /// that it holds no clipboard, the order of injects, how to put the
+        /// text in, Enter after it, and that a target refused.
+        var inject: String?
+        var pasteOnly: Bool?
+        var seq: UInt64?
+        var method: String?
+        var enter: Bool?
+        var refused: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case op, kind, len, error, detail, done, name, status, devices, inject, seq, method, enter, refused
+            case pasteOnly = "paste_only"
+        }
 
         init(op: String, name: String? = nil) {
             self.op = op
@@ -170,10 +184,23 @@ struct ControlClient {
     }
 
     private func requestNow(_ header: Control.Header, payload: Data) throws -> (Control.Header, Data) {
+        let fd = try connect(timeout: 10)
+        defer { close(fd) }
+        try Self.send(fd, Control.encode(header, payload: payload))
+        var data = Data()
+        guard let (answer, body) = try Self.receive(fd, into: &data) else { throw Control.Failure.broken("the service closed the connection") }
+        if let error = answer.error { throw Control.Failure.refused(error, detail: answer.detail) }
+        return (answer, body)
+    }
+
+    /// A connection to the socket, whose reads and writes give up after
+    /// timeout seconds, or never with 0.
+    func connect(timeout seconds: Int) throws -> Int32 {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw Control.Failure.broken("socket: \(String(cString: strerror(errno)))") }
-        defer { close(fd) }
-        var timeout = timeval(tv_sec: 10, tv_usec: 0)
+        var ok = false
+        defer { if !ok { close(fd) } }
+        var timeout = timeval(tv_sec: seconds, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, [Int32(1)], socklen_t(MemoryLayout<Int32>.size))
@@ -195,8 +222,11 @@ struct ControlClient {
             if e == EACCES || e == EPERM { throw Control.Failure.denied }
             throw Control.Failure.notRunning("\(path): \(String(cString: strerror(e)))")
         }
+        ok = true
+        return fd
+    }
 
-        let out = try Control.encode(header, payload: payload)
+    static func send(_ fd: Int32, _ out: Data) throws {
         try out.withUnsafeBytes { raw in
             var sent = 0
             while sent < raw.count {
@@ -205,16 +235,19 @@ struct ControlClient {
                 sent += n
             }
         }
+    }
 
-        var data = Data()
+    /// The next message on fd; data keeps what came after it for the next
+    /// call. Nil when the service closed the connection.
+    static func receive(_ fd: Int32, into data: inout Data) throws -> (Control.Header, Data)? {
         var chunk = [UInt8](repeating: 0, count: 16 << 10)
         while true {
-            if let (answer, body, _) = try Control.decode(data) {
-                if let error = answer.error { throw Control.Failure.refused(error, detail: answer.detail) }
+            if let (answer, body, used) = try Control.decode(data) {
+                data.removeFirst(used)
                 return (answer, body)
             }
             let n = Darwin.read(fd, &chunk, chunk.count)
-            if n == 0 { throw Control.Failure.broken("the service closed the connection") }
+            if n == 0 { return nil }
             if n < 0 { throw Control.Failure.broken("read: \(String(cString: strerror(errno)))") }
             data.append(contentsOf: chunk[0..<n])
         }
