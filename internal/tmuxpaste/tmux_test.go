@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,12 @@ func TestTmux(t *testing.T) {
 		t.Fatalf("a paste with no client attached: %v", err)
 	}
 
+	// util-linux's script takes the command with -c; the BSDs' and the
+	// Mac's after the file.
 	attach := exec.Command("script", "-q", "-c", "tmux "+strings.Join(tm.Args, " ")+" attach -t test", "/dev/null")
+	if runtime.GOOS != "linux" {
+		attach = exec.Command("script", append(append([]string{"-q", "/dev/null", "tmux"}, tm.Args...), "attach", "-t", "test")...)
+	}
 	// tmux attaches only with a terminal type it knows, which CI has not.
 	attach.Env = append(os.Environ(), "TERM=xterm")
 	var attachOut strings.Builder

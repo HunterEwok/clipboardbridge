@@ -1968,8 +1968,8 @@ It answers `done` when the system took the action (a reboot that is scheduled co
 `refused` with the reason (the action is off, the signer is not allowed, the system refused
 it) or `failed`, and keeps the last 100 actions in a log (sender, time, action, result). An
 `actions-off` command turns every action off on the receiver, keeping who may run each; only
-the device's own user turns them on again. A member before 0.6 refuses both as an unknown
-type.
+the device's own user turns them on again. The lite member knows only `reboot`,
+`cancel-shutdown` and `restart`. A member before 0.6 refuses both as an unknown type.
 
 
 ## 16. Signed releases

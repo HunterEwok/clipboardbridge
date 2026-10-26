@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
@@ -496,6 +497,97 @@ func TestLiteRemotePaste(t *testing.T) {
 	}
 	if set, err := remotepaste.Load(dir); err != nil || set.On {
 		t.Errorf("the lite member's settings: %+v, %v", set, err)
+	}
+}
+
+// TestLiteQuickActions: the lite member runs only the presets its own user
+// turned on, for the signers they allow, and restarts at an admin's request by ending with an error, after which
+// systemd starts it again. A reboot is not run here.
+func TestLiteQuickActions(t *testing.T) {
+	bin := os.Getenv("CBB_LITE")
+	if bin == "" {
+		t.Skip("CBB_LITE is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	dir := joinLite(t, bin, pi)
+	pa, _ := pi.addrs()
+	lite := startLite(t, bin, dir, "-no-mdns", "-no-listen", "-peer", pa)
+	waitFor(t, "the lite member connected", func() bool {
+		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil && len(m.Status.Peers) == 1
+	})
+	run := func(name string) error {
+		time.Sleep(time.Second) // one action a second from one sender
+		_, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "lite", Name: name}, "")
+		return err
+	}
+	set := func(a control.Action) {
+		t.Helper()
+		if _, err := lite.do(t, control.Header{Op: control.OpActionSet, Actions: []control.Action{a}}, ""); err != nil {
+			t.Fatalf("setting %+v: %v", a, err)
+		}
+	}
+	wantRefused := func(name, reason string) {
+		t.Helper()
+		if err := run(name); err == nil || !strings.Contains(err.Error(), reason) {
+			t.Errorf("%s: %v, want %q", name, err, reason)
+		}
+	}
+
+	wantRefused(actions.Restart, "the action restart is off on this device")
+	wantRefused(actions.Lock, "this device has no action")
+	if _, err := lite.do(t, control.Header{Op: control.OpActionSet, Actions: []control.Action{{Name: actions.Lock, On: true}}}, ""); err == nil {
+		t.Error("the lite member turned lock on")
+	}
+	// pi's keys are in files: reboot takes it only with any key, which this
+	// test leaves off.
+	set(control.Action{Name: actions.Reboot, On: true})
+	wantRefused(actions.Reboot, "keys are in hardware")
+	set(control.Action{Name: actions.Restart, On: true, By: []string{actions.ByPhone}})
+	wantRefused(actions.Restart, "only for phone")
+	set(control.Action{Name: actions.Restart, On: true})
+	st := lite.status(t)
+	if len(st.Actions) != 3 || st.Actions[0].Name != actions.Reboot || !st.Actions[0].On || st.Actions[1].On || !st.Actions[2].On {
+		t.Errorf("the lite member's actions: %+v", st.Actions)
+	}
+	out, err := exec.Command(bin, "-socket", lite.socket, "action").Output()
+	if err != nil || !strings.Contains(string(out), "reboot           on, for every admin, keys in hardware only\n") {
+		t.Errorf("cbb action: %v; %s", err, out)
+	}
+	if err := run(actions.Restart); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-lite.done:
+		lite.cancel = nil
+		if err == nil {
+			t.Error("the lite member ended without an error, so systemd would not start it again")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lite member did not restart")
+	}
+
+	// The log keeps who asked and how it ended, in the full member's file.
+	log, err := actions.ReadLog(dir)
+	if err != nil || len(log) != 5 {
+		t.Fatalf("the log: %+v, %v", log, err)
+	}
+	if e := log[4]; e.Action != actions.Restart || e.Result != "done" || e.Name != "pi" {
+		t.Errorf("the restart's entry: %+v", e)
+	}
+
+	// Started again, it keeps them, and any admin turns them off.
+	lite = startLite(t, bin, dir, "-no-mdns", "-no-listen", "-peer", pa)
+	waitFor(t, "the lite member connected again", func() bool {
+		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil && len(m.Status.Peers) == 1
+	})
+	if _, err := pi.do(t, control.Header{Op: control.OpActionOff, Device: "lite"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if set, err := actions.Load(dir); err != nil || len(set.On()) != 0 {
+		t.Errorf("after actions-off: %+v, %v", set, err)
 	}
 }
 

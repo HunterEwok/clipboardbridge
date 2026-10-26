@@ -96,6 +96,8 @@ pub struct Node {
     tunnel_key: Arc<RwLock<TunnelKeys>>,
     on_tunnel: RwLock<Option<OnTunnel>>,
     on_command: RwLock<Option<OnCommand>>,
+    /// The quick actions that are on here, which the hellos name.
+    actions: RwLock<Vec<String>>,
     /// The members discovery finds on the home network now.
     /// The devices discovery finds on the home network, by the uptime they
     /// were first found.
@@ -103,7 +105,7 @@ pub struct Node {
 }
 
 enum Out {
-    Hello(Hello, Duration, crate::clip::Mode),
+    Hello(Hello, Duration, crate::clip::Mode, Vec<String>),
     Event(Event, Duration),
     Records(Vec<Record>),
     Result(wire::CommandResult),
@@ -144,6 +146,7 @@ impl Node {
             tunnel_key: Arc::new(RwLock::new(None)),
             on_tunnel: RwLock::new(None),
             on_command: RwLock::new(None),
+            actions: RwLock::new(Vec::new()),
             home: Mutex::new(HashMap::new()),
         }
     }
@@ -158,6 +161,12 @@ impl Node {
                 c.close(true);
             }
         }
+    }
+
+    /// Sets the quick actions the hellos name from now on; a peer sees a
+    /// change at its next connection.
+    pub fn set_actions(&self, on: Vec<String>) {
+        *self.actions.write().unwrap() = on;
     }
 
     /// Sets what carries out the commands peers send.
@@ -406,7 +415,8 @@ impl Node {
             // The connection is in the forwarding set before the engine
             // makes the hello, so no event falls between the two.
             let hello = self.engine.connected(id.as_str());
-            let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode()));
+            let actions = self.actions.read().unwrap().clone();
+            let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode(), actions));
         }
         self.logf(&format!("cbb: connected to {id} at {addr}"));
         let writer = {
@@ -657,7 +667,7 @@ fn writer(
 ) {
     let message = |o: Out| -> Option<Message> {
         match o {
-            Out::Hello(mut h, queued, mode) => {
+            Out::Hello(mut h, queued, mode, actions) => {
                 if let Some(ev) = h.current.as_mut() {
                     ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
                 }
@@ -669,6 +679,7 @@ fn writer(
                     crate::device::own(),
                     key.read().unwrap().as_ref().map(|(k, p)| (k.as_slice(), p.as_slice())),
                     mode.name(),
+                    &actions,
                 ))
             }
             Out::Event(mut ev, queued) => {

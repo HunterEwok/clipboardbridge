@@ -128,6 +128,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (`actions`), and an admin phone shows them on the page of a computer or a lite member, runs
   one at a tap (reboot and shut down ask again) and turns them all off. The Swift and Kotlin
   kits sign and check `action` and `actions-off` commands, with cross test vectors from Go.
+- Quick actions on the lite member: `reboot` (a minute later, through `shutdown -r +1` and a
+  polkit rule), `cancel-shutdown` and `restart`, each off until `sudo cbb action enable
+  NAME` there; its hello names the ones that are on, and `lite/core` checks action commands
+  and their signers against Go's vectors.
 
 ### Changed
 
