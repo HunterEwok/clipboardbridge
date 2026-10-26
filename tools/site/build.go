@@ -117,7 +117,7 @@ type Release struct {
 }
 
 // releaseHeading is a release's heading in CHANGELOG.md.
-var releaseHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$`)
+var releaseHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})\r?$`)
 
 // latestRelease reads the first release of the changelog next to site/.
 func latestRelease(root string) (Release, error) {

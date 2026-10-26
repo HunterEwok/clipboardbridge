@@ -289,3 +289,20 @@ func checkLinks(t *testing.T, out string) {
 		t.Fatal(err)
 	}
 }
+
+func TestLatestRelease(t *testing.T) {
+	dir := t.TempDir()
+	site := filepath.Join(dir, "site")
+	if err := os.Mkdir(site, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A checkout on Windows has CRLF line ends.
+	log := "# Changelog\r\n\r\n## [Unreleased]\r\n\r\n## [1.2.3] - 2026-01-02\r\n\r\n## [1.2.2] - 2025-12-01\r\n"
+	if err := os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := latestRelease(site)
+	if err != nil || r != (Release{Version: "1.2.3", Date: "2026-01-02"}) {
+		t.Errorf("latestRelease = %+v, %v", r, err)
+	}
+}
