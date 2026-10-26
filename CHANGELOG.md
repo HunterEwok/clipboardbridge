@@ -108,8 +108,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - `cbb global relay` first says what a relay learns (which devices are online and from
   where, which talk, when and how much) and asks you to type yes, or takes `-yes`; the
-  service takes a relay only with that consent. The design no longer keeps the relay to
-  self-hosting only (D-68).
+  service takes a relay only with that consent. Where sync away from home is off, it turns
+  it on as well, after the same warning about keys in files as `cbb global on`. The design
+  no longer keeps the relay to self-hosting only (D-68).
 - The lite member's release archives are `clipboardbridge-lite-linux-amd64.tar.gz`, `-arm64`
   and `-armv6`, holding `clipboardbridge-lite/`, like the full member's `clipboardbridge-*`
   (they were `cbb-lite-linux-*`). `get.sh --lite` takes the new names, and the old ones for
@@ -131,6 +132,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- `cbb pair -invite` was always refused: it sent the join, which changes the group, on the
+  regular control socket instead of the admin socket, so joining by invitation from away
+  did not work at all.
+- `cbb status` lists each device's sync mode (`MODE`: both, send or receive).
+- The lite member's `cbb join -code` returns only once its service has the group, so a
+  command right after it no longer finds the device in no group.
+- The Linux and macOS installers wait up to ten seconds for the service to answer before
+  their final `cbb status`, which no longer says the service is not running on a clean
+  install.
+- The Linux `uninstall.sh` stops the desktop agents running in users' sessions too.
 - Moving the hub could leave a device far from home without a hub: the old hub stopped its
   tunnel two seconds after it queued the new hub's offer, whether or not the offer had gone
   out. It now says goodbye after the offer on each connection through its tunnel, waits up

@@ -150,7 +150,8 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}()
 	}
-	c, err := waitService()
+	// The join changes the group: it goes to the admin socket.
+	c, err := waitService(control.OpJoin)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -168,13 +169,31 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	joined = true
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
-	// The group's servers as the service knows them now that it joined.
-	if st, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}}); err == nil && st.Status != nil {
-		if err := applyGrant(stdout, grantFor(st.Status.Away)); err != nil {
-			fmt.Fprintf(stderr, "cbb: the service's network did not follow the group's servers: %v; %s\n", err, allowHint)
-		}
+	// The group's servers as the service knows them now that it joined,
+	// asked on a connection of its own: each takes one request.
+	if st, err := statusNow(); err != nil {
+		fmt.Fprintf(stderr, "cbb: cannot ask the service for the group's servers: %v; %s\n", err, allowHint)
+	} else if err := applyGrant(stdout, grantFor(st.Away)); err != nil {
+		fmt.Fprintf(stderr, "cbb: the service's network did not follow the group's servers: %v; %s\n", err, allowHint)
 	}
 	fmt.Fprintln(stdout, "Joined the group. It syncs through the group's hub wherever this device is;")
 	fmt.Fprintln(stdout, "cbb global shows how. The invitation file is deleted.")
 	return 0
+}
+
+// statusNow asks the service for its status on a connection of its own.
+func statusNow() (*control.Status, error) {
+	c, err := control.DialFor(control.OpStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpStatus}})
+	if err != nil {
+		return nil, err
+	}
+	if m.Status == nil {
+		return nil, errors.New("the service sent no status")
+	}
+	return m.Status, nil
 }

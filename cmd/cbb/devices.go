@@ -25,7 +25,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 		skew[p.ID] = p.SkewMS
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tSEEN\tCLOCK\tID")
+	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tMODE\tSEEN\tCLOCK\tID")
 	unlisted, oldKeys := false, false
 	for _, d := range devs {
 		name := d.Name
@@ -55,7 +55,8 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 				clock = fmt.Sprintf("off by %v; check its time", d.Round(time.Second))
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, seen(d, now), clock, d.ID)
+		// The sync mode, as each connected device's hello says it.
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, d.Mode, seen(d, now), clock, d.ID)
 	}
 	tw.Flush()
 	if unlisted {

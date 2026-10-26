@@ -45,6 +45,11 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
 	systemctl disable --now clipboardbridge.service >/dev/null 2>&1 || true
 fi
+# The desktop agent runs in each user's session from the autostart entry; it
+# stops here too, or it would keep the clipboard until the user logs out.
+if command -v pkill >/dev/null 2>&1; then
+	pkill -x -f '/usr/local/bin/cbb agent' >/dev/null 2>&1 || true
+fi
 share=/usr/local/share/clipboardbridge
 if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close

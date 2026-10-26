@@ -29,6 +29,9 @@ func fakeService(t *testing.T, answers ...control.Message) chan *control.Message
 }
 
 // fakeHandler is fakeService with a handler that answers each request.
+// Like the service, it listens on a control socket and an admin socket, and
+// refuses an operation that changes the group on the control socket; each
+// connection carries one request.
 func fakeHandler(t *testing.T, handle func(m *control.Message, r *control.Reader, c net.Conn)) chan *control.Message {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "cb")
@@ -37,29 +40,40 @@ func fakeHandler(t *testing.T, handle func(m *control.Message, r *control.Reader
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "c.sock")
-	ln, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ln.Close() })
 	t.Setenv("CBB_SOCKET", socket)
-	t.Setenv("CBB_ADMIN_SOCKET", socket)
+	t.Setenv("CBB_ADMIN_SOCKET", control.AdminSocketFor(socket))
 	got := make(chan *control.Message, 8)
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			r := control.NewReader(c)
-			m, err := r.Read()
-			if err == nil {
-				got <- m
-				handle(m, r, c)
-			}
-			c.Close()
+	for _, path := range []string{socket, control.AdminSocketFor(socket)} {
+		admin := path != socket
+		// On Windows the admin socket is in a directory of its own.
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
 		}
-	}()
+		ln, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { ln.Close() })
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				r := control.NewReader(c)
+				m, err := r.Read()
+				switch {
+				case err != nil:
+				case control.IsAdmin(m.Op) && !admin:
+					answer(c, control.Message{Header: control.Header{Error: m.Op + " changes the group, so the service takes it only on its admin socket", Done: true}})
+				default:
+					got <- m
+					handle(m, r, c)
+				}
+				c.Close()
+			}
+		}()
+	}
 	return got
 }
 
@@ -281,13 +295,18 @@ func TestWriteDevices(t *testing.T) {
 	writeDevices(&b, []control.Device{
 		{ID: "a1", Name: "pi", Role: "full", OS: "linux", Admin: true, Root: true, Online: true, Self: true, Listed: true},
 		{ID: "b2", Name: "mac", Role: "full", OS: "macos", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true},
-		{ID: "c3", Name: "deck", Role: "full", OS: "windows", Admin: true, Online: true},
+		{ID: "c3", Name: "deck", Role: "full", OS: "windows", Admin: true, Online: true, Mode: "send"},
 	}, []control.Device{{ID: "c3", SkewMS: 9000}}, now)
 	out := b.String()
 	for _, want := range []string{"pi (this device)", "online", "5 min ago", "deck *", "not in the devices list yet",
-		"Linux", "macOS", "Windows", "root", "admin", "off by 9s"} {
+		"Linux", "macOS", "Windows", "root", "admin", "off by 9s", "MODE"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "c3") && !strings.Contains(line, "send") {
+			t.Errorf("deck's line lacks its mode: %q", line)
 		}
 	}
 }

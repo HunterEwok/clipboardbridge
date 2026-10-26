@@ -411,13 +411,12 @@ func TestAwayThroughRelay(t *testing.T) {
 		<-served
 	}()
 
-	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err == nil {
-		t.Error("a relay before sync away from home is on")
+	// The relay turns sync away from home on by itself (pi), or takes the
+	// place of its hubs (deck).
+	if _, err := deck.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+		t.Fatal(err)
 	}
 	for _, s := range []*testService{pi, deck} {
-		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
-			t.Fatal(err)
-		}
 		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: "sha256:nope"}, ""); err == nil {
 			t.Error("a relay with a bad key")
 		}
