@@ -596,7 +596,8 @@ multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
 
-Step 1 is built (docs/protocol.md, section 4, "Media" and "Content"); the rest follows.
+Steps 1 and 2 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+watcher protocol in section 8); the rest follows.
 
 1. The `media` event, the content cache, `get` and `chunk`, priorities and limits in Go;
    interop vectors for the Swift and Kotlin kits and the lite core (which learns to ignore

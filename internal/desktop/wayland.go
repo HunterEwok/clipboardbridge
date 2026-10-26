@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/wl"
 )
@@ -50,6 +51,9 @@ const (
 // textTypes are the MIME types and X11 targets of text, the best first.
 var textTypes = []string{"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "STRING", "TEXT"}
 
+// imageTypes are the image types the group carries, the best first.
+var imageTypes = []string{clip.TypePNG, clip.TypeJPEG}
+
 // secretType is the type KDE's password managers add to a secret; any
 // value counts.
 const secretType = "x-kde-passwordManagerHint"
@@ -58,6 +62,8 @@ const (
 	maxText      = 1 << 20
 	readTimeout  = 2 * time.Second
 	writeTimeout = 5 * time.Second // for a program that asked for the text and does not read it
+	// imageTimeout bounds reading or writing an image, which may be large.
+	imageTimeout = 30 * time.Second
 )
 
 // Wayland is the clipboard of a Wayland session through data-control.
@@ -267,13 +273,19 @@ func (w *Wayland) selection(id uint32) {
 	}()
 }
 
-// read receives the text of an offer through a pipe.
+// read receives the text of an offer through a pipe, or its image if it
+// has no text.
 func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) {
-	mime := ""
+	mime, image, limit := "", "", maxText
 	for _, t := range textTypes {
 		if slices.Contains(types, t) {
 			mime = t
 			break
+		}
+	}
+	for _, t := range imageTypes {
+		if mime == "" && slices.Contains(types, t) {
+			mime, image, limit = t, t, connector.MaxImage
 		}
 	}
 	if mime == "" {
@@ -304,13 +316,20 @@ func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) 
 	if err != nil {
 		return connector.Item{}, false, err
 	}
-	r.SetReadDeadline(time.Now().Add(readTimeout))
-	data, err := io.ReadAll(io.LimitReader(r, maxText+1))
+	timeout := readTimeout
+	if image != "" {
+		timeout = imageTimeout
+	}
+	r.SetReadDeadline(time.Now().Add(timeout))
+	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
 	if err != nil {
 		return connector.Item{}, false, err
 	}
-	if len(data) > maxText {
-		return connector.Item{}, false, fmt.Errorf("the clipboard holds more than %d bytes", maxText)
+	if len(data) > limit {
+		return connector.Item{}, false, fmt.Errorf("the clipboard holds more than %d bytes", limit)
+	}
+	if image != "" {
+		return connector.Item{Image: &connector.Image{Type: image, Data: data}}, len(data) > 0, nil
 	}
 	return connector.Item{Text: string(data), Secret: slices.Contains(types, secretType)}, len(data) > 0, nil
 }
@@ -345,42 +364,58 @@ func (w *Wayland) Next(ctx context.Context) (connector.Item, bool, error) {
 // Write sets the clipboard and the primary selection, so Ctrl+V works in
 // applications and Shift+Insert and the middle button in terminals.
 func (w *Wayland) Write(text string, secret bool) error {
-	types := slices.Clone(textTypes)
-	if secret {
+	return w.write(connector.Item{Text: text, Secret: secret})
+}
+
+// WriteImage sets the clipboard and the primary selection to the image,
+// with its text, if any.
+func (w *Wayland) WriteImage(img connector.Image, text string) error {
+	return w.write(connector.Item{Text: text, Image: &img})
+}
+
+func (w *Wayland) write(it connector.Item) error {
+	var types []string
+	if it.Image != nil {
+		types = append(types, it.Image.Type)
+	}
+	if it.Image == nil || it.Text != "" {
+		types = append(types, textTypes...)
+	}
+	if it.Secret {
 		types = append(types, secretType)
 	}
-	clip, err := w.source(text, types)
+	src, err := w.source(it, types)
 	if err != nil {
 		return err
 	}
 	w.mu.Lock()
 	old := w.own
-	w.own = clip
+	w.own = src
 	w.ownPending++
 	w.mu.Unlock()
 	if old != 0 {
 		defer w.destroySource(old)
 	}
-	if err := w.d.Send(w.device, devSetSelection, (&wl.Request{}).Uint(clip)); err != nil {
+	if err := w.d.Send(w.device, devSetSelection, (&wl.Request{}).Uint(src)); err != nil {
 		w.mu.Lock()
 		w.ownPending--
 		w.mu.Unlock()
 		return err
 	}
-	if primary, err := w.source(text, types); err == nil {
+	if primary, err := w.source(it, types); err == nil {
 		w.mu.Lock()
 		w.ownPrimary = primary
 		w.mu.Unlock()
 		w.d.Send(w.device, devSetPrimarySelection, (&wl.Request{}).Uint(primary))
 	}
 	w.mu.Lock()
-	w.item, w.has = connector.Item{Text: text, Secret: secret}, true
+	w.item, w.has = it, true
 	w.mu.Unlock()
 	return nil
 }
 
-// source makes a data source that serves text for the types.
-func (w *Wayland) source(text string, types []string) (uint32, error) {
+// source makes a data source that serves the item for the types.
+func (w *Wayland) source(it connector.Item, types []string) (uint32, error) {
 	var id uint32
 	id = w.d.NewID(func(op uint16, a *wl.Args) error {
 		switch op {
@@ -394,12 +429,17 @@ func (w *Wayland) source(text string, types []string) (uint32, error) {
 				unix.SetNonblock(fd, true) // so the deadline works
 				f := os.NewFile(uintptr(fd), "clipboard")
 				defer f.Close()
-				f.SetWriteDeadline(time.Now().Add(writeTimeout))
-				if mime == secretType {
+				switch {
+				case mime == secretType:
+					f.SetWriteDeadline(time.Now().Add(writeTimeout))
 					f.WriteString("secret")
-					return
+				case it.Image != nil && mime == it.Image.Type:
+					f.SetWriteDeadline(time.Now().Add(imageTimeout))
+					f.Write(it.Image.Data)
+				default:
+					f.SetWriteDeadline(time.Now().Add(writeTimeout))
+					f.WriteString(it.Text)
 				}
-				f.WriteString(text)
 			}()
 		case srcEvCancel:
 			w.mu.Lock()

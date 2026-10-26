@@ -180,6 +180,7 @@ type Service struct {
 	restart        chan struct{}       // an admin had the service restart (actions.Restart)
 	lastSeq        uint64
 	pending        *node.Write                  // a write that no watcher got, for the next one
+	imageWait      *node.Write                  // an image copy the watchers that take images get once it has arrived
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
 	// commands holds the IDs of the commands carried out, until they
 	// expire, so that none is carried out twice.

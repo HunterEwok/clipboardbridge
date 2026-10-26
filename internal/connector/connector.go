@@ -41,14 +41,18 @@ type Item struct {
 	Text   string
 	Secret bool // a password manager marked it; it is never sent
 	Remote bool // it came through Universal Clipboard
+	// Image is the clipboard's image, on an ImageBoard; Text is then its
+	// plain-text alternative, if any.
+	Image *Image
 }
 
 // A Board is a desktop clipboard.
 type Board interface {
-	// Current returns what the clipboard holds now, and false if no text.
+	// Current returns what the clipboard holds now, and false if no text
+	// or image.
 	Current() (Item, bool, error)
 	// Next blocks until the clipboard changes, other than by Write, and
-	// returns the new item, or false if it holds no text.
+	// returns the new item, or false if it holds no text or image.
 	Next(ctx context.Context) (Item, bool, error)
 	// Write puts a text into the clipboard.
 	Write(text string, secret bool) error
@@ -228,8 +232,9 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 		watchReq.Inject = tgt.Target()
 	}
 	watchReq.Act = cfg.Actor != nil || cfg.Commands
+	_, watchReq.Images = cfg.Board.(ImageBoard)
 	if cfg.Board != nil {
-		if it, ok, err := cfg.Board.Current(); err == nil && ok {
+		if it, ok, err := cfg.Board.Current(); err == nil && ok && it.Image == nil {
 			if m := report(control.OpClipboard, it); m != nil {
 				watchReq.Kind, watchReq.Via, watchReq.Payload = m.Kind, m.Via, m.Payload
 			}
@@ -254,9 +259,9 @@ func session(ctx context.Context, cfg Config, exp *expiry) error {
 	}
 	errc := make(chan error, 2)
 	if cfg.Board != nil {
-		go func() { errc <- watch(ctx, cfg.Board, send, cfg.Logf) }()
+		go func() { errc <- watch(ctx, cfg.Socket, cfg.Board, send, cfg.Logf) }()
 	}
-	go func() { errc <- apply(ctx, cfg.Board, tgt, cfg.Actor, c, send, exp, cfg.Logf) }()
+	go func() { errc <- apply(ctx, cfg.Socket, cfg.Board, tgt, cfg.Actor, c, send, exp, cfg.Logf) }()
 	err = <-errc
 	cancel()
 	return err
@@ -281,13 +286,19 @@ func report(op string, it Item) *control.Message {
 }
 
 // watch reports clipboard changes to the service.
-func watch(ctx context.Context, b Board, send func(*control.Message) error, logf func(string, ...any)) error {
+func watch(ctx context.Context, socket string, b Board, send func(*control.Message) error, logf func(string, ...any)) error {
 	for {
 		it, ok, err := b.Next(ctx)
 		if err != nil {
 			return err
 		}
 		if !ok {
+			continue
+		}
+		if it.Image != nil {
+			if err := sendImage(socket, it); err != nil {
+				logf("cbb: a copied image of %d bytes is not synced: %v", len(it.Image.Data), err)
+			}
 			continue
 		}
 		m := report(control.OpCopied, it)
@@ -305,9 +316,13 @@ func watch(ctx context.Context, b Board, send func(*control.Message) error, logf
 
 // apply writes what the service sends into the clipboard, in order, and
 // sets the expiry of a secret; it hands remote pastes to the target, one
-// at a time, and answers each.
-func apply(ctx context.Context, b Board, tgt Target, act Actor, c *control.Client, send func(*control.Message) error, exp *expiry, logf func(string, ...any)) error {
+// at a time, and answers each. An image is fetched on the side, and
+// written only if no newer write came meanwhile.
+func apply(ctx context.Context, socket string, b Board, tgt Target, act Actor, c *control.Client, send func(*control.Message) error, exp *expiry, logf func(string, ...any)) error {
 	var last uint64
+	var mu sync.Mutex // orders the writes: an image's with the newer ones
+	stopImage := func() {}
+	defer func() { stopImage() }()
 	for {
 		m, err := c.Receive()
 		if err != nil {
@@ -332,8 +347,40 @@ func apply(ctx context.Context, b Board, tgt Target, act Actor, c *control.Clien
 			continue
 		}
 		last = m.Seq
+		stopImage()
+		if ib, ok := b.(ImageBoard); ok && m.Kind == control.KindMedia {
+			ictx, cancel := context.WithCancel(ctx)
+			stopImage = cancel
+			text := string(m.Payload)
+			go func() {
+				img, alt, err := fetchImage(ictx, socket)
+				mu.Lock()
+				defer mu.Unlock()
+				if ictx.Err() != nil {
+					return // a newer write came
+				}
+				if err != nil {
+					logf("cbb: fetching the image of the group's copy: %v", err)
+					if text == "" {
+						return
+					}
+					err = b.Write(text, false) // its plain-text alternative instead
+				} else {
+					err = ib.WriteImage(img, alt)
+				}
+				if err != nil {
+					logf("cbb: writing the clipboard: %v", err)
+					return
+				}
+				exp.set(false, 0)
+			}()
+			continue
+		}
 		secret := m.Kind == control.KindSecret
-		if err := b.Write(string(m.Payload), secret); err != nil {
+		mu.Lock()
+		err = b.Write(string(m.Payload), secret)
+		mu.Unlock()
+		if err != nil {
 			logf("cbb: writing the clipboard: %v", err)
 			continue
 		}

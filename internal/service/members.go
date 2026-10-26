@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -492,22 +493,70 @@ func (s *Service) write(w node.Write) {
 		return
 	}
 	s.lastSeq = w.Seq
+	s.imageWait = nil
+	media := w
 	w, ok := s.mediaWritten(w)
-	if !ok {
-		return // images or files without a text: nothing for the watchers yet
+	// A watcher that takes images gets an image copy whole, once it has
+	// arrived; the others get its plain-text alternative, if any.
+	images := s.content != nil && imageCopy(media.Media)
+	if images && !s.content.complete(media.Media) {
+		s.imageWait = &media
 	}
 	boards := 0
 	for wt := range s.watchers {
-		if wt.board() {
+		switch {
+		case !wt.board():
+			continue
+		case images && wt.images:
+			if s.imageWait == nil {
+				wt.send(media)
+			}
+		case ok:
 			wt.send(w)
-			boards++
 		}
+		boards++
+	}
+	if !ok {
+		return // images or files without a text: nothing for the others
 	}
 	if boards == 0 {
 		s.pending = &w
 		return
 	}
 	s.pending = nil
+}
+
+// imageCopy reports whether a copy is clipboard data with an image, which
+// a watcher that takes images puts into the clipboard.
+func imageCopy(m *clip.Manifest) bool {
+	if m == nil || m.Files() {
+		return false
+	}
+	return slices.ContainsFunc(m.Parts, func(p clip.Part) bool { return p.Type == clip.TypePNG || p.Type == clip.TypeJPEG })
+}
+
+// imageArrived gives the watchers that take images the copy m once its
+// fetch ended, if it is still the latest write: the copy if it arrived,
+// else its plain-text alternative, if any.
+func (s *Service) imageArrived(m *clip.Manifest, arrived bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w := s.imageWait
+	if w == nil || w.Media != m || w.Seq != s.lastSeq {
+		return
+	}
+	s.imageWait = nil
+	if !arrived {
+		if w.Text == "" {
+			return
+		}
+		w = &node.Write{Text: w.Text, Kind: clip.Text, Via: w.Via, Seq: w.Seq}
+	}
+	for wt := range s.watchers {
+		if wt.board() && wt.images {
+			wt.send(*w)
+		}
+	}
 }
 
 // logConn logs how a connection to a member ended: with its error, or

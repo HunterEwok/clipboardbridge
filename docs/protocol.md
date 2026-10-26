@@ -897,7 +897,7 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `copy-media`, `paste-media`, `config`, `status`, `devices` and `watch` (with
+`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices` and `watch` (with
 the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
@@ -913,7 +913,7 @@ Header fields (all omitted when empty):
 | Field | Type | Meaning |
 |-------|------|---------|
 | `op` | string | the operation |
-| `kind` | string | `text` (default) or `secret` |
+| `kind` | string | `text` (default), `secret`, or `media` for the images or files of a copy |
 | `via` | string | `copy` (default), `phone` or `universal-clipboard`; `iphone` is taken as `phone` |
 | `seq` | integer | order of writes |
 | `ttl_ms` | integer | how long a written secret may stay in the clipboard |
@@ -936,6 +936,7 @@ Header fields (all omitted when empty):
 | `all` | bool | `paste-receive off`: on every device of the group |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
+| `images` | bool | `watch`: the watcher writes images, so the service sends it copies with images as a `write` of kind `media` |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
@@ -955,6 +956,7 @@ A connection carries one request: the service reads the first message and dispat
 | `copy` | payload = text; `kind`, `via` | `{done}`. A deliberate action: always an event, also written to the member's own clipboard |
 | `paste` | none | `{kind, done}` + payload = the member's own clipboard text; error `the clipboard is empty` when unknown or an expired secret, and one that names `cbb paste -o` for images or files without a text |
 | `copy-media` | payload = the plain-text alternative, or none; then for each part `{"op":"part", part}`, followed for a file or clipboard data by `{"op":"data"}` messages whose payloads, at most 1 MiB each, are exactly its `size` bytes; last `{"op":"part", done}` | `{done}`: the parts are in the cache and the copy went to the group as a `media` event (section 4, "Media"), also written to the member's own clipboard. An error when the copy is over this device's limit, its manifest is not valid or the bytes do not come as said. `cbb copy FILE...` reads the files as the user and sends them |
+| `copied-media` | as `copy-media` | as `copy-media`, but a watcher's report that its clipboard changed: the copy goes to the group as an event when the engine decides so (section 5) and is not written back to the member's own clipboard |
 | `paste-media` | none | once every part of the member's own images or files (in mode `own` the group's) is in the cache, fetched first if it is not: `{kind: "media"}` + payload = the plain-text alternative; then for each part `{part}` and its bytes in answers of at most 1 MiB; last `{done}`. An error when the clipboard holds none, or they did not arrive. `cbb paste -o DIR` writes them |
 | `config` | `{name?, value?}`: `max-copy` or `max-copy-away` and a size such as `200MiB` | `{status, done}`, with the setting saved first when `name` is given; `status.media` = `{max_copy, max_copy_away, fetching?, fetched?, from?, failed?}`, in bytes, also in `status` |
 | `status` | none | `{status, done}`; `status` = `{device, group, role, os, holder, peers: [{id, role, os, skew_ms}], unreached?, port, away?, version}`; `unreached` lists the members at home that could not connect to this one and synced only because it dialed them back, `port` is the member port; `away`, present while sync away from home is on: `{hub, port, endpoints, clients, hub_device, through, keys_in_file, error, detail, forwarder?, relay?}` (section 11); `forwarder`, on a hub with one: `{endpoint, registered, seen, error, detail}` (section 13); `relay`, on a device with one: `{endpoint, connected, online, error, detail}`, where `online` lists the other devices of the group on the relay and `through` tells whether a member connection runs through it (section 14) |
@@ -966,7 +968,7 @@ A connection carries one request: the service reads the first message and dispat
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
-| `watch` | `{kind, via, inject?, paste_only?, act?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `watch` | `{kind, via, inject?, paste_only?, act?, images?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -989,6 +991,15 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   last one it applied. `ttl_ms` is the secret's remaining lifetime (60 s minus its age, at
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
+- A copy of images or files: a watcher whose watch request set `images` gets, once every
+  part is in the cache, a `write` with `kind` `media` whose payload is the plain-text
+  alternative; it fetches the parts with `paste-media` on a connection of its own and writes
+  the image (with the text next to it) into the clipboard, or the text alone when the copy
+  holds no image or the fetch fails. Other watchers get the plain-text alternative as a
+  `text` write when there is one, and nothing otherwise. A watcher reports a copied image
+  with `copied-media` on a connection of its own (one `png` or `jpeg` part, the text as the
+  payload), never as `copied`; a clipboard that holds a text and an image is reported as
+  text, and files on the clipboard are not reported yet.
 - Service to watcher, for a quick action (section 15), only to a watcher whose watch request
   set `act`: `act` (`seq`, `name`, the action, and for an action of the user's own
   `command`, its program by full path and its arguments, as the device's user set them).

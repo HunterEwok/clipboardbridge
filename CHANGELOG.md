@@ -144,6 +144,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   never executable; `cbb status` shows a fetch in progress. Until the desktop connectors
   take images and files, they, the lite member and the phones get only the copy's text, and
   the Swift and Kotlin kits and `lite/core` check manifests against Go's vectors.
+- Images in the desktop connectors (design.md, "Images and files", step 2): a PNG or JPEG
+  copied on Wayland, X11, a Mac or Windows goes to the group, and a received image is
+  written there as the image with its text next to it. Wayland and X11 offer and read
+  `image/png` and `image/jpeg` (large ones in INCR pieces on X11); the Mac reads PNG, JPEG
+  and TIFF (sent as PNG) and writes the image and a TIFF; Windows reads the registered `PNG`
+  format, `CF_DIBV5` and `CF_DIB` (converted to PNG) and writes PNG and `CF_DIBV5`. A
+  clipboard with a text and an image is sent as text, and files are left out until the next
+  step. On the control socket a watcher asks for images with `images`, gets a `write` of
+  kind `media` once the copy is in the cache, and reports its own with `copied-media`
+  (docs/protocol.md, section 8).
 
 ### Changed
 

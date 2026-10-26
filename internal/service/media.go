@@ -27,8 +27,9 @@ import (
 // engine writes a media event, the service fetches every part it lacks,
 // from the origin if it can, else from any peer that serves content,
 // checks each against its hash and keeps it in the cache. A newer write
-// stops the fetch. Until the connectors take images and files (phase 5.2),
-// the watchers get the copy's plain-text alternative.
+// stops the fetch. The watchers whose clipboard takes images get an image
+// copy once it has arrived; the others, and every watcher for files until
+// the connectors take them, get the copy's plain-text alternative.
 
 const (
 	// fetchFor bounds a fetch; a copy that has not arrived by then is
@@ -137,6 +138,9 @@ func (s *Service) setMedia(m *clip.Manifest, origin group.DeviceID, ctx context.
 		}
 		s.mediaMu.Unlock()
 		close(run.done)
+		if !errors.Is(err, context.Canceled) {
+			s.imageArrived(m, err == nil)
+		}
 	}()
 }
 
@@ -314,10 +318,12 @@ func (s *Service) setConfig(name, value string) error {
 	return nil
 }
 
-// copyMedia takes cbb copy FILE: the parts and their bytes come in part
-// and data messages after the request, which carries the plain-text
-// alternative. The parts go into the cache and the copy to the group.
+// copyMedia takes cbb copy FILE, or a watcher's copied image: the parts and
+// their bytes come in part and data messages after the request, which
+// carries the plain-text alternative. The parts go into the cache and the
+// copy to the group.
 func (s *Service) copyMedia(c net.Conn, r *control.Reader, m *control.Message) error {
+	copied := m.Op == control.OpCopiedMedia
 	if s.content == nil || s.engine() == nil {
 		return s.errNoGroup()
 	}
@@ -363,6 +369,12 @@ func (s *Service) copyMedia(c net.Conn, r *control.Reader, m *control.Message) e
 		return err
 	}
 	s.setMedia(man, "", nil)
+	if copied {
+		return s.withNode(func(nd *node.Node) error {
+			_, err := nd.CopiedMedia(man, string(m.Payload), clip.Copy)
+			return err
+		})
+	}
 	return s.withNode(func(nd *node.Node) error { return nd.SendMedia(man, string(m.Payload), clip.Copy) })
 }
 

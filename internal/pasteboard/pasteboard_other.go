@@ -30,5 +30,8 @@ func (b *Board) Read() (Item, bool, error) { return Item{}, false, ErrUnsupporte
 // Write fails in this build.
 func (b *Board) Write(string, bool) (int64, error) { return 0, ErrUnsupported }
 
+// WriteImage fails in this build.
+func (b *Board) WriteImage(string, []byte, string) (int64, error) { return 0, ErrUnsupported }
+
 // Clear does nothing in this build.
 func (b *Board) Clear() int64 { return 0 }

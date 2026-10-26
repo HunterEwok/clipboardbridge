@@ -78,7 +78,7 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
-	case control.OpCopyMedia:
+	case control.OpCopyMedia, control.OpCopiedMedia:
 		if err := s.copyMedia(c, r, m); err != nil {
 			fail(c, err)
 			// Read what the client still sends before closing: closing a
@@ -836,6 +836,7 @@ type watcher struct {
 	inject    string       // the target it offers for remote paste; "" for none
 	pasteOnly bool         // it holds no clipboard, whatever its target
 	act       bool         // it runs the quick actions in its session
+	images    bool         // its clipboard takes and gives images
 	injects   chan *inject // remote pastes for it
 }
 
@@ -874,7 +875,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	default:
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
-	w.pasteOnly, w.act = m.PasteOnly, m.Act
+	w.pasteOnly, w.act, w.images = m.PasteOnly, m.Act, m.Images
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -971,7 +972,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			// The clipboard will hold this text. A report that came in
 			// after the engine decided on it, such as the watch request
 			// itself, must not leave the engine thinking otherwise.
-			if e := s.engine(); e != nil {
+			if e := s.engine(); e != nil && wr.Kind != clip.Media {
 				if text, _, _, ok := e.Local(); !ok || text != wr.Text {
 					e.ClipboardIs(wr.Text, wr.Kind)
 				}

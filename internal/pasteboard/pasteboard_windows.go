@@ -4,8 +4,10 @@
 package pasteboard
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image/png"
 	"runtime"
 	"strings"
 	"sync"
@@ -14,6 +16,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 )
 
 // Supported reports whether this build reaches the clipboard.
@@ -27,6 +31,11 @@ const Supported = true
 // the text is read with LF and written with CR LF, so the group carries one
 // form. A text with a NUL ends there, since the clipboard's text format ends
 // at the first NUL.
+//
+// An image is read when the clipboard holds no text: the "PNG" format that
+// browsers and Office put there, else the bitmap as a PNG. One is written
+// as a PNG and as a bitmap with alpha, CF_DIBV5, from which Windows makes
+// the older bitmap formats. A copy of files in Explorer is no image.
 
 var (
 	user32   = windows.NewLazySystemDLL("user32.dll")
@@ -49,6 +58,9 @@ var (
 )
 
 const (
+	cfDIB         = 8
+	cfHDrop       = 15
+	cfDIBV5       = 17
 	cfUnicodeText = 13
 	gmemMoveable  = 0x0002
 	hwndMessage   = ^uintptr(2) // HWND_MESSAGE, (HWND)-3
@@ -62,10 +74,12 @@ const (
 var (
 	formatsOnce                                   sync.Once
 	cfExclude, cfViewerIgnore, cfHistory, cfCloud uintptr
+	cfPNG                                         uintptr // an image as a PNG file
 )
 
 func registerFormats() {
 	formatsOnce.Do(func() {
+		cfPNG = register("PNG")
 		cfExclude = register("ExcludeClipboardContentFromMonitorProcessing")
 		cfViewerIgnore = register("Clipboard Viewer Ignore")
 		cfHistory = register("CanIncludeInClipboardHistory")
@@ -112,7 +126,9 @@ func (b *Board) Read() (Item, bool, error) {
 		defer procCloseClipboard.Call()
 		it.Change = b.ChangeCount()
 		if !available(cfUnicodeText) {
-			return nil
+			var err error
+			ok, err = readImage(&it)
+			return err
 		}
 		h, _, err := procGetClipboardData.Call(cfUnicodeText)
 		if h == 0 {
@@ -135,10 +151,7 @@ func (b *Board) Read() (Item, bool, error) {
 // A secret carries the marks, so clipboard histories, the cloud clipboard
 // and other monitors skip it.
 func (b *Board) Write(text string, secret bool) (int64, error) {
-	if i := strings.IndexByte(text, 0); i >= 0 {
-		text = text[:i]
-	}
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
+	text = windowsText(text)
 	err := onThread(func(hwnd uintptr) error {
 		if err := open(hwnd); err != nil {
 			return err
@@ -170,6 +183,99 @@ func (b *Board) Write(text string, secret bool) (int64, error) {
 	// Closing the clipboard counts as changes too, as Windows adds the
 	// formats it converts the text to, so the counter is read after it.
 	return b.ChangeCount(), nil
+}
+
+// readImage reads the open clipboard's image, if it holds one and no files.
+func readImage(it *Item) (bool, error) {
+	registerFormats()
+	format := uintptr(0)
+	switch {
+	case available(cfHDrop):
+		return false, nil
+	case available(cfPNG):
+		format = cfPNG
+	case available(cfDIBV5):
+		format = cfDIBV5
+	case available(cfDIB):
+		format = cfDIB
+	default:
+		return false, nil
+	}
+	h, _, err := procGetClipboardData.Call(format)
+	if h == 0 {
+		return false, fmt.Errorf("pasteboard: reading the clipboard's image: %w", err)
+	}
+	data, err := globalBytes(h, clip.MaxMedia)
+	if err != nil {
+		return false, err
+	}
+	if format != cfPNG {
+		if data, err = dibToPNG(data); err != nil {
+			return false, err
+		}
+	}
+	it.ImageType, it.Image = clip.TypePNG, data
+	return true, nil
+}
+
+// globalBytes copies a clipboard memory block of at most limit bytes.
+func globalBytes(h uintptr, limit int) ([]byte, error) {
+	n, _, _ := procGlobalSize.Call(h)
+	if int64(n) > int64(limit) {
+		return nil, errors.New("pasteboard: the image is larger than the group carries")
+	}
+	p, _, err := procGlobalLock.Call(h)
+	if p == 0 {
+		return nil, fmt.Errorf("pasteboard: reading the clipboard: %w", err)
+	}
+	defer procGlobalUnlock.Call(h)
+	return bytes.Clone(unsafe.Slice((*byte)(ptr(p)), n)), nil
+}
+
+// WriteImage puts an image of a type on the clipboard as a PNG and as a
+// bitmap, with its text, if any, and returns the new change counter.
+func (b *Board) WriteImage(typ string, data []byte, text string) (int64, error) {
+	img, err := decodeImage(typ, data)
+	if err != nil {
+		return 0, err
+	}
+	if typ != clip.TypePNG {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err != nil {
+			return 0, err
+		}
+		data = buf.Bytes()
+	}
+	dib := imageDIBV5(img)
+	text = windowsText(text)
+	registerFormats()
+	err = onThread(func(hwnd uintptr) error {
+		if err := open(hwnd); err != nil {
+			return err
+		}
+		defer procCloseClipboard.Call()
+		if r, _, err := procEmptyClipboard.Call(); r == 0 {
+			return fmt.Errorf("pasteboard: emptying the clipboard: %w", err)
+		}
+		errs := []error{set(cfPNG, data), set(cfDIBV5, dib)}
+		if text != "" {
+			errs = append(errs, set(cfUnicodeText, utf16Bytes(text)))
+		}
+		return errors.Join(errs...)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return b.ChangeCount(), nil
+}
+
+// windowsText is a text as the clipboard holds it: up to its first NUL,
+// with CR LF line ends.
+func windowsText(text string) string {
+	if i := strings.IndexByte(text, 0); i >= 0 {
+		text = text[:i]
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 }
 
 // Clear empties the clipboard, for a secret that expired.

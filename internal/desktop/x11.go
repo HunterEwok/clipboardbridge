@@ -19,6 +19,7 @@ import (
 	"github.com/jezek/xgb/xfixes"
 	"github.com/jezek/xgb/xproto"
 
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
 
@@ -43,7 +44,8 @@ type X11 struct {
 	mu      sync.Mutex
 	text    string // what this client owns the selections with
 	secret  bool
-	owned   bool // this client still owns CLIPBOARD
+	image   *connector.Image // an image it owns them with, text then its alternative
+	owned   bool             // this client still owns CLIPBOARD
 	item    connector.Item
 	has     bool
 	changes chan connector.Item
@@ -61,7 +63,9 @@ type x11Read struct {
 	stage   int // readTargets, readText or readIncr
 	targets []xproto.Atom
 	secret  bool
-	initial bool // the clipboard at open: what it holds, not a change
+	image   string // the image type it reads, "" for a text
+	limit   int    // the most bytes it takes: maxText, or connector.MaxImage for an image
+	initial bool   // the clipboard at open: what it holds, not a change
 	data    []byte
 	started time.Time
 }
@@ -90,7 +94,7 @@ type sendKey struct {
 }
 
 var x11Atoms = []string{"CLIPBOARD", "PRIMARY", "TARGETS", "UTF8_STRING", "STRING", "TEXT", "text/plain;charset=utf-8",
-	"text/plain", "INCR", "ATOM", "TIMESTAMP", secretType, "CBB_SELECTION", "MULTIPLE"}
+	"text/plain", "INCR", "ATOM", "TIMESTAMP", secretType, "CBB_SELECTION", "MULTIPLE", clip.TypePNG, clip.TypeJPEG}
 
 // OpenX11 connects to the X server in $DISPLAY.
 func OpenX11(logf func(string, ...any)) (*X11, error) {
@@ -229,7 +233,7 @@ func (b *X11) ownerChanged(e xfixes.SelectionNotifyEvent) {
 }
 
 func (b *X11) startRead() {
-	b.read = &x11Read{stage: readTargets, started: time.Now()}
+	b.read = &x11Read{stage: readTargets, started: time.Now(), limit: maxText}
 	xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], b.atoms["TARGETS"], b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
 }
 
@@ -273,7 +277,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 		b.finishRead(connector.Item{}, false) // the owner refused
 		return
 	}
-	prop, err := xproto.GetProperty(b.x, true, b.win, e.Property, xproto.GetPropertyTypeAny, 0, (maxText+3)/4).Reply()
+	prop, err := xproto.GetProperty(b.x, true, b.win, e.Property, xproto.GetPropertyTypeAny, 0, uint32(r.limit+3)/4).Reply()
 	if err != nil {
 		b.finishRead(connector.Item{}, false)
 		return
@@ -281,7 +285,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 	if prop.BytesAfter > 0 {
 		// More than the group carries, in one piece: skip it rather than
 		// report the beginning as the whole text.
-		b.logf("cbb: the clipboard holds more than %d bytes", maxText)
+		b.logf("cbb: the clipboard holds more than %d bytes", r.limit)
 		b.finishRead(connector.Item{}, false)
 		return
 	}
@@ -298,6 +302,14 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 				break
 			}
 		}
+		// An image without a text: a copy in an image editor, or a
+		// screenshot. A text wins, as in a spreadsheet, which offers a
+		// picture of the cells too.
+		for _, t := range imageTypes {
+			if a := b.atoms[t]; target == 0 && slices.Contains(r.targets, a) {
+				target, r.image, r.limit = a, t, connector.MaxImage
+			}
+		}
 		if target == 0 {
 			// An owner that lists no text target may still convert to
 			// UTF8_STRING, as many old programs do.
@@ -310,8 +322,16 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 			r.stage = readIncr // the pieces follow as property changes
 			return
 		}
-		b.finishRead(connector.Item{Text: string(prop.Value), Secret: r.secret}, len(prop.Value) > 0)
+		b.finishRead(r.item(prop.Value), len(prop.Value) > 0)
 	}
+}
+
+// item makes the item of the bytes read.
+func (r *x11Read) item(data []byte) connector.Item {
+	if r.image != "" {
+		return connector.Item{Image: &connector.Image{Type: r.image, Data: data}}
+	}
+	return connector.Item{Text: string(data), Secret: r.secret}
 }
 
 // property handles property changes: the pieces of an INCR read on our
@@ -322,18 +342,18 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 		if r == nil || r.stage != readIncr {
 			return
 		}
-		prop, err := xproto.GetProperty(b.x, true, b.win, e.Atom, xproto.GetPropertyTypeAny, 0, (maxText+3)/4).Reply()
+		prop, err := xproto.GetProperty(b.x, true, b.win, e.Atom, xproto.GetPropertyTypeAny, 0, uint32(r.limit+3)/4).Reply()
 		if err != nil {
 			b.finishRead(connector.Item{}, false)
 			return
 		}
 		if len(prop.Value) == 0 {
-			b.finishRead(connector.Item{Text: string(r.data), Secret: r.secret}, len(r.data) > 0)
+			b.finishRead(r.item(r.data), len(r.data) > 0)
 			return
 		}
 		r.data = append(r.data, prop.Value...)
-		if len(r.data) > maxText {
-			b.logf("cbb: the clipboard holds more than %d bytes", maxText)
+		if len(r.data) > r.limit {
+			b.logf("cbb: the clipboard holds more than %d bytes", r.limit)
 			b.finishRead(connector.Item{}, false)
 		}
 		return
@@ -357,8 +377,13 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 // serve answers another program's request for a selection we own.
 func (b *X11) serve(e xproto.SelectionRequestEvent) {
 	b.mu.Lock()
-	text, secret := b.text, b.secret
+	text, secret, image := b.text, b.secret, b.image
 	b.mu.Unlock()
+	// The text targets, none for an image without one.
+	texts := textTypes
+	if image != nil && text == "" {
+		texts = nil
+	}
 	prop := e.Property
 	if prop == xproto.AtomNone {
 		prop = e.Target // an obsolete client
@@ -367,7 +392,10 @@ func (b *X11) serve(e xproto.SelectionRequestEvent) {
 	switch t := e.Target; {
 	case t == b.atoms["TARGETS"]:
 		targets := []xproto.Atom{b.atoms["TARGETS"], b.atoms["TIMESTAMP"]}
-		for _, name := range textTypes {
+		if image != nil {
+			targets = append(targets, b.atoms[image.Type])
+		}
+		for _, name := range texts {
 			targets = append(targets, b.atoms[name])
 		}
 		if secret {
@@ -380,11 +408,14 @@ func (b *X11) serve(e xproto.SelectionRequestEvent) {
 		xproto.ChangeProperty(b.x, xproto.PropModeReplace, e.Requestor, prop, b.atoms["ATOM"], 32, uint32(len(targets)), data)
 	case t == b.atoms[secretType]:
 		xproto.ChangeProperty(b.x, xproto.PropModeReplace, e.Requestor, prop, b.atoms["UTF8_STRING"], 8, 6, []byte("secret"))
-	case slices.ContainsFunc(textTypes, func(name string) bool { return b.atoms[name] == t }):
+	case image != nil && t == b.atoms[image.Type], slices.ContainsFunc(texts, func(name string) bool { return b.atoms[name] == t }):
 		data := []byte(text)
 		typ := t
 		if t == b.atoms["TEXT"] {
 			typ = b.atoms["UTF8_STRING"]
+		}
+		if image != nil && t == b.atoms[image.Type] {
+			data = image.Data
 		}
 		if len(data) > b.chunk {
 			// INCR: announce the size, then send pieces each time the
@@ -446,9 +477,23 @@ func (b *X11) Next(ctx context.Context) (connector.Item, bool, error) {
 // Write owns CLIPBOARD and PRIMARY with the text.
 func (b *X11) Write(text string, secret bool) error {
 	b.mu.Lock()
-	b.text, b.secret, b.owned = text, secret, true
+	b.text, b.secret, b.image, b.owned = text, secret, nil, true
 	b.item, b.has = connector.Item{Text: text, Secret: secret}, true
 	b.mu.Unlock()
+	return b.own()
+}
+
+// WriteImage owns CLIPBOARD and PRIMARY with the image, and its text, if
+// any.
+func (b *X11) WriteImage(img connector.Image, text string) error {
+	b.mu.Lock()
+	b.text, b.secret, b.image, b.owned = text, false, &img, true
+	b.item, b.has = connector.Item{Text: text, Image: &img}, true
+	b.mu.Unlock()
+	return b.own()
+}
+
+func (b *X11) own() error {
 	for _, sel := range []string{"CLIPBOARD", "PRIMARY"} {
 		if err := xproto.SetSelectionOwnerChecked(b.x, b.win, b.atoms[sel], xproto.TimeCurrentTime).Check(); err != nil {
 			return err
@@ -462,7 +507,7 @@ func (b *X11) ClearIfUnchanged() error {
 	b.mu.Lock()
 	owned := b.owned
 	if owned {
-		b.text, b.owned = "", false
+		b.text, b.image, b.owned = "", nil, false
 	}
 	b.mu.Unlock()
 	if !owned {

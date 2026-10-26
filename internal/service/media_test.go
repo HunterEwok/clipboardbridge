@@ -136,9 +136,29 @@ func TestMedia(t *testing.T) {
 	if _, err := b.do(t, control.Header{Op: control.OpMode, Name: "shared"}, ""); err != nil {
 		t.Fatal(err)
 	}
+	// A watcher whose clipboard takes images gets the image once it has
+	// arrived; one without gets nothing, as it has no text.
+	iw := b.dial(t)
+	defer iw.Close()
+	if _, err := iw.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Images: true}}); err != nil {
+		t.Fatal(err)
+	}
 	png := sentPart{Part: control.Part{Type: clip.TypePNG, Size: 1 << 20}, data: randomBytes(1 << 20)}
 	if err := a.copyMedia(t, "", png); err != nil {
 		t.Fatal(err)
+	}
+	iw.SetDeadline(time.Now().Add(10 * time.Second))
+	for {
+		m, err := iw.Receive()
+		if err != nil {
+			t.Fatalf("the image watcher got no image: %v", err)
+		}
+		if m.Op == control.OpWrite && m.Kind == control.KindMedia {
+			break
+		}
+		if string(m.Payload) != "photos, notes.txt" { // the earlier copy, which the watch started with
+			t.Fatalf("the image watcher got %s %s %q", m.Op, m.Kind, m.Payload)
+		}
 	}
 	sum := sha256.Sum256(png.data)
 	waitFor(t, "beta fetched the image", func() bool {
