@@ -69,7 +69,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 		if _, err := Run(ctx, hub, adminCmd(hub)+" global on", "yes\n"); err != nil {
 			return noSudo(hub, err)
 		}
-		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, hub) })
+		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, hub) })
 		if _, err := Run(ctx, hub, adminCmd(hub)+" global hub -firewall no -forwarder "+fwd.Address+" -forwarder-key "+fwd.Key, ""); err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			continue
 		}
 		g.members = append(g.members, d)
-		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, d) })
+		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, d) })
 		if r.Do("away/P11/"+d.Name+"/shared", func() error { return shareClipboard(ctx, d) }) == nil {
 			joined = append(joined, d)
 		}
@@ -197,8 +197,8 @@ func bothWays(ctx context.Context, r *Report, g *benchGroup, prefix string, d *D
 	}
 }
 
-func globalOff(ctx context.Context, r *Report, d *Device) {
-	r.Do("away/"+d.Name+"/global-off", func() error {
+func globalOff(ctx context.Context, r *Report, suite string, d *Device) {
+	r.Do(suite+"/"+d.Name+"/global-off", func() error {
 		_, err := Run(ctx, d, adminCmd(d)+" global off", "")
 		return noSudo(d, err)
 	})
@@ -297,7 +297,7 @@ func Relay(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 			if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
 				return noSudo(d, err)
 			}
-			g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, d) })
+			g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, d) })
 			_, err := Run(ctx, d, adminCmd(d)+" global relay "+rel.Address+" -key "+rel.Key+" -yes", "")
 			return err
 		}) == nil {
