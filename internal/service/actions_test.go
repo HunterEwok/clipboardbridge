@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -206,7 +207,11 @@ func TestOwnActions(t *testing.T) {
 			t.Errorf("%+v: %v, want %q", c.a, err, c.want)
 		}
 	}
-	if err := set(control.Action{Name: "backup", On: true, Command: []string{"/usr/local/bin/backup", "--quick"}}); err != nil {
+	prog := "/usr/local/bin/backup"
+	if runtime.GOOS == "windows" {
+		prog = `C:\Tools\backup.exe`
+	}
+	if err := set(control.Action{Name: "backup", On: true, Command: []string{prog, "--quick"}}); err != nil {
 		t.Fatal(err)
 	}
 	var own *control.Action
@@ -215,7 +220,7 @@ func TestOwnActions(t *testing.T) {
 			own = &a
 		}
 	}
-	if own == nil || !own.On || strings.Join(own.Command, " ") != "/usr/local/bin/backup --quick" {
+	if own == nil || !own.On || strings.Join(own.Command, " ") != prog+" --quick" {
 		t.Fatalf("the status lists %+v", own)
 	}
 
@@ -240,7 +245,7 @@ func TestOwnActions(t *testing.T) {
 	if _, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "deck", Name: "backup"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if m := <-got; m.Name != "backup" || strings.Join(m.Command, " ") != "/usr/local/bin/backup --quick" {
+	if m := <-got; m.Name != "backup" || strings.Join(m.Command, " ") != prog+" --quick" {
 		t.Errorf("the agent got %+v", m.Header)
 	}
 
