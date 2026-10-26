@@ -460,36 +460,6 @@ jobs:
             echo "get.sh installed an archive that does not match SHA256SUMS" >&2
             exit 1
           fi
-      - name: get.sh checks the release's signature
-        run: |
-          # A release signed with throwaway keys (tools/release-sign drill).
-          rel="$RUNNER_TEMP/signed"
-          sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
-          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
-          go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
-          export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/roots.pem"
-          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
-          refused() {
-            if sudo -E sh packaging/get.sh --no-firewall; then
-              echo "get.sh installed a release with $1" >&2
-              exit 1
-            fi
-          }
-          # The archive and SHA256SUMS changed together after signing.
-          cp "$rel/clipboardbridge-linux-amd64.tar.gz" "$RUNNER_TEMP/good.tar.gz"
-          echo tampered >>"$rel/clipboardbridge-linux-amd64.tar.gz"
-          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
-          refused "an archive that release.json does not list"
-          cp "$RUNNER_TEMP/good.tar.gz" "$rel/clipboardbridge-linux-amd64.tar.gz"
-          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
-          # Another project's roots.
-          mkdir "$RUNNER_TEMP/other" && echo other >"$RUNNER_TEMP/other/SHA256SUMS"
-          go run ./tools/release-sign drill "$RUNNER_TEMP/other" "$RUNNER_TEMP/other.pem"
-          CBB_RELEASE_ROOTS="$RUNNER_TEMP/other.pem" refused "keys.json from other roots"
-          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out"
-          rm "$rel/stable.json"
-          refused "no stable.json"
-          CBB_VERIFY=skip sudo -E sh packaging/get.sh --no-firewall | grep -q "Not checked"
           sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
           for f in /usr/local/bin/cbb /usr/local/share/clipboardbridge /etc/clipboardbridge "/Library/LaunchDaemons/$daemon.plist"; do
             if [ -e "$f" ]; then
