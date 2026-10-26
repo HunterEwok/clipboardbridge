@@ -48,7 +48,7 @@ func newLegacyGroup(t *testing.T) *Identity {
 		t.Fatal(err)
 	}
 	id.GroupCA = *ca
-	if id.Cert, err = ca.IssueMember(id.ID, &id.Key.PublicKey, t0); err != nil {
+	if id.Cert, err = ca.IssueMember(id.ID, PublicKey(id.Key), t0); err != nil {
 		t.Fatal(err)
 	}
 	if err := id.Check(); err != nil {
@@ -350,14 +350,14 @@ func TestSaveLoad(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.ID != tt.id.ID || !got.Key.Equal(tt.id.Key) || !got.Cert.Equal(tt.id.Cert) ||
+			if got.ID != tt.id.ID || !SameKey(got.Key, tt.id.Key.Public()) || !got.Cert.Equal(tt.id.Cert) ||
 				!got.GroupCA.Cert.Equal(tt.id.GroupCA.Cert) {
 				t.Error("the loaded identity differs")
 			}
 			if got.ServesPhone() != tt.admin {
 				t.Errorf("ServesPhone() = %v, want %v", got.ServesPhone(), tt.admin)
 			}
-			if tt.admin && (!got.GroupCA.Key.Equal(tt.id.GroupCA.Key) || !got.PhoneCA.Key.Equal(tt.id.PhoneCA.Key) ||
+			if tt.admin && (!SameKey(got.GroupCA.Key, tt.id.GroupCA.Key.Public()) || !SameKey(got.PhoneCA.Key, tt.id.PhoneCA.Key.Public()) ||
 				!got.Phone.Equal(tt.id.Phone)) {
 				t.Error("the loaded CA keys or the clipboardbridge.local certificate differ")
 			}
@@ -524,7 +524,7 @@ func TestRenewMember(t *testing.T) {
 	if _, err := mac.WithCert([]byte("junk")); err == nil {
 		t.Error("WithCert took junk")
 	}
-	forged, err := other.GroupCA.IssueMember(mac.ID, &mac.Key.PublicKey, at)
+	forged, err := other.GroupCA.IssueMember(mac.ID, PublicKey(mac.Key), at)
 	if err != nil {
 		t.Fatal(err)
 	}

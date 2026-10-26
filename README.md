@@ -96,8 +96,9 @@ The order of what comes next is the [roadmap](docs/roadmap.md).
 
 - **Using it**: the [quick start](docs/guide/quickstart.md), [how it works](docs/guide/how-it-works.md)
   (with pictures), [installing](docs/guide/install.md), [away from home](docs/guide/away-from-home.md),
-  [networks that block VPNs](docs/guide/blocked-networks.md), [the apps](docs/guide/apps.md),
-  [without the app](docs/guide/without-app.md) and [troubleshooting](docs/guide/troubleshooting.md).
+  [networks that block VPNs](docs/guide/blocked-networks.md), [keys and attestation](docs/guide/keys.md),
+  [the apps](docs/guide/apps.md), [without the app](docs/guide/without-app.md) and
+  [troubleshooting](docs/guide/troubleshooting.md).
 - **Reference**: [commands](docs/reference/cli.md), [devices, ports and files](docs/reference/devices.md),
   [running your own servers](docs/reference/self-hosting.md), the [lite member](lite/README.md).
 - **For developers**: the [design](docs/design.md), the [protocol](docs/protocol.md) and the

@@ -339,7 +339,7 @@ func (h *Hub) Register(endpoint, pin, chain string, signer Signer, records, vles
 		Obfuscation: h.obf,
 		VLESSID:     vlessID,
 		Cert:        func() tls.Certificate { return cert },
-		Authority: func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
+		Authority: func() (crypto.Signer, *x509.Certificate, []group.Record) {
 			h.mu.Lock()
 			defer h.mu.Unlock()
 			return nil, nil, h.records

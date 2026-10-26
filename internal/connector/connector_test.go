@@ -98,19 +98,20 @@ func startService(t *testing.T) string {
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 	deadline := time.Now().Add(5 * time.Second)
+	// The admin socket, which OpNew goes to, opens a moment after the
+	// user's one: wait for both.
+	var c *control.Client
 	for {
-		if c, err := control.Dial(socket); err == nil {
-			c.Close()
-			break
+		if u, err := control.Dial(socket); err == nil {
+			u.Close()
+			if c, err = control.DialAt(socket, control.OpNew); err == nil {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the service did not start")
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	c, err := control.DialAt(socket, control.OpNew)
-	if err != nil {
-		t.Fatal(err)
 	}
 	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpNew}}); err != nil {
 		t.Fatal(err)

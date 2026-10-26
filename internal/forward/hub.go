@@ -5,8 +5,8 @@ package forward
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdh"
-	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -71,7 +71,7 @@ type HubConfig struct {
 	// the group removed. A hub whose root or admin key cannot sign without
 	// the user, a phone's, returns a nil key: the records then show the
 	// forwarder that its member key is the root's or an admin's.
-	Authority func() (key *ecdsa.PrivateKey, admin *x509.Certificate, records []group.Record)
+	Authority func() (key crypto.Signer, admin *x509.Certificate, records []group.Record)
 	Cert      func() tls.Certificate
 
 	// Send sends a packet from the hub's WireGuard port, so that the

@@ -27,7 +27,10 @@ public enum KeychainIdentity {
     /// Creates a P-256 key in the keychain under label: in the Secure
     /// Enclave with secureEnclave (on a device), a keychain key otherwise.
     /// With userPresence, a Secure Enclave key signs only after Face ID,
-    /// Touch ID or the passcode (an evaluated LAContext that loadKey takes).
+    /// Touch ID or the passcode (an evaluated LAContext that loadKey takes)
+    /// and only while the phone is unlocked; without it the key also signs
+    /// while the phone is locked, once it was unlocked after starting, so
+    /// that the member key syncs in the background.
     public static func makeKey(label: String, secureEnclave: Bool = false, userPresence: Bool = false) throws -> SecKey {
         // Only the private key is stored: a public key under the same label
         // and key hash can pair with the certificate in an identity, and TLS
@@ -40,14 +43,19 @@ public enum KeychainIdentity {
         ]
         if secureEnclave {
             // A Secure Enclave key needs an access control that allows
-            // signing; it stays on this device and works while unlocked.
+            // signing; it stays on this device.
             var error: Unmanaged<CFError>?
             let flags: SecAccessControlCreateFlags = userPresence ? [.privateKeyUsage, .userPresence] : .privateKeyUsage
-            guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, &error) else {
+            let when = userPresence ? kSecAttrAccessibleWhenUnlockedThisDeviceOnly : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            guard let access = SecAccessControlCreateWithFlags(nil, when, flags, &error) else {
                 throw error!.takeRetainedValue() as Error
             }
             attrs[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
             privateAttrs[kSecAttrAccessControl] = access
+        } else {
+            #if !os(macOS)
+            privateAttrs[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            #endif
         }
         attrs[kSecPrivateKeyAttrs] = privateAttrs
         #if os(macOS)
@@ -126,7 +134,9 @@ public enum KeychainIdentity {
         #if os(macOS)
         let where_: [CFString: Any] = [kSecUseDataProtectionKeychain: false]
         #else
-        let where_: [CFString: Any] = [:]
+        // TLS finds the identity while the phone is locked, after the
+        // first unlock, as the member key signs then.
+        let where_: [CFString: Any] = [kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
         #endif
         if storeKey {
             let item: [CFString: Any] = [kSecClass: kSecClassKey, kSecValueRef: key, kSecAttrLabel: label]
@@ -138,6 +148,12 @@ public enum KeychainIdentity {
         let add = item.merging(where_) { a, _ in a }
         let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else { throw Failure.keychain(status) }
+        #if !os(macOS)
+        // A certificate stored before was readable only while unlocked.
+        if status == errSecDuplicateItem {
+            SecItemUpdate([kSecClass: kSecClassCertificate, kSecAttrLabel: label] as CFDictionary, where_ as CFDictionary)
+        }
+        #endif
         #if os(macOS)
         var identity: SecIdentity?
         let s = SecIdentityCreateWithCertificate(nil, cert, &identity)

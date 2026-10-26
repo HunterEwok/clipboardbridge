@@ -373,7 +373,7 @@ func TestPhoneRootIdentity(t *testing.T) {
 	} {
 		tmpl := *pg.root.Cert
 		mod(&tmpl)
-		root, err := create(&tmpl, &tmpl, &pg.root.Key.PublicKey, pg.root.Key)
+		root, err := create(&tmpl, &tmpl, PublicKey(pg.root.Key), pg.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}

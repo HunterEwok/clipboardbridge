@@ -40,7 +40,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
 ## Layout
 
 - `internal/group`: identities, certificates (group CA, admin CAs, member certificates),
-  member TLS, signed device and revocation records.
+  member TLS, signed device and revocation records; `keys.go` puts new member and admin keys
+  in the TPM (`internal/tpmkey`, go-tpm, tested against swtpm) on Linux.
 - `internal/pair`: pairing (CPace inside TLS, the Welcome), both directions.
 - `internal/node`: the member protocol and sync; `internal/service`: the daemon and CLI.
 - `internal/tunnel`: WireGuard for sync away from home (amneziawg-go, a wireguard-go fork that is

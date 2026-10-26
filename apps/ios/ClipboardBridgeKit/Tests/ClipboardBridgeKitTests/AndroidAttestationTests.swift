@@ -88,5 +88,20 @@ final class AndroidAttestationTests: XCTestCase {
         var other = evidence
         other.groupTag = "another"
         XCTAssertThrowsError(try g.evidence(device: phone, chain: [e.chain[0]], other, rootSigner: ca, now: now, roots: [e.root]))
+        // Google revokes the attestation key: the phone's keys count as only
+        // in hardware.
+        let challenge = try Attestation.challenge(groupTag: "", memberKey: Data(), salt: e.salt)
+        let spki = try CertificateInfo(der: e.chain[0]).publicKey
+        let serials = try AndroidAttestation.check(chain: e.chain, spki: spki, challenge: challenge,
+                                                   policy: AndroidAttestation.Policy(roots: [e.root])).serials
+        let revoked: Set<String> = [serials[1]]
+        XCTAssertNotNil(try g.evidence(device: phone, chain: [e.chain[0]], evidence, rootSigner: ca, now: now.addingTimeInterval(4),
+                                       roots: [e.root], revoked: revoked))
+        let after = try XCTUnwrap(g.devices.first { $0.id == phone })
+        XCTAssertEqual(after.store, Records.hardware)
+        XCTAssertEqual(after.kind, AndroidAttestation.kindTEE)
+        XCTAssertNil(after.proof)
+        XCTAssertNil(try g.evidence(device: phone, chain: [e.chain[0]], evidence, rootSigner: ca, now: now.addingTimeInterval(5),
+                                    roots: [e.root], revoked: revoked))
     }
 }

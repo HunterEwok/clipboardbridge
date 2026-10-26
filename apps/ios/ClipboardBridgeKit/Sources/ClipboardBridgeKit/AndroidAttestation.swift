@@ -71,9 +71,10 @@ public enum AndroidAttestation {
     }
 
     /// An attestation that proves nothing: a broken chain, another root, key
-    /// or challenge, a revoked certificate.
+    /// or challenge, a revoked certificate (revoked).
     public struct Invalid: Error, CustomStringConvertible {
         public let reason: String
+        public var revoked = false
         public var description: String { "invalid attestation: \(reason)" }
     }
 
@@ -97,7 +98,7 @@ public enum AndroidAttestation {
             if i + 1 < certs.count, !c.signed(by: certs[i + 1].spki) {
                 throw Invalid(reason: "certificate \(i) is not signed by the next")
             }
-            if policy.revoked.contains(c.serial) { throw Invalid(reason: "certificate \(i) (\(c.serial)) is revoked") }
+            if policy.revoked.contains(c.serial) { throw Invalid(reason: "certificate \(i) (\(c.serial)) is revoked", revoked: true) }
             if c.extensions[oidProvisioning] != nil { rkp = true }
         }
         guard (policy.roots ?? googleRoots).contains(where: { certs.last!.signed(by: Array($0)) }) else {

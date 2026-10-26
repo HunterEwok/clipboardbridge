@@ -4,7 +4,7 @@
 package service
 
 import (
-	"crypto/ecdsa"
+	"crypto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,7 +127,7 @@ func TestCommandRefused(t *testing.T) {
 		records: group.NewRecords(root.GroupCA.Cert), eng: clip.New(clip.Config{Self: string(root.ID), Clock: hlc.NewClock(nil, hlc.Timestamp{}, nil)})}
 	ca, chain := root.Signer()
 	now := time.Now()
-	sign := func(to group.DeviceID, mode string, key *ecdsa.PrivateKey) group.Record {
+	sign := func(to group.DeviceID, mode string, key crypto.Signer) group.Record {
 		c, err := group.SignCommand(group.CommandBody{Type: group.CommandMode, Group: group.Tag(root.GroupCA.Cert), By: root.ID, To: to,
 			ID: group.NewCommandID(), TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Mode: mode}, key, chain...)
 		if err != nil {

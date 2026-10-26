@@ -6,6 +6,7 @@
 package phone
 
 import (
+	"crypto/ecdsa"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
@@ -39,7 +40,13 @@ func tokenKey(ca *group.CA) ([]byte, error) {
 	if ca == nil || ca.Key == nil {
 		return nil, errors.New("phone: this member does not hold the iPhone CA key")
 	}
-	priv, err := ca.Key.ECDH()
+	// The iPhone CA key always sits in the file: the token key is derived
+	// from its bytes.
+	k, ok := ca.Key.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("phone: the iPhone CA key is not in a file")
+	}
+	priv, err := k.ECDH()
 	if err != nil {
 		return nil, err
 	}

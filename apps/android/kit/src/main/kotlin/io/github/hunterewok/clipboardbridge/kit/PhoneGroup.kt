@@ -342,6 +342,7 @@ class PhoneGroup internal constructor(
         rootSigner: CertificateSigner,
         now: Instant,
         roots: List<ByteArray>? = null,
+        revoked: Set<String> = emptySet(),
     ): Member.Record? {
         if (!isRoot || chain.isEmpty() || e.format != Member.Evidence.ANDROID || e.key != Member.Evidence.MEMBER) return null
         val key = Records.keyHashOfCert(chain[0])
@@ -352,9 +353,17 @@ class PhoneGroup internal constructor(
         } catch (x: IllegalArgumentException) {
             throw AndroidAttestation.Invalid(x.message ?: "a bad salt")
         }
-        val r = AndroidAttestation.check(e.chain, CertificateInfo(chain[0]).publicKey, challenge, AndroidAttestation.Policy(roots = roots))
+        val r = try {
+            AndroidAttestation.check(e.chain, CertificateInfo(chain[0]).publicKey, challenge, AndroidAttestation.Policy(revoked = revoked, roots = roots))
+        } catch (x: AndroidAttestation.Invalid) {
+            // Revoked: the keys may still be in hardware, as the hello
+            // says, but Google no longer vouches for the chain.
+            if (!x.revoked) throw x
+            if (d.store != Records.PROVEN) return null
+            return record(device, d.name, d.role, d.key, rootSigner, now, d.adminKey, d.os, Records.HARDWARE, d.kind, null)
+        }
         if (d.store == r.store && (d.kind ?: "") == r.kind) return null
-        val proof = sha256(e.chain[0]).joinToString("") { "%02x".format(it) }
+        val proof = if (r.store == Records.PROVEN) sha256(e.chain[0]).joinToString("") { "%02x".format(it) } else null
         return record(device, d.name, d.role, d.key, rootSigner, now, d.adminKey, d.os, r.store, r.kind.ifEmpty { null }, proof)
     }
 

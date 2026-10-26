@@ -77,5 +77,15 @@ class AndroidAttestationTest {
         kotlin.test.assertFailsWith<AndroidAttestation.Invalid> {
             root.evidence(phone, listOf(chain[0]), Member.Evidence(Member.Evidence.ANDROID, Member.Evidence.MEMBER, "another", e.bytes("salt"), chain), rootKey, now, roots)
         }
+        // Google revokes the attestation key: the phone's keys count as only in hardware.
+        val ca = java.security.cert.CertificateFactory.getInstance("X.509")
+            .generateCertificate(chain[1].inputStream()) as java.security.cert.X509Certificate
+        val revoked = setOf(ca.serialNumber.toString(16))
+        assertTrue(root.evidence(phone, listOf(chain[0]), evidence, rootKey, now.plusSeconds(3), roots, revoked) != null)
+        val after = root.devices.first { it.id == phone }
+        assertEquals(Records.HARDWARE, after.store)
+        assertEquals(AndroidAttestation.KIND_TEE, after.kind)
+        assertEquals(null, after.proof)
+        assertEquals(null, root.evidence(phone, listOf(chain[0]), evidence, rootKey, now.plusSeconds(4), roots, revoked), "already in hardware")
     }
 }

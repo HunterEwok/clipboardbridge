@@ -982,12 +982,13 @@ implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, t
 ### Admins
 
 Any full member can be an admin, in a group a phone created and in one a computer created.
-Its admin key is a file next to its identity, not a Secure Enclave key, so a thief with the
-computer can act as an admin until another admin removes it.
+Its admin key is in its TPM on Linux (section 17) and otherwise a file next to its identity,
+not a Secure Enclave key, so a thief with such a computer can act as an admin until another
+admin removes it.
 
 - Every full member that is not the root makes a P-256 admin key when it starts in a group
   with a root (not in a legacy group) and keeps it in the identity file (`admin_key`,
-  PKCS #8). Until it holds an admin CA, its hello carries `admin_key`: the key's
+  PKCS #8, or `admin_key_tpm`, section 17). Until it holds an admin CA, its hello carries `admin_key`: the key's
   SubjectPublicKeyInfo.
 - The root makes it an admin, the root phone with "Make it an admin" and the root computer
   with `cbb admin NAME`, after the user allows a computer whose keys sit in a file (section
@@ -1960,8 +1961,17 @@ device. The roadmap's key levels (item 31) build on this; this section is what 0
 far.
 
 - A **hello** says where the sender's keys live in `key_store` (section 4): the phones send
-  `hardware`, the computers and the lite member `file`. A device that cannot tell sends
-  `file`.
+  `hardware`, a Linux computer whose member key is in its TPM `hardware`, the other
+  computers and the lite member `file`. A device that cannot tell sends `file`.
+- **Keys in a TPM.** A full member on Linux makes its member key and its admin key in the
+  TPM 2.0 at `/dev/tpmrm0` when it may open it (the installer lets the service do so):
+  an ECC P-256 signing key under the TPM's ECC storage root key (the TCG template, made
+  again each time the service starts), fixed to that TPM and its parent, used without a
+  password. The identity file then keeps the key's TPM blob, its public and private parts,
+  in `key_tpm` and `admin_key_tpm` instead of `key` and `admin_key`; the blob loads only in
+  that TPM. `CBB_TPM=off` makes new keys in a file; a key already in a file stays there
+  until the device joins again. The CA keys of a root computer stay in the file.
+  `CBB_TPM_SIMULATOR=host:port` points the service at a software TPM (swtpm), for tests.
 - A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
   root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
   of hardware (`android-tee`, `android-strongbox`), and `proof`, the hex SHA-256 of the
@@ -1977,9 +1987,10 @@ far.
   in the phones' "Make it an admin" dialog). The root then signs the device record with
   `store` `file`. Moving the hub to such a computer makes it an admin only through that
   dialog.
-- **The root.** `cbb new` on a computer warns that its root key is a file. The computers
-  keep their keys in a file until the service uses the TPM and the Secure Enclave (roadmap,
-  D-44); from then on making a group or an admin with keys in a file asks first too.
+- **The root.** `cbb new` on a computer warns that its root key is a file: the group's CA
+  keys are not in the TPM yet, and Macs and Windows PCs keep all their keys in a file until
+  the service uses the Secure Enclave and the Windows TPM (roadmap, D-44). From then on
+  making a group or an admin with keys in a file asks first too.
 - **The attestation challenge.** An Android key is made with the attestation challenge
   `SHA-256("cbb attest v1" || field(group tag) || field(member key) || salt)`, where
   `field` is a two-byte big-endian length followed by the bytes, the group tag is empty
@@ -2030,7 +2041,8 @@ serial numbers that are revoked or suspended, and publishes them at
 status key (section 16; `tools/attest-status`). The mirror refuses a list that drops a
 serial number the last one revoked until its maintainer looks.
 
-- The group's root fetches both files when the group starts and once a day, and takes the
+- The group's root fetches both files when the group starts and once a day (a root phone
+  when evidence comes, at most once a day), and takes the
   list when it passes the checks of section 16 and its `seq` is not below the last it took
   (kept in the state directory). The request is the same for every device and names none.
 - The root checks every chain against the list it holds. A chain with a revoked
