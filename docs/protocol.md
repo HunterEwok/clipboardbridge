@@ -1720,8 +1720,8 @@ last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts eac
 
 The meeting point, on the user's own server or the project's open relay, for a group that has
 no computer to be its hub ([design.md](design.md), "Blind relay"). Implemented in Go (`internal/relay`,
-`cbb relay`, and on the devices `internal/service/relay.go`) for computers; the phones do
-not take part yet. It holds none of the group's keys: it ends each device's WireGuard
+`cbb relay`, and on the devices `internal/service/relay.go`), and on the phones through
+`mobile/cbbtun` (`StartRelay`) with the kits' `RelayOnPhone`. It holds none of the group's keys: it ends each device's WireGuard
 tunnel and joins two devices' connections inside the tunnels, and member TLS (section 4)
 runs end to end between the two devices.
 
@@ -1797,6 +1797,10 @@ lines of its own, notes:
    answering one as the server, and it closes the connection unless the client
    certificate names the device the call came from. So the relay can join two devices,
    but cannot pose as either.
+   On a phone, cbbtun joins the answered connection to the app's member listener on the
+   loopback address and first tells the app the call's device and the connection's source
+   port; the listener serves a connection only when the client certificate names the
+   device told for its port, and closes any other.
 4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections;
    256 registrations and requests being set up at a time.
 5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address

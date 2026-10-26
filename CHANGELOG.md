@@ -12,6 +12,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   relay at `cbb.tools` will, within limits that keep groups nobody vouches for from filling
   it: 4096 groups, 16 registrations from one address and 64 from one network, and 1 MiB a
   second of copying for each group. It forgets a group once its last device leaves.
+- The blind relay on the phones, Android and the iPhone: under **Blind relay** in Settings,
+  the relay's address and key, as `cbb relay` prints them. The app first says what the relay
+  learns and asks; then the phone meets the group's devices there while it syncs, dialing
+  and answering through `mobile/cbbtun`. A call reaches the phone's member listener only
+  when the device's certificate names the device the relay announced for that connection,
+  so the relay cannot pose as another member.
 - The phone as the group's hub while its app is open, on Android and the iPhone: on from the
   start in a group made on the phone, and a switch in Settings on a root or admin phone. At
   home the other phones, TVs and lite members connect to it; it takes them and publishes

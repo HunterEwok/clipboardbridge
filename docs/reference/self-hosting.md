@@ -16,10 +16,10 @@ with a public address will do: a virtual server with 1 CPU and 512 MB of memory 
 |---|---|---|
 | Command | `cbb forward` | `cbb relay -group TAG` |
 | Serves | any hub that registers with it | only the groups you list |
-| Devices connect with | the hub's `-forwarder ADDRESS -forwarder-key KEY` | `cbb global relay ADDRESS -key KEY` on each computer |
+| Devices connect with | the hub's `-forwarder ADDRESS -forwarder-key KEY` | `cbb global relay ADDRESS -key KEY` on each computer; Settings on the phones |
 | Ports | UDP and TCP 8764; TCP 443 with VLESS | UDP and TCP 8764 |
 | AmneziaWG, VLESS | yes | not yet |
-| Phones | yes | not yet (in 0.5) |
+| Phones | yes | yes, while the app syncs |
 
 ## Getting `cbb` onto the server
 
@@ -158,13 +158,16 @@ On each computer of the group, after `sudo cbb global on`, in place of a hub:
 sudo cbb global relay 198.51.100.9:8764 -key sha256:...
 ```
 
-It says what the relay learns and asks you to type yes.
+It says what the relay learns and asks you to type yes. On a phone, give the same address
+and key under **Blind relay** in Settings; the app says the same and asks before it meets the
+group there.
 
-The computers then meet at the relay whenever they are not on one network. Both must be
+The devices then meet at the relay whenever they are not on one network. Both must be
 online at once, since the relay stores nothing. It speaks plain WireGuard only.
 
-Planned for 0.5 ([roadmap](../roadmap.md), item 28): the relay in the phone apps, and the
-project's relay at `cbb.tools` for groups that do not want to run their own.
+Planned ([roadmap](../roadmap.md), item 28): the project's relay at `cbb.tools` for groups
+that do not want to run their own, and AmneziaWG and VLESS on the relay, as on the
+forwarder.
 
 ## Updating
 

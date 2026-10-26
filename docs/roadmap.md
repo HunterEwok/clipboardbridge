@@ -151,8 +151,9 @@ The order may change.
     the guide to running one's own forwarder or relay, with the plain, AmneziaWG and VLESS
     ways for networks and countries that block VPNs
     ([running your own servers](reference/self-hosting.md)). **Built: the open relay
-    (`cbb relay -open`) with its limits, and the choice in `cbb global relay`. Next: the
-    relay in the phone apps, the guide, and the project's relay on `cbb.tools`.**
+    (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
+    phone apps with the same choice, and the guide. Next: the project's relay on
+    `cbb.tools`, and AmneziaWG and VLESS on the relay.**
 29. **Proposed for 0.6.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See
