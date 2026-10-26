@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"slices"
@@ -80,6 +81,11 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 	case control.OpCopyMedia:
 		if err := s.copyMedia(c, r, m); err != nil {
 			fail(c, err)
+			// Read what the client still sends before closing: closing a
+			// socket with unread data resets it, and on Windows the reset
+			// drops the reply before the client reads it.
+			c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			io.Copy(io.Discard, c)
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)

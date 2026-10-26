@@ -32,7 +32,11 @@ func TestCollect(t *testing.T) {
 	if skipped != links {
 		t.Errorf("left out %d, want %d", skipped, links)
 	}
-	want := []control.Part{{Path: "trip", Dir: true}, {Path: "trip/day 1", Dir: true}, {Path: "trip/day 1/a.jpg", Size: 4}, {Path: "trip/notes._", Size: 1}, {Path: "con_.txt", Size: 2}}
+	notes := "trip/notes._"
+	if runtime.GOOS == "windows" {
+		notes = "trip/notes" // Windows drops the trailing dot when it creates the file
+	}
+	want := []control.Part{{Path: "trip", Dir: true}, {Path: "trip/day 1", Dir: true}, {Path: "trip/day 1/a.jpg", Size: 4}, {Path: notes, Size: 1}, {Path: "con_.txt", Size: 2}}
 	if len(parts) != len(want) {
 		t.Fatalf("parts %+v", parts)
 	}

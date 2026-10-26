@@ -86,6 +86,8 @@ public enum Media {
         public var size: Int64
         public var sha256: Data?
 
+        enum CodingKeys: String, CodingKey { case type, path, dir, size, sha256 }
+
         public init(type: String? = nil, path: String? = nil, dir: Bool = false, size: Int64 = 0, sha256: Data? = nil) {
             (self.type, self.path, self.dir, self.size, self.sha256) = (type, path, dir, size, sha256)
         }
