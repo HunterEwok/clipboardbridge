@@ -109,12 +109,13 @@ Other ways to join from afar, through SSH or your own VPN, are in
 
 ## No computer for a hub
 
-Today such a group syncs at home only, or you run a **blind relay** on a server of your own,
-which computers (not yet the phones) meet at instead of a hub; it cannot read the clipboard
-but sees which devices talk and when. See [running your own servers](../reference/self-hosting.md#a-blind-relay).
+A phone can be the hub while its app is open (Settings, **This phone as the hub**). Or the
+devices meet at a **blind relay** on a server of your own instead of a hub: the computers with
+`cbb global relay`, the phones under **Blind relay** in Settings. The relay cannot read the
+clipboard but sees which devices talk, when and how much. See
+[running your own servers](../reference/self-hosting.md#a-blind-relay).
 
-Coming in 0.5: the phone itself as the hub while its app is open, and a blind relay at
-`cbb.tools` that any group can use, phones included.
+Coming later: a blind relay at `cbb.tools` that any group can use.
 
 ## Turning it off
 

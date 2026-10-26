@@ -143,15 +143,17 @@ The order may change.
     actions" below.
 28. **Planned for 0.5.** A blind relay for every group that needs a hub and has none, or
     does not want to run one: the project's relay at `cbb.tools`, and one of the user's own
-    that is easy to set up. This changes the principle of "Blind relay (self-hosted only)"
-    in [design.md](design.md#blind-relay-self-hosted-only); the pull request that builds it
-    rewrites that section. It needs: groups that register with the project's relay by
-    themselves, with limits per group (finding 3 of the security audit); the relay in both
-    phone apps, beside the hub; a choice the user makes, after the apps and `cbb global
-    relay` say what the relay learns (which devices talk, when and how much, and their
-    addresses; never the clipboard); and the guide to running one's own forwarder or relay,
-    with the plain, AmneziaWG and VLESS ways for networks and countries that block VPNs
-    ([running your own servers](reference/self-hosting.md)).
+    that is easy to set up. See "Blind relay" in [design.md](design.md#blind-relay) (D-68).
+    It needs: groups that register with the project's relay by themselves, with limits per
+    group (finding 3 of the security audit); the relay in both phone apps, beside the hub; a
+    choice the user makes, after the apps and `cbb global relay` say what the relay learns
+    (which devices talk, when and how much, and their addresses; never the clipboard); and
+    the guide to running one's own forwarder or relay, with the plain, AmneziaWG and VLESS
+    ways for networks and countries that block VPNs
+    ([running your own servers](reference/self-hosting.md)). **Built: the open relay
+    (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
+    phone apps with the same choice, and the guide. Next: the project's relay on
+    `cbb.tools`, and AmneziaWG and VLESS on the relay.**
 29. **Proposed for 0.6.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See

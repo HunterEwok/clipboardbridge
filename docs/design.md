@@ -1048,21 +1048,31 @@ the root and any computers and lite members. Some member has to accept connectio
 member, a Windows PC, a Mac or a lite member; only phones never do. So any group with a
 computer or a lite member besides its phones syncs at home.
 
-### Blind relay (self-hosted only)
+### Blind relay
 
-For a user with no computer that could be the hub, a blind relay can stand in as the meeting
-point. It is a `cbb` mode on a server the user runs: it holds none of the group's keys, ends
-the clients' WireGuard tunnels, and joins the member TLS of two clients of one group end to
-end, so it reads nothing. It is still a star: clients reach only the relay, and the relay
-decides which two connections to join. What it learns, and what the user's own hub would
-not let out: which devices of the group talk, when, and how much. Both devices must be
-online at once, since it stores nothing. It is built as an option for those who run it
-themselves and is never switched on in the project's own forwarder, which collects nothing
-about who talks to whom.
+For a group with no computer that could be the hub, a blind relay can stand in as the
+meeting point (D-68). It holds none of the group's keys, ends the clients' WireGuard tunnels,
+and joins the member TLS of two clients of one group end to end, so it reads nothing. It is
+still a star: clients reach only the relay, and the relay decides which two connections to
+join. What it learns, and what the user's own hub would not let out: which devices of the
+group are online and their addresses, which of them talk, when, and how much. Both devices
+must be online at once, since it stores nothing.
 
-- `cbb relay -group TAG` runs it on the user's server, for the groups whose tags it is
-  given and no other. Each device turns it on with `cbb global relay ADDRESS -key KEY`, in
-  place of a hub; the key is the pin of the relay's own key, as with the forwarder.
+Anyone who needs it may use it: the project runs an open relay at `cbb.tools`, and a user may
+run their own just as easily (`cbb relay`, the [guide](reference/self-hosting.md)). A device
+meets at a relay only after the user agrees to what it learns: `cbb global relay` shows it
+and asks, and the phone apps will say it before their switch. The relay keeps nothing about
+the devices in its logs, but a user who would rather nobody saw even that runs their own
+relay, or a hub.
+
+- `cbb relay -group TAG` runs a relay for the groups whose tags it is given and no other;
+  `cbb relay -open` serves every group that registers, as the project's relay does, within
+  limits that keep groups nobody vouches for from filling it (finding 3 of the security
+  audit): 4096 groups, 16 registrations from one address and 64 from one network (an IPv4
+  /24 or an IPv6 /64), and 1 MiB a second of copying for each group, besides the limits of
+  every relay. An open relay forgets a group once its last device leaves.
+- Each device turns it on with `cbb global relay ADDRESS -key KEY`, in place of a hub, after
+  the user agrees; the key is the pin of the relay's own key, as with the forwarder.
 - A device registers with its member certificate and proves it holds its WireGuard key, as
   a hub does with the forwarder. The relay then gives it a tunnel, a preshared key and a
   tunnel address of the relay's choosing, and drops it when the registration ends.
@@ -1207,7 +1217,7 @@ only adds to it.
    follows.
 5. The forwarder: `cbb forward` and the hub's registration, routing by `mac1` (done); the
    computed port as a fallback if AmneziaWG needs it; the project's own server.
-6. The blind relay, self-hosted only (done for computers).
+6. The blind relay, the user's own or the project's open one (done for computers).
 7. The phones: the in-app tunnel in both kits and apps, interop tests against the Go hub,
    making and opening remote invitations. Done: the tunnel, `mobile/cbbtun`, bound by
    gomobile into an AAR and an xcframework; the tunnel offer in both kits; both apps'
@@ -1780,3 +1790,4 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-65 | A group may have several hubs in an order the user sets; clients keep every hub's offer and use the first that answers, the hubs share the clients' keys, and a lower hub yields to a higher one, so there is one star at a time. Every capable device with sync away from home on is a hub, in a table signed by the root or an admin that all devices share: the user's main hubs first, then devices with keys in hardware, then devices with keys in files where the key level allows them (D-66); the first one online serves. |
 | D-66 | Who may be the root, an admin or a hub follows the group's key level, which the user picks: proven hardware only (attestation, asking Apple, Google's public lists and some TPM makers, which the guide names; the one exception to D-47, by the user's choice), hardware by the device's own word (the default, so no device is disclosed to anyone outside the group), or files too, each time after a warning. |
 | D-67 | A forwarder and a relay see credentials made for them, not the group's records: the hubs' and the members' key hashes with a version and an expiry, signed by the root or a listed admin, so no device ID, name, system or date leaves the group. |
+| D-68 | A blind relay is for everyone who needs it, not only for those who run their own: the project runs an open one at `cbb.tools`, within limits per group and per network, and a device meets there only after the user agrees to what it learns (who talks to whom, when, how much, and from where). |

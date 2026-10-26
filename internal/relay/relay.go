@@ -45,8 +45,12 @@ type Config struct {
 	Keys   Keys
 
 	// Groups are the tags of the groups the relay serves; it refuses every
-	// other group. The user runs it for their own groups only.
+	// other group. The user runs it for their own groups.
 	Groups []string
+	// Open serves any group that registers, in place of Groups, within
+	// Limits: the project's relay, or one a user runs for others.
+	Open   bool
+	Limits Limits
 
 	Logf    func(format string, args ...any)
 	Verbose bool // also log WireGuard's own messages
@@ -64,8 +68,12 @@ type Relay struct {
 	once    sync.Once
 	wg      sync.WaitGroup
 
+	limits Limits // an open relay's; zero otherwise
+
 	mu      sync.Mutex
 	groups  map[string]map[string]*member // tag, then device ID
+	fromIP  map[netip.Addr]int            // an open relay's registrations by address
+	fromNet map[netip.Prefix]int          // and by network
 	byAddr  map[netip.Addr]*member
 	calls   map[string]*call // by ticket
 	setting int
@@ -88,6 +96,8 @@ type member struct {
 	notes   chan note
 	calls   int // calls waiting for its answer
 	pairs   *int
+	bytes   *rate      // the group's copying, on an open relay
+	from    netip.Addr // the address it registered from
 	dropped bool
 }
 
@@ -100,7 +110,10 @@ type call struct {
 // Listen opens the relay's port: TCP for the registrations, UDP for the
 // tunnels, both with the same number.
 func Listen(cfg Config) (*Relay, error) {
-	if len(cfg.Groups) == 0 {
+	switch {
+	case cfg.Open && len(cfg.Groups) > 0:
+		return nil, errors.New("relay: an open relay serves every group; give no group's tag")
+	case !cfg.Open && len(cfg.Groups) == 0:
 		return nil, errors.New("relay: no group to serve; give the tags of your groups (cbb status shows them)")
 	}
 	allowed := map[string]bool{}
@@ -129,7 +142,10 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
-		records: map[string][]group.Record{}}
+		records: map[string][]group.Record{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{}}
+	if cfg.Open {
+		r.limits = cfg.Limits.withDefaults()
+	}
 	r.tlsCfg = r.serverTLS()
 	return r, nil
 }
@@ -214,6 +230,14 @@ func (r *Relay) addLocked(m *member) error {
 	if len(g) >= maxMembers {
 		return errors.New("the relay holds as many devices of this group as it can")
 	}
+	if r.cfg.Open {
+		switch {
+		case g == nil && len(r.groups) >= r.limits.Groups:
+			return errors.New("the relay serves as many groups as it can; try again later, or run your own relay")
+		case r.fromIP[m.from] >= r.limits.PerAddress, r.fromNet[networkOf(m.from)] >= r.limits.PerNetwork:
+			return errors.New("too many devices registered from this network; try again later")
+		}
+	}
 	for {
 		a, err := tunnel.Addr(string(group.NewDeviceID()))
 		if err != nil {
@@ -228,9 +252,12 @@ func (r *Relay) addLocked(m *member) error {
 		g = map[string]*member{}
 		r.groups[m.tag] = g
 		m.pairs = new(int)
+		if r.cfg.Open {
+			m.bytes = newRate(r.limits.ByteRate)
+		}
 	} else {
 		for _, o := range g {
-			m.pairs = o.pairs
+			m.pairs, m.bytes = o.pairs, o.bytes
 			break
 		}
 	}
@@ -242,6 +269,10 @@ func (r *Relay) addLocked(m *member) error {
 			delete(r.groups, m.tag)
 		}
 		return err
+	}
+	if r.cfg.Open {
+		r.fromIP[m.from]++
+		r.fromNet[networkOf(m.from)]++
 	}
 	return nil
 }
@@ -270,9 +301,20 @@ func (r *Relay) dropLocked(m *member) {
 		delete(g, m.device)
 		if len(g) == 0 {
 			delete(r.groups, m.tag)
+			// An open relay forgets a group once its last device goes, so
+			// groups that come and go do not fill its memory.
+			if r.cfg.Open {
+				delete(r.records, m.tag)
+			}
 		}
 	}
-	delete(r.byAddr, m.addr)
+	if r.byAddr[m.addr] == m {
+		delete(r.byAddr, m.addr)
+		if r.cfg.Open {
+			countDown(r.fromIP, m.from)
+			countDown(r.fromNet, networkOf(m.from))
+		}
+	}
 	if err := r.hub.SetPeers(r.peersLocked()); err != nil {
 		r.logf("cbb relay: setting the tunnels: %v", err)
 	}
@@ -528,7 +570,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 	if writeLine(other, note{OK: true}, noteTimeout) != nil || writeLine(c, note{OK: true}, noteTimeout) != nil {
 		return
 	}
-	splice(c, other)
+	splice(c, other, m.bytes, r.done)
 }
 
 // serveAnswer hands c to the call it answers; the dialing side joins them.
@@ -546,11 +588,21 @@ func (r *Relay) serveAnswer(m *member, c net.Conn, ticket string) {
 	r.closeStream(m, c)
 }
 
-// splice copies between two connections until either ends.
-func splice(a, b net.Conn) {
+// countDown lowers the count of k, and forgets it at zero.
+func countDown[K comparable](m map[K]int, k K) {
+	if m[k] <= 1 {
+		delete(m, k)
+	} else {
+		m[k]--
+	}
+}
+
+// splice copies between two connections until either ends, at the
+// group's rate when it has one.
+func splice(a, b net.Conn, limit *rate, stop <-chan struct{}) {
 	done := make(chan struct{}, 2)
 	cp := func(dst, src net.Conn) {
-		io.Copy(dst, src)
+		limitedCopy(dst, src, limit, stop)
 		done <- struct{}{}
 	}
 	go cp(a, b)

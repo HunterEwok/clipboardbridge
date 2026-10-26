@@ -119,6 +119,29 @@ class AppModel(private val app: Context) {
     private var hubError: String? = null
 
     /**
+     * The phone at a blind relay as Settings shows it (docs/design.md,
+     * "Blind relay"): where it stands, why the relay does not take it, the
+     * relay, and the group's devices there and the connections through it.
+     */
+    data class BlindRelay(
+        val status: RelayOnPhone.Status,
+        val error: Note? = null,
+        val relay: HubState.Forwarder? = null,
+        val online: Int = 0,
+        val through: Int = 0,
+    )
+
+    var blindRelay by mutableStateOf<BlindRelay?>(null)
+        private set
+
+    /** What the last change to the relay said, when it failed. */
+    var relayNote by mutableStateOf<Note?>(null)
+        private set
+
+    /** The relay's last error, logged once. */
+    private var relayError: String? = null
+
+    /**
      * A remote invitation as Settings shows it: when it expires, the file to
      * share, and the device waiting for the user's answer.
      */
@@ -304,7 +327,42 @@ class AppModel(private val app: Context) {
                 )
             }
         }
+        blindRelay = withContext(Dispatchers.IO) {
+            group.blindRelay?.let { r ->
+                val (status, report, error) = r.status(paused = false)
+                if (error != relayError) {
+                    relayError = error
+                    if (error != null) Log.w(TAG, "the relay: $error")
+                }
+                BlindRelay(
+                    status,
+                    error?.let { Note(R.string.relay_failed, if (settings.showsErrorDetails) it else null, error = true) },
+                    r.relay, report.online.size, report.through,
+                )
+            }
+        }
         WatchLink.update(app, this)
+    }
+
+    /**
+     * Meets the group at the blind relay at address with the key pin, as
+     * cbb relay prints them, after the user read what it learns; both
+     * empty leave it.
+     */
+    suspend fun setRelay(address: String, pin: String) {
+        relayNote = try {
+            if (address.isBlank() != pin.isBlank()) throw IllegalArgumentException("both or neither")
+            if (pin.isNotBlank() && !HubState.validPin(pin.trim())) throw IllegalArgumentException("not a pin")
+            withContext(Dispatchers.IO) { group.setRelay(address, pin) }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            describe(e, R.string.relay_bad)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
     }
 
     /** Makes this phone the group's hub, or stops it being the hub. */

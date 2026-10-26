@@ -141,6 +141,13 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
 
     public func close() { connection.cancel() }
 
+    /// The peer's port, as an accepted connection names its client: on the
+    /// loopback address it tells whose connection a relay call is.
+    public var remotePort: UInt16? {
+        guard case .hostPort(_, let port) = connection.endpoint else { return nil }
+        return port.rawValue
+    }
+
     var tlsMetadata: sec_protocol_metadata_t? {
         (connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata)?.securityProtocolMetadata
     }

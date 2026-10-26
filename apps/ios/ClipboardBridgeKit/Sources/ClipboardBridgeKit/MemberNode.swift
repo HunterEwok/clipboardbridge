@@ -353,6 +353,18 @@ public actor MemberNode {
         for c in conns.values where c.peer == peer { c.goodbye() }
     }
 
+    /// Says goodbye, after what is queued for them, on the connections to
+    /// peers, and waits up to timeout until they ended: an old hub's
+    /// clients then have the new hub's offer before its tunnel stops.
+    public func sayGoodbye(to peers: [String], timeout: Duration) async {
+        let ids = conns.filter { $0.value.peer.map(peers.contains) == true }.map(\.key)
+        for id in ids { conns[id]?.goodbye() }
+        let deadline = ContinuousClock.now + timeout
+        while ids.contains(where: { conns[$0] != nil }), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     /// Sends records made on this phone to every connected member.
     public func sendRecords(_ rs: [Member.Record]) {
         sendRecords(rs, except: nil)

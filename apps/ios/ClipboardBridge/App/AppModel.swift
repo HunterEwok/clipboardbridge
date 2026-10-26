@@ -61,6 +61,10 @@ protocol GroupController: AnyObject {
     func invite(lifetime: Int, ask: @escaping @MainActor (PairingMember.Request) async -> Bool,
                 ended: @escaping @MainActor (Result<String, Error>) -> Void) async throws -> AppModel.Invitation
     func moveHub(to id: String) async throws
+    /// The phone at a blind relay; nil without a group.
+    func relayStatus() async -> AppModel.BlindRelay?
+    /// Meets the group at a blind relay; both empty leave it.
+    func setRelay(address: String, pin: String) async throws
 }
 
 extension GroupController {
@@ -79,6 +83,8 @@ extension GroupController {
         throw HubOnPhone.Failure.notRunning
     }
     func moveHub(to id: String) async throws { throw HubOnPhone.Failure.notRunning }
+    func relayStatus() async -> AppModel.BlindRelay? { nil }
+    func setRelay(address: String, pin: String) async throws {}
 }
 
 /// What the app shows and does; the views only read it and call it.
@@ -172,6 +178,23 @@ final class AppModel: ObservableObject {
     }
 
     @Published private(set) var hub: Hub?
+
+    /// The phone at a blind relay as Settings shows it (docs/design.md,
+    /// "Blind relay"): where it stands, why the relay does not take it, the
+    /// relay, and the group's devices there and the connections through it.
+    struct BlindRelay: Equatable {
+        var status: RelayOnPhone.Status
+        var error: String?
+        var relay: HubState.Forwarder?
+        var online = 0
+        var through = 0
+    }
+
+    @Published private(set) var blindRelay: BlindRelay?
+    /// What the last change to the relay said, when it failed.
+    @Published private(set) var relayNote: String?
+    /// The relay's last error, logged once.
+    private var relayError: String?
     /// What the last change to the hub said, when it failed.
     @Published private(set) var hubNote: String?
 
@@ -343,6 +366,7 @@ final class AppModel: ObservableObject {
         devices = group.devices
         await refreshAway()
         await refreshHub()
+        await refreshRelay()
         if notifies {
             Notifier.shared.observe(devices)
             WatchLink.shared.update(self)
@@ -377,6 +401,32 @@ final class AppModel: ObservableObject {
             if let e = hubError { log.error("the hub: \(e, privacy: .public)") }
         }
         hub = h
+    }
+
+    private func refreshRelay() async {
+        let r = await group.relayStatus()
+        if r?.error != relayError {
+            relayError = r?.error
+            if let e = relayError { log.error("the relay: \(e, privacy: .public)") }
+        }
+        blindRelay = r
+    }
+
+    /// Meets the group at the blind relay at address with the key pin, as
+    /// cbb relay prints them, after the user read what it learns; both
+    /// empty leave it.
+    func setRelay(address: String, pin: String) async {
+        do {
+            try await group.setRelay(address: address, pin: pin)
+            relayNote = nil
+        } catch RelayOnPhone.Failure.badRelay {
+            relayNote = Self.describe(RelayOnPhone.Failure.badRelay, summary: String(
+                localized: "Give the relay's address with its port and its key, as cbb relay prints them, or leave both empty.",
+                bundle: .app))
+        } catch {
+            relayNote = Self.describe(error)
+        }
+        await refreshRelay()
     }
 
     /// Makes this phone the group's hub, or stops it being the hub.

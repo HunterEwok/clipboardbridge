@@ -11,6 +11,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "away")
+private let relayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "relay")
 private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
 private let modeLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "mode")
 
@@ -84,6 +85,10 @@ final class LiveGroup: GroupController {
     private var hub: HubOnPhone?
     private var tunnelListener: (listener: MemberListener, port: UInt16)?
     private var homeListener: MemberListener?
+    /// The phone at a blind relay, and while it runs its member listener on
+    /// the loopback address, which serves the relay's calls.
+    private var blindRelay: RelayOnPhone?
+    private var relayListener: (listener: MemberListener, port: UInt16)?
     /// This phone's TLS identity, for the hub's listeners.
     private var memberIdentity: SecIdentity?
     /// Whether the app is in front: the phone is the hub only then (iOS
@@ -699,6 +704,21 @@ final class LiveGroup: GroupController {
             isPhone: { box.isPhone($0) })
         awayRef.value = away
         Task { await away.start() }
+        // At a blind relay the phone dials the device the relay joined, with
+        // the same TLS as at home, while it is not found here.
+        let blindRelay = RelayOnPhone(
+            device: g.device, links: GoRelayLinks(), settings: RelayKeychain.load(), save: { try RelayKeychain.save($0) },
+            dial: { port, peer in
+                let t = TLSTransport(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port) ?? .any),
+                                     alpn: Member.alpn, identity: id, chain: chain) { c in
+                    (try? GroupCertificates.verifyMember(chain: c, roots: roots, now: Date())) == peer
+                }
+                try await t.start()
+                return t
+            },
+            serve: { t, peer in try await node.serve(t, peer: peer) },
+            elsewhere: { relay.found($0) },
+            log: { what, error in relayLog.error("\(what, privacy: .public): \(error.map { String(reflecting: $0) } ?? "", privacy: .public)") })
         let browser = BonjourBrowser { found in relay.update(found) }
         let dialer = MemberDialer(node: node, group: g.tag,
                                   dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted) { relay.addresses[$0] ?? [] })
@@ -708,7 +728,7 @@ final class LiveGroup: GroupController {
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins, self.away) =
             (node, browser, dialer, relay, box, renewer, admins, away)
-        (self.hub, memberIdentity) = (hub, id)
+        (self.hub, self.blindRelay, memberIdentity) = (hub, blindRelay, id)
         refreshHub()
     }
 
@@ -716,7 +736,8 @@ final class LiveGroup: GroupController {
     private func restartSync() async {
         await hubDone()
         stopHub()
-        hub = nil
+        stopRelay()
+        (hub, blindRelay) = (nil, nil)
         await away?.stop()
         await dialer?.stop()
         browser?.stop()
@@ -750,6 +771,10 @@ final class LiveGroup: GroupController {
     /// the hub to a computer").
     static let keepsPhoneHubKey = "KeepsPhoneHub"
 
+    /// The longest the old hub waits for its clients' connections to end
+    /// after it passed the new hub's offer on.
+    static let moveGrace: Duration = .seconds(10)
+
     /// The forms of devices that are always on, as their hellos state them.
     private static let alwaysOn: Set<String> = ["desktop", "server", "board", "router"]
 
@@ -781,9 +806,12 @@ final class LiveGroup: GroupController {
             if !wasOn { try? await away.turnOff() }
             throw error
         }
-        await node.sendTunnel { hub.movedOffer(device: $0, newHub: id, offer: offer) }
-        // The clients that came through the tunnel get the offer before it closes.
-        try? await Task.sleep(for: .seconds(2))
+        let sent = await node.sendTunnel { hub.movedOffer(device: $0, newHub: id, offer: offer) }
+        // The clients that came through the tunnel get the offer before it
+        // closes: each connection ends after the offer and a goodbye, and
+        // the last packets get a second more.
+        await node.sayGoodbye(to: sent, timeout: Self.moveGrace)
+        try? await Task.sleep(for: .seconds(1))
         try hub.turnOff()
         await away.keep(from: id, offer: offer.with(psk: psk, hub: nil))
         await restartSync()
@@ -838,6 +866,7 @@ final class LiveGroup: GroupController {
         hubWork = Task { @MainActor [weak self] in
             await previous?.value
             await self?.updateHub()
+            await self?.updateRelay()
         }
     }
 
@@ -898,6 +927,59 @@ final class LiveGroup: GroupController {
         let ids = Set(g.devices.map(\.id))
         hub.prune { ids.contains($0) }
         hub.setRecords(g.records.authorityRecords)
+        blindRelay?.setRecords(g.records.authorityRecords)
+    }
+
+    // MARK: The blind relay
+
+    /// Runs the link to the blind relay while it is on and the app is in
+    /// front, with its member listener on the loopback address, which
+    /// serves only the calls the relay announced and only when the
+    /// certificate names the caller; otherwise it stops them.
+    private func updateRelay() async {
+        guard let r = blindRelay, let node, let g = state, let id = memberIdentity, r.isOn, foreground,
+              let member = try? memberSigner() else { return stopRelay() }
+        if relayListener == nil {
+            let roots = g.trusted
+            do {
+                let l = try MemberListener(node: node, identity: id, chain: Self.chain(g), trusted: { roots }, caller: { r.caller(port: $0) },
+                                           onError: { relayLog.error("a call through the relay failed: \(String(reflecting: $0), privacy: .public)") })
+                relayListener = (l, try await l.start())
+            } catch {
+                relayLog.error("the relay's calls cannot be taken: \(String(reflecting: error), privacy: .public)")
+                return
+            }
+        }
+        guard let port = relayListener?.port, blindRelay === r else { return }
+        let sign: @Sendable (Data) throws -> Data = { try member.signature(digest: $0) }
+        // The relay takes the member chain and the group's roots after it, as a forwarder (docs/protocol.md, section 14).
+        r.start(.init(memberPort: port, chain: g.memberChain + g.trusted, sign: sign, records: g.records.authorityRecords))
+    }
+
+    private func stopRelay() {
+        relayListener?.listener.stop()
+        relayListener = nil
+        blindRelay?.stop()
+    }
+
+    /// The blind relay as Settings shows it; nil without a group.
+    func relayStatus() async -> AppModel.BlindRelay? {
+        guard let r = blindRelay else { return nil }
+        let (status, report, error) = r.status(paused: !foreground)
+        return AppModel.BlindRelay(status: status, error: error, relay: r.relay, online: report.online.count, through: report.through)
+    }
+
+    /// Meets the group at the relay at address, whose key is pin, after the
+    /// user read what a relay learns; both empty leave it.
+    func setRelay(address: String, pin: String) async throws {
+        guard let r = blindRelay else { return }
+        let a = address.trimmingCharacters(in: .whitespaces), p = pin.trimmingCharacters(in: .whitespaces)
+        if a.isEmpty && p.isEmpty {
+            try r.turnOff()
+        } else {
+            try r.turnOn(endpoint: a, pin: p)
+        }
+        refreshHub()
     }
 
     /// The member port the hub takes members on at home, as the computers';
@@ -1141,6 +1223,10 @@ final class LiveGroup: GroupController {
             if ProcessInfo.processInfo.systemUptime - at < Self.nearGrace { return true }
             return await d?.connected.contains(device) ?? false
         }
+
+        /// Whether the browser finds device on the home network now, where
+        /// the dialer reaches it directly.
+        func found(_ device: String) -> Bool { lock.withLock { foundAt[device] != nil } }
 
         func update(_ found: Set<FoundMember>) {
             let (d, members): (MemberDialer?, Set<FoundMember>) = lock.withLock {

@@ -45,6 +45,9 @@ class TLSTransport private constructor(private val socket: SSLSocket, private va
     /** The peer's leaf certificate, DER, once the handshake is done. */
     val peerCertificate: ByteArray? get() = peerChain.firstOrNull()
 
+    /** The peer's port, as an accepted connection names its client: on the loopback address it tells whose connection a relay call is. */
+    val remotePort: Int get() = socket.port
+
     /** Runs the handshake, at most timeoutMS, and checks the ALPN protocol; closes the socket when it fails. */
     private fun handshake(timeoutMS: Int) {
         try {

@@ -78,7 +78,7 @@ func (r *Relay) groupOf(certs []*x509.Certificate, now time.Time) (tag, device s
 	var roots []*x509.Certificate
 	for _, c := range certs[1:] {
 		if c.IsCA && c.CheckSignatureFrom(c) == nil {
-			if r.allowed[group.Tag(c)] {
+			if r.cfg.Open || r.allowed[group.Tag(c)] {
 				roots = append(roots, c)
 			}
 		} else {
@@ -210,7 +210,7 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &member{tag: tag, device: device, leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}}
+	m := &member{tag: tag, device: device, leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}, from: addrOf(raw)}
 	copy(m.key[:], c.Key)
 	r.mu.Lock()
 	select {

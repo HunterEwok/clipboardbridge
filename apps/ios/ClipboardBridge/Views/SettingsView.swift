@@ -14,6 +14,10 @@ struct SettingsView: View {
     @State private var moving: AppModel.Hub.Target?
     @State private var forwarderAddress = ""
     @State private var forwarderKey = ""
+    @State private var relayAddress = ""
+    @State private var relayKey = ""
+    /// Whether the question about what a relay learns is showing.
+    @State private var askingRelay = false
     /// Taps on the version; seven show the error details switch, as
     /// Android's build number shows its developer options.
     @State private var versionTaps = 0
@@ -55,6 +59,9 @@ struct SettingsView: View {
             }
             if let away = model.away, model.hub?.on != true {
                 awaySection(away)
+            }
+            if let relay = model.blindRelay {
+                relaySection(relay)
             }
             NotificationSettings()
             Section {
@@ -276,6 +283,79 @@ struct SettingsView: View {
         case .connecting: return Text("Connecting to the hub through the tunnel…")
         case .connected: return Text("Connected to the hub through the tunnel.")
         case .off, .waitingForHub: return Text("Waiting for the hub: open the app at home once, near a computer of the group.")
+        }
+    }
+}
+
+extension SettingsView {
+    /// The blind relay (docs/design.md, "Blind relay"): where the phone
+    /// stands there, its address and key, and what it learns, which the
+    /// user reads and accepts before the phone meets the group there.
+    func relaySection(_ relay: AppModel.BlindRelay) -> some View {
+        Section {
+            relayStatus(relay)
+                .foregroundStyle(relay.status == .connected ? palette.accent : palette.textDim)
+            // The relay's error underneath, when details are on.
+            if let error = relay.error, AppModel.showsErrorDetails {
+                Text(verbatim: error).font(.caption).foregroundStyle(palette.textDim)
+            }
+            TextField(text: $relayAddress) { Text("Relay address, such as 198.51.100.9:8764") }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.numbersAndPunctuation)
+            TextField(text: $relayKey) { Text("Relay key, sha256:…") }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.body, design: .monospaced))
+            let empty = relayAddress.trimmingCharacters(in: .whitespaces).isEmpty && relayKey.trimmingCharacters(in: .whitespaces).isEmpty
+            Button {
+                if empty {
+                    saveRelay()
+                } else {
+                    askingRelay = true
+                }
+            } label: {
+                Text(empty ? "Leave the relay" : "Meet at this relay")
+            }
+            .disabled(switching || (relayAddress == (relay.relay?.endpoint ?? "") && relayKey == (relay.relay?.pin ?? "")))
+            if let note = model.relayNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(palette.danger)
+            }
+        } header: {
+            Text("Blind relay")
+        } footer: {
+            Text("For a group without a hub of its own: the devices meet at a relay, such as one set up with cbb relay, while this app is open. The clipboard stays encrypted between the devices, but the relay learns which of them are online and their addresses, and which talk to each other, when and how much. Leave both fields empty to stop.")
+        }
+        .listRowBackground(palette.surface)
+        .onAppear {
+            relayAddress = relay.relay?.endpoint ?? ""
+            relayKey = relay.relay?.pin ?? ""
+        }
+        .alert(Text("Meet at this relay?"), isPresented: $askingRelay) {
+            Button { saveRelay() } label: { Text("Meet at this relay") }
+            Button(role: .cancel) {} label: { Text("Cancel") }
+        } message: {
+            Text("The clipboard stays encrypted end to end between the devices: the relay cannot read it or pose as a device. It does learn, while the devices use it, which devices of the group are online and their internet addresses, and which of them talk to each other, when and how much they send. A hub of the group's own lets none of this out. Use a relay you run yourself, or one whose operator you trust with this.")
+        }
+    }
+
+    private func saveRelay() {
+        switching = true
+        Task {
+            await model.setRelay(address: relayAddress, pin: relayKey)
+            switching = false
+        }
+    }
+
+    private func relayStatus(_ relay: AppModel.BlindRelay) -> Text {
+        switch relay.status {
+        case .off: return Text("Off: this phone meets nobody at a relay.")
+        case .paused: return Text("Waiting for the app: the relay works while the app is open.")
+        case .connecting: return Text("Connecting to the relay…")
+        case .connected:
+            return relay.online == 0 ? Text("At the relay: no other device of the group is there now.")
+                : Text("At the relay with \(relay.online) devices of the group.")
+        case .failed: return Text("The relay does not take this phone. Check its address and key.")
         }
     }
 }

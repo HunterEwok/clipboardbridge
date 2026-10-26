@@ -37,6 +37,20 @@ the group. To keep that from happening:
 
 `
 
+// relayNotice says what a blind relay learns, before the user agrees to
+// meet there (docs/design.md, "Blind relay").
+const relayNotice = `A blind relay is a meeting point for the devices of a group that has no hub of its own.
+The clipboard stays encrypted end to end between the devices: the relay cannot read it
+or pose as a device. It does learn, while the devices use it:
+
+  - which devices of the group are online, and their internet addresses;
+  - which of them talk to each other, when, and how much they send.
+
+A hub of the group's own lets none of this out. Use a relay you run yourself, or one
+whose operator you trust with this; the project's relay keeps none of it in logs.
+
+`
+
 // cmdGlobal shows or changes sync away from home on this device.
 func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb global                     show sync away from home\n" +
@@ -50,7 +64,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"                                      on the hub: make DEVICE, an admin computer with sync away from\n" +
 		"                                      home on, the hub in its place, reached through this hub's\n" +
 		"                                      forwarder unless others are given; its clients move with it\n" +
-		"       cbb global relay address:port -key KEY\n" +
+		"       cbb global relay address:port -key KEY [-yes]\n" +
 		"                                      meet the group's other devices at a blind relay, for a group\n" +
 		"                                      without a hub\n" +
 		"       cbb global allow               let this computer's service reach the group's servers as they\n" +
@@ -148,6 +162,7 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("global relay", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		key := fs.String("key", "", "the relay's key, which cbb relay prints")
+		yes := fs.Bool("yes", false, "agree to what the relay learns without asking (for scripts)")
 		// The address may come before the flag or after it.
 		rest := args[1:]
 		var addr string
@@ -171,6 +186,19 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return fail(stderr, err)
 		}
 		h.Relay, h.RelayKey = addr, *key
+		if !*yes {
+			fmt.Fprint(stdout, relayNotice)
+			fmt.Fprint(stdout, "Type yes to meet at this relay: ")
+			line, err := readLine(stdin)
+			if err != nil {
+				return fail(stderr, err)
+			}
+			if !strings.EqualFold(strings.TrimSpace(line), "yes") {
+				fmt.Fprintln(stdout, "Nothing changed.")
+				return 1
+			}
+		}
+		h.Consent = true
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2
