@@ -3,6 +3,7 @@
 /cbb
 /bin/
 /dist/
+/site/out/
 *.exe
 *.test
 *.out

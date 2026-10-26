@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# The website's language chooser (tools/site serve) behind nginx:
+# /etc/systemd/system/cbb-site.service. It keeps no state and no log of
+# visitors; "systemctl reload" reads the country database again.
+
+[Unit]
+Description=cbb.tools language chooser
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/cbb-site serve -dir /srv/cbb.tools/www -geo /var/lib/cbb-site/dbip-country-lite.csv.gz -addr 127.0.0.1:8780 -proxy
+ExecReload=/bin/kill -HUP $MAINPID
+DynamicUser=yes
+StateDirectory=cbb-site
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

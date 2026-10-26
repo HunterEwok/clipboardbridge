@@ -17,6 +17,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   or hardware, and `cbb status` shows it in a KEYS column (docs/protocol.md, section 17).
 - The Android app makes its keys with an attestation challenge, so the Keystore can later
   prove that they live in its hardware.
+- The website for cbb.tools (`site/`, built by `tools/site`): the start page, download, and
+  security and privacy, in English and Russian. It presents the two kinds of group, with a
+  computer at its heart and phones only, and says plainly why a computer is simpler. "/"
+  picks the visitor's language by the language they picked before, their country (a local
+  DB-IP database on the server, nothing logged) and their browser; English otherwise.
+  nginx with its ACME module serves it (`site/deploy`), and CI checks every translation.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

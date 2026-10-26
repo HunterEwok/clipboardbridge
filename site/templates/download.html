@@ -1,0 +1,53 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+{{define "title"}}{{t "Download"}}: Clipboard Bridge{{end}}
+
+{{define "content"}}
+<section class="wrap page">
+  <h1>{{t "Download"}}</h1>
+  <p class="lead">{{t "Install the app on your phone and Clipboard Bridge on your computers. Every way installs the same program, and every release is free."}}</p>
+
+  <h2>{{t "Phones"}}</h2>
+  <div class="cards two">
+    <div class="card">
+      <h3>Android</h3>
+      <p>{{t "Android 10 or later. Download the APK from the latest release on the phone and open it."}}</p>
+      <p><a class="button accent" href="https://github.com/HunterEwok/clipboardbridge/releases/latest">{{t "Latest release"}}</a></p>
+    </div>
+    <div class="card">
+      <h3>iPhone</h3>
+      <p>{{t "The app comes with TestFlight, which is not open yet. Until then an iPhone joins with a shortcut, and a computer holds the group: see %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/without-app.md" (t "without the app"))}}</p>
+    </div>
+  </div>
+
+  <h2>{{t "Computers"}}</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>{{t "Linux and Mac"}}</h3>
+      <p>{{t "Any Linux with systemd (x86-64, ARM64, ARMv7, ARMv6) and any Mac. In a terminal:"}}</p>
+      <pre><code>curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh</code></pre>
+      <p>{{t "Or on a Mac with Homebrew, which also updates it; run the second line again after each upgrade:"}}</p>
+      <pre><code>brew install hunterewok/tap/clipboardbridge
+sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"</code></pre>
+    </div>
+    <div class="card">
+      <h3>Windows</h3>
+      <p>{{t "Windows 10 (1809 or later) or 11, x86-64 or ARM64. In a PowerShell opened with “Run as administrator”:"}}</p>
+      <pre><code>irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex</code></pre>
+    </div>
+    <div class="card">
+      <h3>{{t "A NAS or a home server"}}</h3>
+      <p>{{t "The Docker image %s runs as an ordinary member that is always on." (code "ghcr.io/hunterewok/clipboardbridge")}}</p>
+    </div>
+    <div class="card">
+      <h3>{{t "Small devices"}}</h3>
+      <p>{{t "A router or a Raspberry Pi Zero that should only sync takes the lite member: add %s to the Linux command." (code "-s -- --lite")}}</p>
+    </div>
+  </div>
+  <p>{{t "The installer checks the download, starts Clipboard Bridge and asks before it opens the firewall for it. Then run %s and scan its QR code in the app." (code "sudo cbb pair")}}
+     {{t "All the ways and options: %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/install.md" (t "installing"))}}</p>
+
+  <h2>{{t "Checking a download"}}</h2>
+  <p>{{t "The installers check every file against the release's checksums. Each file also has a build attestation that ties it to this repository and the build that made it, which %s checks:" (code "gh attestation verify")}}</p>
+  <pre><code>gh attestation verify clipboardbridge-linux-amd64.tar.gz --repo HunterEwok/clipboardbridge</code></pre>
+</section>
+{{end}}

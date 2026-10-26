@@ -1,0 +1,91 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+{{define "title"}}Clipboard Bridge: {{t "one clipboard for all your devices"}}{{end}}
+
+{{define "orbit"}}
+<div class="orbit" aria-hidden="true">
+  <svg viewBox="0 0 300 300" preserveAspectRatio="none"><path d="M150 150 50 50M150 150 250 50M150 150 50 250M150 150 250 250"/></svg>
+  <span class="node n1">{{index . 1}}</span>
+  <span class="node n2">{{index . 2}}</span>
+  <span class="node hub">{{index . 0}}</span>
+  <span class="node n3">{{index . 3}}</span>
+  <span class="node n4">{{index . 4}}</span>
+</div>
+{{end}}
+
+{{define "content"}}
+<section class="hero">
+  <div class="wrap">
+    <h1>{{t "Copy on one device. Paste on another."}}</h1>
+    <p class="lead">{{t "Clipboard Bridge gives your phone and your computers one clipboard: Android, iPhone, Linux, Windows and Mac. The devices talk directly on your own network, always encrypted. No cloud, no accounts, no telemetry."}}</p>
+    <p class="actions">
+      <a class="button accent" href="download.html">{{t "Download"}}</a>
+      <a class="button" href="#groups">{{t "How it works"}}</a>
+    </p>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>{{t "What it does"}}</h2>
+  <div class="table">
+  <table>
+    <tr><th>{{t "Computer → computer"}}</th><td>{{t "Copy on one, paste on another. Automatic."}}</td></tr>
+    <tr><th>{{t "Computer → Android"}}</th><td>{{t "Copy on the computer, paste on the phone. Automatic."}}</td></tr>
+    <tr><th>{{t "Android → computer"}}</th><td>{{t "Copy on the phone; it is sent by itself with the accessibility service, or with one tap."}}</td></tr>
+    <tr><th>{{t "Computer ↔ iPhone"}}</th><td>{{t "One press of the Action button or a double tap on the back, then paste."}}</td></tr>
+  </table>
+  </div>
+  <p class="dim">{{t "iOS does not let apps read the clipboard in the background, so the iPhone needs one gesture. On Linux it works with any desktop, and without one in tmux."}}</p>
+</section>
+
+<section class="wrap" id="groups">
+  <h2>{{t "Two ways to build your group"}}</h2>
+  <p>{{t "Your devices form a group. Only devices you let in belong to it, and they talk only to each other. A group can have a computer at its heart, or only phones: both are fully supported. We will be honest, though: with a computer everything is simpler."}}</p>
+  <div class="cards two">
+    <article class="card">
+      <p class="badge">{{t "Simplest"}}</p>
+      <h3>{{t "With a computer"}}</h3>
+      {{template "orbit" (list (t "Computer") (t "Phone") (t "Laptop") (t "Phone") (t "Mac"))}}
+      <ul>
+        <li>{{t "A computer that is often on, such as a desktop, a Raspberry Pi or a home server, keeps the group going."}}</li>
+        <li>{{t "Away from home, your phone and laptop sync through it at any time: it is the group's hub."}}</li>
+        <li>{{t "The phone can still hold the group's key in its security chip and admit every device."}}</li>
+        <li>{{t "No app needed: a computer can hold the group by itself, and an iPhone joins with a shortcut."}}</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h3>{{t "Phones only"}}</h3>
+      {{template "orbit" (list (t "Phone") (t "Phone") (t "TV") (t "Tablet") (t "Phone"))}}
+      <ul>
+        <li>{{t "No computer needed: the phone makes the group, keeps its key in its security chip and adds the other devices by QR code."}}</li>
+        <li>{{t "At home every device syncs directly with the others."}}</li>
+        <li>{{t "Away from home the phone is the group's hub while its app is open; on Android it can keep running in the background."}}</li>
+        <li>{{t "Or the devices meet at a blind relay that cannot read what you copy: your own, or the project's at cbb.tools once it opens."}}</li>
+      </ul>
+    </article>
+  </div>
+  <p class="note">{{t "Why a computer is simpler: it is on far more often than a phone app is open, so sync away from home just works, and the iPhone gives an app little time in the background. When a computer that is always on joins a group of phones, the app offers to make it the hub."}}</p>
+</section>
+
+<section class="wrap">
+  <h2>{{t "Get started"}}</h2>
+  <ol class="steps">
+    <li><strong>{{t "Install the app on your phone."}}</strong> {{t "Android: the APK from the latest release. iPhone: the app comes with TestFlight; until then a shortcut and a computer do the job."}}</li>
+    <li><strong>{{t "Install Clipboard Bridge on a computer."}}</strong> {{t "One command on Linux, Mac or Windows: see %s." (link "download.html" (t "Download"))}}</li>
+    <li><strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
+  </ol>
+  <p>{{t "No computer? Make the group in the app, then open the app on each other phone and join from its start screen."}}
+     {{t "Step by step: the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" (t "quick start"))}}</p>
+</section>
+
+<section class="wrap">
+  <h2>{{t "Principles"}}</h2>
+  <div class="cards three">
+    <div class="card"><h3>{{t "Your network only"}}</h3><p>{{t "At home the devices talk to each other directly. Away from home they reach your group through its own encrypted tunnel. Nothing goes through a cloud."}}</p></div>
+    <div class="card"><h3>{{t "Paired, then encrypted"}}</h3><p>{{t "A device joins your group once, by a QR code or a six-digit code. All traffic uses TLS, and devices talk only to the devices of the group."}}</p></div>
+    <div class="card"><h3>{{t "Keys in the chip"}}</h3><p>{{t "In a group made on a phone, the phone holds the group's key in its security chip, and each use asks for your face, fingerprint or passcode."}}</p></div>
+    <div class="card"><h3>{{t "Passwords stay put"}}</h3><p>{{t "What password managers mark as secret is not synced automatically."}}</p></div>
+    <div class="card"><h3>{{t "Small"}}</h3><p>{{t "One file per platform and no dependencies. It runs even on a Raspberry Pi Zero."}}</p></div>
+    <div class="card"><h3>{{t "Open"}}</h3><p>{{t "Free software: every line is on GitHub, and every release is built there in the open."}}</p></div>
+  </div>
+</section>
+{{end}}

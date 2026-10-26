@@ -1,0 +1,47 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!doctype html>
+<html lang="{{.Lang.Tag}}" dir="{{if .Lang.RTL}}rtl{{else}}ltr{{end}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{template "title" .}}</title>
+<meta name="description" content="{{t "One clipboard for your phone and your computers, on your own network: no cloud, no accounts."}}">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.png">
+{{range .Langs}}<link rel="alternate" hreflang="{{.Tag}}" href="/{{.Code}}/{{$.Page}}">
+{{end}}</head>
+<body>
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="/{{.Lang.Code}}/">
+      <picture><source srcset="/static/icon-dark.png" media="(prefers-color-scheme: dark)"><img src="/static/icon.png" alt="" width="32" height="32"></picture>
+      <span>Clipboard Bridge</span>
+    </a>
+    <nav>
+      <a href="/{{.Lang.Code}}/download.html"{{if eq .Page "download.html"}} aria-current="page"{{end}}>{{t "Download"}}</a>
+      <a href="/{{.Lang.Code}}/privacy.html"{{if eq .Page "privacy.html"}} aria-current="page"{{end}}>{{t "Privacy"}}</a>
+      <a href="https://github.com/HunterEwok/clipboardbridge/blob/main/docs/README.md">{{t "Docs"}}</a>
+      <a href="https://github.com/HunterEwok/clipboardbridge">GitHub</a>
+    </nav>
+    <details class="langs">
+      <summary aria-label="{{t "Language"}}">{{.Lang.Name}}</summary>
+      <ul>
+        {{range .Langs}}<li><a href="/?lang={{.Code}}&amp;p={{$.Page}}" lang="{{.Tag}}" hreflang="{{.Tag}}"{{if eq .Code $.Lang.Code}} aria-current="true"{{end}}>{{.Name}}</a></li>
+        {{end}}
+      </ul>
+    </details>
+  </div>
+</header>
+<main>
+{{template "content" .}}
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <p>{{t "Clipboard Bridge is free software under the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/LICENSE" "GNU AGPL v3")}}
+       {{t "Status: early development."}}</p>
+    <p>{{t "This site uses no analytics and sets one cookie only when you pick a language: %s." (link (printf "/%s/privacy.html#site" .Lang.Code) (t "what it knows about you"))}}
+       <a href="https://db-ip.com">{{t "IP Geolocation by DB-IP"}}</a></p>
+  </div>
+</footer>
+</body>
+</html>
