@@ -43,8 +43,10 @@ func globalShows(ctx context.Context, d *Device, want string, timeout time.Durat
 // Away runs sync away from home (docs/testbench-cases.md): the hub serves
 // through the forwarder, each away device joins by invitation (P11) and
 // syncs both ways, also after cbb global off and on; with the hub's service
-// stopped it says so and sends nothing another way (F6). F7 stops the
-// forwarder, a server others use too, so it runs only with stopForwarder.
+// stopped it says so and sends nothing another way (F6). Then the hub moves
+// to an admin computer (P37), and both serve as several hubs (P36). F7 stops
+// the forwarder, a server others use too, so it runs only with
+// stopForwarder.
 func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool) {
 	away := awayOnly(devices)
 	fwd := inv.Forwarder
@@ -135,6 +137,8 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			}
 		}
 	}
+
+	hubCases(ctx, r, g, fwd, joined, timeout)
 
 	if !stopForwarder {
 		r.Skip("away/F7", "stops the forwarder that others use; run with -stop-forwarder")
