@@ -173,7 +173,7 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
 | P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
 | P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb global on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb global` explains what is missing |
-| P12 | A blind relay for a group without a hub (self-hosted only) | members meet through it; it sees only TLS between members |
+| P12 | A blind relay for a group without a hub: `cbb relay -open` beside the forwarder, `cbb global relay` on two members | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
 | P14 | Downgrade from the 0.4 candidate to 0.3.x on each platform | the older version starts on the newer state or refuses with a clear message; no keys are lost |
 | P15 | macOS: the Local Network permission refused and granted, Gatekeeper on the downloaded binary, the application firewall, Universal Clipboard from an iPhone or iPad signed in to the same Apple account | each state is explained by `cbb status`; Universal Clipboard text syncs once, without an echo; the report records whether the item arrived before a paste on the Mac and which types it carried |
@@ -195,8 +195,11 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P31 | The Mac app: the window and the menu bar item, send and fetch, each layout, rename, remove, freeze, unfreeze, make an admin and sync away from home after the password, the prompt cancelled, the service stopped, error details on and off | each action does what the same `cbb` command does; a cancelled prompt changes nothing and says nothing; a stopped service is explained, with the error underneath when details are on |
 | P32 | The tray app on the Linux members (GNOME, KDE, the Steam Deck) and on Windows: the tray item and the window, send and fetch, each layout, the group's changes after pkexec or UAC, the prompt dismissed, the service stopped, error details on and off, Russian | as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension) |
 | P33 | The Wear OS app with its Android phone: the devices, the away switch, the latest events; the phone out of reach; a phone without Google Play services | as P29; without Play services the phone app works as before |
-| P34 | Sync modes: own, receive, send and shared on `deck` with `win`; a restart; `cbb paste` in own | each mode lets through only what design.md says; the mode survives the restart and the others list it; in own `cbb paste` prints the group's text |
+| P34 | Sync modes: own, receive, send and shared on `deck` with `win`, then on the lite member, the container and the Mac; a restart; `cbb paste` in own; an admin's `cbb mode -on` | each mode lets through only what design.md says; the mode survives the restart and the others list it; in own `cbb paste` prints the group's text |
 | P35 | A member in a container (`nas`): it joins the hub's group; its settings; its process killed, a restart and a new container from the same volume; then, by the owner's explicit choice, an admin with its keys in a file and the hub for `vps` | it runs unprivileged as compose.home.yaml sets it; the group, the mode and sync survive each restart; as the hub `vps` syncs through its tunnel with no `NET_ADMIN` |
+| P36 | Several hubs: the root and an admin computer each with a hub set up, an away device; the root's hub stopped and started again | the admin serves while the root is gone and gives way when it is back; the away device follows both ways with no invitation and loses no copy |
+| P37 | Moving the hub with `cbb global move`: to the lite member and to the container (refused), to an admin computer | the new hub serves with the old one's forwarder; the old one becomes its client; the away device follows without coming home |
+| P38 | The open relay's limits: registrations from one address, a busy group, groups leaving | over a limit refused with a clear message; one busy group does not slow the others; a group is forgotten when its last device leaves |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
 (`windows/amd64`) and no ARMv7 Linux; those builds are covered only by CI. The ARM64 Linux
@@ -235,7 +238,7 @@ not ship the feature.
 | S5 | A key that is not in the group | handshake ignored; no response that tells the key is unknown |
 | S6 | Revoked device, away | its tunnel key is dropped on the hub within one record round; it cannot sync or rejoin |
 | S7 | Invitation file | used once only; refused after expiry; refused without the admin's `yes`; the fingerprint shown on both sides matches |
-| S8 | Relay learns little | groups on the forwarder cannot reach each other; the forwarder writes nothing to disk (file system checked before and after a run) and keeps no logs; registration needs a valid certificate chain |
+| S8 | Relay learns little | groups on the forwarder or the open relay cannot reach each other; neither writes anything to disk but its key (file system checked before and after a run) or keeps logs; registration needs a valid certificate chain and records that do not revoke the device |
 | S9 | Fail closed | with the tunnel broken, an away device sends nothing to any other address (capture shows no fallback) |
 | S10 | Secrets | `copy -secret` never reaches any disk on any device (search of the state directories and swap-free check on Linux) and is gone after 60 s |
 | S11 | Local access | the control socket refuses a user outside the `clipboardbridge` group on Linux, macOS and Windows |
@@ -244,6 +247,7 @@ not ship the feature.
 | S14 | A stranger on the home network: a device in no group dials the member port, replays a captured connection, tries codes | refused; the code attempt counter stops guessing; nothing is learned about the group |
 | S15 | Logs | no clipboard text, code or key in any log on any device, in either error mode (`CBB_DEBUG=0` and `1`) |
 | S16 | Files at rest | the state directories hold only keys and certificates with owner-only permissions; no clipboard text is written to disk on any device |
+| S17 | Commands (`cbb mode -on`): from an admin, a frozen admin, with a clock out of range, replayed | only a valid admin's command, once, within its lifetime, is taken; each refusal is explained |
 
 ## 10. Long run
 
