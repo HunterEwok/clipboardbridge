@@ -1231,9 +1231,23 @@ jobs:
       - name: valid HTML
         working-directory: site
         run: npm run validate
+      # The first Chrome on a fresh runner starts with cold disk and font
+      # caches, and Lighthouse once scored the first page 0.65 for it; a
+      # page loaded first warms them. Each page then runs three times and
+      # the median counts, as Lighthouse advises for its variance.
+      - name: warm up Chrome
+        run: google-chrome --headless=new --no-sandbox --dump-dom "file://$PWD/site/out/en/index.html" > /dev/null
       - name: Lighthouse (performance, accessibility, SEO)
         working-directory: site
         run: npm run lighthouse
+      - name: keep the Lighthouse reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-reports
+          path: site/out-lighthouse
+          if-no-files-found: ignore
+          retention-days: 7
 
   ci-ok:
     name: ci-ok
