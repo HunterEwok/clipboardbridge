@@ -70,6 +70,10 @@ public actor MemberNode {
     private let hub: (@Sendable (String, Data, Data?, [Data]) -> [Member.TunnelOffer])?
     private let hubShare: (@Sendable (String, [Data]) -> Member.HubShare?)?
     private let onHubs: @Sendable (String, [Data], Member.HubShare) -> Void
+    private let onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)?
+    /// This phone's sync mode, which the hellos state; nil for a phone
+    /// without one, which shares.
+    public private(set) var mode: String?
     /// The WireGuard public key the hellos offer the group's hubs (section
     /// 11); nil while sync away from home is off.
     public private(set) var tunnelKey: Data?
@@ -106,7 +110,11 @@ public actor MemberNode {
     /// hubs' it passes on;
     /// hubShare, on a hub, returns what it shares with a peer after its
     /// hello (section 11, "Several hubs"), nil for nothing, and onHubs gets
-    /// what a peer that may be a hub shared.
+    /// what a peer that may be a hub shared; mode is this phone's sync
+    /// mode for the hellos, and onCommand carries out a command a peer sent
+    /// (docs/protocol.md, section 15), with the device ID the caller of
+    /// serve named the peer by, and returns the result the peer gets;
+    /// without it every command is refused.
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, device: Member.DeviceInfo? = nil,
                 records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
@@ -118,12 +126,17 @@ public actor MemberNode {
                 onChange: @escaping @Sendable (Member.Event) -> Void = { _ in },
                 onCert: @escaping @Sendable (Data) -> Void = { _ in },
                 onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in },
-                onHubs: @escaping @Sendable (String, [Data], Member.HubShare) -> Void = { _, _, _ in }) {
+                onHubs: @escaping @Sendable (String, [Data], Member.HubShare) -> Void = { _, _, _ in },
+                mode: String? = nil,
+                onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
         (self.tunnelKey, self.tunnelPSK, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, tunnelPSK, onTunnel, hub, os, device?.cleaned)
-        (self.hubShare, self.onHubs) = (hubShare, onHubs)
+        (self.hubShare, self.onHubs, self.mode, self.onCommand) = (hubShare, onHubs, mode, onCommand)
     }
+
+    /// Replaces the sync mode that the next connections' hellos state.
+    public func set(mode: String?) { self.mode = mode }
 
     /// Replaces the tunnel keys that the next connections' hellos offer;
     /// nil offers none.
@@ -251,6 +264,7 @@ public actor MemberNode {
         hello.records = records?.digest
         hello.tunnelKey = tunnelKey
         hello.tunnelPSK = tunnelKey == nil ? nil : tunnelPSK
+        hello.mode = mode
         c.enqueue(.hello(role, hello))
         let writer = Task { await c.runWriter() }
         let watchdog = Task { await c.runWatchdog() }
@@ -316,10 +330,9 @@ public actor MemberNode {
                         dropRefused()
                     }
                 }
-            // A phone has no sync mode yet and takes no commands.
             case let .command(r):
-                c.enqueue(.result(Member.CommandResult(id: Commands.id(of: r) ?? "", status: "refused",
-                                                       reason: "this device takes no commands")))
+                c.enqueue(.result(onCommand?(c.peer, r)
+                        ?? Member.CommandResult(id: Commands.id(of: r) ?? "", status: "refused", reason: "this device takes no commands")))
             case let .result(r):
                 if let w = waiting[r.id], w.conn == id { w.waiter.resolve(.success(r)) }
             case .bye:

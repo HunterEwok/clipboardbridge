@@ -345,6 +345,35 @@ func TestLiteMember(t *testing.T) {
 		})
 	}
 
+	// A new lite member keeps its clipboard to itself and says so in its
+	// hello; the root sets its mode with a command, and it keeps it.
+	if m := lite.status(t).Mode; m != "own" {
+		t.Errorf("a new lite member's mode is %q, want own", m)
+	}
+	waitFor(t, "the laptop sees the lite member's mode", func() bool {
+		for _, d := range laptop.devices(t) {
+			if d.ID == st.Device {
+				return d.Mode == "own"
+			}
+		}
+		return false
+	})
+	if _, err := pi.do(t, control.Header{Op: control.OpMode, Device: st.Device, Name: "receive"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if m := lite.status(t).Mode; m != "receive" {
+		t.Errorf("after the root's command the lite member's mode is %q, want receive", m)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "mode")); err != nil || string(b) != "receive\n" {
+		t.Errorf("the lite member's mode file: %q, %v", b, err)
+	}
+	if _, err := laptop.do(t, control.Header{Op: control.OpMode, Device: st.Device, Name: "own"}, ""); err == nil {
+		t.Error("a device that is no admin set the lite member's mode")
+	}
+	if _, err := lite.do(t, control.Header{Op: control.OpMode, Name: "shared"}, ""); err != nil || lite.status(t).Mode != "shared" {
+		t.Errorf("cbb mode shared on the lite member: %v", err)
+	}
+
 	// The lite member dials a Mac as it dials every full member; with the
 	// other computers off the two still sync.
 	publishLite(&h, st.Device, st.Group, port)

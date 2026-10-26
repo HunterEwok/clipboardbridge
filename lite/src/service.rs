@@ -4,6 +4,7 @@
 //! The lite member's service: the control socket, the identity, the sync
 //! engine and the connections to the other members.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -13,7 +14,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use crate::away::Away;
-use crate::clip::{Engine, Kind, Via};
+use crate::clip::{Engine, Kind, Mode, Via};
 use crate::control::{self, Device, Header, Message, Status};
 use crate::discovery;
 use crate::error::{Context, Error, Result};
@@ -25,6 +26,7 @@ use crate::node::{Node, WriteReq};
 use crate::records::Records;
 use crate::records::Stored as _;
 use crate::uptime;
+use crate::wire;
 
 /// The release's version, such as "0.3.0", which the release build passes in
 /// `CBB_VERSION`; other builds say "dev", as the Go service does.
@@ -33,6 +35,13 @@ pub const VERSION: &str = match option_env!("CBB_VERSION") {
     None => "dev",
 };
 const MARK_FILE: &str = "hlc.mark";
+/// The sync mode, in the state directory. A device that joined its group
+/// gets one at once, with own; without it, the device joined before sync
+/// modes existed and keeps sharing as it did.
+const MODE_FILE: &str = "mode";
+/// The most command IDs the replay cache keeps; a command lives at most 30
+/// seconds, so this many in that time is far more than any admin sends.
+const MAX_COMMANDS: usize = 4096;
 const WATCH_QUEUE: usize = 16;
 
 /// How the service runs.
@@ -55,6 +64,10 @@ struct Service {
     away: RwLock<Option<Arc<Away>>>,
     watchers: Mutex<Vec<SyncSender<WriteReq>>>,
     pending: Mutex<Option<WriteReq>>, // a write decided while no watcher was connected
+    state_dir: PathBuf,
+    /// The replay cache: the IDs of the commands carried out, until they
+    /// expire, in milliseconds since the Unix epoch.
+    commands: Mutex<HashMap<String, i64>>,
     log: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -84,6 +97,8 @@ pub fn run(cfg: Config) -> Result<()> {
         away: RwLock::new(None),
         watchers: Mutex::new(Vec::new()),
         pending: Mutex::new(None),
+        state_dir: cfg.state_dir.clone(),
+        commands: Mutex::new(HashMap::new()),
         log: log.clone(),
     });
     let admin_socket = control::admin_socket(&cfg.socket);
@@ -140,6 +155,12 @@ pub fn run(cfg: Config) -> Result<()> {
         ))
     };
     engine.rejoin();
+    engine.set_mode(load_mode(&cfg.state_dir)?);
+    log(&format!("cbb: the sync mode is {}", engine.mode().name()));
+    {
+        let svc = svc.clone();
+        node.on_command(Box::new(move |peer, c| svc.command(peer, c)));
+    }
     node.set_tunnel_key(away.key());
     {
         let away = away.clone();
@@ -190,6 +211,29 @@ fn with_roots(ident: Identity, records: &Records, dir: &Path, log: &dyn Fn(&str)
             ident
         }
     }
+}
+
+/// Reads the sync mode from dir: shared when there is no mode file.
+pub fn load_mode(dir: &Path) -> Result<Mode> {
+    match std::fs::read_to_string(dir.join(MODE_FILE)) {
+        Ok(s) => Mode::parse(s.trim()).map_err(|e| e.context(MODE_FILE)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Mode::Shared),
+        Err(e) => Err(e).context(format!("cannot read {}", dir.join(MODE_FILE).display())),
+    }
+}
+
+fn save_mode(dir: &Path, m: Mode) -> Result<()> {
+    files::write_atomic(&dir.join(MODE_FILE), format!("{}\n", m.name()).as_bytes(), 0o600)
+        .map_err(|e| e.context("saving the sync mode"))
+}
+
+/// Gives a device that just joined a group the sync mode of a new device,
+/// own, unless it has a mode from an earlier group.
+pub fn new_device_mode(dir: &Path) -> Result<()> {
+    if dir.join(MODE_FILE).exists() {
+        return Ok(());
+    }
+    save_mode(dir, Mode::Own)
 }
 
 /// The hybrid clock, which never goes back before the mark it saved.
@@ -309,6 +353,60 @@ impl Service {
         Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
     }
 
+    /// Changes the sync mode and saves it.
+    fn set_mode(&self, name: &str) -> Result<()> {
+        let m = Mode::parse(name)?;
+        let node = self.node()?;
+        save_mode(&self.state_dir, m)?;
+        node.engine.set_mode(m);
+        (self.log)(&format!("cbb: the sync mode is {} now", m.name()));
+        Ok(())
+    }
+
+    /// Carries out a command a member sent (docs/protocol.md, section 15):
+    /// one that an admin signed for this device in its group, that has not
+    /// expired and was not carried out before. The lite member takes mode
+    /// commands; it is never the group's hub, so it refuses hub commands.
+    fn command(&self, peer: &crate::certs::DeviceId, c: &crate::records::Record) -> wire::CommandResult {
+        let refused = |id: &str, why: String| {
+            (self.log)(&format!("cbb: refused a command from {peer}: {why}"));
+            wire::CommandResult { id: id.to_string(), status: "refused".into(), reason: why }
+        };
+        let node = match self.node() {
+            Ok(n) => n,
+            Err(e) => return refused("", e.message().to_string()),
+        };
+        let now = uptime::wall_ms();
+        let me = node.identity().id.to_string();
+        let body = match node.records().lock().unwrap().verify_command(c, &me, now) {
+            Ok(b) => b,
+            Err(e) => return refused("", e.message().to_string()),
+        };
+        {
+            let mut seen = self.commands.lock().unwrap();
+            seen.retain(|_, exp| *exp > now);
+            if seen.contains_key(&body.id) {
+                return refused(&body.id, "this command was carried out already".into());
+            }
+            if seen.len() >= MAX_COMMANDS {
+                return refused(&body.id, "too many commands; try again in a minute".into());
+            }
+            seen.insert(body.id.clone(), body.expires_ms);
+        }
+        if body.kind == "hub" {
+            return refused(&body.id, "the lite member is never the group's hub".into());
+        }
+        if let Err(e) = Mode::parse(&body.mode) {
+            return refused(&body.id, e.message().to_string());
+        }
+        if let Err(e) = self.set_mode(&body.mode) {
+            (self.log)(&format!("cbb: a command from {peer}: {}", e.for_log()));
+            return wire::CommandResult { id: body.id, status: "failed".into(), reason: e.message().to_string() };
+        }
+        (self.log)(&format!("cbb: {} set the sync mode to {}", body.by, body.mode));
+        wire::CommandResult { id: body.id, status: "done".into(), reason: String::new() }
+    }
+
     /// Passes a write the engine decided on to every watcher.
     fn deliver(&self, w: WriteReq) {
         let mut ws = self.watchers.lock().unwrap();
@@ -359,8 +457,16 @@ impl Service {
                 Ok(control::reply(Header::default(), Vec::new()))
             }
             "paste" => {
-                let (text, kind, _) =
-                    self.node()?.engine.local().ok_or_else(|| Error::msg("the clipboard is empty"))?;
+                // The local clipboard's text in a mode that takes the
+                // group's copies, and the group's current text in one that
+                // keeps its clipboard to itself, as on a full member.
+                let engine = self.node()?.engine.clone();
+                let got = if engine.mode().receives() {
+                    engine.local()
+                } else {
+                    engine.current().map(|ev| (ev.text, ev.kind, Duration::ZERO))
+                };
+                let (text, kind, _) = got.ok_or_else(|| Error::msg("the clipboard is empty"))?;
                 Ok(control::reply(Header { kind: kind_name(kind).into(), ..Default::default() }, text.into_bytes()))
             }
             "status" => {
@@ -386,6 +492,7 @@ impl Service {
                     os: "linux".into(),
                     peers,
                     version: VERSION.into(),
+                    mode: node.engine.mode().name().into(),
                     away: self.away()?.status(&node),
                 };
                 Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
@@ -427,6 +534,15 @@ impl Service {
                 Ok(control::reply(Header { devices: out, ..Default::default() }, Vec::new()))
             }
             "away" => self.global(h),
+            "mode" => {
+                if !h.device.is_empty() {
+                    return Err(Error::msg(
+                        "only an admin sets the sync mode of another device; the lite member is never one: use the phone app or a Linux member",
+                    ));
+                }
+                self.set_mode(&h.name)?;
+                Ok(control::reply(Header::default(), Vec::new()))
+            }
             "pair" | "pair-phone" | "revoke" => {
                 Err(Error::msg("a lite member admits and removes no devices; use the phone app or a Linux member"))
             }

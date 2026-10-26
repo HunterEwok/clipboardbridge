@@ -41,6 +41,9 @@ pub struct Header {
     pub consent: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    /// mode: the device whose mode an admin sets; this device if empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub device: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -68,6 +71,9 @@ pub struct Status {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<Device>,
     pub version: String,
+    /// The sync mode: own, shared, receive or send; empty when in no group.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mode: String,
     /// Sync away from home; None while it is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub away: Option<Away>,

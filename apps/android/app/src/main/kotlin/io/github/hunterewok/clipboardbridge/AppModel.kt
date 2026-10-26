@@ -45,6 +45,7 @@ class AppModel(private val app: Context) {
     }
     val group = LiveGroup(app).also { g ->
         g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
+        g.onModeChanged = { Handler(Looper.getMainLooper()).post { devices = g.devices } }
         // In the background too: the service keeps the connections that bring the records.
         // Off the node's thread, which may hold its own lock while it hands records over.
         g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
@@ -479,10 +480,10 @@ class AppModel(private val app: Context) {
         update()
     }
 
-    /** Sets a computer's sync mode; the reason it refused, if it does, shows under the message. */
+    /** Sets a device's sync mode, this phone's own without a command; the reason a device refused, if it does, shows under the message. */
     suspend fun setMode(id: String, mode: String) {
         message = try {
-            group.setMode(id, mode)
+            if (devices.firstOrNull { it.id == id }?.isSelf == true) withContext(Dispatchers.IO) { group.setOwnMode(mode) } else group.setMode(id, mode)
             Note(R.string.mode_set)
         } catch (e: CancellationException) {
             throw e

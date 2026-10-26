@@ -4,6 +4,11 @@
 package io.github.hunterewok.clipboardbridge.kit
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import java.io.File
 import java.time.Instant
 import kotlin.test.Test
@@ -137,5 +142,23 @@ class CommandsTest {
             ),
         )
         File(dir, "swift-command.json").writeBytes(Wire.encode(out))
+    }
+
+    /** testdata/interop/go-commands.json, from Go's TestGoCommandVectors: which commands for this phone count. */
+    @Test
+    fun goCommands() {
+        val v = Interop.read("go-commands.json").jsonObject
+        val set = RecordSet()
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        val now = v.getValue("now_ms").jsonPrimitive.long
+        val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
+        assertEquals(11, commands.size)
+        for (c in commands) {
+            val name = c.str("name")
+            val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }
+            assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
+            got.getOrNull()?.let { assertEquals(c.str("mode"), it.mode, name) }
+        }
     }
 }

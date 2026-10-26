@@ -97,10 +97,9 @@ The order may change.
     5. the lite member's target, then the Nano ESP32's keyboard.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
-    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built on the
-    computers (`cbb mode`) with the admin's signed `mode` command (`cbb mode -on`) and in
-    the phone kits and apps (an admin sets a computer's mode; the Mac and tray apps set their
-    own); the phones' and the lite member's own modes are next.**
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built: on the
+    computers (`cbb mode`), the lite member and both phones, with the admin's signed `mode`
+    command (`cbb mode -on`, an admin phone's device page) that every member takes.**
 20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at

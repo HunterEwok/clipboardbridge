@@ -346,3 +346,24 @@ fn device_cleaned() {
     };
     assert!(bad.cleaned().is_empty());
 }
+
+/// Commands for one member (docs/protocol.md, section 15), as Go's
+/// TestGoCommandVectors writes them: who may send one, and when.
+#[test]
+fn go_commands() {
+    let v = vectors("go-commands.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let (_, errs) = s.add_all(&records(&v["records"]));
+    assert!(errs.is_empty(), "{errs:?}");
+    let me = v["self"].as_str().unwrap();
+    let now = v["now_ms"].as_i64().unwrap();
+    for c in v["commands"].as_array().unwrap() {
+        let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
+        let got = s.verify_command(&r, me, now);
+        let name = c["name"].as_str().unwrap();
+        assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{name}: {got:?}");
+        if let Ok(b) = got {
+            assert_eq!(b.mode, c["mode"].as_str().unwrap(), "{name}");
+        }
+    }
+}

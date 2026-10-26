@@ -424,11 +424,13 @@ func runID() string {
 
 // shareClipboard puts a device that just made or joined the group in the
 // sync mode shared, as the sync cases need: a new device keeps its own
-// clipboard. The lite member always shares.
+// clipboard. The lite member's mode is on its admin socket, which only root
+// and the service's user reach.
 func shareClipboard(ctx context.Context, d *Device) error {
+	cmd := cbbCmd(d) + " mode shared"
 	if d.OS == "linux-lite" {
-		return nil
+		cmd = "sudo " + cmd
 	}
-	_, err := Run(ctx, d, cbbCmd(d)+" mode shared", "")
+	_, err := Run(ctx, d, cmd, "")
 	return err
 }

@@ -80,6 +80,44 @@ public enum Commands {
         return Member.Record(body: data, sig: try signer.signature(for: data), chain: adminCA.map { [$0] })
     }
 
+    /// How far ahead of the receiver's clock a command's time may be.
+    public static let aheadMS: Int64 = 60_000
+
+    /// The most bytes of a command's body, as Go takes: a hub command
+    /// carries up to 256 clients' keys.
+    static let maxBody = 64 << 10
+
+    /// Why a command was refused, in words for the sender.
+    public struct Refused: Error, Equatable { public var reason: String }
+
+    /// Checks command c for the member me at nowMS, as Go's
+    /// Records.VerifyCommand: an admin of the group signed it now (records
+    /// says), it is for me in this group, it has not expired and was not
+    /// signed in the future. The caller keeps the replay cache; a mode
+    /// command's mode is not checked against Member.modes here.
+    public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64) throws -> Body {
+        func refuse(_ reason: String) -> Refused { Refused(reason: reason) }
+        guard c.body.count <= maxBody else { throw refuse("the command is too large") }
+        guard let b = try? JSONDecoder().decode(Body.self, from: c.body) else { throw refuse("the command is not valid") }
+        func hex32(_ s: String) -> Bool { s.utf8.count == 32 && s.allSatisfy { "0123456789abcdef".contains($0) } }
+        guard b.v == Records.version else { throw refuse("unknown command version") }
+        guard hex32(b.id) else { throw refuse("the command has no valid ID") }
+        switch b.type {
+        case "mode": guard let m = b.mode, !m.isEmpty, b.hub == nil else { throw refuse("a mode command names no mode") }
+        case "hub": guard b.hub != nil, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
+        default: throw refuse("unknown command type \(b.type)")
+        }
+        guard hex32(b.to) else { throw refuse("the command names no valid device") }
+        guard b.expires_ms > b.time_ms, b.expires_ms - b.time_ms <= lifetimeMS else { throw refuse("the command's lifetime is not valid") }
+        guard let ca = records.groupCA else { throw refuse("this device has no records of its group yet") }
+        guard b.group == GroupCertificates.tag(groupCA: ca) else { throw refuse("the command is for another group") }
+        guard b.to == me else { throw refuse("the command is for another device") }
+        guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
+        guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
+        guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
+        return b
+    }
+
     /// The ID in a command's body, or nil when it has none.
     public static func id(of c: Member.Record) -> String? {
         struct ID: Decodable { var id: String? }

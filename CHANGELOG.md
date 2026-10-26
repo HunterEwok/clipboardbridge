@@ -58,6 +58,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer's mode in Settings and, on an admin, another computer's from its details; an
   admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
   fingerprint, and says if the computer refused.
+- Sync modes on the phones and the lite member. Each phone sets its own mode on its page in
+  the devices list, and an admin phone sets any connected device's; Android's foreground
+  service writes the group's copies to the clipboard only in a mode that receives, and its
+  accessibility service sends copies by itself only in one that sends. The iPhone, in a mode
+  that receives, now writes a group copy from the last 45 s to the pasteboard while the app
+  is open; this includes phones that joined before, which share. The lite member keeps its
+  mode in the file `mode` (`sudo cbb mode own|shared|receive|send`), starts in own when it
+  joins, and `cbb paste` there prints the group's text in a mode that does not receive.
+  Phones and the lite member take an admin's `mode` command, checked as the computers check
+  it, and refuse `hub` commands. The interop vectors gain `go-commands.json`.
 - The phone's side of the phone as the hub (D-64), not yet in the apps: `mobile/cbbtun`
   runs the group's hub in the app's process (`StartHub`), leads the clients' connections to
   the kit's member listener and registers with the forwarder (`Register`). A phone hub

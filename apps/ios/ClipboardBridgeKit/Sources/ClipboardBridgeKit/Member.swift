@@ -193,6 +193,13 @@ public enum Member {
     /// The sync modes (design.md, "Sync modes").
     public static let modes: Set<String> = ["own", "shared", "receive", "send"]
 
+    /// Whether a device in sync mode mode takes the group's copies into its
+    /// clipboard by itself; a device without a mode (nil) shares.
+    public static func receives(_ mode: String?) -> Bool { mode == nil || mode == "shared" || mode == "receive" }
+
+    /// Whether a device in sync mode mode sends its own copies to the group by itself.
+    public static func sends(_ mode: String?) -> Bool { mode == nil || mode == "shared" || mode == "send" }
+
     /// The answer to a command (section 15): its ID, "done", "refused" or
     /// "failed", and why for the last two.
     public struct CommandResult: Codable, Equatable, Sendable {

@@ -524,6 +524,36 @@
         }
       }
     },
+    "Its copies go to the group, and the group's come to it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его копии уходят в группу, копии группы приходят к нему."
+          }
+        }
+      }
+    },
+    "Its copies go to the group; the group's do not come.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его копии уходят в группу, копии группы не приходят."
+          }
+        }
+      }
+    },
+    "Its copies stay on it and the group's do not come; sending or fetching by hand still works.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его копии остаются на нём, копии группы не приходят; отправить или забрать вручную по-прежнему можно."
+          }
+        }
+      }
+    },
     "Join a group": {
       "localizations": {
         "ru": {
@@ -1640,6 +1670,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ждём приложение: хаб работает, пока приложение открыто."
+          }
+        }
+      }
+    },
+    "The group's copies come to it; its own stay on it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Копии группы приходят к нему, свои остаются на нём."
           }
         }
       }

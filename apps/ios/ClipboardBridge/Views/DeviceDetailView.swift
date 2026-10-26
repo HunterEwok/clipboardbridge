@@ -153,10 +153,12 @@ struct DeviceDetailView: View {
         }
     }
 
-    /// The actions an admin phone has for it; none on a phone that is no
-    /// admin.
+    /// The actions an admin phone has for it; a phone that is no admin has
+    /// only its own sync mode.
     @ViewBuilder private func actions(_ d: AppModel.Computer) -> some View {
-        if model.isAdmin {
+        if !model.isAdmin, d.isSelf {
+            modeMenu(d).glassTile(cornerRadius: Tokens.radiusCard)
+        } else if model.isAdmin {
             VStack(spacing: 0) {
                 action(Text("Rename"), "pencil") {
                     newName = d.name
@@ -170,24 +172,10 @@ struct DeviceDetailView: View {
                     Divider().overlay(palette.line)
                     action(Text("Make it an admin"), "person.badge.key") { promoting = true }
                 }
-                // The phones and lite members have no modes yet and refuse.
-                if !d.isSelf, d.online, d.role == "full" {
+                // A phone or lite member from before 0.5 has no mode and refuses.
+                if d.isSelf || d.online {
                     Divider().overlay(palette.line)
-                    Menu {
-                        ForEach(SyncMode.allCases) { mode in
-                            Button { Task { await model.setMode(id, to: mode.rawValue) } } label: { Text(mode.title) }
-                        }
-                    } label: {
-                        HStack(spacing: Tokens.spacingMedium) {
-                            Image(systemName: "arrow.left.arrow.right").frame(width: 24).accessibilityHidden(true)
-                            Text("Sync mode")
-                            Spacer()
-                        }
-                        .foregroundStyle(palette.accent)
-                        .padding(.horizontal, Tokens.spacingMedium)
-                        .frame(minHeight: 48)
-                        .contentShape(Rectangle())
-                    }
+                    modeMenu(d)
                 }
                 if !d.isSelf {
                     Divider().overlay(palette.line)
@@ -197,6 +185,28 @@ struct DeviceDetailView: View {
             .glassTile(cornerRadius: Tokens.radiusCard)
         } else {
             Text("Only an admin phone can add or remove devices.").font(.footnote).foregroundStyle(palette.textDim)
+        }
+    }
+
+    /// The sync modes to pick from, with what each does, the device's own marked.
+    private func modeMenu(_ d: AppModel.Computer) -> some View {
+        Menu {
+            ForEach(SyncMode.allCases) { mode in
+                Button { Task { await model.setMode(id, to: mode.rawValue) } } label: {
+                    if mode.rawValue == d.mode { Label { Text(mode.title) } icon: { Image(systemName: "checkmark") } } else { Text(mode.title) }
+                    Text(mode.note)
+                }
+            }
+        } label: {
+            HStack(spacing: Tokens.spacingMedium) {
+                Image(systemName: "arrow.left.arrow.right").frame(width: 24).accessibilityHidden(true)
+                Text("Sync mode")
+                Spacer()
+            }
+            .foregroundStyle(palette.accent)
+            .padding(.horizontal, Tokens.spacingMedium)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
         }
     }
 

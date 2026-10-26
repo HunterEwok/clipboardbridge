@@ -127,6 +127,56 @@ pub fn check_text(s: &str) -> Result<()> {
     Ok(())
 }
 
+/// A member's sync mode: what moves between its own clipboard and the group
+/// (docs/design.md, "Sync modes"), as Go's clip.Mode. It changes nothing
+/// else: the member stays connected, keeps the group's current event and
+/// forwards events in every mode, and deliberate actions (send) work in
+/// every mode.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Mode {
+    /// Its copies go to the group, and the group's copies reach its clipboard.
+    #[default]
+    Shared,
+    /// Neither; the group's text is at hand on request (current).
+    Own,
+    /// Only the group's copies reach its clipboard.
+    Receive,
+    /// Only its copies go to the group.
+    Send,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 4] = [Mode::Shared, Mode::Own, Mode::Receive, Mode::Send];
+
+    /// Whether the copies a clipboard watcher reports go to the group.
+    pub fn sends(self) -> bool {
+        matches!(self, Mode::Shared | Mode::Send)
+    }
+
+    /// Whether the group's copies are written to the clipboard.
+    pub fn receives(self) -> bool {
+        matches!(self, Mode::Shared | Mode::Receive)
+    }
+
+    /// The mode's name, as cbb mode takes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Shared => "shared",
+            Mode::Own => "own",
+            Mode::Receive => "receive",
+            Mode::Send => "send",
+        }
+    }
+
+    /// Reads a mode's name.
+    pub fn parse(s: &str) -> Result<Mode> {
+        Mode::ALL
+            .into_iter()
+            .find(|m| m.name() == s)
+            .ok_or_else(|| Error::msg(format!("the sync mode is own, shared, receive or send, not {s:?}")))
+    }
+}
+
 /// What a member sends when a connection starts.
 #[derive(Clone, Debug, Default)]
 pub struct Hello {
@@ -169,6 +219,7 @@ struct Inner {
     offline_copy: bool,
     rejoined: bool,
     rejoin_at: Duration,
+    mode: Mode,
 }
 
 /// The state of one member. It is safe for concurrent use.
@@ -209,8 +260,20 @@ impl Engine {
                 offline_copy: false,
                 rejoined: false,
                 rejoin_at: Duration::ZERO,
+                mode: Mode::Shared,
             }),
         }
+    }
+
+    /// The sync mode.
+    pub fn mode(&self) -> Mode {
+        self.inner.lock().mode
+    }
+
+    /// Changes the sync mode; it applies to the copies and events that come
+    /// after.
+    pub fn set_mode(&self, m: Mode) {
+        self.inner.lock().mode = m;
     }
 
     fn sum(&self, text: &str) -> Sum {
@@ -221,7 +284,6 @@ impl Engine {
 
     /// The group's current event with its age as of now, unless there is
     /// none or it is a secret that expired or is known only by its mark.
-    #[allow(dead_code)]
     pub fn current(&self) -> Option<Event> {
         let st = self.inner.lock();
         let now = (self.uptime)();
@@ -270,6 +332,13 @@ impl Engine {
         }
         if kind == Kind::Text && has_secret(&st, &sum, now) {
             st.local = Local::default();
+            return Ok(None);
+        }
+        if !st.mode.sends() {
+            st.local = Local { text: text.to_string(), kind, at: now };
+            if kind == Kind::Secret {
+                add_secret(&mut st, sum, now);
+            }
             return Ok(None);
         }
         Ok(Some(self.new_event(&mut st, text, kind, via, sum, now)))
@@ -439,7 +508,7 @@ impl Engine {
 
     fn decide_write(&self, st: &mut Inner, mut out: Outcome, now: Duration) -> Outcome {
         settle(st, now);
-        if !self.live(st, now) || local_has(st, &st.current.text, now) {
+        if !st.mode.receives() || !self.live(st, now) || local_has(st, &st.current.text, now) {
             return out;
         }
         if now.saturating_sub(st.copied_at) > LIVE_WINDOW && (!in_rejoin_window(st, now) || st.offline_copy) {
@@ -589,6 +658,45 @@ mod tests {
         assert!(!again.write && again.forward.is_none());
         // The echo of the write is no new copy.
         assert!(b.copied("hello", Kind::Text, Via::Copy).unwrap().is_none());
+    }
+
+    #[test]
+    fn modes() {
+        let t = Arc::new(AtomicU64::new(100_000));
+        let (a, b) = (engine(A, t.clone()), engine(B, t.clone()));
+        let (ha, hb) = (a.connected(B), b.connected(A));
+        a.reconcile(B, hb).unwrap();
+        b.reconcile(A, ha).unwrap();
+        for m in Mode::ALL {
+            assert_eq!(Mode::parse(m.name()).unwrap(), m);
+        }
+        assert!(Mode::parse("everything").is_err());
+
+        // Own: a copy stays here, the group's copy does not come in, but it
+        // is at hand, and a deliberate send still goes.
+        b.set_mode(Mode::Own);
+        assert!(b.copied("mine", Kind::Text, Via::Copy).unwrap().is_none());
+        assert_eq!(b.local().unwrap().0, "mine");
+        let ev = a.copied("theirs", Kind::Text, Via::Copy).unwrap().unwrap();
+        let out = b.received(ev).unwrap();
+        assert!(!out.write && out.forward.is_some());
+        assert_eq!(b.current().unwrap().text, "theirs");
+        assert_eq!(b.local().unwrap().0, "mine");
+        assert!(b.send("sent", Kind::Text, Via::Copy).is_ok());
+
+        // Receive: the group's copies come in, its own stay.
+        b.set_mode(Mode::Receive);
+        t.fetch_add(1000, Ordering::SeqCst);
+        let ev = a.copied("next", Kind::Text, Via::Copy).unwrap().unwrap();
+        assert!(b.received(ev).unwrap().write);
+        assert!(b.copied("local", Kind::Text, Via::Copy).unwrap().is_none());
+
+        // Send: its copies go, the group's do not come in.
+        b.set_mode(Mode::Send);
+        assert!(b.copied("out", Kind::Text, Via::Copy).unwrap().is_some());
+        t.fetch_add(1000, Ordering::SeqCst);
+        let ev = a.copied("in", Kind::Text, Via::Copy).unwrap().unwrap();
+        assert!(!b.received(ev).unwrap().write);
     }
 
     #[test]

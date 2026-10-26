@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
+import io.github.hunterewok.clipboardbridge.kit.Member
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -73,8 +74,9 @@ class CopyWatcher : AccessibilityService() {
         windows.any { w -> w.title?.toString()?.contains("clipboard", ignoreCase = true) == true }
     }.getOrDefault(false)
 
-    /** A copy happened: once per second at most, take the focus and send. */
+    /** A copy happened: once per second at most, take the focus and send, in a sync mode that sends this phone's copies. */
     private fun copied() {
+        if (!Member.sends((application as ClipboardBridgeApp).model.group.syncMode)) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastCopy < 1_000) return
         lastCopy = now

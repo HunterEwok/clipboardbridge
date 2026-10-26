@@ -44,6 +44,24 @@ pub struct Message {
     /// on its own with [`TunnelOffer`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tunnel: Option<Value>,
+    /// In a command message, the signed command (section 15).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Record>,
+    /// In a result message, the answer to a command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<CommandResult>,
+}
+
+/// The answer to a command (section 15): `done`, `refused` or `failed`, and
+/// why for the last two.
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
+pub struct CommandResult {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
 }
 
 /// The content of a hello.
@@ -71,6 +89,10 @@ pub struct HelloBody {
     /// (section 11, "Several hubs").
     #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
     pub tunnel_psk: Option<Vec<u8>>,
+    /// The sender's sync mode: own, shared, receive or send; shown, never
+    /// trusted.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mode: String,
 }
 
 /// What a hello says about the sender's device (section 4, "Device"): its
@@ -169,6 +191,7 @@ pub fn hello(
     os: &str,
     device: &DeviceInfo,
     tunnel_key: Option<(&[u8], &[u8])>,
+    mode: &str,
 ) -> Message {
     let device = device.cleaned();
     let body = HelloBody {
@@ -180,6 +203,7 @@ pub fn hello(
         device: if device.is_empty() { None } else { Some(serde_json::to_value(&device).unwrap()) },
         tunnel_key: tunnel_key.map(|(k, _)| k.to_vec()),
         tunnel_psk: tunnel_key.map(|(_, p)| p.to_vec()),
+        mode: mode.to_string(),
     };
     Message {
         kind: "hello".into(),
@@ -187,6 +211,11 @@ pub fn hello(
         hello: Some(serde_json::to_value(body).unwrap()),
         ..Default::default()
     }
+}
+
+/// The result message that answers a command.
+pub fn result(r: CommandResult) -> Message {
+    Message { kind: "result".into(), result: Some(r), ..Default::default() }
 }
 
 /// An event message.

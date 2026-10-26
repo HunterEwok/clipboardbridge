@@ -172,6 +172,10 @@
     <string name="mode_shared">Shared</string>
     <string name="mode_receive">Receive only</string>
     <string name="mode_send">Send only</string>
+    <string name="mode_own_note">Its copies stay on it and the group\'s do not come; sending or fetching by hand still works.</string>
+    <string name="mode_shared_note">Its copies go to the group, and the group\'s come to it.</string>
+    <string name="mode_receive_note">The group\'s copies come to it; its own stay on it.</string>
+    <string name="mode_send_note">Its copies go to the group; the group\'s do not come.</string>
     <string name="mode_set">The sync mode is set.</string>
     <string name="reason_set_mode">Change a computer\'s sync mode</string>
     <string name="error_command_refused">The computer refused.</string>

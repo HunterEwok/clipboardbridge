@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "away")
 private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
+private let modeLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "mode")
 
 /// The phone's own group (docs/protocol.md, section 9): its root CA key in
 /// the Secure Enclave, signing only after Face ID or the passcode (a
@@ -100,6 +101,8 @@ final class LiveGroup: GroupController {
     private var infos: [String: Member.DeviceInfo] = [:]
     /// The sync modes the connected members' hellos report.
     private var modes: [String: String] = [:]
+    /// This phone's own sync mode and the commands it took.
+    let modeBox: ModeBox
 
     /// What this phone says about itself in its hellos: an iPhone or an
     /// iPad, its iOS and the app's version; iOS gives apps no MAC address.
@@ -116,6 +119,7 @@ final class LiveGroup: GroupController {
 
     init(file: URL = LiveGroup.defaultFile) {
         self.file = file
+        modeBox = ModeBox(url: file.deletingLastPathComponent().appendingPathComponent("mode"))
         state = try? PhoneGroup.load(from: file)
         try? startSync()
         Task { await renewOwnCertificate() }
@@ -178,7 +182,7 @@ final class LiveGroup: GroupController {
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
                   canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen,
-                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: modes[$0.id])
+                  device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: $0.id == g.device ? modeBox.mode : modes[$0.id])
         }
     }
 
@@ -281,6 +285,7 @@ final class LiveGroup: GroupController {
                     tls.close()
                 }
                 try g.save(to: file)
+                if made { try modeBox.newDevice() }
                 state = g
                 try startSync()
                 groupChanged()
@@ -459,6 +464,7 @@ final class LiveGroup: GroupController {
             if Task.isCancelled { throw CancellationError() }
             throw Failure.timedOut
         }
+        try modeBox.newDevice()
         state = PhoneGroup.joined(joined)
         try startSync()
     }
@@ -516,6 +522,11 @@ final class LiveGroup: GroupController {
     /// 15): a command signed with this phone's root or admin key after Face
     /// ID, which only that computer takes, within 30 s.
     func setMode(_ id: String, to mode: String) async throws {
+        if id == state?.device {
+            try modeBox.set(mode)
+            await node?.set(mode: mode)
+            return
+        }
         guard let node else { throw MemberNode.Failure.notConnected }
         let ca = try await caSigner(reason: String(localized: "Change a computer's sync mode", bundle: .app))
         guard let g = state else { return }
@@ -634,9 +645,16 @@ final class LiveGroup: GroupController {
         }
         let offered: Data? = isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) }
         let nodeRef = Ref<MemberNode>()
+        let modeBox = modeBox, device = g.device, recent = Self.recentCopyMS
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
                               tunnelKey: offered, tunnelPSK: offered == nil ? nil : awayState?.psk, hub: answer, hubShare: sharing,
+                              // A copy of a moment ago from another device, in a sync
+                              // mode that takes the group's copies, while the app runs.
+                              onChange: { [weak self] e in
+                                  guard Member.receives(modeBox.mode), !e.isMark, e.origin != device, e.ageMS < recent else { return }
+                                  Task { @MainActor in self?.write(e.text, kind: e.kind) }
+                              },
                               onTunnel: { from, offer in Task { await awayRef.value?.keep(from: from, offer: offer) } },
                               onHubs: { from, _, share in
                                   guard isHub else {
@@ -650,6 +668,12 @@ final class LiveGroup: GroupController {
                                   }
                                   guard hub.shared(from: from, share, known: { box.knows($0) }) else { return }
                                   Task { await nodeRef.value?.sendTunnels { hub.offers(for: $0, order: box.hubOrder) } }
+                              },
+                              mode: modeBox.mode,
+                              onCommand: { peer, c in
+                                  let (result, mode) = modeBox.take(c, from: peer, records: box, me: device)
+                                  if let mode { Task { await nodeRef.value?.set(mode: mode) } }
+                                  return result
                               })
         nodeRef.value = node
         let relay = Relay(group: g.tag)
@@ -950,6 +974,82 @@ final class LiveGroup: GroupController {
 
     /// The group's records for the node, which exchanges them with the
     /// computers.
+    /// This phone's sync mode (docs/design.md, "Sync modes"), in the file
+    /// mode beside the group's, as the computers keep it: own for a phone
+    /// that makes or joins a group from now on, shared for one that joined
+    /// before 0.5, which has no file; and the replay cache of the commands
+    /// it took (docs/protocol.md, section 15).
+    final class ModeBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private let url: URL
+        private var commands: [String: Int64] = [:]
+        /// The most command IDs it keeps; a command lives at most 30 s, as Go's maxCommandIDs.
+        static let maxCommands = 4096
+
+        init(url: URL) { self.url = url }
+
+        /// The sync mode: own, shared, receive or send.
+        var mode: String {
+            lock.withLock {
+                let m = (try? String(contentsOf: url, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return m.flatMap { Member.modes.contains($0) ? $0 : nil } ?? "shared"
+            }
+        }
+
+        /// Sets the sync mode and keeps it.
+        func set(_ mode: String) throws {
+            guard Member.modes.contains(mode) else { throw Commands.Failure.unknownMode(mode) }
+            try lock.withLock { try Data((mode + "\n").utf8).write(to: url, options: .atomic) }
+        }
+
+        /// Gives a phone that just made or joined a group the sync mode of a
+        /// new device, own, unless it has one from an earlier group.
+        func newDevice() throws {
+            if !FileManager.default.fileExists(atPath: url.path) { try set("own") }
+        }
+
+        /// Carries out a command a member sent: a mode command an admin of
+        /// the group signed for me, not expired and not carried out before.
+        /// A phone takes no hub command. Returns the result and the new
+        /// mode, if it changed.
+        func take(_ c: Member.Record, from peer: String?, records: RecordBox, me: String) -> (Member.CommandResult, String?) {
+            let id = Commands.id(of: c) ?? ""
+            func refused(_ reason: String) -> (Member.CommandResult, String?) {
+                modeLog.notice("refused a command from \(peer ?? "?", privacy: .public): \(reason, privacy: .public)")
+                return (Member.CommandResult(id: id, status: "refused", reason: reason), nil)
+            }
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            let body: Commands.Body
+            do {
+                body = try records.verify(c, me: me, nowMS: now)
+            } catch let e as Commands.Refused {
+                return refused(e.reason)
+            } catch {
+                return refused("the command is not valid")
+            }
+            let again: String? = lock.withLock {
+                commands = commands.filter { $0.value > now }
+                if commands[body.id] != nil { return "this command was carried out already" }
+                if commands.count >= Self.maxCommands { return "too many commands; try again in a minute" }
+                commands[body.id] = body.expires_ms
+                return nil
+            }
+            if let again { return refused(again) }
+            guard body.type == "mode" else {
+                return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
+            }
+            guard let mode = body.mode, Member.modes.contains(mode) else { return refused("unknown sync mode \(body.mode ?? "")") }
+            do {
+                try set(mode)
+            } catch {
+                modeLog.error("cannot save the sync mode: \(String(reflecting: error), privacy: .public)")
+                return (Member.CommandResult(id: body.id, status: "failed", reason: error.localizedDescription), nil)
+            }
+            modeLog.notice("\(body.by, privacy: .public) set the sync mode to \(mode, privacy: .public)")
+            return (Member.CommandResult(id: body.id, status: "done"), mode)
+        }
+    }
+
     final class RecordBox: RecordStore, @unchecked Sendable {
         private let lock = NSLock()
         private var set: RecordSet
@@ -981,6 +1081,11 @@ final class LiveGroup: GroupController {
 
         /// Whether a record names device.
         func knows(_ device: String) -> Bool { lock.withLock { set.knows(device) } }
+
+        /// Checks a command for me against the records now (Commands.verify).
+        func verify(_ c: Member.Record, me: String, nowMS: Int64) throws -> Commands.Body {
+            try lock.withLock { try Commands.verify(c, records: set, me: me, nowMS: nowMS) }
+        }
 
         /// Whether device is a phone, a hub only while its app is open.
         func isPhone(_ device: String) -> Bool { lock.withLock { set.devices.first { $0.id == device }?.role == "phone" } }

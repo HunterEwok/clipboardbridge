@@ -146,7 +146,14 @@ private fun modeTitle(mode: String) = when (mode) {
     else -> null
 }
 
-/** The actions an admin phone has for it; none on a phone that is no admin. */
+private fun modeNote(mode: String) = when (mode) {
+    "own" -> R.string.mode_own_note
+    "shared" -> R.string.mode_shared_note
+    "receive" -> R.string.mode_receive_note
+    else -> R.string.mode_send_note
+}
+
+/** The actions an admin phone has for it; a phone that is no admin has only its own sync mode. */
 @Composable
 private fun Actions(model: AppModel, d: LiveGroup.Device) {
     val palette = LocalPalette.current
@@ -156,8 +163,14 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     var thawing by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var choosingMode by remember { mutableStateOf(false) }
+    if (choosingMode) ModeChoice(d, dismiss = { choosingMode = false }) { mode -> scope.launch { model.setMode(d.id, mode) } }
+    // Every phone sets its own sync mode; an admin sets any other device's.
     if (!model.isAdmin) {
-        Text(stringResource(R.string.not_admin_note), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
+        if (d.isSelf) {
+            Column(Modifier.fillMaxWidth().card()) { Action("⇄", stringResource(R.string.sync_mode)) { choosingMode = true } }
+        } else {
+            Text(stringResource(R.string.not_admin_note), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
+        }
         return
     }
     Column(Modifier.fillMaxWidth().card()) {
@@ -170,8 +183,8 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             HorizontalDivider(color = palette.line)
             Action("★", stringResource(R.string.make_admin)) { promoting = true }
         }
-        // The phones and lite members have no modes yet and refuse.
-        if (!d.isSelf && d.online && d.role == "full") {
+        // A phone or lite member from before 0.5 has no mode and refuses.
+        if (d.isSelf || d.online) {
             HorizontalDivider(color = palette.line)
             Action("⇄", stringResource(R.string.sync_mode)) { choosingMode = true }
         }
@@ -196,7 +209,6 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             dismiss = { promoting = false },
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
-    if (choosingMode) ModeChoice(d, dismiss = { choosingMode = false }) { mode -> scope.launch { model.setMode(d.id, mode) } }
     if (renaming) Rename(d, dismiss = { renaming = false }) { name -> scope.launch { model.rename(d.id, name) } }
     if (thawing) {
         Confirm(
@@ -208,7 +220,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     }
 }
 
-/** The sync modes to pick from, the computer's own marked. */
+/** The sync modes to pick from, the device's own marked. */
 @Composable
 private fun ModeChoice(d: LiveGroup.Device, dismiss: () -> Unit, choose: (String) -> Unit) {
     val palette = LocalPalette.current
@@ -226,7 +238,10 @@ private fun ModeChoice(d: LiveGroup.Device, dismiss: () -> Unit, choose: (String
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(if (m == d.mode) "✓" else "", color = palette.accent, modifier = Modifier.width(24.dp))
-                        Text(stringResource(modeTitle(m)!!), color = palette.text, modifier = Modifier.padding(start = Tokens.spacingMedium))
+                        Column(Modifier.padding(start = Tokens.spacingMedium, top = Tokens.spacingSmall, bottom = Tokens.spacingSmall)) {
+                            Text(stringResource(modeTitle(m)!!), color = palette.text)
+                            Text(stringResource(modeNote(m)), style = MaterialTheme.typography.bodySmall, color = palette.textDim)
+                        }
                     }
                 }
             }

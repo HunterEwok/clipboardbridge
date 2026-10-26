@@ -1138,3 +1138,108 @@ func TestGoHubVectors(t *testing.T) {
 		t.Error("the computers are not in the order of their device IDs")
 	}
 }
+
+type commandVectors struct {
+	GroupCA  []byte          `json:"group_ca"`
+	Records  []Record        `json:"records"`
+	Self     DeviceID        `json:"self"`
+	NowMS    int64           `json:"now_ms"`
+	Commands []commandVector `json:"commands"`
+}
+
+type commandVector struct {
+	Name    string `json:"name"`
+	Command Record `json:"command"`
+	OK      bool   `json:"ok"`
+	Mode    string `json:"mode,omitempty"`
+}
+
+// TestGoCommandVectors writes (with -update) and checks
+// testdata/interop/go-commands.json: mode commands for one phone, signed by
+// the root, an admin phone and admin computers (one frozen, one removed),
+// or for another device or group, expired, from the future or altered, and
+// whether each counts (docs/protocol.md, section 15), for the phone kits
+// and the lite member to agree with.
+func TestGoCommandVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-commands.json")
+	if *update {
+		pg := newPhoneGroup(t)
+		g := pg.root.Cert
+		phone, pc, frozen, removed := pg.a, adminCA(t, pg.root), adminCA(t, pg.root), adminCA(t, pg.root)
+		self := member(t, pg.root)
+		selfID := DeviceID(self.Subject.CommonName)
+		all := []Record{
+			adminRecord(t, g, pg.root, nil, member(t, phone), "admin phone", KeyHashOf(phone.Cert)),
+			computerAdminRecord(t, pg, member(t, pc), "pc", KeyHashOf(pc.Cert)),
+			computerAdminRecord(t, pg, member(t, frozen), "frozen pc", KeyHashOf(frozen.Cert)),
+			computerAdminRecord(t, pg, member(t, removed), "removed pc", KeyHashOf(removed.Cert)),
+			deviceRecord(t, g, pg.root, nil, self, "my phone", 1),
+			freezeRecord(t, g, pc, []*x509.Certificate{pc.Cert}, []KeyHash{KeyHashOf(frozen.Cert)}, nil),
+			revokeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(removed.Cert)}, nil),
+		}
+		now := int64(1_800_000_000_000)
+		sign := func(signer *CA, chain []*x509.Certificate, to DeviceID, tag string, at int64, mode string) Record {
+			r, err := SignCommand(CommandBody{Type: CommandMode, Group: tag, By: selfID, To: to, ID: NewCommandID(),
+				TimeMS: at, ExpiresMS: at + CommandLifetime.Milliseconds(), Mode: mode}, signer.Key, chain...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r
+		}
+		tag := Tag(g)
+		altered := sign(pg.root, nil, selfID, tag, now, "own")
+		altered.Body = []byte(strings.Replace(string(altered.Body), `"own"`, `"send"`, 1))
+		v := commandVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now}
+		for _, c := range []commandVector{
+			{Name: "the root", Command: sign(pg.root, nil, selfID, tag, now, "shared"), Mode: "shared"},
+			{Name: "the admin phone", Command: sign(phone, []*x509.Certificate{phone.Cert}, selfID, tag, now-1000, "receive"), Mode: "receive"},
+			{Name: "an admin computer", Command: sign(pc, []*x509.Certificate{pc.Cert}, selfID, tag, now, "send"), Mode: "send"},
+			{Name: "a frozen admin computer", Command: sign(frozen, []*x509.Certificate{frozen.Cert}, selfID, tag, now, "own")},
+			{Name: "a removed admin computer", Command: sign(removed, []*x509.Certificate{removed.Cert}, selfID, tag, now, "own")},
+			{Name: "a key of another group", Command: sign(newRoot(t), nil, selfID, tag, now, "own")},
+			{Name: "for another device", Command: sign(pg.root, nil, NewDeviceID(), tag, now, "own")},
+			{Name: "for another group", Command: sign(pg.root, nil, selfID, Tag(newRoot(t).Cert), now, "own")},
+			{Name: "expired", Command: sign(pg.root, nil, selfID, tag, now-CommandLifetime.Milliseconds(), "own")},
+			{Name: "signed in the future", Command: sign(pg.root, nil, selfID, tag, now+CommandAhead.Milliseconds()+1, "own")},
+			{Name: "altered", Command: altered},
+		} {
+			c.OK = c.Mode != ""
+			v.Commands = append(v.Commands, c)
+		}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v commandVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	if len(v.Commands) != 11 {
+		t.Fatalf("the file has %d commands", len(v.Commands))
+	}
+	for _, c := range v.Commands {
+		body, err := s.VerifyCommand(c.Command, v.Self, time.UnixMilli(v.NowMS))
+		if (err == nil) != c.OK {
+			t.Errorf("%s: VerifyCommand = %v, the file says ok %v", c.Name, err, c.OK)
+		}
+		if err == nil && body.Mode != c.Mode {
+			t.Errorf("%s: the mode is %q, the file has %q", c.Name, body.Mode, c.Mode)
+		}
+	}
+}
