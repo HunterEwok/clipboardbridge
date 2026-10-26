@@ -66,7 +66,8 @@ install)
 grep)
 	[ $# -eq 2 ] || usage
 	case $2 in '' | -* | *[!A-Za-z0-9T._-]*) usage ;; esac
-	grep -r -l -F -- "$2" "$state" /tmp /private/tmp 2>/dev/null || true
+	# /tmp is /private/tmp; text files only, so that a big /tmp stays quick.
+	grep -r -l -I -F -- "$2" "$state" /private/tmp 2>/dev/null || true
 	;;
 perms)
 	[ $# -eq 1 ] || usage

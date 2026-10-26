@@ -281,7 +281,7 @@ func notOnDisk(ctx context.Context, d *Device, run string) error {
 	if !ok {
 		return Skipped("the bench cannot search this device's files")
 	}
-	out, err := Run(ctx, d, cmd, "")
+	out, err := RunFor(ctx, d, cmd, "", 2*time.Minute)
 	if err != nil {
 		return noSudo(d, err)
 	}
@@ -349,7 +349,8 @@ func logsClean(ctx context.Context, r *Report, g *benchGroup, since time.Time) {
 		case "darwin":
 			logs = "sudo -n " + macHelper + " logs"
 		case "docker":
-			logs = "docker logs --since " + at + " " + d.Container + " 2>&1"
+			// The container's log is docker logs' standard error.
+			logs = "{ docker logs --since " + at + " " + d.Container + " 2>&1; }"
 		default:
 			r.Skip(prefix+d.Name, "the bench does not read this device's logs yet")
 			continue
