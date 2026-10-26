@@ -250,10 +250,10 @@ func killCmd(d *Device) string {
 	case "docker":
 		// The process dies as a crash would, not by docker kill, which
 		// Docker counts as stopping it by hand: its restart policy
-		// (unless-stopped) starts it again.
-		// Docker reports the container's process as the host sees it,
-		// running as the image's user, so only root may kill it.
-		return "p=$(docker inspect -f '{{.State.Pid}}' " + d.Container + ") && [ \"$p\" -gt 0 ] && sudo -n kill -KILL \"$p\""
+		// (unless-stopped) starts it again. It runs as the image's user,
+		// so root kills it, through the one helper that setup-docker.sh
+		// allows without a password.
+		return "sudo -n /usr/local/sbin/cbbbench-kill-container " + d.Container
 	}
 	return ""
 }

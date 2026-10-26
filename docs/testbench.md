@@ -358,9 +358,11 @@ ssh = "root@relay.example.net"
 
 A device with `os = "docker"` is the image running on a host: the bench calls `docker exec
 -i CONTAINER cbb` there, as the image's user, and copies and pastes with `cbb copy` and `cbb
-paste` (it has no desktop clipboard). Its SSH user is in the host's `docker` group, and for
-F1 may run `kill` as root without a password (the container's process belongs to the image's
-user). `address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
+paste` (it has no desktop clipboard). `tools/bench/setup-docker.sh setup` prepares the host
+once: Docker, the SSH user in the `docker` group, and for F1 the helper
+`cbbbench-kill-container`, which that user may run as root without a password (the
+container's process belongs to the image's user); `setup-docker.sh up CBB` starts a new
+container of the build under test, and `down` removes it with its volume. `address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
 find it; a lite member always joins at an address, which `cbb pair` prints.
 `tools/bench/inventory.example.toml` is a complete example. Each device needs the
 controller's SSH key for its desktop user; a Windows device also runs

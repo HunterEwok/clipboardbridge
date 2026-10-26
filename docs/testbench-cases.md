@@ -23,9 +23,9 @@ Every device starts a run in no group; the bench never touches a group it did no
 1. Linux, macOS: `sudo ./uninstall.sh --purge` (or the installer's copy), then install the
    build under test with `install.sh` (or `get.sh`). Lite member: `get.sh --lite` after the
    purge. Windows: revert the VM to its clean snapshot, or `uninstall.ps1 -Purge`, then
-   `get.ps1`. Container: `docker compose -f compose.home.yaml down -v` (the volume goes with
-   it), then `up -d` with the image under test (a release's, pinned by digest, or one built
-   from the CI artifacts with `context.sh`).
+   `get.ps1`. Container: on its host `sh tools/bench/setup-docker.sh up CBB`, which removes
+   the old container with its volume and starts one of the image built from CBB, the
+   `linux` binary under test for the host's CPU, with `compose.home.yaml`.
 2. On the Linux member with a desktop, sign out and in again (or reboot), so the desktop
    agent starts with the `clipboardbridge` group.
 3. `cbb version` shows the build under test; `cbb status` says "Not in a group" (the lite
@@ -484,8 +484,9 @@ group's CA keys, and they stay off a container.
    exec`), and every text arrives everywhere (R5).
 2. `docker inspect` of the container: not privileged, a read-only root file system, cap_drop
    ALL, the user 65532:65532, `no-new-privileges`, the host's network, a restart policy.
-3. F1 for `nas`: its process is killed from the host (`kill -KILL` of the PID that `docker
-   inspect` gives), as a crash would; Docker's restart policy starts it again.
+3. F1 for `nas`: its process is killed from the host (`cbbbench-kill-container`, from
+   `setup-docker.sh`, kills the PID that `docker inspect` gives), as a crash would; Docker's
+   restart policy starts it again.
 4. `docker restart`; then a new container from the same volume (`docker compose up -d
    --force-recreate`, as after `docker compose pull`). After each, `cbb status` shows the same
    group, `cbb mode` says shared, and a copy on another member arrives on `nas` and on the rest.

@@ -91,6 +91,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   group, whose CA keys stay off a container; `full` checks that it runs locked down as
   `compose.home.yaml` sets it, and that a crash, a restart and a new container from the
   same volume keep its group, its mode and its sync (P35 in docs/testbench.md).
+  `tools/bench/setup-docker.sh` prepares the container's host and starts a container of the
+  build under test.
 
 ### Changed
 

@@ -39,8 +39,8 @@ clipboard = "none"
 roles = ["away"]
 
 # The Docker image on a host, started with packaging/docker/compose.home.yaml:
-# the bench runs cbb in it with docker exec. The ssh user is in the docker
-# group and may run kill as root without a password (F1).
+# the bench runs cbb in it with docker exec. tools/bench/setup-docker.sh
+# prepares the host and starts the container.
 [device.nas]
 os = "docker"
 ssh = "user@pi4.lan"
