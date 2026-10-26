@@ -59,4 +59,34 @@ final class AndroidAttestationTests: XCTestCase {
         }
         XCTAssertThrowsError(try Attestation.challenge(groupTag: "", memberKey: Data(), salt: Data(count: 15)))
     }
+
+    /// The root phone records a phone whose evidence proves its member key
+    /// as proven, once (section 17, "Evidence").
+    func testRootRecordsEvidence() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct E: Decodable { var salt: Data; var chain: [Data]; var root: Data }
+        struct V: Decodable { var evidence: E }
+        let e = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-attest.json"))).evidence
+        let evidence = Member.Evidence(format: Member.Evidence.android, key: Member.Evidence.member, groupTag: nil, salt: e.salt, chain: e.chain)
+        let now = Date()
+        let ca = SoftwareSigner()
+        var g = try PhoneGroup.create(caSigner: ca, memberKey: SoftwareSigner().publicKeyDER, now: now)
+        // The leaf certifies the phone's member key; it stands in for the member certificate here.
+        let phone = SyncEngine.newID()
+        _ = try g.record(device: phone, name: "Pixel", role: "phone", os: "android", key: try Records.keyHash(cert: e.chain[0]),
+                         store: Records.hardware, caSigner: ca, now: now)
+        XCTAssertNil(try g.evidence(device: SyncEngine.newID(), chain: [e.chain[0]], evidence, rootSigner: ca, now: now, roots: [e.root]))
+        XCTAssertNotNil(try g.evidence(device: phone, chain: [e.chain[0]], evidence, rootSigner: ca, now: now.addingTimeInterval(1), roots: [e.root]))
+        let d = try XCTUnwrap(g.devices.first { $0.id == phone })
+        XCTAssertEqual(d.store, Records.proven)
+        XCTAssertEqual(d.kind, AndroidAttestation.kindTEE)
+        XCTAssertEqual(d.proof?.count, 64)
+        XCTAssertNil(try g.evidence(device: phone, chain: [e.chain[0]], evidence, rootSigner: ca, now: now.addingTimeInterval(2), roots: [e.root]))
+        _ = try g.rename(device: phone, to: "Pixel 9", caSigner: ca, now: now.addingTimeInterval(3))
+        XCTAssertEqual(g.devices.first { $0.id == phone }?.store, Records.proven)
+        var other = evidence
+        other.groupTag = "another"
+        XCTAssertThrowsError(try g.evidence(device: phone, chain: [e.chain[0]], other, rootSigner: ca, now: now, roots: [e.root]))
+    }
 }

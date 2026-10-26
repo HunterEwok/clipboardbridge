@@ -43,10 +43,20 @@ type challengeVector struct {
 	Challenge []byte `json:"challenge"`
 }
 
+// evidenceVector is an attestation of a member key made outside a group
+// with an all-zero salt, as the evidence message carries it, and its root:
+// the kits record it as proven.
+type evidenceVector struct {
+	Salt  []byte   `json:"salt"`
+	Chain [][]byte `json:"chain"`
+	Root  []byte   `json:"root"`
+}
+
 type vectors struct {
 	GoogleRoots [][]byte          `json:"google_roots"`
 	Challenges  []challengeVector `json:"challenges"`
 	Vectors     []vector          `json:"vectors"`
+	Evidence    evidenceVector    `json:"evidence"`
 }
 
 func makeVectors(t *testing.T) vectors {
@@ -117,6 +127,10 @@ func makeVectors(t *testing.T) vectors {
 	add("a revoked leaf", k, spki(t, k.key), ch, roots, false, []string{serial(leaf.SerialNumber)})
 	add("another revoked serial", k, spki(t, k.key), ch, roots, false, []string{"1"})
 	add("garbage", chain{certs: [][]byte{{1}, {2}}}, spki(t, k.key), ch, roots, false, nil)
+	zero := make([]byte, 16)
+	evCh, _ := Challenge("", nil, zero)
+	ev := makeChain(t, description{levelTEE, levelTEE, evCh, true, bootVerified, false}, false)
+	v.Evidence = evidenceVector{Salt: zero, Chain: ev.certs, Root: ev.root}
 	noDesc := makeChain(t, good, false)
 	noDesc.certs[0] = withoutDescription(t, noDesc)
 	add("no key description", noDesc, spki(t, noDesc.key), ch, [][]byte{noDesc.root}, false, nil)
@@ -175,6 +189,15 @@ func TestAttestVectors(t *testing.T) {
 		if got, _ := Challenge(c.GroupTag, c.MemberKey, c.Salt); !bytes.Equal(got, c.Challenge) {
 			t.Errorf("the challenge of %q differs", c.GroupTag)
 		}
+	}
+	e := v.Evidence
+	leaf, err := x509.ParseCertificate(e.Chain[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	evCh, _ := Challenge("", nil, e.Salt)
+	if r, err := CheckAndroid(e.Chain, leaf.RawSubjectPublicKeyInfo, evCh, Policy{Roots: [][]byte{e.Root}}); err != nil || r.Store != StoreProven {
+		t.Errorf("the evidence vector: %+v %v", r, err)
 	}
 	for _, c := range v.Vectors {
 		r, err := CheckAndroid(c.Chain, c.SPKI, c.Challenge, Policy{Strict: c.Strict, Roots: c.Roots, Revoked: set(c.Revoked)})

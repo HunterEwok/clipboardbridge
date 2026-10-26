@@ -4,6 +4,8 @@
 package service
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,13 +14,19 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/attest"
+	"github.com/HunterEwok/clipboardbridge/internal/attest/attesttest"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/release"
 )
 
 // fakePhone is the root phone of a group, which dials a computer and sends
@@ -278,4 +286,100 @@ func TestRename(t *testing.T) {
 			t.Errorf("after the rename: %+v", d)
 		}
 	}
+}
+
+// TestEvidence checks that the group's root records what a device's
+// attestation proves: proven for a valid chain of its member key, nothing
+// for a chain of another key.
+func TestEvidence(t *testing.T) {
+	// The revocation list's mirror: keys.json from a root key, and a list
+	// the test changes.
+	rootKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	statusKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rootSPKI, _ := x509.MarshalPKIXPublicKey(&rootKey.PublicKey)
+	statusSPKI, _ := x509.MarshalPKIXPublicKey(&statusKey.PublicKey)
+	now := time.Now().UnixMilli()
+	keysFile, err := release.Sign(release.Keys{V: 1, Type: release.TypeKeys, Seq: 1, TimeMS: now, ExpiresMS: now + 3600_000,
+		Keys: []release.Key{{Key: statusSPKI, Name: "status", Use: release.UseStatus}}}, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listMu sync.Mutex
+	list := release.Status{V: 1, Type: release.TypeStatus, Seq: 1, TimeMS: now, ExpiresMS: now + 3600_000, AndroidRevoked: []string{}}
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listMu.Lock()
+		defer listMu.Unlock()
+		f := keysFile
+		if r.URL.Path == "/attest-status.json" {
+			if f, err = release.Sign(list, statusKey); err != nil {
+				t.Error(err)
+			}
+		}
+		json.NewEncoder(w).Encode(f)
+	}))
+	defer mirror.Close()
+	oldURL, oldRoots, oldEvery := statusURL, statusRoots, statusEvery
+	statusURL, statusRoots, statusEvery = mirror.URL+"/", func() [][]byte { return [][]byte{rootSPKI} }, 100*time.Millisecond
+	t.Cleanup(func() { statusURL, statusRoots, statusEvery = oldURL, oldRoots, oldEvery })
+
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "deck is listed", func() bool { return listed(pi.devices(t)) == "deck pi" })
+	deck.stop()
+	id, err := group.Load(deck.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt := make([]byte, 16)
+	challenge, _ := attest.Challenge("", nil, salt)
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	wrong, wrongRoot, err := attesttest.Android(&other.PublicKey, challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain, root, err := attesttest.Android(id.Cert.PublicKey, challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attestRoots = [][]byte{wrongRoot, root}
+	t.Cleanup(func() { attestRoots = nil })
+
+	p := &fakePhone{t: t, id: id}
+	p.dial(&h, mustLoad(t, pi.dir))
+	ev := func(chain [][]byte) map[string]any {
+		return map[string]any{"t": "evidence", "evidence": map[string]any{"format": "android-key", "key": "member", "salt": salt, "chain": chain}}
+	}
+	p.send(ev(wrong))
+	p.send(ev(chain))
+	store := func() string {
+		for _, d := range pi.devices(t) {
+			if d.Name == "deck" {
+				return d.Store
+			}
+		}
+		return ""
+	}
+	waitFor(t, "the root records the deck's keys as proven", func() bool { return store() == group.StoreProven })
+
+	// Google revokes the chain's attestation key: the root takes the new
+	// list and records the deck's keys as only in hardware.
+	ca, err := x509.ParseCertificate(chain[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	listMu.Lock()
+	list.Seq, list.AndroidRevoked = 2, []string{ca.SerialNumber.Text(16)}
+	listMu.Unlock()
+	waitFor(t, "the root records the deck's keys as in hardware", func() bool { return store() == group.StoreHardware })
+}
+
+func mustLoad(t *testing.T, dir string) *group.Identity {
+	t.Helper()
+	id, err := group.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

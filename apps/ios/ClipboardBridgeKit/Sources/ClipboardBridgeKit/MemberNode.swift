@@ -71,6 +71,7 @@ public actor MemberNode {
     private let hubShare: (@Sendable (String, [Data]) -> Member.HubShare?)?
     private let onHubs: @Sendable (String, [Data], Member.HubShare) -> Void
     private let onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)?
+    private let onEvidence: @Sendable (String?, [Data], Member.Evidence) -> Void
     /// This phone's sync mode, which the hellos state; nil for a phone
     /// without one, which shares.
     public private(set) var mode: String?
@@ -114,7 +115,9 @@ public actor MemberNode {
     /// mode for the hellos, and onCommand carries out a command a peer sent
     /// (docs/protocol.md, section 15), with the device ID the caller of
     /// serve named the peer by, and returns the result the peer gets;
-    /// without it every command is refused.
+    /// without it every command is refused; onEvidence gets the evidence a
+    /// peer sent (section 17, "Evidence"), with the device ID it was named
+    /// by and its certificate chain.
     public init(engine: SyncEngine, name: String?, role: Member.Role = .phone, os: String? = nil, device: Member.DeviceInfo? = nil,
                 records: RecordStore? = nil,
                 renew: (@Sendable ([Data]) -> Renewal?)? = nil,
@@ -128,11 +131,12 @@ public actor MemberNode {
                 onTunnel: @escaping @Sendable (String?, Member.TunnelOffer) -> Void = { _, _ in },
                 onHubs: @escaping @Sendable (String, [Data], Member.HubShare) -> Void = { _, _, _ in },
                 mode: String? = nil,
-                onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil) {
+                onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil,
+                onEvidence: @escaping @Sendable (String?, [Data], Member.Evidence) -> Void = { _, _, _ in }) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
         (self.tunnelKey, self.tunnelPSK, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, tunnelPSK, onTunnel, hub, os, device?.cleaned)
-        (self.hubShare, self.onHubs, self.mode, self.onCommand) = (hubShare, onHubs, mode, onCommand)
+        (self.hubShare, self.onHubs, self.mode, self.onCommand, self.onEvidence) = (hubShare, onHubs, mode, onCommand, onEvidence)
     }
 
     /// Replaces the sync mode that the next connections' hellos state.
@@ -327,6 +331,8 @@ public actor MemberNode {
                 apply(engine.received(e), from: id)
             case let .cert(der, _):
                 onCert(der)
+            case let .evidence(e) where !t.peerChain.isEmpty:
+                onEvidence(c.peer, t.peerChain, e)
             // Only the root or an admin, by the records and its key.
             // A hub is no client yet: it gets the other hubs' offers in their shares.
             case let .tunnel(o?) where o.isValid && hub == nil:

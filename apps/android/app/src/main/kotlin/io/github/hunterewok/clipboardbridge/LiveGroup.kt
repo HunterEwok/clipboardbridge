@@ -11,6 +11,7 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
+import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
 import io.github.hunterewok.clipboardbridge.kit.Commands
 import io.github.hunterewok.clipboardbridge.kit.Discovery
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
@@ -962,6 +963,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             mode = { syncMode },
             onCommand = ::command,
             renew = ::renew,
+            evidence = ::ownEvidence,
+            onEvidence = ::evidenceReceived,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a
             // hello brings it on connecting, would overwrite what the phone
@@ -1103,9 +1106,53 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private fun renew(chain: List<ByteArray>): MemberNode.Renewal? {
         val g = synchronized(lock) { state } ?: return null
         val cert = chain.firstOrNull() ?: return null
+        recordProofs(null)
         if (!g.isAdmin || !authenticator.isFresh || !GroupCertificates.isDue(cert, g.adminCA ?: g.currentRoot, Instant.now())) return null
         val signer = Keys.load(signingAlias(g)) ?: return null
         return synchronized(lock) { state?.renewal(chain, signer, Instant.now()) }
+    }
+
+    /** The attestation of this phone's member key, which every peer gets (docs/protocol.md, section 17, "Evidence"); none for a key made without one. */
+    private val memberEvidence: List<Member.Evidence> by lazy {
+        Keys.evidence(context, Keys.MEMBER)?.let {
+            listOf(Member.Evidence(Member.Evidence.ANDROID, Member.Evidence.MEMBER, it.groupTag.ifEmpty { null }, it.salt, it.chain))
+        } ?: emptyList()
+    }
+
+    private fun ownEvidence(): List<Member.Evidence> = runCatching { memberEvidence }.getOrDefault(emptyList())
+
+    /**
+     * On the root, records what the attestation a peer sent shows, and what
+     * this phone's own shows, as renew does while the user's authentication
+     * lasts: a peer sends it on every connection, so one that comes later
+     * is recorded then.
+     */
+    private fun evidenceReceived(peer: String?, chain: List<ByteArray>, e: Member.Evidence) {
+        if (peer != null) recordProofs(Triple(peer, chain, e))
+    }
+
+    /** Records what peer's evidence, when given, and this phone's own show, on the root while its authentication lasts. */
+    private fun recordProofs(peer: Triple<String, List<ByteArray>, Member.Evidence>?) {
+        val g = synchronized(lock) { state } ?: return
+        val own = ownEvidence().firstOrNull()
+        if (!g.isRoot || !authenticator.isFresh || peer == null && (own == null || g.devices.any { it.id == g.device && it.proof != null })) return
+        val signer = Keys.load(Keys.ROOT) ?: return
+        val copy = copyOfState() ?: return
+        val now = Instant.now()
+        val rs = listOfNotNull(
+            peer?.let { (dev, chain, e) -> prove(copy, dev, chain, e, signer, now) },
+            own?.let { prove(copy, copy.device, copy.memberChain.take(1), it, signer, now) },
+        )
+        if (rs.isEmpty()) return
+        adopt(copy)
+        currentNode?.sendRecords(rs)
+    }
+
+    private fun prove(g: PhoneGroup, device: String, chain: List<ByteArray>, e: Member.Evidence, signer: KeystoreSigner, now: Instant) = try {
+        g.evidence(device, chain, e, signer, now)?.also { Log.i(TAG, "recorded what the attestation of $device shows") }
+    } catch (x: AndroidAttestation.Invalid) {
+        Log.w(TAG, "the attestation of $device proves nothing: ${x.message}")
+        null
     }
 
     /**

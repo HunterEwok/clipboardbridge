@@ -59,7 +59,10 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	case peer.AdminKey == nil:
 		return "", fmt.Errorf("%s offers no admin key: it runs an older Clipboard Bridge, or in a container that may not hold the group's keys (its log says so)", d.Name)
 	}
-	store := group.StoreOf(peer.KeyStore, group.RoleFull)
+	store, kind, proof := group.StoreOf(peer.KeyStore, group.RoleFull), "", ""
+	if rec := s.deviceRecord(peer.ID); rec != nil && rec.Key == peer.Key && rec.Store == group.StoreProven {
+		store, kind, proof = rec.Store, rec.Kind, rec.Proof
+	}
 	if store == group.StoreFile && !allowFileKey {
 		return "", fmt.Errorf("%s keeps its keys in a file, which a thief with it can copy and then act as an admin until another admin removes it; to make it an admin anyway, run cbb admin -allow-file-key %s", d.Name, target)
 	}
@@ -76,7 +79,7 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	// follows the admin message goes to a listed admin.
 	adminKey := group.KeyHashOf(adminCA)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: peer.ID, Name: d.Name, Role: group.RoleFull,
-		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store})
+		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store, Kind: kind, Proof: proof})
 	if err != nil {
 		return "", err
 	}

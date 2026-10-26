@@ -31,7 +31,8 @@ import (
 // whose hello offers a tunnel key. An admin sends a command message with a
 // signed command for the receiver, such as a sync mode, which answers with
 // a result message. A hub sends a hubs message to another device that may
-// be a hub, with its offer and its clients' keys.
+// be a hub, with its offer and its clients' keys. A device whose keys an
+// attestation proves sends an evidence message with it after the hello.
 const (
 	typeHello   = "hello"
 	typeEvent   = "event"
@@ -45,6 +46,7 @@ const (
 	typeCommand = "command"
 	typeResult  = "result"
 	typeHubs    = "hubs"
+	typeEvid    = "evidence"
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -106,7 +108,31 @@ type message struct {
 	// Hubs, in a hubs message, is what a hub shares with the group's other
 	// hubs (docs/protocol.md, section 11, "Several hubs").
 	Hubs *HubShare `json:"hubs,omitempty"`
+	// Evidence, in an evidence message, proves where the sender's keys
+	// live (docs/protocol.md, section 17, "Evidence").
+	Evidence *Evidence `json:"evidence,omitempty"`
 }
+
+// Evidence is an attestation of one of the sender's keys.
+type Evidence struct {
+	// Format is EvidenceAndroid: Chain is the Keystore's certificate
+	// chain, leaf first, DER.
+	Format string `json:"format"`
+	// Key names the attested key: EvidenceMember for the member key of
+	// the sender's TLS certificate.
+	Key string `json:"key"`
+	// GroupTag and Salt made the attestation challenge with the key
+	// (attest.Challenge); GroupTag is "" for a key made outside a group.
+	GroupTag string   `json:"group_tag,omitempty"`
+	Salt     []byte   `json:"salt"`
+	Chain    [][]byte `json:"chain"`
+}
+
+// The formats and keys of Evidence.
+const (
+	EvidenceAndroid = "android-key"
+	EvidenceMember  = "member"
+)
 
 // HubShare is what a hub tells another device that may be a hub: its offer
 // without a preshared key, whether it serves its clients now, and the

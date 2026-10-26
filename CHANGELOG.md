@@ -17,9 +17,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
   or hardware, and `cbb status` shows it in a KEYS column (docs/protocol.md, section 17).
 - The Android app makes its keys with an attestation challenge, so the Keystore can later
   prove that they live in its hardware.
+- Proven keys: a phone sends the attestation of its member key in an `evidence` message,
+  and the group's root checks the Android Key Attestation chain (both Google roots, the
+  phone's verified boot) and records the device's keys as `proven`, which `cbb status`
+  shows as "proven hardware" (docs/protocol.md, section 17, "Evidence").
 
 ### Changed
 
+- Revoked attestations: a mirror on cbb.tools signs Google's revocation list of Android
+  attestation keys every day (`attest-status.json`, with a status key that `keys.json`
+  certifies only for it), and the group's root takes it and records a phone whose chain was
+  revoked as only in hardware (docs/protocol.md, section 17).
 - A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
   admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
   means. `cbb new` warns that the root key is a file.

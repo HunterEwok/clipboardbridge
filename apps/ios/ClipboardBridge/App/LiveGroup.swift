@@ -14,6 +14,7 @@ private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", 
 private let relayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "relay")
 private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
 private let modeLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "mode")
+private let keysLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "keys")
 
 /// The phone's own group (docs/protocol.md, section 9): its root CA key in
 /// the Secure Enclave, signing only after Face ID or the passcode (a
@@ -516,6 +517,24 @@ final class LiveGroup: GroupController {
     /// Gives a device another name (docs/protocol.md, section 10): a device
     /// record like its newest one with that name, signed with this phone's
     /// root or admin key after Face ID, sent to every connected computer.
+    /// On the root, records what the attestation an Android phone sent
+    /// shows (docs/protocol.md, section 17, "Evidence"), as renewals are
+    /// made: only while the context of the user's last Face ID check lasts;
+    /// the phone sends it again on its next connection.
+    private func evidenceReceived(from peer: String?, chain: [Data], _ e: Member.Evidence) async {
+        guard let peer, var g = state, g.isRoot, let signer = renewer?.signer() else { return }
+        do {
+            guard let r = try g.evidence(device: peer, chain: chain, e, rootSigner: signer, now: Date()) else { return }
+            try g.save(to: file)
+            state = g
+            groupChanged()
+            await node?.sendRecords([r])
+            keysLog.info("recorded what the attestation of \(peer, privacy: .public) shows")
+        } catch {
+            keysLog.error("the attestation of \(peer, privacy: .public): \(String(reflecting: error), privacy: .public)")
+        }
+    }
+
     func rename(_ id: String, to name: String) async throws {
         guard state?.isAdmin == true else { throw PhoneGroup.Failure.notAdmin }
         let ca = try await caSigner(reason: String(localized: "Rename a device", bundle: .app))
@@ -692,6 +711,9 @@ final class LiveGroup: GroupController {
                                   let (result, mode) = modeBox.take(c, from: peer, records: box, me: device)
                                   if let mode { Task { await nodeRef.value?.set(mode: mode) } }
                                   return result
+                              },
+                              onEvidence: { [weak self] peer, chain, e in
+                                  Task { @MainActor in await self?.evidenceReceived(from: peer, chain: chain, e) }
                               })
         nodeRef.value = node
         let relay = Relay(group: g.tag)
@@ -1043,16 +1065,21 @@ final class LiveGroup: GroupController {
         /// phone may renew it.
         func renew(_ chain: [Data]) -> MemberNode.Renewal? {
             guard group.isAdmin, let cert = chain.first,
-                  GroupCertificates.isDue(cert, groupCA: group.adminCA ?? group.currentRoot, now: Date()) else { return nil }
+                  GroupCertificates.isDue(cert, groupCA: group.adminCA ?? group.currentRoot, now: Date()),
+                  let signer = signer() else { return nil }
+            return group.renewal(chain: chain, caSigner: signer, now: Date())
+        }
+
+        /// The root or admin key's signer while it signs without asking.
+        func signer() -> SecKeySigner? {
             var ctx = context
             if secureEnclave && ctx == nil {
                 let quiet = LAContext()
                 quiet.interactionNotAllowed = true // a key that needs the user fails instead of asking
                 ctx = quiet
             }
-            guard let k = try? KeychainIdentity.loadKey(label: LiveGroup.signingLabel(group), context: ctx),
-                  let signer = try? SecKeySigner(k) else { return nil }
-            return group.renewal(chain: chain, caSigner: signer, now: Date())
+            guard let k = try? KeychainIdentity.loadKey(label: LiveGroup.signingLabel(group), context: ctx) else { return nil }
+            return try? SecKeySigner(k)
         }
     }
 

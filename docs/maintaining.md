@@ -162,7 +162,8 @@ not signed and the installers check nothing; the steps below are the plan.
   and touch for every signature (`yubico-piv-tool -a generate -s 9c -A ECCP256 --pin-policy=always
   --touch-policy=always`, then a self-signed certificate in the slot so the key can be read).
   Their public keys go into `packaging/get.sh` (`release_roots`), `packaging/windows/get.ps1`
-  (`$releaseRoots`) and the programs.
+  (`$releaseRoots`) and the programs (`internal/release.Roots`, and the phone kits'
+  `Releases.roots`).
 - **The release key**, in the Mac's Secure Enclave, asking for Touch ID at each signature:
   `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
   certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
@@ -179,6 +180,14 @@ not signed and the installers check nothing; the steps below are the plan.
   without a new release.
 - A lost or stolen Mac: a root signs a `keys.json` with a new release key and without the
   old one. A lost YubiKey: the other root signs, and the next release ships a new second root.
+- **The status key** of the revocation mirror, on cbb.tools in a file readable only by the
+  mirror's user (it signs nothing but `attest-status.json`, so a stolen one can at most keep
+  a revoked phone proven until it is replaced): `openssl ecparam -name prime256v1 -genkey
+  -noout -out status-key.pem`. `keys.json` certifies it with `-status mirror=status.pem`. A
+  daily timer runs `attest-status -key status-key.pem -out /srv/cbb.tools/attest` and copies
+  `keys.json` beside it. When it stops on a list that drops a serial number, check Google's
+  list and run it once with `-allow-drop`; a stolen status key is dropped from the next
+  `keys.json` like a release key.
 - `release-sign drill -version X.Y.Z DIR ROOTS.pem` signs DIR with throwaway keys in files,
   as CI does to test the installers, and for drills of the steps above.
 

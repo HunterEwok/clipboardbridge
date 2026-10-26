@@ -27,7 +27,7 @@ final class ReleaseTests: XCTestCase {
             var vectors: [C]
         }
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-release.json")))
-        XCTAssertEqual(v.vectors.count, 23)
+        XCTAssertEqual(v.vectors.count, 27)
         for c in v.vectors {
             let got = Result { try Releases.check(keys: c.keys, channel: c.channel, release: c.release, roots: v.roots,
                                                   name: v.channel, nowMS: v.now_ms, seen: c.seen) }
@@ -37,6 +37,39 @@ final class ReleaseTests: XCTestCase {
                 XCTAssertEqual(r.version, c.version, c.name)
                 XCTAssertEqual(next.version, r.version, c.name)
                 XCTAssertTrue(r.direct(from: "0.5.3") && !r.direct(from: "0.3.9"), c.name)
+            case let .failure(e):
+                XCTAssertFalse(c.ok, "\(c.name): \(e)")
+            }
+        }
+    }
+
+    /// The revocation lists of the same file: which attest-status.json a
+    /// root takes.
+    func testGoStatus() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct C: Decodable {
+            var name: String
+            var keys: Releases.File
+            var status: Releases.File
+            var seen: Releases.Seen
+            var ok: Bool
+            var revoked: [String]?
+        }
+        struct V: Decodable {
+            var roots: [Data]
+            var now_ms: Int64
+            var status: [C]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-release.json")))
+        XCTAssertEqual(v.status.count, 14)
+        for c in v.status {
+            let got = Result { try Releases.checkStatus(keys: c.keys, status: c.status, roots: v.roots, nowMS: v.now_ms, seen: c.seen) }
+            switch got {
+            case let .success((st, next)):
+                XCTAssertTrue(c.ok, c.name)
+                XCTAssertEqual(st.android_revoked, c.revoked, c.name)
+                XCTAssertEqual(next.status_seq, st.seq, c.name)
             case let .failure(e):
                 XCTAssertFalse(c.ok, "\(c.name): \(e)")
             }

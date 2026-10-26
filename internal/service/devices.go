@@ -321,7 +321,7 @@ func (s *Service) ensureListed() {
 			if d.Role != group.RoleFull || os == "" || d.OS == os {
 				return
 			}
-			body.Name, body.Admin, body.Store = d.Name, d.AdminKey, d.Store
+			body.Name, body.Admin, body.Store, body.Kind, body.Proof = d.Name, d.AdminKey, d.Store, d.Kind, d.Proof
 		}
 		if !group.ValidName(body.Name) {
 			body.Name = defaultName(role, dev)
@@ -558,14 +558,7 @@ func (s *Service) rename(target, name string) (string, error) {
 	if !id.IsAdmin() {
 		return "", errNotAdmin
 	}
-	s.recMu.Lock()
-	var rec *group.Device
-	for _, dev := range s.records.Devices() {
-		if string(dev.ID) == d.ID {
-			rec = &dev
-		}
-	}
-	s.recMu.Unlock()
+	rec := s.deviceRecord(group.DeviceID(d.ID))
 	if rec == nil {
 		return "", fmt.Errorf("%s is not in the devices list yet; rename it once it is", d.Name)
 	}
@@ -573,7 +566,7 @@ func (s *Service) rename(target, name string) (string, error) {
 		return rec.Name, nil
 	}
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: rec.ID, Name: name, Role: rec.Role,
-		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Store: rec.Store})
+		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Store: rec.Store, Kind: rec.Kind, Proof: rec.Proof})
 	if err != nil {
 		return "", err
 	}
@@ -708,3 +701,15 @@ func (g phoneGroup) PhoneRevoked(phoneID string) bool {
 // keyHolder reports whether a device of a legacy group holds the CA keys:
 // every computer but a Mac does.
 func keyHolder(role, os string) bool { return role == group.RoleFull && os != group.OSMacOS }
+
+// deviceRecord returns the devices list's entry for dev, or nil.
+func (s *Service) deviceRecord(dev group.DeviceID) *group.Device {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	for _, d := range s.records.Devices() {
+		if d.ID == dev {
+			return &d
+		}
+	}
+	return nil
+}

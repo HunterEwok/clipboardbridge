@@ -512,7 +512,7 @@ func TestStoreOf(t *testing.T) {
 	for _, c := range []struct{ store, role, want string }{
 		{StoreFile, RolePhone, StoreFile},
 		{StoreHardware, RoleFull, StoreHardware},
-		{"proven", RoleFull, StoreHardware},
+		{StoreProven, RoleFull, StoreProven},
 		{"", RolePhone, StoreHardware},
 		{"", RoleFull, StoreFile},
 		{"", RoleLite, StoreFile},

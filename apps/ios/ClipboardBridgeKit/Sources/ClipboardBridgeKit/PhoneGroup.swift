@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import Crypto
 import Foundation
 
 /// A phone group (docs/protocol.md, sections 9 and 10) as this phone holds
@@ -174,10 +175,11 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
 
     /// Signs and adds a device record.
     mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
-                         store: String? = nil, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+                         store: String? = nil, kind: String? = nil, proof: String? = nil, caSigner: CertificateSigner,
+                         now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, store: store, group: tag, by: self.device,
-                                   now: now, signer: caSigner, adminCA: adminCA)
+        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, store: store, kind: kind, proof: proof,
+                                   group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
         records.add(r, groupCA: groupCA)
         return r
     }
@@ -297,7 +299,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
         return try record(device: device, name: name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
-                          store: d.store, caSigner: caSigner, now: now)
+                          store: d.store, kind: d.kind, proof: d.proof, caSigner: caSigner, now: now)
     }
 
     /// Unfreezes an admin computer that another admin froze (section 10,
@@ -325,13 +327,41 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
         guard d.role == "full" else { throw Failure.notAComputer }
         guard !d.frozen else { throw Failure.frozen }
-        let store = Records.store(keyStore, role: d.role)
-        guard store == Records.hardware || allowFileKey else { throw Failure.fileKey }
+        let proven = d.store == Records.proven
+        let store = proven ? d.store : Records.store(keyStore, role: d.role)
+        guard store != Records.file || allowFileKey else { throw Failure.fileKey }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
-                           store: store, caSigner: rootSigner, now: now)
+                           store: store, kind: proven ? d.kind : nil, proof: proven ? d.proof : nil, caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
         return (ca, r)
+    }
+
+    /// Checks the attestation a device sent of its member key (section 17,
+    /// "Evidence") and, on the root, returns a new device record with what
+    /// it shows when that differs from the device's record; nil when there
+    /// is nothing to record. chain is the certificate chain the device
+    /// presented, leaf first. Throws AndroidAttestation.Invalid for a proof
+    /// of nothing.
+    public mutating func evidence(device: String, chain: [Data], _ e: Member.Evidence, rootSigner: CertificateSigner, now: Date,
+                                  roots: [Data]? = nil) throws -> Member.Record? {
+        guard isRoot, let leaf = chain.first, e.format == Member.Evidence.android, e.key == Member.Evidence.member else { return nil }
+        let key = try Records.keyHash(cert: leaf)
+        guard let d = devices.first(where: { $0.id == device && $0.key == key }) else { return nil }
+        if let t = e.groupTag, t != tag { throw AndroidAttestation.Invalid(reason: "an attestation made for another group") }
+        let challenge: Data
+        do {
+            challenge = try Attestation.challenge(groupTag: e.groupTag ?? "", memberKey: Data(), salt: e.salt)
+        } catch {
+            throw AndroidAttestation.Invalid(reason: "\(error)")
+        }
+        let r = try AndroidAttestation.check(chain: e.chain, spki: try CertificateInfo(der: leaf).publicKey, challenge: challenge,
+                                             policy: AndroidAttestation.Policy(roots: roots))
+        if d.store == r.store, (d.kind ?? "") == r.kind { return nil }
+        guard let first = e.chain.first else { return nil }
+        let proof = SHA256.hash(data: first).map { String(format: "%02x", $0) }.joined()
+        return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey, store: r.store,
+                          kind: r.kind.isEmpty ? nil : r.kind, proof: proof, caSigner: rootSigner, now: now)
     }
 
     /// The admin CA this phone issued for an admin key a computer offers,

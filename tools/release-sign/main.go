@@ -5,7 +5,7 @@
 // (docs/protocol.md, section 16), on the maintainer's Mac:
 //
 //	release-sign manifest -version 0.6.0 -channel stable [-min-from 0.5.0] [-docker IMAGE@sha256:...] DIR >release.body
-//	release-sign keys -seq 2 [-days 90] NAME=release-key.pem... >keys.body
+//	release-sign keys -seq 2 [-days 90] [-status NAME=status-key.pem] NAME=release-key.pem... >keys.body
 //	release-sign channel -seq 7 [-days 30] release.json >stable.body
 //	release-sign sign -key SIGNER BODY >FILE.json
 //	release-sign public -key SIGNER >key.pem
@@ -214,15 +214,21 @@ func checkBody(body []byte) error {
 	return err
 }
 
-// keys writes the body of keys.json, certifying the release keys.
+// keys writes the body of keys.json, certifying the release keys and,
+// with -status, the keys that sign attest-status.json.
 func keys(args []string) error {
 	fs := flag.NewFlagSet("keys", flag.ExitOnError)
 	seq := fs.Uint64("seq", 0, "the sequence number, above the last keys.json's")
 	days := fs.Int("days", 90, "days until it expires")
+	var status []string
+	fs.Func("status", "NAME=KEY.pem of a key that signs attest-status.json (repeatable)", func(v string) error {
+		status = append(status, v)
+		return nil
+	})
 	fs.Parse(args)
 	k := release.Keys{V: 1, Type: release.TypeKeys, Seq: *seq, TimeMS: now().UnixMilli()}
 	k.ExpiresMS = k.TimeMS + int64(*days)*24*time.Hour.Milliseconds()
-	for _, arg := range fs.Args() {
+	add := func(arg, use string) error {
 		name, path, ok := strings.Cut(arg, "=")
 		if !ok {
 			return fmt.Errorf("%q is not NAME=KEY.pem", arg)
@@ -231,7 +237,18 @@ func keys(args []string) error {
 		if err != nil {
 			return err
 		}
-		k.Keys = append(k.Keys, release.Key{Key: spki, Name: name})
+		k.Keys = append(k.Keys, release.Key{Key: spki, Name: name, Use: use})
+		return nil
+	}
+	for _, arg := range fs.Args() {
+		if err := add(arg, ""); err != nil {
+			return err
+		}
+	}
+	for _, arg := range status {
+		if err := add(arg, release.UseStatus); err != nil {
+			return err
+		}
 	}
 	return writeJSON(k)
 }

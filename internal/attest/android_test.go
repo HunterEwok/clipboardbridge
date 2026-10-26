@@ -184,7 +184,7 @@ func TestCheckAndroidInvalid(t *testing.T) {
 		},
 		"garbage": func() error { _, err := CheckAndroid([][]byte{{1}, {2}}, spki(t, k.key), ch, p); return err },
 	} {
-		if err := f(); !errors.Is(err, ErrInvalid) {
+		if err := f(); !errors.Is(err, ErrInvalid) || errors.Is(err, ErrRevoked) != (name == "revoked") {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

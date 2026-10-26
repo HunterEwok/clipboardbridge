@@ -88,6 +88,10 @@ type Policy struct {
 // revoked certificate.
 var ErrInvalid = errors.New("invalid attestation")
 
+// ErrRevoked is wrapped, beside ErrInvalid, by the error of a chain with a
+// certificate the policy revokes.
+var ErrRevoked = errors.New("a certificate is revoked")
+
 func invalid(format string, a ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, a...))
 }
@@ -139,7 +143,7 @@ func CheckAndroid(chain [][]byte, spki, challenge []byte, p Policy) (Result, err
 			}
 		}
 		if p.Revoked[res.Serials[i]] {
-			return Result{}, invalid("certificate %d (%s) is revoked", i, res.Serials[i])
+			return Result{}, fmt.Errorf("%w: certificate %d (%s): %w", ErrInvalid, i, res.Serials[i], ErrRevoked)
 		}
 		for _, e := range c.Extensions {
 			if e.Id.Equal(oidProvisioning) {

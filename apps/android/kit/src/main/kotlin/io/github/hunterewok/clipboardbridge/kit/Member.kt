@@ -391,6 +391,47 @@ object Member {
         }
     }
 
+    /**
+     * An attestation of one of a device's keys (section 17, "Evidence"):
+     * format ANDROID with the Keystore's chain, leaf first, for the key
+     * MEMBER, made with the challenge of groupTag (null outside a group)
+     * and salt.
+     */
+    class Evidence(
+        val format: String,
+        val key: String,
+        val groupTag: String?,
+        val salt: ByteArray,
+        val chain: List<ByteArray>,
+    ) {
+        fun toJson(): JsonObject = Wire.obj(
+            "format" to Wire.str(format),
+            "key" to Wire.str(key),
+            "group_tag" to Wire.str(groupTag),
+            "salt" to Wire.bytes(salt),
+            "chain" to Wire.list(chain),
+        )
+
+        override fun equals(other: Any?): Boolean =
+            other is Evidence && format == other.format && key == other.key && groupTag == other.groupTag && salt.contentEquals(other.salt) &&
+                chain.size == other.chain.size && chain.zip(other.chain).all { (a, b) -> a.contentEquals(b) }
+
+        override fun hashCode(): Int = salt.contentHashCode()
+
+        companion object {
+            const val ANDROID = "android-key"
+            const val MEMBER = "member"
+
+            fun fromJson(o: JsonObject): Evidence = Evidence(
+                o.optString("format") ?: "",
+                o.optString("key") ?: "",
+                o.optString("group_tag")?.takeIf { it.isNotEmpty() },
+                o.optBytes("salt") ?: ByteArray(0),
+                o.optBytesList("chain") ?: emptyList(),
+            )
+        }
+    }
+
     /** One message of the protocol. */
     sealed class Message {
         data class Hello(val role: Role, val hello: Member.Hello) : Message()
@@ -435,6 +476,9 @@ object Member {
         /** The answer to a command. */
         data class Result(val result: CommandResult) : Message()
 
+        /** An attestation of one of the sender's keys (section 17, "Evidence"). */
+        data class Evidence(val evidence: Member.Evidence) : Message()
+
         /** A type from a newer version, ignored. */
         data class Unknown(val type: String) : Message()
     }
@@ -470,6 +514,7 @@ object Member {
         is Message.Hubs -> Wire.obj("t" to Wire.str("hubs"), "hubs" to m.share.toJson())
         is Message.Command -> Wire.obj("t" to Wire.str("command"), "command" to m.command.toJson())
         is Message.Result -> Wire.obj("t" to Wire.str("result"), "result" to m.result.toJson())
+        is Message.Evidence -> Wire.obj("t" to Wire.str("evidence"), "evidence" to m.evidence.toJson())
         is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
     }
 
@@ -534,6 +579,7 @@ object Member {
                 "hubs" -> o.optObject("hubs")?.let { Message.Hubs(HubShare.fromJson(it)) } ?: Message.Unknown(t)
                 "command" -> o.optObject("command")?.let { Message.Command(Record.fromJson(it)) } ?: Message.Unknown(t)
                 "result" -> o.optObject("result")?.let { Message.Result(CommandResult.fromJson(it)) } ?: Message.Unknown(t)
+                "evidence" -> o.optObject("evidence")?.let { Message.Evidence(Evidence.fromJson(it)) } ?: Message.Unknown(t)
                 else -> Message.Unknown(t)
             }
         } catch (e: WireTypeException) {

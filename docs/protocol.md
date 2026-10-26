@@ -287,7 +287,7 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15) |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -297,6 +297,7 @@ Message object:
 | `admin_ca` | string | admin | from the group's root, a phone or a computer: the receiver's admin CA, for the admin key its hello offered, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string | phone_ca | from the root or an admin of a group a computer created: the group's iPhone CA, DER in base64 (section 10, "Admins") |
 | `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
+| `evidence` | object | evidence | an attestation of one of the sender's keys (section 17, "Evidence") |
 
 ```json
 {"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -1890,6 +1891,9 @@ them alike, against `testdata/interop/go-release.json`.
   both (their SubjectPublicKeyInfos); either one signs `keys.json`.
 - **Release keys**, P-256, which `keys.json` certifies. A release key signs `release.json`
   and the channel files.
+- A **status key**, P-256, which `keys.json` certifies with `use` `status`. It lives on the
+  mirror of Google's revocation list and signs only `attest-status.json` (section 17,
+  "Revoked attestations"), never a release.
 
 ### The envelope
 
@@ -1901,9 +1905,14 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 
 | `type` | Signed by | Fields |
 |--------|-----------|--------|
-| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes)`}` |
+| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes), `use` (`release` when absent, or `status`)`}` |
 | `release` (`release.json`) | a release key | `version`, `channel`, `time_ms`, `min_from` (a version, optional), `files`: 1 to 256 of `{name, size, sha256, binaries?}`, `docker` (optional `{image, digest}`) |
 | `channel` (`stable.json`, ...) | a release key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
+| `attest-status` (`attest-status.json`) | a status key | `seq` (from 1), `time_ms`, `expires_ms`, `source_ms` (when Google last changed its list, optional), `android_revoked`: the serial numbers |
+
+- A key of a `use` the reader does not know is in `keys.json` for newer programs and signs
+  nothing for it; a release key signs no `attest-status.json` and a status key no release
+  or channel file.
 
 - A version is `X.Y.Z` or, for a release candidate, `X.Y.Z-rc.N`: decimal numbers of at
   most 6 digits without leading zeros (`N` from 1), compared number by number, a release
@@ -1916,7 +1925,11 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 - `docker.digest` is `sha256:` and 64 hex digits.
 - A `keys` or `channel` file lives at most 100 days (`expires_ms` after `time_ms`, by at
   most 8 640 000 000 ms). `keys.json` is signed again every 90 days, and a channel file
-  before it expires.
+  before it expires. `attest-status.json` lives at most 8 days (691 200 000 ms) and is
+  signed again at least a day before it expires.
+- A serial number is lowercase hex without leading zeros (`0` for zero), at most 64
+  digits, as Google's list names them. `android_revoked` lists each once, shorter numbers
+  first and numbers of one length in string order, which is numeric order.
 
 ### The check
 
@@ -1949,10 +1962,12 @@ far.
 - A **hello** says where the sender's keys live in `key_store` (section 4): the phones send
   `hardware`, the computers and the lite member `file`. A device that cannot tell sends
   `file`.
-- A **device record** says it in `store`: `file`, `hardware`, or `proven` once a proof of
-  hardware (an attestation) is checked; until then a reader counts `proven` as `hardware`.
-  The signer writes what the device's hello said when it made the record, and a record
-  that renames a device keeps its `store`. A record without `store`, made before 0.6, or
+- A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
+  root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
+  of hardware (`android-tee`, `android-strongbox`), and `proof`, the hex SHA-256 of the
+  attestation's leaf certificate. The signer writes what the device's hello said when it
+  made the record, and a record that renames a device, or that makes it an admin, keeps its
+  `store`, `kind` and `proof`. A record without `store`, made before 0.6, or
   with a value the reader does not know, counts as `hardware` for a `phone` and as `file`
   for every other role, which is where those versions kept the keys. `cbb status` and the
   apps' device pages show it.
@@ -1974,3 +1989,56 @@ far.
   presents the key proves holding it in member TLS, so the proof needs no live nonce: it is
   made with the key, offline, and shown later with its salt and group tag. A Keystore that
   cannot attest at that moment still makes the key, which then has no proof.
+
+### Evidence
+
+A device whose keys an attestation proves sends an `evidence` message to each peer after the
+hellos, once per connection:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `format` | string | `android-key`: Android's Key Attestation |
+| `key` | string | `member`: the attested key is the member key of the sender's TLS certificate |
+| `group_tag` | string or absent | the group tag the key was made with; absent for a key made outside a group |
+| `salt` | string | the 16 bytes of the challenge, base64 |
+| `chain` | array of strings | the Keystore's certificate chain, leaf first, DER in base64 |
+
+Only the group's root acts on it; every other member ignores it, as it ignores a `format` or
+`key` it does not know. The root checks that `group_tag` is absent or the group's own, that
+the chain leads to one of Google's attestation roots without a revoked certificate, that the
+leaf certifies the key of the sender's TLS certificate and carries the challenge made with
+`group_tag`, an empty member key and `salt`, and reads the leaf's key description:
+
+- a key in software: `file`;
+- a key in the TEE or StrongBox of a phone with a locked bootloader and a verified boot:
+  `proven`, of kind `android-tee` or `android-strongbox` (StrongBox only when both levels of
+  the description say it);
+- a key in hardware otherwise (an unlocked bootloader, a system signed with its own key as
+  GrapheneOS, a boot not verified, no root of trust): `hardware`.
+
+When that differs from the `store` or `kind` of the device's record, the root signs a new
+device record that keeps the rest and says what the attestation shows. A chain that proves
+nothing is logged and changes nothing.
+
+### Revoked attestations
+
+Google revokes the attestation keys of phones whose keys leaked (and suspends some for a
+while) in a list at `https://android.googleapis.com/attestation/status`, which is not
+signed. Devices never fetch it: a mirror on `cbb.tools` fetches it once a day, keeps the
+serial numbers that are revoked or suspended, and publishes them at
+`https://cbb.tools/attest/` as `attest-status.json` beside `keys.json`, signed with the
+status key (section 16; `tools/attest-status`). The mirror refuses a list that drops a
+serial number the last one revoked until its maintainer looks.
+
+- The group's root fetches both files when the group starts and once a day, and takes the
+  list when it passes the checks of section 16 and its `seq` is not below the last it took
+  (kept in the state directory). The request is the same for every device and names none.
+- The root checks every chain against the list it holds. A chain with a revoked
+  certificate proves nothing: the root keeps the last evidence of each peer and, when it
+  takes a new list, checks it again; a device recorded as `proven` whose chain is now
+  revoked gets a new record with `store` `hardware` (its hello's word), its `kind`, and no
+  `proof`, and the log says which certificate was revoked.
+- A root without a current list (the mirror unreachable for a week, or no root keys pinned
+  yet) checks chains without it. The strict key level (roadmap, item 31) will prove nothing
+  without one.
+

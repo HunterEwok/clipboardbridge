@@ -92,11 +92,28 @@ type vector struct {
 	Version string `json:"version,omitempty"`
 }
 
+type statusVector struct {
+	Name    string   `json:"name"`
+	Keys    File     `json:"keys"`
+	Status  File     `json:"status"`
+	Seen    Seen     `json:"seen"`
+	OK      bool     `json:"ok"`
+	Revoked []string `json:"revoked,omitempty"`
+}
+
 type vectors struct {
-	Roots   [][]byte `json:"roots"`
-	NowMS   int64    `json:"now_ms"`
-	Name    string   `json:"channel"`
-	Vectors []vector `json:"vectors"`
+	Roots   [][]byte       `json:"roots"`
+	NowMS   int64          `json:"now_ms"`
+	Name    string         `json:"channel"`
+	Vectors []vector       `json:"vectors"`
+	Status  []statusVector `json:"status"`
+}
+
+func statusBody(seq uint64, at int64, life time.Duration, revoked ...string) Status {
+	if revoked == nil {
+		revoked = []string{}
+	}
+	return Status{V: 1, Type: TypeStatus, Seq: seq, TimeMS: at, ExpiresMS: at + life.Milliseconds(), SourceMS: at - 3600_000, AndroidRevoked: revoked}
 }
 
 // makeVectors builds the cases every verifier must agree on.
@@ -116,6 +133,12 @@ func makeVectors(t *testing.T) vectors {
 	beta := sign(t, releaseBody("0.6.0", "beta"), rk1)
 	expiredKeys := sign(t, keysBody(3, nowMS-91*day.Milliseconds(), 90*day, rk1), root1)
 	longKeys := sign(t, keysBody(3, nowMS-1000, 101*day, rk1), root1)
+	sk := newSigner(t)
+	withStatus := keysBody(5, nowMS-1000, 90*day, rk1)
+	withStatus.Keys = append(withStatus.Keys, Key{Key: sk.spki, Name: "status key", Use: UseStatus})
+	keysStatus := sign(t, withStatus, root1)
+	unknownUse := keysBody(5, nowMS-1000, 90*day)
+	unknownUse.Keys = []Key{{Key: rk1.spki, Name: "a key of a later use", Use: "later"}}
 	v := vectors{Roots: [][]byte{root1.spki, root2.spki}, NowMS: nowMS, Name: "stable"}
 	add := func(name string, k, c, r File, seen Seen, version string) {
 		v.Vectors = append(v.Vectors, vector{Name: name, Keys: k, Channel: c, Release: r, Seen: seen, OK: version != "", Version: version})
@@ -144,6 +167,34 @@ func makeVectors(t *testing.T) vectors {
 	add("the channel names another version", keys, sign(t, channelBody("stable", 7, nowMS-1000, 30*day, rel, "0.6.1"), rk1), rel, first, "")
 	add("the file of another channel", keys, sign(t, channelBody("beta", 7, nowMS-1000, 30*day, beta, "0.6.0"), rk1), beta, first, "")
 	add("a release of another channel", keys, sign(t, channelBody("stable", 7, nowMS-1000, 30*day, beta, "0.6.0"), rk1), beta, first, "")
+	add("valid beside a status key", keysStatus, ch, rel, first, "0.6.0")
+	add("the channel signed by the status key", keysStatus, sign(t, channelBody("stable", 7, nowMS-1000, 30*day, rel, "0.6.0"), sk), rel, first, "")
+	add("release.json signed by the status key", keysStatus, ch, sign(t, releaseBody("0.6.0", "stable"), sk), first, "")
+	add("signed by a key of a use the reader does not know", sign(t, unknownUse, root1), ch, rel, first, "")
+
+	revoked := []string{"0", "1f", "9a", "c35a2e1e3b46b5a1", "15b3d8b2f3a0e3e3cc1d2a4e1f0b7c9d"}
+	addStatus := func(name string, k, st File, seen Seen, ok bool) {
+		c := statusVector{Name: name, Keys: k, Status: st, Seen: seen, OK: ok}
+		if ok {
+			c.Revoked = revoked
+		}
+		v.Status = append(v.Status, c)
+	}
+	good := sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), sk)
+	addStatus("valid", keysStatus, good, first, true)
+	addStatus("the same again", keysStatus, good, Seen{KeysSeq: 5, StatusSeq: 40}, true)
+	addStatus("an older list", keysStatus, good, Seen{StatusSeq: 41}, false)
+	addStatus("an older keys.json", keysStatus, good, Seen{KeysSeq: 6}, false)
+	addStatus("signed by a release key", keysStatus, sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), rk1), first, false)
+	addStatus("signed by a root", keysStatus, sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), root1), first, false)
+	addStatus("keys.json without a status key", keys, good, first, false)
+	addStatus("expired", keysStatus, sign(t, statusBody(40, nowMS-9*day.Milliseconds(), 8*day, revoked...), sk), first, false)
+	addStatus("lives too long", keysStatus, sign(t, statusBody(40, nowMS-1000, 9*day, revoked...), sk), first, false)
+	addStatus("serials out of order", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "9a", "1f"), sk), first, false)
+	addStatus("a serial twice", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "1f", "1f"), sk), first, false)
+	addStatus("a serial with a leading zero", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "01f"), sk), first, false)
+	addStatus("a serial in capitals", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "1F"), sk), first, false)
+	addStatus("a channel file where the list belongs", keysStatus, sign(t, channelBody("stable", 40, nowMS-1000, day, rel, "0.6.0"), sk), first, false)
 	return v
 }
 
@@ -170,8 +221,24 @@ func TestReleaseVectors(t *testing.T) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Vectors) != 23 {
-		t.Fatalf("the file has %d vectors", len(v.Vectors))
+	if len(v.Vectors) != 27 || len(v.Status) != 14 {
+		t.Fatalf("the file has %d vectors and %d of the list", len(v.Vectors), len(v.Status))
+	}
+	for _, c := range v.Status {
+		st, seen, err := CheckStatus(c.Keys, c.Status, v.Roots, time.UnixMilli(v.NowMS), c.Seen)
+		if (err == nil) != c.OK {
+			t.Errorf("%s: CheckStatus = %v, the file says ok %v", c.Name, err, c.OK)
+			continue
+		}
+		if err != nil {
+			if seen != c.Seen {
+				t.Errorf("%s: a refused check changed seen", c.Name)
+			}
+			continue
+		}
+		if strings.Join(st.AndroidRevoked, ",") != strings.Join(c.Revoked, ",") || seen.StatusSeq != st.Seq || seen.KeysSeq != 5 {
+			t.Errorf("%s: %v, seen %+v", c.Name, st.AndroidRevoked, seen)
+		}
 	}
 	for _, c := range v.Vectors {
 		r, seen, err := Check(c.Keys, c.Channel, c.Release, v.Roots, v.Name, time.UnixMilli(v.NowMS), c.Seen)
