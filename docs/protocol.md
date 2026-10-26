@@ -2030,7 +2030,8 @@ serial numbers that are revoked or suspended, and publishes them at
 status key (section 16; `tools/attest-status`). The mirror refuses a list that drops a
 serial number the last one revoked until its maintainer looks.
 
-- The group's root fetches both files when the group starts and once a day, and takes the
+- The group's root fetches both files when the group starts and once a day (a root phone
+  when evidence comes, at most once a day), and takes the
   list when it passes the checks of section 16 and its `seq` is not below the last it took
   (kept in the state directory). The request is the same for every device and names none.
 - The root checks every chain against the list it holds. A chain with a revoked
