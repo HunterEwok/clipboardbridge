@@ -152,6 +152,36 @@ Rules for workflows:
   attests it in the registry and adds its digest to the release notes. The first push makes
   the package private: once, in the package's settings on GitHub, make it public.
 
+## Signed releases
+
+The release files of docs/protocol.md, section 16, are made with `tools/release-sign` on
+the maintainer's Mac; the keys never reach CI. The roots are not made yet, so releases are
+not signed and the installers check nothing; the steps below are the plan.
+
+- **The root keys**, once: one on each of two YubiKeys, kept offline and apart, with a PIN
+  and touch for every signature (`yubico-piv-tool -a generate -s 9c -A ECCP256 --pin-policy=always
+  --touch-policy=always`, then a self-signed certificate in the slot so the key can be read).
+  Their public keys go into `packaging/get.sh` (`release_roots`), `packaging/windows/get.ps1`
+  (`$releaseRoots`) and the programs.
+- **The release key**, in the Mac's Secure Enclave, asking for Touch ID at each signature:
+  `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
+  certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
+  `release-sign keys -seq N release=release.pem >keys.body` and
+  `release-sign sign -key piv:9c keys.body >keys.json`.
+- **Each release**: download the draft's files, check their attestations against the tag's
+  commit (`gh attestation verify FILE --repo HunterEwok/clipboardbridge`), then
+  `release-sign manifest -version X.Y.Z -min-from ... DIR >release.body`,
+  `release-sign sign -key se:$HOME/.config/cbb-release/release.se release.body >release.json`,
+  `release-sign channel -seq N release.json >stable.body`, sign it the same way into
+  `stable.json`, run `release-sign verify -roots root-1.pem,root-2.pem DIR`, upload
+  `keys.json`, `release.json` and `stable.json` to the release and publish it.
+- `stable.json` expires after 30 days: sign it again before then, with a higher `-seq`, even
+  without a new release.
+- A lost or stolen Mac: a root signs a `keys.json` with a new release key and without the
+  old one. A lost YubiKey: the other root signs, and the next release ships a new second root.
+- `release-sign drill -version X.Y.Z DIR ROOTS.pem` signs DIR with throwaway keys in files,
+  as CI does to test the installers, and for drills of the steps above.
+
 ## Homebrew
 
 The tap is the repository

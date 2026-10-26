@@ -15,6 +15,8 @@
 # picks a release instead of the latest, CBB_ATTESTATION=require refuses to
 # install unless GitHub's build provenance attestation of the archive checks
 # out (it needs gh, signed in), CBB_ATTESTATION=skip does not check it,
+# CBB_VERIFY=skip installs a release whose signed release files
+# (docs/protocol.md, section 16) do not check out,
 # CBB_ERROR_DETAILS=1 shows the full
 # error of a failure, and
 # CBB_RELEASE_DIR, for tests, takes the files from a directory instead of
@@ -32,6 +34,125 @@
 	$repo = 'https://github.com/HunterEwok/clipboardbridge'
 	$step = 'starting'
 	$details = $env:CBB_ERROR_DETAILS -eq '1'
+
+	# The project's release root keys (docs/protocol.md, section 16), base64
+	# SubjectPublicKeyInfos, which sign keys.json. None yet: until they are
+	# made, releases carry no signed files and nothing is checked.
+	$releaseRoots = @()
+
+	# Get-ReleaseFile downloads a release file, or copies it from CBB_RELEASE_DIR.
+	function Get-ReleaseFile($url, $path) {
+		if ($env:CBB_RELEASE_DIR) {
+			Copy-Item (Join-Path $env:CBB_RELEASE_DIR (Split-Path $url -Leaf)) $path
+		} else {
+			[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+			Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $path
+		}
+	}
+
+	# A P-256 key from its SubjectPublicKeyInfo, for .NET Framework too.
+	function Get-P256Key([byte[]]$spki) {
+		$prefix = [Convert]::FromBase64String('MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE')
+		if ($spki.Length -ne 91 -or -not (Test-ByteEqual $spki[0..26] $prefix)) {
+			throw 'a key is not P-256'
+		}
+		$p = New-Object Security.Cryptography.ECParameters
+		$p.Curve = [Security.Cryptography.ECCurve]::CreateFromFriendlyName('nistP256')
+		$q = New-Object Security.Cryptography.ECPoint
+		$q.X = [byte[]]$spki[27..58]
+		$q.Y = [byte[]]$spki[59..90]
+		$p.Q = $q
+		[Security.Cryptography.ECDsa]::Create($p)
+	}
+
+	function Test-ByteEqual([byte[]]$a, [byte[]]$b) {
+		if ($a.Length -ne $b.Length) { return $false }
+		for ($i = 0; $i -lt $a.Length; $i++) {
+			if ($a[$i] -ne $b[$i]) { return $false }
+		}
+		$true
+	}
+
+	# A DER ECDSA signature as the 64 bytes r || s that .NET takes.
+	function ConvertFrom-DerSignature([byte[]]$der) {
+		$out = New-Object byte[] 64
+		if ($der.Length -lt 8 -or $der[0] -ne 0x30 -or $der[1] -ne $der.Length - 2) { return $null }
+		$i = 2
+		foreach ($half in 0, 1) {
+			if ($der[$i] -ne 0x02) { return $null }
+			$n = $der[$i + 1]
+			$v = [byte[]]$der[($i + 2)..($i + 1 + $n)]
+			$i += 2 + $n
+			while ($v.Length -gt 32 -and $v[0] -eq 0) { $v = [byte[]]$v[1..($v.Length - 1)] }
+			if ($v.Length -gt 32) { return $null }
+			[Array]::Copy($v, 0, $out, $half * 32 + 32 - $v.Length, $v.Length)
+		}
+		if ($i -ne $der.Length) { return $null }
+		$out
+	}
+
+	# Open-ReleaseFile checks the envelope at path with any of the keys and
+	# returns its body, decoded, or throws.
+	function Open-ReleaseFile($path, $type, $keys) {
+		$f = Get-Content -Raw $path | ConvertFrom-Json
+		$body = [Convert]::FromBase64String($f.body)
+		$sig = ConvertFrom-DerSignature ([Convert]::FromBase64String($f.sig))
+		foreach ($k in $keys) {
+			if ($sig -and (Get-P256Key $k).VerifyData($body, $sig, [Security.Cryptography.HashAlgorithmName]::SHA256)) {
+				$b = [Text.Encoding]::UTF8.GetString($body) | ConvertFrom-Json
+				if ($b.type -ne $type -or $b.v -ne 1) { break }
+				return @{ Bytes = $body; Value = $b }
+			}
+		}
+		throw "$(Split-Path $path -Leaf) is not signed by the project's key; not installing"
+	}
+
+	# Test-Release checks keys.json against the root keys, release.json and,
+	# for the latest release, stable.json against its release keys, and the
+	# archive against release.json. CBB_VERIFY=skip skips it.
+	function Test-Release($base, $version, $archive, $got, $tmp) {
+		$roots = $releaseRoots
+		if ($env:CBB_RELEASE_DIR -and $env:CBB_RELEASE_ROOTS) {
+			$roots = @(((Get-Content -Raw $env:CBB_RELEASE_ROOTS) -split '-----END PUBLIC KEY-----') |
+				ForEach-Object { ($_ -replace '-----BEGIN PUBLIC KEY-----', '' -replace '\s', '') } | Where-Object { $_ })
+		}
+		if ($env:CBB_VERIFY -eq 'skip') {
+			Write-Host "Not checked: the release's signature (CBB_VERIFY=skip)."
+			return
+		}
+		if ($roots.Count -eq 0) { return }
+		$latest = "$repo/releases/latest/download"
+		if ($env:CBB_RELEASE_DIR) { $latest = $base }
+		try {
+			Get-ReleaseFile "$latest/keys.json" (Join-Path $tmp 'keys.json')
+			Get-ReleaseFile "$base/release.json" (Join-Path $tmp 'release.json')
+		} catch {
+			throw "$version has no signed release files; not installing it (CBB_VERIFY=skip installs it unchecked)"
+		}
+		$nowMS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+		$keys = Open-ReleaseFile (Join-Path $tmp 'keys.json') 'keys' @($roots | ForEach-Object { , [Convert]::FromBase64String($_) })
+		if ([long]$keys.Value.expires_ms -le $nowMS) { throw 'keys.json has expired; check the clock, or try again later' }
+		$releaseKeys = @($keys.Value.keys | ForEach-Object { , [Convert]::FromBase64String($_.key) })
+		$rel = Open-ReleaseFile (Join-Path $tmp 'release.json') 'release' $releaseKeys
+		if ($version -eq 'latest') {
+			Get-ReleaseFile "$base/stable.json" (Join-Path $tmp 'stable.json')
+			$ch = Open-ReleaseFile (Join-Path $tmp 'stable.json') 'channel' $releaseKeys
+			if ($ch.Value.channel -ne 'stable') { throw "stable.json is not the stable channel's" }
+			if ([long]$ch.Value.expires_ms -le $nowMS) { throw 'stable.json has expired; check the clock, or try again later' }
+			$sum = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($rel.Bytes) | ForEach-Object { $_.ToString('x2') })
+			if ($ch.Value.release_sha256 -ne $sum -or $ch.Value.release -ne $rel.Value.version) {
+				throw 'release.json is not the release stable.json names; not installing'
+			}
+		} elseif ("v$($rel.Value.version)" -ne $version) {
+			throw "release.json is for $($rel.Value.version), not $version"
+		}
+		$entry = $rel.Value.files | Where-Object { $_.name -eq $archive } | Select-Object -First 1
+		if (-not $entry) { throw "release.json does not list $archive" }
+		if ($entry.sha256 -ne $got -or [long]$entry.size -ne (Get-Item (Join-Path $tmp $archive)).Length) {
+			throw "$archive does not match the signed release.json; not installing it"
+		}
+		Write-Host "The release's signature checks out ($($rel.Value.version))."
+	}
 
 	try {
 		$step = 'checking for administrator rights'
@@ -96,8 +217,13 @@
 			}
 
 			# SHA256SUMS comes from the same release, so it shows only that
-			# the download is whole. The attestation shows that this
-			# repository's release workflow built the archive.
+			# the download is whole. The signed release files show that the
+			# project signed this release (docs/protocol.md, section 16).
+			$step = "checking the release's signature"
+			Test-Release $base $version $archive $got $tmp
+
+			# The attestation shows that this repository's release workflow
+			# built the archive.
 			$step = "checking the build attestation of $archive"
 			$attestation = if ($env:CBB_ATTESTATION) { $env:CBB_ATTESTATION } else { 'check' }
 			$gh = Get-Command gh -ErrorAction SilentlyContinue
