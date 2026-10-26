@@ -46,7 +46,8 @@ go run ./tools/site serve -preview            # http://127.0.0.1:8780
 `go test ./tools/site` builds the site and checks every page: one `h1`, canonical links,
 `noindex` only on the error pages, valid schema.org data, the sitemap, and that every link
 within the site leads to a file the build wrote. CI's `website` job also validates the HTML
-and runs Lighthouse on a few pages; it fails below 0.9 for performance and SEO and 0.95 for
+and runs Lighthouse three times on each of a few pages (`go run ./tools/site lighthouse`);
+it fails when a page's median is below 0.9 for performance and SEO and 0.95 for
 accessibility. To run it here (`CHROME_PATH` if Chrome is not found by itself):
 
 ```sh

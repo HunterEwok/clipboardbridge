@@ -1236,17 +1236,19 @@ jobs:
           cache: false # nothing to download; leaves the shared cache key to the check job
       - name: build the website
         run: go run ./tools/site build
-      # The tools are pinned by site/package-lock.json; the runner's Node and Chrome run them.
+      # The tools are pinned by site/package-lock.json; the runner's Node and Chrome run them
+      # (Lighthouse needs Node 22.19 or later).
       - name: install the checks
         working-directory: site
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: node --version && npm ci --ignore-scripts --no-audit --no-fund
       - name: valid HTML
         working-directory: site
         run: npm run validate
       # The first Chrome on a fresh runner starts with cold disk and font
       # caches, and Lighthouse once scored the first page 0.65 for it; a
       # page loaded first warms them. Each page then runs three times and
-      # the median counts, as Lighthouse advises for its variance.
+      # the median counts, as Lighthouse advises for its variance
+      # (tools/site/lighthouse.go).
       - name: warm up Chrome
         run: google-chrome --headless=new --no-sandbox --dump-dom "file://$PWD/site/out/en/index.html" > /dev/null
       - name: Lighthouse (performance, accessibility, SEO)

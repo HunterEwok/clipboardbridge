@@ -7,6 +7,7 @@
 //	site build [-out DIR]     write the site, one directory per language
 //	site check                fail if a page or a translation is broken
 //	site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview]
+//	site lighthouse [-dir DIR] [-runs N]   measure the built site (CI)
 //
 // The pages are site/templates, written in English; each other language is
 // site/l10n/<language>.json, which maps every English text to its
@@ -50,6 +51,14 @@ func main() {
 		proxy := fs.Bool("proxy", false, "take the visitor's address from X-Real-IP, set by nginx")
 		fs.Parse(os.Args[2:])
 		err = serve(*addr, *dir, *geo, *proxy, *preview)
+	case "lighthouse":
+		fs := flag.NewFlagSet("lighthouse", flag.ExitOnError)
+		dir := fs.String("dir", "site/out", "the built site")
+		bin := fs.String("bin", "site/node_modules/.bin/lighthouse", "Lighthouse, installed by npm ci in site")
+		reports := fs.String("reports", "site/out-lighthouse", "the directory to keep the reports in")
+		runs := fs.Int("runs", 3, "the runs on each page; the median counts")
+		fs.Parse(os.Args[2:])
+		err = lighthouse(*dir, *bin, *reports, *runs)
 	default:
 		usage()
 	}
@@ -60,6 +69,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: site build [-out DIR] | site check | site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview]")
+	fmt.Fprintln(os.Stderr, "usage: site build [-out DIR] | site check | site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview] | site lighthouse [-dir DIR] [-runs N]")
 	os.Exit(2)
 }
