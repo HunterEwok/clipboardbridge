@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -79,6 +80,10 @@ type Config struct {
 	// there it makes no group and takes no admin key unless KeysInFile
 	// (KeysInFileAllowed).
 	Container, KeysInFile bool
+
+	// runner carries out the quick actions' presets; actions.System if
+	// nil.
+	runner actions.Runner
 
 	// newMode is the sync mode of a device that makes or joins a group;
 	// clip.Own if nil. Tests that sync take clip.Shared.
@@ -168,6 +173,8 @@ type Service struct {
 	prio           map[group.DeviceID]int           // their holder priority (TXT h), for those that can hold the name
 	watchers       map[*watcher]bool
 	pastes         remotepaste.Limiter // remote pastes per sender
+	actionLimit    remotepaste.Limiter // quick actions per sender, as remote pastes
+	restart        chan struct{}       // an admin had the service restart (actions.Restart)
 	lastSeq        uint64
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
@@ -260,7 +267,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.fallbackAfter == 0 {
 		cfg.fallbackAfter = fallbackDial
 	}
-	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{},
+	if cfg.runner == nil {
+		cfg.runner = actions.System()
+	}
+	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}, restart: make(chan struct{}, 1),
 		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
 	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the holder setting: %v; using auto", err)
@@ -315,9 +325,15 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	go s.watchSleep(ctx)
 
-	<-ctx.Done()
-	s.stopGroup()
-	return nil
+	select {
+	case <-ctx.Done():
+		s.stopGroup()
+		return nil
+	case <-s.restart:
+		cfg.Logf("cbb: %v", ErrRestart)
+		s.stopGroup()
+		return ErrRestart
+	}
 }
 
 // errBroken is what the user sees when the device's group file cannot be

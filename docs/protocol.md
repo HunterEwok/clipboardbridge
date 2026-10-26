@@ -1855,7 +1855,8 @@ An admin orders one member to do something with a **command**: signed like a rec
 10) and never stored. `mode` sets the receiver's sync mode (design.md, "Sync modes"); `hub`
 makes the receiver the group's hub (section 11, "Moving the hub"); `paste` puts a text where
 the receiver's focus is, and `paste-off` turns remote paste off on the receiver (design.md,
-"Remote paste").
+"Remote paste"); `action` runs one of the receiver's quick actions, and `actions-off` turns
+them all off there (roadmap.md, "Quick actions").
 
 ### The command
 
@@ -1864,7 +1865,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `v` | integer | `1` |
-| `type` | string | `mode`, `hub`, `paste` or `paste-off` |
+| `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action` or `actions-off` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
@@ -1875,6 +1876,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | `enter` | bool | in a `paste` command: press Enter after the text |
 | `kind` | string | in a `paste` command: `text` or `secret` |
 | `text` | string | in a `paste` command: the text, not empty, at most 1 MiB of UTF-8 for `paste` and 4 KiB for `type` |
+| `action` | string | in an `action` command: the action's name, 1 to 32 of `a`-`z`, `0`-`9` and `-`, starting with a letter; in no other command |
 | `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
@@ -1894,8 +1896,8 @@ two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member wi
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
 
-A sender that has no connection to the receiver sends a `mode`, `paste` or `paste-off`
-command to every member it is connected to (a `hub` command only goes directly). A member
+A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
+`action` or `actions-off` command to every member it is connected to (a `hub` command only goes directly). A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
 command expires, at most 4096), and passes the receiver's `result` back to the member it
@@ -1934,6 +1936,26 @@ in, `refused` with its reason (for example a locked session) or `failed`. It kee
 100 pastes in a log (sender, time, length, way, result, never the text), but no `secret`
 one. A `paste-off` command turns remote paste off, Enter and consoles too; only the
 device's own user turns it on again.
+
+An `action` command carries only the action's name: what it does is defined on the receiver,
+which knows the presets `lock` (lock the screen), `sleep`, `reboot` and `shutdown` (both a
+minute after the command, so that `cancel-shutdown` can stop them), `cancel-shutdown` and
+`restart` (the service ends and its service manager starts it again, after the result is
+sent). The receiver refuses it unless its user turned that action on there, and then:
+
+- unless the signer is of a kind the user allowed for it, when the user named kinds: `root`
+  (the root's own key signed it), `phone` or `computer` (the role of the signer's device, the
+  device record whose `admin` is the signer's admin CA, or the root's own device);
+- for `reboot` and `shutdown`, unless that device's record says its keys are in hardware
+  (`store` `hardware` or `proven`), or the user allowed keys in files for that action;
+- beyond one a second and 30 a minute from one signer.
+
+It answers `done` when the system took the action (a reboot that is scheduled counts),
+`refused` with the reason (the action is off, the signer is not allowed, the system refused
+it) or `failed`, and keeps the last 100 actions in a log (sender, time, action, result). An
+`actions-off` command turns every action off on the receiver, keeping who may run each; only
+the device's own user turns them on again. A member before 0.6 refuses both as an unknown
+type.
 
 
 ## 16. Signed releases
