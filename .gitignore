@@ -1,6 +1,7 @@
 # Build output
 /clipboardbridge
 /cbb
+/bench
 /bin/
 /dist/
 /site/out/

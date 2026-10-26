@@ -8,6 +8,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- BRAND.md: which builds are official and how to check them, what belongs to the project
+  (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
+  build with changes should not do; it names the other projects called Clipboard Bridge.
+- A commercial license is available without the AGPL's obligations; ask with the new
+  **Commercial license** issue form.
+- The text of docs/protocol.md is under CC BY 4.0, so anyone may write a compatible
+  implementation under any license.
+
 - Signed releases: `keys.json`, `release.json` and `stable.json` describe each release and
   are signed by release keys that two offline root keys certify (docs/protocol.md, section
   16). `tools/release-sign` makes and signs them with a key in a file, on a YubiKey or in

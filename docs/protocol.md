@@ -1,5 +1,10 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Clipboard Bridge protocol
+
+The text of this document is under the
+[Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/).
+You may implement the protocol in your own code under any license. The code of this
+repository stays under the GNU AGPL v3.0 only ([LICENSE](../LICENSE)).
 
 This document specifies protocol version 1 of Clipboard Bridge as the Go code in this repository
 implements it, so that another implementation (an iPhone or Android app, a Rust lite member)
