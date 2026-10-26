@@ -78,7 +78,13 @@ they look, so both apps are built to the same plan.
    `cbb revoke`. If the removed phone held the root, this phone
    takes it over in the same step. A connected computer's page shows its sync mode and, on an admin phone,
    offers "Sync mode": the phone signs a `mode` command (docs/protocol.md, section 15) after
-   Face ID or the fingerprint and sends it to that computer, which answers done or why it refused. A phone that is not an admin shows the list without
+   Face ID or the fingerprint and sends it to that computer, which answers done or why it refused.
+   On an admin phone, the page of a computer or a lite member also offers "Paste on it…"
+   (docs/design.md, "Remote paste"): a text, typed or taken from the clipboard (on the iPhone
+   through the system's Paste button, which asks nothing), pasted or typed key by key, with
+   Enter after it and as a secret if asked. The phone signs a `paste` command after Face ID or
+   the fingerprint, and a member connected to the computer passes it on when the phone is not.
+   The computer answers once the text is in, or why it would not. A phone that is not an admin shows the list without
    actions and says which phones are admins.
 5. **Settings**: the theme (System, Dark or Light) and one of ten colours, language, about (seven taps on the version show the switch "Show
    error details", which puts the error itself under each error message; it is on in debug

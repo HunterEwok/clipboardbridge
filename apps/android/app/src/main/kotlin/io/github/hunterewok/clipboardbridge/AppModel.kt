@@ -529,6 +529,26 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /** Puts text where a computer's focus is; true when it did, else the reason shows under the message. */
+    suspend fun paste(id: String, text: String, method: String, enter: Boolean, secret: Boolean): Boolean {
+        var done = false
+        message = try {
+            group.paste(id, text, method, enter, secret)
+            done = true
+            Note(R.string.pasted)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LiveGroup.CommandRefused) {
+            Log.e(TAG, app.getString(R.string.error_paste_refused), e)
+            Note(R.string.error_paste_refused, e.reason, error = true)
+        } catch (e: MemberNode.ProtocolException) {
+            describe(e, R.string.error_no_answer)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        return done
+    }
+
     /** Unfreezes an admin computer that another admin froze. */
     suspend fun unfreeze(id: String) {
         message = try {

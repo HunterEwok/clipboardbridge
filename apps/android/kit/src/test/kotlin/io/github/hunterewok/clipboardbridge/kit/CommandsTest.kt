@@ -48,6 +48,20 @@ class CommandsTest {
         assertNull(c.chain)
     }
 
+    /** A phone group signs a paste command with its root key, its way and kind in the body. */
+    @Test
+    fun phoneGroupPasteCommand() {
+        val rootKey = SoftwareSigner()
+        val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, now)
+        val c = g.pasteCommand(pc, "ls", "type", enter = true, secret = true, caSigner = rootKey, now = now)
+        val o = Wire.parse(c.body)!!
+        assertEquals("paste", o.optString("type"))
+        assertEquals(g.tag, o.optString("group"))
+        assertEquals("type", o.optString("mode"))
+        assertEquals("secret", o.optString("kind"))
+        assertEquals("ls", o.optString("text"))
+    }
+
     /** A hub command carries the forwarder and the clients; a result carries the new hub's offer. */
     @Test
     fun hubCommand() {

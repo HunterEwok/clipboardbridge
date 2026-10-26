@@ -94,6 +94,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   events. It refuses on the lock screen and while Secure Keyboard Entry or a password field
   holds the keyboard. Without the app, a Mac says it needs it. The app's Settings show
   whether it may press keys.
+- "Paste on it…" in the iPhone and Android apps: an admin phone puts a text where a
+  computer's focus is, pasted or typed, with Enter or as a secret if asked, after Face ID or
+  the fingerprint.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

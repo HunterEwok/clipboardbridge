@@ -3,6 +3,8 @@
 
 package io.github.hunterewok.clipboardbridge
 
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,10 +16,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,10 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -163,6 +169,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     var thawing by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var choosingMode by remember { mutableStateOf(false) }
+    var pasting by remember { mutableStateOf(false) }
     if (choosingMode) ModeChoice(d, dismiss = { choosingMode = false }) { mode -> scope.launch { model.setMode(d.id, mode) } }
     // Every phone sets its own sync mode; an admin sets any other device's.
     if (!model.isAdmin) {
@@ -188,6 +195,11 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             HorizontalDivider(color = palette.line)
             Action("⇄", stringResource(R.string.sync_mode)) { choosingMode = true }
         }
+        // Computers and lite members take pastes; phones do not.
+        if (!d.isSelf && (d.role == "full" || d.role == "lite")) {
+            HorizontalDivider(color = palette.line)
+            Action("⌨", stringResource(R.string.paste_on_it)) { pasting = true }
+        }
         if (!d.isSelf) {
             HorizontalDivider(color = palette.line)
             Action("✕", stringResource(R.string.remove), danger = true) { removing = true }
@@ -209,6 +221,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             dismiss = { promoting = false },
         ) { scope.launch { model.makeAdmin(d.id) } }
     }
+    if (pasting) PasteOn(model, d, dismiss = { pasting = false })
     if (renaming) Rename(d, dismiss = { renaming = false }) { name -> scope.launch { model.rename(d.id, name) } }
     if (thawing) {
         Confirm(
@@ -217,6 +230,69 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
             action = stringResource(R.string.unfreeze),
             dismiss = { thawing = false },
         ) { scope.launch { model.unfreeze(d.id) } }
+    }
+}
+
+/**
+ * Remote paste (docs/design.md, "Remote paste"): a text to put where a
+ * computer's focus is, pasted or typed, with Enter after it if asked. The
+ * computer takes it only when its user turned remote paste on there.
+ */
+@Composable
+private fun PasteOn(model: AppModel, d: LiveGroup.Device, dismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var text by rememberSaveable { mutableStateOf("") }
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var enter by rememberSaveable { mutableStateOf(false) }
+    var secret by rememberSaveable { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { model.message = null }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.paste_on_title, d.name)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+                Text(stringResource(R.string.paste_on_body, d.name))
+                OutlinedTextField(value = text, onValueChange = { text = it }, minLines = 3, maxLines = 10, label = { Text(stringResource(R.string.paste_text)) })
+                TextButton(onClick = { clipText(context)?.let { text = it } }) { Text(stringResource(R.string.paste_from_clipboard), color = palette.accent) }
+                Switch(stringResource(R.string.paste_type), typing) { typing = it }
+                Switch(stringResource(R.string.paste_enter), enter) { enter = it }
+                Switch(stringResource(R.string.paste_secret), secret) { secret = it }
+                Text(stringResource(R.string.paste_note), style = MaterialTheme.typography.bodySmall)
+                model.message?.takeIf { !sending }?.let { NoteText(it, dim = true) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotEmpty() && !sending, onClick = {
+                sending = true
+                scope.launch {
+                    val done = model.paste(d.id, text, if (typing) "type" else "paste", enter, secret)
+                    sending = false
+                    if (done) dismiss()
+                }
+            }) { Text(stringResource(R.string.paste), color = palette.accent) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+        containerColor = palette.surface,
+        titleContentColor = palette.text,
+        textContentColor = palette.textDim,
+    )
+}
+
+/** What the clipboard holds as text; the app may read it while it is in front. */
+private fun clipText(context: Context): String? =
+    context.getSystemService(ClipboardManager::class.java)?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+
+@Composable
+private fun Switch(title: String, on: Boolean, change: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = change),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
     }
 }
 

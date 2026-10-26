@@ -16,6 +16,7 @@ struct DeviceDetailView: View {
     @State private var thawing = false
     @State private var renaming = false
     @State private var newName = ""
+    @State private var pasting = false
 
     private var device: AppModel.Computer? { model.devices.first { $0.id == id } }
 
@@ -71,6 +72,9 @@ struct DeviceDetailView: View {
             Button(role: .cancel) {} label: { Text("Cancel") }
         } message: {
             Text("Every device of the group shows the new name.")
+        }
+        .sheet(isPresented: $pasting) {
+            if let d = device { PasteView(device: d) }
         }
         .confirmationDialog(Text("Unfreeze \(device?.name ?? "")?"), isPresented: $thawing, titleVisibility: .visible) {
             Button {
@@ -180,6 +184,11 @@ struct DeviceDetailView: View {
                 if d.isSelf || d.online {
                     Divider().overlay(palette.line)
                     modeMenu(d)
+                }
+                // Computers and lite members take pastes; phones do not.
+                if !d.isSelf, d.role == "full" || d.role == "lite" {
+                    Divider().overlay(palette.line)
+                    action(Text("Paste on it…"), "keyboard") { pasting = true }
                 }
                 if !d.isSelf {
                     Divider().overlay(palette.line)
