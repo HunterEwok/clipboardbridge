@@ -262,6 +262,21 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                                   group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
     }
 
+    /// An action command that runs the quick action name on the member
+    /// device, signed with this phone's root or admin key; the member
+    /// defines what it does.
+    public func actionCommand(to device: String, name: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        return try Commands.action(to: device, name: name, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+    }
+
+    /// An actions-off command that turns every quick action off on the
+    /// member device.
+    public func actionsOffCommand(to device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        return try Commands.actionsOff(to: device, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+    }
+
     /// A hub command that makes the admin computer to the group's hub in
     /// place of this phone (section 11, "Moving the hub"), signed with this
     /// phone's root or admin key, with the hub's clients and its forwarder.

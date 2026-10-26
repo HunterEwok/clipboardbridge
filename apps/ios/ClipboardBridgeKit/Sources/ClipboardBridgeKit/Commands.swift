@@ -7,7 +7,9 @@ import Foundation
 /// them: one sets the receiver's sync mode, another makes the receiver, an
 /// admin computer, the group's hub in place of this phone; a paste command
 /// puts a text where the receiver's focus is, and paste-off turns remote
-/// paste off on the receiver (design.md, "Remote paste").
+/// paste off on the receiver (design.md, "Remote paste"); an action command
+/// runs one of the receiver's quick actions by its name, and actions-off
+/// turns them all off there (roadmap.md, "Quick actions").
 public enum Commands {
     /// How long after signing a command expires; the receivers take at most 30 s.
     public static let lifetimeMS: Int64 = 30_000
@@ -27,6 +29,7 @@ public enum Commands {
         public var enter: Bool?
         public var kind: String?
         public var text: String?
+        public var action: String?
     }
 
     /// What a hub command tells the new hub (section 11, "Moving the
@@ -46,7 +49,41 @@ public enum Commands {
     /// The most clients a hub command hands over, as many as a hub keeps.
     public static let maxHubClients = 256
 
-    public enum Failure: Error { case unknownMode(String), badHubOrder, badPaste }
+    public enum Failure: Error { case unknownMode(String), badHubOrder, badPaste, badAction(String) }
+
+    /// The longest name of a quick action, and the most a hello lists.
+    public static let maxActionName = 32
+    public static let maxHelloActions = 64
+
+    /// The presets every computer knows, in the order the apps show them.
+    public static let presets = ["lock", "sleep", "reboot", "shutdown", "cancel-shutdown", "restart"]
+
+    /// Whether name is a quick action's name: 1 to 32 of a-z, 0-9 and -,
+    /// starting with a letter.
+    public static func validActionName(_ name: String) -> Bool {
+        let u = Array(name.utf8)
+        func ok(_ c: UInt8) -> Bool { (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x2d }
+        return (1...maxActionName).contains(u.count) && u[0] >= 0x61 && u[0] <= 0x7a && u.allSatisfy(ok)
+    }
+
+    /// An action command for the device to: run its quick action name,
+    /// which only the receiver defines. Signed as mode.
+    public static func action(to: String, name: String, group: String, by: String, now: Date, signer: CertificateSigner,
+                              adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+        guard validActionName(name) else { throw Failure.badAction(name) }
+        let ms = Records.ms(now)
+        return try sign(Body(type: "action", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, action: name),
+                        signer: signer, adminCA: adminCA)
+    }
+
+    /// An actions-off command for the device to: it turns every quick
+    /// action off there. Signed as mode.
+    public static func actionsOff(to: String, group: String, by: String, now: Date, signer: CertificateSigner,
+                                  adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+        let ms = Records.ms(now)
+        return try sign(Body(type: "actions-off", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS),
+                        signer: signer, adminCA: adminCA)
+    }
 
     /// The longest text of a paste command, in bytes of UTF-8, and of one
     /// typed key by key.
@@ -147,10 +184,14 @@ public enum Commands {
         guard b.v == Records.version else { throw refuse("unknown command version") }
         guard hex32(b.id) else { throw refuse("the command has no valid ID") }
         guard b.type == "paste" || (b.enter == nil && b.kind == nil && b.text == nil) else { throw refuse("a \(b.type) command carries a paste") }
+        guard b.type == "action" || b.action == nil else { throw refuse("a \(b.type) command names an action") }
         switch b.type {
         case "mode": guard let m = b.mode, !m.isEmpty, b.hub == nil else { throw refuse("a mode command names no mode") }
         case "hub": guard b.hub != nil, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
-        case "paste-off": guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("a paste-off command carries an order") }
+        case "paste-off", "actions-off": guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("a \(b.type) command carries an order") }
+        case "action":
+            guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("an action command carries an order") }
+            guard validActionName(b.action ?? "") else { throw refuse("an action command names no valid action") }
         case "paste":
             let limit = b.mode == "paste" ? maxPasteText : b.mode == "type" ? maxTypeText : 0
             guard limit > 0 else { throw refuse("a paste command's way is not paste or type") }

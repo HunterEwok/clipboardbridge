@@ -198,9 +198,12 @@ object Member {
         val mode: String? = null,
         /** Where the sender says its keys live: Records.FILE or Records.HARDWARE; null from a member before 0.6. */
         val keyStore: String? = null,
+        /** The sender's quick actions that are on, for the buttons (section 15); empty from a member before 0.6. */
+        val actions: List<String> = emptyList(),
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records && keyStore == other.keyStore &&
+                actions == other.actions &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
                 tunnelKey.contentEqualsOrNull(other.tunnelKey) &&
                 tunnelPSK.contentEqualsOrNull(other.tunnelPSK) && device == other.device && mode == other.mode
@@ -567,6 +570,10 @@ object Member {
                             device = DeviceInfo.fromJson(h.opt("device")),
                             mode = h.optString("mode")?.takeIf { it in MODES },
                             keyStore = h.optString("key_store")?.takeIf { it == Records.FILE || it == Records.HARDWARE },
+                            actions = (h.opt("actions") as? JsonArray).orEmpty()
+                                .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+                                .filter { Commands.validActionName(it) }
+                                .take(Commands.MAX_HELLO_ACTIONS),
                         ),
                     )
                 }

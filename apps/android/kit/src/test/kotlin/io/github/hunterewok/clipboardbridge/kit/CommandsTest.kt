@@ -206,6 +206,8 @@ class CommandsTest {
                     ).toJson(),
                     Commands.paste(pc, "echo <ok> & \"done\"\n", "type", enter = true, group = tag, by = by, now = now, signer = admin, adminCA = adminCA).toJson(),
                     Commands.pasteOff(pc, tag, by, now, root).toJson(),
+                    Commands.action(pc, "lock", tag, by, now, admin, adminCA).toJson(),
+                    Commands.actionsOff(pc, tag, by, now, root).toJson(),
                 ),
             ),
         )
@@ -229,5 +231,36 @@ class CommandsTest {
             got.getOrNull()?.let { assertEquals(c["mode"]?.jsonPrimitive?.content, it.mode, name) }
             got.getOrNull()?.takeIf { it.type == "paste" }?.let { assertTrue(it.enter && it.kind == "text" && it.text!!.endsWith("\"done\"\n"), name) }
         }
+    }
+
+    /** testdata/interop/go-actions.json, from Go's TestGoActionVectors: action commands for a member, as Go checks them. */
+    @Test
+    fun goActions() {
+        val v = Interop.read("go-actions.json").jsonObject
+        val set = RecordSet()
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        val now = v.getValue("now_ms").jsonPrimitive.long
+        val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
+        assertEquals(6, commands.size)
+        for (c in commands) {
+            val name = c.str("name")
+            val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }
+            assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
+            got.getOrNull()?.let { assertEquals(c["action"]?.jsonPrimitive?.content, it.action, name) }
+        }
+    }
+
+    @Test
+    fun actionCommands() {
+        val rootKey = SoftwareSigner()
+        val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, now)
+        val o = Wire.parse(g.actionCommand(pc, "reboot", rootKey, now).body)!!
+        assertEquals("action", o.optString("type"))
+        assertEquals("reboot", o.optString("action"))
+        assertEquals("actions-off", Wire.parse(g.actionsOffCommand(pc, rootKey, now).body)!!.optString("type"))
+        assertFailsWith<IllegalArgumentException> { g.actionCommand(pc, "Reboot now", rootKey, now) }
+        assertTrue(Commands.validActionName("cancel-shutdown"))
+        for (bad in listOf("", "-x", "1x", "X", "a".repeat(33), "a b")) assertTrue(!Commands.validActionName(bad), bad)
     }
 }

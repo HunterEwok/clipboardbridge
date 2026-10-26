@@ -124,6 +124,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   on a computer adds an action that runs PROGRAM, by its full path and with those arguments
   only, as the user signed in, through the agent; only its exit status goes back, and it
   must end within 15 s. `cbb action remove NAME` takes it away.
+- Quick actions on the phones: a member's hello names the actions that are on there
+  (`actions`), and an admin phone shows them on the page of a computer or a lite member, runs
+  one at a tap (reboot and shut down ask again) and turns them all off. The Swift and Kotlin
+  kits sign and check `action` and `actions-off` commands, with cross test vectors from Go.
 
 ### Changed
 

@@ -84,7 +84,12 @@ they look, so both apps are built to the same plan.
    through the system's Paste button, which asks nothing), pasted or typed key by key, with
    Enter after it and as a secret if asked. The phone signs a `paste` command after Face ID or
    the fingerprint, and a member connected to the computer passes it on when the phone is not.
-   The computer answers once the text is in, or why it would not. A phone that is not an admin shows the list without
+   The computer answers once the text is in, or why it would not.
+   While a computer or a lite member is online, its page also offers "Quick actions"
+   (docs/protocol.md, section 15): the actions its hello says are on, the presets by their
+   names in words and the user's own by theirs. A tap runs one, after Face ID or the
+   fingerprint; reboot and shut down ask again first. "Turn all off" signs `actions-off`,
+   after which only the device's own user turns them on again. A phone that is not an admin shows the list without
    actions and says which phones are admins.
 5. **Settings**: the theme (System, Dark or Light) and one of ten colours, language, about (seven taps on the version show the switch "Show
    error details", which puts the error itself under each error message; it is on in debug

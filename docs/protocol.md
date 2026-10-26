@@ -360,6 +360,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member before 0.5, which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 | `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
+| `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
 
 ### Device
 

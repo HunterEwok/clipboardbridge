@@ -325,3 +325,12 @@ func (r sessionRunner) run(ctx context.Context, name string, command []string) e
 	}
 	return errors.New(joinReasons(reasons))
 }
+
+// actionsOn lists the actions that are on here, for the hello.
+func (s *Service) actionsOn() []string {
+	set, err := actions.Load(s.cfg.StateDir)
+	if err != nil {
+		return nil
+	}
+	return set.On()
+}

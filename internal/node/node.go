@@ -55,6 +55,9 @@ type Config struct {
 	// KeyStore is where this device's keys live (group.StoreFile or
 	// group.StoreHardware), sent in the hello; "" sends group.StoreFile.
 	KeyStore string
+	// Actions, if set, lists this device's quick actions that are on,
+	// sent in the hello.
+	Actions func() []string
 	// Evidence, if set, is sent to every peer after its hello: the
 	// attestations of this device's keys.
 	Evidence []Evidence
@@ -189,7 +192,9 @@ type Peer struct {
 	// KeyStore is where its hello says its keys live: group.StoreFile or
 	// group.StoreHardware; "" when it says neither, as before 0.6.
 	KeyStore string
-	Since    time.Duration // uptime when the connection started
+	// Actions are the quick actions its hello says are on.
+	Actions []string
+	Since   time.Duration // uptime when the connection started
 	// Local is this end's address of the connection; invalid when it is
 	// not an IP connection.
 	Local netip.Addr
@@ -489,11 +494,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode, store := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore
+			adminKey, oldKeys, device, mode, store, acts := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, KeyStore: store, Since: c.since, Local: local.Addr().Unmap()})
+				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -923,10 +928,11 @@ type conn struct {
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
 	peerPhoneCA  []byte
-	peerOldKeys  bool   // the peer's hello says it holds a legacy group CA key
-	peerMode     string // the sync mode its hello reports; "" when none or unknown
-	peerKeyStore string // where its hello says its keys live; "" when it says neither
-	certSent     bool   // a renewed certificate was queued for the peer
+	peerOldKeys  bool     // the peer's hello says it holds a legacy group CA key
+	peerMode     string   // the sync mode its hello reports; "" when none or unknown
+	peerKeyStore string   // where its hello says its keys live; "" when it says neither
+	peerActions  []string // the quick actions its hello says are on
+	certSent     bool     // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
 	closed       bool
@@ -1074,6 +1080,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS, Mode: c.n.cfg.Engine.Mode().String(), KeyStore: c.n.cfg.KeyStore}
 		if out.KeyStore == "" {
 			out.KeyStore = group.StoreFile
+		}
+		if c.n.cfg.Actions != nil {
+			out.Actions = c.n.cfg.Actions()
 		}
 		if d := c.n.cfg.Device.Clean(); !d.IsZero() {
 			out.Device = &d
@@ -1248,6 +1257,12 @@ func (c *conn) reader() error {
 			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware {
 				c.peerKeyStore = extra.KeyStore
 			}
+			c.peerActions = nil
+			for _, a := range extra.Actions {
+				if group.ValidActionName(a) && len(c.peerActions) < maxPeerActions {
+					c.peerActions = append(c.peerActions, a)
+				}
+			}
 			c.peerMode = ""
 			if _, err := clip.ParseMode(extra.Mode); err == nil {
 				c.peerMode = extra.Mode
@@ -1362,3 +1377,7 @@ func decodeHello(raw json.RawMessage) (clip.Hello, helloBody, error) {
 	}
 	return h, b, nil
 }
+
+// maxPeerActions bounds the quick actions a peer's hello may list: the
+// presets and its user's own.
+const maxPeerActions = 64
