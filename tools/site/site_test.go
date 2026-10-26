@@ -306,3 +306,17 @@ func TestLatestRelease(t *testing.T) {
 		t.Errorf("latestRelease = %+v, %v", r, err)
 	}
 }
+
+func TestMedian(t *testing.T) {
+	for _, c := range []struct {
+		in   []float64
+		want float64
+	}{{nil, 0}, {[]float64{0.65, 1, 0.98}, 0.98}, {[]float64{0.9, 1}, 0.95}} {
+		if got := median(c.in); got != c.want {
+			t.Errorf("median(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+	if got := reportName("/ru/privacy.html"); got != "ru-privacy" {
+		t.Errorf("reportName = %q", got)
+	}
+}

@@ -41,7 +41,7 @@ pre {
   background: var(--grid); padding: 12px 14px; border-radius: 10px;
   overflow-x: auto; direction: ltr; text-align: left; white-space: pre;
 }
-pre code { background: none; padding: 0; }
+pre code { background: none; padding: 0; white-space: pre; display: block; max-width: none; overflow: visible; } /* keeps the lines of a command */
 h1, h2, h3 { line-height: 1.2; }
 h1 { font-size: clamp(32px, 6vw, 52px); margin: 0 0 16px; letter-spacing: -.01em; }
 h2 { font-size: 28px; margin: 56px 0 16px; }
@@ -59,7 +59,7 @@ nav { display: flex; gap: 18px; flex-wrap: wrap; margin-inline-start: auto; }
 nav a { color: var(--dim); text-decoration: none; font-weight: 500; padding: 10px 0; }
 nav a:hover, nav a[aria-current] { color: var(--accent); }
 
-.langs { position: relative; }
+.langs { position: relative; z-index: 5; } /* above the hero's animated text when the header is not sticky */
 .langs summary {
   cursor: pointer; list-style: none; padding: 6px 14px; border: 1px solid var(--line);
   border-radius: 22px; color: var(--text); min-height: 44px; display: flex; align-items: center;
@@ -125,7 +125,11 @@ tr:last-child th, tr:last-child td { border-bottom: none; }
 th { white-space: nowrap; }
 
 .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-.cards.four { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+/* Four cards are four in a row or two by two, and the cards of the
+   download page, which hold commands, two by two: never three and one. */
+.cards.four { grid-template-columns: repeat(4, 1fr); }
+.cards.pairs { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 960px) { .cards.four { grid-template-columns: repeat(2, 1fr); } }
 .cards.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; min-width: 0; }
 .lead, .page p, .page li, section > p { max-width: 75ch; }
@@ -171,6 +175,7 @@ th { white-space: nowrap; }
   }
   .dock .button { width: 100%; justify-content: center; }
   .hero { padding-top: 40px; }
+  .cards.four, .cards.pairs { grid-template-columns: 1fr; }
   nav { width: 100%; margin-inline-start: 0; order: 3; padding-bottom: 10px; }
   .langs { margin-inline-start: auto; }
   h2 { font-size: 24px; margin-top: 40px; }
@@ -206,8 +211,7 @@ th { white-space: nowrap; }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes shrink { from { min-height: 60px; } to { min-height: 48px; } }
 
-.soon { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding-block: 40px; }
+.soon { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding-block: 40px; }
 .soon img { border-radius: 22px; display: block; }
 .soon h1 { margin-top: 20px; }
 .soon p { margin: 6px 0; }
-.soon p[dir="rtl"] { text-align: right; }
