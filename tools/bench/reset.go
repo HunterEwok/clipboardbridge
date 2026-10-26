@@ -193,6 +193,17 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		if _, err := RunFor(ctx, d, "sudo -n "+macHelper+" purge && sudo -n "+install, "", 2*time.Minute); err != nil {
 			return noSudo(d, err)
 		}
+		// The pasteboard agent runs in the signed-in user's session; a
+		// build without the pasteboard (no cgo) exits there at once.
+		r.Do("reset/"+d.Name+"/agent", func() error {
+			return eventually(ctx, 15*time.Second, func() error {
+				out, err := Run(ctx, d, "launchctl print gui/$(id -u)/io.github.hunterewok.clipboardbridge.agent 2>&1 | grep -m1 -E '^\\s*state = '; true", "")
+				if err == nil && !strings.Contains(out, "running") {
+					err = fmt.Errorf("the pasteboard agent does not run in the session: %s", strings.TrimSpace(out))
+				}
+				return err
+			})
+		})
 		return nil
 	case "docker":
 		if quick {

@@ -59,7 +59,7 @@ setup)
 	if [ -n "${2:-}" ]; then
 		install -o root -g wheel -m 0644 "$2" "$dir/SHA256SUMS"
 		echo "The helper installs the archives of $2."
-	else
+	elif [ -z "$signer" ]; then
 		echo "Trust a build next: sudo sh $0 trust SHA256SUMS"
 	fi
 	;;
