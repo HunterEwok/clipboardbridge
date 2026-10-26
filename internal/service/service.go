@@ -84,6 +84,9 @@ type Config struct {
 	// runner carries out the quick actions' presets; actions.System if
 	// nil.
 	runner actions.Runner
+	// actInSession runs the presets through the agent, as on a Mac and
+	// on Windows, whatever the system.
+	actInSession bool
 
 	// newMode is the sync mode of a device that makes or joins a group;
 	// clip.Own if nil. Tests that sync take clip.Shared.
@@ -267,11 +270,16 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.fallbackAfter == 0 {
 		cfg.fallbackAfter = fallbackDial
 	}
-	if cfg.runner == nil {
+	if cfg.runner == nil && !cfg.actInSession {
 		cfg.runner = actions.System()
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}, restart: make(chan struct{}, 1),
 		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
+	if s.cfg.runner == nil {
+		// A Mac and Windows run the presets in the signed-in user's
+		// session, through the agent.
+		s.cfg.runner = sessionRunner{s}
+	}
 	if s.holdSetting, err = loadHolder(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the holder setting: %v; using auto", err)
 	}
@@ -394,7 +402,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunMu.Unlock()
 	tunKey, tunPSK := tunnelKey(tun)
 	nd := node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key),
+		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,

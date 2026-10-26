@@ -13,6 +13,7 @@ use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use crate::actions;
 use crate::away::Away;
 use crate::clip::{Engine, Kind, Mode, Via};
 use crate::control::{self, Device, Header, Message, Status};
@@ -44,6 +45,9 @@ const MODE_FILE: &str = "mode";
 /// seconds, so this many in that time is far more than any admin sends.
 const MAX_COMMANDS: usize = 4096;
 const WATCH_QUEUE: usize = 16;
+/// How long the service waits before it restarts at an admin's request,
+/// so that the result reaches the sender first.
+const RESTART_AFTER: Duration = Duration::from_millis(500);
 
 /// The targets a watcher offers for remote paste, as its watch request
 /// names them (docs/protocol.md, section 8). The lite member has no desktop
@@ -111,6 +115,8 @@ struct Service {
     next_watcher: AtomicU64,
     /// The limits of remote paste per sender.
     pastes: Mutex<remotepaste::Limiter>,
+    /// The limits of quick actions per sender, as remote paste's.
+    acts: Mutex<remotepaste::Limiter>,
     pending: Mutex<Option<WriteReq>>, // a write decided while no watcher was connected
     state_dir: PathBuf,
     /// The replay cache: the IDs of the commands carried out, until they
@@ -120,6 +126,9 @@ struct Service {
 }
 
 static STOP: AtomicBool = AtomicBool::new(false);
+/// An admin had the service restart: it stops with an error, after which
+/// systemd starts it again.
+static RESTART: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn on_signal(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
@@ -146,6 +155,7 @@ pub fn run(cfg: Config) -> Result<()> {
         watchers: Mutex::new(Vec::new()),
         next_watcher: AtomicU64::new(0),
         pastes: Mutex::new(remotepaste::Limiter::default()),
+        acts: Mutex::new(remotepaste::Limiter::default()),
         pending: Mutex::new(None),
         state_dir: cfg.state_dir.clone(),
         commands: Mutex::new(HashMap::new()),
@@ -211,6 +221,7 @@ pub fn run(cfg: Config) -> Result<()> {
         let svc = svc.clone();
         node.on_command(Arc::new(move |peer, c| svc.command(peer, c)));
     }
+    node.set_actions(actions::load(&cfg.state_dir)?.on());
     node.set_tunnel_key(away.key());
     {
         let away = away.clone();
@@ -241,6 +252,9 @@ pub fn run(cfg: Config) -> Result<()> {
     std::thread::sleep(Duration::from_millis(500));
     let _ = std::fs::remove_file(&cfg.socket);
     let _ = std::fs::remove_file(&admin_socket);
+    if RESTART.load(Ordering::SeqCst) {
+        return Err(Error::msg("restarting at an admin's request"));
+    }
     Ok(())
 }
 
@@ -415,9 +429,9 @@ impl Service {
 
     /// Carries out a command a member sent (docs/protocol.md, section 15):
     /// one that an admin signed for this device in its group, that has not
-    /// expired and was not carried out before. The lite member takes mode
-    /// and paste commands; it is never the group's hub, so it refuses hub
-    /// commands.
+    /// expired and was not carried out before. The lite member takes mode,
+    /// paste and action commands; it is never the group's hub, so it
+    /// refuses hub commands.
     fn command(&self, peer: &crate::certs::DeviceId, c: &crate::records::Record) -> wire::CommandResult {
         let refused = |id: &str, why: String| {
             (self.log)(&format!("cbb: refused a command from {peer}: {why}"));
@@ -447,6 +461,19 @@ impl Service {
         match body.kind.as_str() {
             "hub" => return refused(&body.id, "the lite member is never the group's hub".into()),
             "paste" => return self.pasted(&node, body),
+            "action" => return self.act(&node, c, body),
+            "actions-off" => {
+                let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
+                match self.all_actions_off(&node) {
+                    Ok(()) => (self.log)(&format!("cbb: {} turned the quick actions off here", body.by)),
+                    Err(e) => {
+                        (self.log)(&format!("cbb: turning the quick actions off: {}", e.for_log()));
+                        res.status = "failed".into();
+                        res.reason = e.message().to_string();
+                    }
+                }
+                return res;
+            }
             "paste-off" => {
                 let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
                 match remotepaste::save(&self.state_dir, remotepaste::Settings::default()) {
@@ -470,6 +497,121 @@ impl Service {
         }
         (self.log)(&format!("cbb: {} set the sync mode to {}", body.by, body.mode));
         wire::CommandResult { id: body.id, status: "done".into(), reason: String::new() }
+    }
+
+    /// Carries out an action command that verify_command took, as a full
+    /// member does (internal/service/actions.go): one of the presets that
+    /// this device's user turned on, for that kind of signer, within the
+    /// limits per sender.
+    fn act(&self, node: &Node, c: &crate::records::Record, body: crate::records::Command) -> wire::CommandResult {
+        let mut res = wire::CommandResult { id: body.id.clone(), status: "refused".into(), reason: String::new() };
+        match actions::load(&self.state_dir) {
+            Err(e) => {
+                res.status = "failed".into();
+                res.reason = format!("reading the quick actions: {}", e.for_log());
+            }
+            Ok(_) if !actions::PRESETS.contains(&body.action.as_str()) => {
+                res.reason = format!("this device has no action {:?}", body.action);
+            }
+            Ok(set) => {
+                let (dev, root) = node.records().lock().unwrap().command_signer(c);
+                let signer = actions::Signer {
+                    root,
+                    role: dev.as_ref().map(|d| d.role.clone()).unwrap_or_default(),
+                    store: dev.map(|d| d.store).unwrap_or_default(),
+                };
+                if let Some(why) = actions::check(&set.get(&body.action), &signer) {
+                    res.reason = why;
+                } else if !self.acts.lock().unwrap().allow(&body.by, uptime::wall_ms()) {
+                    res.reason = "too many actions: at most one a second and 30 a minute from one device".into();
+                } else {
+                    res = self.run_action(&body);
+                }
+            }
+        }
+        if res.status == "done" {
+            (self.log)(&format!("cbb: {} ran the action {} here", body.by, body.action));
+        } else {
+            (self.log)(&format!("cbb: the action {} from {}: {}: {}", body.action, body.by, res.status, res.reason));
+        }
+        let e = actions::Entry {
+            time_ms: uptime::wall_ms(),
+            by: body.by.clone(),
+            name: device_name(node, &body.by),
+            action: body.action.clone(),
+            result: res.status.clone(),
+            reason: res.reason.clone(),
+        };
+        if let Err(e) = actions::append(&self.state_dir, e) {
+            (self.log)(&format!("cbb: keeping the action log: {}", e.for_log()));
+        }
+        res
+    }
+
+    /// Runs a preset that passed the checks.
+    fn run_action(&self, body: &crate::records::Command) -> wire::CommandResult {
+        let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
+        if body.action == actions::RESTART {
+            std::thread::spawn(|| {
+                std::thread::sleep(RESTART_AFTER);
+                RESTART.store(true, Ordering::SeqCst);
+                STOP.store(true, Ordering::SeqCst);
+            });
+            return res;
+        }
+        match actions::run(&body.action) {
+            Ok(()) => {}
+            Err(actions::Failure::Refused(why)) => (res.status, res.reason) = ("refused".into(), why),
+            Err(actions::Failure::Failed(e)) => (res.status, res.reason) = ("failed".into(), e.for_log()),
+        }
+        res
+    }
+
+    /// Turns every quick action off here; the rights the user granted stay
+    /// until cbb action enable or disable runs here again, as root, and
+    /// with the actions off the service uses none of them.
+    fn all_actions_off(&self, node: &Node) -> Result<()> {
+        let mut set = actions::load(&self.state_dir)?;
+        set.all_off();
+        actions::save(&self.state_dir, &set)?;
+        node.set_actions(Vec::new());
+        Ok(())
+    }
+
+    /// cbb action enable and disable: only this device's own user sets its
+    /// actions, on the admin socket.
+    fn set_action(&self, h: &Header) -> Result<Message> {
+        let node = self.node()?;
+        let [a] = h.actions.as_slice() else {
+            return Err(Error::msg("set one quick action at a time"));
+        };
+        if !a.command.is_empty() {
+            return Err(Error::msg(
+                "the lite member has only the presets reboot, cancel-shutdown and restart; actions of your own need a full member",
+            ));
+        }
+        if !actions::PRESETS.contains(&a.name.as_str()) {
+            return Err(Error::msg(format!(
+                "this device has no action {:?}: the lite member has reboot, cancel-shutdown and restart",
+                a.name
+            )));
+        }
+        for k in &a.by {
+            if !actions::KINDS.contains(&k.as_str()) {
+                return Err(Error::msg(format!("{k:?} is not a kind of admin: root, phone or computer")));
+            }
+        }
+        let mut set = actions::load(&self.state_dir)?;
+        set.set(actions::Action { name: a.name.clone(), on: a.on, by: a.by.clone(), any_key: a.any_key });
+        actions::save(&self.state_dir, &set).map_err(|e| e.context("saving the quick actions"))?;
+        node.set_actions(set.on());
+        (self.log)(&format!("cbb: the action {} is {} here", a.name, if a.on { "on" } else { "off" }));
+        Ok(self.action_reply(&set))
+    }
+
+    fn action_reply(&self, set: &actions::Settings) -> Message {
+        let status = Status { actions: action_status(set), ..Default::default() };
+        control::reply(Header { status: Some(status), ..Default::default() }, Vec::new())
     }
 
     /// Carries out a paste command that verify_command took, as a full
@@ -747,6 +889,7 @@ impl Service {
                     mode: node.engine.mode().name().into(),
                     away: self.away()?.status(&node),
                     paste: self.paste_status(),
+                    actions: action_status(&actions::load(&self.state_dir).unwrap_or_default()),
                 };
                 Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
             }
@@ -788,6 +931,17 @@ impl Service {
             }
             "away" => self.global(h),
             "paste-receive" => self.set_receive(h),
+            "action-set" => self.set_action(h),
+            "actions-off" if h.device.is_empty() && !h.all => {
+                let node = self.node()?;
+                self.all_actions_off(&node)?;
+                (self.log)("cbb: the quick actions are off here");
+                Ok(self.action_reply(&actions::load(&self.state_dir)?))
+            }
+            "actions-off" | "action-on" => Err(Error::msg(
+                "only an admin runs or turns off quick actions on another device; the lite member is never one: use the phone app or a full member",
+            )),
+            "action-remove" => Err(Error::msg("the lite member has only presets, which cbb action disable turns off")),
             "paste-on" => Err(Error::msg(
                 "only an admin pastes on another device; the lite member is never one: use the phone app or a full member",
             )),
@@ -937,6 +1091,14 @@ fn injected(h: &Header) -> (String, String) {
 }
 
 /// The name of the group's device id, empty when unknown.
+/// The presets as cbb action shows them.
+fn action_status(set: &actions::Settings) -> Vec<control::Action> {
+    set.all()
+        .into_iter()
+        .map(|a| control::Action { name: a.name, on: a.on, by: a.by, any_key: a.any_key, ..Default::default() })
+        .collect()
+}
+
 fn device_name(node: &Node, id: &str) -> String {
     node.devices().into_iter().find(|d| d.id == id).map(|d| d.name).unwrap_or_default()
 }

@@ -17,6 +17,8 @@ struct DeviceDetailView: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var pasting = false
+    @State private var confirmingAction: String?
+    @State private var turningOff = false
 
     private var device: AppModel.Computer? { model.devices.first { $0.id == id } }
 
@@ -75,6 +77,22 @@ struct DeviceDetailView: View {
         }
         .sheet(isPresented: $pasting) {
             if let d = device { PasteView(device: d) }
+        }
+        .confirmationDialog(Text("\(confirmingAction.map(Self.actionName) ?? "") \(device?.name ?? "")?"),
+                            isPresented: Binding { confirmingAction != nil } set: { if !$0 { confirmingAction = nil } },
+                            titleVisibility: .visible, presenting: confirmingAction) { name in
+            Button(role: .destructive) {
+                Task { await model.runAction(id, name: name) }
+            } label: { Text(verbatim: Self.actionName(name)) }
+        } message: { _ in
+            Text("It happens a minute from now; until then, Cancel the reboot or shutdown stops it.")
+        }
+        .confirmationDialog(Text("Turn off the quick actions on \(device?.name ?? "")?"), isPresented: $turningOff, titleVisibility: .visible) {
+            Button(role: .destructive) {
+                Task { await model.actionsOff(id) }
+            } label: { Text("Turn all off") }
+        } message: {
+            Text("No admin can run them there until its user turns them on again on the device itself.")
         }
         .confirmationDialog(Text("Unfreeze \(device?.name ?? "")?"), isPresented: $thawing, titleVisibility: .visible) {
             Button {
@@ -190,6 +208,11 @@ struct DeviceDetailView: View {
                     Divider().overlay(palette.line)
                     action(Text("Paste on it…"), "keyboard") { pasting = true }
                 }
+                // Computers run quick actions; the lite member reboots and restarts.
+                if !d.isSelf, d.online, d.role == "full" || d.role == "lite" {
+                    Divider().overlay(palette.line)
+                    actionMenu(d)
+                }
                 if !d.isSelf {
                     Divider().overlay(palette.line)
                     action(Text("Remove"), "trash", destructive: true) { removing = true }
@@ -220,6 +243,57 @@ struct DeviceDetailView: View {
             .padding(.horizontal, Tokens.spacingMedium)
             .frame(minHeight: 48)
             .contentShape(Rectangle())
+        }
+    }
+
+    /// The quick actions a device's hello says are on (docs/protocol.md,
+    /// section 15): one runs at a tap, reboot and shut down ask again. The
+    /// device defines each; its user turns them on there, and any admin
+    /// turns them all off from here.
+    private func actionMenu(_ d: AppModel.Computer) -> some View {
+        Menu {
+            Section {
+                ForEach(d.actions, id: \.self) { name in
+                    Button {
+                        if name == "reboot" || name == "shutdown" {
+                            confirmingAction = name
+                        } else {
+                            Task { await model.runAction(id, name: name) }
+                        }
+                    } label: { Text(verbatim: Self.actionName(name)) }
+                }
+            } header: {
+                if d.actions.isEmpty {
+                    Text("\(d.name) has no quick action turned on. Its user turns them on there, with sudo cbb action enable.")
+                } else {
+                    Text("The computer defines what each action does, and runs it only for the admins its user allowed.")
+                }
+            }
+            Button(role: .destructive) { turningOff = true } label: { Text("Turn all off") }
+        } label: {
+            HStack(spacing: Tokens.spacingMedium) {
+                Image(systemName: "bolt").frame(width: 24).accessibilityHidden(true)
+                Text("Quick actions")
+                Spacer()
+            }
+            .foregroundStyle(palette.accent)
+            .padding(.horizontal, Tokens.spacingMedium)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+    }
+
+    /// The title of a quick action: the presets in words, the user's own by
+    /// name.
+    static func actionName(_ name: String) -> String {
+        switch name {
+        case "lock": String(localized: "Lock the screen", bundle: .app)
+        case "sleep": String(localized: "Sleep", bundle: .app)
+        case "reboot": String(localized: "Reboot", bundle: .app)
+        case "shutdown": String(localized: "Shut down", bundle: .app)
+        case "cancel-shutdown": String(localized: "Cancel the reboot or shutdown", bundle: .app)
+        case "restart": String(localized: "Restart Clipboard Bridge", bundle: .app)
+        default: name
         }
     }
 

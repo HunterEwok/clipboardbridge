@@ -69,6 +69,12 @@ pub struct Header {
     /// The underlying error of a failed inject, as Go's watchers send it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub detail: String,
+    /// In action-set, the quick action to set: on or off, and for whom.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<Action>,
+    /// In actions-off, every device of the group; only an admin does it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub all: bool,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -101,6 +107,25 @@ pub struct Status {
     /// Remote paste on this device; None when in no group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paste: Option<Paste>,
+    /// This device's quick actions, the presets in their order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<Action>,
+}
+
+/// A quick action as the device's user set it, with the names of the Go
+/// service's status.
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct Action {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub by: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub any_key: bool,
+    /// The program of a user's own action, which only a full member has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command: Vec<String>,
 }
 
 /// Remote paste on this device: the switches its user set and the targets

@@ -184,6 +184,27 @@ break needs `-enter`, since tmux and the console would run it; a locked tmux cli
 a login prompt or a console without a logged-in user refuse. The last 100 pastes, never their
 text, are in `/var/lib/clipboardbridge/pastes.json`.
 
+### Quick actions
+
+```sh
+sudo cbb action enable reboot      # admins with keys in hardware may reboot it
+sudo cbb action enable cancel-shutdown
+sudo cbb action enable restart     # and restart the service
+cbb action                         # how each stands
+sudo cbb action disable reboot
+sudo cbb action off                # all of them
+```
+
+An admin phone's "Quick actions", or `cbb action -on DEVICE NAME` on an admin computer, runs
+one of them here, as on a full Linux member. The lite member has three presets: `reboot`, a
+minute after the admin asks, which `cancel-shutdown` stops, and `restart`, which restarts the
+service. Each is off until the device's own user turns it on; `-by root,phone,computer`
+limits it to those kinds of admins, and a reboot takes only admins whose keys are in hardware
+unless `-any-key`. Turning `reboot` on writes a polkit rule that lets the service's user ask
+logind for a reboot and nothing else (`/etc/polkit-1/rules.d/60-clipboardbridge.rules`), so
+the device needs polkit (`polkitd`); `shutdown -r +1` runs it. Any admin turns the actions
+off from afar. The last 100 are in `/var/lib/clipboardbridge/actions-log.json`.
+
 ## ZX Spectrum Next
 
 On the Accelerated ZX Spectrum Next, the lite member runs on the Raspberry Pi wired to the

@@ -529,6 +529,32 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /** Runs a quick action on a computer; true when it did, else the reason shows under the message. */
+    suspend fun runAction(id: String, name: String): Boolean = command(R.string.action_done, R.string.error_action_refused) { group.runAction(id, name) }
+
+    /** Turns every quick action off on a computer. */
+    suspend fun actionsOff(id: String): Boolean = command(R.string.actions_off_done, R.string.error_action_refused) { group.actionsOff(id) }
+
+    private suspend fun command(done: Int, refused: Int, run: suspend () -> Unit): Boolean {
+        var ok = false
+        message = try {
+            run()
+            ok = true
+            Note(done)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LiveGroup.CommandRefused) {
+            Log.e(TAG, app.getString(refused), e)
+            Note(refused, e.reason, error = true)
+        } catch (e: MemberNode.ProtocolException) {
+            describe(e, R.string.error_no_answer)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+        return ok
+    }
+
     /** Puts text where a computer's focus is; true when it did, else the reason shows under the message. */
     suspend fun paste(id: String, text: String, method: String, enter: Boolean, secret: Boolean): Boolean {
         var done = false

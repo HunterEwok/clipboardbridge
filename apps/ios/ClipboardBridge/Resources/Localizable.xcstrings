@@ -2353,6 +2353,176 @@
           }
         }
       }
+    },
+    "%@ %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@?"
+          }
+        }
+      }
+    },
+    "It happens a minute from now; until then, Cancel the reboot or shutdown stops it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это произойдёт через минуту; до тех пор её остановит «Отменить перезагрузку или выключение»."
+          }
+        }
+      }
+    },
+    "Turn off the quick actions on %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить быстрые действия на %@?"
+          }
+        }
+      }
+    },
+    "Turn all off": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить все"
+          }
+        }
+      }
+    },
+    "No admin can run them there until its user turns them on again on the device itself.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ни один админ не сможет их там запустить, пока пользователь снова не включит их на самом устройстве."
+          }
+        }
+      }
+    },
+    "%@ has no quick action turned on. Its user turns them on there, with sudo cbb action enable.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На %@ не включено ни одного быстрого действия. Его пользователь включает их там командой sudo cbb action enable."
+          }
+        }
+      }
+    },
+    "The computer defines what each action does, and runs it only for the admins its user allowed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что делает каждое действие, задаёт сам компьютер, и выполняет он его только для тех админов, кому разрешил его пользователь."
+          }
+        }
+      }
+    },
+    "Quick actions": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрые действия"
+          }
+        }
+      }
+    },
+    "Lock the screen": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокировать экран"
+          }
+        }
+      }
+    },
+    "Sleep": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сон"
+          }
+        }
+      }
+    },
+    "Reboot": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить"
+          }
+        }
+      }
+    },
+    "Shut down": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить"
+          }
+        }
+      }
+    },
+    "Cancel the reboot or shutdown": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить перезагрузку или выключение"
+          }
+        }
+      }
+    },
+    "Restart Clipboard Bridge": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустить Clipboard Bridge"
+          }
+        }
+      }
+    },
+    "Done.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово."
+          }
+        }
+      }
+    },
+    "The quick actions are off there.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрые действия там выключены."
+          }
+        }
+      }
+    },
+    "Run a quick action": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить быстрое действие"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

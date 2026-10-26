@@ -153,6 +153,12 @@ class MemberNode(
             conns.mapNotNull { c -> val p = c.peer; val k = c.adminKey; if (p != null && k != null) p to k else null }.toMap()
         }
 
+    /** The quick actions the connected members' hellos say are on, by device ID, where the caller of serve named them. */
+    val actions: Map<String, List<String>>
+        get() = synchronized(lock) {
+            conns.mapNotNull { c -> val p = c.peer; val a = c.actions; if (p != null && a.isNotEmpty()) p to a else null }.toMap()
+        }
+
     /** Where the connected members' hellos say their keys live, by device ID, where the caller of serve named them. */
     val keyStores: Map<String, String>
         get() = synchronized(lock) {
@@ -295,6 +301,7 @@ class MemberNode(
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
                         c.keyStore = m.hello.keyStore
+                        c.actions = m.hello.actions
                         c.device = m.hello.device?.cleaned
                         c.mode = m.hello.mode
                         c.peerRole = m.role
@@ -424,6 +431,9 @@ class MemberNode(
 
         /** Where the peer's hello says its keys live. */
         @Volatile var keyStore: String? = null
+
+        /** The quick actions the peer's hello says are on. */
+        @Volatile var actions: List<String> = emptyList()
         @Volatile var device: Member.DeviceInfo? = null
         @Volatile var mode: String? = null
 

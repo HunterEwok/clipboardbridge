@@ -319,7 +319,9 @@ mod tests {
             role: role.into(),
             os: String::new(),
             key: Default::default(),
+            store: "file".into(),
             admin: true,
+            admin_key: None,
             frozen: false,
             keys: vec![],
         }

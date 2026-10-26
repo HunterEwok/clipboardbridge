@@ -5,6 +5,7 @@ package cbbtun
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -64,6 +65,14 @@ func overVLESS(t *testing.T, port uint16) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
+	// A client that came before REALITY has learned the decoy would wait
+	// 5 seconds or more, its WireGuard handshakes held, the first ones
+	// stale by then.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.Ready(ctx); err != nil {
+		t.Fatal(err)
+	}
 	id, err := tunnel.NewVLESSID()
 	if err != nil {
 		t.Fatal(err)

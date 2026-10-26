@@ -98,6 +98,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val device: Member.DeviceInfo? = null,
         /** The sync mode its hello reports, while it is connected. */
         val mode: String? = null,
+        /** The quick actions its hello says are on, while it is connected. */
+        val actions: List<String> = emptyList(),
     )
 
     /**
@@ -190,6 +192,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val stores = n?.keyStores.orEmpty()
             val infos = n?.devices.orEmpty()
             val modes = n?.modes.orEmpty()
+            val acts = n?.actions.orEmpty()
             val root = g.records.rootDevice
             return g.devices.map {
                 Device(
@@ -200,6 +203,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
                     mode = if (it.id == g.device) syncMode else modes[it.id],
+                    actions = acts[it.id].orEmpty(),
                 )
             }
         }
@@ -810,6 +814,30 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Runs a quick action on a computer (docs/protocol.md, section 15): an
+     * action command, signed with this phone's root or admin key, names it;
+     * the computer defines what it does and runs it only when its user
+     * turned it on there.
+     */
+    suspend fun runAction(id: String, name: String) {
+        val ca = caSigner(R.string.reason_action)
+        val g = copyOfState() ?: return
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        // The computer waits up to 20 s for the action to start.
+        val r = withContext(Dispatchers.IO) { n.command(id, g.actionCommand(id, name, ca, Instant.now()), timeoutMS = ACTION_TIMEOUT_MS, via = true) }
+        if (!r.done) throw CommandRefused(r.reason ?: r.status)
+    }
+
+    /** Turns every quick action off on a computer; only its user turns them on again. */
+    suspend fun actionsOff(id: String) {
+        val ca = caSigner(R.string.reason_action)
+        val g = copyOfState() ?: return
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        val r = withContext(Dispatchers.IO) { n.command(id, g.actionsOffCommand(id, ca, Instant.now()), via = true) }
+        if (!r.done) throw CommandRefused(r.reason ?: r.status)
+    }
+
+    /**
      * Makes a connected admin computer the group's hub in place of this
      * phone (docs/protocol.md, section 11, "Moving the hub"): a hub command
      * signed with this phone's root or admin key hands it the clients' keys
@@ -1273,6 +1301,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
         /** How long a hub command may take: the computer starts its hub before it answers. */
         private const val MOVE_TIMEOUT_MS = 20_000L
+
+        /** How long a quick action may take: an own action runs for up to 15 s before the computer answers. */
+        private const val ACTION_TIMEOUT_MS = 25_000L
 
         /** The longest the old hub waits for its clients' connections to end after it passed the new hub's offer on, as Go's moveGrace. */
         private const val MOVE_GRACE_MS = 10_000L

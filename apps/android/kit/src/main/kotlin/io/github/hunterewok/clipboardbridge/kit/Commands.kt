@@ -15,7 +15,9 @@ import java.time.Instant
  * them: one sets the receiver's sync mode, another makes the receiver, an
  * admin computer, the group's hub in place of this phone; a paste command
  * puts a text where the receiver's focus is, and paste-off turns remote
- * paste off on the receiver (design.md, "Remote paste").
+ * paste off on the receiver (design.md, "Remote paste"); an action command
+ * runs one of the receiver's quick actions by its name, and actions-off
+ * turns them all off there (roadmap.md, "Quick actions").
  */
 object Commands {
     /** How long after signing a command expires; the receivers take at most 30 s. */
@@ -175,6 +177,73 @@ object Commands {
         return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
     }
 
+    /** The longest name of a quick action. */
+    const val MAX_ACTION_NAME = 32
+
+    /** The most quick actions a hello lists. */
+    const val MAX_HELLO_ACTIONS = 64
+
+    /** The presets every computer knows, in the order the apps show them. */
+    val PRESETS = listOf("lock", "sleep", "reboot", "shutdown", "cancel-shutdown", "restart")
+
+    /** Whether name is a quick action's name: 1 to 32 of a-z, 0-9 and -, starting with a letter. */
+    fun validActionName(name: String): Boolean =
+        name.length in 1..MAX_ACTION_NAME && name[0] in 'a'..'z' && name.all { it in 'a'..'z' || it in '0'..'9' || it == '-' }
+
+    /** An action command for the device to: run its quick action name, which only the receiver defines. Signed as mode. */
+    fun action(
+        to: String,
+        name: String,
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray? = null,
+        id: String = newID(),
+    ): Member.Record {
+        require(validActionName(name)) { "$name is not an action's name" }
+        return signed("action", to, group, by, now, signer, adminCA, id, "action" to Wire.str(name))
+    }
+
+    /** An actions-off command for the device to: it turns every quick action off there. Signed as mode. */
+    fun actionsOff(
+        to: String,
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray? = null,
+        id: String = newID(),
+    ): Member.Record = signed("actions-off", to, group, by, now, signer, adminCA, id)
+
+    private fun signed(
+        type: String,
+        to: String,
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray?,
+        id: String,
+        vararg extra: Pair<String, JsonElement?>,
+    ): Member.Record {
+        val ms = now.toEpochMilli()
+        val body = Wire.encode(
+            Wire.obj(
+                "v" to Wire.num(Records.VERSION.toLong()),
+                "type" to Wire.str(type),
+                "group" to Wire.str(group),
+                "by" to Wire.str(by),
+                "to" to Wire.str(to),
+                "id" to Wire.str(id),
+                "time_ms" to Wire.num(ms),
+                "expires_ms" to Wire.num(ms + LIFETIME_MS),
+                *extra,
+            ),
+        )
+        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+    }
+
     /** The most clients a hub command hands over, as many as a hub keeps. */
     const val MAX_HUB_CLIENTS = 256
 
@@ -198,6 +267,7 @@ object Commands {
         val enter: Boolean = false,
         val kind: String? = null,
         val text: String? = null,
+        val action: String? = null,
     )
 
     /** Why a command was refused, in words for the sender. */
@@ -227,14 +297,20 @@ object Commands {
             enter = o.optBool("enter") ?: false,
             kind = o.optString("kind"),
             text = o.optString("text"),
+            action = o.optString("action"),
         )
         if (o.optLong("v") != Records.VERSION.toLong()) throw Refused("unknown command version")
         if (b.id.length != 32 || b.id.any { it !in "0123456789abcdef" }) throw Refused("the command has no valid ID")
         if (type != "paste" && (b.enter || b.kind != null || b.text != null)) throw Refused("a $type command carries a paste")
+        if (type != "action" && b.action != null) throw Refused("a $type command names an action")
         when (type) {
             "mode" -> if (b.mode.isNullOrEmpty() || o.opt("hub") != null) throw Refused("a mode command names no mode")
             "hub" -> if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
-            "paste-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a paste-off command carries an order")
+            "paste-off", "actions-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a $type command carries an order")
+            "action" -> {
+                if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("an action command carries an order")
+                if (!validActionName(b.action ?: "")) throw Refused("an action command names no valid action")
+            }
             "paste" -> {
                 val limit = when (b.mode) {
                     "paste" -> MAX_PASTE_TEXT

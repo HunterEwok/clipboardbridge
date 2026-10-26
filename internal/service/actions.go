@@ -41,7 +41,7 @@ func (s *Service) act(body group.CommandBody, c group.Record) node.Result {
 	switch {
 	case err != nil:
 		res.Status, res.Reason = node.ResultFailed, fmt.Sprintf("reading the quick actions: %v", err)
-	case !actions.IsPreset(body.Action):
+	case !set.Has(body.Action):
 		res.Reason = fmt.Sprintf("this device has no action %q", body.Action)
 	default:
 		s.recMu.Lock()
@@ -56,7 +56,7 @@ func (s *Service) act(body group.CommandBody, c group.Record) node.Result {
 		} else if !s.actionLimit.Allow(string(body.By), s.cfg.now()) {
 			res.Reason = "too many actions: at most one a second and 30 a minute from one device"
 		} else {
-			res = s.runAction(body)
+			res = s.runAction(body, set.Get(body.Action))
 		}
 	}
 	if res.Status == node.ResultDone {
@@ -72,8 +72,9 @@ func (s *Service) act(body group.CommandBody, c group.Record) node.Result {
 	return res
 }
 
-// runAction runs a preset that passed the checks.
-func (s *Service) runAction(body group.CommandBody) node.Result {
+// runAction runs an action that passed the checks: a preset, or one of
+// the user's own, which runs in the user's session.
+func (s *Service) runAction(body group.CommandBody, a actions.Action) node.Result {
 	res := node.Result{ID: body.ID, Status: node.ResultDone}
 	if body.Action == actions.Restart {
 		if s.restart == nil {
@@ -90,7 +91,12 @@ func (s *Service) runAction(body group.CommandBody) node.Result {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), actionWait)
 	defer cancel()
-	err := s.cfg.runner.Run(ctx, body.Action)
+	var err error
+	if len(a.Command) > 0 {
+		err = sessionRunner{s}.run(ctx, body.Action, a.Command)
+	} else {
+		err = s.cfg.runner.Run(ctx, body.Action)
+	}
 	var r *actions.Refusal
 	switch {
 	case err == nil:
@@ -132,9 +138,6 @@ func (s *Service) setAction(m *control.Message) error {
 		return errors.New("set one action at a time")
 	}
 	a := m.Actions[0]
-	if !actions.IsPreset(a.Name) {
-		return fmt.Errorf("this device has no action %q; the presets are lock, sleep, reboot, shutdown, cancel-shutdown and restart", a.Name)
-	}
 	by, err := actions.ParseKinds(strings.Join(a.By, ","))
 	if err != nil {
 		return err
@@ -149,11 +152,45 @@ func (s *Service) setAction(m *control.Message) error {
 	if err != nil {
 		return err
 	}
-	set.Set(actions.Action{Name: a.Name, On: a.On, By: by, AnyKey: a.AnyKey})
+	command := a.Command
+	switch {
+	case len(command) > 0:
+		if err := actions.CheckOwn(a.Name, command); err != nil {
+			return err
+		}
+		if !set.Has(a.Name) && len(set.Own()) >= actions.MaxOwn {
+			return fmt.Errorf("this device has %d actions of its user's own already, the most it keeps", actions.MaxOwn)
+		}
+	case actions.IsPreset(a.Name):
+	case set.Has(a.Name):
+		command = set.Get(a.Name).Command // enable or disable keeps it
+	default:
+		return fmt.Errorf("this device has no action %q; the presets are %s, and cbb action add adds your own", a.Name, strings.Join(actions.Presets, ", "))
+	}
+	set.Set(actions.Action{Name: a.Name, On: a.On, By: by, AnyKey: a.AnyKey, Command: command})
 	if err := actions.Save(s.cfg.StateDir, set); err != nil {
 		return fmt.Errorf("saving the quick actions: %w", err)
 	}
 	s.logf("cbb: the action %s is %s here (by %v, any key %v)", a.Name, onOff(a.On), by, a.AnyKey)
+	return nil
+}
+
+// removeAction serves cbb action remove: the user's own action goes.
+func (s *Service) removeAction(m *control.Message) error {
+	set, err := actions.Load(s.cfg.StateDir)
+	if err != nil {
+		return err
+	}
+	if !set.Remove(m.Name) {
+		if actions.IsPreset(m.Name) {
+			return fmt.Errorf("%s is a preset, which stays; cbb action disable %s turns it off", m.Name, m.Name)
+		}
+		return fmt.Errorf("this device has no action of its user's own named %q", m.Name)
+	}
+	if err := actions.Save(s.cfg.StateDir, set); err != nil {
+		return fmt.Errorf("saving the quick actions: %w", err)
+	}
+	s.logf("cbb: the action %s is removed here", m.Name)
 	return nil
 }
 
@@ -175,6 +212,9 @@ func (s *Service) actionStatus() []control.Action {
 	for _, p := range actions.Presets {
 		a := set.Get(p)
 		out = append(out, control.Action{Name: a.Name, On: a.On, By: a.By, AnyKey: a.AnyKey})
+	}
+	for _, a := range set.Own() {
+		out = append(out, control.Action{Name: a.Name, On: a.On, By: a.By, AnyKey: a.AnyKey, Command: a.Command})
 	}
 	return out
 }
@@ -235,4 +275,62 @@ func (s *Service) actionsOffOn(ctx context.Context, m *control.Message) error {
 		return fmt.Errorf("quick actions may still be on: %s", joinReasons(failed))
 	}
 	return nil
+}
+
+// sessionRunner runs the presets in the signed-in user's session, through
+// the agent that offers them, as on a Mac and on Windows.
+type sessionRunner struct{ s *Service }
+
+func (r sessionRunner) Run(ctx context.Context, name string) error { return r.run(ctx, name, nil) }
+
+// run hands the action name to an agent: a preset, or with command the
+// user's own.
+func (r sessionRunner) run(ctx context.Context, name string, command []string) error {
+	s := r.s
+	s.mu.Lock()
+	var ws []*watcher
+	for w := range s.watchers {
+		if w.act {
+			ws = append(ws, w)
+		}
+	}
+	s.mu.Unlock()
+	if len(ws) == 0 {
+		return &actions.Refusal{Reason: "nobody is signed in here with Clipboard Bridge's agent running, and the actions run in the user's session"}
+	}
+	body := group.CommandBody{Type: group.CommandAction, Action: name}
+	var reasons []string
+	for _, w := range ws {
+		in := &inject{body: body, command: command, done: make(chan node.Result, 1)}
+		select {
+		case w.injects <- in:
+		default:
+			continue
+		}
+		select {
+		case res := <-in.done:
+			switch res.Status {
+			case node.ResultDone:
+				return nil
+			case node.ResultRefused:
+				return &actions.Refusal{Reason: res.Reason}
+			}
+			reasons = append(reasons, res.Reason)
+		case <-ctx.Done():
+			return errors.New("the agent did not answer")
+		}
+	}
+	if len(reasons) == 0 {
+		return errors.New("the agent is busy")
+	}
+	return errors.New(joinReasons(reasons))
+}
+
+// actionsOn lists the actions that are on here, for the hello.
+func (s *Service) actionsOn() []string {
+	set, err := actions.Load(s.cfg.StateDir)
+	if err != nil {
+		return nil
+	}
+	return set.On()
 }

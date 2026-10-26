@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -514,5 +515,39 @@ func TestTarget(t *testing.T) {
 	}
 	if got := <-tgt.got; got != "type:ls" {
 		t.Errorf("the target got %q", got)
+	}
+}
+
+type fakeActor func(name string) error
+
+func (f fakeActor) Run(_ context.Context, name string) error { return f(name) }
+
+// TestActed: an action's answer says done, refused with the reason as it is,
+// or failed with its cause in Detail.
+func TestActed(t *testing.T) {
+	act := fakeActor(func(name string) error {
+		switch name {
+		case actions.Sleep:
+			return &actions.Refusal{Reason: "the lid is closed"}
+		case actions.Reboot:
+			return errors.New("osascript: exit status 1")
+		}
+		return nil
+	})
+	logf := func(string, ...any) {}
+	for _, c := range []struct {
+		act            Actor
+		name, err, det string
+		refused        bool
+	}{
+		{act, actions.Lock, "", "", false},
+		{act, actions.Sleep, "the lid is closed", "", true},
+		{act, actions.Reboot, "the session could not run reboot", "osascript: exit status 1", false},
+		{nil, actions.Lock, "this session runs no presets: the service runs them", "", true},
+	} {
+		m := acted(context.Background(), c.act, &control.Message{Header: control.Header{Op: control.OpAct, Seq: 7, Name: c.name}}, logf)
+		if m.Op != control.OpActed || m.Seq != 7 || m.Error != c.err || m.Detail != c.det || m.Refused != c.refused {
+			t.Errorf("%s: %+v", c.name, m.Header)
+		}
 	}
 }

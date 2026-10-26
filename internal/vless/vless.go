@@ -26,8 +26,10 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
+	goreality "github.com/xtls/reality"
 	"github.com/xtls/xray-core/app/dispatcher"
 	xlog "github.com/xtls/xray-core/app/log"
 	"github.com/xtls/xray-core/app/proxyman"
@@ -90,6 +92,7 @@ type Server struct {
 	inst  *core.Instance
 	users proxy.UserManager
 	port  uint16
+	site  string // REALITY's key for what it learns of the site: Dest and server name
 }
 
 const inboundTag = "vless-in"
@@ -155,7 +158,7 @@ func Listen(cfg ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{inst: inst, port: listen.Port()}
+	s := &Server{inst: inst, port: listen.Port(), site: cfg.Dest + " " + cfg.ServerName}
 	m, _ := inst.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	if m == nil {
 		inst.Close()
@@ -176,6 +179,30 @@ func Listen(cfg ServerConfig) (*Server, error) {
 		return nil, errors.New("vless: the inbound has no users")
 	}
 	return s, nil
+}
+
+// Ready waits until REALITY has learned how the site it borrows ends its
+// handshakes, which it finds out in the background when the server starts,
+// once for each ALPN a client may offer. A client that comes before that
+// waits for it in steps of 5 seconds, its packets held.
+func (s *Server) Ready(ctx context.Context) error {
+	for {
+		learned := true
+		for alpn := range 3 {
+			v, _ := goreality.GlobalPostHandshakeRecordsLens.Load(s.site + " " + strconv.Itoa(alpn))
+			if _, ok := v.([]int); !ok {
+				learned = false
+			}
+		}
+		if learned {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("vless: learning the site: %w", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 // Port returns the TCP port the server listens on.

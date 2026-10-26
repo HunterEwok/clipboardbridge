@@ -59,6 +59,9 @@ const (
 	OpActionSet = "action-set"    // client → service: set this device's quick action Actions[0]: on or off, and for whom
 	OpActionOn  = "action-on"     // client → service: as an admin, have the member Device run its action Name
 	OpActionOff = "actions-off"   // client → service: as an admin, turn every quick action off on Device or All
+	OpActionDel = "action-remove" // client → service: remove this device's own action Name
+	OpAct       = "act"           // service → watcher: run the quick action Name in the watcher's session
+	OpActed     = "acted"         // watcher → service: how the act with Seq ended: Error empty, or why not
 	OpReply     = "reply"         // service → client: the answer to a request
 )
 
@@ -102,8 +105,14 @@ type Header struct {
 	PasteOnly bool   `json:"paste_only,omitempty"`
 	Refused   bool   `json:"refused,omitempty"`
 
-	// Actions: in action-set, the one action to set.
+	// Actions: in action-set, the one action to set. Act, in a watch
+	// request, says the watcher runs the quick actions in its session, as
+	// the agent does on a Mac and on Windows.
+	// Command, in act, is the program and arguments of the user's own
+	// action Name.
 	Actions []Action `json:"actions,omitempty"`
+	Act     bool     `json:"act,omitempty"`
+	Command []string `json:"command,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
@@ -170,10 +179,11 @@ type Status struct {
 // computer; every kind when empty), and whether admins whose keys are in
 // files may run one that hardware alone runs by default.
 type Action struct {
-	Name   string   `json:"name"`
-	On     bool     `json:"on,omitempty"`
-	By     []string `json:"by,omitempty"`
-	AnyKey bool     `json:"any_key,omitempty"`
+	Name    string   `json:"name"`
+	On      bool     `json:"on,omitempty"`
+	By      []string `json:"by,omitempty"`
+	AnyKey  bool     `json:"any_key,omitempty"`
+	Command []string `json:"command,omitempty"` // the user's own action: its program and arguments
 }
 
 // Paste describes remote paste on this device: the switches its user set

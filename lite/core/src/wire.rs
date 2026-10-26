@@ -97,6 +97,10 @@ pub struct HelloBody {
     /// (section 17); shown, never trusted.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub key_store: String,
+    /// The quick actions that are on at the sender, for the phones'
+    /// buttons (section 15); shown, never trusted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
 }
 
 /// What a hello says about the sender's device (section 4, "Device"): its
@@ -187,7 +191,9 @@ pub fn known_role(r: &str) -> bool {
 
 /// A hello message from a lite member running on `os` (`"linux"`, or
 /// `"none"` for firmware) with what it says about its device, with its
-/// tunnel key and its own preshared key while sync away from home is on.
+/// tunnel key and its own preshared key while sync away from home is on,
+/// and the quick actions that are on there.
+#[allow(clippy::too_many_arguments)]
 pub fn hello(
     h: &Hello,
     records: String,
@@ -196,6 +202,7 @@ pub fn hello(
     device: &DeviceInfo,
     tunnel_key: Option<(&[u8], &[u8])>,
     mode: &str,
+    actions: &[String],
 ) -> Message {
     let device = device.cleaned();
     let body = HelloBody {
@@ -210,6 +217,7 @@ pub fn hello(
         mode: mode.to_string(),
         // The lite member keeps its keys in a file, or in the ESP32's flash.
         key_store: "file".into(),
+        actions: actions.to_vec(),
     };
     Message {
         kind: "hello".into(),

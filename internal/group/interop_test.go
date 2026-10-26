@@ -1002,8 +1002,8 @@ func TestGoTakeoverVectors(t *testing.T) {
 
 // TestSwiftCommand checks the commands a phone kit signed
 // (swift-command.json, which the kits' tests write): mode commands with the
-// root's key and with an admin CA's, a hub, a paste and a paste-off command
-// are taken, for the device they name.
+// root's key and with an admin CA's, a hub, a paste, a paste-off, an action
+// and an actions-off command are taken, for the device they name.
 func TestSwiftCommand(t *testing.T) {
 	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
@@ -1030,10 +1030,10 @@ func TestSwiftCommand(t *testing.T) {
 	}
 	s := NewRecords(ca)
 	// Two mode commands, by the root and by an admin, a hub command by the
-	// root with one client, a typed paste by the admin and paste-off by
-	// the root.
-	if len(v.Commands) != 5 {
-		t.Fatalf("%d commands, want 5", len(v.Commands))
+	// root with one client, a typed paste by the admin, paste-off by the
+	// root, lock by the admin and actions-off by the root.
+	if len(v.Commands) != 7 {
+		t.Fatalf("%d commands, want 7", len(v.Commands))
 	}
 	for i, c := range v.Commands {
 		var b CommandBody
@@ -1056,6 +1056,12 @@ func TestSwiftCommand(t *testing.T) {
 		}
 		if i == 4 && got.Type != CommandPasteOff {
 			t.Errorf("the paste-off command: %+v", got)
+		}
+		if i == 5 && (got.Type != CommandAction || got.Action != "lock") {
+			t.Errorf("the action command: %+v", got)
+		}
+		if i == 6 && got.Type != CommandActionsOff {
+			t.Errorf("the actions-off command: %+v", got)
 		}
 		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
 			t.Errorf("command %d was taken by another device", i)
