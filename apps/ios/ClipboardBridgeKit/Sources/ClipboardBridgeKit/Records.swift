@@ -49,6 +49,8 @@ public enum Records {
 
     public static let file = "file"
     public static let hardware = "hardware"
+    /// A key in hardware whose attestation a signer checked.
+    public static let proven = "proven"
 
     /// Where a device's keys live, as its record's store field says
     /// (docs/protocol.md, section 17): hardware for "hardware", and for
@@ -57,7 +59,7 @@ public enum Records {
     /// phone's keys are in hardware and any other device's in a file.
     public static func store(_ store: String?, role: String) -> String {
         switch store {
-        case hardware, "proven": hardware
+        case hardware, proven: hardware
         case file: file
         default: role == "phone" ? hardware : file
         }
