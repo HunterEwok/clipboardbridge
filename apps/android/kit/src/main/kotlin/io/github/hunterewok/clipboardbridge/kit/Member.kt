@@ -49,9 +49,9 @@ object Member {
         }
     }
 
-    /** The kind of a text: a secret is kept only briefly (section 5). */
+    /** The kind of an event: a secret is kept only briefly (section 5); media is images or files, of which the kit takes the text. */
     enum class Kind(val wire: String) {
-        TEXT("text"), SECRET("secret");
+        TEXT("text"), SECRET("secret"), MEDIA("media");
 
         companion object {
             fun of(s: String): Kind? = entries.firstOrNull { it.wire == s }
@@ -113,8 +113,10 @@ object Member {
         /** Milliseconds since the copy, as of the moment the frame is written. */
         val ageMS: Long = 0,
         val kind: Kind,
-        /** The text; "" only in the mark of a secret. */
+        /** The text; "" only in the mark of a secret, and in images or files without one. */
         val text: String,
+        /** The content of a media event, which only it has. */
+        val media: Media.Manifest? = null,
     ) {
         /** Whether it is the mark of a secret: the event without its text. */
         val isMark: Boolean get() = kind == Kind.SECRET && text.isEmpty()
@@ -130,7 +132,12 @@ object Member {
                 ) {
                     return false
                 }
-                return isMark || (text.isNotEmpty() && text.toByteArray().size <= MAX_TEXT)
+                if ((kind == Kind.MEDIA) != (media != null)) return false
+                if (isMark) return true
+                if (media != null) {
+                    return media.isValid && (text.isEmpty() || text.toByteArray().size <= Media.MAX_ALT_TEXT)
+                }
+                return text.isNotEmpty() && text.toByteArray().size <= MAX_TEXT
             }
 
         /** Whether it sorts after f: by time, then by ID, so every member orders any two events the same way. */
@@ -144,6 +151,7 @@ object Member {
             "age_ms" to Wire.num(ageMS),
             "kind" to Wire.str(kind.wire),
             "text" to Wire.str(text),
+            "media" to media?.toJson(),
         )
 
         companion object {
@@ -158,6 +166,7 @@ object Member {
                         ageMS = o.optLong("age_ms") ?: 0,
                         kind = Kind.of(o.optString("kind") ?: return null) ?: return null,
                         text = o.optString("text") ?: "",
+                        media = o.optObject("media")?.let { Media.Manifest.fromJson(it) },
                     )
                 } catch (e: WireTypeException) {
                     null
@@ -200,10 +209,12 @@ object Member {
         val keyStore: String? = null,
         /** The sender's quick actions that are on, for the buttons (section 15); empty from a member before 0.6. */
         val actions: List<String> = emptyList(),
+        /** Whether the sender serves the content of media events (section 4, "Content"). */
+        val media: Boolean = false,
     ) {
         override fun equals(other: Any?): Boolean =
             other is Hello && wallMS == other.wallMS && current == other.current && records == other.records && keyStore == other.keyStore &&
-                actions == other.actions &&
+                actions == other.actions && media == other.media &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
                 tunnelKey.contentEqualsOrNull(other.tunnelKey) &&
                 tunnelPSK.contentEqualsOrNull(other.tunnelPSK) && device == other.device && mode == other.mode
@@ -508,6 +519,7 @@ object Member {
                 "tunnel_psk" to Wire.bytes(m.hello.tunnelPSK),
                 "mode" to Wire.str(m.hello.mode),
                 "key_store" to Wire.str(m.hello.keyStore),
+                "media" to if (m.hello.media) JsonPrimitive(true) else null,
             ),
         )
         is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
@@ -574,6 +586,7 @@ object Member {
                                 .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
                                 .filter { Commands.validActionName(it) }
                                 .take(Commands.MAX_HELLO_ACTIONS),
+                            media = h.optBool("media") ?: false,
                         ),
                     )
                 }

@@ -203,6 +203,14 @@ type Service struct {
 	recMu      sync.Mutex     // guards records; taken after mu, never before
 	records    *group.Records // the group's device records; nil while in no group
 
+	// Images and files (media.go): the cache, which is nil until the
+	// service runs; mediaMu guards the rest, taken after mu, never before.
+	content     *contentStore
+	mediaMu     sync.Mutex
+	limits      mediaLimits
+	fetch       *fetchRun // the copy being fetched; nil if none
+	fetchFailed string    // why the last copy was not fetched, for status
+
 	tunMu      sync.Mutex            // guards tunnel and the rest of the tun fields; taken after mu, before recMu
 	tunnel     *tunnel.State         // the tunnel keys (tunnel.go); nil while sync away from home is off
 	tunCtx     context.Context       // the group's context, for the tunnel; nil while in no group
@@ -312,6 +320,13 @@ func Run(ctx context.Context, cfg Config) error {
 	s.clock = clock
 
 	s.nets = loadNetworks(cfg.StateDir, id != nil, cfg.Logf)
+	if s.limits, err = loadLimits(cfg.StateDir); err != nil {
+		cfg.Logf("cbb: the limits of a copy: %v; using %s and %s", err, SizeText(s.limits.Home), SizeText(s.limits.Away))
+	}
+	if s.content, err = openContent(filepath.Join(cfg.StateDir, contentDir), time.Now); err != nil {
+		cfg.Logf("cbb: the cache of images and files: %v; this device does not serve or fetch them", err)
+		s.content = nil
+	}
 
 	ln, err := listenControl(cfg.Socket, false)
 	if err != nil {
@@ -402,7 +417,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunMu.Unlock()
 	tunKey, tunPSK := tunnelKey(tun)
 	nd := node.New(node.Config{
-		Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
+		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
 		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,

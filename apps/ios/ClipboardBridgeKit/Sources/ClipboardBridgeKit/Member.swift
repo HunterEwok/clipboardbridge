@@ -23,8 +23,9 @@ public enum Member {
     /// Windows or macOS); its system is the hello's `os`.
     public enum Role: String, Codable, Sendable { case full, phone, lite }
 
-    /// The kind of a text: a secret is kept only briefly (section 5).
-    public enum Kind: String, Codable, Sendable { case text, secret }
+    /// The kind of an event: a secret is kept only briefly (section 5);
+    /// media is images or files, of which the kit takes the text.
+    public enum Kind: String, Codable, Sendable { case text, secret, media }
 
     /// How a text reached the member that made the event.
     public enum Via: String, Codable, Sendable {
@@ -93,13 +94,18 @@ public enum Member {
         /// Milliseconds since the copy, as of the moment the frame is written.
         public var ageMS: Int64
         public var kind: Kind
-        /// The text; "" only in the mark of a secret.
+        /// The text; "" only in the mark of a secret, and in images or files
+        /// without one.
         public var text: String
+        /// The content of a media event, which only it has.
+        public var media: Media.Manifest?
 
-        enum CodingKeys: String, CodingKey { case id, origin, via, time, ageMS = "age_ms", kind, text }
+        enum CodingKeys: String, CodingKey { case id, origin, via, time, ageMS = "age_ms", kind, text, media }
 
-        public init(id: String, origin: String, via: Via = .copy, time: Timestamp, ageMS: Int64 = 0, kind: Kind, text: String) {
+        public init(id: String, origin: String, via: Via = .copy, time: Timestamp, ageMS: Int64 = 0, kind: Kind, text: String,
+                    media: Media.Manifest? = nil) {
             (self.id, self.origin, self.via, self.time, self.ageMS, self.kind, self.text) = (id, origin, via, time, ageMS, kind, text)
+            self.media = media
         }
 
         public init(from decoder: Decoder) throws {
@@ -111,6 +117,7 @@ public enum Member {
             ageMS = try c.decodeIfPresent(Int64.self, forKey: .ageMS) ?? 0
             kind = try c.decode(Kind.self, forKey: .kind)
             text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+            media = try c.decodeIfPresent(Media.Manifest.self, forKey: .media)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -122,6 +129,7 @@ public enum Member {
             try c.encode(ageMS, forKey: .ageMS)
             try c.encode(kind, forKey: .kind)
             try c.encode(text, forKey: .text)
+            try c.encodeIfPresent(media, forKey: .media)
         }
 
         /// Whether it is the mark of a secret: the event without its text.
@@ -140,7 +148,12 @@ public enum Member {
         public var isValid: Bool {
             guard GroupCertificates.isDeviceID(id), GroupCertificates.isDeviceID(origin),
                   !time.isZero, time.wall <= Timestamp.maxWall, ageMS >= 0 else { return false }
-            return isMark || (!text.isEmpty && text.utf8.count <= Member.maxText)
+            if (kind == .media) != (media != nil) { return false }
+            if isMark { return true }
+            if let media {
+                return media.isValid && (text.isEmpty || text.utf8.count <= Media.maxAltText)
+            }
+            return !text.isEmpty && text.utf8.count <= Member.maxText
         }
 
         /// Whether it sorts after f: by time, then by ID, so every member
@@ -187,13 +200,16 @@ public enum Member {
         /// The sender's quick actions that are on, for the buttons
         /// (section 15); empty from a member before 0.6.
         public var actions: [String]
+        /// Whether the sender serves the content of media events (section
+        /// 4, "Content").
+        public var media: Bool
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
                     adminKey: Data? = nil, tunnelKey: Data? = nil, tunnelPSK: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil,
-                    keyStore: String? = nil, actions: [String] = []) {
+                    keyStore: String? = nil, actions: [String] = [], media: Bool = false) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
-            (self.tunnelPSK, self.device, self.mode, self.keyStore, self.actions) = (tunnelPSK, device, mode, keyStore, actions)
+            (self.tunnelPSK, self.device, self.mode, self.keyStore, self.actions, self.media) = (tunnelPSK, device, mode, keyStore, actions, media)
         }
     }
 
@@ -509,7 +525,8 @@ public enum Member {
                                       os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, tunnelPSK: h.tunnel_psk, device: h.device?.value,
                                       mode: h.mode.flatMap { modes.contains($0) ? $0 : nil },
                                       keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware ? $0 : nil },
-                                      actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions))))
+                                      actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions)),
+                                      media: h.media ?? false))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -545,6 +562,7 @@ public enum Member {
         var mode: String?
         var key_store: String?
         var actions: Lenient<[String]>?
+        var media: Bool?
     }
 
     struct WireIn: Decodable {
@@ -568,7 +586,7 @@ public enum Member {
         init(_ m: Message) { self.m = m }
 
         enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, media }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -589,6 +607,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.mode, forKey: .mode)
                 try hc.encodeIfPresent(h.keyStore, forKey: .key_store)
                 if !h.actions.isEmpty { try hc.encode(h.actions, forKey: .actions) }
+                if h.media { try hc.encode(true, forKey: .media) }
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)

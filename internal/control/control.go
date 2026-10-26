@@ -27,48 +27,54 @@ const (
 
 // Operations.
 const (
-	OpCopy      = "copy"          // client → service: make an event from a deliberate action
-	OpPaste     = "paste"         // client → service: ask for the member's own clipboard text
-	OpStatus    = "status"        // client → service: ask for the status
-	OpNew       = "new"           // client → service: create a group with this device as its root
-	OpPair      = "pair"          // client → service: open a pairing window; answers follow
-	OpPairPhone = "pair-phone"    // client → service: open an iPhone pairing window; answers follow
-	OpJoin      = "join"          // client → service: join a group with a code
-	OpDevices   = "devices"       // client → service: list the group's devices
-	OpRevoke    = "revoke"        // client → service: remove the device Name names (a name or a device ID)
-	OpRename    = "rename"        // client → service: give the device Name names the name NewName
-	OpFreeze    = "freeze"        // client → service: freeze the admin computer Name names
-	OpThaw      = "thaw"          // client → service: on the root, unfreeze the admin computer Name names
-	OpAway      = "away"          // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
-	OpHolder    = "holder"        // client → service: Name "auto", "first", "fallback" or "never": the holder setting
-	OpMode      = "mode"          // client → service: Name "own", "shared", "receive" or "send": the sync mode
-	OpNetwork   = "network"       // client → service: take the networks this device is on now as known
-	OpAdmin     = "admin"         // client → service: on the root, make the device Name names an admin
-	OpTakeover  = "takeover"      // client → service: on an admin, take the group over from the lost root Name names
-	OpUpgrade   = "upgrade"       // client → service: on a key holder of a legacy group, give the group a root
-	OpInvite    = "invite"        // client → service: make a remote invitation on the hub; answers and a question follow
-	OpAnswer    = "answer"        // client → service: Consent answers the service's question during a request
-	OpWatch     = "watch"         // watcher → service: start watching, with what the clipboard holds now
-	OpCopied    = "copied"        // watcher → service: the clipboard changed
-	OpClipboard = "clipboard"     // watcher → service: what the clipboard holds, without a change
-	OpWrite     = "write"         // service → watcher: put this text into the clipboard
-	OpPasteOn   = "paste-on"      // client → service: as an admin, have the member Device put the payload where its focus is
-	OpReceive   = "paste-receive" // client → service: Name "on" or "off": remote paste on this device, or off on Device or All
-	OpInject    = "inject"        // service → watcher: put the payload where the focus is, a remote paste
-	OpInjected  = "injected"      // watcher → service: how the inject with Seq ended: Error empty, or why not
-	OpActionSet = "action-set"    // client → service: set this device's quick action Actions[0]: on or off, and for whom
-	OpActionOn  = "action-on"     // client → service: as an admin, have the member Device run its action Name
-	OpActionOff = "actions-off"   // client → service: as an admin, turn every quick action off on Device or All
-	OpActionDel = "action-remove" // client → service: remove this device's own action Name
-	OpAct       = "act"           // service → watcher: run the quick action Name in the watcher's session
-	OpActed     = "acted"         // watcher → service: how the act with Seq ended: Error empty, or why not
-	OpReply     = "reply"         // service → client: the answer to a request
+	OpCopy       = "copy"          // client → service: make an event from a deliberate action
+	OpPaste      = "paste"         // client → service: ask for the member's own clipboard text
+	OpStatus     = "status"        // client → service: ask for the status
+	OpNew        = "new"           // client → service: create a group with this device as its root
+	OpPair       = "pair"          // client → service: open a pairing window; answers follow
+	OpPairPhone  = "pair-phone"    // client → service: open an iPhone pairing window; answers follow
+	OpJoin       = "join"          // client → service: join a group with a code
+	OpDevices    = "devices"       // client → service: list the group's devices
+	OpRevoke     = "revoke"        // client → service: remove the device Name names (a name or a device ID)
+	OpRename     = "rename"        // client → service: give the device Name names the name NewName
+	OpFreeze     = "freeze"        // client → service: freeze the admin computer Name names
+	OpThaw       = "thaw"          // client → service: on the root, unfreeze the admin computer Name names
+	OpAway       = "away"          // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
+	OpHolder     = "holder"        // client → service: Name "auto", "first", "fallback" or "never": the holder setting
+	OpMode       = "mode"          // client → service: Name "own", "shared", "receive" or "send": the sync mode
+	OpNetwork    = "network"       // client → service: take the networks this device is on now as known
+	OpAdmin      = "admin"         // client → service: on the root, make the device Name names an admin
+	OpTakeover   = "takeover"      // client → service: on an admin, take the group over from the lost root Name names
+	OpUpgrade    = "upgrade"       // client → service: on a key holder of a legacy group, give the group a root
+	OpInvite     = "invite"        // client → service: make a remote invitation on the hub; answers and a question follow
+	OpAnswer     = "answer"        // client → service: Consent answers the service's question during a request
+	OpWatch      = "watch"         // watcher → service: start watching, with what the clipboard holds now
+	OpCopied     = "copied"        // watcher → service: the clipboard changed
+	OpClipboard  = "clipboard"     // watcher → service: what the clipboard holds, without a change
+	OpWrite      = "write"         // service → watcher: put this text into the clipboard
+	OpPasteOn    = "paste-on"      // client → service: as an admin, have the member Device put the payload where its focus is
+	OpReceive    = "paste-receive" // client → service: Name "on" or "off": remote paste on this device, or off on Device or All
+	OpInject     = "inject"        // service → watcher: put the payload where the focus is, a remote paste
+	OpInjected   = "injected"      // watcher → service: how the inject with Seq ended: Error empty, or why not
+	OpActionSet  = "action-set"    // client → service: set this device's quick action Actions[0]: on or off, and for whom
+	OpActionOn   = "action-on"     // client → service: as an admin, have the member Device run its action Name
+	OpActionOff  = "actions-off"   // client → service: as an admin, turn every quick action off on Device or All
+	OpActionDel  = "action-remove" // client → service: remove this device's own action Name
+	OpAct        = "act"           // service → watcher: run the quick action Name in the watcher's session
+	OpActed      = "acted"         // watcher → service: how the act with Seq ended: Error empty, or why not
+	OpReply      = "reply"         // service → client: the answer to a request
+	OpCopyMedia  = "copy-media"    // client → service: copy images or files, the payload their plain-text alternative; part and data messages follow
+	OpPart       = "part"          // client → service in copy-media, or a reply in paste-media: the next part (Part), its bytes in data messages; Done ends the parts
+	OpData       = "data"          // client → service in copy-media, or a reply in paste-media: the next bytes of the part
+	OpPasteMedia = "paste-media"   // client → service: ask for the images or files of the member's own clipboard; parts follow
+	OpConfig     = "config"        // client → service: show the settings, or set the setting Name to Value
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
 const (
 	KindText     = "text"
 	KindSecret   = "secret"
+	KindMedia    = "media"               // images or files
 	ViaCopy      = "copy"                // copied on the member
 	ViaPhone     = "phone"               // sent from a phone: the app, or the iPhone shortcut
 	ViaUniversal = "universal-clipboard" // reached a Mac through Universal Clipboard
@@ -136,6 +142,21 @@ type Header struct {
 	Joining      *Joining `json:"joining,omitempty"`   // invite: a device to confirm, before it is admitted
 	Status       *Status  `json:"status,omitempty"`
 	Devices      []Device `json:"devices,omitempty"`
+
+	// Images and files: in a part message, the part whose bytes follow;
+	// Value, in config, the setting's new value.
+	Part  *Part  `json:"part,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+// Part is a part of a copy of images or files, as copy-media and
+// paste-media carry it: clipboard data of a Type (image/png, image/jpeg,
+// text/html), or a file or folder at a Path, names joined by "/".
+type Part struct {
+	Type string `json:"type,omitempty"`
+	Path string `json:"path,omitempty"`
+	Dir  bool   `json:"dir,omitempty"`
+	Size int64  `json:"size,omitempty"`
 }
 
 // Status describes the service for cbb status.
@@ -171,7 +192,24 @@ type Status struct {
 	// Actions are this device's quick actions, the presets first, as its
 	// user set them; empty when in no group.
 	Actions []Action `json:"actions,omitempty"`
-	Version string   `json:"version"`
+	// Media is images and files on this device: its limits and the copy
+	// being fetched; nil when in no group.
+	Media   *Media `json:"media,omitempty"`
+	Version string `json:"version"`
+}
+
+// Media describes images and files on this device: the largest copy it
+// sends or fetches at home and away from home, in bytes, and the copy it is
+// fetching, if any.
+type Media struct {
+	MaxCopy     int64 `json:"max_copy"`
+	MaxCopyAway int64 `json:"max_copy_away"`
+	// Fetching is the size of the copy being fetched, Fetched how much of
+	// it has arrived; Failed says why the last copy was not fetched.
+	Fetching int64  `json:"fetching,omitempty"`
+	Fetched  int64  `json:"fetched,omitempty"`
+	From     string `json:"from,omitempty"` // the device it comes from
+	Failed   string `json:"failed,omitempty"`
 }
 
 // Action is a quick action on this device (design.md, "Quick actions"):

@@ -47,6 +47,9 @@ const (
 	typeResult  = "result"
 	typeHubs    = "hubs"
 	typeEvid    = "evidence"
+	typeGet     = "get"
+	typeMissing = "missing"
+	typeChunk   = "chunk" // a binary frame, never JSON
 
 	// maxFrame bounds a frame: a text of up to 1 MiB, which JSON may
 	// escape to six bytes per byte for control characters, and the rest
@@ -111,6 +114,11 @@ type message struct {
 	// Evidence, in an evidence message, proves where the sender's keys
 	// live (docs/protocol.md, section 17, "Evidence").
 	Evidence *Evidence `json:"evidence,omitempty"`
+	// Get, in a get message, asks for a range of a part of a media event;
+	// in a missing message, it is the get the sender cannot answer.
+	Get *Get `json:"get,omitempty"`
+
+	chunk *chunk // a binary chunk frame, which readMessage decoded
 }
 
 // Evidence is an attestation of one of the sender's keys.
@@ -248,6 +256,8 @@ type helloBody struct {
 	// Actions are the sender's quick actions that are on, for the
 	// buttons; absent from a member before 0.6.
 	Actions []string `json:"actions,omitempty"`
+	// Media tells that the sender serves the content of media events.
+	Media bool `json:"media,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -284,6 +294,8 @@ type helloOut struct {
 	// Actions are this member's quick actions that are on, for the
 	// admins' buttons.
 	Actions []string `json:"actions,omitempty"`
+	// Media tells that this member serves the content of media events.
+	Media bool `json:"media,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.
@@ -356,7 +368,9 @@ func readMessage(r deadliner, timeout time.Duration) (*message, error) {
 		return nil, err
 	}
 	size := binary.BigEndian.Uint32(n[:])
-	if size > maxFrame {
+	bin := size&binaryFrame != 0
+	size &^= binaryFrame
+	if size > maxFrame || bin && size > maxChunkFrame {
 		return nil, fmt.Errorf("node: a frame of %d bytes is too large", size)
 	}
 	r.SetReadDeadline(time.Now().Add(timeout + transferTime(int(size))))
@@ -368,6 +382,13 @@ func readMessage(r deadliner, timeout time.Duration) (*message, error) {
 	}
 	if len(data) != int(size) {
 		return nil, io.ErrUnexpectedEOF
+	}
+	if bin {
+		ch, err := decodeChunk(data)
+		if err != nil {
+			return nil, err
+		}
+		return &message{Type: typeChunk, chunk: &ch}, nil
 	}
 	var m message
 	if err := json.Unmarshal(data, &m); err != nil {

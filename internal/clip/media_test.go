@@ -1,0 +1,196 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package clip
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+)
+
+func part(typ, path string, b string) Part {
+	sum := sha256.Sum256([]byte(b))
+	return Part{Type: typ, Path: path, Size: int64(len(b)), SHA256: sum[:]}
+}
+
+func manifest(parts ...Part) *Manifest {
+	m := &Manifest{Parts: parts}
+	for _, p := range parts {
+		m.Size += p.Size
+	}
+	return m
+}
+
+func TestManifestValidate(t *testing.T) {
+	png, html := part(TypePNG, "", "png bytes"), part(TypeHTML, "", "<b>x</b>")
+	file, dir := part("", "photos/a.jpg", "jpeg"), Part{Path: "photos", Dir: true}
+	for _, m := range []*Manifest{manifest(png), manifest(png, html), manifest(dir, file), manifest(part("", "empty.txt", ""))} {
+		if err := m.Validate(); err != nil {
+			t.Errorf("Validate(%+v): %v", m.Parts, err)
+		}
+	}
+	tooMany := make([]Part, MaxTypes+1)
+	for i := range tooMany {
+		tooMany[i] = png
+	}
+	bad := map[string]*Manifest{
+		"no parts":        {},
+		"mixed":           manifest(png, file),
+		"mixed the other": manifest(file, png),
+		"unknown type":    manifest(part("image/gif", "", "gif")),
+		"twice":           manifest(png, png),
+		"same path":       manifest(file, file),
+		"too many types":  manifest(tooMany...),
+		"no hash":         manifest(Part{Type: TypePNG, Size: 1}),
+		"folder size":     manifest(Part{Path: "d", Dir: true, Size: 1}),
+		"bad size":        {Size: 1, Parts: []Part{png}},
+		"too large":       manifest(Part{Type: TypePNG, Size: MaxMedia + 1, SHA256: png.SHA256}),
+		"inside a file":   manifest(part("", "a.txt", "x"), part("", "a.txt/b", "y")),
+		"dot dot":         manifest(part("", "../etc/passwd", "x")),
+		"absolute":        manifest(part("", "/etc/passwd", "x")),
+		"backslash":       manifest(part("", `a\b`, "x")),
+		"reserved":        manifest(part("", "dir/con.txt", "x")),
+	}
+	for name, m := range bad {
+		if err := m.Validate(); err == nil {
+			t.Errorf("%s: Validate(%+v) succeeded", name, m.Parts)
+		}
+	}
+	// 140 folders of 15 names of 250 bytes: more than MaxPaths together.
+	var paths []Part
+	for i := range 140 {
+		names := make([]string, 15)
+		for j := range names {
+			names[j] = strings.Repeat("d", 247) + fmt.Sprintf("%03d", i)
+		}
+		paths = append(paths, Part{Path: strings.Join(names, "/"), Dir: true})
+	}
+	if err := manifest(paths...).Validate(); err == nil || !strings.Contains(err.Error(), "paths") {
+		t.Errorf("paths of more than %d bytes: %v", MaxPaths, err)
+	}
+}
+
+func TestNames(t *testing.T) {
+	for _, name := range []string{"a.txt", "R\u00e9sum\u00e9 2026.pdf", "con", "LPT9.log", "a.", "a ", "", ".", "..", "a/b", "a:b", "tab\there", strings.Repeat("\u00e9", 200), "\xff"} {
+		clean := CleanName(name)
+		if err := CheckName(clean); err != nil {
+			t.Errorf("CleanName(%q) = %q: %v", name, clean, err)
+		}
+		if CheckName(name) == nil && clean != name {
+			t.Errorf("CleanName(%q) = %q, changed a valid name", name, clean)
+		}
+	}
+	for _, name := range []string{"CON", "nul.txt", "com1", "Lpt3.doc"} {
+		if CheckName(name) == nil {
+			t.Errorf("CheckName(%q) took a name Windows reserves", name)
+		}
+	}
+	for _, name := range []string{"console", "com0", "lpt", "comX"} {
+		if err := CheckName(name); err != nil {
+			t.Errorf("CheckName(%q): %v", name, err)
+		}
+	}
+}
+
+func TestMediaEvents(t *testing.T) {
+	w := newWorld()
+	a, b := w.member(idA), w.member(idB)
+	join(t, w, a, idB, nil)
+	join(t, w, b, idA, nil)
+	m := manifest(part(TypePNG, "", "screenshot"))
+	ev, ok, err := a.CopiedMedia(m, "", Copy)
+	if err != nil || !ok || ev.Kind != Media || ev.Media != m || ev.Text != "" {
+		t.Fatalf("CopiedMedia() = %+v, %v, %v", ev, ok, err)
+	}
+	if err := ev.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := a.CopiedMedia(manifest(part(TypePNG, "", "screenshot")), "", Copy); ok {
+		t.Error("copying the same image again made a new event")
+	}
+	if got, _, _, ok := a.LocalMedia(); !ok || got != m {
+		t.Errorf("LocalMedia() = %v, %v", got, ok)
+	}
+	if _, _, _, ok := a.Local(); ok {
+		t.Error("Local() returned a text for an image without one")
+	}
+	// A text after the image is a new copy, and the image is no longer local.
+	mustCopy(t, a, "then a text")
+	if _, _, _, ok := a.LocalMedia(); ok {
+		t.Error("LocalMedia() after a text")
+	}
+
+	// The other member writes it, and its watcher's report is an echo.
+	res := mustReceive(t, b, ev)
+	if !res.Write {
+		t.Fatalf("a live media event was not written: %+v", res)
+	}
+	if cur, _ := b.Current(); cur.Kind != Media || cur.Media.Parts[0].Type != TypePNG {
+		t.Errorf("current = %+v", cur)
+	}
+	if _, ok, _ := b.CopiedMedia(manifest(part(TypePNG, "", "screenshot")), "", Copy); ok {
+		t.Error("the echo of a written image made a new event")
+	}
+	if _, ok, _ := b.Copied("screenshot", Text, Copy); !ok {
+		t.Error("a text that equals nothing written made no event")
+	}
+
+	// Files with a text alternative: Local gives the text.
+	files := manifest(Part{Path: "docs", Dir: true}, part("", "docs/a.txt", "a"))
+	ev, res, err = b.SendMedia(files, "docs", Copy)
+	if err != nil || !res.Write || ev.Text != "docs" {
+		t.Fatalf("SendMedia() = %+v, %+v, %v", ev, res, err)
+	}
+	if text, kind, _, ok := b.Local(); !ok || text != "docs" || kind != Text {
+		t.Errorf("Local() = %q, %v, %v", text, kind, ok)
+	}
+	if _, res, _ := b.SendMedia(files, "docs", Copy); res.Write {
+		t.Error("SendMedia() asked to write what the clipboard holds")
+	}
+	if _, _, err := b.SendMedia(files, strings.Repeat("x", MaxAltText+1), Copy); err == nil {
+		t.Error("a text alternative over the limit was taken")
+	}
+	if _, _, err := b.CopiedMedia(&Manifest{}, "", Copy); err == nil {
+		t.Error("an empty manifest was taken")
+	}
+}
+
+func TestMediaValidation(t *testing.T) {
+	w := newWorld()
+	good := Event{ID: NewID(), Origin: idB, Time: hlc.Timestamp{Wall: w.wall}, Kind: Media, Media: manifest(part(TypeJPEG, "", "j"))}
+	if err := good.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	noManifest := good
+	noManifest.Media = nil
+	textWithManifest := good
+	textWithManifest.Kind = Text
+	textWithManifest.Text = "x"
+	longText := good
+	longText.Text = strings.Repeat("x", MaxAltText+1)
+	badManifest := good
+	badManifest.Media = &Manifest{Size: 2, Parts: good.Media.Parts}
+	for name, ev := range map[string]Event{"no manifest": noManifest, "text with a manifest": textWithManifest, "long text": longText, "bad manifest": badManifest} {
+		if err := ev.Validate(); err == nil {
+			t.Errorf("%s: Validate succeeded", name)
+		}
+	}
+	b, err := json.Marshal(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"kind":"media"`, `"media":{"size":1,"parts":[{"type":"image/jpeg","size":1,"sha256":"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("JSON %s lacks %s", b, want)
+		}
+	}
+	var back Event
+	if err := json.Unmarshal(b, &back); err != nil || back.Validate() != nil || back.Media.key() != good.Media.key() {
+		t.Errorf("round trip %+v, %v", back, err)
+	}
+}

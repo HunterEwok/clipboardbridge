@@ -17,9 +17,13 @@ const usage = `Usage: clipboardbridge <command> [arguments]
 
 Commands:
   copy [-secret]          Send standard input to the group.
+  copy [-text TEXT] FILE...
+                          Send files and folders to the group; -type png|jpeg|html FILE
+                          sends one image or HTML as clipboard data.
   paste [-terminal [-lines] [-secret]]
                           Print this member's clipboard text; -terminal makes it
                           safe to paste into a terminal.
+  paste -o DIR            Save the clipboard's images or files in the folder DIR.
   paste -on DEVICE [-type] [-enter] [-secret]
                           On an admin: put standard input, or this clipboard, where the
                           focus is on another device that allows remote paste.
@@ -51,6 +55,9 @@ Commands:
                           Show or set what moves between this clipboard and the group;
                           a new device keeps its own.
   mode -on DEVICE MODE    On an admin: set the sync mode of another device of the group.
+  config [max-copy|max-copy-away SIZE]
+                          Show or set the largest copy of images and files this device
+                          sends or fetches, at home (100MiB) and away from home (25MiB).
   pair                    In a group: show a code for a new computer. In none: join one,
                           by the phone's QR code or the code from cbb pair on the group.
   pair -code [address]    Join with the code from cbb pair on the root or an admin.
@@ -135,6 +142,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdHolder(rest, stdout, stderr)
 	case "mode":
 		return cmdMode(rest, stdout, stderr)
+	case "config":
+		return cmdConfig(rest, stdout, stderr)
 	case "network":
 		return cmdNetwork(rest, stdout, stderr)
 	case "forward":

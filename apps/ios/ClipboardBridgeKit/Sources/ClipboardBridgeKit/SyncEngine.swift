@@ -111,11 +111,12 @@ public final class SyncEngine {
         return e
     }
 
-    /// The current text while it is usable: a text, or a secret younger
-    /// than the secret lifetime.
+    /// The current text while it is usable: a text, a secret younger than
+    /// the secret lifetime, or the text of images or files, as a text.
     public var usable: (text: String, kind: Member.Kind)? {
         guard let e = current, !e.isMark else { return nil }
         if e.kind == .secret && uptime() - copiedAt >= Self.secretTTL { return nil }
+        if e.kind == .media { return e.text.isEmpty ? nil : (e.text, .text) }
         return (e.text, e.kind)
     }
 

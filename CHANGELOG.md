@@ -132,6 +132,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
   polkit rule), `cancel-shutdown` and `restart`, each off until `sudo cbb action enable
   NAME` there; its hello names the ones that are on, and `lite/core` checks action commands
   and their signers against Go's vectors.
+- Images and files, the first step (design.md, "Images and files"; docs/protocol.md,
+  section 4): a `media` event carries a manifest of the copy's parts with their sizes and
+  SHA-256, and members fetch the content with `get` from one that serves it, in binary
+  chunks padded to 16 KiB that go only while no event waits. The service keeps what it holds
+  in a cache in its state directory (the current copy, older ones for 10 minutes, nothing
+  after a restart) and fetches a copy its mode takes, from the origin first, up to its limit:
+  `cbb config max-copy` (100 MiB) and `max-copy-away` (25 MiB), at most 1 GiB. `cbb copy
+  FILE...` sends files and folders (links left out, names made safe for every system), `cbb
+  copy -type png FILE` an image, and `cbb paste -o DIR` saves them, never over a file and
+  never executable; `cbb status` shows a fetch in progress. Until the desktop connectors
+  take images and files, they, the lite member and the phones get only the copy's text, and
+  the Swift and Kotlin kits and `lite/core` check manifests against Go's vectors.
 
 ### Changed
 

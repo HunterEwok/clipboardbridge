@@ -591,10 +591,12 @@ with member TLS inside it, so the forwarder and the blind relay see neither cont
 headers nor inner addresses. Only group members hold the plaintext, and every part is
 checked against the SHA-256 of a manifest that came over an authenticated connection, so a
 member serving from its cache cannot change it. What stays visible: the network between a
-client and the hub sees that roughly so many megabytes went; chunks are padded to 256 KiB,
-and cover traffic cannot hide a large transfer.
+client and the hub sees that roughly so many megabytes went; chunk frames are padded to a
+multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
+
+Step 1 is built (docs/protocol.md, section 4, "Media" and "Content"); the rest follows.
 
 1. The `media` event, the content cache, `get` and `chunk`, priorities and limits in Go;
    interop vectors for the Swift and Kotlin kits and the lite core (which learns to ignore

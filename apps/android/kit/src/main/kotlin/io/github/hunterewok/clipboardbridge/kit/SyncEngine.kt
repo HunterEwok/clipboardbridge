@@ -98,12 +98,16 @@ class SyncEngine(
     /** The current event with its age as of now. */
     val currentEvent: Member.Event? get() = current?.copy(ageMS = maxOf(0, uptimeMS() - copiedAt))
 
-    /** The current text while it is usable: a text, or a secret younger than the secret lifetime. */
+    /**
+     * The current text while it is usable: a text, a secret younger than
+     * the secret lifetime, or the text of images or files, as a text.
+     */
     val usable: Pair<String, Member.Kind>?
         get() {
             val e = current ?: return null
             if (e.isMark) return null
             if (e.kind == Member.Kind.SECRET && uptimeMS() - copiedAt >= SECRET_TTL_MS) return null
+            if (e.kind == Member.Kind.MEDIA) return e.text.takeIf { it.isNotEmpty() }?.let { it to Member.Kind.TEXT }
             return e.text to e.kind
         }
 

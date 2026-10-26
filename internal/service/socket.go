@@ -77,6 +77,24 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
+	case control.OpCopyMedia:
+		if err := s.copyMedia(c, r, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
+	case control.OpPasteMedia:
+		if err := s.pasteMedia(ctx, c); err != nil {
+			fail(c, err)
+		}
+	case control.OpConfig:
+		if m.Name != "" {
+			if err := s.setConfig(m.Name, m.Value); err != nil {
+				fail(c, err)
+				return
+			}
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpPaste:
 		e := s.engine()
 		if e == nil {
@@ -85,6 +103,10 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		}
 		text, kind, ok := pasteText(e)
 		if !ok {
+			if hasMedia(e) {
+				fail(c, errors.New("the clipboard holds images or files without a text; cbb paste -o DIR saves them"))
+				return
+			}
 			fail(c, errors.New("the clipboard is empty"))
 			return
 		}
@@ -299,6 +321,7 @@ func (s *Service) status() *control.Status {
 	st.Away = s.awayStatus()
 	st.Paste = s.pasteStatusLocked()
 	st.Actions = s.actionStatus()
+	st.Media = s.mediaStatus()
 	return st
 }
 

@@ -492,6 +492,10 @@ func (s *Service) write(w node.Write) {
 		return
 	}
 	s.lastSeq = w.Seq
+	w, ok := s.mediaWritten(w)
+	if !ok {
+		return // images or files without a text: nothing for the watchers yet
+	}
 	boards := 0
 	for wt := range s.watchers {
 		if wt.board() {

@@ -367,7 +367,8 @@ fn via_of(s: &str) -> Result<Via> {
 
 fn kind_name(k: Kind) -> &'static str {
     match k {
-        Kind::Text => "text",
+        // Of images or files a lite member has only their text.
+        Kind::Text | Kind::Media => "text",
         Kind::Secret => "secret",
     }
 }
@@ -858,7 +859,7 @@ impl Service {
                 let got = if engine.mode().receives() {
                     engine.local()
                 } else {
-                    engine.current().map(|ev| (ev.text, ev.kind, Duration::ZERO))
+                    engine.current().filter(|ev| !ev.text.is_empty()).map(|ev| (ev.text, ev.kind, Duration::ZERO))
                 };
                 let (text, kind, _) = got.ok_or_else(|| Error::msg("the clipboard is empty"))?;
                 Ok(control::reply(Header { kind: kind_name(kind).into(), ..Default::default() }, text.into_bytes()))

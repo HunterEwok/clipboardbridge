@@ -89,7 +89,21 @@ func pasteText(e *clip.Engine) (string, clip.Kind, bool) {
 		return text, kind, ok
 	}
 	ev, ok := e.Current()
+	if ev.Kind == clip.Media {
+		// Images or files: their plain-text alternative, if any.
+		return ev.Text, clip.Text, ok && ev.Text != ""
+	}
 	return ev.Text, ev.Kind, ok
+}
+
+// hasMedia reports whether cbb paste -o has images or files to save.
+func hasMedia(e *clip.Engine) bool {
+	if e.Mode().Receives() {
+		_, _, _, ok := e.LocalMedia()
+		return ok
+	}
+	ev, ok := e.Current()
+	return ok && ev.Media != nil
 }
 
 // maxCommandIDs bounds the replay cache of commands; a command lives at
