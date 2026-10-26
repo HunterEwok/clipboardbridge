@@ -70,6 +70,7 @@ type Wayland struct {
 	seat   uint32
 	vkm    uint32 // the virtual keyboard manager, 0 if the compositor has none
 	inj    waylandInject
+	portal *portal // the keys on GNOME and KDE, which have no virtual keyboard; nil without it
 
 	mu         sync.Mutex
 	offers     map[uint32][]string // the types of each live offer
@@ -120,6 +121,8 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 	w.seat = seatID
 	if vkm, ok := reg.Find(virtualKeyboards); ok {
 		w.vkm = reg.Bind(vkm, 1, nil)
+	} else {
+		w.portal = newPortal(logf)
 	}
 	w.device = d.NewID(w.deviceEvent)
 	if err := d.Send(w.mgr, mgrGetDevice, (&wl.Request{}).Uint(w.device).Uint(seatID)); err != nil {
@@ -140,7 +143,12 @@ func OpenWayland(logf func(string, ...any)) (*Wayland, error) {
 }
 
 // Close closes the connection.
-func (w *Wayland) Close() error { return w.d.Close() }
+func (w *Wayland) Close() error {
+	if w.portal != nil {
+		w.portal.close()
+	}
+	return w.d.Close()
+}
 
 func (w *Wayland) loop() {
 	for {

@@ -59,9 +59,9 @@ type waylandInject struct {
 }
 
 // Target offers the desktop for remote paste when the compositor has
-// virtual keyboards.
+// virtual keyboards, or the session the RemoteDesktop portal (KDE).
 func (w *Wayland) Target() string {
-	if w.vkm == 0 {
+	if w.vkm == 0 && w.portal == nil {
 		return ""
 	}
 	return "desktop"
@@ -72,7 +72,10 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	w.inj.mu.Lock()
 	defer w.inj.mu.Unlock()
 	if w.vkm == 0 {
-		return &connector.Refusal{Reason: "this compositor offers no virtual keyboard to paste with"}
+		if w.portal == nil {
+			return &connector.Refusal{Reason: "this compositor offers no virtual keyboard to paste with"}
+		}
+		return portalInject(w.portal, w, text, method, enter, secret)
 	}
 	if why := lockcheck.Reason(); why != "" {
 		return &connector.Refusal{Reason: why}
@@ -87,7 +90,12 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	var err error
 	switch method {
 	case "paste":
-		err = w.pasteText(text, secret)
+		err = pasteThrough(w, text, secret, func() error {
+			if err := w.sync(); err != nil { // the selection is set before the keys
+				return err
+			}
+			return w.keys([]string{"Insert"}, modShift)
+		})
 	case "type":
 		err = w.typeText(ctx, text)
 	default:
@@ -99,32 +107,10 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	return err
 }
 
-// pasteText pastes text through the clipboard and gives the clipboard back.
-func (w *Wayland) pasteText(text string, secret bool) error {
-	prev, had, _ := w.Current()
-	if err := w.Write(text, secret); err != nil {
-		return err
-	}
-	if err := w.sync(); err != nil { // the selection is set before the keys
-		return err
-	}
-	err := w.keys([]string{"Insert"}, modShift)
-	time.Sleep(restoreAfter)
+func (w *Wayland) holds(text string) bool {
 	w.mu.Lock()
-	ours := w.own != 0 && w.item.Text == text
-	w.mu.Unlock()
-	switch {
-	case !ours: // the user copied meanwhile
-	case had:
-		if werr := w.Write(prev.Text, prev.Secret); werr != nil && err == nil {
-			err = werr
-		}
-	default:
-		if cerr := w.ClearIfUnchanged(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}
-	return err
+	defer w.mu.Unlock()
+	return w.own != 0 && w.item.Text == text
 }
 
 // typeText types text key by key, a keymap for every keysPerMap different

@@ -55,6 +55,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   --console` runs as the `clipboardbridge-console` unit with `CAP_SYS_ADMIN` alone, types
   into the active console where a user is logged in. A text with a line break goes to tmux,
   a console or the keys only when the user allowed Enter, since it would run there.
+- Remote paste on GNOME and KDE: the desktop connector presses the keys through the
+  RemoteDesktop portal (the ei protocol, `internal/ei`). The first paste opens the portal's
+  dialog on the device and is refused until the user allows it; the portal's restore token
+  keeps the consent. It pastes and presses Enter, and refuses typing, whose keys would follow
+  the user's layout. In a Wayland session the X11 connector of XWayland uses it too, since
+  XTEST's keys reach only X11 programs there.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

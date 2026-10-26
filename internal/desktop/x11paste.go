@@ -66,10 +66,12 @@ type x11Inject struct {
 	err  error // XTEST is missing
 }
 
-// Target offers the desktop for remote paste, but only in an X11 session:
-// in a Wayland session, XWayland's keys reach only X11 programs.
+// Target offers the desktop for remote paste: XTEST in an X11 session, the
+// portal in a Wayland one.
+// In a Wayland session XWayland's keys reach only X11 programs, so the
+// keys go through the RemoteDesktop portal there, as on GNOME.
 func (b *X11) Target() string {
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
+	if os.Getenv("WAYLAND_DISPLAY") != "" && b.portal == nil {
 		return ""
 	}
 	return "desktop"
@@ -79,6 +81,12 @@ func (b *X11) Target() string {
 func (b *X11) Inject(ctx context.Context, text, method string, enter, secret bool) error {
 	b.inj.mu.Lock()
 	defer b.inj.mu.Unlock()
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		if b.portal == nil {
+			return &connector.Refusal{Reason: "this Wayland desktop offers no way to press keys for a paste"}
+		}
+		return portalInject(b.portal, b, text, method, enter, secret)
+	}
 	b.inj.once.Do(func() {
 		if err := xtest.Init(b.x); err != nil {
 			b.inj.err = fmt.Errorf("the X server has no XTEST: %w", err)
@@ -97,7 +105,7 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 	defer keys.release(b)
 	switch method {
 	case "paste":
-		err = b.pasteText(keys, text, secret)
+		err = pasteThrough(b, text, secret, func() error { return keys.press(b, ksInsert, true) })
 	case "type":
 		err = b.typeText(ctx, keys, text)
 	default:
@@ -124,29 +132,10 @@ func (b *X11) locked() string {
 	return ""
 }
 
-// pasteText pastes text through the clipboard and gives the clipboard back.
-func (b *X11) pasteText(keys *x11Keys, text string, secret bool) error {
-	prev, had, _ := b.Current()
-	if err := b.Write(text, secret); err != nil {
-		return err
-	}
-	err := keys.press(b, ksInsert, true)
-	time.Sleep(restoreAfter)
+func (b *X11) holds(text string) bool {
 	b.mu.Lock()
-	ours := b.owned && b.text == text
-	b.mu.Unlock()
-	switch {
-	case !ours: // the user copied meanwhile
-	case had:
-		if werr := b.Write(prev.Text, prev.Secret); werr != nil && err == nil {
-			err = werr
-		}
-	default:
-		if cerr := b.ClearIfUnchanged(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}
-	return err
+	defer b.mu.Unlock()
+	return b.owned && b.text == text
 }
 
 // typeText types text key by key; it stops early when ctx ends.
