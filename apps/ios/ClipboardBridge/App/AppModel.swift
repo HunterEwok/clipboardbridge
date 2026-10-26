@@ -136,7 +136,11 @@ final class AppModel: ObservableObject {
         var actions: [String] = []
     }
 
-    enum SyncResult: Equatable { case sent, fetched, nothingNew }
+    enum SyncResult: Equatable {
+        case sent, fetched, nothingNew
+        /// Files a computer copied, saved in the app's folder in Files.
+        case savedFiles
+    }
 
     enum ScanResult: Equatable {
         case joinCode(JoinCode)
@@ -351,6 +355,7 @@ final class AppModel: ObservableObject {
             case .sent: message = String(localized: "Sent to the computers.", bundle: .app)
             case .fetched: message = String(localized: "Fetched from the computers.", bundle: .app)
             case .nothingNew: message = String(localized: "Nothing new to send or fetch.", bundle: .app)
+            case .savedFiles: message = String(localized: "Saved in Files, On My iPhone, Clipboard Bridge.", bundle: .app)
             }
             if let message { Island.flash(message) }
         } catch {
@@ -728,6 +733,12 @@ final class AppModel: ObservableObject {
             case .timedOut, .closed: return String(localized: "The computer did not answer. It may run an older version of Clipboard Bridge.", bundle: .app)
             default: break
             }
+        }
+        if let f = error as? Content.Failure, case .tooLarge = f {
+            return String(localized: "This image is larger than 100 MB, so it stays on the computer.", bundle: .app)
+        }
+        if error is Content.Failure || (error as? MemberNode.Failure) == .missing {
+            return String(localized: "Could not get the image from the computers. Copy it there again, then try again.", bundle: .app)
         }
         if error is LiveGroup.ClipboardUnreadable {
             return String(localized: "Could not read the clipboard, so it was left as it is. Allow pasting for Clipboard Bridge, or copy the text again.", bundle: .app)

@@ -73,12 +73,14 @@ const (
 	maxSecrets = 4096
 )
 
-// Kind tells normal text from a secret, such as a password.
+// Kind tells normal text from a secret, such as a password, and from
+// images and files.
 type Kind uint8
 
 const (
 	Text   Kind = iota // normal text
 	Secret             // kept only in memory, expires, sent in a hello only as a mark
+	Media              // images or files: a manifest, and maybe a plain-text alternative
 )
 
 // MarshalText implements encoding.TextMarshaler.
@@ -88,6 +90,8 @@ func (k Kind) MarshalText() ([]byte, error) {
 		return []byte("text"), nil
 	case Secret:
 		return []byte("secret"), nil
+	case Media:
+		return []byte("media"), nil
 	}
 	return nil, fmt.Errorf("clip: unknown kind %d", k)
 }
@@ -99,6 +103,8 @@ func (k *Kind) UnmarshalText(b []byte) error {
 		*k = Text
 	case "secret":
 		*k = Secret
+	case "media":
+		*k = Media
 	default:
 		return fmt.Errorf("clip: unknown kind %q", b)
 	}
@@ -150,7 +156,9 @@ type Event struct {
 	Time   hlc.Timestamp `json:"time"`
 	Age    int64         `json:"age_ms"` // milliseconds since the copy, when the event was sent
 	Kind   Kind          `json:"kind"`
-	Text   string        `json:"text"` // empty only in the mark of a secret
+	Text   string        `json:"text"` // empty only in the mark of a secret, and in media without a text
+	// Media is the content of a media event, which only it has.
+	Media *Manifest `json:"media,omitempty"`
 }
 
 // IsMark reports whether e is the mark of a secret: the event without its text.
@@ -165,16 +173,36 @@ func (e Event) Validate() error {
 		return errors.New("clip: bad origin device ID")
 	case e.Time.IsZero() || !e.Time.Valid():
 		return errors.New("clip: bad timestamp")
-	case e.Kind != Text && e.Kind != Secret:
+	case e.Kind > Media:
 		return fmt.Errorf("clip: unknown kind %d", e.Kind)
+	case (e.Kind == Media) != (e.Media != nil):
+		return errors.New("clip: only a media event has a manifest, and it always does")
 	case e.Via > Universal:
 		return fmt.Errorf("clip: unknown via %d", e.Via)
 	case e.Age < 0:
 		return fmt.Errorf("clip: negative event age %d ms", e.Age)
 	case e.IsMark():
 		return nil
+	case e.Kind == Media:
+		if err := e.Media.Validate(); err != nil {
+			return err
+		}
+		if e.Text == "" {
+			return nil
+		}
+		if len(e.Text) > MaxAltText {
+			return fmt.Errorf("clip: a media event's text of %d bytes is larger than %d", len(e.Text), MaxAltText)
+		}
 	}
 	return checkText(e.Text)
+}
+
+// key identifies the content of e for the echo checks.
+func (e Event) key() string {
+	if e.Media != nil {
+		return e.Media.key()
+	}
+	return e.Text
 }
 
 // later reports whether e sorts after f: by timestamp, then by ID, so that
@@ -257,9 +285,18 @@ type Engine struct {
 // localText is the text of the member's own clipboard, as far as clipboardbridge
 // knows it: the last local copy or the last text it wrote there.
 type localText struct {
-	text string // empty when unknown
-	kind Kind
-	at   time.Duration // uptime of the copy
+	text  string // empty when unknown, or media without a text
+	kind  Kind
+	media *Manifest     // with kind Media
+	at    time.Duration // uptime of the copy
+}
+
+// key identifies the content, as Event.key.
+func (l localText) key() string {
+	if l.media != nil {
+		return l.media.key()
+	}
+	return l.text
 }
 
 // New returns an Engine without a current text.
@@ -324,15 +361,33 @@ func (e *Engine) Current() (Event, bool) {
 
 // Local returns the text of this member's own clipboard, as far as clipboardbridge
 // knows it, and how long ago it was copied. cbb paste and the iPhone
-// button use it. It reports false when unknown or an expired secret.
+// button use it. It reports false when unknown or an expired secret; for
+// images or files, their plain-text alternative, as a Text.
 func (e *Engine) Local() (string, Kind, time.Duration, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := e.cfg.Uptime()
-	if !e.localLive(now) {
+	switch {
+	case !e.localLive(now) || e.local.kind == Media && e.local.text == "":
 		return "", Text, 0, false
+	case e.local.kind == Media:
+		return e.local.text, Text, now - e.local.at, true
 	}
 	return e.local.text, e.local.kind, now - e.local.at, true
+}
+
+// LocalMedia returns the images or files of this member's own clipboard,
+// with their plain-text alternative and how long ago they were copied:
+// what cbb paste -o writes. It reports false when the clipboard holds no
+// media, as far as clipboardbridge knows.
+func (e *Engine) LocalMedia() (*Manifest, string, time.Duration, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.cfg.Uptime()
+	if e.local.media == nil {
+		return nil, "", 0, false
+	}
+	return e.local.media, e.local.text, now - e.local.at, true
 }
 
 // ClipboardIs records what the local clipboard holds without making an event:
@@ -343,7 +398,7 @@ func (e *Engine) Local() (string, Kind, time.Duration, bool) {
 func (e *Engine) ClipboardIs(text string, kind Kind) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if checkText(text) != nil || kind != Text && kind != Secret {
+	if checkText(text) != nil || kind != Text && kind != Secret { // media is never only told
 		e.local = localText{}
 		return
 	}
@@ -428,6 +483,78 @@ func (e *Engine) Send(text string, kind Kind, via Via) (Event, Result, error) {
 		e.written.add(sum, now)
 	}
 	return e.newEvent(text, kind, via, sum, now), res, nil
+}
+
+// SendMedia makes a media event from a deliberate action, such as cbb copy
+// FILE, whose content the caller already holds; text is its plain-text
+// alternative, or "". As Send, Result.Write tells whether it must go to the
+// member's own clipboard.
+func (e *Engine) SendMedia(m *Manifest, text string, via Via) (Event, Result, error) {
+	ev := Event{Kind: Media, Media: m, Text: text, Via: via}
+	if err := checkMedia(ev); err != nil {
+		return Event{}, Result{}, err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.cfg.Uptime()
+	e.settle(now)
+	var res Result
+	if !e.localHolds(ev, now) {
+		e.seq++
+		res.Write, res.Seq = true, e.seq
+		e.written.add(e.sum(ev.key()), now)
+	}
+	return e.newMedia(ev, now), res, nil
+}
+
+// CopiedMedia records images or files that a clipboard watcher reported,
+// whose content the caller holds, as Copied does a text: it returns the
+// event to send, or false when the clipboard did not really change for the
+// group.
+func (e *Engine) CopiedMedia(m *Manifest, text string, via Via) (Event, bool, error) {
+	ev := Event{Kind: Media, Media: m, Text: text, Via: via}
+	if err := checkMedia(ev); err != nil {
+		return Event{}, false, err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.cfg.Uptime()
+	e.settle(now)
+	switch {
+	case e.localHolds(ev, now), e.written.has(e.sum(ev.key()), now, echoWindow):
+		return Event{}, false, nil
+	case via == Universal && e.live() && e.current.Kind == Media && e.current.key() == ev.key():
+		e.local = localText{text: e.current.Text, kind: Media, media: e.current.Media, at: e.copiedAt}
+		return Event{}, false, nil
+	case !e.mode.Sends():
+		e.local = localText{text: text, kind: Media, media: m, at: now}
+		return Event{}, false, nil
+	}
+	return e.newMedia(ev, now), true, nil
+}
+
+func checkMedia(ev Event) error {
+	if ev.Media == nil || ev.Via > Universal {
+		return errors.New("clip: bad media or via")
+	}
+	if err := ev.Media.Validate(); err != nil {
+		return err
+	}
+	if ev.Text != "" && (len(ev.Text) > MaxAltText || checkText(ev.Text) != nil) {
+		return errors.New("clip: a media event's text is not valid or too long")
+	}
+	return nil
+}
+
+// newMedia makes a local media event current and the local clipboard's
+// content.
+func (e *Engine) newMedia(ev Event, now time.Duration) Event {
+	ev.ID, ev.Origin, ev.Time = NewID(), e.cfg.Self, e.cfg.Clock.Now()
+	e.seen.add(ev.ID)
+	e.current, e.copiedAt = ev, now
+	e.local = localText{text: ev.Text, kind: Media, media: ev.Media, at: now}
+	e.offlineCopy = !e.synced || len(e.peers) == 0
+	return ev
 }
 
 func checkCopy(text string, kind Kind, via Via) error {
@@ -628,7 +755,7 @@ func (e *Engine) receive(ev Event) Result {
 // back in sync.
 func (e *Engine) decideWrite(res Result, now time.Duration) Result {
 	e.settle(now)
-	if !e.mode.Receives() || !e.live() || e.localHas(e.current.Text, now) {
+	if !e.mode.Receives() || !e.live() || e.localHolds(e.current, now) {
 		return res
 	}
 	if now-e.copiedAt > e.cfg.LiveWindow && (!e.inRejoinWindow(now) || e.offlineCopy) {
@@ -636,8 +763,8 @@ func (e *Engine) decideWrite(res Result, now time.Duration) Result {
 	}
 	e.seq++
 	res.Write, res.Seq = true, e.seq
-	e.local = localText{text: e.current.Text, kind: e.current.Kind, at: e.copiedAt}
-	e.written.add(e.sum(e.current.Text), now)
+	e.local = localText{text: e.current.Text, kind: e.current.Kind, media: e.current.Media, at: e.copiedAt}
+	e.written.add(e.sum(e.current.key()), now)
 	e.offlineCopy = false
 	return res
 }
@@ -663,14 +790,19 @@ func (e *Engine) live() bool {
 }
 
 func (e *Engine) localLive(now time.Duration) bool {
-	if e.local.text == "" {
+	if e.local.text == "" && e.local.media == nil {
 		return false
 	}
 	return e.local.kind != Secret || now-e.local.at < e.cfg.SecretTTL
 }
 
 func (e *Engine) localHas(text string, now time.Duration) bool {
-	return e.localLive(now) && e.local.text == text
+	return e.localLive(now) && e.local.media == nil && e.local.text == text
+}
+
+// localHolds reports whether the local clipboard holds the content of ev.
+func (e *Engine) localHolds(ev Event, now time.Duration) bool {
+	return e.localLive(now) && (e.local.media != nil) == (ev.Media != nil) && e.local.key() == ev.key()
 }
 
 // withAge returns the current event with its age as of now.

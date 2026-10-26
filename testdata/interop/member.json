@@ -184,6 +184,93 @@
 					"mac": "a4:83:e7:01:02:0f"
 				}
 			}
+		},
+		{
+			"t": "event",
+			"event": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1761024000002.0",
+				"age_ms": 5,
+				"kind": "media",
+				"text": "trip",
+				"media": {
+					"size": 1234,
+					"parts": [
+						{
+							"path": "trip",
+							"dir": true
+						},
+						{
+							"path": "trip/a.jpg",
+							"size": 1234,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						},
+						{
+							"path": "trip/empty.txt",
+							"sha256": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="
+						}
+					]
+				}
+			}
+		},
+		{
+			"t": "event",
+			"event": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1761024000003.0",
+				"age_ms": 0,
+				"kind": "media",
+				"text": "",
+				"media": {
+					"size": 70000,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 60000,
+							"sha256": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+						},
+						{
+							"type": "text/html",
+							"size": 10000,
+							"sha256": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ="
+						}
+					]
+				}
+			}
+		},
+		{
+			"t": "hello",
+			"role": "full",
+			"hello": {
+				"wall_ms": 1761024000500,
+				"current": {
+					"id": "fedcba9876543210fedcba9876543210",
+					"origin": "0123456789abcdef0123456789abcdef",
+					"time": "1761024000003.0",
+					"age_ms": 0,
+					"kind": "media",
+					"text": "",
+					"media": {
+						"size": 70000,
+						"parts": [
+							{
+								"type": "image/png",
+								"size": 60000,
+								"sha256": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+							},
+							{
+								"type": "text/html",
+								"size": 10000,
+								"sha256": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ="
+							}
+						]
+					}
+				},
+				"os": "linux",
+				"media": true
+			}
 		}
 	],
 	"timestamps": [
@@ -406,6 +493,333 @@
 				"extra": true
 			},
 			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"text": "",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"text": "alt",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 1,
+					"parts": [
+						{
+							"path": "d",
+							"dir": true
+						},
+						{
+							"path": "d/f.txt",
+							"size": 1,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": true
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"text": "alt"
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "text",
+				"text": "x",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 4,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 0,
+					"parts": []
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"type": "image/gif",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQID"
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 6,
+					"parts": [
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						},
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 3,
+					"parts": [
+						{
+							"path": "a",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						},
+						{
+							"type": "image/png",
+							"size": 3,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 1,
+					"parts": [
+						{
+							"path": "../f",
+							"size": 1,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 1,
+					"parts": [
+						{
+							"path": "d/con.txt",
+							"size": 1,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 1,
+					"parts": [
+						{
+							"path": "d/f.",
+							"size": 1,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 1,
+					"parts": [
+						{
+							"path": "a",
+							"size": 1,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						},
+						{
+							"path": "a/b",
+							"size": 0,
+							"sha256": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+						}
+					]
+				}
+			},
+			"valid": false
+		},
+		{
+			"json": {
+				"id": "fedcba9876543210fedcba9876543210",
+				"origin": "0123456789abcdef0123456789abcdef",
+				"time": "1.0",
+				"age_ms": 0,
+				"kind": "media",
+				"media": {
+					"size": 0,
+					"parts": [
+						{
+							"path": "d",
+							"dir": true,
+							"size": 1
+						}
+					]
+				}
+			},
+			"valid": false
 		}
 	],
 	"order": [

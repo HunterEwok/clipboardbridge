@@ -25,6 +25,7 @@ pub mod clip;
 pub mod error;
 pub mod hlc;
 pub mod identity;
+pub mod media;
 pub mod pair;
 pub mod records;
 pub mod release;

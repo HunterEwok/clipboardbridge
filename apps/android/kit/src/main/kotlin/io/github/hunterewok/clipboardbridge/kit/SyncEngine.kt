@@ -98,12 +98,16 @@ class SyncEngine(
     /** The current event with its age as of now. */
     val currentEvent: Member.Event? get() = current?.copy(ageMS = maxOf(0, uptimeMS() - copiedAt))
 
-    /** The current text while it is usable: a text, or a secret younger than the secret lifetime. */
+    /**
+     * The current text while it is usable: a text, a secret younger than
+     * the secret lifetime, or the text of images or files, as a text.
+     */
     val usable: Pair<String, Member.Kind>?
         get() {
             val e = current ?: return null
             if (e.isMark) return null
             if (e.kind == Member.Kind.SECRET && uptimeMS() - copiedAt >= SECRET_TTL_MS) return null
+            if (e.kind == Member.Kind.MEDIA) return e.text.takeIf { it.isNotEmpty() }?.let { it to Member.Kind.TEXT }
             return e.text to e.kind
         }
 
@@ -111,9 +115,13 @@ class SyncEngine(
     fun hello(name: String?, wallMS: Long = System.currentTimeMillis()): Member.Hello =
         Member.Hello(wallMS = wallMS, current = currentEvent?.mark, name = name)
 
-    /** Makes an event of a text this phone copied or sent, which becomes the current event. It goes to every connection. */
-    fun local(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY): Member.Event {
-        val e = Member.Event(newID(), device, via, clock.now(), 0, kind, text)
+    /**
+     * Makes an event of a text this phone copied or sent, or with media of
+     * images or files and text their plain-text alternative, which becomes
+     * the current event. It goes to every connection.
+     */
+    fun local(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY, media: Media.Manifest? = null): Member.Event {
+        val e = Member.Event(newID(), device, via, clock.now(), 0, if (media != null) Member.Kind.MEDIA else kind, text, media)
         remember(e.id)
         current = e
         copiedAt = uptimeMS()

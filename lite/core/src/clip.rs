@@ -19,6 +19,7 @@ use sha2::Sha256;
 use crate::certs::{is_id, random_bytes, random_id};
 use crate::error::{Error, Result};
 use crate::hlc::{Clock, Timestamp};
+use crate::media::{MAX_ALT_TEXT, Manifest};
 use crate::sync::Mutex;
 
 /// The largest text, in bytes, that the group carries.
@@ -33,13 +34,16 @@ const MAX_SECRETS: usize = 4096;
 const SEEN_IDS: usize = 4096;
 const AHEAD: &str = "the event's time is more than 7 days ahead of this device's clock; check the sender's date";
 
-/// Normal text or a secret, such as a password.
+/// Normal text, a secret, such as a password, or images and files.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     #[default]
     Text,
     Secret,
+    /// Images or files: a manifest, and maybe a plain-text alternative,
+    /// which is all a lite member takes of them.
+    Media,
 }
 
 /// How a text reached the member that made the event.
@@ -79,6 +83,9 @@ pub struct Event {
     pub kind: Kind,
     #[serde(default)]
     pub text: String,
+    /// The content of a media event, which only it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<Manifest>,
 }
 
 impl Event {
@@ -102,8 +109,23 @@ impl Event {
         if self.age < 0 {
             return Err(Error::msg(format!("negative event age {} ms", self.age)));
         }
+        if (self.kind == Kind::Media) != self.media.is_some() {
+            return Err(Error::msg("only a media event has a manifest, and it always does"));
+        }
         if self.is_mark() {
             return Ok(());
+        }
+        if let Some(m) = &self.media {
+            m.validate()?;
+            if self.text.is_empty() {
+                return Ok(());
+            }
+            if self.text.len() > MAX_ALT_TEXT {
+                return Err(Error::msg(format!(
+                    "a media event's text of {} bytes is larger than 256 KiB",
+                    self.text.len()
+                )));
+            }
         }
         check_text(&self.text)
     }
@@ -317,6 +339,9 @@ impl Engine {
     /// the group.
     pub fn copied(&self, text: &str, kind: Kind, via: Via) -> Result<Option<Event>> {
         check_text(text)?;
+        if kind == Kind::Media {
+            return Err(Error::msg("a lite member makes no media events"));
+        }
         let mut st = self.inner.lock();
         let now = (self.uptime)();
         settle(&mut st, now);
@@ -348,6 +373,9 @@ impl Engine {
     /// outcome tells whether to write it to the member's own clipboard.
     pub fn send(&self, text: &str, mut kind: Kind, via: Via) -> Result<(Event, Outcome)> {
         check_text(text)?;
+        if kind == Kind::Media {
+            return Err(Error::msg("a lite member makes no media events"));
+        }
         let mut st = self.inner.lock();
         let now = (self.uptime)();
         settle(&mut st, now);
@@ -375,6 +403,7 @@ impl Engine {
             age: 0,
             kind,
             text: text.to_string(),
+            media: None,
         };
         add_seen(st, &ev.id);
         st.current = ev.clone();
@@ -508,7 +537,13 @@ impl Engine {
 
     fn decide_write(&self, st: &mut Inner, mut out: Outcome, now: Duration) -> Outcome {
         settle(st, now);
-        if !st.mode.receives() || !self.live(st, now) || local_has(st, &st.current.text, now) {
+        if !st.mode.receives()
+            || !self.live(st, now)
+            || st.current.text.is_empty()
+            || local_has(st, &st.current.text, now)
+        {
+            // Images or files without a text leave this member's clipboard
+            // as it is: it never fetches their content.
             return out;
         }
         if now.saturating_sub(st.copied_at) > LIVE_WINDOW && (!in_rejoin_window(st, now) || st.offline_copy) {
@@ -517,7 +552,8 @@ impl Engine {
         st.seq += 1;
         out.write = true;
         out.seq = st.seq;
-        st.local = Local { text: st.current.text.clone(), kind: st.current.kind, at: st.copied_at };
+        let kind = if st.current.kind == Kind::Media { Kind::Text } else { st.current.kind };
+        st.local = Local { text: st.current.text.clone(), kind, at: st.copied_at };
         let sum = self.sum(&st.current.text);
         add_written(st, sum, now);
         st.offline_copy = false;
@@ -629,11 +665,59 @@ mod tests {
             age: 0,
             kind: Kind::Text,
             text: "x".to_string(),
+            media: None,
         };
         assert!(e.received(event(crate::hlc::MAX_WALL)).is_err());
         let out = e.reconcile(B, Hello { wall: now, current: Some(event(crate::hlc::MAX_WALL)) }).unwrap();
         assert!(out.forward.is_none() && !out.write);
         assert!(e.received(event(now + 6 * 24 * 3600 * 1000)).is_ok());
+    }
+
+    /// A media event becomes the group's current one; a lite member takes
+    /// only its text, as a text, and keeps its clipboard when it has none.
+    #[test]
+    fn media_events() {
+        use crate::media::{Manifest, Part};
+        let t = Arc::new(AtomicU64::new(100_000));
+        let a = engine(A, t.clone());
+        a.reconcile(B, Hello { wall: 1_761_024_000_000, current: None }).unwrap();
+        a.connected(B);
+        let (_, out) = a.send("mine", Kind::Text, Via::Copy).unwrap();
+        assert!(out.write);
+        let png = Part { kind: "image/png".into(), size: 3, sha256: alloc::vec![7; 32], ..Default::default() };
+        let mut ev = Event {
+            id: random_id(),
+            origin: B.to_string(),
+            via: Via::Copy,
+            time: Timestamp { wall: 1_761_024_000_000 + 200_000, logical: 0 },
+            age: 0,
+            kind: Kind::Media,
+            text: String::new(),
+            media: Some(Manifest { size: 3, parts: alloc::vec![png] }),
+        };
+        let out = a.received(ev.clone()).unwrap();
+        assert!(out.forward.is_some() && !out.write);
+        assert_eq!(a.current().unwrap().kind, Kind::Media);
+        assert_eq!(a.local().unwrap().0, "mine");
+
+        ev.id = random_id();
+        ev.time.logical = 1;
+        ev.text = "a picture".into();
+        let out = a.received(ev.clone()).unwrap();
+        assert!(out.write);
+        assert_eq!(a.local().unwrap(), ("a picture".to_string(), Kind::Text, Duration::ZERO));
+        assert!(a.copied("a picture", Kind::Text, Via::Copy).unwrap().is_none());
+        assert!(a.send("x", Kind::Media, Via::Copy).is_err());
+
+        let mut bad = ev.clone();
+        bad.media = None;
+        assert!(bad.validate().is_err());
+        bad = ev.clone();
+        bad.media.as_mut().unwrap().size = 4;
+        assert!(bad.validate().is_err());
+        bad = ev;
+        bad.media.as_mut().unwrap().parts[0].path = "../x".into();
+        assert!(bad.validate().is_err());
     }
 
     #[test]

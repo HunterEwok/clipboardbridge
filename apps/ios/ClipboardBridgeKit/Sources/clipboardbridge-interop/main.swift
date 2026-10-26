@@ -17,7 +17,9 @@
 // a key in the keychain and prints "key <SubjectPublicKeyInfo, base64>",
 // reads "cert <DER, base64>" and "ca <DER, base64>" from standard input,
 // dials the Go member PEER with TLS, sends "from swift", waits for "from
-// go", and prints "ok".
+// go", then for Go's picture "go picture", which it fetches, sends its
+// bytes reversed as "phone picture", which Go fetches, waits for "done",
+// and prints "ok".
 //
 //   clipboardbridge-interop invite-window SECRET yes|no   (macOS)
 //
@@ -113,9 +115,10 @@ func memberTLS(host: String, port: UInt16, peer: String) async throws {
         (try? GroupCertificates.verifyMember(leaf, groupCA: ca, now: Date())) == peer
     }
     try await tls.start()
-    let (changes, cont) = AsyncStream<String>.makeStream()
-    let node = MemberNode(engine: SyncEngine(device: me, clock: HybridClock()), name: "iPhone", onChange: { cont.yield($0.text) })
-    let serving = Task { try await node.serve(tls) }
+    let (changes, cont) = AsyncStream<Member.Event>.makeStream()
+    let store = MemoryContent()
+    let node = MemberNode(engine: SyncEngine(device: me, clock: HybridClock()), name: "iPhone", onChange: { cont.yield($0) }, content: store)
+    let serving = Task { try await node.serve(tls, peer: peer) }
     let timeout = Task {
         try await Task.sleep(nanoseconds: 15_000_000_000)
         cont.finish()
@@ -124,13 +127,23 @@ func memberTLS(host: String, port: UInt16, peer: String) async throws {
         try await Task.sleep(nanoseconds: 50_000_000)
     }
     await node.send(text: "from swift", kind: .text)
-    var gotIt = false
-    for await t in changes where t == "from go" {
-        gotIt = true
-        break
+    var events = changes.makeAsyncIterator()
+    func waitFor(_ text: String) async throws -> Member.Event {
+        while let e = await events.next() {
+            if e.text == text { return e }
+        }
+        throw TLSTransport.Failure.notReady("no \"\(text)\" within 15 s")
     }
+    _ = try await waitFor("from go")
+    // Go's picture, fetched, goes back reversed for Go to fetch.
+    let picture = try await waitFor("go picture")
+    guard let part = picture.media?.parts.first, picture.media?.parts.count == 1 else {
+        throw TLSTransport.Failure.notReady("Go's picture has no part")
+    }
+    let png = try await Content.data(from: node, event: picture, part: part)
+    await node.send(text: "phone picture", kind: .text, media: Content.manifest(store: store, data: [("image/png", Data(png.reversed()))]))
+    _ = try await waitFor("done")
     timeout.cancel()
-    guard gotIt else { throw TLSTransport.Failure.notReady("no \"from go\" within 15 s") }
     print("ok")
     await node.closeAll()
     try await serving.value

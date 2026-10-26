@@ -69,6 +69,11 @@ func TestMemberInteropVectors(t *testing.T) {
 	secret.Text = "hunter2"
 	universal := text
 	universal.Via = clip.Universal
+	sum := func(b byte) []byte { return bytes.Repeat([]byte{b}, 32) }
+	files := clip.Event{ID: vecEvent, Origin: vecDevice, Time: vecTime(t, "1761024000002.0"), Age: 5, Kind: clip.Media, Text: "trip",
+		Media: &clip.Manifest{Size: 1234, Parts: []clip.Part{{Path: "trip", Dir: true}, {Path: "trip/a.jpg", Size: 1234, SHA256: sum(1)}, {Path: "trip/empty.txt", SHA256: sum(2)}}}}
+	image := clip.Event{ID: vecEvent, Origin: vecDevice, Time: vecTime(t, "1761024000003.0"), Kind: clip.Media,
+		Media: &clip.Manifest{Size: 70000, Parts: []clip.Part{{Type: clip.TypePNG, Size: 60000, SHA256: sum(3)}, {Type: clip.TypeHTML, Size: 10000, SHA256: sum(4)}}}}
 	hello := func(role Role, h helloOut) json.RawMessage {
 		data, err := encode(h)
 		if err != nil {
@@ -110,6 +115,10 @@ func TestMemberInteropVectors(t *testing.T) {
 				`"short_id":"0123456789abcdef","server_name":"www.example.com","id":"5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f"}`)}}),
 		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500}, OS: group.OSMacOS,
 			Device: &group.DeviceInfo{Form: "laptop", OSVersion: "15.1", Version: "0.5.0", MAC: "a4:83:e7:01:02:0f"}}),
+		// Images and files (frames 16 to 18).
+		event(files),
+		event(image),
+		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &image}, OS: group.OSLinux, Media: true}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",
@@ -133,6 +142,24 @@ func TestMemberInteropVectors(t *testing.T) {
 		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","via":"fax","time":"1.0","age_ms":0,"kind":"text","text":"x"}`,
 		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1","age_ms":0,"kind":"text","text":"x"}`,
 		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x","extra":true}`,
+		// Images and files.
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","text":"","media":{"size":3,"parts":[{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","text":"alt","media":{"size":3,"parts":[{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":1,"parts":[{"path":"d","dir":true},{"path":"d/f.txt","size":1,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		// Media without a manifest, a text with one, and manifests that break a rule.
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","text":"alt"}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x","media":{"size":3,"parts":[{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":4,"parts":[{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":0,"parts":[]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":3,"parts":[{"type":"image/gif","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":3,"parts":[{"type":"image/png","size":3,"sha256":"AQID"}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":6,"parts":[{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="},{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":3,"parts":[{"path":"a","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="},{"type":"image/png","size":3,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":1,"parts":[{"path":"../f","size":1,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":1,"parts":[{"path":"d/con.txt","size":1,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":1,"parts":[{"path":"d/f.","size":1,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":1,"parts":[{"path":"a","size":1,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="},{"path":"a/b","size":0,"sha256":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}]}}`,
+		`{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"media","media":{"size":0,"parts":[{"path":"d","dir":true,"size":1}]}}`,
 	} {
 		var e clip.Event
 		ok := json.Unmarshal([]byte(raw), &e) == nil && e.Validate() == nil
@@ -353,3 +380,39 @@ func TestSwiftMemberFrames(t *testing.T) {
 type nopDeadline struct{ *bytes.Reader }
 
 func (nopDeadline) SetReadDeadline(time.Time) error { return nil }
+
+// contentVectors are the messages and binary frames of content
+// (docs/protocol.md, section 4, "Content"), for the kits.
+type contentVectors struct {
+	Frames []json.RawMessage `json:"frames"` // get, missing and a cancel, as Go writes them
+	Chunks []chunkVector     `json:"chunks"`
+}
+
+type chunkVector struct {
+	SHA256 []byte `json:"sha256"`
+	Offset int64  `json:"offset"`
+	Data   []byte `json:"data"`
+	// Frame is the frame, length included, without the zeros at its end;
+	// FrameLen is its length with them.
+	Frame    []byte `json:"frame"`
+	FrameLen int    `json:"frame_len"`
+}
+
+func TestContentInteropVectors(t *testing.T) {
+	sum := bytes.Repeat([]byte{7}, 32)
+	v := contentVectors{Frames: []json.RawMessage{
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum, Offset: 0, Length: getWindow}}),
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum, Offset: 3 << 20, Length: 12345}}),
+		msg(t, &message{Type: typeMissing, Get: &Get{SHA256: sum, Offset: 0, Length: getWindow}}),
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum}}), // a cancel
+	}}
+	for _, ch := range []chunk{
+		{sum: [32]byte(sum), offset: 0, data: []byte("hello")},
+		{sum: [32]byte(sum), offset: 1 << 40, data: bytes.Repeat([]byte{0xab}, 100)},
+		{sum: [32]byte(sum), offset: 5, data: nil},
+	} {
+		f := encodeChunk(ch)
+		v.Chunks = append(v.Chunks, chunkVector{SHA256: ch.sum[:], Offset: ch.offset, Data: ch.data, Frame: bytes.TrimRight(f, "\x00"), FrameLen: len(f)})
+	}
+	checkVectors(t, "content.json", v)
+}

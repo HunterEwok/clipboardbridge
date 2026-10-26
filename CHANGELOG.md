@@ -141,6 +141,50 @@ All notable changes to clipboardbridge are documented in this file. The format f
   polkit rule), `cancel-shutdown` and `restart`, each off until `sudo cbb action enable
   NAME` there; its hello names the ones that are on, and `lite/core` checks action commands
   and their signers against Go's vectors.
+- Images and files, the first step (design.md, "Images and files"; docs/protocol.md,
+  section 4): a `media` event carries a manifest of the copy's parts with their sizes and
+  SHA-256, and members fetch the content with `get` from one that serves it, in binary
+  chunks padded to 16 KiB that go only while no event waits. The service keeps what it holds
+  in a cache in its state directory (the current copy, older ones for 10 minutes, nothing
+  after a restart) and fetches a copy its mode takes, from the origin first, up to its limit:
+  `cbb config max-copy` (100 MiB) and `max-copy-away` (25 MiB), at most 1 GiB. `cbb copy
+  FILE...` sends files and folders (links left out, names made safe for every system), `cbb
+  copy -type png FILE` an image, and `cbb paste -o DIR` saves them, never over a file and
+  never executable; `cbb status` shows a fetch in progress. Until the desktop connectors
+  take images and files, they, the lite member and the phones get only the copy's text, and
+  the Swift and Kotlin kits and `lite/core` check manifests against Go's vectors.
+- Images in the desktop connectors (design.md, "Images and files", step 2): a PNG or JPEG
+  copied on Wayland, X11, a Mac or Windows goes to the group, and a received image is
+  written there as the image with its text next to it. Wayland and X11 offer and read
+  `image/png` and `image/jpeg` (large ones in INCR pieces on X11); the Mac reads PNG, JPEG
+  and TIFF (sent as PNG) and writes the image and a TIFF; Windows reads the registered `PNG`
+  format, `CF_DIBV5` and `CF_DIB` (converted to PNG) and writes PNG and `CF_DIBV5`. A
+  clipboard with a text and an image is sent as text, and files are left out until the next
+  step. On the control socket a watcher asks for images with `images`, gets a `write` of
+  kind `media` once the copy is in the cache, and reports its own with `copied-media`
+  (docs/protocol.md, section 8).
+- Files and folders in the desktop connectors (design.md, "Images and files", step 3):
+  files copied in a file manager go to the group, and a received copy is saved in the
+  user's cache, a folder for each copy readable only by the user and removed 10 minutes
+  after a newer copy, and put into the clipboard as copied files. Wayland and X11 read and
+  write `text/uri-list` and `x-special/gnome-copied-files` with the paths as text, and
+  offer written files to Flatpak apps through the FileTransfer portal; the Mac reads and
+  writes file URLs, as the Finder copies them; Windows reads and writes `CF_HDROP`, with the
+  drop effect that makes Explorer copy them. A cut is taken as a copy. Received files carry
+  the quarantine mark on a Mac and the Mark of the Web on Windows, also those `cbb paste -o`
+  saves, and nothing is made executable. A watch request asks for files with `files`.
+- Content in the phones' kits (design.md, "Images and files", step 4): the Swift and Kotlin
+  kits speak `get`, `missing` and the binary chunks, serve the parts of the phone's own copies
+  from a store, and fetch a received copy's parts from the members that serve them, its
+  origin first, checking the hash; their hellos then say `media`. `testdata/interop/content.json`
+  holds Go's frames for them, and the Go test that plays the phone sends a picture each way.
+- Images and files on the phones (design.md, "Images and files", step 4; apps.md): the button
+  sends an image on the clipboard as PNG or JPEG (HEIC and other formats converted) and
+  fetches a computer's image, which also comes by itself as a text does (on the iPhone while
+  the app runs, to this phone only); the button saves received files in Downloads on Android
+  and in the app's folder in Files on the iPhone. Share sends images and files: up to 100 MiB
+  on Android, 50 MB from the iPhone's share extension, which stays until a computer fetched
+  them.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 

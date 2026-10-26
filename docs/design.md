@@ -516,8 +516,8 @@ queue, so large content cannot simply go inside it.
 | Linux without a desktop | `cbb copy FILE...`, `cbb paste -o DIR` | the same | no |
 | Windows | `CF_DIBV5` and the registered `PNG` format | `CF_HDROP` with the paths of the received copies; virtual files (Outlook attachments, ZIP contents) later | `HTML Format` |
 | Mac | `public.png`, `public.jpeg`, `public.tiff` (sent as PNG) | `public.file-url` items | `public.html` |
-| iPhone app | on the button, as text; HEIC is sent as JPEG | files copied in Files and other apps (named after their type when iOS gives no name); a share extension later | yes |
-| Android app | reads a `content://` image with the clipboard, writes one through its FileProvider | Android file managers have no system copy, so files come through the share sheet; received files are offered in the notification ("Open", "Save to Downloads") | yes |
+| iPhone app | on the button and while the app runs, written to this phone only; HEIC is sent as JPEG (PNG with transparency) | Share sends images and files (up to 50 MB, the share extension's memory); the button saves received files in the app's folder in Files | later |
+| Android app | reads a `content://` image with the clipboard, writes one through its FileProvider; other formats are sent as PNG | Android file managers have no system copy, so files come through the share sheet; the button saves received files in Downloads, in a folder "Clipboard Bridge" | later |
 | iPhone shortcut, the lite member, ESP32, ZX Next | no | no | no |
 
 Text-only devices take the event, so the group converges, but never fetch its content and
@@ -553,8 +553,10 @@ application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
 - Images and files follow the device's sync mode ("Sync modes", D-55) like text: a device
   fetches only in a mode that takes the group's copies into its clipboard, and offers its
   own only in a mode that sends them.
-- Android on the home Wi-Fi fetches images by itself; files, and anything away from home,
-  wait for a tap on the notification. The iPhone fetches on its button.
+- Android fetches images by itself, as it takes texts; files wait for the button, which
+  saves them in Downloads. The iPhone fetches on its button, and an image by itself while the
+  app runs; its button saves files in the app's folder in Files. Both phones serve their own
+  copies to the computers, at most 100 MiB a copy.
 
 ### Storage
 
@@ -591,10 +593,18 @@ with member TLS inside it, so the forwarder and the blind relay see neither cont
 headers nor inner addresses. Only group members hold the plaintext, and every part is
 checked against the SHA-256 of a manifest that came over an authenticated connection, so a
 member serving from its cache cannot change it. What stays visible: the network between a
-client and the hub sees that roughly so many megabytes went; chunks are padded to 256 KiB,
-and cover traffic cannot hide a large transfer.
+client and the hub sees that roughly so many megabytes went; chunk frames are padded to a
+multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
+
+Steps 1 to 3 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
+over the control socket and saves them in the user's cache (`~/.cache/clipboardbridge/received`,
+`~/Library/Caches` on a Mac, `%LocalAppData%` on Windows), a folder for each copy readable
+only by the user; it empties the folder when it starts. A Flatpak app gets written files
+through the FileTransfer portal; files a Flatpak app copies are under the document portal's
+`/run/user/UID/doc`, which the host reads.
 
 1. The `media` event, the content cache, `get` and `chunk`, priorities and limits in Go;
    interop vectors for the Swift and Kotlin kits and the lite core (which learns to ignore

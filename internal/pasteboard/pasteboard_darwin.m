@@ -109,6 +109,129 @@ long cb_write(const char *name, const char *text, long len, int secret) {
 	}
 }
 
+// cb_read_image reads the pasteboard's image: its PNG, else its JPEG, else
+// its TIFF as a PNG. It returns 1 with the bytes in *data, which the caller
+// frees, 0 for no image, -1 out of memory and -2 for an image over max.
+int cb_read_image(const char *name, void **data, long *len, int *type, long *change, long max) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		*change = (long)[pb changeCount];
+		*data = NULL;
+		*len = 0;
+		*type = CB_PNG;
+		NSArray<NSPasteboardType> *types = [pb types];
+		if (types == nil || [types containsObject:NSPasteboardTypeFileURL]) {
+			return 0; // files, whose icons are no copy of an image
+		}
+		NSData *d = [pb dataForType:NSPasteboardTypePNG];
+		if (d == nil) {
+			d = [pb dataForType:@"public.jpeg"];
+			if (d != nil) {
+				*type = CB_JPEG;
+			}
+		}
+		if (d == nil) {
+			NSData *tiff = [pb dataForType:NSPasteboardTypeTIFF];
+			if (tiff != nil) {
+				NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData:tiff];
+				d = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+			}
+		}
+		if (d == nil || [d length] == 0) {
+			return 0;
+		}
+		if ((long)[d length] > max) {
+			return -2;
+		}
+		*data = malloc([d length]);
+		if (*data == NULL) {
+			return -1;
+		}
+		memcpy(*data, [d bytes], [d length]);
+		*len = (long)[d length];
+		return 1;
+	}
+}
+
+long cb_write_image(const char *name, const void *data, long len, int type, const char *text, long textlen) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		NSData *d = [NSData dataWithBytes:data length:(NSUInteger)len];
+		NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData:d];
+		if (rep == nil) {
+			return -1; // not an image
+		}
+		[pb clearContents];
+		if (![pb setData:d forType:(type == CB_JPEG ? @"public.jpeg" : NSPasteboardTypePNG)]) {
+			return -1;
+		}
+		NSData *tiff = [rep TIFFRepresentation];
+		if (tiff != nil) {
+			[pb setData:tiff forType:NSPasteboardTypeTIFF];
+		}
+		if (textlen > 0) {
+			NSString *s = [[NSString alloc] initWithBytes:text length:(NSUInteger)textlen encoding:NSUTF8StringEncoding];
+			if (s != nil) {
+				[pb setString:s forType:NSPasteboardTypeString];
+			}
+		}
+		return (long)[pb changeCount];
+	}
+}
+
+// cb_read_files reads the pasteboard's file URLs, as the Finder copies
+// files: their paths, each ended by a NUL, in *paths, which the caller
+// frees. It returns 1, 0 for no files and -1 out of memory.
+int cb_read_files(const char *name, char **paths, long *len, long *change) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		*change = (long)[pb changeCount];
+		*paths = NULL;
+		*len = 0;
+		NSArray<NSURL *> *urls = [pb readObjectsForClasses:@[ [NSURL class] ]
+		                                           options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+		NSMutableData *out = [NSMutableData data];
+		for (NSURL *u in urls) {
+			const char *p = [u fileSystemRepresentation];
+			if (p != NULL) {
+				[out appendBytes:p length:strlen(p) + 1];
+			}
+		}
+		if ([out length] == 0) {
+			return 0;
+		}
+		*paths = malloc([out length]);
+		if (*paths == NULL) {
+			return -1;
+		}
+		memcpy(*paths, [out bytes], [out length]);
+		*len = (long)[out length];
+		return 1;
+	}
+}
+
+// cb_write_files puts file URLs on the pasteboard, as the Finder copies
+// files, from paths that each end with a NUL.
+long cb_write_files(const char *name, const char *paths, long len) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		NSMutableArray<NSURL *> *urls = [NSMutableArray array];
+		for (long i = 0; i < len;) {
+			NSString *p = [NSString stringWithUTF8String:paths + i];
+			if (p == nil) {
+				return -1;
+			}
+			[urls addObject:[NSURL fileURLWithPath:p]];
+			i += (long)strlen(paths + i) + 1;
+		}
+		[pb clearContents];
+		if (![pb writeObjects:urls]) {
+			return -1;
+		}
+		return (long)[pb changeCount];
+	}
+}
+
 long cb_clear(const char *name) {
 	@autoreleasepool {
 		return (long)[board(name) clearContents];

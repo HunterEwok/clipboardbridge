@@ -111,11 +111,12 @@ public final class SyncEngine {
         return e
     }
 
-    /// The current text while it is usable: a text, or a secret younger
-    /// than the secret lifetime.
+    /// The current text while it is usable: a text, a secret younger than
+    /// the secret lifetime, or the text of images or files, as a text.
     public var usable: (text: String, kind: Member.Kind)? {
         guard let e = current, !e.isMark else { return nil }
         if e.kind == .secret && uptime() - copiedAt >= Self.secretTTL { return nil }
+        if e.kind == .media { return e.text.isEmpty ? nil : (e.text, .text) }
         return (e.text, e.kind)
     }
 
@@ -125,10 +126,12 @@ public final class SyncEngine {
         Member.Hello(wallMS: wallMS, current: currentEvent?.mark, name: name)
     }
 
-    /// Makes an event of a text this phone copied or sent, which becomes
+    /// Makes an event of a text this phone copied or sent, or with media of
+    /// images or files and text their plain-text alternative, which becomes
     /// the current event. It goes to every connection.
-    public func local(text: String, kind: Member.Kind, via: Member.Via = .phone) -> Member.Event {
-        let e = Member.Event(id: Self.newID(), origin: device, via: via, time: clock.now(), ageMS: 0, kind: kind, text: text)
+    public func local(text: String, kind: Member.Kind, via: Member.Via = .phone, media: Media.Manifest? = nil) -> Member.Event {
+        let e = Member.Event(id: Self.newID(), origin: device, via: via, time: clock.now(), ageMS: 0, kind: media != nil ? .media : kind,
+                             text: text, media: media)
         remember(e.id)
         current = e
         copiedAt = uptime()

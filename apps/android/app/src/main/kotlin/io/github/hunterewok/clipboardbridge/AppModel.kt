@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
 import io.github.hunterewok.clipboardbridge.kit.MemberNode
@@ -45,6 +46,7 @@ class AppModel(private val app: Context) {
     }
     val group = LiveGroup(app).also { g ->
         g.onCopy = { text, kind -> Clipboard.write(app, text, kind) }
+        g.onImage = { file, alt -> Clipboard.writeImage(app, file, alt) }
         // In the background too: the service keeps the connections that bring the records.
         // Off the node's thread, which may hold its own lock while it hands records over.
         g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
@@ -247,10 +249,14 @@ class AppModel(private val app: Context) {
     suspend fun sync() {
         busy = true
         try {
-            val board = Clipboard.readForSync(app)
-            val (result, fetched) = withContext(Dispatchers.IO) { group.sync(board) }
-            fetched?.let { (text, kind) -> Clipboard.write(app, text, kind) }
-            message = Note(
+            val (result, fetched) = withContext(Dispatchers.IO) { group.sync(Clipboard.readForSync(app)) }
+            when (fetched) {
+                is LiveGroup.Got.Text -> Clipboard.write(app, fetched.text, fetched.kind)
+                is LiveGroup.Got.Image -> Clipboard.writeImage(app, fetched.file, fetched.alt)
+                is LiveGroup.Got.Files -> {}
+                null -> {}
+            }
+            message = if (fetched is LiveGroup.Got.Files) Note(R.string.files_saved) else Note(
                 when (result) {
                     LiveGroup.SyncResult.SENT -> R.string.sent
                     LiveGroup.SyncResult.FETCHED -> R.string.fetched
@@ -282,6 +288,25 @@ class AppModel(private val app: Context) {
         }
         message = try {
             Note(if (withContext(Dispatchers.IO) { group.send(text) } == LiveGroup.SyncResult.SENT) R.string.sent else R.string.nothing_new)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        return message!!
+    }
+
+    /**
+     * Sends the images or files another app shared, which the computers
+     * fetch from this phone; with the app perhaps just started for it, it
+     * waits up to waitMS for a computer to connect. Returns what it says.
+     */
+    suspend fun sendShared(uris: List<android.net.Uri>, waitMS: Long = 5_000): Note {
+        val deadline = System.currentTimeMillis() + waitMS
+        while (group.hasGroup && System.currentTimeMillis() < deadline && !withContext(Dispatchers.IO) { group.online }) delay(250)
+        message = try {
+            withContext(Dispatchers.IO) { group.sendShared(Files.read(app, uris)) }
+            Note(R.string.files_sent)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -652,6 +677,8 @@ class AppModel(private val app: Context) {
                 LiveGroup.Failure.Kind.NO_SCREEN, LiveGroup.Failure.Kind.UNREACHABLE -> R.string.error_unreachable
             }
             is Clipboard.Unreadable -> R.string.error_clipboard_unreadable
+            is Content.TooLarge -> R.string.error_image_too_large
+            is MemberNode.MissingException, is MemberNode.ProtocolException -> R.string.error_image_unavailable
             is PairingMember.Failure ->
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
             is PhoneGroup.Failure -> R.string.error_generic

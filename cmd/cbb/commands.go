@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -34,16 +35,26 @@ import (
 
 const maxText = 1 << 20
 
-// cmdCopy sends standard input to the group as a deliberate copy.
+// cmdCopy sends standard input to the group as a deliberate copy, or the
+// files and folders it names.
 func cmdCopy(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("copy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	secret := fs.Bool("secret", false, "send the text as a secret: kept only in memory, gone after 60 seconds")
+	typ := fs.String("type", "", "with one FILE, send it as clipboard data of this type: png, jpeg or html")
+	alt := fs.String("text", "", "with FILE, the plain text that goes with the copy, for the devices that take only text")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "cbb: copy takes no arguments; it reads the text from standard input")
+		if *secret {
+			fmt.Fprintln(stderr, "cbb: -secret is for a text, not for files")
+			return 2
+		}
+		return copyMedia(fs.Args(), *typ, *alt, stdout, stderr)
+	}
+	if *typ != "" || *alt != "" {
+		fmt.Fprintln(stderr, "cbb: -type and -text go with FILE")
 		return 2
 	}
 	text, err := io.ReadAll(io.LimitReader(stdin, maxText+1))
@@ -81,12 +92,20 @@ func cmdPaste(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	terminal := fs.Bool("terminal", false, "make the text safe for a terminal: no control characters, only the first line")
 	lines := fs.Bool("lines", false, "with -terminal, keep every line instead of only the first")
 	secret := fs.Bool("secret", false, "with -terminal, paste a secret too")
+	out := fs.String("o", "", "save the clipboard's images or files in this folder")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "cbb: paste takes no arguments")
 		return 2
+	}
+	if *out != "" {
+		if *terminal || *lines || *secret {
+			fmt.Fprintln(stderr, "cbb: -o saves images or files; -terminal, -lines and -secret are for a text")
+			return 2
+		}
+		return pasteMedia(*out, stdout, stderr)
 	}
 	if (*lines || *secret) && !*terminal {
 		fmt.Fprintln(stderr, "cbb: -lines and -secret go with -terminal")
@@ -101,18 +120,18 @@ func cmdPaste(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	out := m.Payload
+	text := m.Payload
 	if *terminal {
 		if m.Kind == control.KindSecret && !*secret {
 			return fail(stderr, errors.New("the clipboard holds a secret; add -secret to paste it"))
 		}
-		text, dropped := terminalText(string(m.Payload), *lines)
+		t, dropped := terminalText(string(m.Payload), *lines)
 		if dropped > 0 {
 			fmt.Fprintf(stderr, "cbb: pasted only the first line; %d more left out (add -lines to paste them)\n", dropped)
 		}
-		out = []byte(text)
+		text = []byte(t)
 	}
-	if _, err := stdout.Write(out); err != nil {
+	if _, err := stdout.Write(text); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
@@ -217,6 +236,7 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 		fmt.Fprintln(w, q)
 	}
 	writeAway(w, st.Away)
+	writeMedia(w, st.Media)
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "No members connected.")
 	}
@@ -570,7 +590,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	w := pasteboard.NewWatch(b)
-	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Commands: true, Logf: logf}); err != nil {
+	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Board: w, Target: agentTarget(w), Actor: actions.Session(), Commands: true, Files: receivedFiles(), Logf: logf}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
@@ -602,6 +622,17 @@ func fail(stderr io.Writer, err error) int {
 		fmt.Fprintln(stderr, "  Detail:", re.Detail)
 	}
 	return 1
+}
+
+// receivedFiles is the folder where the agent keeps the files the group
+// copies, a folder for each copy, in the user's cache: ~/.cache on Linux,
+// ~/Library/Caches on a Mac, %LocalAppData% on Windows. "" takes no files.
+func receivedFiles() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "clipboardbridge", "received")
 }
 
 // hostOS names this computer's operating system as device records do.
