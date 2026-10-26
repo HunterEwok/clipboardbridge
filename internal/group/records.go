@@ -60,6 +60,34 @@ const (
 	RoleShortcut = "shortcut"
 )
 
+// Where a device's keys live, as its device record says (docs/protocol.md,
+// section 17): in a file, which a thief with the device can copy, or in
+// hardware that never lets them out (the Secure Enclave, the Android
+// Keystore, a TPM).
+const (
+	StoreFile     = "file"
+	StoreHardware = "hardware"
+)
+
+// StoreOf reads the store field of a device record of role: StoreHardware
+// for "hardware", and for "proven", which counts as hardware until this
+// version checks its proof; StoreFile for "file". A record without one,
+// made before 0.6, or with a value this version does not know, counts as a
+// phone's in hardware and any other device's in a file, as those versions
+// kept them.
+func StoreOf(store, role string) string {
+	switch store {
+	case StoreHardware, "proven":
+		return StoreHardware
+	case StoreFile:
+		return StoreFile
+	}
+	if role == RolePhone {
+		return StoreHardware
+	}
+	return StoreFile
+}
+
 // The roles of records made before a device's system was apart from its
 // role; Role reads them as RoleFull and RoleShortcut.
 const (
@@ -176,6 +204,7 @@ type RecordBody struct {
 	OS     string   `json:"os,omitempty"`
 	Key    *KeyHash `json:"key,omitempty"`
 	Admin  *KeyHash `json:"admin,omitempty"` // the key of the device's admin CA
+	Store  string   `json:"store,omitempty"` // StoreFile or StoreHardware: where its keys live
 
 	// revoke
 	Keys []KeyHash `json:"keys,omitempty"`
@@ -1124,11 +1153,13 @@ func (s *Records) listed(k KeyHash) bool {
 
 // A Device is one entry of the devices list.
 type Device struct {
-	ID    DeviceID
-	Name  string
-	Role  string // RoleFull, RolePhone, RoleLite or RoleShortcut
-	OS    string // "" when its record does not tell
-	Key   KeyHash
+	ID   DeviceID
+	Name string
+	Role string // RoleFull, RolePhone, RoleLite or RoleShortcut
+	OS   string // "" when its record does not tell
+	Key  KeyHash
+	// Store is where its keys live: StoreFile or StoreHardware (StoreOf).
+	Store string
 	Admin bool
 	// AdminKey is the key of its admin CA, as its record names it; nil
 	// when it has none.
@@ -1179,6 +1210,7 @@ func (s *Records) Devices() []Device {
 			Role:     role(r.body.Role),
 			OS:       osOf(r.body),
 			Key:      *r.body.Key,
+			Store:    StoreOf(r.body.Store, role(r.body.Role)),
 			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin) && !s.Frozen(*r.body.Admin),
 			AdminKey: r.body.Admin,
 			Keys:     keys[id],

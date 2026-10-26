@@ -113,6 +113,9 @@ final class AppModel: ObservableObject {
         /// A computer this phone, the root, can make an admin: it offers an
         /// admin key.
         var canMakeAdmin = false
+        /// Its keys sit in a file, as its hello or else its record says: a
+        /// thief with it can copy them.
+        var keysInFile = false
         /// An admin computer another admin froze: the root or an admin phone
         /// unfreezes or removes it.
         var frozen = false
@@ -682,6 +685,9 @@ final class AppModel: ObservableObject {
         }
         if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
             return String(localized: "The phone that made the group cannot be removed yet.", bundle: .app)
+        }
+        if let f = error as? PhoneGroup.Failure, f == .fileKey {
+            return String(localized: "This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.", bundle: .app)
         }
         if error is PairingJoiner.Failure {
             return String(localized: "The other phone's group could not be joined. Try again.", bundle: .app)

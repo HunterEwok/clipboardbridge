@@ -464,12 +464,22 @@
         }
       }
     },
-    "It can then add and remove devices with cbb pair and cbb revoke. Its key is a file on the computer, so do this only for a computer you keep safe.": {
+    "It can then add and remove devices with cbb pair and cbb revoke. Its keys are in its hardware, which never lets them out.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключ хранится в файле на компьютере, поэтому делайте так только для компьютера, который надёжно защищён."
+            "value": "Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключи хранятся в его железе и никогда его не покидают."
+          }
+        }
+      }
+    },
+    "It can then add and remove devices with cbb pair and cbb revoke. Its keys sit in a file on the computer: whoever copies that file can act as an admin until another admin removes it. Do this only for a computer you keep safe.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключи лежат в файле на компьютере: кто скопирует этот файл, сможет действовать как админ, пока другой админ его не удалит. Делайте так только для компьютера, который надёжно защищён."
           }
         }
       }
@@ -1170,6 +1180,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Как в системе"
+          }
+        }
+      }
+    },
+    "This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот компьютер хранит ключи в файле. Сначала сделайте его админом на его странице: там сказано, что это значит."
           }
         }
       }

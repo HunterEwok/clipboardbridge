@@ -25,8 +25,10 @@ import (
 // makeAdmin makes the device that target names an admin, on the group's
 // root: it issues the admin CA for the admin key the device's hello
 // offers, records it in the device's record and sends it, followed by the
-// iPhone CA. The device must be connected.
-func (s *Service) makeAdmin(target string) (string, error) {
+// iPhone CA. The device must be connected. A device whose keys sit in a
+// file becomes an admin only with allowFileKey, which the user gives after
+// a warning (docs/protocol.md, section 17).
+func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	d, err := s.findDevice(target)
 	if err != nil {
 		return "", err
@@ -57,6 +59,10 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	case peer.AdminKey == nil:
 		return "", fmt.Errorf("%s offers no admin key: it runs an older Clipboard Bridge, or in a container that may not hold the group's keys (its log says so)", d.Name)
 	}
+	store := group.StoreOf(peer.KeyStore, group.RoleFull)
+	if store == group.StoreFile && !allowFileKey {
+		return "", fmt.Errorf("%s keeps its keys in a file, which a thief with it can copy and then act as an admin until another admin removes it; to make it an admin anyway, run cbb admin -allow-file-key %s", d.Name, target)
+	}
 	k, err := x509.ParsePKIXPublicKey(peer.AdminKey)
 	pub, ok := k.(*ecdsa.PublicKey)
 	if err != nil || !ok {
@@ -70,7 +76,7 @@ func (s *Service) makeAdmin(target string) (string, error) {
 	// follows the admin message goes to a listed admin.
 	adminKey := group.KeyHashOf(adminCA)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: peer.ID, Name: d.Name, Role: group.RoleFull,
-		OS: d.OS, Key: &peer.Key, Admin: &adminKey})
+		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store})
 	if err != nil {
 		return "", err
 	}

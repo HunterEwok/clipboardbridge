@@ -29,6 +29,7 @@ import io.github.hunterewok.clipboardbridge.kit.PairingMember
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.PhoneHub
 import io.github.hunterewok.clipboardbridge.kit.RecordStore
+import io.github.hunterewok.clipboardbridge.kit.Records as KitRecords
 import io.github.hunterewok.clipboardbridge.kit.SyncEngine
 import io.github.hunterewok.clipboardbridge.kit.TLSListener
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
@@ -88,6 +89,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val isRoot: Boolean = false,
         /** A computer this phone, the root, can make an admin: it offers an admin key. */
         val canMakeAdmin: Boolean = false,
+        /** Its keys sit in a file, as its hello or else its record says: a thief with it can copy them. */
+        val keysInFile: Boolean = false,
         /** An admin computer another admin froze: the root or an admin phone unfreezes or removes it. */
         val frozen: Boolean = false,
         /** What its hello says about its device, while it is connected; this phone's own for itself. */
@@ -180,6 +183,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val (g, n) = synchronized(lock) { (state ?: return emptyList()) to node }
             val online = n?.connected.orEmpty()
             val offers = n?.offeredAdminKeys.orEmpty()
+            val stores = n?.keyStores.orEmpty()
             val infos = n?.devices.orEmpty()
             val modes = n?.modes.orEmpty()
             val root = g.records.rootDevice
@@ -188,6 +192,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     id = it.id, name = it.name, online = it.id == g.device || it.id in online, role = it.role, os = it.os, isSelf = it.id == g.device,
                     admin = it.admin || it.id == root, isRoot = it.id == root,
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
+                    keysInFile = KitRecords.storeOf(stores[it.id] ?: it.store, it.role) == KitRecords.FILE,
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
                     mode = if (it.id == g.device) syncMode else modes[it.id],
@@ -833,14 +838,18 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /**
      * Makes a computer an admin (docs/protocol.md, section 10, "A computer
      * as admin"): the root key certifies the admin key the computer offers;
-     * the computer gets its admin CA and every member the new record.
+     * the computer gets its admin CA and every member the new record. A
+     * computer whose keys sit in a file becomes one only with allowFileKey,
+     * after the user read the warning; else PhoneGroup.FileKey.
      */
-    suspend fun makeAdmin(id: String) {
+    suspend fun makeAdmin(id: String, allowFileKey: Boolean = false) {
         val n = synchronized(lock) { if (state?.isRoot == true) node else null }
         val key = n?.offeredAdminKeys?.get(id) ?: throw Failure(Failure.Kind.NOT_ADMIN)
+        val store = n.keyStores[id]
+        if (KitRecords.storeOf(store, "full") == KitRecords.FILE && !allowFileKey) throw PhoneGroup.FileKey()
         val root = caSigner(R.string.reason_make_admin)
         val g = copyOfState() ?: return
-        val (ca, r) = withContext(Dispatchers.IO) { g.makeAdmin(id, key, root, Instant.now()) }
+        val (ca, r) = withContext(Dispatchers.IO) { g.makeAdmin(id, key, root, Instant.now(), store, allowFileKey) }
         withContext(Dispatchers.IO) { adopt(g) }
         currentNode?.sendRecords(listOf(r))
         currentNode?.sendAdminCA(ca, id)
@@ -855,9 +864,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private suspend fun takeOver(id: String) {
         val admin = signer(Keys.ADMIN, R.string.reason_take_over)
         val rs = withContext(Dispatchers.IO) {
-            // A root key left from a group this phone made before goes.
-            val root = Keys.create(context, Keys.ROOT)
             val g = copyOfState() ?: return@withContext null
+            // A root key left from a group this phone made before goes.
+            val root = Keys.create(context, Keys.ROOT, g.tag)
             val rs = g.takeOver(id, admin, root, Instant.now())
             adopt(g)
             rs

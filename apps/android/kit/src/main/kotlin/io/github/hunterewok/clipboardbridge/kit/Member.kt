@@ -196,9 +196,11 @@ object Member {
         val device: DeviceInfo? = null,
         /** The sender's sync mode: "own", "shared", "receive" or "send"; null from a member without one, which shares. */
         val mode: String? = null,
+        /** Where the sender says its keys live: Records.FILE or Records.HARDWARE; null from a member before 0.6. */
+        val keyStore: String? = null,
     ) {
         override fun equals(other: Any?): Boolean =
-            other is Hello && wallMS == other.wallMS && current == other.current && records == other.records &&
+            other is Hello && wallMS == other.wallMS && current == other.current && records == other.records && keyStore == other.keyStore &&
                 name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) &&
                 tunnelKey.contentEqualsOrNull(other.tunnelKey) &&
                 tunnelPSK.contentEqualsOrNull(other.tunnelPSK) && device == other.device && mode == other.mode
@@ -455,6 +457,7 @@ object Member {
                 "tunnel_key" to Wire.bytes(m.hello.tunnelKey),
                 "tunnel_psk" to Wire.bytes(m.hello.tunnelPSK),
                 "mode" to Wire.str(m.hello.mode),
+                "key_store" to Wire.str(m.hello.keyStore),
             ),
         )
         is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
@@ -515,6 +518,7 @@ object Member {
                             tunnelPSK = h.optBytes("tunnel_psk"),
                             device = DeviceInfo.fromJson(h.opt("device")),
                             mode = h.optString("mode")?.takeIf { it in MODES },
+                            keyStore = h.optString("key_store")?.takeIf { it == Records.FILE || it == Records.HARDWARE },
                         ),
                     )
                 }

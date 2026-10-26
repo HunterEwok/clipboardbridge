@@ -16,7 +16,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", "4.0.0"..<"5.0.0"),
     ],
     targets: [
-        .target(name: "ClipboardBridgeKit", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),
+        .target(name: "ClipboardBridgeKit", dependencies: [
+            .product(name: "Crypto", package: "swift-crypto"),
+            // RSA, for Google's attestation root (AndroidAttestation).
+            .product(name: "_CryptoExtras", package: "swift-crypto"),
+        ]),
         .testTarget(name: "ClipboardBridgeKitTests", dependencies: ["ClipboardBridgeKit"]),
         // Plays the phone against the Go code in the Go tests; not shipped.
         .executableTarget(name: "clipboardbridge-interop", dependencies: ["ClipboardBridgeKit"]),

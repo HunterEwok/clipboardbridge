@@ -204,7 +204,7 @@ private fun Actions(model: AppModel, d: LiveGroup.Device) {
     if (promoting) {
         Confirm(
             title = stringResource(R.string.make_admin_title, d.name),
-            body = stringResource(R.string.make_admin_body),
+            body = stringResource(if (d.keysInFile) R.string.make_admin_body else R.string.make_admin_hardware_body),
             action = stringResource(R.string.make_admin),
             dismiss = { promoting = false },
         ) { scope.launch { model.makeAdmin(d.id) } }

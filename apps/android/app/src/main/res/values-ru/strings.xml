@@ -34,7 +34,8 @@
     <string name="admin">админ</string>
     <string name="make_admin">Сделать админом</string>
     <string name="make_admin_title">Сделать %1$s админом?</string>
-    <string name="make_admin_body">Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключ хранится в файле на компьютере, поэтому делайте так только для компьютера, который надёжно защищён.</string>
+    <string name="make_admin_body">Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключи лежат в файле на компьютере: кто скопирует этот файл, сможет действовать как админ, пока другой админ его не удалит. Делайте так только для компьютера, который надёжно защищён.</string>
+    <string name="make_admin_hardware_body">Тогда он сможет добавлять и удалять устройства командами cbb pair и cbb revoke. Его ключи хранятся в его железе и никогда его не покидают.</string>
     <string name="made_admin">Теперь это админ: он добавляет и удаляет устройства командами cbb pair и cbb revoke.</string>
     <string name="frozen">заморожен</string>
     <string name="unfreeze">Разморозить</string>
@@ -66,6 +67,7 @@
     <string name="error_too_many_codes">Слишком много неверных кодов. Попробуйте снова с новым кодом.</string>
     <string name="error_clipboard_unreadable">Не удалось прочитать буфер обмена, поэтому он оставлен как есть. Скопируйте текст ещё раз и повторите.</string>
     <string name="error_not_admin">Это может только телефон-админ.</string>
+    <string name="error_file_key">Этот компьютер хранит ключи в файле. Сначала сделайте его админом на его странице: там сказано, что это значит.</string>
     <string name="error_unreachable">Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол Clipboard Bridge?</string>
     <string name="error_wrong_code">Код не совпал. Запустите cbb pair на компьютере ещё раз и отсканируйте новый код.</string>
     <string name="error_refused">Компьютер отказал. Запустите на нём cbb pair ещё раз.</string>

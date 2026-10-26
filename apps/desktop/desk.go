@@ -174,11 +174,15 @@ func (d *Desk) Fetch() {
 
 // Rename, Remove, MakeAdmin, Freeze, Unfreeze, SetAway and SetMode change the group:
 // cbb does them as the administrator (admin_*.go), after the system asks.
+// MakeAdmin's dialog warns that the computer's key is a file, which
+// -allow-file-key consents to.
 func (d *Desk) Rename(id, name string) { d.admin([]string{"rename", id, name}, false, "Renamed.") }
 func (d *Desk) Remove(id string)       { d.admin([]string{"revoke", id}, false, "Removed from the group.") }
-func (d *Desk) MakeAdmin(id string)    { d.admin([]string{"admin", id}, false, "It is an admin now.") }
-func (d *Desk) Freeze(id string)       { d.admin([]string{"freeze", id}, false, "Frozen.") }
-func (d *Desk) Unfreeze(id string)     { d.admin([]string{"unfreeze", id}, false, "Unfrozen.") }
+func (d *Desk) MakeAdmin(id string) {
+	d.admin([]string{"admin", "-allow-file-key", id}, false, "It is an admin now.")
+}
+func (d *Desk) Freeze(id string)   { d.admin([]string{"freeze", id}, false, "Frozen.") }
+func (d *Desk) Unfreeze(id string) { d.admin([]string{"unfreeze", id}, false, "Unfrozen.") }
 
 // SetAway turns sync away from home on or off; on answers yes to the
 // warning the window showed, which cbb asks for.

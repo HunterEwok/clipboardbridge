@@ -181,12 +181,16 @@ public enum Member {
         /// The sender's sync mode: "own", "shared", "receive" or "send";
         /// nil from a member without one, which shares.
         public var mode: String?
+        /// Where the sender says its keys live: Records.file or
+        /// Records.hardware; nil from a member before 0.6.
+        public var keyStore: String?
 
         public init(wallMS: Int64, current: Event? = nil, records: String? = nil, name: String? = nil, os: String? = nil,
-                    adminKey: Data? = nil, tunnelKey: Data? = nil, tunnelPSK: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil) {
+                    adminKey: Data? = nil, tunnelKey: Data? = nil, tunnelPSK: Data? = nil, device: DeviceInfo? = nil, mode: String? = nil,
+                    keyStore: String? = nil) {
             (self.wallMS, self.current, self.records, self.name, self.os, self.adminKey, self.tunnelKey) =
                 (wallMS, current, records, name, os, adminKey, tunnelKey)
-            (self.tunnelPSK, self.device, self.mode) = (tunnelPSK, device, mode)
+            (self.tunnelPSK, self.device, self.mode, self.keyStore) = (tunnelPSK, device, mode, keyStore)
         }
     }
 
@@ -462,7 +466,8 @@ public enum Member {
             guard let h = w.hello else { throw WireError.badHello("no hello object") }
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
                                       os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, tunnelPSK: h.tunnel_psk, device: h.device?.value,
-                                      mode: h.mode.flatMap { modes.contains($0) ? $0 : nil }))
+                                      mode: h.mode.flatMap { modes.contains($0) ? $0 : nil },
+                                      keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware ? $0 : nil }))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -495,6 +500,7 @@ public enum Member {
         var tunnel_psk: Data?
         var device: Lenient<DeviceInfo>?
         var mode: String?
+        var key_store: String?
     }
 
     struct WireIn: Decodable {
@@ -517,7 +523,7 @@ public enum Member {
         init(_ m: Message) { self.m = m }
 
         enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -536,6 +542,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.tunnelKey, forKey: .tunnel_key)
                 try hc.encodeIfPresent(h.tunnelPSK, forKey: .tunnel_psk)
                 try hc.encodeIfPresent(h.mode, forKey: .mode)
+                try hc.encodeIfPresent(h.keyStore, forKey: .key_store)
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)

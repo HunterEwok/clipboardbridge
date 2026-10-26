@@ -36,7 +36,8 @@
     <string name="admin">admin</string>
     <string name="make_admin">Make it an admin</string>
     <string name="make_admin_title">Make %1$s an admin?</string>
-    <string name="make_admin_body">It can then add and remove devices with cbb pair and cbb revoke. Its key is a file on the computer, so do this only for a computer you keep safe.</string>
+    <string name="make_admin_body">It can then add and remove devices with cbb pair and cbb revoke. Its keys sit in a file on the computer: whoever copies that file can act as an admin until another admin removes it. Do this only for a computer you keep safe.</string>
+    <string name="make_admin_hardware_body">It can then add and remove devices with cbb pair and cbb revoke. Its keys are in its hardware, which never lets them out.</string>
     <string name="made_admin">It is an admin now: it adds and removes devices with cbb pair and cbb revoke.</string>
     <string name="frozen">frozen</string>
     <string name="unfreeze">Unfreeze</string>
@@ -68,6 +69,7 @@
     <string name="error_too_many_codes">Too many wrong codes. Try again with a new code.</string>
     <string name="error_clipboard_unreadable">Could not read the clipboard, so it was left as it is. Copy the text again, then try again.</string>
     <string name="error_not_admin">Only an admin phone can do this.</string>
+    <string name="error_file_key">This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.</string>
     <string name="error_unreachable">Could not reach the computer. Is it on the same network as this phone, and does its firewall let Clipboard Bridge in?</string>
     <string name="error_wrong_code">The code did not match. Run cbb pair on the computer again and scan the new code.</string>
     <string name="error_refused">The computer refused. Run cbb pair on it again.</string>

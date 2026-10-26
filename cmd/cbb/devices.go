@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -25,7 +26,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 		skew[p.ID] = p.SkewMS
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tMODE\tSEEN\tCLOCK\tID")
+	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tKEYS\tMODE\tSEEN\tCLOCK\tID")
 	unlisted, oldKeys := false, false
 	for _, d := range devs {
 		name := d.Name
@@ -56,7 +57,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 			}
 		}
 		// The sync mode, as each connected device's hello says it.
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, d.Mode, seen(d, now), clock, d.ID)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, keys(d), d.Mode, seen(d, now), clock, d.ID)
 	}
 	tw.Flush()
 	if unlisted {
@@ -65,6 +66,18 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 	if oldKeys {
 		fmt.Fprintln(w, "old keys: it may still hold the group's CA keys from before cbb upgrade; it deletes them when it next connects.")
 	}
+}
+
+// keys says where a device's keys live: "in a file" warns that whoever
+// copies the file holds them.
+func keys(d control.Device) string {
+	switch d.Store {
+	case group.StoreHardware:
+		return "hardware"
+	case group.StoreFile:
+		return "in a file"
+	}
+	return ""
 }
 
 // seen says when a device was last seen, in words.
@@ -155,20 +168,27 @@ func cmdFreeze(args []string, on bool, stdout, stderr io.Writer) int {
 
 // cmdAdmin makes a device an admin of the group, on the group's root.
 func cmdAdmin(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
-		fmt.Fprintln(stderr, "cbb: usage: cbb admin <name or device ID>; cbb status lists them")
+	fs := flag.NewFlagSet("admin", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	allow := fs.Bool("allow-file-key", false, "make it an admin although its keys sit in a file")
+	if fs.Parse(args) != nil || fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb admin [-allow-file-key] <name or device ID>; cbb status lists them")
 		return 2
 	}
+	args = fs.Args()
 	c, err := control.DialFor(control.OpAdmin)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	defer c.Close()
-	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpAdmin, Name: args[0]}})
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpAdmin, Name: args[0], Consent: *allow}})
 	if err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "%s is an admin now: it can admit and remove devices and pair iPhones for the shortcut.\n", m.Name)
+	if *allow {
+		fmt.Fprintf(stdout, "If it keeps its keys in a file, guard it: whoever copies that file acts as an admin until another admin removes %s.\n", m.Name)
+	}
 	return 0
 }
 

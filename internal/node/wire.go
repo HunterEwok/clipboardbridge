@@ -190,6 +190,9 @@ type helloBody struct {
 	// OldKeys tells that the sender holds the group CA key of a legacy
 	// group, which it deletes once the group is upgraded.
 	OldKeys bool `json:"old_keys,omitempty"`
+	// KeyStore is where the sender says its keys live (group.StoreFile or
+	// group.StoreHardware); "" from a member before 0.6.
+	KeyStore string `json:"key_store,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -220,6 +223,9 @@ type helloOut struct {
 	TunnelPSK []byte `json:"tunnel_psk,omitempty"`
 	// Mode is this member's sync mode (clip.Mode), for the others to show.
 	Mode string `json:"mode,omitempty"`
+	// KeyStore is where this member's keys live, for the root that makes
+	// it an admin.
+	KeyStore string `json:"key_store,omitempty"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.

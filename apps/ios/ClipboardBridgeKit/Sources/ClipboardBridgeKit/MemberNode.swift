@@ -166,6 +166,14 @@ public actor MemberNode {
         return out
     }
 
+    /// Where the connected members' hellos say their keys live, by device
+    /// ID, where the caller of serve named them.
+    public var keyStores: [String: String] {
+        var out: [String: String] = [:]
+        for c in conns.values { if let p = c.peer, let s = c.keyStore { out[p] = s } }
+        return out
+    }
+
     /// What the connected members' hellos say about their devices, their
     /// invalid fields dropped, by device ID where the caller of serve named
     /// them.
@@ -265,6 +273,8 @@ public actor MemberNode {
         hello.tunnelKey = tunnelKey
         hello.tunnelPSK = tunnelKey == nil ? nil : tunnelPSK
         hello.mode = mode
+        // A phone's keys are in the Secure Enclave or the Keystore.
+        hello.keyStore = Records.hardware
         c.enqueue(.hello(role, hello))
         let writer = Task { await c.runWriter() }
         let watchdog = Task { await c.runWatchdog() }
@@ -289,6 +299,7 @@ public actor MemberNode {
                 first = false
                 if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
                 c.adminKey = h.adminKey
+                c.keyStore = h.keyStore
                 c.device = h.device?.cleaned
                 c.mode = h.mode
                 c.peerRole = peerRole
@@ -444,6 +455,12 @@ public actor MemberNode {
             set { lock.withLock { _adminKey = newValue } }
         }
         private var _adminKey: Data?
+        /// Where the peer's hello says its keys live.
+        var keyStore: String? {
+            get { lock.withLock { _keyStore } }
+            set { lock.withLock { _keyStore = newValue } }
+        }
+        private var _keyStore: String?
         /// What the peer's hello says about its device.
         var device: Member.DeviceInfo? {
             get { lock.withLock { _device } }

@@ -52,6 +52,9 @@ type Config struct {
 	Role     Role
 	Name     string // this device's name, sent in the hello
 	OS       string // this device's operating system (group.OSLinux...), sent in the hello
+	// KeyStore is where this device's keys live (group.StoreFile or
+	// group.StoreHardware), sent in the hello; "" sends group.StoreFile.
+	KeyStore string
 	// Device is this device's form, versions and MAC address, sent in the
 	// hello for the others to show.
 	Device group.DeviceInfo
@@ -176,8 +179,11 @@ type Peer struct {
 	// legacy group.
 	OldKeys bool
 	// Mode is the sync mode its hello reports; "" when it reports none.
-	Mode  string
-	Since time.Duration // uptime when the connection started
+	Mode string
+	// KeyStore is where its hello says its keys live: group.StoreFile or
+	// group.StoreHardware; "" when it says neither, as before 0.6.
+	KeyStore string
+	Since    time.Duration // uptime when the connection started
 	// Local is this end's address of the connection; invalid when it is
 	// not an IP connection.
 	Local netip.Addr
@@ -476,11 +482,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode
+			adminKey, oldKeys, device, mode, store := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, Since: c.since, Local: local.Addr().Unmap()})
+				OldKeys: oldKeys, Mode: mode, KeyStore: store, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -804,6 +810,7 @@ type conn struct {
 	peerPhoneCA  []byte
 	peerOldKeys  bool   // the peer's hello says it holds a legacy group CA key
 	peerMode     string // the sync mode its hello reports; "" when none or unknown
+	peerKeyStore string // where its hello says its keys live; "" when it says neither
 	certSent     bool   // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
@@ -948,7 +955,10 @@ func (c *conn) message(o outgoing) (*message, error) {
 			ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
 			h.Current = &ev
 		}
-		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS, Mode: c.n.cfg.Engine.Mode().String()}
+		out := helloOut{Hello: h, Name: c.n.cfg.Name, OS: c.n.cfg.OS, Mode: c.n.cfg.Engine.Mode().String(), KeyStore: c.n.cfg.KeyStore}
+		if out.KeyStore == "" {
+			out.KeyStore = group.StoreFile
+		}
 		if d := c.n.cfg.Device.Clean(); !d.IsZero() {
 			out.Device = &d
 		}
@@ -1116,6 +1126,10 @@ func (c *conn) reader() error {
 				c.peerDevice = extra.Device.Clean()
 			}
 			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
+			c.peerKeyStore = ""
+			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware {
+				c.peerKeyStore = extra.KeyStore
+			}
 			c.peerMode = ""
 			if _, err := clip.ParseMode(extra.Mode); err == nil {
 				c.peerMode = extra.Mode

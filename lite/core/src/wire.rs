@@ -93,6 +93,10 @@ pub struct HelloBody {
     /// trusted.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mode: String,
+    /// Where the sender says its keys live: `file` or `hardware`
+    /// (section 17); shown, never trusted.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_store: String,
 }
 
 /// What a hello says about the sender's device (section 4, "Device"): its
@@ -204,6 +208,8 @@ pub fn hello(
         tunnel_key: tunnel_key.map(|(k, _)| k.to_vec()),
         tunnel_psk: tunnel_key.map(|(_, p)| p.to_vec()),
         mode: mode.to_string(),
+        // The lite member keeps its keys in a file, or in the ESP32's flash.
+        key_store: "file".into(),
     };
     Message {
         kind: "hello".into(),

@@ -10,12 +10,15 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
+import io.github.hunterewok.clipboardbridge.kit.Attestation
 import io.github.hunterewok.clipboardbridge.kit.CertificateSigner
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.PrivateKey
+import java.security.ProviderException
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
+import java.util.Base64
 
 /**
  * The phone's keys in the Android Keystore, which never lets them out: in
@@ -28,6 +31,10 @@ import java.security.spec.ECGenParameterSpec
  *   records. They sign only for [AUTH_SECONDS] after the user passed the
  *   fingerprint, the face or the screen lock, as Face ID guards them on the
  *   iPhone.
+ *
+ * Each key is made with an attestation challenge ([Attestation.challenge]),
+ * so its certificate chain from the Keystore can prove later where it lives
+ * ([evidence]).
  */
 object Keys {
     const val MEMBER = "clipboardbridge.member"
@@ -51,36 +58,76 @@ object Keys {
     }
 
     /** The signer of the key under alias, made now when there is none. */
-    fun loadOrCreate(context: Context, alias: String): KeystoreSigner = load(alias) ?: create(context, alias)
+    fun loadOrCreate(context: Context, alias: String, groupTag: String = ""): KeystoreSigner =
+        load(alias) ?: create(context, alias, groupTag)
+
+    /**
+     * What proves where the key under alias lives: the Keystore's chain
+     * for it, leaf first, and the salt and group tag of its challenge. A
+     * key made before 0.6, or on a phone whose Keystore could not attest
+     * it, has none.
+     */
+    class Evidence(val chain: List<ByteArray>, val salt: ByteArray, val groupTag: String)
+
+    fun evidence(context: Context, alias: String): Evidence? {
+        val chain = store().getCertificateChain(alias)?.map { it.encoded } ?: return null
+        // A key made without a challenge has only its self-signed certificate.
+        if (chain.size < 2) return null
+        val p = prefs(context)
+        val salt = p.getString("salt.$alias", null)?.let { Base64.getDecoder().decode(it) } ?: return null
+        return Evidence(chain, salt, p.getString("tag.$alias", "")!!)
+    }
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences("keys", Context.MODE_PRIVATE)
 
     /**
      * Makes a P-256 key under alias, replacing one that was there. The root
      * and admin keys need the user's authentication; a debug build on a
      * device without a screen lock, such as a fresh emulator, makes them
      * without, so the app can be tried there.
+     *
+     * groupTag is the group the key is made in, when there is one already
+     * (an admin key made for the group the phone is joining, a root key
+     * that takes a group over). The root and admin keys' challenges also
+     * bind the member key, which is made first when there is none.
      */
-    fun create(context: Context, alias: String): KeystoreSigner {
+    fun create(context: Context, alias: String, groupTag: String = ""): KeystoreSigner {
         val auth = alias != MEMBER
         if (auth && !context.getSystemService(KeyguardManager::class.java).isDeviceSecure && !isDebuggable(context)) throw NoScreenLock()
         val secure = auth && context.getSystemService(KeyguardManager::class.java).isDeviceSecure
+        val member = if (alias == MEMBER) ByteArray(0) else loadOrCreate(context, MEMBER).publicKeyDER
         remove(alias)
+        val salt = Attestation.newSalt()
+        val challenge = Attestation.challenge(groupTag, member, salt)
+        prefs(context).edit()
+            .putString("salt.$alias", Base64.getEncoder().encodeToString(salt))
+            .putString("tag.$alias", groupTag)
+            .commit()
         val strongBox = context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
         if (strongBox) {
             try {
-                return generate(alias, secure, strongBox = true)
+                return generate(alias, secure, strongBox = true, challenge)
             } catch (e: StrongBoxUnavailableException) {
                 // Some StrongBox chips lack P-256 or are busy: the TEE then.
             }
         }
-        return generate(alias, secure, strongBox = false)
+        return try {
+            generate(alias, secure, strongBox = false, challenge)
+        } catch (e: ProviderException) {
+            // A Keystore that cannot attest now (no attestation key
+            // provisioned yet, as after a factory reset offline) still
+            // makes the key, which then has no evidence.
+            generate(alias, secure, strongBox = false, challenge = null)
+        }
     }
 
-    private fun generate(alias: String, auth: Boolean, strongBox: Boolean): KeystoreSigner {
+    private fun generate(alias: String, auth: Boolean, strongBox: Boolean, challenge: ByteArray?): KeystoreSigner {
         val spec = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             // Conscrypt signs the TLS handshake over a digest it computed, which needs NONE.
             .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_NONE)
             .setIsStrongBoxBacked(strongBox)
+            .apply { if (challenge != null) setAttestationChallenge(challenge) }
             .apply { if (auth) authenticate(this) }
             .build()
         val kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, PROVIDER)

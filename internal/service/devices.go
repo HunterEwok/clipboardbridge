@@ -321,7 +321,7 @@ func (s *Service) ensureListed() {
 			if d.Role != group.RoleFull || os == "" || d.OS == os {
 				return
 			}
-			body.Name, body.Admin = d.Name, d.AdminKey
+			body.Name, body.Admin, body.Store = d.Name, d.AdminKey, d.Store
 		}
 		if !group.ValidName(body.Name) {
 			body.Name = defaultName(role, dev)
@@ -399,8 +399,8 @@ func (s *Service) devices() ([]control.Device, error) {
 	now := s.cfg.now()
 	var out []control.Device
 	shown := map[group.DeviceID]bool{}
-	entry := func(dev group.DeviceID, name, role, os string, admin, listed bool) {
-		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Listed: listed, Self: dev == id.ID, Root: dev == root, Frozen: frozen[dev]}
+	entry := func(dev group.DeviceID, name, role, os, store string, admin, listed bool) {
+		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Store: store, Listed: listed, Self: dev == id.ID, Root: dev == root, Frozen: frozen[dev]}
 		d.Admin = admin || (legacy && keyHolder(role, os))
 		d.OldKeys = !legacy && !d.Self && s.holdsOldKeys(dev, peers)
 		if _, ok := peers[dev]; ok || d.Self {
@@ -429,14 +429,14 @@ func (s *Service) devices() ([]control.Device, error) {
 		if p, ok := peers[d.ID]; ok && p.OS != "" {
 			os = p.OS
 		}
-		entry(d.ID, d.Name, d.Role, os, d.Admin, true)
+		entry(d.ID, d.Name, d.Role, os, d.Store, d.Admin, true)
 	}
 	if !shown[id.ID] {
-		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, false, false)
+		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.StoreFile, false, false)
 	}
 	for _, p := range nd.Peers() {
 		if !shown[p.ID] {
-			entry(p.ID, p.Name, roleOf(p.Role), p.OS, false, false)
+			entry(p.ID, p.Name, roleOf(p.Role), p.OS, group.StoreOf(p.KeyStore, roleOf(p.Role)), false, false)
 		}
 	}
 	return out, nil
@@ -573,7 +573,7 @@ func (s *Service) rename(target, name string) (string, error) {
 		return rec.Name, nil
 	}
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: rec.ID, Name: name, Role: rec.Role,
-		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey})
+		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Store: rec.Store})
 	if err != nil {
 		return "", err
 	}

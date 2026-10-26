@@ -160,7 +160,7 @@ class PhoneGroupTest {
         assertNull(welcome.groupCAKey)
         assertNull(welcome.adminCA)
         assertEquals("lite", root.devices.first { it.id == l.device }.role)
-        assertFailsWith<PhoneGroup.Failure> { root.makeAdmin(l.device, SoftwareSigner().publicKeyDER, rootKey, t0) }
+        assertFailsWith<PhoneGroup.Failure> { root.makeAdmin(l.device, SoftwareSigner().publicKeyDER, rootKey, t0, allowFileKey = true) }
     }
 
     @Test
@@ -199,7 +199,7 @@ class PhoneGroupTest {
         val cert = GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, rootKey, t0)
         g.record(pi, "pi", "linux", Records.keyHashOfCert(cert), rootKey, t0)
         g.computers.add(PhoneGroup.Computer(pi, "pi", "linux", cert, Instant.ofEpochMilli(t0.toEpochMilli()), listOf("10.0.0.5:8764")))
-        val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, rootKey, t0.plusSeconds(1))
+        val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, rootKey, t0.plusSeconds(1), allowFileKey = true)
         val f = File.createTempFile("group", ".json")
         try {
             g.save(f)
@@ -225,7 +225,7 @@ class PhoneGroupTest {
         val pi = SyncEngine.newID()
         val piKey = Records.keyHashOfCert(GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, root, t0))
         g.record(pi, "pi", "full", piKey, root, t0, os = "linux")
-        val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, root, t0.plusSeconds(1))
+        val (ca, _) = g.makeAdmin(pi, SoftwareSigner().publicKeyDER, root, t0.plusSeconds(1), allowFileKey = true)
         val r = g.rename(pi, "  living room pi ", root, t0.plusSeconds(2))
         assertTrue(r in g.records.records)
         val d = assertNotNull(g.devices.firstOrNull { it.id == pi })
@@ -248,17 +248,24 @@ class PhoneGroupTest {
         val piKey = Records.keyHashOfCert(GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, root, t0))
         g.record(pi, "pi", "linux", piKey, root, t0)
         val adminKey = SoftwareSigner()
-        val (ca, r) = g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1))
+        // A computer whose keys sit in a file, or that does not say, needs
+        // the user's consent; one with hardware keys does not.
+        assertFailsWith<PhoneGroup.FileKey> { g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1)) }
+        assertFailsWith<PhoneGroup.FileKey> { g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1), keyStore = Records.FILE) }
+        assertEquals(Records.FILE, g.devices.first { it.id == pi }.store)
+        val (ca, r) = g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1), allowFileKey = true)
         assertContentEquals(adminKey.publicKeyDER, CertificateInfo(ca).publicKey)
         val d = assertNotNull(g.devices.firstOrNull { it.id == pi })
         assertTrue(d.admin)
+        assertEquals(Records.FILE, d.store)
+        assertEquals(Records.HARDWARE, g.devices.first { it.id == g.device }.store)
         assertContentEquals(Records.keyHashOfCert(ca), d.adminKey)
         assertContentEquals(piKey, d.key)
         assertTrue(r in g.records.records)
         assertContentEquals(ca, g.computerAdminCA(adminKey.publicKeyDER))
         assertNull(g.computerAdminCA(SoftwareSigner().publicKeyDER))
-        assertFailsWith<PhoneGroup.Failure> { g.makeAdmin(g.device, adminKey.publicKeyDER, root, t0) }
-        assertFailsWith<PhoneGroup.Failure> { g.makeAdmin(SyncEngine.newID(), adminKey.publicKeyDER, root, t0) }
+        assertFailsWith<PhoneGroup.Failure> { g.makeAdmin(g.device, adminKey.publicKeyDER, root, t0, allowFileKey = true) }
+        assertFailsWith<PhoneGroup.Failure> { g.makeAdmin(SyncEngine.newID(), adminKey.publicKeyDER, root, t0, allowFileKey = true) }
 
         // The admin computer admits the deck; removing the computer keeps it.
         val deck = SyncEngine.newID()
@@ -319,7 +326,7 @@ class PhoneGroupTest {
         // The root makes a computer an admin.
         g.record(pc, "pi", "linux", Records.keyHashOfCert(cert), ca, t0)
         val computerKey = SoftwareSigner()
-        val (computerCA, _) = g.makeAdmin(pc, computerKey.publicKeyDER, ca, t0.plusSeconds(1))
+        val (computerCA, _) = g.makeAdmin(pc, computerKey.publicKeyDER, ca, t0.plusSeconds(1), allowFileKey = true)
         File(dir, "swift-computer-admin.json").writeBytes(
             Wire.encode(
                 Wire.obj(

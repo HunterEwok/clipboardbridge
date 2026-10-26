@@ -88,7 +88,9 @@ final class MacModel: ObservableObject {
     }
 
     func remove(_ id: String) async { await admin(["revoke", id], done: String(localized: "Removed from the group.")) }
-    func makeAdmin(_ id: String) async { await admin(["admin", id], done: String(localized: "It is an admin now.")) }
+    /// The dialog that asks first warns that the computer's key is a file,
+    /// which -allow-file-key consents to.
+    func makeAdmin(_ id: String) async { await admin(["admin", "-allow-file-key", id], done: String(localized: "It is an admin now.")) }
     func freeze(_ id: String) async { await admin(["freeze", id], done: String(localized: "Frozen.")) }
     func unfreeze(_ id: String) async { await admin(["unfreeze", id], done: String(localized: "Unfrozen.")) }
 

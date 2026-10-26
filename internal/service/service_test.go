@@ -400,7 +400,7 @@ func makeAdmin(t *testing.T, root, s *testService) {
 		}
 		return false
 	})
-	m, err := root.do(t, control.Header{Op: control.OpAdmin, Name: s.name}, "")
+	m, err := root.do(t, control.Header{Op: control.OpAdmin, Name: s.name, Consent: true}, "")
 	if err != nil || m.Name != s.name {
 		t.Fatalf("admin %s on %s: %+v, %v", s.name, root.name, m, err)
 	}

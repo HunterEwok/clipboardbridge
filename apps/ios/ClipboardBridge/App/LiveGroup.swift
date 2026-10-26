@@ -102,6 +102,8 @@ final class LiveGroup: GroupController {
     private var online: Set<String> = []
     /// The admin keys the connected computers offer, by device ID.
     private var offers: [String: Data] = [:]
+    /// Where the connected members' hellos say their keys live.
+    private var keyStores: [String: String] = [:]
     /// What the connected members' hellos say about their devices.
     private var infos: [String: Member.DeviceInfo] = [:]
     /// The sync modes the connected members' hellos report.
@@ -186,7 +188,8 @@ final class LiveGroup: GroupController {
             .init(id: $0.id, name: $0.name, online: $0.id == g.device || online.contains($0.id), role: $0.role, os: $0.os,
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
-                  canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil, frozen: $0.frozen,
+                  canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil,
+                  keysInFile: Records.store(keyStores[$0.id] ?? $0.store, role: $0.role) == Records.file, frozen: $0.frozen,
                   device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: $0.id == g.device ? modeBox.mode : modes[$0.id])
         }
     }
@@ -196,6 +199,7 @@ final class LiveGroup: GroupController {
         infos = await node?.devices ?? [:]
         modes = await node?.modes ?? [:]
         offers = await node?.offeredAdminKeys ?? [:]
+        keyStores = await node?.keyStores ?? [:]
     }
 
     // MARK: Keys
@@ -545,10 +549,19 @@ final class LiveGroup: GroupController {
     /// computer offers; the computer gets its admin CA and every member the
     /// new record.
     func makeAdmin(_ id: String) async throws {
+        // The dialog before it warned when the computer's keys sit in a file.
+        try await makeAdmin(id, allowFileKey: true)
+    }
+
+    /// Makes a computer an admin; one whose keys sit in a file only with
+    /// allowFileKey, else PhoneGroup.Failure.fileKey.
+    private func makeAdmin(_ id: String, allowFileKey: Bool) async throws {
         guard state?.isRoot == true, let key = offers[id] else { throw Failure.notAdmin }
+        let store = keyStores[id]
+        guard Records.store(store, role: "full") == Records.hardware || allowFileKey else { throw PhoneGroup.Failure.fileKey }
         let root = try await caSigner(reason: String(localized: "Make a computer an admin", bundle: .app))
         guard var g = state else { return }
-        let (ca, r) = try g.makeAdmin(device: id, adminKey: key, rootSigner: root, now: Date())
+        let (ca, r) = try g.makeAdmin(device: id, adminKey: key, rootSigner: root, now: Date(), keyStore: store, allowFileKey: allowFileKey)
         try g.save(to: file)
         state = g
         groupChanged()
@@ -788,7 +801,7 @@ final class LiveGroup: GroupController {
     func moveHub(to id: String) async throws {
         guard let hub, hub.isOn, let fw = hub.forwarder else { throw HubOnPhone.Failure.notRunning }
         guard let node else { throw MemberNode.Failure.notConnected }
-        if state?.records.mayHost(id) != true { try await makeAdmin(id) }
+        if state?.records.mayHost(id) != true { try await makeAdmin(id, allowFileKey: false) }
         let ca = try await caSigner(reason: String(localized: "Move the hub to a computer", bundle: .app))
         guard let g = state, let away else { return }
         // This phone is the new hub's client from now on, with a key of its own.

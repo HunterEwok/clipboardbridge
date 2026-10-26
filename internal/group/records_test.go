@@ -505,3 +505,21 @@ func TestAuthorityRecords(t *testing.T) {
 		t.Error("a plain device's record is shown")
 	}
 }
+
+// A device record says where the device's keys live; records made before
+// say nothing, and count as a phone's in hardware and others' in a file.
+func TestStoreOf(t *testing.T) {
+	for _, c := range []struct{ store, role, want string }{
+		{StoreFile, RolePhone, StoreFile},
+		{StoreHardware, RoleFull, StoreHardware},
+		{"proven", RoleFull, StoreHardware},
+		{"", RolePhone, StoreHardware},
+		{"", RoleFull, StoreFile},
+		{"", RoleLite, StoreFile},
+		{"tpm", RoleFull, StoreFile},
+	} {
+		if got := StoreOf(c.store, c.role); got != c.want {
+			t.Errorf("StoreOf(%q, %q) = %q, want %q", c.store, c.role, got, c.want)
+		}
+	}
+}

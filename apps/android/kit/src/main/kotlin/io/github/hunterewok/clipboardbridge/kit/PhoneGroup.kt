@@ -79,6 +79,13 @@ class PhoneGroup internal constructor(
 
     class Failure(message: String) : Exception(message)
 
+    /**
+     * The computer keeps its keys in a file, which a thief with it can copy
+     * and then act as an admin: the user allows it after a warning
+     * (docs/protocol.md, section 17).
+     */
+    class FileKey : Exception("its keys sit in a file")
+
     /** Whether this phone may admit devices, renew certificates and remove devices: the root and the admins. */
     val isAdmin: Boolean get() = isRoot || adminCA != null
 
@@ -129,9 +136,10 @@ class PhoneGroup internal constructor(
         now: Instant,
         admin: ByteArray? = null,
         os: String? = null,
+        store: String? = null,
     ): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA, os)
+        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA, os, store)
         records.add(r, groupCA)
         return r
     }
@@ -238,7 +246,7 @@ class PhoneGroup internal constructor(
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         val n = name.trim()
         if (n.isEmpty() || validName(n) != n) throw Failure(INVALID_NAME)
-        return record(device, n, d.role, d.key, caSigner, now, d.adminKey, d.os)
+        return record(device, n, d.role, d.key, caSigner, now, d.adminKey, d.os, d.store)
     }
 
     /**
@@ -289,15 +297,26 @@ class PhoneGroup internal constructor(
      * root issues an admin CA for the admin key the computer's hello offered
      * (a SubjectPublicKeyInfo) and signs its device record again, naming that
      * CA. It returns the admin CA, for the admin message, and the record to
-     * send. Only the root makes admins.
+     * send. Only the root makes admins. keyStore is where the computer's
+     * hello says its keys live; one that keeps them in a file becomes an
+     * admin only with allowFileKey, else it throws FileKey.
      */
-    fun makeAdmin(device: String, adminKey: ByteArray, rootSigner: CertificateSigner, now: Instant): Pair<ByteArray, Member.Record> {
+    fun makeAdmin(
+        device: String,
+        adminKey: ByteArray,
+        rootSigner: CertificateSigner,
+        now: Instant,
+        keyStore: String? = null,
+        allowFileKey: Boolean = false,
+    ): Pair<ByteArray, Member.Record> {
         if (!isRoot) throw Failure("only the root makes admins")
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         if (d.role != "full") throw Failure("not a computer")
         if (d.frozen) throw Failure("frozen: unfreeze it or remove it")
+        val store = Records.storeOf(keyStore, d.role)
+        if (store == Records.FILE && !allowFileKey) throw FileKey()
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
-        val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os)
+        val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os, store)
         computerAdmins[device] = ca
         return ca to r
     }
@@ -359,7 +378,7 @@ class PhoneGroup internal constructor(
         val name = validName(admitted.info.name)
         val key = Records.keyHashOfCert(admitted.cert)
         if (Pairing.Info.isPhone(admitted.info.os)) {
-            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) }, admitted.info.os)
+            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) }, admitted.info.os, Records.HARDWARE)
             return admitted
         }
         computers.removeAll { it.device == admitted.device }
@@ -418,7 +437,7 @@ class PhoneGroup internal constructor(
             val device = SyncEngine.newID()
             val cert = GroupCertificates.member(device, memberKey, ca, caSigner, now)
             val g = PhoneGroup(device, ca, cert)
-            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android")
+            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android", store = Records.HARDWARE)
             return g
         }
 

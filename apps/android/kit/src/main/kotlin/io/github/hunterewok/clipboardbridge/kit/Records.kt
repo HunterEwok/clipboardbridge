@@ -29,6 +29,8 @@ object Records {
         val os: String? = null,
         val key: ByteArray? = null,
         val admin: ByteArray? = null,
+        /** Where the device's keys live: "file" or "hardware" (storeOf). */
+        val store: String? = null,
         // revoke
         val keys: List<ByteArray>? = null,
         val keep: List<ByteArray>? = null,
@@ -51,6 +53,7 @@ object Records {
                 "os" to Wire.str(os),
                 "key" to Wire.bytes(key),
                 "admin" to Wire.bytes(admin),
+                "store" to Wire.str(store),
                 "keys" to Wire.list(keys),
                 "keep" to Wire.list(keep),
                 "root" to Wire.bytes(root),
@@ -75,6 +78,7 @@ object Records {
                         os = o.optString("os"),
                         key = o.optBytes("key"),
                         admin = o.optBytes("admin"),
+                        store = o.optString("store"),
                         keys = o.optBytesList("keys"),
                         keep = o.optBytesList("keep"),
                         root = o.optBytes("root"),
@@ -115,12 +119,32 @@ object Records {
         admin: ByteArray? = null,
         adminCA: ByteArray? = null,
         os: String? = null,
+        store: String? = null,
     ): Member.Record =
         sign(
-            Body(type = "device", group = group, timeMS = now.toEpochMilli(), by = by, device = device, name = name, role = role, os = os, key = key, admin = admin),
+            Body(type = "device", group = group, timeMS = now.toEpochMilli(), by = by, device = device, name = name, role = role, os = os, key = key, admin = admin, store = store),
             signer,
             adminCA,
         )
+
+    const val FILE = "file"
+    const val HARDWARE = "hardware"
+
+    /** A key in hardware whose attestation a signer checked. */
+    const val PROVEN = "proven"
+
+    /**
+     * Where a device's keys live, as its record's store field says
+     * (docs/protocol.md, section 17): HARDWARE for "hardware", and for
+     * "proven" until this version checks proofs; FILE for "file". Without
+     * one, as before 0.6, or with one this version does not know, a phone's
+     * keys are in hardware and any other device's in a file.
+     */
+    fun storeOf(store: String?, role: String): String = when (store) {
+        HARDWARE, PROVEN -> HARDWARE
+        FILE -> FILE
+        else -> if (role == "phone") HARDWARE else FILE
+    }
 
     /** The role a record names, with the roles of earlier records read as today's: "linux" and "mac" as "full", "iphone" as "shortcut". */
     fun role(r: String?): String = when (r) {
@@ -204,9 +228,11 @@ class RecordSet {
         val frozen: Boolean = false,
         /** Every key that a counting device record names for it and that is not revoked, key among them: what removing it revokes. */
         val keys: List<ByteArray> = listOf(key),
+        /** Where its keys live: Records.FILE or Records.HARDWARE. */
+        val store: String = Records.storeOf(null, role),
     ) {
         override fun equals(other: Any?): Boolean =
-            other is Device && id == other.id && name == other.name && role == other.role && os == other.os && key.contentEquals(other.key) &&
+            other is Device && id == other.id && name == other.name && role == other.role && os == other.os && store == other.store && key.contentEquals(other.key) &&
                 admin == other.admin && adminKey.contentEqualsOrNull(other.adminKey) && frozen == other.frozen &&
                 keys.size == other.keys.size && keys.zip(other.keys).all { (a, b) -> a.contentEquals(b) }
 
@@ -714,6 +740,7 @@ class RecordSet {
                 Device(
                     d, e.body.name ?: d, Records.role(e.body.role), key, admin?.let { it !in ev.revoked && !ev.frozen(it) } ?: false, e.body.admin,
                     Records.os(e.body), ev.frozen(Key(key)) || (admin != null && ev.frozen(admin)), keys[d].orEmpty(),
+                    Records.storeOf(e.body.store, Records.role(e.body.role)),
                 )
             }.sortedWith(compareBy({ it.name }, { it.id }))
         }
