@@ -398,23 +398,30 @@ of the repository:
 |---|---|---|---|
 | The container's host | the controller (or another host) | `sh tools/bench/setup-docker.sh setup` (Docker, the docker group, the kill helper for F1) | `sh tools/bench/setup-docker.sh teardown [--group]` |
 | SSH to itself, for a device on the controller | the controller | `sh tools/bench/setup-controller.sh setup` | `sh tools/bench/setup-controller.sh teardown` |
-| The Mac's root helper | the Mac | `sudo sh tools/bench/setup-mac.sh setup SHA256SUMS` | `sudo sh tools/bench/setup-mac.sh teardown` |
+| The bench's signing key | the controller | `ssh-keygen -t ed25519 -N '' -f ~/.ssh/cbb_bench_sign -C cbbbench` | delete `~/.ssh/cbb_bench_sign` and its `.pub` |
+| The Mac's root helper | the Mac | `sudo sh tools/bench/setup-mac.sh setup -signer cbb_bench_sign.pub` (the public half, copied from the controller) | `sudo sh tools/bench/setup-mac.sh teardown` |
 | The blind relay of the relay suite | the server beside the forwarder | `sudo sh setup-relay.sh setup [PORT]` (prints its key; open the port in the provider's firewall too) | `sudo sh setup-relay.sh teardown [--purge]` |
 
 The Mac's helper has fixed steps only: remove the install with its keys, install a release
 archive, search the state directory and `/tmp` for a run's text, list the state directory's
 open files, run `cbb status` as `nobody` and print the service's log. It installs only an
-archive whose SHA-256 is in the `SHA256SUMS` that the owner gave `setup` or `trust`, which
-`/usr/local/libexec/cbbbench` keeps root-owned; give it each new build's sums with `sudo sh
-tools/bench/setup-mac.sh trust SHA256SUMS`. `cbb` itself runs as root through the same rule,
-which is as much as the group's admin can do on that Mac anyway; still, the rule belongs to a
-test cycle, and teardown removes it.
+archive whose SHA-256 is in a build's `SHA256SUMS` that the bench's signing key signed
+(`ssh-keygen -Y sign -n cbbbench`, on the controller), checked against the public half that
+`setup -signer` keeps root-owned in `/usr/local/libexec/cbbbench/allowed_signers`; so a new
+build needs no password on the Mac. Without a signing key, `setup SHA256SUMS` or `trust
+SHA256SUMS` lets it install one build's archives. The risk: whoever controls the bench user
+on the controller, which holds the signing key, can have the Mac install a build as root; the
+same user already reaches the Mac over SSH, and `cbb` runs there as root through the same
+rule, which is as much as the group's admin can do anyway. The helper, `allowed_signers` and
+both sudoers files belong to one test cycle: teardown removes them, and the signing key on the
+controller is deleted with them.
 
 ### A test cycle
 
 1. Put the build under test on the controller: its release archives
    (`clipboardbridge-<os>-<arch>.tar.gz`, `clipboardbridge-lite-linux-<arch>.tar.gz`) and
-   `SHA256SUMS`, from the release or from CI, in a directory of their own.
+   `SHA256SUMS`, from the release or from CI, in a directory of their own, and sign the sums
+   there for a Mac: `ssh-keygen -Y sign -f ~/.ssh/cbb_bench_sign -n cbbbench SHA256SUMS`.
 2. `bench -build DIR reset`: every device at once gets its archive (once per build; a
    device keeps the newest three), loses its install and keys (`uninstall.sh --purge`, which
    L10 then checks), installs the build, and answers in no group. On a Linux desktop the

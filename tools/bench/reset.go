@@ -31,8 +31,9 @@ const stateBase = "$HOME/.cache/cbbbench"
 // the release workflow and CI make them (packaging/archive.sh,
 // lite/packaging/archive.sh), checked against its SHA256SUMS.
 type Build struct {
-	dir  string
-	sums map[string]string // archive name to its SHA-256
+	dir    string
+	sums   map[string]string // archive name to its SHA-256
+	signed bool              // SHA256SUMS.sig is there, for a Mac's helper
 }
 
 // LoadBuild reads the archives of dir and checks each one that SHA256SUMS
@@ -69,6 +70,8 @@ func LoadBuild(dir string) (*Build, error) {
 	if len(b.sums) == 0 {
 		return nil, fmt.Errorf("the build %s has no .tar.gz archives", dir)
 	}
+	_, err = os.Stat(filepath.Join(dir, "SHA256SUMS.sig"))
+	b.signed = err == nil
 	return b, nil
 }
 
@@ -172,7 +175,22 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		if err != nil {
 			return err
 		}
-		if _, err := RunFor(ctx, d, "sudo -n "+macHelper+" purge && sudo -n "+macHelper+" install "+dir+"/archive.tar.gz", "", 2*time.Minute); err != nil {
+		install := macHelper + " install " + dir + "/archive.tar.gz"
+		if b.signed {
+			// The build's sums and their signature by the bench's key, so
+			// a new build needs no password on the Mac.
+			for _, f := range []string{"SHA256SUMS", "SHA256SUMS.sig"} {
+				data, err := os.ReadFile(filepath.Join(b.dir, f))
+				if err != nil {
+					return err
+				}
+				if _, err := Run(ctx, d, "cat > "+dir+"/"+f, string(data)); err != nil {
+					return err
+				}
+			}
+			install += " " + dir + "/SHA256SUMS " + dir + "/SHA256SUMS.sig"
+		}
+		if _, err := RunFor(ctx, d, "sudo -n "+macHelper+" purge && sudo -n "+install, "", 2*time.Minute); err != nil {
 			return noSudo(d, err)
 		}
 		return nil
