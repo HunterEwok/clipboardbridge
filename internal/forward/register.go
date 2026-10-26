@@ -4,6 +4,7 @@
 package forward
 
 import (
+	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/hmac"
@@ -399,12 +400,12 @@ func adminMessage(cs tls.ConnectionState, wgKey []byte) ([]byte, error) {
 
 // SignAdmin signs a registration's admin message with the key of the
 // group's root or of an admin CA.
-func SignAdmin(key *ecdsa.PrivateKey, cs tls.ConnectionState, wgKey []byte) ([]byte, error) {
+func SignAdmin(key crypto.Signer, cs tls.ConnectionState, wgKey []byte) ([]byte, error) {
 	msg, err := adminMessage(cs, wgKey)
 	if err != nil {
 		return nil, err
 	}
-	return ecdsa.SignASN1(rand.Reader, key, msg)
+	return key.Sign(rand.Reader, msg, crypto.SHA256)
 }
 
 // authority checks that a root or an admin of the hub's group signed the

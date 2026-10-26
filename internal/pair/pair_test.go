@@ -6,6 +6,7 @@ package pair
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -93,7 +94,7 @@ func legacyGroup(t *testing.T) *group.Identity {
 		t.Fatal(err)
 	}
 	admin.GroupCA = *ca
-	if admin.Cert, err = ca.IssueMember(admin.ID, &admin.Key.PublicKey, t0); err != nil {
+	if admin.Cert, err = ca.IssueMember(admin.ID, group.PublicKey(admin.Key), t0); err != nil {
 		t.Fatal(err)
 	}
 	if err := admin.Check(); err != nil {
@@ -184,7 +185,7 @@ func TestPairMac(t *testing.T) {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
 	id := out.id
-	if id.ID != j.ID || !id.Key.Equal(j.Key) || id.ServesPhone() || id.PhoneCA != nil || id.GroupCA.Key != nil {
+	if id.ID != j.ID || !group.SameKey(id.Key, j.Key.Public()) || id.ServesPhone() || id.PhoneCA != nil || id.GroupCA.Key != nil {
 		t.Error("a Mac got the wrong identity, or CA keys")
 	}
 	if !id.GroupCA.Cert.Equal(f.admin.GroupCA.Cert) {
@@ -237,10 +238,10 @@ func TestPairLinux(t *testing.T) {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
 	id := out.id
-	if !id.ServesPhone() || !id.GroupCA.Key.Equal(f.admin.GroupCA.Key) || !id.PhoneCA.Key.Equal(f.admin.PhoneCA.Key) {
+	if !id.ServesPhone() || !group.SameKey(id.GroupCA.Key, f.admin.GroupCA.Key.Public()) || !group.SameKey(id.PhoneCA.Key, f.admin.PhoneCA.Key.Public()) {
 		t.Fatal("a Linux member did not get the CA keys")
 	}
-	if !id.Phone.PublicKey.(*ecdsa.PublicKey).Equal(&j.Key.PublicKey) {
+	if !id.Phone.PublicKey.(*ecdsa.PublicKey).Equal(group.PublicKey(j.Key)) {
 		t.Error("the clipboardbridge.local certificate is not for the device's key")
 	}
 	assertMembers(t, id, f.admin)
@@ -824,7 +825,7 @@ func TestServerTLSRejects(t *testing.T) {
 func TestJoinerRefusesKeysFromARoot(t *testing.T) {
 	f := newFixture(t)
 	j := newJoiner(t, "linux")
-	cert, err := f.admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	cert, err := f.admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -845,7 +846,7 @@ func TestJoinerChecksTheWelcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	j := newJoiner(t, "linux")
-	cert, err := f.admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	cert, err := f.admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1074,7 +1075,7 @@ func TestMacRefusesCAKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	j := newJoiner(t, "macos")
-	cert, err := admin.GroupCA.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	cert, err := admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1108,7 +1109,7 @@ func phoneRoot(t *testing.T) (root, admin *group.CA) {
 			MaxPathLenZero:        pathLen == 0,
 			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		}
-		parentCert, parentKey := tmpl, key
+		parentCert, parentKey := tmpl, crypto.Signer(key)
 		if parent != nil {
 			parentCert, parentKey = parent.Cert, parent.Key
 		}
@@ -1138,7 +1139,7 @@ func TestJoinerTakesAnAdminWelcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, err := admin.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	cert, err := admin.IssueMember(j.ID, group.PublicKey(j.Key), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1187,7 +1188,7 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, err := admin.IssueMember(j.ID, &j.Key.PublicKey, t0)
+	cert, err := admin.IssueMember(j.ID, group.PublicKey(j.Key), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1249,7 +1250,7 @@ func computerAdmin(t *testing.T) (*group.Identity, *group.CA) {
 		MaxPathLenZero:        true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, root.Cert, &id.AdminKey.PublicKey, root.Key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, root.Cert, group.PublicKey(id.AdminKey), root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}

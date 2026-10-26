@@ -971,7 +971,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 		}
 		id := c.n.identity()
 		if id.AdminKey != nil && id.AdminCA == nil {
-			spki, err := x509.MarshalPKIXPublicKey(&id.AdminKey.PublicKey)
+			spki, err := x509.MarshalPKIXPublicKey(group.PublicKey(id.AdminKey))
 			if err != nil {
 				return nil, err
 			}

@@ -83,7 +83,7 @@ func adminCAFor(t *testing.T, root *group.CA, id *group.Identity) *x509.Certific
 		MaxPathLenZero:        true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, root.Cert, &id.AdminKey.PublicKey, root.Key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, root.Cert, group.PublicKey(id.AdminKey), root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestAdminPeerNeedsARealAdminCA(t *testing.T) {
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: group.AdminName(dev)},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
 		MaxPathLenZero: true, KeyUsage: x509.KeyUsageCertSign}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &own.Key.PublicKey, own.Key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, group.PublicKey(own.Key), own.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
