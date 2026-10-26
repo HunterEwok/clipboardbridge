@@ -4,6 +4,7 @@
 package group
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
 )
 
 // FileName is the name of the identity file in the state directory.
@@ -36,7 +38,7 @@ var ErrNoGroup = errors.New("group: this device is in no group; run cbb new to s
 // An Identity is not changed after it is made; renewing returns a new one.
 type Identity struct {
 	ID   DeviceID
-	Key  *ecdsa.PrivateKey
+	Key  crypto.Signer     // a P-256 key: an *ecdsa.PrivateKey in the file, or a *tpmkey.Key
 	Cert *x509.Certificate // from the group CA, or from Issuer
 	// Issuer is the admin CA that issued Cert, in a group whose root is a
 	// phone and where another admin phone admitted this device; nil when
@@ -52,7 +54,7 @@ type Identity struct {
 	// RootKey is the key of the last of Roots on the admin that took the
 	// group over with it (TakenOver), which is the group's root from then
 	// on; nil elsewhere.
-	RootKey *ecdsa.PrivateKey
+	RootKey crypto.Signer
 	// PhoneCA is the iPhone CA with its key, and Phone the
 	// clipboardbridge.local certificate for Key, on a member that serves
 	// the shortcut: the root computer and its admins, or every Linux and
@@ -63,14 +65,14 @@ type Identity struct {
 	// an admin: the hello offers it until AdminCA, from the root,
 	// certifies it (docs/protocol.md, section 10). Both are nil on the
 	// root and in a legacy group.
-	AdminKey *ecdsa.PrivateKey
+	AdminKey crypto.Signer // as Key
 	AdminCA  *x509.Certificate
 }
 
 // Create creates a new group on this device, its root: a device ID, a key,
 // the root CA, the iPhone CA and the device's certificates.
 func Create(now time.Time) (*Identity, error) {
-	key, err := NewKey()
+	key, err := NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}
@@ -83,11 +85,11 @@ func Create(now time.Time) (*Identity, error) {
 		return nil, err
 	}
 	id := NewDeviceID()
-	cert, err := groupCA.IssueMember(id, &key.PublicKey, now)
+	cert, err := groupCA.IssueMember(id, PublicKey(key), now)
 	if err != nil {
 		return nil, err
 	}
-	phone, err := phoneCA.IssuePhone(&key.PublicKey, now)
+	phone, err := phoneCA.IssuePhone(PublicKey(key), now)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ func (id *Identity) WithAdminKey() (*Identity, error) {
 	if !id.NeedsAdminKey() {
 		return nil, errors.New("group: only a member of a group with a root, not the root, and without one gets an admin key")
 	}
-	key, err := NewKey()
+	key, err := NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +201,7 @@ func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
 		return nil, err
 	}
 	ca, _ := next.Signer()
-	if next.Cert, err = ca.IssueMember(id.ID, &id.Key.PublicKey, now); err != nil {
+	if next.Cert, err = ca.IssueMember(id.ID, PublicKey(id.Key), now); err != nil {
 		return nil, err
 	}
 	next.Issuer = c
@@ -255,7 +257,7 @@ func (id *Identity) Upgraded(root *CA, roots []*x509.Certificate, phoneCA CA, no
 func (id *Identity) WithRoots(roots []*x509.Certificate) (*Identity, error) {
 	next := *id
 	next.Roots = roots
-	if id.RootKey != nil && (len(roots) == 0 || !id.RootKey.PublicKey.Equal(roots[len(roots)-1].PublicKey)) {
+	if id.RootKey != nil && (len(roots) == 0 || !SameKey(id.RootKey, roots[len(roots)-1].PublicKey)) {
 		next.RootKey, next.PhoneCA, next.Phone = nil, nil, nil
 	}
 	if id.Legacy() && len(roots) > 0 {
@@ -277,7 +279,7 @@ func (id *Identity) WithPhoneCA(ca CA, now time.Time) (*Identity, error) {
 	if err := checkCA(&ca, "iPhone CA", 0); err != nil {
 		return nil, err
 	}
-	phone, err := ca.IssuePhone(&id.Key.PublicKey, now)
+	phone, err := ca.IssuePhone(PublicKey(id.Key), now)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +309,7 @@ func (id *Identity) Check() error {
 	if _, err := ParseDeviceID(string(id.ID)); err != nil {
 		return err
 	}
-	if id.Key == nil || id.Key.Curve != elliptic.P256() {
+	if id.Key == nil || PublicKey(id.Key) == nil {
 		return errors.New("group: the device key is not a P-256 key")
 	}
 	if err := checkCA(&id.GroupCA, "group CA", maxGroupCAPath); err != nil {
@@ -321,7 +323,7 @@ func (id *Identity) Check() error {
 			return err
 		}
 	}
-	if id.RootKey != nil && (len(id.Roots) == 0 || !id.RootKey.PublicKey.Equal(id.Root().PublicKey)) {
+	if id.RootKey != nil && (len(id.Roots) == 0 || !SameKey(id.RootKey, id.Root().PublicKey)) {
 		return errors.New("group: the root key is not the key of the group's current root")
 	}
 	issuers := id.Trusted()
@@ -398,13 +400,13 @@ func (id *Identity) checkAdmin() error {
 	if id.Legacy() || id.IsRoot() {
 		return errors.New("group: only a member of a group with a root, not the root, has an admin key")
 	}
-	if id.AdminKey.Curve != elliptic.P256() {
+	if PublicKey(id.AdminKey) == nil {
 		return errors.New("group: the admin key is not a P-256 key")
 	}
 	if id.AdminCA == nil {
 		return nil
 	}
-	if !id.AdminKey.PublicKey.Equal(id.AdminCA.PublicKey) {
+	if !SameKey(id.AdminKey, id.AdminCA.PublicKey) {
 		return errors.New("group: the admin CA is not for this device's admin key")
 	}
 	if id.AdminCA.Subject.CommonName != AdminName(id.ID) {
@@ -438,13 +440,13 @@ func checkCA(ca *CA, what string, maxPath int) error {
 	if c.CheckSignatureFrom(c) != nil {
 		return fmt.Errorf("group: the %s certificate is not self-signed", what)
 	}
-	if ca.Key != nil && !ca.Key.PublicKey.Equal(c.PublicKey) {
+	if ca.Key != nil && !SameKey(ca.Key, c.PublicKey) {
 		return fmt.Errorf("group: the %s key does not match its certificate", what)
 	}
 	return nil
 }
 
-func checkLeaf(c, ca *x509.Certificate, key *ecdsa.PrivateKey, what string) error {
+func checkLeaf(c, ca *x509.Certificate, key crypto.Signer, what string) error {
 	if c == nil {
 		return fmt.Errorf("group: the %s is missing", what)
 	}
@@ -454,7 +456,7 @@ func checkLeaf(c, ca *x509.Certificate, key *ecdsa.PrivateKey, what string) erro
 	if err := c.CheckSignatureFrom(ca); err != nil {
 		return fmt.Errorf("group: the %s is not from its CA: %w", what, err)
 	}
-	if !key.PublicKey.Equal(c.PublicKey) {
+	if !SameKey(key, c.PublicKey) {
 		return fmt.Errorf("group: the %s does not match the device key", what)
 	}
 	return nil
@@ -482,7 +484,7 @@ func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 	next := *id
 	changed := false
 	if ca := id.RootCA(); ca != nil && renewable(id.Cert, ca.Cert, now, memberRenewBefore) {
-		cert, err := ca.IssueMember(id.ID, &id.Key.PublicKey, now)
+		cert, err := ca.IssueMember(id.ID, PublicKey(id.Key), now)
 		if err != nil {
 			return id, false, err
 		}
@@ -490,14 +492,14 @@ func (id *Identity) Renew(now time.Time) (*Identity, bool, error) {
 	}
 	if id.AdminCA != nil && renewable(id.Cert, id.AdminCA, now, memberRenewBefore) {
 		ca, _ := id.Signer()
-		cert, err := ca.IssueMember(id.ID, &id.Key.PublicKey, now)
+		cert, err := ca.IssueMember(id.ID, PublicKey(id.Key), now)
 		if err != nil {
 			return id, false, err
 		}
 		next.Cert, next.Issuer, changed = cert, id.AdminCA, true
 	}
 	if id.Phone != nil && id.PhoneCA.Key != nil && renewable(id.Phone, id.PhoneCA.Cert, now, phoneRenewBefore) {
-		cert, err := id.PhoneCA.IssuePhone(&id.Key.PublicKey, now)
+		cert, err := id.PhoneCA.IssuePhone(PublicKey(id.Key), now)
 		if err != nil {
 			return id, false, err
 		}
@@ -594,7 +596,7 @@ func renewable(c, ca *x509.Certificate, now time.Time, before time.Duration) boo
 type identityFile struct {
 	Version    int      `json:"v"`
 	Device     string   `json:"device"`
-	Key        []byte   `json:"key"`
+	Key        []byte   `json:"key,omitempty"`
 	Cert       []byte   `json:"cert"`
 	Issuer     []byte   `json:"issuer,omitempty"`
 	GroupCA    []byte   `json:"group_ca"`
@@ -606,6 +608,10 @@ type identityFile struct {
 	Phone      []byte   `json:"phone,omitempty"`
 	AdminKey   []byte   `json:"admin_key,omitempty"`
 	AdminCA    []byte   `json:"admin_ca,omitempty"`
+	// KeyTPM and AdminKeyTPM stand for Key and AdminKey when those live
+	// in the TPM: the blob that only this machine's TPM loads.
+	KeyTPM      *tpmkey.Blob `json:"key_tpm,omitempty"`
+	AdminKeyTPM *tpmkey.Blob `json:"admin_key_tpm,omitempty"`
 }
 
 const fileVersion = 1
@@ -630,8 +636,10 @@ func (id *Identity) Save(dir string) error {
 		f.Roots = append(f.Roots, r.Raw)
 	}
 	var err error
-	if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
-		return err
+	if f.KeyTPM = keyBlob(id.Key); f.KeyTPM == nil {
+		if f.Key, err = x509.MarshalPKCS8PrivateKey(id.Key); err != nil {
+			return err
+		}
 	}
 	if id.GroupCA.Key != nil {
 		if f.GroupCAKey, err = x509.MarshalPKCS8PrivateKey(id.GroupCA.Key); err != nil {
@@ -652,8 +660,10 @@ func (id *Identity) Save(dir string) error {
 		}
 	}
 	if id.AdminKey != nil {
-		if f.AdminKey, err = x509.MarshalPKCS8PrivateKey(id.AdminKey); err != nil {
-			return err
+		if f.AdminKeyTPM = keyBlob(id.AdminKey); f.AdminKeyTPM == nil {
+			if f.AdminKey, err = x509.MarshalPKCS8PrivateKey(id.AdminKey); err != nil {
+				return err
+			}
 		}
 	}
 	if id.AdminCA != nil {
@@ -693,7 +703,12 @@ func parseIdentity(data []byte) (*Identity, error) {
 	}
 	id := &Identity{ID: DeviceID(f.Device)}
 	var err error
-	if id.Key, err = parseKey(f.Key); err != nil {
+	if f.KeyTPM != nil {
+		id.Key, err = loadTPMKey(f.KeyTPM)
+	} else {
+		id.Key, err = parseKey(f.Key)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if id.Cert, err = x509.ParseCertificate(f.Cert); err != nil {
@@ -729,7 +744,12 @@ func parseIdentity(data []byte) (*Identity, error) {
 			return nil, err
 		}
 	}
-	if f.AdminKey != nil {
+	switch {
+	case f.AdminKeyTPM != nil:
+		if id.AdminKey, err = loadTPMKey(f.AdminKeyTPM); err != nil {
+			return nil, err
+		}
+	case f.AdminKey != nil:
 		if id.AdminKey, err = parseKey(f.AdminKey); err != nil {
 			return nil, err
 		}

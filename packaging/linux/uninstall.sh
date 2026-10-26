@@ -65,7 +65,8 @@ if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close
 	sh "$share/firewall.sh" hub-close
 fi
-rm -f /etc/systemd/system/clipboardbridge.service.d/away.conf /etc/systemd/system/clipboardbridge.service.d/cgnat.conf
+rm -f /etc/systemd/system/clipboardbridge.service.d/away.conf /etc/systemd/system/clipboardbridge.service.d/cgnat.conf \
+	/etc/systemd/system/clipboardbridge.service.d/tpm.conf
 rmdir /etc/systemd/system/clipboardbridge.service.d 2>/dev/null || true
 rm -f /etc/systemd/system/clipboardbridge.service /etc/xdg/autostart/clipboardbridge-desktop.desktop \
 	/etc/systemd/user/clipboardbridge-agent.service \

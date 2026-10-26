@@ -312,8 +312,8 @@ func (s *Service) ensureListed() {
 	}
 	s.recMu.Unlock()
 	var rs []group.Record
-	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash) {
-		body := group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key}
+	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash, store string) {
+		body := group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key, Store: store}
 		if d, ok := listed[key]; ok {
 			// A computer whose record names no system or another one, as a
 			// Windows PC that joined as a Linux member: record what its
@@ -333,9 +333,9 @@ func (s *Service) ensureListed() {
 		}
 		rs = append(rs, r)
 	}
-	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert))
+	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert), group.KeyStoreOf(id.Key))
 	for _, p := range nd.Peers() {
-		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key)
+		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key, p.KeyStore)
 	}
 	if len(rs) > 0 {
 		s.publish(nd, rs...)
@@ -432,7 +432,7 @@ func (s *Service) devices() ([]control.Device, error) {
 		entry(d.ID, d.Name, d.Role, os, d.Store, d.Admin, true)
 	}
 	if !shown[id.ID] {
-		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.StoreFile, false, false)
+		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyStoreOf(id.Key), false, false)
 	}
 	for _, p := range nd.Peers() {
 		if !shown[p.ID] {

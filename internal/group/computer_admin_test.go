@@ -38,7 +38,7 @@ func computerAdmin(t *testing.T, pg phoneGroup) *Identity {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, err = id.WithAdminCA(adminCAFor(t, pg.root, AdminName(id.ID), &id.AdminKey.PublicKey).Raw, t0); err != nil {
+	if id, err = id.WithAdminCA(adminCAFor(t, pg.root, AdminName(id.ID), PublicKey(id.AdminKey)).Raw, t0); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -67,7 +67,7 @@ func TestComputerAdmin(t *testing.T) {
 	if err := pending.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := Load(dir); err != nil || got.AdminKey == nil || !got.AdminKey.Equal(pending.AdminKey) || got.AdminCA != nil {
+	if got, err := Load(dir); err != nil || got.AdminKey == nil || !SameKey(got.AdminKey, pending.AdminKey.Public()) || got.AdminCA != nil {
 		t.Fatalf("the admin key was not kept: %v", err)
 	}
 
@@ -76,9 +76,9 @@ func TestComputerAdmin(t *testing.T) {
 	key, _ := NewKey()
 	for name, c := range map[string]*x509.Certificate{
 		"another key":           adminCAFor(t, pg.root, cn, &key.PublicKey),
-		"another device":        adminCAFor(t, pg.root, AdminName(NewDeviceID()), &pending.AdminKey.PublicKey),
-		"another group's root":  adminCAFor(t, other.root, cn, &pending.AdminKey.PublicKey),
-		"from an admin CA":      adminCAFor(t, pg.a, cn, &pending.AdminKey.PublicKey),
+		"another device":        adminCAFor(t, pg.root, AdminName(NewDeviceID()), PublicKey(pending.AdminKey)),
+		"another group's root":  adminCAFor(t, other.root, cn, PublicKey(pending.AdminKey)),
+		"from an admin CA":      adminCAFor(t, pg.a, cn, PublicKey(pending.AdminKey)),
 		"a member certificate":  member(t, pg.root),
 		"the root's own":        pg.root.Cert,
 		"another admin's admin": pg.a.Cert,
@@ -91,7 +91,7 @@ func TestComputerAdmin(t *testing.T) {
 		t.Error("accepted a corrupt admin CA")
 	}
 
-	admin, err := pending.WithAdminCA(adminCAFor(t, pg.root, cn, &pending.AdminKey.PublicKey).Raw, t0)
+	admin, err := pending.WithAdminCA(adminCAFor(t, pg.root, cn, PublicKey(pending.AdminKey)).Raw, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,13 +145,13 @@ func TestComputerRoot(t *testing.T) {
 		t.Error("a member that is no admin took the iPhone CA")
 	}
 	key, _ := NewKey()
-	if _, err := (&CA{Cert: root.GroupCA.Cert}).IssueAdmin(pending.ID, &pending.AdminKey.PublicKey, t0); err == nil {
+	if _, err := (&CA{Cert: root.GroupCA.Cert}).IssueAdmin(pending.ID, PublicKey(pending.AdminKey), t0); err == nil {
 		t.Error("issued an admin CA without the root key")
 	}
 	if _, err := root.PhoneCA.IssueAdmin(pending.ID, &key.PublicKey, t0); err == nil {
 		t.Error("the iPhone CA issued an admin CA")
 	}
-	adminCA, err := root.GroupCA.IssueAdmin(pending.ID, &pending.AdminKey.PublicKey, t0)
+	adminCA, err := root.GroupCA.IssueAdmin(pending.ID, PublicKey(pending.AdminKey), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestComputerRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !serving.ServesPhone() || serving.Phone.VerifyHostname(PhoneName) != nil || !serving.Key.PublicKey.Equal(serving.Phone.PublicKey) {
+	if !serving.ServesPhone() || serving.Phone.VerifyHostname(PhoneName) != nil || !SameKey(serving.Key, serving.Phone.PublicKey) {
 		t.Error("the admin does not serve the shortcut with its own clipboardbridge.local certificate")
 	}
 	dir := t.TempDir()
@@ -183,7 +183,7 @@ func TestComputerRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := Load(dir)
-	if err != nil || !got.ServesPhone() || !got.PhoneCA.Key.Equal(root.PhoneCA.Key) || got.AdminCA == nil {
+	if err != nil || !got.ServesPhone() || !SameKey(got.PhoneCA.Key, root.PhoneCA.Key.Public()) || got.AdminCA == nil {
 		t.Fatalf("the admin's iPhone CA was not kept: %v", err)
 	}
 	if back := serving.WithoutPhoneCA(); back.ServesPhone() || back.Check() != nil || !back.IsAdmin() {
@@ -200,7 +200,7 @@ func TestTakenOver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminCA, err := root.GroupCA.IssueAdmin(m.ID, &m.AdminKey.PublicKey, t0)
+	adminCA, err := root.GroupCA.IssueAdmin(m.ID, PublicKey(m.AdminKey), t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestTakenOver(t *testing.T) {
 	if err := took.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := Load(dir); err != nil || !got.IsRoot() || !got.RootKey.Equal(next.Key) {
+	if got, err := Load(dir); err != nil || !got.IsRoot() || !SameKey(got.RootKey, next.Key.Public()) {
 		t.Fatalf("the root key was not kept: %v", err)
 	}
 	renewed, changed, err := took.Renew(took.Cert.NotAfter.Add(-memberRenewBefore + time.Hour))

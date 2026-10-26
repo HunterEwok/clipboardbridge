@@ -344,7 +344,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// presented, leaf first. Throws AndroidAttestation.Invalid for a proof
     /// of nothing.
     public mutating func evidence(device: String, chain: [Data], _ e: Member.Evidence, rootSigner: CertificateSigner, now: Date,
-                                  roots: [Data]? = nil) throws -> Member.Record? {
+                                  roots: [Data]? = nil, revoked: Set<String> = []) throws -> Member.Record? {
         guard isRoot, let leaf = chain.first, e.format == Member.Evidence.android, e.key == Member.Evidence.member else { return nil }
         let key = try Records.keyHash(cert: leaf)
         guard let d = devices.first(where: { $0.id == device && $0.key == key }) else { return nil }
@@ -355,11 +355,20 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         } catch {
             throw AndroidAttestation.Invalid(reason: "\(error)")
         }
-        let r = try AndroidAttestation.check(chain: e.chain, spki: try CertificateInfo(der: leaf).publicKey, challenge: challenge,
-                                             policy: AndroidAttestation.Policy(roots: roots))
+        let r: AndroidAttestation.Result
+        do {
+            r = try AndroidAttestation.check(chain: e.chain, spki: try CertificateInfo(der: leaf).publicKey, challenge: challenge,
+                                             policy: AndroidAttestation.Policy(revoked: revoked, roots: roots))
+        } catch let x as AndroidAttestation.Invalid where x.revoked {
+            // Revoked: the keys may still be in hardware, as the hello says,
+            // but Google no longer vouches for the chain.
+            guard d.store == Records.proven else { return nil }
+            return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
+                              store: Records.hardware, kind: d.kind, proof: nil, caSigner: rootSigner, now: now)
+        }
         if d.store == r.store, (d.kind ?? "") == r.kind { return nil }
         guard let first = e.chain.first else { return nil }
-        let proof = SHA256.hash(data: first).map { String(format: "%02x", $0) }.joined()
+        let proof = r.store == Records.proven ? SHA256.hash(data: first).map { String(format: "%02x", $0) }.joined() : nil
         return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey, store: r.store,
                           kind: r.kind.isEmpty ? nil : r.kind, proof: proof, caSigner: rootSigner, now: now)
     }

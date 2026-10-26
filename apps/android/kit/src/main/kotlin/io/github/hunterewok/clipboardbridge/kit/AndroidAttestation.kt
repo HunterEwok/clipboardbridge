@@ -37,8 +37,8 @@ object AndroidAttestation {
     /** Strict proves only chains of Remote Key Provisioning; [revoked] holds lowercase hex serials. */
     data class Policy(val strict: Boolean = false, val revoked: Set<String> = emptySet(), val roots: List<ByteArray>? = null)
 
-    /** An attestation that proves nothing: a broken chain, another root, key or challenge, a revoked certificate. */
-    class Invalid(message: String) : Exception("invalid attestation: $message")
+    /** An attestation that proves nothing: a broken chain, another root, key or challenge, a revoked certificate ([revoked]). */
+    class Invalid(message: String, val revoked: Boolean = false) : Exception("invalid attestation: $message")
 
     private const val OID_KEY_DESCRIPTION = "1.3.6.1.4.1.11129.2.1.17"
     private const val OID_PROVISIONING = "1.3.6.1.4.1.11129.2.1.30"
@@ -68,7 +68,7 @@ object AndroidAttestation {
             if (i + 1 < certs.size && !verifies(c, certs[i + 1].publicKey)) {
                 throw Invalid("certificate $i is not signed by the next")
             }
-            if (serials[i] in policy.revoked) throw Invalid("certificate $i (${serials[i]}) is revoked")
+            if (serials[i] in policy.revoked) throw Invalid("certificate $i (${serials[i]}) is revoked", revoked = true)
             if (OID_PROVISIONING in c.oids()) rkp = true
         }
         val last = certs.last()

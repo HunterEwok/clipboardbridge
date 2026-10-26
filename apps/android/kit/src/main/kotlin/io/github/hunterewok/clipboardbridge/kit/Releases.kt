@@ -48,6 +48,9 @@ object Releases {
         companion object {
             fun fromJson(o: JsonObject): File =
                 File(o.optBytes("body") ?: ByteArray(0), o.optBytes("sig") ?: ByteArray(0), o.optBytes("key") ?: ByteArray(0))
+
+            /** Reads a file as it is served; null when it is not one. */
+            fun parse(data: ByteArray): File? = runCatching { Wire.parse(data)?.let(::fromJson) }.getOrNull()
         }
     }
 

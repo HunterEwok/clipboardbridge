@@ -28,18 +28,31 @@ All notable changes to clipboardbridge are documented in this file. The format f
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`
   shows as "proven hardware" (docs/protocol.md, section 17, "Evidence").
+- Revoked attestations: a mirror on cbb.tools signs Google's revocation list of Android
+  attestation keys every day (`attest-status.json`, with a status key that `keys.json`
+  certifies only for it), and the group's root, a computer or a phone, takes it and records a
+  phone whose chain was revoked as only in hardware (docs/protocol.md, section 17).
+- Keys in the TPM: a Linux computer with a TPM 2.0 makes its member and admin keys in it
+  when it joins a group, the identity file keeps only the TPM's blob, and the device counts
+  as hardware (`internal/tpmkey`, docs/protocol.md, section 17). The installer lets the
+  service reach `/dev/tpmrm0`; `CBB_TPM=off` keeps new keys in a file.
+- The guide "Keys and attestation" (docs/guide/keys.md): where each device keeps its keys,
+  how Android phones prove it, and the three key levels.
 
 ### Changed
 
-- Revoked attestations: a mirror on cbb.tools signs Google's revocation list of Android
-  attestation keys every day (`attest-status.json`, with a status key that `keys.json`
-  certifies only for it), and the group's root takes it and records a phone whose chain was
-  revoked as only in hardware (docs/protocol.md, section 17).
 - A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
   admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
   means. `cbb new` warns that the root key is a file.
 - `get.ps1` no longer stops in Windows PowerShell 5.1 when `gh` is installed but not signed
   in.
+
+### Fixed
+
+- The iPhone's member key and its certificate are readable while the phone is locked, once
+  it was unlocked after starting, so that sync works in the background; the root and admin
+  keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
+  setting.
 
 ## [0.5.0] - 2026-10-26
 

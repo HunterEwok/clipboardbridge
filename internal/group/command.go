@@ -4,7 +4,7 @@
 package group
 
 import (
-	"crypto/ecdsa"
+	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -90,7 +90,7 @@ func NewCommandID() string {
 
 // SignCommand signs a command with key, a root's key (chain empty) or an
 // admin CA key (chain holds the admin CA certificate).
-func SignCommand(body CommandBody, key *ecdsa.PrivateKey, chain ...*x509.Certificate) (Record, error) {
+func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate) (Record, error) {
 	body.V = recordVersion
 	if err := body.check(); err != nil {
 		return Record{}, err
@@ -100,7 +100,7 @@ func SignCommand(body CommandBody, key *ecdsa.PrivateKey, chain ...*x509.Certifi
 		return Record{}, err
 	}
 	sum := sha256.Sum256(data)
-	sig, err := ecdsa.SignASN1(rand.Reader, key, sum[:])
+	sig, err := key.Sign(rand.Reader, sum[:], crypto.SHA256)
 	if err != nil {
 		return Record{}, err
 	}

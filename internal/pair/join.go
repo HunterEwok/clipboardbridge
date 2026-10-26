@@ -6,6 +6,7 @@ package pair
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -29,7 +30,7 @@ import (
 // A Joiner is a device that joins a group: its new device ID and key.
 type Joiner struct {
 	ID   group.DeviceID
-	Key  *ecdsa.PrivateKey
+	Key  crypto.Signer // a P-256 key, in a file or a TPM
 	Info Info
 	Now  func() time.Time // time.Now if nil
 
@@ -52,7 +53,7 @@ func NewJoiner(info Info) (*Joiner, error) {
 	if err := info.check(); err != nil {
 		return nil, err
 	}
-	key, err := group.NewKey()
+	key, err := group.NewDeviceKey()
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (j *Joiner) cert() ([]byte, error) {
 			NotBefore: time.Unix(0, 0),
 			NotAfter:  time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
 		}
-		j.certDER, j.certErr = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &j.Key.PublicKey, j.Key)
+		j.certDER, j.certErr = x509.CreateCertificate(rand.Reader, tmpl, tmpl, group.PublicKey(j.Key), j.Key)
 	})
 	return j.certDER, j.certErr
 }
@@ -351,7 +352,7 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 			return nil, err
 		}
 		id.PhoneCA = phoneCA
-		if id.Phone, err = phoneCA.IssuePhone(&j.Key.PublicKey, j.now()); err != nil {
+		if id.Phone, err = phoneCA.IssuePhone(group.PublicKey(j.Key), j.now()); err != nil {
 			return nil, err
 		}
 	}

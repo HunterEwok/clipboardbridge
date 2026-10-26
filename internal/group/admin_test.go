@@ -98,7 +98,7 @@ func TestAdminIssuedRenewal(t *testing.T) {
 	pg := newPhoneGroup(t)
 	id := adminIdentity(t, pg, pg.a)
 	later := t0.Add(24 * time.Hour)
-	fromAdmin, err := pg.a.IssueMember(id.ID, &id.Key.PublicKey, later)
+	fromAdmin, err := pg.a.IssueMember(id.ID, PublicKey(id.Key), later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestAdminIssuedRenewal(t *testing.T) {
 	if err != nil || next.Issuer == nil {
 		t.Fatalf("renewed by its admin CA: %v, issuer %v", err, next != nil && next.Issuer != nil)
 	}
-	fromRoot, err := pg.root.IssueMember(id.ID, &id.Key.PublicKey, later)
+	fromRoot, err := pg.root.IssueMember(id.ID, PublicKey(id.Key), later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestAdminIssuedRenewal(t *testing.T) {
 	if err != nil || next.Issuer != nil {
 		t.Fatalf("renewed by the root: %v, issuer kept %v", err, next != nil && next.Issuer != nil)
 	}
-	fromOther, err := pg.b.IssueMember(id.ID, &id.Key.PublicKey, later)
+	fromOther, err := pg.b.IssueMember(id.ID, PublicKey(id.Key), later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestRenewalFromAnotherAdmin(t *testing.T) {
 	pg := newPhoneGroup(t)
 	id := adminIdentity(t, pg, pg.a)
 	later := t0.Add(24 * time.Hour)
-	fromB, err := pg.b.IssueMember(id.ID, &id.Key.PublicKey, later)
+	fromB, err := pg.b.IssueMember(id.ID, PublicKey(id.Key), later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestRenewalFromAnotherAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := newPhoneGroup(t)
-	fromOther, err := other.a.IssueMember(id.ID, &id.Key.PublicKey, later)
+	fromOther, err := other.a.IssueMember(id.ID, PublicKey(id.Key), later)
 	if err != nil {
 		t.Fatal(err)
 	}

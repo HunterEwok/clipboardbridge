@@ -71,6 +71,8 @@ final class LiveGroup: GroupController {
     static let connectWait: Duration = .seconds(5)
 
     let file: URL
+    /// The revocation list the root checks evidence against.
+    private let attestStatus: AttestStatus
     private(set) var state: PhoneGroup?
     private var node: MemberNode?
     private var browser: BonjourBrowser?
@@ -127,6 +129,7 @@ final class LiveGroup: GroupController {
 
     init(file: URL = LiveGroup.defaultFile) {
         self.file = file
+        attestStatus = AttestStatus(dir: file.deletingLastPathComponent().appendingPathComponent("attest-status"))
         modeBox = ModeBox(url: file.deletingLastPathComponent().appendingPathComponent("mode"))
         state = try? PhoneGroup.load(from: file)
         try? startSync()
@@ -522,9 +525,12 @@ final class LiveGroup: GroupController {
     /// made: only while the context of the user's last Face ID check lasts;
     /// the phone sends it again on its next connection.
     private func evidenceReceived(from peer: String?, chain: [Data], _ e: Member.Evidence) async {
-        guard let peer, var g = state, g.isRoot, let signer = renewer?.signer() else { return }
+        guard let peer, state?.isRoot == true else { return }
+        await attestStatus.refreshIfDue()
+        let revoked = await attestStatus.revoked
+        guard var g = state, g.isRoot, let signer = renewer?.signer() else { return }
         do {
-            guard let r = try g.evidence(device: peer, chain: chain, e, rootSigner: signer, now: Date()) else { return }
+            guard let r = try g.evidence(device: peer, chain: chain, e, rootSigner: signer, now: Date(), revoked: revoked) else { return }
             try g.save(to: file)
             state = g
             groupChanged()

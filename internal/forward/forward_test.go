@@ -6,6 +6,7 @@ package forward
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -53,8 +54,8 @@ func member(t *testing.T) (tls.Certificate, string, *group.CA) {
 }
 
 // rootAuthority is a hub's Authority on the group's root.
-func rootAuthority(ca *group.CA) func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
-	return func() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) { return ca.Key, nil, nil }
+func rootAuthority(ca *group.CA) func() (crypto.Signer, *x509.Certificate, []group.Record) {
+	return func() (crypto.Signer, *x509.Certificate, []group.Record) { return ca.Key, nil, nil }
 }
 
 func startForwarder(t *testing.T, limits Limits) (*Forwarder, string) {
@@ -491,7 +492,7 @@ func TestHello(t *testing.T) {
 // hubAuth is what a hand-made registration shows: the key that signs it,
 // the admin CA of that key (nil for a root), and records.
 type hubAuth struct {
-	key     *ecdsa.PrivateKey
+	key     crypto.Signer
 	admin   *x509.Certificate
 	records []group.Record
 }

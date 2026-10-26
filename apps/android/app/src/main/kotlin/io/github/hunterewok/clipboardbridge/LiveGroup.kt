@@ -1121,6 +1121,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     private fun ownEvidence(): List<Member.Evidence> = runCatching { memberEvidence }.getOrDefault(emptyList())
 
+    /** The revocation list the root checks evidence against. */
+    private val attestStatus by lazy { AttestStatus(File(context.filesDir, "attest-status")) }
+
     /**
      * On the root, records what the attestation a peer sent shows, and what
      * this phone's own shows, as renew does while the user's authentication
@@ -1135,6 +1138,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private fun recordProofs(peer: Triple<String, List<ByteArray>, Member.Evidence>?) {
         val g = synchronized(lock) { state } ?: return
         val own = ownEvidence().firstOrNull()
+        if (g.isRoot) attestStatus.refreshIfDue()
         if (!g.isRoot || !authenticator.isFresh || peer == null && (own == null || g.devices.any { it.id == g.device && it.proof != null })) return
         val signer = Keys.load(Keys.ROOT) ?: return
         val copy = copyOfState() ?: return
@@ -1149,7 +1153,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     private fun prove(g: PhoneGroup, device: String, chain: List<ByteArray>, e: Member.Evidence, signer: KeystoreSigner, now: Instant) = try {
-        g.evidence(device, chain, e, signer, now)?.also { Log.i(TAG, "recorded what the attestation of $device shows") }
+        g.evidence(device, chain, e, signer, now, revoked = attestStatus.revoked)?.also { Log.i(TAG, "recorded what the attestation of $device shows") }
     } catch (x: AndroidAttestation.Invalid) {
         Log.w(TAG, "the attestation of $device proves nothing: ${x.message}")
         null

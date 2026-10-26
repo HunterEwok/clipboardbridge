@@ -12,6 +12,7 @@
 package group
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -72,11 +73,30 @@ func NewKey() (*ecdsa.PrivateKey, error) {
 	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 }
 
+// PublicKey returns k's P-256 public key, or nil when k is nil or not a
+// P-256 key.
+func PublicKey(k crypto.Signer) *ecdsa.PublicKey {
+	if k == nil {
+		return nil
+	}
+	p, ok := k.Public().(*ecdsa.PublicKey)
+	if !ok || p.Curve != elliptic.P256() {
+		return nil
+	}
+	return p
+}
+
+// SameKey reports whether k is the private key of pub.
+func SameKey(k crypto.Signer, pub crypto.PublicKey) bool {
+	p := PublicKey(k)
+	return p != nil && p.Equal(pub)
+}
+
 // A CA is a certificate authority of the group: its certificate and, on
 // members that hold it, its private key.
 type CA struct {
 	Cert *x509.Certificate
-	Key  *ecdsa.PrivateKey // nil when this device does not hold the key
+	Key  crypto.Signer // a P-256 key; nil when this device does not hold the key
 }
 
 // NewGroupCA creates a group CA with path length 0, which certifies the
@@ -214,7 +234,7 @@ func (ca *CA) issue(tmpl *x509.Certificate, pub *ecdsa.PublicKey, now time.Time)
 
 // create signs a certificate; a nil serial number makes x509 pick a random
 // one.
-func create(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, priv *ecdsa.PrivateKey) (*x509.Certificate, error) {
+func create(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, priv crypto.Signer) (*x509.Certificate, error) {
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, priv)
 	if err != nil {
 		return nil, fmt.Errorf("group: %w", err)

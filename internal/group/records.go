@@ -5,6 +5,7 @@ package group
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -244,7 +245,7 @@ func (r Record) Type() string {
 
 // SignRecord signs body with key, the group CA key (chain empty) or an
 // admin CA key (chain holds the admin CA certificate).
-func SignRecord(body RecordBody, key *ecdsa.PrivateKey, chain ...*x509.Certificate) (Record, error) {
+func SignRecord(body RecordBody, key crypto.Signer, chain ...*x509.Certificate) (Record, error) {
 	body.V = recordVersion
 	if err := body.check(); err != nil {
 		return Record{}, err
@@ -257,7 +258,7 @@ func SignRecord(body RecordBody, key *ecdsa.PrivateKey, chain ...*x509.Certifica
 		return Record{}, errors.New("group: the record is too large")
 	}
 	sum := sha256.Sum256(data)
-	sig, err := ecdsa.SignASN1(rand.Reader, key, sum[:])
+	sig, err := key.Sign(rand.Reader, sum[:], crypto.SHA256)
 	if err != nil {
 		return Record{}, err
 	}

@@ -78,6 +78,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false # nothing to download; leaves the shared cache key to the check job
+      - name: swtpm, a software TPM for the tests of keys in a TPM
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q swtpm
+          echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
         run: go test -race ./...
 

@@ -4,7 +4,7 @@
 package service
 
 import (
-	"crypto/ecdsa"
+	"crypto"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -34,7 +34,7 @@ func testCA(t *testing.T, parent *group.CA) *group.CA {
 		MaxPathLen:            1,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
-	parentCert, parentKey := tmpl, key
+	parentCert, parentKey := tmpl, crypto.Signer(key)
 	if parent != nil {
 		tmpl.Subject.CommonName = "clipboardbridge admin " + string(group.NewDeviceID())
 		tmpl.MaxPathLen, tmpl.MaxPathLenZero = 0, true
@@ -76,7 +76,7 @@ func memberIn(t *testing.T, first, issuer *group.CA, roots ...*x509.Certificate)
 	return dir, id
 }
 
-func sign(t *testing.T, first *x509.Certificate, body group.RecordBody, key *ecdsa.PrivateKey, chain ...*x509.Certificate) group.Record {
+func sign(t *testing.T, first *x509.Certificate, body group.RecordBody, key crypto.Signer, chain ...*x509.Certificate) group.Record {
 	t.Helper()
 	body.Group, body.TimeMS = group.Tag(first), time.Now().UnixMilli()
 	r, err := group.SignRecord(body, key, chain...)

@@ -15,6 +15,7 @@ tool (
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/amnezia-vpn/amneziawg-go v0.2.20-0.20260724121833-457d920a1a7d
+	github.com/google/go-tpm v0.9.8
 	github.com/jezek/xgb v1.3.1
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
 	golang.org/x/crypto v0.58.0

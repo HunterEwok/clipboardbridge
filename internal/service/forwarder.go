@@ -5,7 +5,7 @@ package service
 
 import (
 	"context"
-	"crypto/ecdsa"
+	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"strings"
@@ -114,7 +114,7 @@ func (s *Service) vlessLearnedLocked(v *tunnel.VLESS) {
 // forwarderAuthority is what a hub shows its forwarder that it may register
 // the group: the key of its root or admin CA, that admin CA, and the
 // group's authority records.
-func (s *Service) forwarderAuthority() (*ecdsa.PrivateKey, *x509.Certificate, []group.Record) {
+func (s *Service) forwarderAuthority() (crypto.Signer, *x509.Certificate, []group.Record) {
 	s.mu.Lock()
 	id := s.id
 	s.mu.Unlock()
