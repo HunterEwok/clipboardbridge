@@ -15,6 +15,7 @@ tool (
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/amnezia-vpn/amneziawg-go v0.2.20-0.20260724121833-457d920a1a7d
+	github.com/google/go-tpm v0.9.8
 	github.com/jezek/xgb v1.3.1
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
 	golang.org/x/crypto v0.58.0
@@ -32,7 +33,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
