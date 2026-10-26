@@ -1610,7 +1610,10 @@ input, and the sender is told so.
 - **Enter and root consoles are off by default** even when remote paste is on: the `enter`
   flag is refused, and so are the Linux text console helper and a tmux session of root,
   until the device's user turns each on there (`cbb paste-receive on -enter`,
-  `-console`). So a paste can at most put text in front of the user, not run it.
+  `-console`). A line break would run what comes before it in tmux, on a console and
+  in typed text, so without the leave for Enter such a text is refused there, and a
+  pasted one goes only to a desktop session, whose terminals take it bracketed. So a
+  paste can at most put text in front of the user, not run it.
 - **Any admin turns it off on any member** with a signed command, like the sync mode
   (D-55), when an admin device is lost: it takes effect at once, needs no consent, and only
   the device's own user turns it on again.
@@ -1631,10 +1634,10 @@ pasted newline before the user sees it. The `enter` flag presses Enter afterward
 | Target | Method | Limits |
 |---|---|---|
 | Linux, X11 | the desktop connector: clipboard and primary, then Shift+Insert through XTEST, and the clipboard's text back after 500 ms unless the user copied meanwhile; typing through XTEST on spare keycodes that get each character's keysym in every column, so Shift and the layout do not change it, and no keysym again afterwards | only in an X11 session: in a Wayland one XWayland's keys reach only X11 programs; XTEST events pass a locker's keyboard grab, so the lock check below decides |
-| Linux, Wayland with `zwp_virtual_keyboard_v1` (sway, Hyprland, labwc) | the clipboard through data-control, the keys through the virtual keyboard (any Unicode through its own keymap) | the compositor must offer the protocol |
+| Linux, Wayland with `zwp_virtual_keyboard_v1` (sway, Hyprland, labwc) | the desktop connector: the clipboard and primary through data-control, then Shift+Insert, and the clipboard's text back as on X11; typing through the virtual keyboard with a keymap of its own, one key for each character by its Unicode keysym, a new keymap for every 247 different characters | the compositor must offer the protocol |
 | Linux, Wayland on GNOME and KDE | the RemoteDesktop portal with libei: the device's user allows it once in the portal's dialog, and a restore token keeps the consent; the keys press Shift+Insert after the clipboard write | keys follow the layout, so paste comes first; a lost token asks again on the device |
 | Linux, uinput (gamescope, setups without the portal) | a separate helper with a uinput virtual keyboard, which the device's user turns on apart from remote paste, since it can type anywhere, the login screen included | the helper refuses while the session is locked; keys follow the layout |
-| Linux text console | the console helper: TIOCSTI on the active virtual console, as root with only `CAP_SYS_ADMIN`, which works also where the distribution turns `dev.tty.legacy_tiocsti` off (Ubuntu, Arch); bytes, so any UTF-8 the console font shows | text consoles only |
+| Linux text console | the console helper (`cbb paste-helper console`, the `clipboardbridge-console` unit that `install.sh --console` adds): TIOCSTI on the active virtual console, as root with only `CAP_SYS_ADMIN`, which works also where the distribution turns `dev.tty.legacy_tiocsti` off (Ubuntu, Arch); bytes, so any UTF-8 the console font shows | text consoles only (`KDGETMODE`), with a user logged in on them (logind), never a login prompt; refuses while vlock or physlock runs |
 | Linux, tmux | `cbb paste-helper tmux`, which clipboardbridge.conf starts once per tmux server: `load-buffer` and `paste-buffer -p` (bracketed when the program asked for it) into the active pane of the attached client used last, or `send-keys -l` given on standard input, never in the arguments | no root needed; refuses when no client is attached or it is locked; root's tmux counts as a console |
 | Windows | the clipboard agent in the user's session, a Remote Desktop session included (the service in session 0 cannot inject): clipboard and Ctrl+V, or `SendInput` with `KEYEVENTF_UNICODE` | UIPI drops input into elevated windows without an error, so the agent checks the foreground window's integrity level and refuses with that reason (`uiAccess`, which needs a signed binary, is not used); never on the secure desktop (UAC, the lock screen) |
 | macOS | the Mac app (`apps/macos`), which holds the Accessibility permission: pasteboard and Cmd+V through `CGEventPost`, or `CGEventKeyboardSetUnicodeString` | the permission is granted to the app once in System Settings, and again after each update while the app is signed ad hoc (until Developer ID); `cbb status` says when it is missing; a Mac without the app (Homebrew only) refuses with that reason; Secure Event Input (password fields, Terminal's Secure Keyboard Entry) and the lock screen refuse it |
@@ -1647,7 +1650,7 @@ pasted newline before the user sees it. The `enter` flag presses Enter afterward
 **The lock check.** Synthetic input does not stop at a lock screen: XTEST events pass a
 locker's keyboard grab, and a uinput device is a real keyboard to the compositor, the
 display manager and the text console. So every target checks right before it injects that
-its session is active and not locked (logind's `LockedHint`, `org.freedesktop.ScreenSaver`,
+its session is active and not locked (logind's `LockedHint`, a locker that runs only while the screen is locked and tells logind nothing, such as swaylock or hyprlock, `org.freedesktop.ScreenSaver`,
 X11's MIT-SCREEN-SAVER, `CGSessionCopyCurrentDictionary` on the Mac, `OpenInputDesktop` on
 Windows) and refuses otherwise. Lock, login and disk-encryption screens are never typed in
 software; only the Nano ESP32's USB keyboard reaches them, on an explicit paste.

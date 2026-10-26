@@ -48,7 +48,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the clipboard and Shift+Insert, or types with XTEST in any layout, and refuses while the
   session is locked or the screen saver is on; in tmux, `cbb paste-helper tmux`, which
   clipboardbridge.conf starts, pastes into the active pane of the client used last, and
-  refuses when no one is attached.
+  refuses when no one is attached. On Wayland compositors with virtual keyboards (sway,
+  Hyprland, labwc), the desktop connector pastes through data-control and Shift+Insert, or
+  types any character through a keymap of its own; it also refuses while swaylock or
+  another locker runs. On the text console, `cbb paste-helper console`, which `install.sh
+  --console` runs as the `clipboardbridge-console` unit with `CAP_SYS_ADMIN` alone, types
+  into the active console where a user is logged in. A text with a line break goes to tmux,
+  a console or the keys only when the user allowed Enter, since it would run there.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

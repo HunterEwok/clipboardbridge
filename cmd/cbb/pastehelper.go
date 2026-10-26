@@ -26,14 +26,25 @@ import (
 
 // cmdPasteHelper runs a paste target without a clipboard (design.md,
 // "Remote paste"): cbb paste-helper tmux, which clipboardbridge's tmux.conf
-// starts in the background. One runs for each tmux server, until the server
-// ends; it logs to the user's state directory, since tmux shows a
-// background command's output in a pane.
+// starts in the background, or cbb paste-helper console on Linux, which the
+// clipboardbridge-console unit runs.
 func cmdPasteHelper(args []string, stderr io.Writer) int {
-	if len(args) != 1 || args[0] != "tmux" {
-		fmt.Fprintln(stderr, "usage: cbb paste-helper tmux")
+	if len(args) != 1 || (args[0] != "tmux" && args[0] != "console") {
+		fmt.Fprintln(stderr, "usage: cbb paste-helper tmux|console")
 		return 2
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	if args[0] == "console" {
+		return runConsoleHelper(ctx, stderr)
+	}
+	return runTmuxHelper(ctx, stderr)
+}
+
+// runTmuxHelper is the helper for tmux. One runs for each tmux server,
+// until the server ends; it logs to the user's state directory, since tmux
+// shows a background command's output in a pane.
+func runTmuxHelper(ctx context.Context, stderr io.Writer) int {
 	sock, _, _ := strings.Cut(os.Getenv("TMUX"), ",")
 	if sock == "" {
 		return fail(stderr, errors.New("not inside tmux: start it from tmux, as clipboardbridge's tmux.conf does"))
@@ -53,8 +64,6 @@ func cmdPasteHelper(args []string, stderr io.Writer) int {
 		}
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(logw, format+"\n", args...) }
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	tm := &tmuxpaste.Tmux{Args: []string{"-S", sock}, Console: os.Geteuid() == 0}

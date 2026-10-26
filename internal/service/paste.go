@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -101,9 +102,21 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 		res.Reason = "the text has nothing that may be pasted: only control characters"
 		return res
 	}
-	order := []string{targetDesktop, targetTmux}
-	if set.Console {
-		order = append(order, targetConsole)
+	// A line break runs what comes before it where keys go straight to a
+	// shell: in a typed text, and in tmux and on a console. There it needs
+	// the user's leave for Enter; a desktop's terminal takes a paste
+	// bracketed.
+	lines := strings.Contains(text, "\n") && !set.Enter
+	if lines && body.Mode == group.PasteByTyping {
+		res.Reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line"
+		return res
+	}
+	order := []string{targetDesktop}
+	if !lines {
+		order = append(order, targetTmux)
+		if set.Console {
+			order = append(order, targetConsole)
+		}
 	}
 	s.mu.Lock()
 	var ws []*watcher
@@ -115,13 +128,17 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			}
 		}
 	}
+	term := false // tmux or a console is here
 	for w := range s.watchers {
 		console = console || w.inject == targetConsole
+		term = term || w.inject == targetTmux || w.inject == targetConsole
 	}
 	s.mu.Unlock()
 	if len(ws) == 0 {
 		res.Reason = "nothing on this device can paste: no desktop session, tmux or console helper of Clipboard Bridge runs here"
-		if console && !set.Console {
+		if lines && term {
+			res.Reason = "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
+		} else if console && !set.Console {
 			res.Reason = "only a text console is here, and its user did not allow consoles (cbb paste-receive on -console)"
 		}
 		return res

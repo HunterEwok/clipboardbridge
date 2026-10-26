@@ -67,11 +67,11 @@ func TestRemotePaste(t *testing.T) {
 		return p != nil && len(p.Targets) == 1 && p.Targets[0] == targetDesktop
 	})
 	time.Sleep(time.Second) // the paste without a target counted
-	if err := paste("echo \x1b[31mhi\x1b[0m\r\n", control.Header{Method: "type"}); err != nil {
+	if err := paste("echo \x1b[31mhi\x1b[0m", control.Header{Method: "type"}); err != nil {
 		t.Fatal(err)
 	}
 	m := <-got
-	if string(m.Payload) != "echo hi\n" || m.Method != "type" || m.Enter {
+	if string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter {
 		t.Errorf("the desktop got %q %+v", m.Payload, m.Header)
 	}
 	time.Sleep(time.Second) // one paste a second from one sender
@@ -100,7 +100,7 @@ func TestRemotePaste(t *testing.T) {
 			t.Errorf("an entry names %q", e.Name)
 		}
 	}
-	if e := log[2]; e.Result != "done" || e.Len != len("echo hi\n") || e.Method != "type" {
+	if e := log[2]; e.Result != "done" || e.Len != len("echo hi") || e.Method != "type" {
 		t.Errorf("the paste's entry: %+v", e)
 	}
 
@@ -160,5 +160,60 @@ func TestPasteTargetHasNoClipboard(t *testing.T) {
 	m, err := w.Receive()
 	if err != nil || m.Op != control.OpWrite || string(m.Payload) != "from pi" {
 		t.Errorf("the desktop connector got %+v, %v", m, err)
+	}
+}
+
+// TestPasteLineBreaks: a line break runs the text in tmux, on a console and
+// when typed, so there it needs the user's leave for Enter.
+func TestPasteLineBreaks(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	if _, err := deck.do(t, control.Header{Op: control.OpReceive, Name: "on"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	tm := deck.dial(t)
+	defer tm.Close()
+	if _, err := tm.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetTmux}}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 4)
+	go func() {
+		for {
+			m, err := tm.Receive()
+			if err != nil {
+				return
+			}
+			got <- string(m.Payload)
+			tm.Send(&control.Message{Header: control.Header{Op: control.OpInjected, Seq: m.Seq}})
+		}
+	}()
+	paste := func(text, method string) error {
+		time.Sleep(time.Second) // one paste a second from one sender
+		_, err := pi.do(t, control.Header{Op: control.OpPasteOn, Device: "deck", Method: method}, text)
+		return err
+	}
+	if err := paste("rm -rf x\nls", "paste"); err == nil || !strings.Contains(err.Error(), "only tmux or a text console") {
+		t.Errorf("two lines into tmux: %v", err)
+	}
+	if err := paste("x\ny", "type"); err == nil || !strings.Contains(err.Error(), "a typed text with a line break") {
+		t.Errorf("two lines typed: %v", err)
+	}
+	if err := paste("one line", "paste"); err != nil {
+		t.Fatal(err)
+	}
+	if g := <-got; g != "one line" {
+		t.Errorf("tmux got %q", g)
+	}
+	if _, err := deck.do(t, control.Header{Op: control.OpReceive, Name: "on", Enter: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := paste("a\nb", "type"); err != nil {
+		t.Fatal(err)
+	}
+	if g := <-got; g != "a\nb" {
+		t.Errorf("tmux got %q", g)
 	}
 }

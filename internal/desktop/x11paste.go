@@ -18,6 +18,7 @@ import (
 	"github.com/jezek/xgb/xtest"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/lockcheck"
 )
 
 // Remote paste on X11 (design.md, "Remote paste"): XTEST presses the keys
@@ -109,10 +110,10 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 }
 
 // locked says why the session cannot take a paste now, or "" if it can:
-// logind marks it locked, or the screen saver is on.
+// it is locked, or the screen saver is on.
 func (b *X11) locked() string {
-	if sessionLocked() {
-		return "the session is locked"
+	if why := lockcheck.Reason(); why != "" {
+		return why
 	}
 	if screensaver.Init(b.x) == nil {
 		root := xproto.Setup(b.x).DefaultScreen(b.x).Root

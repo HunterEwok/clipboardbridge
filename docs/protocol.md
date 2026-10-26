@@ -1921,7 +1921,10 @@ with `enter`, allowed Enter; and beyond one a second and 30 a minute from one si
 receiver cleans the text (newlines and tabs stay; other control characters, terminal escape
 sequences and bytes that are not UTF-8 go; CR LF and CR become LF), hands it to a target
 (the watcher protocol's `inject`, section 8: a desktop session first, then tmux, then a text
-console only where the user allowed consoles), and answers `done` when the target put it
+console only where the user allowed consoles). A line break runs the text where keys go
+straight to a shell, so unless the user allowed Enter, a typed text with a line break is
+refused, and a pasted one goes only to a desktop session, whose terminals take it
+bracketed. The receiver answers `done` when the target put it
 in, `refused` with its reason (for example a locked session) or `failed`. It keeps the last
 100 pastes in a log (sender, time, length, way, result, never the text), but no `secret`
 one. A `paste-off` command turns remote paste off, Enter and consoles too; only the

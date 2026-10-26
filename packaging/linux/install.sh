@@ -12,7 +12,8 @@
 # user, the systemd unit, for the full member the desktop autostart entry and user unit,
 # and the tmux configuration, adds the user
 # who ran sudo to the clipboardbridge group, and starts or restarts the service.
-# --console also starts tmux after a login on the text console. --port moves
+# --console also starts tmux after a login on the text console and, for the
+# full member, the console helper for remote paste there. --port moves
 # the member port from 8764 to N, kept in /etc/clipboardbridge/clipboardbridge.env
 # until the next --port; --port 8764 goes back. It finds the firewall, lists
 # the rules clipboardbridge needs (mDNS and its port from the home network)
@@ -205,6 +206,9 @@ if ! grep -qsF "$line" /etc/tmux.conf; then
 fi
 if [ "$console" = yes ]; then
 	install -m 0644 "$here/../tmux/clipboardbridge-console.sh" /etc/profile.d/clipboardbridge-console.sh
+	if [ "$kind" = full ]; then
+		install -m 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
+	fi
 fi
 
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
@@ -301,6 +305,10 @@ fi
 systemctl daemon-reload
 systemctl enable clipboardbridge.service
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
+if [ -f /etc/systemd/system/clipboardbridge-console.service ]; then
+	systemctl enable clipboardbridge-console.service
+	systemctl restart clipboardbridge-console.service
+fi
 # answers waits up to 10 s until the service answers on its socket: in no
 # group cbb status says so, which is an answer too. A command right after
 # the installer then finds it running.

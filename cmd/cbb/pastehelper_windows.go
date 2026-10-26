@@ -11,5 +11,5 @@ import (
 // cmdPasteHelper runs a paste target without a clipboard; Windows has no
 // tmux or text console to paste into.
 func cmdPasteHelper(_ []string, stderr io.Writer) int {
-	return fail(stderr, errors.New("paste-helper is for tmux, which Windows does not have"))
+	return fail(stderr, errors.New("paste-helper is for tmux and the Linux text console, which Windows does not have"))
 }
