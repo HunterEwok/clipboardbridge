@@ -16,11 +16,29 @@ each other, always encrypted (TLS). Each device has a role:
 | **Admin** | a second phone, or a computer the root chose | adds and removes devices, like the root |
 | **Member** | every computer and phone | syncs the clipboard |
 | **Lite member** | a small Linux device: a router, a Raspberry Pi Zero | syncs, never adds anyone ([lite member](../../lite/README.md)) |
-| **Hub** | one admin computer at home, if you want it | lets your devices sync when they are away from home |
+| **Hub** | an admin computer at home, or a phone while its app is open, if you want one | lets your devices sync when they are away from home |
 
 The phone's key is made in its security chip (the Secure Enclave, Android's Keystore) and
 never leaves it; each use asks for your face, fingerprint or passcode. A computer keeps its
 keys in files that only Clipboard Bridge reads.
+
+## Two kinds of group
+
+A group can have a computer at its heart, or be made of phones only. Both are supported in
+full, and you can move from one to the other at any time, but a computer makes things
+simpler, and we would rather say so.
+
+| | With a computer | Phones only |
+|---|---|---|
+| Who holds the group's key | the phone (in its security chip), or the computer [without the app](without-app.md) | the phone, in its security chip |
+| Sync at home | every device directly | every device directly |
+| Sync away from home | through the computer as the hub, at any time | through the phone as the hub while its app is open (on Android also in the background), or a blind relay |
+| What you need | a Linux or Windows computer that is often on | nothing more |
+
+Why a computer is simpler: it is on far more often than an app is open on a phone, and the
+iPhone gives an app little time in the background, so sync away from home just works. A Mac
+can be a member of either kind but cannot be the hub yet. When a computer that is always on
+joins a group of phones, the phone app offers to make it the hub.
 
 ## At home: no hub needed
 
@@ -88,29 +106,29 @@ group's tunnel:
 
 The lite member speaks only plain WireGuard, so with either of these it syncs at home only.
 
-## No computer to be the hub
+## Phones only: the phone as the hub
 
-A group of just phones, or phones and a Mac, has no computer that can be the hub. Today
-there are two choices:
+A group of just phones, or phones and a Mac, has no computer to be the hub. Two ways keep it
+syncing away from home:
 
-- **Sync at home only.** Everything works on the home network.
+- **The phone as the hub**, while its app is open (Settings, **This phone as the hub**; on
+  from the start in a group made on a phone). The other phones, TVs and lite members connect
+  to it at home, and with a forwarder they reach it from afar too. On Android it can keep
+  running in the background; an iPhone serves only while the app is open.
 - **A blind relay of your own** (`cbb relay` on your server). It stands in for the hub as
   the meeting point, but it is not a member: the devices' encryption runs end to end through
   it, so it cannot read the clipboard. It does see which of your devices talk, and when.
-  Computers can use it; the phone apps cannot yet.
+  Computers and both phone apps can use it.
 
 ![A blind relay joins the laptop away and the Mac at home; the encryption runs end to end through it](../images/relay.svg)
 
-**Planned:**
+A group may have several hubs: the root and every admin with a hub set up. Devices away from
+home use the first one that answers, phones first, so a group of phones and a computer keeps
+working while the phone's app is closed.
 
-- **The phone as the hub**, while its app is open (in 0.5). A group made on a phone will
-  sync away from home without any computer, and the app will suggest moving the hub to a
-  computer that is always on once one joins.
-- **Several hubs** in one group (in 0.5): the first one online serves, in an order the root
-  sets, so the group keeps working when one hub is off.
-- **A blind relay at `cbb.tools`** for everyone who does not want to run a hub or a relay,
-  and the relay in the phone apps (in 0.5). It will see which devices talk and when, never
-  what they copy, and you turn it on yourself.
+**Planned:** a blind relay at `cbb.tools` for everyone who does not want to run a hub or a
+relay. It will see which devices talk and when, never what they copy, and you turn it on
+yourself.
 
 ## What each server can see
 

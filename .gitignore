@@ -3,6 +3,7 @@
 /cbb
 /bin/
 /dist/
+/site/out/
 *.exe
 *.test
 *.out
@@ -47,3 +48,6 @@ go.work.sum
 /cbbtun-sources.jar
 /Cbbtun.xcframework/
 /apps/ios/Cbbtun.xcframework/
+/site/out-lighthouse/
+/site/.lighthouseci/
+/site/node_modules/

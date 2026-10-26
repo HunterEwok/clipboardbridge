@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# The website's visit counter, GoatCounter, on the loopback address only:
+# /etc/systemd/system/cbb-site-stats.service. nginx passes it /count and
+# /count.js; its dashboard is reached through an SSH tunnel (site/README.md).
+# GoatCounter stores no addresses and sets no cookies; it counts a visitor
+# once per session by a hash of address and browser with a salt it changes
+# often, and finds the country in its own built-in database.
+
+[Unit]
+Description=cbb.tools visit counter (GoatCounter)
+After=network.target
+
+[Service]
+User=goatcounter
+Group=goatcounter
+ExecStart=/usr/local/bin/goatcounter serve -listen 127.0.0.1:8781 -tls http -public-port 8781 -db sqlite+/var/lib/goatcounter/db.sqlite3 -automigrate
+WorkingDirectory=/var/lib/goatcounter
+StateDirectory=goatcounter
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
