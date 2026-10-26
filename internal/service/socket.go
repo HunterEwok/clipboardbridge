@@ -117,6 +117,24 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpActionSet:
+		if err := s.setAction(m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpActionOn:
+		if err := s.runActionOn(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
+	case control.OpActionOff:
+		if err := s.actionsOffOn(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpNew:
 		if _, err := s.newGroup(); err != nil {
 			fail(c, err)
@@ -274,6 +292,7 @@ func (s *Service) status() *control.Status {
 	st.Quiet = s.nets.Unknown()
 	st.Away = s.awayStatus()
 	st.Paste = s.pasteStatusLocked()
+	st.Actions = s.actionStatus()
 	return st
 }
 

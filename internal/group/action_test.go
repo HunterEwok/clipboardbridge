@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package group
+
+import (
+	"crypto/x509"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestValidActionName(t *testing.T) {
+	for name, ok := range map[string]bool{
+		"reboot": true, "cancel-shutdown": true, "backup2": true, "a": true,
+		"": false, "Reboot": false, "2fa": false, "-x": false, "rm -rf": false, "ä": false,
+		"abcdefghijklmnopqrstuvwxyz012345": true, "abcdefghijklmnopqrstuvwxyz0123456": false,
+	} {
+		if ValidActionName(name) != ok {
+			t.Errorf("ValidActionName(%q) = %v", name, !ok)
+		}
+	}
+}
+
+func TestActionCommand(t *testing.T) {
+	pg := newPhoneGroup(t)
+	to, now := NewDeviceID(), time.UnixMilli(1_761_400_000_000)
+	body := func(typ, action string) CommandBody {
+		return CommandBody{Type: typ, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Action: action}
+	}
+	s := NewRecords(pg.root.Cert)
+	c, err := SignCommand(body(CommandAction, "reboot"), pg.a.Key, pg.a.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.VerifyCommand(c, to, now); err != nil || got.Action != "reboot" {
+		t.Errorf("the action command: %+v, %v", got, err)
+	}
+	if _, root, ok := s.CommandSigner(c); root || ok {
+		t.Errorf("an admin whose device has no record here: root %v, found %v", root, ok)
+	}
+	withMode := body(CommandAction, "lock")
+	withMode.Mode = "own"
+	withText := body(CommandAction, "lock")
+	withText.Text = "x"
+	for what, b := range map[string]CommandBody{
+		"no name":               body(CommandAction, ""),
+		"a bad name":            body(CommandAction, "rm -rf /"),
+		"with a mode":           withMode,
+		"with a text":           withText,
+		"a name on paste-off":   body(CommandPasteOff, "lock"),
+		"a name on actions-off": body(CommandActionsOff, "lock"),
+	} {
+		if _, err := SignCommand(b, pg.root.Key); err == nil {
+			t.Errorf("%s: signed", what)
+		}
+	}
+	if _, err := SignCommand(body(CommandActionsOff, ""), pg.root.Key); err != nil {
+		t.Errorf("actions-off: %v", err)
+	}
+}
+
+type actionSigner struct {
+	Root  bool   `json:"root,omitempty"`
+	Role  string `json:"role,omitempty"`
+	Store string `json:"store,omitempty"`
+	Found bool   `json:"found,omitempty"`
+}
+
+type actionVector struct {
+	Name    string       `json:"name"`
+	Command Record       `json:"command"`
+	OK      bool         `json:"ok"`
+	Action  string       `json:"action,omitempty"`
+	Signer  actionSigner `json:"signer"`
+}
+
+type actionVectors struct {
+	GroupCA  []byte         `json:"group_ca"`
+	Records  []Record       `json:"records"`
+	Self     DeviceID       `json:"self"`
+	NowMS    int64          `json:"now_ms"`
+	Commands []actionVector `json:"commands"`
+}
+
+// TestGoActionVectors writes (with -update) and checks
+// testdata/interop/go-actions.json: action and actions-off commands for a
+// lite member, signed by the root phone, an admin phone, an admin computer
+// with its keys in a file and one with them in a TPM, and which device each
+// signer is (docs/protocol.md, section 15), for the lite member and the
+// phone kits to agree with.
+func TestGoActionVectors(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "interop", "go-actions.json")
+	if *update {
+		pg := newPhoneGroup(t)
+		g := pg.root.Cert
+		phone, pc, tpm := pg.a, pg.b, adminCA(t, pg.root)
+		rootPhone, self := member(t, pg.root), member(t, pg.root)
+		selfID, rootID := DeviceID(self.Subject.CommonName), DeviceID(rootPhone.Subject.CommonName)
+		rootKey, selfKey := KeyHashOf(rootPhone), KeyHashOf(self)
+		own, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, By: rootID,
+			Device: rootID, Name: "root phone", Role: RolePhone, OS: OSiOS, Key: &rootKey}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lite, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 2, By: rootID,
+			Device: selfID, Name: "pi", Role: RoleLite, OS: OSLinux, Key: &selfKey}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tpmMember := member(t, tpm)
+		tpmKey, tpmAdmin := KeyHashOf(tpmMember), KeyHashOf(tpm.Cert)
+		tpmRecord, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 3, By: rootID,
+			Device: DeviceID(tpmMember.Subject.CommonName), Name: "tpm pc", Role: RoleFull, OS: OSLinux, Key: &tpmKey,
+			Admin: &tpmAdmin, Store: StoreHardware}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all := []Record{
+			own, lite, tpmRecord,
+			adminRecord(t, g, pg.root, nil, member(t, phone), "admin phone", KeyHashOf(phone.Cert)),
+			computerAdminRecord(t, pg, member(t, pc), "file pc", KeyHashOf(pc.Cert)),
+		}
+		now := int64(1_800_000_000_000)
+		sign := func(signer *CA, chain []*x509.Certificate, typ, action string) Record {
+			r, err := SignCommand(CommandBody{Type: typ, Group: Tag(g), By: rootID, To: selfID, ID: NewCommandID(),
+				TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds(), Action: action}, signer.Key, chain...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r
+		}
+		v := actionVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now, Commands: []actionVector{
+			{Name: "reboot by the root phone", Command: sign(pg.root, nil, CommandAction, "reboot"), OK: true, Action: "reboot",
+				Signer: actionSigner{Root: true, Role: RolePhone, Store: StoreHardware, Found: true}},
+			{Name: "lock by the admin phone", Command: sign(phone, []*x509.Certificate{phone.Cert}, CommandAction, "lock"), OK: true, Action: "lock",
+				Signer: actionSigner{Role: RolePhone, Store: StoreHardware, Found: true}},
+			{Name: "reboot by an admin computer with its keys in a file", Command: sign(pc, []*x509.Certificate{pc.Cert}, CommandAction, "reboot"), OK: true, Action: "reboot",
+				Signer: actionSigner{Role: RoleFull, Store: StoreFile, Found: true}},
+			{Name: "shutdown by an admin computer with its keys in a TPM", Command: sign(tpm, []*x509.Certificate{tpm.Cert}, CommandAction, "shutdown"), OK: true, Action: "shutdown",
+				Signer: actionSigner{Role: RoleFull, Store: StoreHardware, Found: true}},
+			{Name: "actions-off by an admin computer", Command: sign(pc, []*x509.Certificate{pc.Cert}, CommandActionsOff, ""), OK: true,
+				Signer: actionSigner{Role: RoleFull, Store: StoreFile, Found: true}},
+			{Name: "a key of another group", Command: sign(newRoot(t), nil, CommandAction, "reboot")},
+		}}
+		data, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v actionVectors
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(v.GroupCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	if len(v.Commands) != 6 {
+		t.Fatalf("the file has %d commands", len(v.Commands))
+	}
+	for _, c := range v.Commands {
+		body, err := s.VerifyCommand(c.Command, v.Self, time.UnixMilli(v.NowMS))
+		if (err == nil) != c.OK || (c.OK && body.Action != c.Action) {
+			t.Errorf("%s: %+v, %v", c.Name, body, err)
+			continue
+		}
+		if !c.OK {
+			continue
+		}
+		d, root, found := s.CommandSigner(c.Command)
+		if got := (actionSigner{Root: root, Role: d.Role, Store: d.Store, Found: found}); got != c.Signer {
+			t.Errorf("%s: the signer is %+v, want %+v", c.Name, got, c.Signer)
+		}
+	}
+}

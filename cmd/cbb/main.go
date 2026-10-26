@@ -26,6 +26,11 @@ Commands:
   paste-receive [on [-enter] [-console] | off]
                           Show, or turn on or off, remote paste on this device;
                           off -on DEVICE or off -all on an admin turns it off elsewhere.
+  action [enable NAME [-by KINDS] [-any-key] | disable NAME | off]
+                          Show this device's quick actions (lock, sleep, reboot, shutdown,
+                          cancel-shutdown, restart), or turn one on or off here.
+  action -on DEVICE NAME  On an admin: run the quick action NAME on another device;
+                          action off -on DEVICE or -all turns them off elsewhere.
   status                  Show this device, its group and the group's devices.
   revoke <name or ID>     Remove a device from the group.
   rename <name or ID> <new name>
@@ -100,6 +105,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPaste(rest, stdin, stdout, stderr)
 	case "paste-receive":
 		return cmdPasteReceive(rest, stdout, stderr)
+	case "action":
+		return cmdAction(rest, stdin, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
 	case "global":

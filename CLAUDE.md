@@ -50,6 +50,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   (`cbb paste-helper uinput`, the opt-in keys helper the desktop connector asks for Shift+Insert), `internal/tmuxpaste` (`cbb paste-helper tmux`),
   `internal/consolepaste` (`cbb paste-helper console`, TIOCSTI); `internal/lockcheck` tells
   them a locked session.
+- `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
+  on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
+  rule); `internal/service/actions.go` takes `action` and `actions-off` commands.
 - `internal/remotepaste`: remote paste on a member (the user's switches, cleaning the text, the
   limits per sender, the log); `internal/service/paste.go` takes `paste` commands and hands
   them to the watchers that offer a target.

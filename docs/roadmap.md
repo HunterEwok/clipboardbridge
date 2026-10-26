@@ -606,7 +606,7 @@ starting the Android app's listener for the Wear OS switch, and the delay of not
 Planned for 0.6, after remote paste (item 18), whose signed commands and opt-in it reuses.
 
 One button runs an action on a member: in the phone apps, on the watch (item 26), or with
-`cbb run <device> <action>`. Running commands on another machine is the most dangerous thing
+`cbb action -on <device> <action>`. Running commands on another machine is the most dangerous thing
 the group could do, so the rule is that **the network never carries a command**: every
 action is defined on the member that runs it, and the button sends only its name.
 

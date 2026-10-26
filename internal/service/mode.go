@@ -153,6 +153,10 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		return s.pasted(body)
 	case group.CommandPasteOff:
 		return s.pasteOff(body)
+	case group.CommandAction:
+		return s.act(body, c)
+	case group.CommandActionsOff:
+		return s.actionsOff(body)
 	}
 	if _, err := clip.ParseMode(body.Mode); err != nil {
 		res.Status, res.Reason = node.ResultRefused, err.Error()
