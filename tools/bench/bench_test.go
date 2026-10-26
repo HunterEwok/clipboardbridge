@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,5 +195,74 @@ func TestContainer(t *testing.T) {
 	}
 	if got := recreateCmd("||"); got != "" {
 		t.Errorf("recreateCmd without compose = %q", got)
+	}
+}
+
+func TestAdmin(t *testing.T) {
+	for os, want := range map[string]string{
+		"linux":      "sudo -n cbb",
+		"linux-lite": "sudo -n cbb",
+		"darwin":     "sudo -n cbb",
+		"windows":    `& "$env:ProgramFiles\clipboardbridge\cbb.exe"`,
+		"docker":     "docker exec -i c cbb",
+	} {
+		if got := adminCmd(&Device{OS: os, Container: "c"}); got != want {
+			t.Errorf("adminCmd(%s) = %q, want %q", os, got, want)
+		}
+	}
+	refused := &RunError{Device: "mac", Output: "sudo: a password is required\n"}
+	if !sudoRefused(refused) || sudoRefused(&RunError{Output: "only the administrator may run it"}) || sudoRefused(nil) {
+		t.Fatal("sudoRefused")
+	}
+	var buf strings.Builder
+	r := NewReport("t", &buf, false)
+	if err := r.Do("a", func() error { return noSudo(&Device{Name: "mac"}, refused) }); err == nil {
+		t.Fatal("a skipped case returned nil")
+	}
+	r.Do("b", func() error { return noSudo(&Device{Name: "x"}, errors.New("broken")) })
+	if r.Failed() != 1 || !strings.Contains(buf.String(), "SKIP a: mac runs no sudo") || !strings.Contains(buf.String(), "FAIL b") {
+		t.Fatalf("report:\n%s", buf.String())
+	}
+}
+
+func TestAway(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inventory.toml")
+	os.WriteFile(path, []byte(`
+[device.deck]
+os = "linux"
+ssh = "a@deck"
+roles = ["member", "hub", "away"]
+
+[device.vps]
+os = "linux"
+ssh = "a@vps"
+roles = ["away"]
+
+[forwarder]
+ssh = "a@relay"
+address = "relay.example.net:8764"
+key = "sha256:AAAA"
+service = "cbb-forward"
+
+[relay]
+address = "relay.example.net:8765"
+key = "sha256:BBBB"
+`), 0o600)
+	inv, err := LoadInventory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Forwarder.Address != "relay.example.net:8764" || inv.Forwarder.Service != "cbb-forward" || inv.Relay.Key != "sha256:BBBB" {
+		t.Fatalf("servers: %+v %+v", inv.Forwarder, inv.Relay)
+	}
+	ds, _ := inv.Select("")
+	if home := atHome(ds); len(home) != 1 || home[0].Name != "deck" {
+		t.Fatalf("atHome = %v", home)
+	}
+	if away := awayOnly(ds); len(away) != 1 || away[0].Name != "vps" {
+		t.Fatalf("awayOnly = %v", away)
+	}
+	if m := fingerprintRE.FindStringSubmatch("Its key fingerprint:  ab12 cd34 ef56"); m == nil || m[1] != "ab12 cd34 ef56" {
+		t.Fatalf("fingerprint: %q", m)
 	}
 }

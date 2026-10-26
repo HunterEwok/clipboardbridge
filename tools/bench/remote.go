@@ -70,7 +70,15 @@ func Run(ctx context.Context, d *Device, cmd string, stdin string) (string, erro
 // Stream starts a command on a device and hands each line it prints to
 // lines, until it exits or ctx ends. It returns once the command exits.
 func Stream(ctx context.Context, d *Device, cmd string, lines func(string)) error {
+	return StreamIn(ctx, d, cmd, "", lines)
+}
+
+// StreamIn is Stream with the command's standard input.
+func StreamIn(ctx context.Context, d *Device, cmd, stdin string, lines func(string)) error {
 	c := command(ctx, d, cmd)
+	if stdin != "" {
+		c.Stdin = strings.NewReader(stdin)
+	}
 	pr, pw := io.Pipe()
 	c.Stdout, c.Stderr = pw, pw
 	var all bytes.Buffer

@@ -130,6 +130,7 @@ type benchGroup struct {
 	hub     *Device
 	members []*Device // the hub first
 	tag     string
+	codes   []string // the pairing codes of the run, which no log may hold
 	undo    []func()
 }
 
@@ -137,6 +138,7 @@ type benchGroup struct {
 // in no group, the bench never touches a group it did not make. It returns
 // nil when the run cannot go on.
 func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) *benchGroup {
+	devices = atHome(devices)
 	var hub *Device
 	for _, d := range devices {
 		if d.Has("hub") {
@@ -189,12 +191,13 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 	}
 
 	if r.Do(suite+"/"+hub.Name+"/new", func() error {
-		_, err := Run(ctx, hub, cbbCmd(hub)+" new", "")
+		_, err := Run(ctx, hub, adminCmd(hub)+" new", "")
 		if err == nil {
 			err = shareClipboard(ctx, hub)
 		}
-		return err
+		return noSudo(hub, err)
 	}) != nil {
+		g.undoAll()
 		return nil
 	}
 	for _, d := range devices {
@@ -202,7 +205,10 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 			continue
 		}
 		if r.Do(suite+"/"+d.Name+"/join", func() error {
-			err := pairOne(ctx, hub, d)
+			code, err := pairOne(ctx, hub, d)
+			if code != "" {
+				g.codes = append(g.codes, code)
+			}
 			if err == nil {
 				err = shareClipboard(ctx, d)
 			}
@@ -234,6 +240,19 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 	return g
 }
 
+// atHome leaves out the devices that are only away from home (the role away
+// without member or hub): they cannot pair by code, and join by invitation
+// in the away suite.
+func atHome(devices []*Device) []*Device {
+	var out []*Device
+	for _, d := range devices {
+		if d.Has("member") || d.Has("hub") {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // end closes the run. The hub revokes the others, so nothing copied on
 // them after the run (the Mac is also someone's own computer) reaches the
 // bench's group. Only the hub, the group's root, holds its CA keys, so
@@ -246,13 +265,19 @@ func (g *benchGroup) end(ctx context.Context, r *Report) {
 			if err != nil {
 				return err
 			}
-			_, err = Run(ctx, g.hub, cbbCmd(g.hub)+" revoke "+id, "")
-			return err
+			_, err = Run(ctx, g.hub, adminCmd(g.hub)+" revoke "+id, "")
+			return noSudo(g.hub, err)
 		})
 	}
+	g.undoAll()
+}
+
+// undoAll takes back what the bench changed for the run, newest first.
+func (g *benchGroup) undoAll() {
 	for i := len(g.undo) - 1; i >= 0; i-- {
 		g.undo[i]()
 	}
+	g.undo = nil
 }
 
 // spread checks that text, copied on from, reaches every other member
@@ -341,8 +366,8 @@ func deviceOf(ctx context.Context, d *Device) (string, error) {
 
 // pairOne admits a device into the hub's group: cbb pair on the hub, and
 // cbb pair -code (cbb join -code on the lite member) with its code on the
-// device.
-func pairOne(ctx context.Context, hub, d *Device) error {
+// device. It returns the code it used.
+func pairOne(ctx context.Context, hub, d *Device) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	type window struct{ code, addr string }
@@ -350,7 +375,7 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 	done := make(chan error, 1)
 	go func() {
 		var w window
-		done <- Stream(ctx, hub, cbbCmd(hub)+" pair", func(line string) {
+		done <- Stream(ctx, hub, adminCmd(hub)+" pair", func(line string) {
 			if m := addrRE.FindStringSubmatch(line); m != nil {
 				w.addr = m[1]
 			}
@@ -372,35 +397,32 @@ func pairOne(ctx context.Context, hub, d *Device) error {
 		if err == nil {
 			err = errors.New("cbb pair ended without a code")
 		}
-		return err
+		return "", err
 	case <-ctx.Done():
-		return fmt.Errorf("cbb pair on %s showed no code", hub.Name)
+		return "", fmt.Errorf("cbb pair on %s showed no code", hub.Name)
 	}
 	addr := d.addrFor(hub, w.addr)
-	join := cbbCmd(d) + " pair -code"
-	if d.OS == "linux-lite" {
-		join = cbbCmd(d) + " join -code"
-	}
+	join := adminCmd(d) + " pair -code"
 	if d.OS == "linux-lite" {
 		// The lite member joins as its service's user, which alone may
 		// write its keys (lite/README.md); the bench user has sudo.
-		join = "sudo -n -u clipboardbridge " + join
+		join = "sudo -n -u clipboardbridge " + cbbCmd(d) + " join -code"
 	}
 	if d.OS == "linux-lite" || addr != "" {
 		if addr == "" {
 			cancel()
-			return fmt.Errorf("the lite member joins at an address; set address for %s in the inventory", hub.Name)
+			return w.code, fmt.Errorf("the lite member joins at an address; set address for %s in the inventory", hub.Name)
 		}
 		join += " " + addr
 	}
 	if _, err := Run(ctx, d, join, w.code+"\n"); err != nil {
 		cancel()
-		return err
+		return w.code, noSudo(d, err)
 	}
 	if err := <-done; err != nil {
-		return fmt.Errorf("cbb pair on %s did not see %s join: %w", hub.Name, d.Name, err)
+		return w.code, fmt.Errorf("cbb pair on %s did not see %s join: %w", hub.Name, d.Name, err)
 	}
-	return nil
+	return w.code, nil
 }
 
 // addrFor returns the address d dials to pair with hub: the hub's address in
@@ -424,13 +446,44 @@ func runID() string {
 
 // shareClipboard puts a device that just made or joined the group in the
 // sync mode shared, as the sync cases need: a new device keeps its own
-// clipboard. The lite member's mode is on its admin socket, which only root
-// and the service's user reach.
-func shareClipboard(ctx context.Context, d *Device) error {
-	cmd := cbbCmd(d) + " mode shared"
-	if d.OS == "linux-lite" {
-		cmd = "sudo " + cmd
+// clipboard.
+func shareClipboard(ctx context.Context, d *Device) error { return setMode(ctx, d, "shared") }
+
+// setMode sets the device's sync mode, which is on the admin socket.
+func setMode(ctx context.Context, d *Device, mode string) error {
+	_, err := Run(ctx, d, adminCmd(d)+" mode "+mode, "")
+	return noSudo(d, err)
+}
+
+// adminCmd runs cbb for a command that changes the group. Such commands go
+// to the admin socket, which only root and the service's own account reach
+// (internal/control, IsAdmin): on Linux and macOS the bench user runs them
+// with sudo, without a password (docs/testbench.md, section 13). In the
+// container cbb runs as the service's user; on Windows the SSH user is an
+// administrator.
+func adminCmd(d *Device) string {
+	switch d.OS {
+	case "linux", "linux-lite", "darwin":
+		return "sudo -n " + cbbCmd(d)
 	}
-	_, err := Run(ctx, d, cmd, "")
+	return cbbCmd(d)
+}
+
+// sudoRefused tells whether a command failed because sudo wanted a
+// password: the device lacks the bench's sudoers rule.
+func sudoRefused(err error) bool {
+	var re *RunError
+	return errors.As(err, &re) && (strings.Contains(re.Output, "sudo: a password is required") ||
+		strings.Contains(re.Output, "sudo: a terminal is required") ||
+		strings.Contains(re.Output, "is not allowed to execute"))
+}
+
+// noSudo turns a refused sudo into a skipped case: the device cannot take
+// part until it has the bench's sudoers rule, which is no fault of the build
+// under test.
+func noSudo(d *Device, err error) error {
+	if sudoRefused(err) {
+		return Skipped(d.Name + " runs no sudo without a password for cbb; add the bench's sudoers rule (docs/testbench.md, section 13)")
+	}
 	return err
 }

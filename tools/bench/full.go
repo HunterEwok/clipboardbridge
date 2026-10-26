@@ -48,9 +48,12 @@ var textCases = []textCase{
 }
 
 // Full makes a group as smoke does and runs the sync matrix of
-// docs/testbench.md, section 6 (C1 to C5, C7, C8), then kills each
-// member's service (F1).
+// docs/testbench.md, section 6 (C1 to C5, C7, C8), kills each member's
+// service (F1), checks a member in a container (P35), the sync modes (P34),
+// a secret copy (C6, S10), local access (S11), the files at rest (S16) and
+// the logs of the run (S15).
 func Full(ctx context.Context, r *Report, devices []*Device, timeout time.Duration) {
+	start := time.Now()
 	g := formGroup(ctx, r, "full", devices)
 	if g == nil {
 		return
@@ -77,6 +80,11 @@ func Full(ctx context.Context, r *Report, devices []*Device, timeout time.Durati
 			containerCases(ctx, r, g, d, timeout)
 		}
 	}
+	syncModes(ctx, r, g, timeout)
+	secretCopy(ctx, r, g, timeout)
+	localAccess(ctx, r, g)
+	filesAtRest(ctx, r, g)
+	logsClean(ctx, r, g, start)
 }
 
 // emptyText (C4): an empty text is refused by cbb copy and changes no
