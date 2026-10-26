@@ -27,16 +27,20 @@ import (
 // cmdPasteHelper runs a paste target without a clipboard (design.md,
 // "Remote paste"): cbb paste-helper tmux, which clipboardbridge's tmux.conf
 // starts in the background, or cbb paste-helper console on Linux, which the
-// clipboardbridge-console unit runs.
+// clipboardbridge-console unit runs, or cbb paste-helper uinput, the keys
+// of a paste for the desktop connectors, which clipboardbridge-uinput runs.
 func cmdPasteHelper(args []string, stderr io.Writer) int {
-	if len(args) != 1 || (args[0] != "tmux" && args[0] != "console") {
-		fmt.Fprintln(stderr, "usage: cbb paste-helper tmux|console")
+	if len(args) != 1 || (args[0] != "tmux" && args[0] != "console" && args[0] != "uinput") {
+		fmt.Fprintln(stderr, "usage: cbb paste-helper tmux|console|uinput")
 		return 2
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	if args[0] == "console" {
+	switch args[0] {
+	case "console":
 		return runConsoleHelper(ctx, stderr)
+	case "uinput":
+		return runUinputHelper(ctx, stderr)
 	}
 	return runTmuxHelper(ctx, stderr)
 }

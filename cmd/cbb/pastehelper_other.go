@@ -15,3 +15,8 @@ import (
 func runConsoleHelper(_ context.Context, stderr io.Writer) int {
 	return fail(stderr, errors.New("the console helper is for the Linux text console"))
 }
+
+// runUinputHelper is the keys helper for Linux desktops.
+func runUinputHelper(_ context.Context, stderr io.Writer) int {
+	return fail(stderr, errors.New("the uinput helper is for Linux desktops"))
+}

@@ -61,6 +61,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   keeps the consent. It pastes and presses Enter, and refuses typing, whose keys would follow
   the user's layout. In a Wayland session the X11 connector of XWayland uses it too, since
   XTEST's keys reach only X11 programs there.
+- `install.sh --uinput` (and `get.sh --uinput`) adds the uinput helper, `cbb paste-helper
+  uinput` in the `clipboardbridge-uinput` unit: a virtual keyboard that presses only
+  Shift+Insert and Enter for the desktop connector of the session on the screen, so that
+  remote paste works on GNOME and KDE without the portal's dialog. It presses them only for
+  the user of the active graphical session, and never on a login or lock screen.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

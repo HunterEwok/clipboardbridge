@@ -64,7 +64,7 @@ Rarely needed:
                           (the options of install.ps1, such as -Express).
   service                 Run the service (started by systemd, launchd or Windows).
   agent                   Link this desktop's clipboard to the service (started at sign-in).
-  paste-helper tmux|console
+  paste-helper tmux|console|uinput
                           Take remote pastes into tmux (started by clipboardbridge.conf)
                           or the Linux text console (the clipboardbridge-console unit).
 

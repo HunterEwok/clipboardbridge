@@ -36,9 +36,9 @@ type X11 struct {
 	chunk int // the largest property this server takes in one piece
 	logf  func(string, ...any)
 	inj   x11Inject
-	// portal presses the keys in a Wayland session, whose compositor
-	// takes no keys from XWayland's XTEST; nil without one.
-	portal *portal
+	// kb presses a paste's keys in a Wayland session, whose compositor
+	// takes no keys from XWayland's XTEST; nil without a way.
+	kb keyboard
 
 	mu      sync.Mutex
 	text    string // what this client owns the selections with
@@ -140,7 +140,7 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 		return nil, err
 	}
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		b.portal = newPortal(logf)
+		b.kb = pasteKeys(logf)
 	}
 	go b.loop()
 	// Read what the clipboard holds now; it is not reported as a change.
@@ -153,9 +153,7 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 
 // Close closes the connection.
 func (b *X11) Close() error {
-	if b.portal != nil {
-		b.portal.close()
-	}
+	closeKeys(b.kb)
 	b.x.Close()
 	return nil
 }

@@ -65,6 +65,15 @@ func Show(id string, props ...string) map[string]string {
 	return m
 }
 
+// ActiveSession returns the ID of the session active on seat, or "".
+func ActiveSession(seat string) string {
+	out, err := loginctl("show-seat", seat, "-p", "ActiveSession", "--value")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // Sessions returns the IDs of logind's sessions.
 func Sessions() ([]string, error) {
 	out, err := loginctl("list-sessions", "--no-legend")

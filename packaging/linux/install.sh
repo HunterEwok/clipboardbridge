@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Linux machine with systemd:
 #
-#   sudo sh install.sh [--console] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
+#   sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
 #
 # The full member's archive and the lite member's
 # (clipboardbridge-lite-linux-*) both carry this script, each with its own systemd unit beside it; cbb version
@@ -13,7 +13,10 @@
 # and the tmux configuration, adds the user
 # who ran sudo to the clipboardbridge group, and starts or restarts the service.
 # --console also starts tmux after a login on the text console and, for the
-# full member, the console helper for remote paste there. --port moves
+# full member, the console helper for remote paste there. --uinput, for the
+# full member, adds the uinput helper, which presses the keys of a remote
+# paste on desktops without another way (GNOME and KDE without the portal's
+# dialog), and loads the uinput module at boot. --port moves
 # the member port from 8764 to N, kept in /etc/clipboardbridge/clipboardbridge.env
 # until the next --port; --port 8764 goes back. It finds the firewall, lists
 # the rules clipboardbridge needs (mDNS and its port from the home network)
@@ -44,16 +47,18 @@ trap 'failed $?' EXIT
 export LC_ALL=C
 
 usage() {
-	echo "usage: sudo sh install.sh [--console] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 console=no
+uinput=no
 port=
 cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
 while [ $# -gt 1 ]; do
 	case $1 in
 	--console) console=yes ;;
+	--uinput) uinput=yes ;;
 	--express) firewall=express ;;
 	--no-firewall) firewall=no ;;
 	--port)
@@ -210,6 +215,15 @@ if [ "$console" = yes ]; then
 		install -m 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
 	fi
 fi
+if [ "$uinput" = yes ]; then
+	if [ "$kind" != full ]; then
+		echo "install.sh: --uinput is for the full member, which runs the desktop connector" >&2
+		exit 2
+	fi
+	echo uinput >/etc/modules-load.d/clipboardbridge-uinput.conf
+	modprobe uinput 2>/dev/null || echo "install.sh: could not load the uinput module now; it loads at the next boot" >&2
+	install -m 0644 "$here/clipboardbridge-uinput.service" /etc/systemd/system/clipboardbridge-uinput.service
+fi
 
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	usermod -a -G clipboardbridge "$SUDO_USER"
@@ -308,6 +322,10 @@ systemctl restart clipboardbridge.service # also takes a new binary on a reinsta
 if [ -f /etc/systemd/system/clipboardbridge-console.service ]; then
 	systemctl enable clipboardbridge-console.service
 	systemctl restart clipboardbridge-console.service
+fi
+if [ -f /etc/systemd/system/clipboardbridge-uinput.service ]; then
+	systemctl enable clipboardbridge-uinput.service
+	systemctl restart clipboardbridge-uinput.service || echo "install.sh: the uinput helper did not start; see journalctl -u clipboardbridge-uinput" >&2
 fi
 # answers waits up to 10 s until the service answers on its socket: in no
 # group cbb status says so, which is an answer too. A command right after

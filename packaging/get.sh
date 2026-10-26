@@ -12,7 +12,9 @@
 # adds none and prints the commands that would, --port N moves the member
 # port from 8764 to N, --home-cgnat on counts 100.64.0.0/10 as the home
 # network too (a home network on the carrier-grade NAT range); on Linux, --lite installs the lite member for small devices instead of the full
-# member, and --console also starts tmux after a login on the text console.
+# member, --console also starts tmux after a login on the text console, and
+# --uinput adds the full member's uinput helper for remote paste on desktops
+# without another way to press keys.
 # CBB_ATTESTATION=require refuses to install unless GitHub's build
 # provenance attestation of the archive checks out (it needs gh, signed in);
 # CBB_ATTESTATION=skip does not check it. CBB_VERSION=v1.2.3 picks a
@@ -41,6 +43,7 @@ failed() {
 
 repo=https://github.com/HunterEwok/clipboardbridge
 console=
+uinput=
 port=
 cgnat=
 firewall=${CBB_FIREWALL:-ask}
@@ -48,6 +51,7 @@ lite=no
 while [ $# -gt 0 ]; do
 	case $1 in
 	--console) console=--console ;;
+	--uinput) uinput=--uinput ;;
 	--port)
 		[ $# -gt 1 ] || {
 			echo "get.sh: --port needs a port number" >&2
@@ -68,7 +72,7 @@ while [ $# -gt 0 ]; do
 	--no-firewall) firewall=no ;;
 	--lite) lite=yes ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --lite, --console, --port N, --home-cgnat on|off, --express, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --console, --uinput, --port N, --home-cgnat on|off, --express, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -96,6 +100,7 @@ Darwin)
 	os=darwin
 	[ "$lite" = no ] || fail "--lite is for Linux; a Mac runs the full member"
 	[ -z "$console" ] || fail "--console is for Linux"
+	[ -z "$uinput" ] || fail "--uinput is for Linux"
 	# A shell under Rosetta reports x86_64 on an Apple chip.
 	if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
 		arch=arm64
@@ -265,7 +270,7 @@ if [ "$os" = darwin ]; then
 	# shellcheck disable=SC2086 # $port and $cgnat are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat "$tmp/$dir/cbb"
 else
-	# shellcheck disable=SC2086 # $console, $port and $cgnat are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $port $cgnat "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $console, $uinput, $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat "$tmp/$dir/cbb"
 fi
 

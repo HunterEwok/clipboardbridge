@@ -59,9 +59,10 @@ type waylandInject struct {
 }
 
 // Target offers the desktop for remote paste when the compositor has
-// virtual keyboards, or the session the RemoteDesktop portal (KDE).
+// virtual keyboards, or the session the uinput helper or the RemoteDesktop
+// portal (GNOME, KDE).
 func (w *Wayland) Target() string {
-	if w.vkm == 0 && w.portal == nil {
+	if w.vkm == 0 && w.kb == nil {
 		return ""
 	}
 	return "desktop"
@@ -72,10 +73,10 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 	w.inj.mu.Lock()
 	defer w.inj.mu.Unlock()
 	if w.vkm == 0 {
-		if w.portal == nil {
+		if w.kb == nil {
 			return &connector.Refusal{Reason: "this compositor offers no virtual keyboard to paste with"}
 		}
-		return portalInject(w.portal, w, text, method, enter, secret)
+		return keysInject(w.kb, w, text, method, enter, secret)
 	}
 	if why := lockcheck.Reason(); why != "" {
 		return &connector.Refusal{Reason: why}

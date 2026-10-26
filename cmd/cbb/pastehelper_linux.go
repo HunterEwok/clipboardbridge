@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/consolepaste"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/uinput"
 )
 
 // runConsoleHelper is the helper for the text console, run by the
@@ -24,6 +27,41 @@ func runConsoleHelper(ctx context.Context, stderr io.Writer) int {
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 	logf("cbb: pasting into the active text console")
 	if err := connector.Run(ctx, connector.Config{Socket: control.SocketPath(), Target: &consolepaste.Console{}, Logf: logf}); err != nil {
+		return fail(stderr, err)
+	}
+	return 0
+}
+
+// runUinputHelper is the keys helper, run by the clipboardbridge-uinput
+// unit as root: it holds a uinput keyboard and presses a paste's keys for
+// the user of the active graphical session (internal/uinput).
+func runUinputHelper(ctx context.Context, stderr io.Writer) int {
+	if os.Geteuid() != 0 {
+		return fail(stderr, errors.New("the uinput helper runs as root, from the clipboardbridge-uinput unit"))
+	}
+	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
+	kbd, err := uinput.Open(uinput.Device, "Clipboard Bridge remote paste")
+	if err != nil {
+		return fail(stderr, fmt.Errorf("%w (is the uinput module loaded?)", err))
+	}
+	defer kbd.Close()
+	if err := os.MkdirAll(filepath.Dir(uinput.Socket), 0o755); err != nil {
+		return fail(stderr, err)
+	}
+	os.Remove(uinput.Socket)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: uinput.Socket, Net: "unix"})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer os.Remove(uinput.Socket)
+	// Any user may connect: the helper presses the keys only for the user
+	// of the session on the screen, by the caller's credentials.
+	if err := os.Chmod(uinput.Socket, 0o666); err != nil {
+		return fail(stderr, err)
+	}
+	logf("cbb: pressing the keys of remote pastes for the active session, at %s", uinput.Socket)
+	h := &uinput.Helper{Keys: kbd, Logf: logf}
+	if err := h.Serve(ctx, ln); err != nil {
 		return fail(stderr, err)
 	}
 	return 0

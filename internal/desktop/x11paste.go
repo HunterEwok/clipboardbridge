@@ -66,12 +66,11 @@ type x11Inject struct {
 	err  error // XTEST is missing
 }
 
-// Target offers the desktop for remote paste: XTEST in an X11 session, the
-// portal in a Wayland one.
-// In a Wayland session XWayland's keys reach only X11 programs, so the
-// keys go through the RemoteDesktop portal there, as on GNOME.
+// Target offers the desktop for remote paste: XTEST in an X11 session. In a
+// Wayland session XWayland's keys reach only X11 programs, so the keys go
+// through the uinput helper or the RemoteDesktop portal there, as on GNOME.
 func (b *X11) Target() string {
-	if os.Getenv("WAYLAND_DISPLAY") != "" && b.portal == nil {
+	if os.Getenv("WAYLAND_DISPLAY") != "" && b.kb == nil {
 		return ""
 	}
 	return "desktop"
@@ -82,10 +81,10 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 	b.inj.mu.Lock()
 	defer b.inj.mu.Unlock()
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		if b.portal == nil {
+		if b.kb == nil {
 			return &connector.Refusal{Reason: "this Wayland desktop offers no way to press keys for a paste"}
 		}
-		return portalInject(b.portal, b, text, method, enter, secret)
+		return keysInject(b.kb, b, text, method, enter, secret)
 	}
 	b.inj.once.Do(func() {
 		if err := xtest.Init(b.x); err != nil {
