@@ -253,9 +253,10 @@ class AppModel(private val app: Context) {
             when (fetched) {
                 is LiveGroup.Got.Text -> Clipboard.write(app, fetched.text, fetched.kind)
                 is LiveGroup.Got.Image -> Clipboard.writeImage(app, fetched.file, fetched.alt)
+                is LiveGroup.Got.Files -> {}
                 null -> {}
             }
-            message = Note(
+            message = if (fetched is LiveGroup.Got.Files) Note(R.string.files_saved) else Note(
                 when (result) {
                     LiveGroup.SyncResult.SENT -> R.string.sent
                     LiveGroup.SyncResult.FETCHED -> R.string.fetched
@@ -287,6 +288,25 @@ class AppModel(private val app: Context) {
         }
         message = try {
             Note(if (withContext(Dispatchers.IO) { group.send(text) } == LiveGroup.SyncResult.SENT) R.string.sent else R.string.nothing_new)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        return message!!
+    }
+
+    /**
+     * Sends the images or files another app shared, which the computers
+     * fetch from this phone; with the app perhaps just started for it, it
+     * waits up to waitMS for a computer to connect. Returns what it says.
+     */
+    suspend fun sendShared(uris: List<android.net.Uri>, waitMS: Long = 5_000): Note {
+        val deadline = System.currentTimeMillis() + waitMS
+        while (group.hasGroup && System.currentTimeMillis() < deadline && !withContext(Dispatchers.IO) { group.online }) delay(250)
+        message = try {
+            withContext(Dispatchers.IO) { group.sendShared(Files.read(app, uris)) }
+            Note(R.string.files_sent)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

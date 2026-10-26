@@ -89,6 +89,10 @@
     <string name="send_share">Send to the computers</string>
     <string name="share_confirm_title">Send this text to your computers?</string>
     <string name="share_confirm_body">%1$s handed Clipboard Bridge a text of %2$d characters. It goes to every computer of the group.</string>
+    <string name="files_saved">Saved in Downloads, in the folder Clipboard Bridge.</string>
+    <string name="files_sent">Sent to the computers, which fetch it from this phone now.</string>
+    <string name="share_files_title">Send to your computers?</string>
+    <string name="share_files_body">%1$s handed Clipboard Bridge %2$d items. They go to every computer of the group.</string>
     <string name="outside_sync_title">Sync the clipboard with your computers?</string>
     <string name="outside_sync_body">%1$s opened Clipboard Bridge. Syncing may put your computers\' latest copy on this phone\'s clipboard, where that app could read it.</string>
     <string name="share_unknown_app">An app</string>

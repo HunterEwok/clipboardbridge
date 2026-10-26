@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Saved in Files, On My iPhone, Clipboard Bridge.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранено в «Файлах»: «На iPhone», Clipboard Bridge."
+          }
+        }
+      }
+    },
     "Could not get the image from the computers. Copy it there again, then try again.": {
       "localizations": {
         "ru": {

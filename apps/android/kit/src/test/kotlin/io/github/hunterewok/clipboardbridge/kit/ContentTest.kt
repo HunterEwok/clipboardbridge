@@ -146,6 +146,29 @@ class ContentTest {
     }
 
     @Test
+    fun cleanNames() {
+        for ((given, want) in listOf(
+            "report.pdf" to "report.pdf",
+            "a/b:c?.txt" to "a_b_c_.txt",
+            "CON.txt" to "CON_.txt",
+            "lpt1" to "lpt1_",
+            "dots..." to "dots..._",
+            "" to "_",
+            ".." to "_",
+            "tab\there" to "tab_here",
+            "x".repeat(300) to "x".repeat(254),
+        )) {
+            val got = Media.cleanName(given)
+            assertEquals(want, got, given)
+            assertTrue(Media.checkName(got), got)
+        }
+        val m = Content.files(MemoryContent(), listOf("a.txt" to ByteArray(1), "A.txt" to ByteArray(2), "a.txt" to ByteArray(3), "CON" to ByteArray(0)))
+        assertEquals(listOf("a.txt", "A (2).txt", "a (3).txt", "CON_"), m.parts.map { it.path })
+        assertTrue(m.isValid)
+        assertEquals(6L, m.size)
+    }
+
+    @Test
     fun memoryContentKeepsTheNewest() {
         val store = MemoryContent(maxBytes = 10)
         val one = store.put(ByteArray(6) { 1 })

@@ -128,11 +128,44 @@ public enum Media {
             return false
         }
         if name.hasSuffix(".") || name.hasSuffix(" ") { return false }
+        return !reserved(name)
+    }
+
+    /// Whether name, before its first dot, is a device name of Windows:
+    /// CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, in any case.
+    static func reserved(_ name: String) -> Bool {
         let base = String(name.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false).first ?? "").uppercased()
-        if ["CON", "PRN", "AUX", "NUL"].contains(base) { return false }
-        if base.utf8.count == 4, base.hasPrefix("COM") || base.hasPrefix("LPT"), let d = base.utf8.last, (0x31...0x39).contains(d) {
-            return false
+        if ["CON", "PRN", "AUX", "NUL"].contains(base) { return true }
+        return base.utf8.count == 4 && (base.hasPrefix("COM") || base.hasPrefix("LPT")) && (0x31...0x39).contains(base.utf8.last ?? 0)
+    }
+
+    /// A name that checkName takes, made of one a system gave, as Go's
+    /// clip.CleanName: the characters it does not allow become "_", a
+    /// reserved name gets "_" after its base and one that ends in a dot or
+    /// a space gets "_" after it.
+    public static func cleanName(_ given: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for u in given.unicodeScalars {
+            let bad = u.value < 0x20 || (0x7f...0x9f).contains(u.value) || "/\\:*?\"<>|".unicodeScalars.contains(u)
+            scalars.append(bad ? "_" : u)
         }
-        return true
+        while String(scalars).utf8.count > maxName { scalars.removeLast() }
+        var name = String(scalars)
+        if name.isEmpty || name == "." || name == ".." { return "_" }
+        if name.utf8.count == maxName {
+            scalars.removeLast()
+            name = String(scalars)
+        }
+        if reserved(name) {
+            // CON.txt becomes CON_.txt: Windows reserves the base with any
+            // extension.
+            if let dot = name.firstIndex(of: ".") {
+                name = String(name[..<dot]) + "_" + String(name[dot...])
+            } else {
+                name += "_"
+            }
+        }
+        if name.hasSuffix(".") || name.hasSuffix(" ") { name += "_" }
+        return name
     }
 }

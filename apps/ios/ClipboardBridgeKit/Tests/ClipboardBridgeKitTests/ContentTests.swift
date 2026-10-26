@@ -163,6 +163,20 @@ final class ContentTests: XCTestCase {
         } catch MemberNode.Failure.refused {}
     }
 
+    func testCleanNames() {
+        for (given, want) in [("report.pdf", "report.pdf"), ("a/b:c?.txt", "a_b_c_.txt"), ("CON.txt", "CON_.txt"), ("lpt1", "lpt1_"),
+                              ("dots...", "dots..._"), ("", "_"), ("..", "_"), ("tab\there", "tab_here"),
+                              (String(repeating: "x", count: 300), String(repeating: "x", count: 254))] {
+            let got = Media.cleanName(given)
+            XCTAssertEqual(got, want, given)
+            XCTAssertTrue(Media.checkName(got), got)
+        }
+        let m = Content.files(store: MemoryContent(), files: [("a.txt", Data(count: 1)), ("A.txt", Data(count: 2)), ("a.txt", Data(count: 3)), ("CON", Data())])
+        XCTAssertEqual(m.parts.map(\.path), ["a.txt", "A (2).txt", "a (3).txt", "CON_"])
+        XCTAssertTrue(m.isValid)
+        XCTAssertEqual(m.size, 6)
+    }
+
     func testMemoryContentKeepsTheNewest() {
         let store = MemoryContent(maxBytes: 10)
         let one = store.put(Data(repeating: 1, count: 6))

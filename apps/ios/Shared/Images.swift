@@ -69,6 +69,23 @@ enum Images {
         return image.jpegData(compressionQuality: 0.9).map { Copied(type: "image/jpeg", data: $0) }
     }
 
+    /// The image an item provider of Share holds, as PNG or JPEG, like
+    /// read; nil when it holds none, or it is too large.
+    static func load(_ p: NSItemProvider) async -> Copied? {
+        for (uti, type) in [(UTType.png, "image/png"), (UTType.jpeg, "image/jpeg")] where p.hasItemConformingToTypeIdentifier(uti.identifier) {
+            if let d = await data(p, uti), Int64(d.count) <= maxCopy { return Copied(type: type, data: d) }
+        }
+        guard p.hasItemConformingToTypeIdentifier(UTType.image.identifier), let d = await data(p, .image), let image = UIImage(data: d) else { return nil }
+        return convert(image).flatMap { Int64($0.data.count) <= maxCopy ? $0 : nil }
+    }
+
+    /// The bytes of an item provider in type.
+    static func data(_ p: NSItemProvider, _ type: UTType) async -> Data? {
+        await withCheckedContinuation { c in
+            _ = p.loadDataRepresentation(for: type) { d, _ in c.resume(returning: d) }
+        }
+    }
+
     /// Puts a received image on this phone's clipboard, with alt, its
     /// plain-text alternative, next to it; local only, so Universal
     /// Clipboard does not carry it back to a Mac of the group.

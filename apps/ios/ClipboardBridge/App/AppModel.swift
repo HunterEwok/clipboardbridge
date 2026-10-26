@@ -136,7 +136,11 @@ final class AppModel: ObservableObject {
         var actions: [String] = []
     }
 
-    enum SyncResult: Equatable { case sent, fetched, nothingNew }
+    enum SyncResult: Equatable {
+        case sent, fetched, nothingNew
+        /// Files a computer copied, saved in the app's folder in Files.
+        case savedFiles
+    }
 
     enum ScanResult: Equatable {
         case joinCode(JoinCode)
@@ -351,6 +355,7 @@ final class AppModel: ObservableObject {
             case .sent: message = String(localized: "Sent to the computers.", bundle: .app)
             case .fetched: message = String(localized: "Fetched from the computers.", bundle: .app)
             case .nothingNew: message = String(localized: "Nothing new to send or fetch.", bundle: .app)
+            case .savedFiles: message = String(localized: "Saved in Files, On My iPhone, Clipboard Bridge.", bundle: .app)
             }
             if let message { Island.flash(message) }
         } catch {

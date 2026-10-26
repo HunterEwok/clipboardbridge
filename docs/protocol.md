@@ -437,7 +437,7 @@ can hold a received copy. The Go code is `internal/clip/media.go`.
 {"t":"event","event":{"id":"77aa...","origin":"3b1e...","time":"1761024002000.0","age_ms":5,"kind":"media","text":"trip","media":{"size":1234,"parts":[{"path":"trip","dir":true},{"path":"trip/a.jpg","size":1234,"sha256":"AQEB..."}]}}}
 ```
 
-A member that does not take images or files (the lite member, the phones until they do) takes
+A member that does not take images or files (the lite member) takes
 the event like any other, so the group converges, forwards it, and writes only its `text`, as
 a text, to its clipboard; with no text it keeps its clipboard.
 

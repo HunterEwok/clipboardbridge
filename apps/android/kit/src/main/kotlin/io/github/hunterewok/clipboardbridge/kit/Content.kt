@@ -75,6 +75,28 @@ object Content {
         return Media.Manifest(parts.sumOf { it.size }, parts)
     }
 
+    /**
+     * The manifest of files the user shared, side by side without folders,
+     * whose bytes store keeps to serve them: each name made one every system
+     * takes (Media.cleanName), and a name taken already, in any case, given
+     * " (2)" and so on before its extension.
+     */
+    fun files(store: MemoryContent, files: List<Pair<String, ByteArray>>): Media.Manifest {
+        val taken = HashSet<String>()
+        val parts = files.map { (given, bytes) ->
+            val clean = Media.cleanName(given)
+            var name = clean
+            var n = 2
+            while (!taken.add(name.lowercase())) {
+                val dot = clean.lastIndexOf('.').takeIf { it > 0 } ?: clean.length
+                name = Media.cleanName(clean.substring(0, dot) + " ($n)" + clean.substring(dot))
+                n++
+            }
+            Media.Part(path = name, size = bytes.size.toLong(), sha256 = store.put(bytes))
+        }
+        return Media.Manifest(parts.sumOf { it.size }, parts)
+    }
+
     class TooLarge(val size: Long, val limit: Long) : Exception("the copy is $size bytes, more than the limit of $limit")
 
     /**

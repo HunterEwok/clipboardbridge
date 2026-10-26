@@ -122,6 +122,35 @@ object Media {
         path.isNotEmpty() && path.toByteArray().size <= MAX_PATH && path.split('/').all { checkName(it) }
 
     /**
+     * A name that checkName takes, made of one a system gave, as Go's
+     * clip.CleanName: the characters it does not allow become "_", a
+     * reserved name gets "_" after its base and one that ends in a dot or a
+     * space gets "_" after it.
+     */
+    fun cleanName(given: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < given.length) {
+            val cp = given.codePointAt(i)
+            i += Character.charCount(cp)
+            val bad = cp in 0xd800..0xdfff || cp < 0x20 || cp == 0x7f || cp in 0x80..0x9f || (cp < 0x80 && cp.toChar() in "/\\:*?\"<>|")
+            if (bad) sb.append('_') else sb.appendCodePoint(cp)
+        }
+        var name = sb.toString()
+        fun dropLast() {
+            val cp = name.codePointBefore(name.length)
+            name = name.substring(0, name.length - Character.charCount(cp))
+        }
+        while (name.toByteArray().size > MAX_NAME) dropLast()
+        if (name.isEmpty() || name == "." || name == "..") return "_"
+        if (name.toByteArray().size == MAX_NAME) dropLast()
+        // CON.txt becomes CON_.txt: Windows reserves the base with any extension.
+        if (reserved(name)) name = name.substringBefore('.') + "_" + if ('.' in name) "." + name.substringAfter('.') else ""
+        if (name.endsWith('.') || name.endsWith(' ')) name += "_"
+        return name
+    }
+
+    /**
      * Whether a name of a path is one every system can hold, as Go's
      * clip.CheckName decides: 1 to 255 bytes, not "." or "..", no control
      * characters, separators or characters Windows does not allow, no dot
@@ -132,8 +161,13 @@ object Media {
         if (bytes == 0 || bytes > MAX_NAME || name == "." || name == "..") return false
         if (name.any { it in "/\\:*?\"<>|" || it < ' ' || it == '\u007f' || it in '\u0080'..'\u009f' }) return false
         if (name.endsWith('.') || name.endsWith(' ')) return false
+        return !reserved(name)
+    }
+
+    /** Whether name, before its first dot, is a device name of Windows: CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, in any case. */
+    private fun reserved(name: String): Boolean {
         val base = name.substringBefore('.').uppercase()
-        if (base in setOf("CON", "PRN", "AUX", "NUL")) return false
-        return !(base.length == 4 && (base.startsWith("COM") || base.startsWith("LPT")) && base[3] in '1'..'9')
+        if (base in setOf("CON", "PRN", "AUX", "NUL")) return true
+        return base.length == 4 && (base.startsWith("COM") || base.startsWith("LPT")) && base[3] in '1'..'9'
     }
 }

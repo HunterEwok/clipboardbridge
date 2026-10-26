@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "The computers did not fetch it within a minute. Try again, or send fewer files.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компьютеры не забрали это за минуту. Повторите или отправьте меньше файлов."
+          }
+        }
+      }
+    },
+    "What you shared is larger than 50 MB, more than Share can carry. Send less at a time.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это больше 50 МБ, столько «Поделиться» не унесёт. Отправьте меньше за раз."
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ru": {

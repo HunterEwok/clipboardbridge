@@ -87,6 +87,10 @@
     <string name="send_share">Отправить на компьютеры</string>
     <string name="share_confirm_title">Отправить этот текст на компьютеры?</string>
     <string name="share_confirm_body">%1$s передаёт Clipboard Bridge текст (символов: %2$d). Он уйдёт на все компьютеры группы.</string>
+    <string name="files_saved">Сохранено в «Загрузках», в папке Clipboard Bridge.</string>
+    <string name="files_sent">Отправлено на компьютеры, они сейчас заберут это с телефона.</string>
+    <string name="share_files_title">Отправить на компьютеры?</string>
+    <string name="share_files_body">%1$s передаёт Clipboard Bridge файлы (штук: %2$d). Они уйдут на все компьютеры группы.</string>
     <string name="outside_sync_title">Синхронизировать буфер с компьютерами?</string>
     <string name="outside_sync_body">%1$s открывает Clipboard Bridge. Синхронизация может положить последнюю копию с компьютеров в буфер телефона, где это приложение её прочитает.</string>
     <string name="share_unknown_app">Приложение</string>

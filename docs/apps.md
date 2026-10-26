@@ -55,7 +55,19 @@ they look, so both apps are built to the same plan.
    dials the group's computers with the phone's member key, which it shares with the app
    through an app group and a keychain access group (both need the Apple developer
    account; a debug build signed ad hoc has neither, and its extension says there is no
-   group).
+   group). Share takes an image or files too, up to 50 MB together: the extension stays
+   until a computer fetched them from the phone, at most a minute.
+
+   **Images and files** (docs/design.md, "Images and files"): the button sends an image on
+   the clipboard as PNG or JPEG (HEIC and other formats are converted) and fetches a
+   computer's image whole before it writes it, an image by its hash: the same image twice is
+   nothing new. A received image goes to the clipboard by itself as a text does, on Android
+   through the app's FileProvider and on the iPhone while the app runs, to this phone only.
+   Received files wait for the button, which saves them, with their folders, in Downloads,
+   folder "Clipboard Bridge", on Android and in Files, On My iPhone, Clipboard Bridge,
+   Received, on the iPhone; it saves a copy once. Android's Share sends a single image as an
+   image and anything else as files, up to 100 MiB together. A copy over 100 MiB stays on
+   the computers.
 3. **Add a device**: the camera with a frame; the device appears in the list when it has
    joined. Fallback: type the six digits. Another phone joins the same way: it shows its own
    QR code ("I already use Clipboard Bridge on another phone" on its Start screen) and this phone

@@ -173,6 +173,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   from a store, and fetch a received copy's parts from the members that serve them, its
   origin first, checking the hash; their hellos then say `media`. `testdata/interop/content.json`
   holds Go's frames for them, and the Go test that plays the phone sends a picture each way.
+- Images and files on the phones (design.md, "Images and files", step 4; apps.md): the button
+  sends an image on the clipboard as PNG or JPEG (HEIC and other formats converted) and
+  fetches a computer's image, which also comes by itself as a text does (on the iPhone while
+  the app runs, to this phone only); the button saves received files in Downloads on Android
+  and in the app's folder in Files on the iPhone. Share sends images and files: up to 100 MiB
+  on Android, 50 MB from the iPhone's share extension, which stays until a computer fetched
+  them.
 
 ### Changed
 

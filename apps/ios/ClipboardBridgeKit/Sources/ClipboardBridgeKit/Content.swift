@@ -73,6 +73,26 @@ public enum Content {
         return Media.Manifest(size: parts.reduce(0) { $0 + $1.size }, parts: parts)
     }
 
+    /// The manifest of files the user shared, side by side without
+    /// folders, whose bytes store keeps to serve them: each name made one
+    /// every system takes (Media.cleanName), and a name taken already, in
+    /// any case, given " (2)" and so on before its extension.
+    public static func files(store: MemoryContent, files: [(name: String, bytes: Data)]) -> Media.Manifest {
+        var taken = Set<String>()
+        let parts = files.map { f -> Media.Part in
+            let clean = Media.cleanName(f.name)
+            var name = clean
+            var n = 2
+            while !taken.insert(name.lowercased()).inserted {
+                let dot = clean.lastIndex(of: ".").flatMap { $0 > clean.startIndex ? $0 : nil } ?? clean.endIndex
+                name = Media.cleanName(String(clean[..<dot]) + " (\(n))" + String(clean[dot...]))
+                n += 1
+            }
+            return Media.Part(path: name, size: Int64(f.bytes.count), sha256: store.put(f.bytes))
+        }
+        return Media.Manifest(size: parts.reduce(0) { $0 + $1.size }, parts: parts)
+    }
+
     public enum Failure: Error, Equatable {
         /// The part is over the receiver's limit.
         case tooLarge(size: Int64, limit: Int64)

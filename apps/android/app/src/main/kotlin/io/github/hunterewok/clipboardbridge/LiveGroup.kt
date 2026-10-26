@@ -1252,10 +1252,22 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val (n, device) = synchronized(lock) { (node ?: throw Failure(Failure.Kind.NO_COMPUTERS)) to (state?.device ?: "") }
         val current = n.current
         val image = Images.part(current?.media)
-        // An image compares by its hash, a text by itself.
-        val usable = if (image != null) Images.key(image.sha256!!) to Member.Kind.MEDIA else n.usable
+        val files = current?.media?.takeIf { it.isFiles }
+        // An image compares by its hash, a text by itself; files count
+        // until the button saved them once.
+        val usable = when {
+            image != null -> Images.key(image.sha256!!) to Member.Kind.MEDIA
+            files != null -> if (current.id == savedFiles) null else "\u0000files:" + current.id to Member.Kind.MEDIA
+            else -> n.usable
+        }
         return when (SyncRule.decide(board?.key, current, usable, device)) {
             SyncRule.Action.FETCH -> {
+                if (files != null) {
+                    if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
+                    val saved = Files.save(context, n, current, files)
+                    savedFiles = current.id
+                    return SyncResult.FETCHED to Got.Files(saved)
+                }
                 if (image == null) return SyncResult.FETCHED to usable?.let { Got.Text(it.first, it.second) }
                 if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
                 val f = fetchImage(current!!, image, quiet = false) ?: throw Failure(Failure.Kind.NO_COMPUTERS)
@@ -1298,6 +1310,23 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         data class Text(val text: String, val kind: Member.Kind) : Got()
 
         data class Image(val file: File, val alt: String) : Got()
+
+        /** Files saved in Downloads/Clipboard Bridge. */
+        data class Files(val count: Int) : Got()
+    }
+
+    /** The files event the button saved last, so it does not save them again. */
+    @Volatile private var savedFiles: String? = null
+
+    /** Sends what the user shared with the app: an image, or files, which the computers fetch from this phone. */
+    fun sendShared(shared: Files.Shared): SyncResult {
+        val n = currentNode ?: throw Failure(Failure.Kind.NO_COMPUTERS)
+        if (!connected(n)) throw Failure(Failure.Kind.NO_COMPUTERS)
+        when (shared) {
+            is Files.Shared.Image -> sendImage(n, shared.image)
+            is Files.Shared.Many -> n.send("", Member.Kind.TEXT, media = Content.files(content, shared.files))
+        }
+        return SyncResult.SENT
     }
 
     /** Sends an image the phone copied: the computers fetch it from this phone. */

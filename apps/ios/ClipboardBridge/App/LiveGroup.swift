@@ -1362,18 +1362,28 @@ final class LiveGroup: GroupController {
         let board = image?.key ?? text
         let cur = await node.current
         let curImage = Images.part(of: cur?.media)
+        let curFiles = cur?.media.flatMap { $0.isFiles ? $0 : nil }
+        // An image compares by its hash, a text by itself; files count
+        // until the button saved them once.
         var usable = await node.usable
         if let sum = curImage?.sha256 { usable = (Images.key(sum), .media) }
-        func fetch() async throws {
+        if let cur, curFiles != nil { usable = cur.id == savedFiles ? nil : (text: "\u{0}files:" + cur.id, kind: Member.Kind.media) }
+        func fetch() async throws -> AppModel.SyncResult {
+            if let cur, let curFiles {
+                guard await connected(node) else { throw PendingGroup.Failure.noComputers }
+                try await save(cur, files: curFiles)
+                savedFiles = cur.id
+                return .savedFiles
+            }
             if let cur, let curImage {
                 try await receive(cur, image: curImage)
             } else if let u = usable {
                 write(u.text, kind: u.kind)
             }
+            return .fetched
         }
         if let cur, let u = usable, cur.origin != g.device, cur.via == .copy, cur.ageMS < Self.recentCopyMS, u.text != board {
-            try await fetch()
-            return .fetched
+            return try await fetch()
         }
         if let t = board, !t.isEmpty, t != usable?.text {
             guard await connected(node) else { throw PendingGroup.Failure.noComputers }
@@ -1385,8 +1395,7 @@ final class LiveGroup: GroupController {
             return .sent
         }
         if let u = usable, u.text != board {
-            try await fetch()
-            return .fetched
+            return try await fetch()
         }
         if !(await connected(node)) { throw PendingGroup.Failure.noComputers }
         return .nothingNew
@@ -1401,6 +1410,57 @@ final class LiveGroup: GroupController {
             online = await node.connected
             if !online.isEmpty || ContinuousClock.now >= deadline { return !online.isEmpty }
             try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    /// The files event the button saved last, so it does not save them again.
+    private var savedFiles: String?
+
+    /// Fetches the files a computer copied into the app's folder in Files,
+    /// Received, with their folders; a name taken there gets a number.
+    private func save(_ e: Member.Event, files m: Media.Manifest) async throws {
+        guard let node else { throw PendingGroup.Failure.noComputers }
+        if m.size > Images.maxCopy { throw Content.Failure.tooLarge(size: m.size, limit: Images.maxCopy) }
+        let fm = FileManager.default
+        let root = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("Received", isDirectory: true)
+        // Each top-level name of the copy, made free in Received.
+        var renamed: [String: String] = [:]
+        func target(_ path: String) -> URL {
+            let parts = path.split(separator: "/").map(String.init)
+            if renamed[parts[0]] == nil {
+                var name = parts[0], n = 2
+                let ext = (parts[0] as NSString).pathExtension, base = (parts[0] as NSString).deletingPathExtension
+                while fm.fileExists(atPath: root.appendingPathComponent(name).path) {
+                    name = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
+                    n += 1
+                }
+                renamed[parts[0]] = name
+            }
+            return parts.dropFirst().reduce(root.appendingPathComponent(renamed[parts[0]]!)) { $0.appendingPathComponent($1) }
+        }
+        for p in m.parts {
+            guard let path = p.path else { continue }
+            let url = target(path)
+            if p.dir {
+                try fm.createDirectory(at: url, withIntermediateDirectories: true)
+                continue
+            }
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).part")
+            fm.createFile(atPath: tmp.path, contents: nil)
+            let h = try FileHandle(forWritingTo: tmp)
+            do {
+                if p.size > 0 {
+                    try await Content.fetch(from: node, event: e, part: p, limit: Images.maxCopy,
+                                            start: { try h.truncate(atOffset: 0) }, sink: { try h.write(contentsOf: $0) })
+                }
+                try h.close()
+                try fm.moveItem(at: tmp, to: url)
+            } catch {
+                try? h.close()
+                try? fm.removeItem(at: tmp)
+                throw error
+            }
         }
     }
 
