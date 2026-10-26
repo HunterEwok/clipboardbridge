@@ -6,6 +6,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-26
+
 ### Added
 
 - An open blind relay: `cbb relay -open` serves every group that registers, as the project's
@@ -887,7 +889,8 @@ archives, so it has no release.
 - The release build packs the macOS archives with `packaging/macos`; CI now builds every
   release archive on each pull request with the same script, `packaging/archive.sh`.
 
-[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/HunterEwok/clipboardbridge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/HunterEwok/clipboardbridge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HunterEwok/clipboardbridge/compare/v0.2.0...v0.3.0
