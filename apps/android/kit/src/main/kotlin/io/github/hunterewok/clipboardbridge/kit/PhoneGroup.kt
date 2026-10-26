@@ -137,9 +137,11 @@ class PhoneGroup internal constructor(
         admin: ByteArray? = null,
         os: String? = null,
         store: String? = null,
+        kind: String? = null,
+        proof: String? = null,
     ): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA, os, store)
+        val r = Records.device(device, name, role, key, tag, this.device, now, caSigner, admin, adminCA, os, store, kind, proof)
         records.add(r, groupCA)
         return r
     }
@@ -246,7 +248,7 @@ class PhoneGroup internal constructor(
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         val n = name.trim()
         if (n.isEmpty() || validName(n) != n) throw Failure(INVALID_NAME)
-        return record(device, n, d.role, d.key, caSigner, now, d.adminKey, d.os, d.store)
+        return record(device, n, d.role, d.key, caSigner, now, d.adminKey, d.os, d.store, d.kind, d.proof)
     }
 
     /**
@@ -313,12 +315,47 @@ class PhoneGroup internal constructor(
         val d = devices.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         if (d.role != "full") throw Failure("not a computer")
         if (d.frozen) throw Failure("frozen: unfreeze it or remove it")
-        val store = Records.storeOf(keyStore, d.role)
+        val proven = d.store == Records.PROVEN
+        val store = if (proven) d.store else Records.storeOf(keyStore, d.role)
         if (store == Records.FILE && !allowFileKey) throw FileKey()
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
-        val r = record(device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os, store)
+        val r = record(
+            device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os, store,
+            d.kind.takeIf { proven }, d.proof.takeIf { proven },
+        )
         computerAdmins[device] = ca
         return ca to r
+    }
+
+    /**
+     * Checks the attestation a device sent of its member key (section 17,
+     * "Evidence") and, on the root, returns a new device record with what
+     * it shows when that differs from the device's record; null when there
+     * is nothing to record. chain is the certificate chain the device
+     * presented, leaf first. Throws AndroidAttestation.Invalid for a proof
+     * of nothing.
+     */
+    fun evidence(
+        device: String,
+        chain: List<ByteArray>,
+        e: Member.Evidence,
+        rootSigner: CertificateSigner,
+        now: Instant,
+        roots: List<ByteArray>? = null,
+    ): Member.Record? {
+        if (!isRoot || chain.isEmpty() || e.format != Member.Evidence.ANDROID || e.key != Member.Evidence.MEMBER) return null
+        val key = Records.keyHashOfCert(chain[0])
+        val d = devices.firstOrNull { it.id == device && it.key.contentEquals(key) } ?: return null
+        if (e.groupTag != null && e.groupTag != tag) throw AndroidAttestation.Invalid("an attestation made for another group")
+        val challenge = try {
+            Attestation.challenge(e.groupTag ?: "", ByteArray(0), e.salt)
+        } catch (x: IllegalArgumentException) {
+            throw AndroidAttestation.Invalid(x.message ?: "a bad salt")
+        }
+        val r = AndroidAttestation.check(e.chain, CertificateInfo(chain[0]).publicKey, challenge, AndroidAttestation.Policy(roots = roots))
+        if (d.store == r.store && (d.kind ?: "") == r.kind) return null
+        val proof = sha256(e.chain[0]).joinToString("") { "%02x".format(it) }
+        return record(device, d.name, d.role, d.key, rootSigner, now, d.adminKey, d.os, r.store, r.kind.ifEmpty { null }, proof)
     }
 
     /** The admin CA this phone issued for an admin key a computer offers, while that computer is still listed as an admin. */

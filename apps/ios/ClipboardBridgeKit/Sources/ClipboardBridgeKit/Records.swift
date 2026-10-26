@@ -24,8 +24,12 @@ public enum Records {
         public var os: String?
         public var key: Data?
         public var admin: Data?
-        /// Where the device's keys live: "file" or "hardware" (store(_:role:)).
+        /// Where the device's keys live: "file", "hardware" or "proven" (store(_:role:)).
         public var store: String?
+        /// With a checked attestation: the kind of hardware and the hex
+        /// SHA-256 of the attestation's leaf.
+        public var kind: String?
+        public var proof: String?
         // revoke
         public var keys: [Data]?
         public var keep: [Data]?
@@ -53,14 +57,12 @@ public enum Records {
     public static let proven = "proven"
 
     /// Where a device's keys live, as its record's store field says
-    /// (docs/protocol.md, section 17): hardware for "hardware", and for
-    /// "proven" until this version checks proofs; file for "file". Without
+    /// (docs/protocol.md, section 17): file, hardware or proven. Without
     /// one, as before 0.6, or with one this version does not know, a
     /// phone's keys are in hardware and any other device's in a file.
     public static func store(_ store: String?, role: String) -> String {
         switch store {
-        case hardware, proven: hardware
-        case file: file
+        case let s? where s == file || s == hardware || s == proven: s
         default: role == "phone" ? hardware : file
         }
     }
@@ -100,10 +102,11 @@ public enum Records {
     /// A device record. admin is the key hash of the device's admin CA, for
     /// an admin phone.
     public static func device(_ device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
-                              store: String? = nil, group: String, by: String, now: Date, signer: CertificateSigner,
-                              adminCA: Data? = nil) throws -> Member.Record {
+                              store: String? = nil, kind: String? = nil, proof: String? = nil, group: String, by: String, now: Date,
+                              signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
         var b = Body(type: "device", group: group, timeMS: ms(now), by: by)
         (b.device, b.name, b.role, b.os, b.key, b.admin, b.store) = (device, name, role, os, key, admin, store)
+        (b.kind, b.proof) = (kind, proof)
         return try sign(b, with: signer, adminCA: adminCA)
     }
 
@@ -217,8 +220,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// Every key that a counting device record names for it and that is
         /// not revoked, key among them: what removing it revokes.
         public var keys: [Data] = []
-        /// Where its keys live: Records.file or Records.hardware.
+        /// Where its keys live: Records.file, Records.hardware or Records.proven.
         public var store = Records.file
+        /// The kind of hardware and the hash of the attestation the root
+        /// checked, if any.
+        public var kind: String?
+        public var proof: String?
     }
 
     /// Adds a record signed under one of the group's roots, by the root's
@@ -708,7 +715,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
                           admin: rb.1.admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: rb.1.admin,
                           frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false, keys: keys[d] ?? [key],
-                          store: Records.store(rb.1.store, role: Records.role(rb.1.role)))
+                          store: Records.store(rb.1.store, role: Records.role(rb.1.role)), kind: rb.1.kind, proof: rb.1.proof)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AndroidAttestationTest {
     private fun JsonObject.bytes(key: String) = b64(str(key))
@@ -45,6 +46,36 @@ class AndroidAttestationTest {
                 assertEquals(c.list("serials"), r.serials, name)
                 assertEquals(r.store == Records.PROVEN, r.why == "", name)
             }
+        }
+    }
+
+    /** The root phone records a phone whose evidence proves its member key as proven, once (section 17, "Evidence"). */
+    @Test
+    fun rootRecordsEvidence() {
+        val e = Interop.read("go-attest.json").jsonObject.getValue("evidence").jsonObject
+        val chain = e.list("chain")!!.map(::b64)
+        val evidence = Member.Evidence(Member.Evidence.ANDROID, Member.Evidence.MEMBER, null, e.bytes("salt"), chain)
+        val roots = listOf(e.bytes("root"))
+        val now = java.time.Instant.now()
+        val rootKey = SoftwareSigner()
+        val root = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, now, "Root")
+        // The leaf certifies the phone's member key; it stands in for the member certificate here.
+        val phone = SyncEngine.newID()
+        root.record(phone, "Pixel", "phone", Records.keyHashOfCert(chain[0]), rootKey, now, os = "android", store = Records.HARDWARE)
+        val other = SyncEngine.newID()
+        assertEquals(null, root.evidence(other, listOf(chain[0]), evidence, rootKey, now, roots), "an unlisted device")
+        val r = root.evidence(phone, listOf(chain[0]), evidence, rootKey, now.plusSeconds(1), roots)
+        assertTrue(r != null)
+        val d = root.devices.first { it.id == phone }
+        assertEquals(Records.PROVEN, d.store)
+        assertEquals(AndroidAttestation.KIND_TEE, d.kind)
+        assertEquals(64, d.proof?.length)
+        assertEquals(null, root.evidence(phone, listOf(chain[0]), evidence, rootKey, now, roots), "nothing new")
+        // Renaming keeps what the attestation proved.
+        root.rename(phone, "Pixel 9", rootKey, now.plusSeconds(2))
+        assertEquals(Records.PROVEN, root.devices.first { it.id == phone }.store)
+        kotlin.test.assertFailsWith<AndroidAttestation.Invalid> {
+            root.evidence(phone, listOf(chain[0]), Member.Evidence(Member.Evidence.ANDROID, Member.Evidence.MEMBER, "another", e.bytes("salt"), chain), rootKey, now, roots)
         }
     }
 }

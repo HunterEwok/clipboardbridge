@@ -107,6 +107,10 @@ class MemberNode(
     private val onCommand: ((String?, Member.Record) -> Member.CommandResult)? = null,
     /** This device's form, system version and version, which the hellos state too. */
     device: Member.DeviceInfo? = null,
+    /** The attestations of this phone's keys, which every peer gets after its hello (section 17, "Evidence"). */
+    private val evidence: () -> List<Member.Evidence> = { emptyList() },
+    /** Gets the evidence a peer sent, with the device ID the caller of serve named it by and its chain (leaf first). */
+    private val onEvidence: (String?, List<ByteArray>, Member.Evidence) -> Unit = { _, _, _ -> },
 ) {
     val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
@@ -279,6 +283,7 @@ class MemberNode(
                         hub?.invoke(c.peer, offered, psk, chain)?.forEach { c.enqueue(Member.Message.Tunnel(it)) }
                     }
                     if (c.peer != null && chain.isNotEmpty()) hubShare?.invoke(c.peer, chain)?.let { c.enqueue(Member.Message.Hubs(it)) }
+                    for (e in evidence()) c.enqueue(Member.Message.Evidence(e))
                     continue
                 }
                 when (m) {
@@ -287,6 +292,7 @@ class MemberNode(
                         if (e != null) synchronized(lock) { apply(engine.received(e), c) }
                     }
                     is Member.Message.Cert -> onCert(m.cert)
+                    is Member.Message.Evidence -> if (t.peerChain.isNotEmpty()) onEvidence(c.peer, t.peerChain, m.evidence)
                     // Only the root or an admin, by the records and its key.
                     // A hub is no client yet: it gets the other hubs' offers in their shares.
                     is Member.Message.Tunnel -> m.offer?.takeIf { hub == null && it.isValid && c.peer != null && records?.mayHost(c.peer, t.peerChain) != false }

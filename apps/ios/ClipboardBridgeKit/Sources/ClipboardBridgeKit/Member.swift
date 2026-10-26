@@ -402,6 +402,39 @@ public enum Member {
         public init(body: Data, sig: Data, chain: [Data]? = nil) { (self.body, self.sig, self.chain) = (body, sig, chain) }
     }
 
+    /// An attestation of one of a device's keys (section 17, "Evidence"):
+    /// format android with the Keystore's chain, leaf first, for the key
+    /// member, made with the challenge of groupTag (nil outside a group) and
+    /// salt.
+    public struct Evidence: Codable, Equatable, Sendable {
+        public static let android = "android-key"
+        public static let member = "member"
+
+        public var format: String
+        public var key: String
+        public var groupTag: String?
+        public var salt: Data
+        public var chain: [Data]
+
+        public init(format: String, key: String, groupTag: String?, salt: Data, chain: [Data]) {
+            (self.format, self.key, self.groupTag, self.salt, self.chain) = (format, key, groupTag, salt, chain)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case format, key, salt, chain
+            case groupTag = "group_tag"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            format = try c.decodeIfPresent(String.self, forKey: .format) ?? ""
+            key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+            groupTag = try c.decodeIfPresent(String.self, forKey: .groupTag).flatMap { $0.isEmpty ? nil : $0 }
+            salt = try c.decodeIfPresent(Data.self, forKey: .salt) ?? Data()
+            chain = try c.decodeIfPresent([Data].self, forKey: .chain) ?? []
+        }
+    }
+
     /// One message of the protocol.
     public enum Message: Equatable, Sendable {
         case hello(Role, Hello)
@@ -429,6 +462,8 @@ public enum Member {
         case command(Record)
         /// The answer to a command.
         case result(CommandResult)
+        /// An attestation of one of the sender's keys (section 17).
+        case evidence(Evidence)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -478,6 +513,7 @@ public enum Member {
         case "hubs": return w.hubs?.value.map { .hubs($0) } ?? .unknown(w.t)
         case "command": return w.command?.value.map { .command($0) } ?? .unknown(w.t)
         case "result": return w.result?.value.map { .result($0) } ?? .unknown(w.t)
+        case "evidence": return w.evidence?.value.map { .evidence($0) } ?? .unknown(w.t)
         default: return .unknown(w.t)
         }
     }
@@ -516,13 +552,14 @@ public enum Member {
         var hubs: Lenient<HubShare>?
         var command: Lenient<Record>?
         var result: Lenient<CommandResult>?
+        var evidence: Lenient<Evidence>?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence }
         enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store }
 
         func encode(to encoder: Encoder) throws {
@@ -570,6 +607,9 @@ public enum Member {
             case let .result(r):
                 try c.encode("result", forKey: .t)
                 try c.encode(r, forKey: .result)
+            case let .evidence(e):
+                try c.encode("evidence", forKey: .t)
+                try c.encode(e, forKey: .evidence)
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }
