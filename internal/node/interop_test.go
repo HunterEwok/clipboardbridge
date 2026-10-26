@@ -380,3 +380,39 @@ func TestSwiftMemberFrames(t *testing.T) {
 type nopDeadline struct{ *bytes.Reader }
 
 func (nopDeadline) SetReadDeadline(time.Time) error { return nil }
+
+// contentVectors are the messages and binary frames of content
+// (docs/protocol.md, section 4, "Content"), for the kits.
+type contentVectors struct {
+	Frames []json.RawMessage `json:"frames"` // get, missing and a cancel, as Go writes them
+	Chunks []chunkVector     `json:"chunks"`
+}
+
+type chunkVector struct {
+	SHA256 []byte `json:"sha256"`
+	Offset int64  `json:"offset"`
+	Data   []byte `json:"data"`
+	// Frame is the frame, length included, without the zeros at its end;
+	// FrameLen is its length with them.
+	Frame    []byte `json:"frame"`
+	FrameLen int    `json:"frame_len"`
+}
+
+func TestContentInteropVectors(t *testing.T) {
+	sum := bytes.Repeat([]byte{7}, 32)
+	v := contentVectors{Frames: []json.RawMessage{
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum, Offset: 0, Length: getWindow}}),
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum, Offset: 3 << 20, Length: 12345}}),
+		msg(t, &message{Type: typeMissing, Get: &Get{SHA256: sum, Offset: 0, Length: getWindow}}),
+		msg(t, &message{Type: typeGet, Get: &Get{SHA256: sum}}), // a cancel
+	}}
+	for _, ch := range []chunk{
+		{sum: [32]byte(sum), offset: 0, data: []byte("hello")},
+		{sum: [32]byte(sum), offset: 1 << 40, data: bytes.Repeat([]byte{0xab}, 100)},
+		{sum: [32]byte(sum), offset: 5, data: nil},
+	} {
+		f := encodeChunk(ch)
+		v.Chunks = append(v.Chunks, chunkVector{SHA256: ch.sum[:], Offset: ch.offset, Data: ch.data, Frame: bytes.TrimRight(f, "\x00"), FrameLen: len(f)})
+	}
+	checkVectors(t, "content.json", v)
+}

@@ -1,0 +1,59 @@
+{
+	"frames": [
+		{
+			"t": "get",
+			"get": {
+				"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+				"offset": 0,
+				"length": 1048576
+			}
+		},
+		{
+			"t": "get",
+			"get": {
+				"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+				"offset": 3145728,
+				"length": 12345
+			}
+		},
+		{
+			"t": "missing",
+			"get": {
+				"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+				"offset": 0,
+				"length": 1048576
+			}
+		},
+		{
+			"t": "get",
+			"get": {
+				"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+				"offset": 0,
+				"length": 0
+			}
+		}
+	],
+	"chunks": [
+		{
+			"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+			"offset": 0,
+			"data": "aGVsbG8=",
+			"frame": "gABAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAAAAAAAAAAAAAAAFaGVsbG8=",
+			"frame_len": 16388
+		},
+		{
+			"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+			"offset": 1099511627776,
+			"data": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw==",
+			"frame": "gABAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAAABAAAAAAAAAABkq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw==",
+			"frame_len": 16388
+		},
+		{
+			"sha256": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+			"offset": 5,
+			"data": null,
+			"frame": "gABAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAAAAAAAAAAU=",
+			"frame_len": 16388
+		}
+	]
+}

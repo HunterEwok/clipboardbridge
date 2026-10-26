@@ -168,6 +168,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   drop effect that makes Explorer copy them. A cut is taken as a copy. Received files carry
   the quarantine mark on a Mac and the Mark of the Web on Windows, also those `cbb paste -o`
   saves, and nothing is made executable. A watch request asks for files with `files`.
+- Content in the phones' kits (design.md, "Images and files", step 4): the Swift and Kotlin
+  kits speak `get`, `missing` and the binary chunks, serve the parts of the phone's own copies
+  from a store, and fetch a received copy's parts from the members that serve them, its
+  origin first, checking the hash; their hellos then say `media`. `testdata/interop/content.json`
+  holds Go's frames for them, and the Go test that plays the phone sends a picture each way.
 
 ### Changed
 

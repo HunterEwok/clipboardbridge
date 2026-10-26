@@ -111,6 +111,11 @@ class MemberNode(
     private val evidence: () -> List<Member.Evidence> = { emptyList() },
     /** Gets the evidence a peer sent, with the device ID the caller of serve named it by and its chain (leaf first). */
     private val onEvidence: (String?, List<ByteArray>, Member.Evidence) -> Unit = { _, _, _ -> },
+    /**
+     * The images and files this phone holds whole, which it serves to its
+     * peers (section 4, "Content"); the hellos say so. null serves none.
+     */
+    private val content: ContentStore? = null,
 ) {
     val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
@@ -130,6 +135,9 @@ class MemberNode(
     class Renewal(val cert: ByteArray, val issuer: ByteArray? = null)
 
     class ProtocolException(message: String) : Exception(message)
+
+    /** What fetch throws when the peer does not hold the part whole. */
+    class MissingException : Exception("the device does not have this content")
 
     /** The current event with its age as of now. */
     val current: Member.Event? get() = synchronized(lock) { engine.currentEvent }
@@ -173,6 +181,10 @@ class MemberNode(
         get() = synchronized(lock) {
             conns.mapNotNull { c -> val p = c.peer; val d = c.device; if (p != null && d != null) p to d else null }.toMap()
         }
+
+    /** The device IDs of the connected members whose hellos say they serve images and files, where the caller of serve named them. */
+    val mediaPeers: List<String>
+        get() = synchronized(lock) { conns.filter { it.peerRole != null && it.peerMedia }.mapNotNull { it.peer } }
 
     /** The sync modes the connected members' hellos report, by device ID where the caller of serve named them. */
     val modes: Map<String, String>
@@ -260,9 +272,13 @@ class MemberNode(
         for (c in conns) if (c.peer == peer && c.peerRole != null) c.enqueue(Member.Message.Admin(adminCA))
     }
 
-    /** Sends a text this phone copied to every connected member. */
-    fun send(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY): Member.Event = synchronized(lock) {
-        val e = engine.local(text, kind, via)
+    /**
+     * Sends a text this phone copied to every connected member, or with
+     * media images or files whose content this phone's ContentStore holds,
+     * text their plain-text alternative.
+     */
+    fun send(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY, media: Media.Manifest? = null): Member.Event = synchronized(lock) {
+        val e = engine.local(text, kind, via, media)
         for (c in conns) c.enqueue(Member.Message.Event(e))
         e
     }
@@ -280,7 +296,7 @@ class MemberNode(
             // A phone's keys are in the Secure Enclave or the Keystore.
             val hello = engine.hello(name).copy(
                 records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device, mode = mode(),
-                keyStore = Records.HARDWARE,
+                keyStore = Records.HARDWARE, media = content != null,
             )
             c.enqueue(Member.Message.Hello(role, hello))
         }
@@ -304,6 +320,7 @@ class MemberNode(
                         c.actions = m.hello.actions
                         c.device = m.hello.device?.cleaned
                         c.mode = m.hello.mode
+                        c.peerMedia = m.hello.media
                         c.peerRole = m.role
                         apply(engine.reconcile(m.hello), c)
                         val store = records
@@ -368,6 +385,9 @@ class MemberNode(
                             if (p != null && p.to == c.peer) p.from?.let { from -> p.from = null; from.enqueue(Member.Message.Result(r)) }
                         }
                     }
+                    is Member.Message.Get -> get(c, m.get)
+                    is Member.Message.Missing -> c.fetching(m.get.sha256)?.let { it.missing = true; it.chunks.offer(MISSING) }
+                    is Member.Message.Chunk -> received(c, m)
                     Member.Message.Bye -> return
                     else -> {} // a ping, an event that did not decode, or a newer type
                 }
@@ -380,6 +400,147 @@ class MemberNode(
             c.finish()
             t.close()
         }
+    }
+
+    /**
+     * Fetches the part whose SHA-256 is sum and whose size is size from the
+     * connected peer, from offset on, and passes each piece to sink in
+     * order; it returns once the part is complete and throws when the peer
+     * does not hold it (MissingException), the connection ends, or the
+     * thread is interrupted, which cancels it. It checks nothing of the
+     * content: the caller hashes what sink got. One fetch of a part runs on
+     * a connection at a time.
+     */
+    fun fetch(peer: String, sum: ByteArray, size: Long, offset: Long = 0, sink: (Long, ByteArray) -> Unit) {
+        val c = synchronized(lock) { conns.firstOrNull { it.peer == peer && it.peerRole != null } }
+            ?: throw ProtocolException("the device is not connected")
+        if (!c.peerMedia) throw ProtocolException("the device serves no images or files")
+        val key = sum.toHex()
+        val f = Fetching()
+        synchronized(c.fetches) {
+            if (c.fetches.containsKey(key)) throw ProtocolException("this part is already being fetched from that device")
+            c.fetches[key] = f
+        }
+        val cancel = { c.enqueue(Member.Message.Get(Member.Get(sum, 0, 0))) }
+        try {
+            var at = offset
+            var asked = offset // the end of the ranges asked for
+            fun ask() {
+                while (asked < size && asked - at < FETCH_AHEAD) {
+                    val l = minOf(Member.GET_WINDOW.toLong(), size - asked)
+                    c.enqueue(Member.Message.Get(Member.Get(sum, asked, l)))
+                    asked += l
+                }
+            }
+            ask()
+            while (at < size) {
+                if (f.missing) throw MissingException()
+                val m = f.chunks.poll(500, TimeUnit.MILLISECONDS)
+                    ?: if (c.ended) throw ProtocolException("the connection to the device ended") else continue
+                if (m !is Member.Message.Chunk) continue // MISSING, seen above
+                if (m.data.isEmpty() || m.offset + m.data.size > size) {
+                    cancel()
+                    throw ProtocolException("the device sent a chunk that is not valid")
+                }
+                // Left from a fetch of the part cancelled before: the peer
+                // serves gets in order, so the piece wanted comes later.
+                if (m.offset != at) continue
+                try {
+                    sink(at, m.data)
+                } catch (e: Exception) {
+                    cancel()
+                    throw e
+                }
+                at += m.data.size
+                ask()
+            }
+        } catch (e: InterruptedException) {
+            cancel()
+            throw e
+        } finally {
+            synchronized(c.fetches) { c.fetches.remove(key) }
+        }
+    }
+
+    /** Passes a chunk the peer sent to the fetch of its part, waiting while it is behind; a chunk nobody waits for is dropped. */
+    private fun received(c: Conn, m: Member.Message.Chunk) {
+        val f = c.fetching(m.sha256) ?: return
+        while (!c.ended && c.fetching(m.sha256) === f) if (f.chunks.offer(m, 200, TimeUnit.MILLISECONDS)) return
+    }
+
+    /** Serves a peer's get: it queues the range for the connection's server, or cancels the queued ranges of the part. */
+    private fun get(c: Conn, g: Member.Get) {
+        if (!g.isValid) return // dropped, as Go does
+        val key = g.sha256.toHex()
+        if (g.length == 0L) {
+            synchronized(c.gets) {
+                c.gets.removeAll { it.first.sha256.contentEquals(g.sha256) }
+                if (c.serving) c.cancels[key] = (c.cancels[key] ?: 0) + 1
+            }
+            return
+        }
+        val size = content?.open(g.sha256)?.use { it.size }
+        if (size == null || g.offset >= size) {
+            c.enqueue(Member.Message.Missing(g))
+            return
+        }
+        synchronized(c.gets) {
+            if (c.gets.size >= MAX_GETS) throw ProtocolException("the peer asks for too much at once")
+            c.gets.addLast(g to (c.cancels[key] ?: 0))
+            if (!c.serving) {
+                c.serving = true
+                Thread({ serveGets(c) }, "cbb-content").apply { isDaemon = true; start() }
+            }
+        }
+    }
+
+    /** Reads the ranges the peer asked for, in order, and hands their chunks to the writer, until none is left or the connection ends. */
+    private fun serveGets(c: Conn) {
+        try {
+            while (true) {
+                val (g, cancels) = synchronized(c.gets) {
+                    if (c.gets.isEmpty()) {
+                        c.serving = false
+                        c.cancels.clear()
+                        return
+                    }
+                    c.gets.removeFirst()
+                }
+                val src = content?.open(g.sha256)
+                if (src == null) {
+                    c.enqueue(Member.Message.Missing(g))
+                    continue
+                }
+                if (!src.use { serveRange(c, g, cancels, it) }) return
+            }
+        } catch (e: InterruptedException) {
+            // the connection ended
+        }
+    }
+
+    /** Hands the chunks of one get to the writer; it returns false when the connection ended. */
+    private fun serveRange(c: Conn, g: Member.Get, cancels: Int, src: ContentSource): Boolean {
+        val key = g.sha256.toHex()
+        val end = minOf(src.size, g.offset + g.length)
+        var off = g.offset
+        while (off < end && synchronized(c.gets) { (c.cancels[key] ?: 0) == cancels }) {
+            val n = minOf(Member.CHUNK_SIZE.toLong(), end - off).toInt()
+            val data = try {
+                src.read(off, n)
+            } catch (e: IOException) {
+                c.enqueue(Member.Message.Missing(g))
+                return true
+            }
+            if (!c.putChunk(Member.Message.Chunk(g.sha256, off, data))) return false
+            off += n
+        }
+        return true
+    }
+
+    /** A fetch in progress on a connection: the chunks of its part, and whether the peer said it has none. */
+    private class Fetching {
+        val chunks = LinkedBlockingQueue<Any>(CHUNK_QUEUE)
+        @Volatile var missing = false
     }
 
     /** Says goodbye on every connection and closes it. */
@@ -421,10 +582,35 @@ class MemberNode(
         if (r.changed) engine.currentEvent?.let(onChange)
     }
 
-    /** One connection: a queue the writer drains, and the times of the last read and write for the ping and the timeout. */
+    /**
+     * One connection: the messages and chunks the writer drains, chunks only
+     * while no message waits, and the times of the last read and write for
+     * the ping and the timeout.
+     */
     private class Conn(val transport: FrameTransport, val peer: String?) {
-        private val queue = LinkedBlockingQueue<Any>()
+        private val queue = Object()
+        private val messages = ArrayDeque<Any>()
+        private val chunks = ArrayDeque<Member.Message.Chunk>()
         @Volatile var peerRole: Member.Role? = null
+
+        /** Whether the peer's hello says it serves content. */
+        @Volatile var peerMedia = false
+
+        /** The peer's gets waiting to be served, each with its part's cancels when it came, and whether a server runs; guarded by gets. */
+        val gets = ArrayDeque<Pair<Member.Get, Int>>()
+        var serving = false
+
+        /**
+         * The peer's cancels of each part, by hex SHA-256, so that a range
+         * queued before a cancel ends with its next chunk, while one asked
+         * for after it goes on.
+         */
+        val cancels = HashMap<String, Int>()
+
+        /** The fetches of this side waiting for chunks, by their part's hex SHA-256; guarded by itself. */
+        val fetches = HashMap<String, Fetching>()
+
+        fun fetching(sum: ByteArray): Fetching? = synchronized(fetches) { fetches[sum.toHex()] }
 
         /** The admin key the peer's hello offered. */
         @Volatile var adminKey: ByteArray? = null
@@ -447,8 +633,30 @@ class MemberNode(
         @Volatile private var lastWrite = now()
         private val threads = mutableListOf<Thread>()
 
-        fun enqueue(m: Member.Message) {
-            if (!done) queue.put(m)
+        /** Whether the connection ended or is ending. */
+        val ended: Boolean get() = done
+
+        fun enqueue(m: Member.Message) = synchronized(queue) {
+            if (!done) {
+                messages.addLast(m)
+                queue.notifyAll()
+            }
+        }
+
+        /** Queues a chunk, waiting while CHUNK_QUEUE wait; it returns false once the connection ended. */
+        fun putChunk(c: Member.Message.Chunk): Boolean = synchronized(queue) {
+            while (!done && chunks.size >= CHUNK_QUEUE) queue.wait()
+            if (done) return false
+            chunks.addLast(c)
+            queue.notifyAll()
+            true
+        }
+
+        private fun take(): Any = synchronized(queue) {
+            while (messages.isEmpty() && chunks.isEmpty()) queue.wait()
+            val m = messages.removeFirstOrNull() ?: chunks.removeFirst()
+            queue.notifyAll()
+            m
         }
 
         fun start() {
@@ -462,15 +670,16 @@ class MemberNode(
             finish()
         }
 
-        fun finish() {
+        fun finish() = synchronized(queue) {
             done = true
-            queue.put(END)
+            messages.addLast(END)
+            queue.notifyAll()
         }
 
         private fun runWriter() {
             try {
                 while (true) {
-                    val m = queue.take()
+                    val m = take()
                     if (m === END) break
                     transport.write(Member.encode(m as Member.Message))
                     lastWrite = now()
@@ -507,10 +716,10 @@ class MemberNode(
         }
 
         fun readMessage(): Member.Message {
-            val n = Member.length(transport.read(4))
+            val (n, binary) = Member.header(transport.read(4))
             val body = transport.read(n)
             lastRead = now()
-            return Member.decode(body)
+            return if (binary) Member.decodeChunk(body) else Member.decode(body)
         }
 
         companion object {
@@ -523,3 +732,15 @@ class MemberNode(
 
 /** The most commands a member passes on at a time, as Go. */
 private const val MAX_PASSED = 4096
+
+/** How many chunks a connection holds ready to write, and a fetch ready to take. */
+private const val CHUNK_QUEUE = 8
+
+/** The most gets a peer may have waiting on one connection. */
+private const val MAX_GETS = 64
+
+/** The most bytes a fetch keeps asked for ahead of what it has. */
+private const val FETCH_AHEAD = 4L shl 20
+
+/** What a fetch's queue gets when the peer does not hold the part. */
+private val MISSING = Any()

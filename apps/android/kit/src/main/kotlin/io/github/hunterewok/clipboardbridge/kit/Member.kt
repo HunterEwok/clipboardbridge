@@ -31,6 +31,24 @@ object Member {
     /** Frames larger than this close the connection. */
     const val MAX_FRAME = 7 shl 20
 
+    /** The most bytes of a part one chunk carries (section 4, "Content"). */
+    const val CHUNK_SIZE = 256 shl 10
+
+    /** The most bytes one get asks for. */
+    const val GET_WINDOW = 1 shl 20
+
+    /** A chunk's frame is padded to a multiple of this, so the network learns less of the parts' sizes. */
+    const val CHUNK_PAD = 16 shl 10
+
+    /** The start of a chunk's frame: the part's SHA-256, the offset and the data's length. */
+    const val CHUNK_HEAD = 32 + 8 + 4
+
+    /** The largest chunk frame, padding included; a longer one closes the connection. */
+    const val MAX_CHUNK_FRAME = (CHUNK_HEAD + CHUNK_SIZE + CHUNK_PAD - 1) / CHUNK_PAD * CHUNK_PAD
+
+    /** The top bit of a frame's length marks a binary chunk frame. */
+    private const val BINARY_FRAME = 1L shl 31
+
     /** A side that wrote nothing for this long, in milliseconds, sends a ping. */
     const val PING_EVERY_MS = 5_000L
 
@@ -449,6 +467,23 @@ object Member {
         }
     }
 
+    /** A range of a part of images or files, by its SHA-256 (section 4, "Content"); length 0 cancels the sender's gets of the part. */
+    class Get(val sha256: ByteArray, val offset: Long, val length: Long) {
+        /** Whether a server takes it: a 32-byte hash and a range of at most GET_WINDOW. */
+        val isValid: Boolean get() = sha256.size == 32 && offset >= 0 && length in 0..GET_WINDOW.toLong()
+
+        override fun equals(other: Any?): Boolean =
+            other is Get && sha256.contentEquals(other.sha256) && offset == other.offset && length == other.length
+
+        override fun hashCode(): Int = sha256.contentHashCode()
+
+        fun toJson(): JsonObject = Wire.obj("sha256" to Wire.bytes(sha256), "offset" to Wire.num(offset), "length" to Wire.num(length))
+
+        companion object {
+            fun fromJson(o: JsonObject): Get = Get(o.optBytes("sha256") ?: ByteArray(0), o.optLong("offset") ?: 0, o.optLong("length") ?: 0)
+        }
+    }
+
     /** One message of the protocol. */
     sealed class Message {
         data class Hello(val role: Role, val hello: Member.Hello) : Message()
@@ -496,6 +531,20 @@ object Member {
         /** An attestation of one of the sender's keys (section 17, "Evidence"). */
         data class Evidence(val evidence: Member.Evidence) : Message()
 
+        /** Asks for a range of a part the receiver serves. */
+        data class Get(val get: Member.Get) : Message()
+
+        /** Answers a get for a part the sender does not hold whole, and ends that fetch. */
+        data class Missing(val get: Member.Get) : Message()
+
+        /** A piece of a part, in a binary frame. */
+        class Chunk(val sha256: ByteArray, val offset: Long, val data: ByteArray) : Message() {
+            override fun equals(other: Any?): Boolean =
+                other is Chunk && sha256.contentEquals(other.sha256) && offset == other.offset && data.contentEquals(other.data)
+
+            override fun hashCode(): Int = sha256.contentHashCode()
+        }
+
         /** A type from a newer version, ignored. */
         data class Unknown(val type: String) : Message()
     }
@@ -533,11 +582,15 @@ object Member {
         is Message.Command -> Wire.obj("t" to Wire.str("command"), "command" to m.command.toJson())
         is Message.Result -> Wire.obj("t" to Wire.str("result"), "result" to m.result.toJson())
         is Message.Evidence -> Wire.obj("t" to Wire.str("evidence"), "evidence" to m.evidence.toJson())
+        is Message.Get -> Wire.obj("t" to Wire.str("get"), "get" to m.get.toJson())
+        is Message.Missing -> Wire.obj("t" to Wire.str("missing"), "get" to m.get.toJson())
+        is Message.Chunk -> throw WireException("a chunk is a binary frame")
         is Message.Unknown -> Wire.obj("t" to Wire.str(m.type))
     }
 
-    /** Encodes a message as a frame: the length, then the JSON. */
+    /** Encodes a message as a frame: the length, then the JSON, or for a chunk its binary frame. */
     fun encode(m: Message): ByteArray {
+        if (m is Message.Chunk) return encodeChunk(m)
         val body = Wire.encode(toJson(m))
         if (body.size > MAX_FRAME) throw WireException("frame too large")
         return frame(body)
@@ -554,6 +607,50 @@ object Member {
         val n = header.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
         if (n > max) throw WireException("frame too large")
         return n.toInt()
+    }
+
+    /**
+     * The length a member frame's header announces and whether it is a
+     * binary chunk frame, or an error when too large for its kind.
+     */
+    fun header(header: ByteArray): Pair<Int, Boolean> {
+        if (header.size != 4) throw WireException("short frame header")
+        val n = header.fold(0L) { acc, b -> (acc shl 8) or (b.toLong() and 0xff) }
+        if (n and BINARY_FRAME != 0L) {
+            val l = n and (BINARY_FRAME - 1)
+            if (l > MAX_CHUNK_FRAME) throw WireException("chunk frame too large")
+            return l.toInt() to true
+        }
+        if (n > MAX_FRAME) throw WireException("frame too large")
+        return n.toInt() to false
+    }
+
+    /**
+     * The frame of a chunk: the binary length, the part's SHA-256, the
+     * offset and the data's length, the data, and zeros up to a multiple of
+     * CHUNK_PAD.
+     */
+    fun encodeChunk(c: Message.Chunk): ByteArray {
+        if (c.sha256.size != 32 || c.data.size > CHUNK_SIZE || c.offset < 0) throw WireException("not a valid chunk")
+        val padded = (CHUNK_HEAD + c.data.size + CHUNK_PAD - 1) / CHUNK_PAD * CHUNK_PAD
+        val b = java.nio.ByteBuffer.allocate(4 + padded) // big-endian, zeroed
+        b.putInt((padded.toLong() or BINARY_FRAME).toInt())
+        b.put(c.sha256)
+        b.putLong(c.offset)
+        b.putInt(c.data.size)
+        b.put(c.data)
+        return b.array()
+    }
+
+    /** Reads the body of a chunk frame. */
+    fun decodeChunk(body: ByteArray): Message.Chunk {
+        if (body.size < CHUNK_HEAD) throw WireException("a chunk is too short")
+        val b = java.nio.ByteBuffer.wrap(body)
+        val sum = ByteArray(32).also { b.get(it) }
+        val offset = b.getLong()
+        val n = b.getInt()
+        if (offset < 0 || n < 0 || n > CHUNK_SIZE || CHUNK_HEAD + n > body.size) throw WireException("a chunk's length is not valid")
+        return Message.Chunk(sum, offset, body.copyOfRange(CHUNK_HEAD, CHUNK_HEAD + n))
     }
 
     /**
@@ -603,6 +700,8 @@ object Member {
                 "command" -> o.optObject("command")?.let { Message.Command(Record.fromJson(it)) } ?: Message.Unknown(t)
                 "result" -> o.optObject("result")?.let { Message.Result(CommandResult.fromJson(it)) } ?: Message.Unknown(t)
                 "evidence" -> o.optObject("evidence")?.let { Message.Evidence(Evidence.fromJson(it)) } ?: Message.Unknown(t)
+                "get" -> o.optObject("get")?.let { Message.Get(Get.fromJson(it)) } ?: Message.Unknown(t)
+                "missing" -> o.optObject("get")?.let { Message.Missing(Get.fromJson(it)) } ?: Message.Unknown(t)
                 else -> Message.Unknown(t)
             }
         } catch (e: WireTypeException) {

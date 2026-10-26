@@ -24,7 +24,9 @@
 // prints "key <SubjectPublicKeyInfo, base64>", reads "cert <DER, base64>"
 // and "ca <DER, base64>" from standard input, dials the Go member PEER with
 // TLS, sends "from swift" (the Swift tool's text, which Go waits for),
-// waits for "from go", and prints "ok". Test use only.
+// waits for "from go", then for Go's picture "go picture", which it
+// fetches, sends its bytes reversed as "phone picture", which Go fetches,
+// waits for "done", and prints "ok". Test use only.
 
 package io.github.hunterewok.clipboardbridge.kit
 
@@ -93,20 +95,33 @@ private fun memberTLS(host: String, port: Int, peer: String) {
     val tls = TLSTransport.dial(host, port, Member.ALPN, key.keyPair.private, listOf(cert)) {
         runCatching { GroupCertificates.verifyMember(it[0], ca, Instant.now()) }.getOrNull() == peer
     }
-    val changes = LinkedBlockingQueue<String>()
-    val node = MemberNode(SyncEngine(me, HybridClock()), "Android", onChange = { changes.add(it.text) })
-    val serving = Thread { node.serve(tls) }.apply { start() }
+    val changes = LinkedBlockingQueue<Member.Event>()
+    val store = MemoryContent()
+    val node = MemberNode(SyncEngine(me, HybridClock()), "Android", onChange = { changes.add(it) }, content = store)
+    val serving = Thread { node.serve(tls, peer) }.apply { start() }
     val deadline = System.nanoTime() + 15_000_000_000L
     while (node.peers == 0) {
         if (System.nanoTime() > deadline) fail("no hello within 15 s")
         Thread.sleep(50)
     }
     node.send("from swift", Member.Kind.TEXT) // the text Go's test waits for
-    while (true) {
-        val left = deadline - System.nanoTime()
-        val t = changes.poll(maxOf(left, 0), TimeUnit.NANOSECONDS) ?: fail("no \"from go\" within 15 s")
-        if (t == "from go") break
+    fun await(text: String): Member.Event {
+        while (true) {
+            val left = deadline - System.nanoTime()
+            val e = changes.poll(maxOf(left, 0), TimeUnit.NANOSECONDS) ?: fail("no \"$text\" within 15 s")
+            if (e.text == text) return e
+        }
     }
+    await("from go")
+    val picture = await("go picture")
+    val part = picture.media?.parts?.singleOrNull() ?: fail("Go's picture has no part")
+    val png = try {
+        Content.bytes(node, picture, part)
+    } catch (e: Exception) {
+        fail("fetching Go's picture: $e")
+    }
+    node.send("phone picture", Member.Kind.TEXT, media = Content.manifest(store, listOf("image/png" to png.reversedArray())))
+    await("done")
     println("ok")
     System.out.flush()
     node.closeAll()

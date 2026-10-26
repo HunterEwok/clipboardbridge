@@ -11,6 +11,21 @@ public enum Member {
     public static let alpn = "clipboardbridge/1"
     /// Frames larger than this close the connection.
     public static let maxFrame = 7 << 20
+    /// The most bytes of a part one chunk carries (section 4, "Content").
+    public static let chunkSize = 256 << 10
+    /// The most bytes one get asks for.
+    public static let getWindow: Int64 = 1 << 20
+    /// A chunk's frame is padded to a multiple of this, so the network
+    /// learns less of the parts' sizes.
+    public static let chunkPad = 16 << 10
+    /// The start of a chunk's frame: the part's SHA-256, the offset and the
+    /// data's length.
+    public static let chunkHead = 32 + 8 + 4
+    /// The largest chunk frame, padding included; a longer one closes the
+    /// connection.
+    public static let maxChunkFrame = (chunkHead + chunkSize + chunkPad - 1) / chunkPad * chunkPad
+    /// The top bit of a frame's length marks a binary chunk frame.
+    static let binaryFrame: UInt32 = 1 << 31
     /// A side that wrote nothing for this long sends a ping.
     public static let pingEvery: TimeInterval = 5
     /// A connection silent for this long is dead.
@@ -458,6 +473,36 @@ public enum Member {
     }
 
     /// One message of the protocol.
+    /// A range of a part of images or files, by its SHA-256 (section 4,
+    /// "Content"); length 0 cancels the sender's gets of the part.
+    public struct Get: Codable, Equatable, Sendable {
+        public var sha256: Data
+        public var offset: Int64
+        public var length: Int64
+
+        public init(sha256: Data, offset: Int64, length: Int64) { (self.sha256, self.offset, self.length) = (sha256, offset, length) }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sha256 = try c.decodeIfPresent(Data.self, forKey: .sha256) ?? Data()
+            offset = try c.decodeIfPresent(Int64.self, forKey: .offset) ?? 0
+            length = try c.decodeIfPresent(Int64.self, forKey: .length) ?? 0
+        }
+
+        /// Whether a server takes it: a 32-byte hash and a range of at most
+        /// getWindow.
+        public var isValid: Bool { sha256.count == 32 && offset >= 0 && (0...Member.getWindow).contains(length) }
+    }
+
+    /// A piece of a part, in a binary frame.
+    public struct Chunk: Equatable, Sendable {
+        public var sha256: Data
+        public var offset: Int64
+        public var data: Data
+
+        public init(sha256: Data, offset: Int64, data: Data) { (self.sha256, self.offset, self.data) = (sha256, offset, data) }
+    }
+
     public enum Message: Equatable, Sendable {
         case hello(Role, Hello)
         /// An event; nil when it did not decode, for example from a newer
@@ -486,6 +531,13 @@ public enum Member {
         case result(CommandResult)
         /// An attestation of one of the sender's keys (section 17).
         case evidence(Evidence)
+        /// Asks for a range of a part the receiver serves.
+        case get(Get)
+        /// Answers a get for a part the sender does not hold whole, and
+        /// ends that fetch.
+        case missing(Get)
+        /// A piece of a part, in a binary frame.
+        case chunk(Chunk)
         /// A type from a newer version, ignored.
         case unknown(String)
     }
@@ -494,8 +546,10 @@ public enum Member {
         case tooLarge, short, notAMessage, badHello(String)
     }
 
-    /// Encodes a message as a frame: the length, then the JSON.
+    /// Encodes a message as a frame: the length, then the JSON, or for a
+    /// chunk its binary frame.
     public static func encode(_ m: Message) throws -> Data {
+        if case let .chunk(c) = m { return try encode(chunk: c) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         let body = try enc.encode(WireOut(m))
@@ -510,6 +564,47 @@ public enum Member {
         let n = header.reduce(0) { $0 << 8 | Int($1) }
         guard n <= maxFrame else { throw WireError.tooLarge }
         return n
+    }
+
+    /// The length a member frame's header announces and whether it is a
+    /// binary chunk frame, or an error when too large for its kind.
+    public static func header(_ header: Data) throws -> (length: Int, binary: Bool) {
+        guard header.count == 4 else { throw WireError.short }
+        let n = header.reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+        if n & binaryFrame != 0 {
+            let l = Int(n & ~binaryFrame)
+            guard l <= maxChunkFrame else { throw WireError.tooLarge }
+            return (l, true)
+        }
+        guard n <= maxFrame else { throw WireError.tooLarge }
+        return (Int(n), false)
+    }
+
+    /// The frame of a chunk: the binary length, the part's SHA-256, the
+    /// offset and the data's length, the data, and zeros up to a multiple
+    /// of chunkPad.
+    public static func encode(chunk c: Chunk) throws -> Data {
+        guard c.sha256.count == 32, c.data.count <= chunkSize, c.offset >= 0 else { throw WireError.notAMessage }
+        let padded = (chunkHead + c.data.count + chunkPad - 1) / chunkPad * chunkPad
+        var f = Data(capacity: 4 + padded)
+        func put<T: FixedWidthInteger>(_ v: T) { withUnsafeBytes(of: v.bigEndian) { f.append(contentsOf: $0) } }
+        put(UInt32(padded) | binaryFrame)
+        f.append(c.sha256)
+        put(UInt64(c.offset))
+        put(UInt32(c.data.count))
+        f.append(c.data)
+        f.append(Data(count: 4 + padded - f.count))
+        return f
+    }
+
+    /// Reads the body of a chunk frame.
+    public static func decodeChunk(body: Data) throws -> Chunk {
+        let b = [UInt8](body)
+        guard b.count >= chunkHead else { throw WireError.short }
+        let offset = b[32..<40].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        let n = Int(b[40..<44].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
+        guard offset <= UInt64(Int64.max), n <= chunkSize, chunkHead + n <= b.count else { throw WireError.notAMessage }
+        return Chunk(sha256: Data(b[0..<32]), offset: Int64(offset), data: Data(b[chunkHead..<(chunkHead + n)]))
     }
 
     /// Decodes the body of a frame. A hello whose role is unknown or whose
@@ -538,6 +633,8 @@ public enum Member {
         case "command": return w.command?.value.map { .command($0) } ?? .unknown(w.t)
         case "result": return w.result?.value.map { .result($0) } ?? .unknown(w.t)
         case "evidence": return w.evidence?.value.map { .evidence($0) } ?? .unknown(w.t)
+        case "get": return w.get?.value.map { .get($0) } ?? .unknown(w.t)
+        case "missing": return w.get?.value.map { .missing($0) } ?? .unknown(w.t)
         default: return .unknown(w.t)
         }
     }
@@ -579,13 +676,14 @@ public enum Member {
         var command: Lenient<Record>?
         var result: Lenient<CommandResult>?
         var evidence: Lenient<Evidence>?
+        var get: Lenient<Get>?
     }
 
     struct WireOut: Encodable {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence, get }
         enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, media }
 
         func encode(to encoder: Encoder) throws {
@@ -638,6 +736,14 @@ public enum Member {
             case let .evidence(e):
                 try c.encode("evidence", forKey: .t)
                 try c.encode(e, forKey: .evidence)
+            case let .get(g):
+                try c.encode("get", forKey: .t)
+                try c.encode(g, forKey: .get)
+            case let .missing(g):
+                try c.encode("missing", forKey: .t)
+                try c.encode(g, forKey: .get)
+            case .chunk:
+                throw WireError.notAMessage // a binary frame
             case let .unknown(t): try c.encode(t, forKey: .t)
             }
         }

@@ -115,9 +115,13 @@ class SyncEngine(
     fun hello(name: String?, wallMS: Long = System.currentTimeMillis()): Member.Hello =
         Member.Hello(wallMS = wallMS, current = currentEvent?.mark, name = name)
 
-    /** Makes an event of a text this phone copied or sent, which becomes the current event. It goes to every connection. */
-    fun local(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY): Member.Event {
-        val e = Member.Event(newID(), device, via, clock.now(), 0, kind, text)
+    /**
+     * Makes an event of a text this phone copied or sent, or with media of
+     * images or files and text their plain-text alternative, which becomes
+     * the current event. It goes to every connection.
+     */
+    fun local(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY, media: Media.Manifest? = null): Member.Event {
+        val e = Member.Event(newID(), device, via, clock.now(), 0, if (media != null) Member.Kind.MEDIA else kind, text, media)
         remember(e.id)
         current = e
         copiedAt = uptimeMS()

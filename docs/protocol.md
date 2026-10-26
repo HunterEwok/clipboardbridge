@@ -364,7 +364,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 | `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
-| `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member, the phones for now) |
+| `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
 
 ### Device
 
