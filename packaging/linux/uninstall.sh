@@ -6,9 +6,10 @@
 #
 #   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
-# It stops the service and removes the binary, the unit, the autostart entry,
-# the tmux and console configuration, the settings in /etc/clipboardbridge and the
-# firewall rules that install.sh added, and only those. The device's keys and
+# It stops the service and the desktop agents and removes the binary, the
+# unit, the agent's user unit and autostart entry, the tmux and console
+# configuration, the settings in /etc/clipboardbridge and the firewall rules
+# that install.sh added, and only those. The device's keys and
 # group, in /var/lib/clipboardbridge, stay for a reinstall unless --purge; the
 # clipboardbridge user and group stay too, since files may still belong to them.
 set -eu
@@ -45,8 +46,17 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
 	systemctl disable --now clipboardbridge.service >/dev/null 2>&1 || true
 fi
-# The desktop agent runs in each user's session from the autostart entry; it
-# stops here too, or it would keep the clipboard until the user logs out.
+# The desktop agent runs in each user's session, from the user unit or the
+# autostart entry; it stops here too, or it would keep the clipboard until
+# the user logs out.
+if command -v systemctl >/dev/null 2>&1; then
+	systemctl --global disable clipboardbridge-agent.service >/dev/null 2>&1 || true
+	for dir in /run/user/*/systemd; do
+		[ -d "$dir" ] || continue
+		user=$(stat -c %U "$dir") || continue
+		systemctl --user -M "$user@" stop clipboardbridge-agent.service >/dev/null 2>&1 || true
+	done
+fi
 if command -v pkill >/dev/null 2>&1; then
 	pkill -x -f '/usr/local/bin/cbb agent' >/dev/null 2>&1 || true
 fi
@@ -58,6 +68,7 @@ fi
 rm -f /etc/systemd/system/clipboardbridge.service.d/away.conf /etc/systemd/system/clipboardbridge.service.d/cgnat.conf
 rmdir /etc/systemd/system/clipboardbridge.service.d 2>/dev/null || true
 rm -f /etc/systemd/system/clipboardbridge.service /etc/xdg/autostart/clipboardbridge-desktop.desktop \
+	/etc/systemd/user/clipboardbridge-agent.service \
 	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb
 if command -v systemctl >/dev/null 2>&1; then
 	systemctl daemon-reload || true

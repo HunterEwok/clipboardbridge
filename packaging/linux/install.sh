@@ -9,7 +9,7 @@
 # The full member's archive and the lite member's
 # (clipboardbridge-lite-linux-*) both carry this script, each with its own systemd unit beside it; cbb version
 # tells the two apart. It installs the binary to /usr/local/bin, the service
-# user, the systemd unit, for the full member the desktop autostart entry,
+# user, the systemd unit, for the full member the desktop autostart entry and user unit,
 # and the tmux configuration, adds the user
 # who ran sudo to the clipboardbridge group, and starts or restarts the service.
 # --console also starts tmux after a login on the text console. --port moves
@@ -187,9 +187,13 @@ fi
 install -m 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.service
 # Desktop sessions start the connector with the session; the lite member has
 # none.
+# Desktops with graphical-session.target start it as a user unit, which the
+# installer restarts after an update (below); others from the autostart entry.
 if [ "$kind" = full ]; then
-	install -d -m 0755 /etc/xdg/autostart
+	install -d -m 0755 /etc/xdg/autostart /etc/systemd/user
 	install -m 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
+	install -m 0644 "$here/clipboardbridge-agent.service" /etc/systemd/user/clipboardbridge-agent.service
+	systemctl --global enable clipboardbridge-agent.service >/dev/null 2>&1 || true
 fi
 
 # tmux reads /etc/tmux.conf; source the clipboardbridge part from there once.
@@ -290,6 +294,25 @@ answers() { # cbb
 	return 1
 }
 answers /usr/local/bin/cbb || true
+
+# The agents running in desktop sessions still run the old binary: stop
+# them, and start the user unit again in each session that has one, so the
+# clipboard links again without logging out and in. A desktop without
+# graphical-session.target starts the agent again at its next login.
+if [ "$kind" = full ]; then
+	if command -v pkill >/dev/null 2>&1; then
+		pkill -x -f '/usr/local/bin/cbb agent' >/dev/null 2>&1 || true
+	fi
+	for dir in /run/user/*/systemd; do
+		[ -d "$dir" ] || continue
+		user=$(stat -c %U "$dir") || continue
+		if systemctl --user -M "$user@" is-active -q graphical-session.target 2>/dev/null; then
+			systemctl --user -M "$user@" daemon-reload >/dev/null 2>&1 || true
+			systemctl --user -M "$user@" restart clipboardbridge-agent.service >/dev/null 2>&1 ||
+				echo "install.sh: the desktop agent of $user did not start again; it starts at their next login" >&2
+		fi
+	done
+fi
 # A limit that cbb global wrote, perhaps by an earlier version (which let
 # the service reach every address), is brought in line with what the
 # service asks for now, once it answers.

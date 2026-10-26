@@ -98,6 +98,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On a Linux desktop that starts `graphical-session.target` (GNOME, KDE Plasma) the desktop
+  agent runs as the user unit `clipboardbridge-agent.service`, which the installer starts
+  again in each running session after an update: the clipboard links again without logging
+  out and in. Other desktops keep the autostart entry, and a lock keeps it to one agent a
+  session.
 - A member in the Docker image holds none of the group's keys: `cbb new`, `cbb upgrade` and
   `cbb takeover` refuse there, and it offers no admin key, so the root cannot make it an
   admin and it cannot be the hub, since its keys would be in a file in the volume. The
