@@ -40,6 +40,10 @@ func TestTmux(t *testing.T) {
 	}
 
 	attach := exec.Command("script", "-q", "-c", "tmux "+strings.Join(tm.Args, " ")+" attach -t test", "/dev/null")
+	// tmux attaches only with a terminal type it knows, which CI has not.
+	attach.Env = append(os.Environ(), "TERM=xterm")
+	var attachOut strings.Builder
+	attach.Stdout, attach.Stderr = &attachOut, &attachOut
 	stdin, err := attach.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -48,11 +52,16 @@ func TestTmux(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { stdin.Close(); attach.Process.Kill(); attach.Wait() }()
+	attached := false
 	for range 100 {
 		if o, _ := tm.output(ctx, "list-clients", "-F", "#{client_name}"); o != "" {
+			attached = true
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if !attached {
+		t.Fatalf("no tmux client attached: %s", attachOut.String())
 	}
 
 	tricky := `it's "q" $HOME; #x ~ \ {} 'end'` + "\ttab"
