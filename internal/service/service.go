@@ -179,6 +179,7 @@ type Service struct {
 	actionLimit    remotepaste.Limiter // quick actions per sender, as remote pastes
 	restart        chan struct{}       // an admin had the service restart (actions.Restart)
 	lastSeq        uint64
+	relaySeq       uint64                       // the last event passed on without a write (relayed)
 	pending        *node.Write                  // a write that no watcher got, for the next one
 	mediaWait      *node.Write                  // a copy of images or files the watchers that take them get once it has arrived
 	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
@@ -419,7 +420,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	tunKey, tunPSK := tunnelKey(tun)
 	nd := node.New(node.Config{
 		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
-		OnWrite: s.write, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
+		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Allow: s.allow,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,

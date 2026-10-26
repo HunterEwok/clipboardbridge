@@ -180,6 +180,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   and in the app's folder in Files on the iPhone. Share sends images and files: up to 100 MiB
   on Android, 50 MB from the iPhone's share extension, which stays until a computer fetched
   them.
+- Images and files away from home (design.md, "Images and files", step 5): the hub that
+  serves fetches each copy of the group within its limit away from home, also in a mode that
+  keeps its own clipboard out, and serves it to the members that reach only it, both ways.
+  Through its tunnel it serves only copies within that limit (`cbb config max-copy-away`),
+  so the hub's limit caps its whole star; a larger copy stays at home and the hub logs it.
 
 ### Changed
 

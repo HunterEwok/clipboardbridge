@@ -543,16 +543,22 @@ application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
 - Events, hellos, pings and records go first; chunks go only while the event queue is empty
   and do not count against the 256-message queue limit, so text keeps flowing during a large
   transfer.
-- Content is addressed by its hash, so any member that has it serves it, and a member asked
-  for a part it lacks fetches it and passes the chunks on as they arrive. Away from home that
-  is the hub serving its clients, which never talk to each other.
+- Content is addressed by its hash, so any member that holds it whole serves it. Away from
+  home the hub serves its clients, which never talk to each other: the hub that serves
+  fetches each copy of the group within its limit away from home, whatever its own mode,
+  and serves it from its cache once it is whole; a client asked too early hears `missing`
+  and asks again 2 seconds later. Through its tunnel the hub serves only copies within its
+  limit away from home, so that limit caps its whole star; a copy over it stays at home, and
+  the hub logs that. (Passing chunks on as they arrive, before the hub holds the whole part,
+  may come later.)
 - A receiver fetches in the background once the event is the group's current live event and
   fits its limit, and writes its clipboard only when every part has arrived and matches its
   hash, so a paste never gives half a file; a newer copy stops the fetch. Progress shows in
   `cbb status` and the apps' notification.
 - Images and files follow the device's sync mode ("Sync modes", D-55) like text: a device
   fetches only in a mode that takes the group's copies into its clipboard, and offers its
-  own only in a mode that sends them.
+  own only in a mode that sends them. The hub that serves is the one exception: it fetches
+  to pass copies on, but writes its clipboard only as its mode says.
 - Android fetches images by itself, as it takes texts; files wait for the button, which
   saves them in Downloads. The iPhone fetches on its button, and an image by itself while the
   app runs; its button saves files in the app's folder in Files. Both phones serve their own
@@ -598,7 +604,7 @@ multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
 
-Steps 1 to 3 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+Steps 1 to 5 are built (docs/protocol.md, section 4, "Media" and "Content", and the
 watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
 over the control socket and saves them in the user's cache (`~/.cache/clipboardbridge/received`,
 `~/Library/Caches` on a Mac, `%LocalAppData%` on Windows), a folder for each copy readable
