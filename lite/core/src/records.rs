@@ -34,6 +34,11 @@ const VERSION: i64 = 1;
 /// The most bytes of a command's body: a hub command carries up to 256
 /// clients' keys.
 const MAX_COMMAND_BODY: usize = 64 << 10;
+/// A paste command's body may be larger: it carries up to 1 MiB of text.
+const MAX_PASTE_BODY: usize = 2 << 20;
+/// The longest text of a paste command, and of one typed key by key.
+pub const MAX_PASTE_TEXT: usize = 1 << 20;
+pub const MAX_TYPE_TEXT: usize = 4 << 10;
 /// How long a command lives at most after it was signed.
 pub const COMMAND_LIFETIME_MS: i64 = 30_000;
 /// How far ahead of the receiver's clock a command's time may be.
@@ -44,7 +49,7 @@ pub const COMMAND_AHEAD_MS: i64 = 60_000;
 pub struct Command {
     #[serde(default)]
     v: i64,
-    /// `mode` or `hub`.
+    /// `mode`, `hub`, `paste` or `paste-off`.
     #[serde(rename = "type", default)]
     pub kind: String,
     #[serde(default)]
@@ -61,12 +66,21 @@ pub struct Command {
     #[serde(default)]
     pub expires_ms: i64,
     /// In a mode command, the mode; not checked against the known modes
-    /// here.
+    /// here. In a paste command, `paste` or `type`.
     #[serde(default)]
     pub mode: String,
     /// In a hub command, the order.
     #[serde(default)]
     pub hub: Option<serde_json::Value>,
+    /// In a paste command: press Enter after the text.
+    #[serde(default)]
+    pub enter: bool,
+    /// In a paste command: `text` or `secret`.
+    #[serde(rename = "kind", default)]
+    pub paste_kind: String,
+    /// In a paste command: the text.
+    #[serde(default)]
+    pub text: String,
 }
 
 impl Command {
@@ -78,10 +92,18 @@ impl Command {
             return Err(Error::msg("the command has no valid ID"));
         }
         let hub = self.hub.as_ref().is_some_and(|h| !h.is_null());
+        let paste = self.enter || !self.paste_kind.is_empty() || !self.text.is_empty();
+        if paste && self.kind != "paste" {
+            return Err(Error::msg(format!("a {} command carries a paste", self.kind)));
+        }
         match self.kind.as_str() {
             "mode" if self.mode.is_empty() || hub => return Err(Error::msg("a mode command names no mode")),
             "hub" if !hub || !self.mode.is_empty() => return Err(Error::msg("a hub command has no order")),
-            "mode" | "hub" => {}
+            "paste-off" if hub || !self.mode.is_empty() => {
+                return Err(Error::msg("a paste-off command carries an order"));
+            }
+            "paste" => self.check_paste(hub)?,
+            "mode" | "hub" | "paste-off" => {}
             k => return Err(Error::msg(format!("unknown command type {k:?}"))),
         }
         if !certs::is_id(&self.to) {
@@ -89,6 +111,27 @@ impl Command {
         }
         if self.expires_ms <= self.time_ms || self.expires_ms - self.time_ms > COMMAND_LIFETIME_MS {
             return Err(Error::msg("the command's lifetime is not valid"));
+        }
+        Ok(())
+    }
+
+    fn check_paste(&self, hub: bool) -> Result<()> {
+        let limit = match self.mode.as_str() {
+            "paste" => MAX_PASTE_TEXT,
+            "type" => MAX_TYPE_TEXT,
+            m => return Err(Error::msg(format!("a paste command's way {m:?} is not paste or type"))),
+        };
+        if hub {
+            return Err(Error::msg("a paste command carries a hub order"));
+        }
+        if self.paste_kind != "text" && self.paste_kind != "secret" {
+            return Err(Error::msg("a paste command's kind is not text or secret"));
+        }
+        if self.text.is_empty() {
+            return Err(Error::msg("a paste command has no text"));
+        }
+        if self.text.len() > limit {
+            return Err(Error::msg(format!("a paste command's text is longer than {limit} bytes")));
         }
         Ok(())
     }
@@ -1003,10 +1046,13 @@ impl Records {
     /// nor frozen), it is for `me` in this group, it has not expired and it
     /// was not signed in the future. The caller keeps the replay cache.
     pub fn verify_command(&self, c: &Record, me: &str, now_ms: i64) -> Result<Command> {
-        if c.body.len() > MAX_COMMAND_BODY {
+        if c.body.len() > MAX_PASTE_BODY {
             return Err(Error::msg("the command is too large"));
         }
         let body: Command = serde_json::from_slice(&c.body).context("a command does not decode")?;
+        if body.kind != "paste" && c.body.len() > MAX_COMMAND_BODY {
+            return Err(Error::msg("the command is too large"));
+        }
         body.check()?;
         if body.group != self.tag {
             return Err(Error::msg("the command is for another group"));

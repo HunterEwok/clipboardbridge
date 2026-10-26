@@ -170,8 +170,11 @@ type HubShare struct {
 
 // Result answers a command (docs/protocol.md, section 15).
 type Result struct {
-	ID     string `json:"id"`     // the command's ID
-	Status string `json:"status"` // ResultDone, ResultRefused or ResultFailed
+	ID string `json:"id"` // the command's ID
+	// By is the device that answered, the command's receiver; a member
+	// that passes the result back leaves it as it is.
+	By     group.DeviceID `json:"by,omitempty"`
+	Status string         `json:"status"` // ResultDone, ResultRefused or ResultFailed
 	// Reason says why it was refused or failed, for the sender to show.
 	Reason string `json:"reason,omitempty"`
 	// Tunnel, in the result of a hub command that was carried out, is the

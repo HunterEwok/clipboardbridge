@@ -130,15 +130,28 @@ func Listen(cfg Config) (*Relay, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	tcp, err := net.Listen("tcp", cfg.Listen)
-	if err != nil {
-		return nil, fmt.Errorf("relay: %w", err)
-	}
-	port := tcp.Addr().(*net.TCPAddr).Port
-	hub, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: cfg.Keys.WireGuard, Addr: Addr, ListenPort: port, Logf: logf, Verbose: cfg.Verbose})
-	if err != nil {
+	// The tunnel listens on the UDP port of the same number. Where any free
+	// port will do, one whose UDP twin is taken or reserved (Windows keeps
+	// ranges for Hyper-V) is given up for another.
+	_, wanted, _ := net.SplitHostPort(cfg.Listen)
+	var (
+		tcp net.Listener
+		hub *tunnel.Hub
+	)
+	for try := 0; ; try++ {
+		var err error
+		if tcp, err = net.Listen("tcp", cfg.Listen); err != nil {
+			return nil, fmt.Errorf("relay: %w", err)
+		}
+		port := tcp.Addr().(*net.TCPAddr).Port
+		hub, err = tunnel.StartHub(tunnel.HubConfig{PrivateKey: cfg.Keys.WireGuard, Addr: Addr, ListenPort: port, Logf: logf, Verbose: cfg.Verbose})
+		if err == nil {
+			break
+		}
 		tcp.Close()
-		return nil, fmt.Errorf("relay: %w", err)
+		if wanted != "0" || try == 4 {
+			return nil, fmt.Errorf("relay: %w", err)
+		}
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},

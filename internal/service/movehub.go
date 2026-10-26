@@ -237,7 +237,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	res, err := nd.SendCommand(cctx, group.DeviceID(d.ID), cmd, body.ID)
+	res, err := nd.SendCommand(cctx, group.DeviceID(d.ID), cmd, body.ID, false)
 	if err != nil {
 		return fmt.Errorf("moving the hub to %s: %w", d.Name, err)
 	}

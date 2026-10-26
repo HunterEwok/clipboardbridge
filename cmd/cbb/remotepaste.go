@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+)
+
+// cmdPasteOn has another member put a text where its focus is (design.md,
+// "Remote paste"): standard input, or this member's clipboard when standard
+// input is a terminal.
+func cmdPasteOn(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("paste", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	on := fs.String("on", "", "the device, by name or ID, to paste on (on an admin)")
+	typed := fs.Bool("type", false, "type the text key by key instead of pasting it (at most 4 KiB)")
+	enter := fs.Bool("enter", false, "press Enter after the text, where the device's user allowed it")
+	secret := fs.Bool("secret", false, "send the text as a secret: not logged, and the clipboard there is cleared after")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if fs.NArg() != 0 || *on == "" {
+		fmt.Fprintln(stderr, "usage: cbb paste -on DEVICE [-type] [-enter] [-secret] < text")
+		return 2
+	}
+	h := control.Header{Op: control.OpPasteOn, Device: *on, Method: group.PasteByClipboard, Enter: *enter, Kind: control.KindText}
+	if *typed {
+		h.Method = group.PasteByTyping
+	}
+	if *secret {
+		h.Kind = control.KindSecret
+	}
+	var text []byte
+	if f, ok := stdin.(*os.File); ok && isTerminal(f) {
+		c, err := control.DialFor(control.OpPaste)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpPaste}})
+		c.Close()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		text = m.Payload
+		if m.Kind == control.KindSecret {
+			h.Kind = control.KindSecret
+		}
+	} else {
+		var err error
+		if text, err = io.ReadAll(io.LimitReader(stdin, maxText+1)); err != nil {
+			return fail(stderr, err)
+		}
+		if len(text) > maxText {
+			return fail(stderr, errors.New("the text is larger than 1 MiB"))
+		}
+	}
+	if *typed && len(text) > group.MaxTypeText {
+		return fail(stderr, fmt.Errorf("the text is longer than %d bytes, too long to type; paste it without -type", group.MaxTypeText))
+	}
+	c, err := control.DialFor(h.Op)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: h, Payload: text}); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "Pasted on %s.\n", *on)
+	return 0
+}
+
+// isTerminal reports whether f is a terminal rather than a pipe or a file.
+func isTerminal(f *os.File) bool {
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// cmdPasteReceive shows or sets remote paste on this device, or, on an
+// admin, turns it off on another device or every device.
+func cmdPasteReceive(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("paste-receive", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	enter := fs.Bool("enter", false, "with on: let a paste press Enter")
+	console := fs.Bool("console", false, "with on: let pastes reach text consoles and root's tmux")
+	on := fs.String("on", "", "with off, on an admin: the device, by name or ID, to turn remote paste off on")
+	all := fs.Bool("all", false, "with off, on an admin: turn remote paste off on every device of the group")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	usage := "usage: cbb paste-receive [on [-enter] [-console] | off [-on DEVICE | -all]]"
+	if fs.NArg() > 1 {
+		fmt.Fprintln(stderr, usage)
+		return 2
+	}
+	h := control.Header{Op: control.OpStatus}
+	if fs.NArg() == 1 {
+		h = control.Header{Op: control.OpReceive, Name: fs.Arg(0), Enter: *enter, Console: *console, Device: *on, All: *all}
+	} else if *enter || *console || *on != "" || *all {
+		fmt.Fprintln(stderr, usage)
+		return 2
+	}
+	c, err := control.DialFor(h.Op)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: h})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	switch {
+	case *all:
+		fmt.Fprintln(stdout, "Remote paste is off on every device of the group.")
+		return 0
+	case *on != "":
+		fmt.Fprintf(stdout, "Remote paste is off on %s.\n", *on)
+		return 0
+	}
+	if m.Status == nil || m.Status.Paste == nil {
+		return fail(stderr, errors.New("this device is in no group"))
+	}
+	fmt.Fprintln(stdout, pasteLine(m.Status.Paste))
+	return 0
+}
+
+// pasteLine says how remote paste stands on this device.
+func pasteLine(p *control.Paste) string {
+	if !p.On {
+		return "Remote paste is off: the group's admins cannot paste here."
+	}
+	line := "Remote paste is on: the group's admins may paste here"
+	switch {
+	case p.Enter && p.Console:
+		line += ", press Enter, and reach text consoles."
+	case p.Enter:
+		line += " and press Enter."
+	case p.Console:
+		line += " and reach text consoles, without Enter."
+	default:
+		line += ", without Enter."
+	}
+	if len(p.Targets) == 0 {
+		return line + " Nothing here can paste yet: the desktop connector, the Mac app or the tmux and console helpers do it."
+	}
+	return line
+}

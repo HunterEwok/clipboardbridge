@@ -5,6 +5,7 @@ package group
 
 import (
 	"crypto/x509"
+	"strings"
 	"testing"
 	"time"
 )
@@ -111,5 +112,53 @@ func TestHubCommand(t *testing.T) {
 	mixed.Mode = "own"
 	if _, err := SignCommand(mixed, pg.root.Key); err == nil {
 		t.Error("a hub command with a mode was signed")
+	}
+}
+
+func TestPasteCommand(t *testing.T) {
+	pg := newPhoneGroup(t)
+	s := NewRecords(pg.root.Cert)
+	to, now := NewDeviceID(), time.UnixMilli(1_761_400_000_000)
+	body := func(mode, kind, text string) CommandBody {
+		return CommandBody{Type: CommandPaste, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Mode: mode, Kind: kind, Text: text, Enter: true}
+	}
+	c, err := SignCommand(body(PasteByClipboard, "text", "ls -l"), pg.a.Key, pg.a.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.VerifyCommand(c, to, now)
+	if err != nil || got.Text != "ls -l" || !got.Enter || got.Mode != PasteByClipboard {
+		t.Fatalf("the paste command: %+v, %v", got, err)
+	}
+	// A megabyte of text that JSON escapes still fits.
+	big := strings.Repeat("<", MaxPasteText)
+	if c, err := SignCommand(body(PasteByClipboard, "secret", big), pg.root.Key); err != nil {
+		t.Errorf("a long paste: %v", err)
+	} else if _, err := s.VerifyCommand(c, to, now); err != nil {
+		t.Errorf("a long paste: %v", err)
+	}
+	for what, b := range map[string]CommandBody{
+		"no text":        body(PasteByClipboard, "text", ""),
+		"too long":       body(PasteByClipboard, "text", big+"x"),
+		"too long typed": body(PasteByTyping, "text", strings.Repeat("a", MaxTypeText+1)),
+		"another way":    body("drop", "text", "x"),
+		"another kind":   body(PasteByTyping, "image", "x"),
+	} {
+		if _, err := SignCommand(b, pg.root.Key); err == nil {
+			t.Errorf("%s: signed", what)
+		}
+	}
+	mode := body(PasteByClipboard, "text", "x")
+	mode.Type = CommandMode
+	if _, err := SignCommand(mode, pg.root.Key); err == nil {
+		t.Error("a mode command with a text was signed")
+	}
+	off := CommandBody{Type: CommandPasteOff, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
+		TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli()}
+	if c, err := SignCommand(off, pg.b.Key, pg.b.Cert); err != nil {
+		t.Error(err)
+	} else if got, err := s.VerifyCommand(c, to, now); err != nil || got.Type != CommandPasteOff {
+		t.Errorf("paste-off: %+v, %v", got, err)
 	}
 }

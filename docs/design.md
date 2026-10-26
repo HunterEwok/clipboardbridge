@@ -1671,8 +1671,9 @@ random bits), `time_ms`, `expires_ms` (at most 30 seconds later), `mode` (`paste
   in the future and `time_ms` at most 60 seconds ahead of its clock, and that `id` is not
   in its replay cache (kept until expiry). A target whose clock is not set (a Pi without a
   clock before NTP) refuses with that reason.
-- It answers with a result that goes back the same way: `pasted`, `refused` with a reason,
-  or `failed` with the underlying error, which the sender shows in debug mode.
+- It answers with a result that goes back the same way: `done` once the text is in,
+  `refused` with a reason, or `failed` with the underlying error, which the sender shows in
+  debug mode.
 
 The signature, not the connection, says who sent it, so a member that forwards a command,
 such as the hub, cannot forge or change it.

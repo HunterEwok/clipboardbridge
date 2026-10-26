@@ -1000,9 +1000,10 @@ func TestGoTakeoverVectors(t *testing.T) {
 	}
 }
 
-// TestSwiftCommand checks the mode commands a phone kit signed
-// (swift-command.json, which the kits' tests write): one with the root's
-// key and one with an admin CA's are taken, for the device they name.
+// TestSwiftCommand checks the commands a phone kit signed
+// (swift-command.json, which the kits' tests write): mode commands with the
+// root's key and with an admin CA's, a hub, a paste and a paste-off command
+// are taken, for the device they name.
 func TestSwiftCommand(t *testing.T) {
 	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
@@ -1028,10 +1029,11 @@ func TestSwiftCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
-	// Two mode commands, by the root and by an admin, then a hub command
-	// by the root with one client.
-	if len(v.Commands) != 3 {
-		t.Fatalf("%d commands, want 3", len(v.Commands))
+	// Two mode commands, by the root and by an admin, a hub command by the
+	// root with one client, a typed paste by the admin and paste-off by
+	// the root.
+	if len(v.Commands) != 5 {
+		t.Fatalf("%d commands, want 5", len(v.Commands))
 	}
 	for i, c := range v.Commands {
 		var b CommandBody
@@ -1048,6 +1050,12 @@ func TestSwiftCommand(t *testing.T) {
 		if i == 2 && (got.Type != CommandHub || got.Hub.Forwarder == nil || got.Hub.Forwarder.Endpoint != "203.0.113.9:8764" ||
 			len(got.Hub.Clients) != 1 || len(got.Hub.Clients[0].PSK) != 32) {
 			t.Errorf("the hub command: %+v", got.Hub)
+		}
+		if i == 3 && (got.Type != CommandPaste || got.Mode != PasteByTyping || !got.Enter || got.Kind != "text" || got.Text != "echo <ok> & \"done\"\n") {
+			t.Errorf("the paste command: %+v", got)
+		}
+		if i == 4 && got.Type != CommandPasteOff {
+			t.Errorf("the paste-off command: %+v", got)
 		}
 		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
 			t.Errorf("command %d was taken by another device", i)
@@ -1155,7 +1163,7 @@ type commandVector struct {
 }
 
 // TestGoCommandVectors writes (with -update) and checks
-// testdata/interop/go-commands.json: mode commands for one phone, signed by
+// testdata/interop/go-commands.json: mode, paste and paste-off commands for one phone, signed by
 // the root, an admin phone and admin computers (one frozen, one removed),
 // or for another device or group, expired, from the future or altered, and
 // whether each counts (docs/protocol.md, section 15), for the phone kits
@@ -1187,6 +1195,17 @@ func TestGoCommandVectors(t *testing.T) {
 			return r
 		}
 		tag := Tag(g)
+		paste := func(signer *CA, chain []*x509.Certificate, typ string) Record {
+			b := CommandBody{Type: typ, Group: tag, By: selfID, To: selfID, ID: NewCommandID(), TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds()}
+			if typ == CommandPaste {
+				b.Mode, b.Kind, b.Text, b.Enter = PasteByClipboard, "text", "ls -l <dir> & echo \"done\"\n", true
+			}
+			r, err := SignCommand(b, signer.Key, chain...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r
+		}
 		altered := sign(pg.root, nil, selfID, tag, now, "own")
 		altered.Body = []byte(strings.Replace(string(altered.Body), `"own"`, `"send"`, 1))
 		v := commandVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now}
@@ -1202,8 +1221,11 @@ func TestGoCommandVectors(t *testing.T) {
 			{Name: "expired", Command: sign(pg.root, nil, selfID, tag, now-CommandLifetime.Milliseconds(), "own")},
 			{Name: "signed in the future", Command: sign(pg.root, nil, selfID, tag, now+CommandAhead.Milliseconds()+1, "own")},
 			{Name: "altered", Command: altered},
+			{Name: "a paste by an admin computer", Command: paste(pc, []*x509.Certificate{pc.Cert}, CommandPaste), Mode: PasteByClipboard},
+			{Name: "a paste by a frozen admin computer", Command: paste(frozen, []*x509.Certificate{frozen.Cert}, CommandPaste)},
+			{Name: "paste-off by the root", Command: paste(pg.root, nil, CommandPasteOff), OK: true},
 		} {
-			c.OK = c.Mode != ""
+			c.OK = c.OK || c.Mode != ""
 			v.Commands = append(v.Commands, c)
 		}
 		data, err := json.MarshalIndent(v, "", "\t")
@@ -1230,7 +1252,7 @@ func TestGoCommandVectors(t *testing.T) {
 	if _, errs := s.AddAll(v.Records); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	if len(v.Commands) != 11 {
+	if len(v.Commands) != 14 {
 		t.Fatalf("the file has %d commands", len(v.Commands))
 	}
 	for _, c := range v.Commands {

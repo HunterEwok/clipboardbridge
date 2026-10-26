@@ -375,11 +375,13 @@ object Member {
         val reason: String? = null,
         /** In the result of a hub command, the new hub's offer without a preshared key (section 11, "Moving the hub"). */
         val tunnel: TunnelOffer? = null,
+        /** The device that answered, the command's receiver; a member that passes the result back leaves it. */
+        val by: String? = null,
     ) {
         val done: Boolean get() = status == "done"
 
         fun toJson(): JsonObject =
-            Wire.obj("id" to Wire.str(id), "status" to Wire.str(status), "reason" to Wire.str(reason), "tunnel" to tunnel?.toJson())
+            Wire.obj("id" to Wire.str(id), "by" to Wire.str(by), "status" to Wire.str(status), "reason" to Wire.str(reason), "tunnel" to tunnel?.toJson())
 
         companion object {
             fun fromJson(o: JsonObject): CommandResult = CommandResult(
@@ -387,6 +389,7 @@ object Member {
                 o.optString("status") ?: "",
                 o.optString("reason"),
                 o.optObject("tunnel")?.let { runCatching { TunnelOffer.fromJson(it) }.getOrNull() },
+                o.optString("by"),
             )
         }
     }

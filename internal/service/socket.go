@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
@@ -104,6 +105,18 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpStatus:
 		reply(c, control.Header{Status: s.statusWithRemoved(), Done: true}, nil)
+	case control.OpPasteOn:
+		if err := s.sendPaste(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
+	case control.OpReceive:
+		if err := s.setReceive(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpNew:
 		if _, err := s.newGroup(); err != nil {
 			fail(c, err)
@@ -260,6 +273,7 @@ func (s *Service) status() *control.Status {
 	st.Port, _ = Port()
 	st.Quiet = s.nets.Unknown()
 	st.Away = s.awayStatus()
+	st.Paste = s.pasteStatusLocked()
 	return st
 }
 
@@ -763,7 +777,9 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 // watcher is a desktop connector or pasteboard agent connected to the
 // socket.
 type watcher struct {
-	out chan node.Write
+	out     chan node.Write
+	inject  string       // the target it offers for remote paste; "" for none
+	injects chan *inject // remote pastes for it
 }
 
 // send queues a write. A watcher that does not keep up loses its oldest
@@ -787,7 +803,13 @@ func (w *watcher) send(wr node.Write) {
 // such as the group's text after the service started, goes to the clipboard
 // instead, if it is still the member's own text.
 func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *control.Message) {
-	w := &watcher{out: make(chan node.Write, 16)}
+	w := &watcher{out: make(chan node.Write, 16), injects: make(chan *inject, 1)}
+	switch m.Inject {
+	case "", targetDesktop, targetTmux, targetConsole:
+		w.inject = m.Inject
+	default:
+		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
+	}
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -820,12 +842,39 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 	}()
 	reply(c, control.Header{}, nil)
 	done := make(chan struct{})
+	var injMu sync.Mutex
+	injected := map[uint64]*inject{}
+	answer := func(seq uint64, res node.Result) {
+		injMu.Lock()
+		in := injected[seq]
+		delete(injected, seq)
+		injMu.Unlock()
+		if in != nil {
+			res.ID = in.body.ID
+			in.done <- res
+		}
+	}
+	var injSeq uint64
 	go func() {
 		defer close(done)
 		for {
 			m, err := r.Read()
 			if err != nil {
 				return
+			}
+			if m.Op == control.OpInjected {
+				res := node.Result{Status: node.ResultDone}
+				if m.Error != "" {
+					res.Status, res.Reason = node.ResultFailed, m.Error
+					if m.Refused {
+						res.Status = node.ResultRefused
+					}
+					if m.Detail != "" {
+						res.Reason += ": " + m.Detail
+					}
+				}
+				answer(m.Seq, res)
+				continue
 			}
 			kind, via, err := parseKind(m.Kind, m.Via)
 			if err != nil {
@@ -863,6 +912,16 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 				h.TTLMS = s.secretLeft().Milliseconds()
 			}
 			if control.Write(c, &control.Message{Header: h, Payload: []byte(wr.Text)}) != nil {
+				return
+			}
+		case in := <-w.injects:
+			injSeq++
+			injMu.Lock()
+			injected[injSeq] = in
+			injMu.Unlock()
+			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind}
+			if control.Write(c, &control.Message{Header: h, Payload: []byte(in.text)}) != nil {
+				answer(injSeq, node.Result{Status: node.ResultFailed, Reason: "the connection to the paste target closed"})
 				return
 			}
 		case <-done:

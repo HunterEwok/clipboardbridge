@@ -36,6 +36,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   makers' certificates ship in `internal/attest/tpmroots`.
 - The guide "Keys and attestation" (docs/guide/keys.md): where each device keeps its keys,
   how Android phones prove it, and the three key levels.
+- Remote paste, the protocol and the service (design.md, "Remote paste"): an admin signs a
+  `paste` command (`cbb paste -on DEVICE`, from standard input or the clipboard, with
+  `-type`, `-enter` and `-secret`), and a member whose user turned it on (`cbb
+  paste-receive on`, with `-enter` and `-console` as separate switches) hands the cleaned
+  text to a watcher that offers to paste, within one a second and 30 a minute per sender,
+  and keeps a log of the last 100 pastes without their texts. Any admin turns it off on a
+  member or on all (`cbb paste-receive off -on DEVICE`, `-all`). The targets that put the
+  text in come next (docs/protocol.md, sections 8 and 15).
+- Commands reach a member this one is not connected to: a member connected to it, such as
+  the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 
 ### Changed
 

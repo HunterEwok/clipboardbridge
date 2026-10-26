@@ -366,7 +366,8 @@ impl Service {
     /// Carries out a command a member sent (docs/protocol.md, section 15):
     /// one that an admin signed for this device in its group, that has not
     /// expired and was not carried out before. The lite member takes mode
-    /// commands; it is never the group's hub, so it refuses hub commands.
+    /// commands; it is never the group's hub, so it refuses hub commands,
+    /// and it refuses pastes, with remote paste off.
     fn command(&self, peer: &crate::certs::DeviceId, c: &crate::records::Record) -> wire::CommandResult {
         let refused = |id: &str, why: String| {
             (self.log)(&format!("cbb: refused a command from {peer}: {why}"));
@@ -393,8 +394,13 @@ impl Service {
             }
             seen.insert(body.id.clone(), body.expires_ms);
         }
-        if body.kind == "hub" {
-            return refused(&body.id, "the lite member is never the group's hub".into());
+        match body.kind.as_str() {
+            "hub" => return refused(&body.id, "the lite member is never the group's hub".into()),
+            // Remote paste on the lite member comes with its targets, tmux
+            // and the console helper; until then it is off, and stays off.
+            "paste" => return refused(&body.id, "remote paste is off on this device".into()),
+            "paste-off" => return wire::CommandResult { id: body.id, status: "done".into(), reason: String::new() },
+            _ => {}
         }
         if let Err(e) = Mode::parse(&body.mode) {
             return refused(&body.id, e.message().to_string());

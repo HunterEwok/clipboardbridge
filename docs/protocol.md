@@ -821,8 +821,8 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied` and
-`clipboard`) and refuses every other operation with an error; the admin socket takes them
+`copy`, `paste`, `status`, `devices` and `watch` (with the watcher's `copied`, `clipboard`
+and `injected`) and refuses every other operation with an error; the admin socket takes them
 all. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
 the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
@@ -853,6 +853,13 @@ Header fields (all omitted when empty):
 | `addrs` | array of strings | the first answer of a listening `join`: where it listens |
 | `port` | integer | `away hub`: the UDP port; 0 for 8764 |
 | `consent` | bool | `away on`: the user agreed to the warning about keys in files |
+| `device` | string | `mode`, `paste-on`, `paste-receive`: another device, by name or device ID |
+| `method` | string | `paste-on`, `inject`: `paste` (the clipboard and the paste keys, the default) or `type` |
+| `enter` | bool | `paste-on`, `inject`: press Enter after the text; `paste-receive on`: allow that |
+| `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
+| `all` | bool | `paste-receive off`: on every device of the group |
+| `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
+| `refused` | bool | `injected`: the target refused, rather than failed |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
 
@@ -873,7 +880,9 @@ A connection carries one request: the service reads the first message and dispat
 | `join` | `{code, address?}`, `{code, listen, expires}` or `{invite, consent}` | `{done}` or an error. Without `address` it browses for `p=1`. With `listen` it first answers `{addrs, fingerprint}` for the QR code, then `{done}` or an error when a member admitted it, or after `expires` seconds. With `invite`, the text of a remote invitation (section 12), it needs `consent` (sync away from home is turned on, and the device keeps its keys in files), first answers `{fingerprint}` (of this device's key, for the admin to compare), then `{done}` or an error. Hanging up cancels |
 | `invite` | `{expires?}`: seconds, 3600 if absent, at most 86 400 | Only on the group's hub, when it can admit devices. First `{invite, expires}`: the invitation's text. Then, for each device that used it and proved it knows the secret, `{joining: {id, name, os, fingerprint}}`, which the client answers with `{"op": "answer", consent}` (`true` admits it); last `{name, done}` or an error. Hanging up cancels the invitation |
 | `mode` | `{name, device?}`: `name` the sync mode, `own`, `shared`, `receive` or `send`; `device`, a name or device ID, for another device (on an admin) | without `device`: `{status, done}`, the mode saved and in effect; with it: `{done}` once that device answered `done` to the command (section 15), or an error with its reason. Only on the admin socket |
-| `watch` | `{kind, via}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
+| `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
+| `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
+| `watch` | `{kind, via, inject?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol
 
@@ -896,6 +905,15 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   last one it applied. `ttl_ms` is the secret's remaining lifetime (60 s minus its age, at
   least 1 ms); the Go connector uses 60 s when it is missing and gives up the clipboard when
   it expires. A watcher writes a secret with the platform's password-manager marks.
+- Service to watcher, for remote paste, only to a watcher whose watch request named an
+  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`). The watcher checks
+  that its session is active and not locked, puts the text in, presses Enter when `enter`
+  is set, clears the clipboard after a `secret`, shows a notification with the sender, and
+  answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),
+  with `refused` when it would not (a locked session, an administrator's window, a missing
+  permission) rather than could not. The service waits 5 s for it. `status` shows the
+  switches and the targets of the connected watchers as `paste: {on, enter, console,
+  targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
 
 The `devices` and `revoke` operations are in section 10.
@@ -1828,8 +1846,9 @@ which a hub would not let out; what the devices send each other it cannot read.
 
 An admin orders one member to do something with a **command**: signed like a record (section
 10) and never stored. `mode` sets the receiver's sync mode (design.md, "Sync modes"); `hub`
-makes the receiver the group's hub (section 11, "Moving the hub"); the remote paste of 0.6
-will be another.
+makes the receiver the group's hub (section 11, "Moving the hub"); `paste` puts a text where
+the receiver's focus is, and `paste-off` turns remote paste off on the receiver (design.md,
+"Remote paste").
 
 ### The command
 
@@ -1838,14 +1857,17 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `v` | integer | `1` |
-| `type` | string | `mode` or `hub` |
+| `type` | string | `mode`, `hub`, `paste` or `paste-off` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
 | `id` | string | 128 random bits in lowercase hex |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
-| `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send` |
+| `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |
+| `enter` | bool | in a `paste` command: press Enter after the text |
+| `kind` | string | in a `paste` command: `text` or `secret` |
+| `text` | string | in a `paste` command: the text, not empty, at most 1 MiB of UTF-8 for `paste` and 4 KiB for `type` |
 | `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
@@ -1855,7 +1877,7 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 
 ```
 {"t":"command","command":{"body":"...","sig":"...","chain":["..."]}}
-{"t":"result","result":{"id":"...","status":"done"}}
+{"t":"result","result":{"id":"...","by":"...","status":"done"}}
 ```
 
 The sender sends the command on its own connection to the receiver, which answers with a
@@ -1864,6 +1886,18 @@ it) or `failed` (it took it and could not carry it out), and `reason` says why f
 two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
+
+A sender that has no connection to the receiver sends a `mode`, `paste` or `paste-off`
+command to every member it is connected to (a `hub` command only goes directly). A member
+that gets a command whose `to` is another device passes it on, unchanged, only when it is
+connected to that device and has not passed that `id` before (it keeps the IDs until the
+command expires, at most 4096), and passes the receiver's `result` back to the member it
+came from, once; a member not connected to `to` drops it. The receiver names itself in the
+result's `by`, so that a sender takes a result from a member in between only when `by` is
+the receiver: a member before 0.6, or the lite member, refuses a command for another device
+for itself instead of passing it on. The signature, not the
+connection, says who sent a command, so the member in between can neither forge nor change
+it; it could withhold a command or forge a `result`, as any member could drop messages.
 
 The receiver takes a command only when:
 
@@ -1875,9 +1909,21 @@ The receiver takes a command only when:
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
   until they expire (at most 4096 at a time).
 
-A body is at most 64 KiB. A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
+A body is at most 64 KiB, a `paste` command's 2 MiB (the sender writes the text without
+JSON's escapes of `<`, `>` and `&`). A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
 and logs who sent it. Every member takes `mode` commands; only a computer takes `hub`, and the
 phones and the lite member refuse it.
+
+A `paste` command is refused unless the receiver's user turned remote paste on there, and,
+with `enter`, allowed Enter; and beyond one a second and 30 a minute from one signer. The
+receiver cleans the text (newlines and tabs stay; other control characters, terminal escape
+sequences and bytes that are not UTF-8 go; CR LF and CR become LF), hands it to a target
+(the watcher protocol's `inject`, section 8: a desktop session first, then tmux, then a text
+console only where the user allowed consoles), and answers `done` when the target put it
+in, `refused` with its reason (for example a locked session) or `failed`. It keeps the last
+100 pastes in a log (sender, time, length, way, result, never the text), but no `secret`
+one. A `paste-off` command turns remote paste off, Enter and consoles too; only the
+device's own user turns it on again.
 
 
 ## 16. Signed releases
