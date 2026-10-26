@@ -72,8 +72,9 @@ pub struct Peer {
 pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value, &dyn Fn(&str) -> bool) + Send + Sync>;
 
 /// Carries out a command a peer sent (docs/protocol.md, section 15) and
-/// gives the answer.
-pub type OnCommand = Box<dyn Fn(&DeviceId, &Record) -> wire::CommandResult + Send + Sync>;
+/// gives the answer. It runs on a thread of its own: a remote paste waits
+/// for its target.
+pub type OnCommand = Arc<dyn Fn(&DeviceId, &Record) -> wire::CommandResult + Send + Sync>;
 
 /// The tunnel key and preshared key a hello offers; None while sync away
 /// from home is off.
@@ -501,16 +502,29 @@ impl Node {
                     }
                 }
                 "command" if m.command.is_some() => {
-                    let cmd = m.command.as_ref().unwrap();
-                    let res = match self.on_command.read().unwrap().as_ref() {
-                        Some(f) => f(&c.id, cmd),
-                        None => wire::CommandResult {
-                            id: String::new(),
-                            status: "refused".into(),
-                            reason: "this device takes no commands".into(),
-                        },
-                    };
-                    self.enqueue(c, Out::Result(res));
+                    let cmd = m.command.unwrap();
+                    match self.on_command.read().unwrap().clone() {
+                        Some(f) => {
+                            // The reader goes on meanwhile, so the peer's
+                            // copies still come in while a paste waits for
+                            // its target.
+                            let c = c.clone();
+                            std::thread::spawn(move || {
+                                let res = f(&c.id, &cmd);
+                                if !c.closed.load(Ordering::SeqCst) {
+                                    let _ = c.tx.try_send(Out::Result(res));
+                                }
+                            });
+                        }
+                        None => self.enqueue(
+                            c,
+                            Out::Result(wire::CommandResult {
+                                id: String::new(),
+                                status: "refused".into(),
+                                reason: "this device takes no commands".into(),
+                            }),
+                        ),
+                    }
                 }
                 "bye" => return Ok(()),
                 _ => {} // a ping, or a message from a newer version

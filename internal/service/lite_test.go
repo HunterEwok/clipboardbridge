@@ -25,6 +25,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/mdns"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/remotepaste"
 )
 
 // publishLite puts a lite member on the fake network, as the real one
@@ -391,6 +392,111 @@ func TestLiteMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the Mac has the lite text", func() bool { return mac.paste(t) == "back from the lite member" })
+}
+
+// TestLiteRemotePaste: an admin's paste reaches the lite member's tmux
+// target, played here by the test, once the lite member's own user turned
+// remote paste on; the lite member keeps the full member's rules and log,
+// and any admin turns it off there.
+func TestLiteRemotePaste(t *testing.T) {
+	bin := os.Getenv("CBB_LITE")
+	if bin == "" {
+		t.Skip("CBB_LITE is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	dir := joinLite(t, bin, pi)
+	pa, _ := pi.addrs()
+	lite := startLite(t, bin, dir, "-no-mdns", "-no-listen", "-peer", pa)
+	waitFor(t, "the lite member connected", func() bool {
+		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
+		return err == nil && len(m.Status.Peers) == 1
+	})
+	paste := func(text string, h control.Header) error {
+		h.Op, h.Device = control.OpPasteOn, "lite"
+		_, err := pi.do(t, h, text)
+		return err
+	}
+	wantRefused := func(what, text string, h control.Header, reason string) {
+		t.Helper()
+		if err := paste(text, h); err == nil || !strings.Contains(err.Error(), reason) {
+			t.Errorf("%s: %v, want %q", what, err, reason)
+		}
+		time.Sleep(time.Second) // one paste a second from one sender
+	}
+	wantRefused("off", "ls", control.Header{}, "remote paste is off on this device")
+	if m, err := lite.do(t, control.Header{Op: control.OpReceive, Name: "on"}, ""); err != nil || m.Status == nil || m.Status.Paste == nil || !m.Status.Paste.On {
+		t.Fatalf("paste-receive on: %+v, %v", m, err)
+	}
+	wantRefused("no target", "ls", control.Header{}, "nothing on this device can paste")
+
+	// The tmux helper offers to paste.
+	w := lite.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetTmux}}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *control.Message, 4)
+	go func() {
+		for {
+			m, err := w.Receive()
+			if err != nil {
+				return
+			}
+			if m.Op != control.OpInject {
+				t.Errorf("the tmux helper got %q", m.Op)
+				continue
+			}
+			got <- m
+			ans := control.Header{Op: control.OpInjected, Seq: m.Seq}
+			if strings.Contains(string(m.Payload), "locked") {
+				ans.Error, ans.Refused = "the tmux client is locked", true
+			}
+			w.Send(&control.Message{Header: ans})
+		}
+	}()
+	waitFor(t, "the lite member offers tmux", func() bool {
+		p := lite.status(t).Paste
+		return p != nil && len(p.Targets) == 1 && p.Targets[0] == targetTmux
+	})
+	out, err := exec.Command(bin, "-socket", lite.socket, "paste-receive").Output()
+	if err != nil || !strings.Contains(string(out), "Remote paste is on: the group's admins may paste here, without Enter.") {
+		t.Errorf("cbb paste-receive: %v; %s", err, out)
+	}
+	if err := paste("echo \x1b[31mhi\x1b[0m", control.Header{Method: "type"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := <-got; string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter || m.Name != "pi" {
+		t.Errorf("tmux got %q %+v", m.Payload, m.Header)
+	}
+	time.Sleep(time.Second)
+	wantRefused("a line break", "two\nlines", control.Header{}, "where a line break would run the text")
+	wantRefused("enter", "ls", control.Header{Enter: true}, "without Enter only")
+	wantRefused("locked", "locked", control.Header{}, "the tmux client is locked")
+	<-got
+	if len(got) != 0 {
+		t.Error("a refused paste reached tmux")
+	}
+
+	// The log keeps who and how, never the text, in the full member's file.
+	log, err := remotepaste.ReadLog(dir)
+	if err != nil || len(log) != 6 {
+		t.Fatalf("the log: %+v, %v", log, err)
+	}
+	if e := log[2]; e.Result != "done" || e.Len != len("echo hi") || e.Method != "type" || e.Name != "pi" {
+		t.Errorf("the paste's entry: %+v", e)
+	}
+
+	// Any admin turns it off.
+	if _, err := pi.do(t, control.Header{Op: control.OpReceive, Name: "off", Device: "lite"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if p := lite.status(t).Paste; p == nil || p.On {
+		t.Errorf("after paste-off: %+v", p)
+	}
+	if set, err := remotepaste.Load(dir); err != nil || set.On {
+		t.Errorf("the lite member's settings: %+v, %v", set, err)
+	}
 }
 
 // TestLiteMemberAway: once sync away from home is on, the lite member

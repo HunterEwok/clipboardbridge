@@ -152,6 +152,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      */
     private val modeFile = File(file.parentFile, "mode")
 
+    /** This phone as a remote paste target: its switches, limits and log. */
+    val pastes = PasteReceiver(context, file.parentFile!!)
+
     /** The sync mode: own, shared, receive or send. */
     val syncMode: String
         get() = runCatching { modeFile.readText().trim() }.getOrNull()?.takeIf { it in Member.MODES } ?: "shared"
@@ -733,8 +736,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Carries out a command a member sent this phone (docs/protocol.md,
-     * section 15): a mode command an admin of the group signed for it, not
-     * expired and not carried out before. A phone takes no hub command.
+     * section 15): a mode, paste or paste-off command an admin of the group
+     * signed for it, not expired and not carried out before. A phone takes
+     * no hub command.
      */
     private fun command(peer: String?, c: Member.Record): Member.CommandResult {
         val id = Commands.idOf(c) ?: ""
@@ -754,6 +758,13 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             if (body.id in commands) return refused("this command was carried out already")
             if (commands.size >= MAX_COMMANDS) return refused("too many commands; try again in a minute")
             commands[body.id] = body.expiresMS
+        }
+        when (body.type) {
+            "paste" -> return pastes.paste(body, g.devices.firstOrNull { it.id == body.by }?.name)
+            "paste-off" -> {
+                Log.i(TAG, "${body.by} turned remote paste off")
+                return pastes.turnOff()?.copy(id = body.id) ?: Member.CommandResult(body.id, "done")
+            }
         }
         if (body.type != "mode") return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
         val mode = body.mode?.takeIf { it in Member.MODES } ?: return refused("unknown sync mode ${body.mode}")

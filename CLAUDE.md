@@ -82,7 +82,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
   C6 (RISC-V) and the S3 (Xtensa); `lite/src` adds the files, the sockets around the
-  core's TLS, mDNS, the control socket and the tunnel to the hub (`tunnel.rs`, `away.rs`:
+  core's TLS, mDNS, the control socket, remote paste (`remotepaste.rs`, the tmux and console
+  helpers in `pastehelper.rs`) and the tunnel to the hub (`tunnel.rs`, `away.rs`:
   GotaTun's WireGuard and smoltcp's TCP behind a loopback port; GotaTun's AEAD comes from
   `lite/ring-shim`, a stand-in for ring on RustCrypto, patched in by `lite/Cargo.toml`).
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
