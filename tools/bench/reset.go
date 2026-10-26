@@ -170,7 +170,7 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		return restartAgent(ctx, d)
 	case "darwin":
 		// Only the helper runs as root here; it installs only an archive
-		// whose checksum the owner trusted (setup-mac.sh trust).
+		// whose checksum is signed by the bench's key or trusted (setup-mac.sh).
 		dir, err := stage(ctx, d, b)
 		if err != nil {
 			return err
