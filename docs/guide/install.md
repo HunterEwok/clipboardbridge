@@ -116,7 +116,7 @@ sudo sh /usr/local/share/clipboardbridge/uninstall.sh
 
 With Homebrew, run `brew uninstall clipboardbridge` after it.
 
-On Windows: Settings, Apps, "clipboardbridge", Uninstall.
+On Windows: Settings, Apps, "Clipboard Bridge", Uninstall.
 
 This removes the program, the service and the firewall rules the installer added. The
 device's keys stay, so installing again brings it back into its group. To delete them too,

@@ -19,6 +19,12 @@ object Member {
     /** The sync modes (design.md, "Sync modes"). */
     val MODES = setOf("own", "shared", "receive", "send")
 
+    /** Whether a device in sync mode mode takes the group's copies into its clipboard by itself; a device without a mode (null) shares. */
+    fun receives(mode: String?): Boolean = mode == null || mode == "shared" || mode == "receive"
+
+    /** Whether a device in sync mode mode sends its own copies to the group by itself. */
+    fun sends(mode: String?): Boolean = mode == null || mode == "shared" || mode == "send"
+
     /** The ALPN protocol of member connections. */
     const val ALPN = "clipboardbridge/1"
 

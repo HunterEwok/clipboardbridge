@@ -546,6 +546,17 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// The revoked keys (docs/protocol.md, section 10, rule 3).
     public var revoked: Set<Data> { Eval(self).revoked }
 
+    /// Whether a command (docs/protocol.md, section 15) is signed by an
+    /// admin of the group now: a root on the path, or an admin CA under one
+    /// that is neither revoked nor frozen, as Go's Records.VerifyCommand.
+    public func signedByAdmin(_ c: Member.Record) -> Bool {
+        guard let groupCA, let a = RecordSet.anchor(c, roots: knownRoots(groupCA)),
+              let anchor = try? Records.keyHash(cert: a.root) else { return false }
+        let ev = Eval(self)
+        return ev.onPath.contains(anchor) && !ev.revoked.contains(a.signer) && !ev.frozen(a.signer)
+            && (a.signer == anchor || ev.issued(anchor, a.signer))
+    }
+
     /// Whether a key hash is frozen (docs/protocol.md, section 10, rule 4): a
     /// computer's admin CA that a freeze names, or such an admin's device
     /// key.

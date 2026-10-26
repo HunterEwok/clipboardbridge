@@ -71,6 +71,10 @@ pub struct Peer {
 /// records make a device the root or an admin, by its ID alone.
 pub type OnTunnel = Box<dyn Fn(&DeviceId, &serde_json::Value, &dyn Fn(&str) -> bool) + Send + Sync>;
 
+/// Carries out a command a peer sent (docs/protocol.md, section 15) and
+/// gives the answer.
+pub type OnCommand = Box<dyn Fn(&DeviceId, &Record) -> wire::CommandResult + Send + Sync>;
+
 /// The tunnel key and preshared key a hello offers; None while sync away
 /// from home is off.
 type TunnelKeys = Option<(Vec<u8>, Vec<u8>)>;
@@ -90,6 +94,7 @@ pub struct Node {
     /// None while sync away from home is off.
     tunnel_key: Arc<RwLock<TunnelKeys>>,
     on_tunnel: RwLock<Option<OnTunnel>>,
+    on_command: RwLock<Option<OnCommand>>,
     /// The members discovery finds on the home network now.
     /// The devices discovery finds on the home network, by the uptime they
     /// were first found.
@@ -97,9 +102,10 @@ pub struct Node {
 }
 
 enum Out {
-    Hello(Hello, Duration),
+    Hello(Hello, Duration, crate::clip::Mode),
     Event(Event, Duration),
     Records(Vec<Record>),
+    Result(wire::CommandResult),
     Wake, // makes the writer look at the closed flag
 }
 
@@ -136,6 +142,7 @@ impl Node {
             closed: AtomicBool::new(false),
             tunnel_key: Arc::new(RwLock::new(None)),
             on_tunnel: RwLock::new(None),
+            on_command: RwLock::new(None),
             home: Mutex::new(HashMap::new()),
         }
     }
@@ -150,6 +157,16 @@ impl Node {
                 c.close(true);
             }
         }
+    }
+
+    /// Sets what carries out the commands peers send.
+    pub fn on_command(&self, f: OnCommand) {
+        *self.on_command.write().unwrap() = Some(f);
+    }
+
+    /// The group's records.
+    pub fn records(&self) -> Arc<Mutex<Records>> {
+        self.records.clone()
     }
 
     /// Sets what is called with the tunnel offers of full members.
@@ -388,7 +405,7 @@ impl Node {
             // The connection is in the forwarding set before the engine
             // makes the hello, so no event falls between the two.
             let hello = self.engine.connected(id.as_str());
-            let _ = c.tx.try_send(Out::Hello(hello, uptime::now()));
+            let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode()));
         }
         self.logf(&format!("cbb: connected to {id} at {addr}"));
         let writer = {
@@ -482,6 +499,18 @@ impl Node {
                     } else if let (Some(v), Some(f)) = (m.tunnel.as_ref(), self.on_tunnel.read().unwrap().as_ref()) {
                         f(&c.id, v, &|dev| self.records.lock().unwrap().may_host(dev));
                     }
+                }
+                "command" if m.command.is_some() => {
+                    let cmd = m.command.as_ref().unwrap();
+                    let res = match self.on_command.read().unwrap().as_ref() {
+                        Some(f) => f(&c.id, cmd),
+                        None => wire::CommandResult {
+                            id: String::new(),
+                            status: "refused".into(),
+                            reason: "this device takes no commands".into(),
+                        },
+                    };
+                    self.enqueue(c, Out::Result(res));
                 }
                 "bye" => return Ok(()),
                 _ => {} // a ping, or a message from a newer version
@@ -614,7 +643,7 @@ fn writer(
 ) {
     let message = |o: Out| -> Option<Message> {
         match o {
-            Out::Hello(mut h, queued) => {
+            Out::Hello(mut h, queued, mode) => {
                 if let Some(ev) = h.current.as_mut() {
                     ev.age = add_age(ev.age, uptime::now().saturating_sub(queued));
                 }
@@ -625,6 +654,7 @@ fn writer(
                     "linux",
                     crate::device::own(),
                     key.read().unwrap().as_ref().map(|(k, p)| (k.as_slice(), p.as_slice())),
+                    mode.name(),
                 ))
             }
             Out::Event(mut ev, queued) => {
@@ -632,6 +662,7 @@ fn writer(
                 Some(wire::event(&ev))
             }
             Out::Records(rs) => Some(Message { kind: "records".into(), records: rs, ..Default::default() }),
+            Out::Result(r) => Some(wire::result(r)),
             Out::Wake => None,
         }
     };

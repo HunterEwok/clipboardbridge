@@ -58,6 +58,16 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer's mode in Settings and, on an admin, another computer's from its details; an
   admin iPhone or Android phone sets a computer's mode from its page, after Face ID or the
   fingerprint, and says if the computer refused.
+- Sync modes on the phones and the lite member. Each phone sets its own mode on its page in
+  the devices list, and an admin phone sets any connected device's; Android's foreground
+  service writes the group's copies to the clipboard only in a mode that receives, and its
+  accessibility service sends copies by itself only in one that sends. The iPhone, in a mode
+  that receives, now writes a group copy from the last 45 s to the pasteboard while the app
+  is open; this includes phones that joined before, which share. The lite member keeps its
+  mode in the file `mode` (`sudo cbb mode own|shared|receive|send`), starts in own when it
+  joins, and `cbb paste` there prints the group's text in a mode that does not receive.
+  Phones and the lite member take an admin's `mode` command, checked as the computers check
+  it, and refuse `hub` commands. The interop vectors gain `go-commands.json`.
 - The phone's side of the phone as the hub (D-64), not yet in the apps: `mobile/cbbtun`
   runs the group's hub in the app's process (`StartHub`), leads the clients' connections to
   the kit's member listener and registers with the forwarder (`Register`). A phone hub
@@ -69,6 +79,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The lite member's release archives are `clipboardbridge-lite-linux-amd64.tar.gz`, `-arm64`
+  and `-armv6`, holding `clipboardbridge-lite/`, like the full member's `clipboardbridge-*`
+  (they were `cbb-lite-linux-*`). `get.sh --lite` takes the new names, and the old ones for
+  a release before 0.5 named in `CBB_VERSION`.
+- What people read calls the project Clipboard Bridge: the installers' and `cbb`'s messages,
+  the Windows service, its firewall rules and its entry in Settings, Apps (an update renames
+  the service), the systemd units' and the desktop entry's descriptions, the iPhone profile
+  and the release notes. Commands, paths, the service's and the group's names stay
+  `clipboardbridge` and `cbb`.
 - The documentation for users is rewritten in plain words, under `docs/guide` and
   `docs/reference`: the quick start begins with the phone app as the group's root and then
   suggests making an always-on computer an admin and the hub; "How it works" draws every

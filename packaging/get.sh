@@ -134,8 +134,15 @@ dir=clipboardbridge
 if [ "$lite" = yes ]; then
 	# The lite member's ARMv6 build runs on ARMv7 too.
 	[ "$arch" = armv7 ] && arch=armv6
-	archive=cbb-lite-linux-$arch.tar.gz
-	dir=cbb-lite
+	archive=clipboardbridge-lite-linux-$arch.tar.gz
+	dir=clipboardbridge-lite
+	case $version in
+	# Releases before 0.5 named the lite member's archive cbb-lite.
+	v0.[0-4].*)
+		archive=cbb-lite-linux-$arch.tar.gz
+		dir=cbb-lite
+		;;
+	esac
 fi
 
 tmp=$(mktemp -d)

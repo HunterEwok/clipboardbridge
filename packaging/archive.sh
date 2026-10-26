@@ -35,7 +35,7 @@ esac
 # notices writes the license files of every module that the program for this
 # OS is built from, and of the code copied into internal/third_party.
 notices() {
-	echo "clipboardbridge is free software under the GNU Affero General Public License v3.0"
+	echo "Clipboard Bridge is free software under the GNU Affero General Public License v3.0"
 	echo "only (LICENSE). It is built with the code below, under its own licenses."
 	(cd "$root" && GOOS=$os go list -deps \
 		-f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/cbb) |

@@ -167,7 +167,7 @@ jobs:
       security-events: write
 
   lite:
-    name: build (cbb-lite-linux-${{ matrix.name }})
+    name: build (clipboardbridge-lite-linux-${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -177,7 +177,7 @@ jobs:
           - { target: aarch64-unknown-linux-musl, name: arm64 }
           - { target: arm-unknown-linux-musleabihf, name: armv6 }
     env:
-      ARCHIVE: cbb-lite-linux-${{ matrix.name }}.tar.gz
+      ARCHIVE: clipboardbridge-lite-linux-${{ matrix.name }}.tar.gz
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

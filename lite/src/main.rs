@@ -52,6 +52,10 @@ Commands:
                        characters, only the first line unless -lines, and
                        no secret unless -secret.
   status               Show this device, its group and the group's devices.
+  mode [own|shared|receive|send]
+                       Show or change the sync mode: what moves between this
+                       device's clipboard and the group (a new device keeps
+                       its own; cbb copy and cbb paste work in every mode).
   global [on|off]      Show sync away from home, or turn it on or off here:
                        through the group's own WireGuard tunnel to its hub.
   watch [-0]           Print every text the group sends here, one per line
@@ -113,6 +117,7 @@ fn main() {
                 "status" => cmd_status(&g, rest),
                 "global" => cmd_global(&g, rest),
                 "watch" => cmd_watch(&g, rest),
+                "mode" => cmd_mode(&g, rest),
                 "version" | "-version" | "--version" => {
                     println!(
                         "cbb {} ({}/{}), the lite member",
@@ -214,7 +219,8 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
         let mut set = records::Records::new(&id.group_ca);
         let _ = set.add_all(rs);
         records::Stored::save(&set, &state)?;
-        id.save(&state)
+        id.save(&state)?;
+        service::new_device_mode(&state)
     };
     let id = match code_addr {
         Some(a) => {
@@ -252,7 +258,7 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
                     out.flush().ok();
                     return;
                 }
-                println!("In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut");
+                println!("In the Clipboard Bridge app, tap \"Connect a new device\" (or run the shortcut");
                 println!("\"clipboardbridge: add a computer\") and scan this:\n");
                 print!("{}", qr(text));
                 println!("\nOr paste this into the app: {text}");
@@ -275,6 +281,11 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
         print!("CBB# joined the group {} as {}\r", id.tag(), id.id);
     } else {
         println!("Joined the group {} as {}.", id.tag(), id.id);
+        let mode = service::load_mode(&g.state).unwrap_or(clip::Mode::Own);
+        println!("{}", mode_line(mode.name()));
+        if mode != clip::Mode::Shared {
+            println!("To share this device's clipboard with the group: sudo cbb mode shared");
+        }
     }
     Ok(())
 }
@@ -474,6 +485,9 @@ fn cmd_status(g: &Global, args: &[String]) -> Result<()> {
         request(g, &control::Message::new(control::Header { op: "status".into(), ..Default::default() }, Vec::new()))?;
     let s = m.header.status.unwrap_or_default();
     println!("device  {}\ngroup   {}\nrole    {}\nversion {}", s.device, s.group, s.role, s.version);
+    if !s.mode.is_empty() {
+        println!("mode    {}", s.mode);
+    }
     if s.peers.is_empty() {
         println!("no members connected");
     }
@@ -495,6 +509,32 @@ fn cmd_status(g: &Global, args: &[String]) -> Result<()> {
         println!("{}  {:<24} {:<8} {:<8} {}", d.id, d.name, os_name(&d.os), d.role, marks.join(", "));
     }
     Ok(())
+}
+
+fn cmd_mode(g: &Global, args: &[String]) -> Result<()> {
+    let h = match args {
+        [] => control::Header { op: "status".into(), ..Default::default() },
+        [m] if !m.starts_with('-') => control::Header { op: "mode".into(), name: m.clone(), ..Default::default() },
+        _ => return Err(Error::msg("usage: cbb mode [own|shared|receive|send]")),
+    };
+    request(g, &control::Message::new(h, Vec::new()))?;
+    let m =
+        request(g, &control::Message::new(control::Header { op: "status".into(), ..Default::default() }, Vec::new()))?;
+    let mode = m.header.status.map(|s| s.mode).unwrap_or_default();
+    println!("{}", mode_line(&mode));
+    Ok(())
+}
+
+/// What the sync mode mode does, as cbb mode on a full member says it.
+fn mode_line(mode: &str) -> String {
+    match mode {
+        "own" => "Sync mode own: this device keeps its clipboard to itself; cbb paste prints the group's text, and cbb copy sends to the group.".into(),
+        "shared" => "Sync mode shared: copies here go to the group, and the group's copies come here.".into(),
+        "receive" => "Sync mode receive: the group's copies come here, and copies here stay here.".into(),
+        "send" => "Sync mode send: copies here go to the group, and the group's copies do not come here.".into(),
+        "" => "This lite member's service does not know sync modes yet; update it.".into(),
+        m => format!("Sync mode {m}."),
+    }
 }
 
 /// What a user agrees to before the lite member, whose keys sit in files,

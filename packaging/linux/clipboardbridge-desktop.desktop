@@ -2,8 +2,8 @@
 # Copyright (C) 2026 HunterEwok
 [Desktop Entry]
 Type=Application
-Name=clipboardbridge
-Comment=Share this desktop's clipboard with the clipboardbridge group
+Name=Clipboard Bridge
+Comment=Share this desktop's clipboard with the Clipboard Bridge group
 Exec=/usr/local/bin/cbb agent
 NoDisplay=true
 X-GNOME-Autostart-enabled=true

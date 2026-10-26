@@ -567,6 +567,21 @@ class RecordSet {
     /** Whether a key hash is frozen (docs/protocol.md, section 10, rule 4): a computer's admin CA that a freeze names, or such an admin's device key. */
     fun isFrozen(keyHash: ByteArray): Boolean = Eval(this).frozen(Key(keyHash))
 
+    /**
+     * Whether a command (docs/protocol.md, section 15) is signed by an
+     * admin of the group now: a root on the path, or an admin CA under one
+     * that is neither revoked nor frozen, as Go's Records.VerifyCommand.
+     */
+    fun signedByAdmin(c: Member.Record): Boolean {
+        val groupCA = groupCA ?: return false
+        val a = anchor(c, knownRoots(groupCA)) ?: return false
+        val anchor = runCatching { Key(Records.keyHashOfCert(a.first)) }.getOrNull() ?: return false
+        val body = Records.Body(v = Records.VERSION, type = "command", group = "", timeMS = 0)
+        val e = Entry(c, body, Key(Records.id(c)), Key(a.second), anchor)
+        val ev = Eval(this)
+        return anchor in ev.onPath && e.signer !in ev.revoked && !ev.frozen(e.signer) && ev.fromRoot(e)
+    }
+
     /** The IDs of the freezes of the admin CA with key hash admin that count: what a thaw of it ends. */
     fun freezesOf(admin: ByteArray): List<ByteArray> =
         Eval(this).freezes[Key(admin)].orEmpty().map { Records.id(it.record) }.sortedWith { a, b -> compareBytes(a, b) }

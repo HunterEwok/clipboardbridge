@@ -11,6 +11,7 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
+import io.github.hunterewok.clipboardbridge.kit.Commands
 import io.github.hunterewok.clipboardbridge.kit.Discovery
 import io.github.hunterewok.clipboardbridge.kit.FoundMember
 import io.github.hunterewok.clipboardbridge.kit.GroupCertificates
@@ -134,6 +135,21 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /** Whether the app is in front: the phone is the hub only then, unless the user lets it run in the background. */
     @Volatile private var foreground = false
 
+    /**
+     * This phone's sync mode (docs/design.md, "Sync modes"), in the file
+     * mode beside the group's, as the computers keep it: own for a phone
+     * that makes or joins a group from now on, shared for one that joined
+     * before 0.5, which has no file.
+     */
+    private val modeFile = File(file.parentFile, "mode")
+
+    /** The sync mode: own, shared, receive or send. */
+    val syncMode: String
+        get() = runCatching { modeFile.readText().trim() }.getOrNull()?.takeIf { it in Member.MODES } ?: "shared"
+
+    /** The IDs of the commands carried out, until they expire: the replay cache (docs/protocol.md, section 15). */
+    private val commands = mutableMapOf<String, Long>()
+
     /** The node, read under the lock; its methods are called outside it, as it calls back into the group under its own. */
     private val currentNode: MemberNode? get() = synchronized(lock) { node }
 
@@ -169,7 +185,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
-                    mode = modes[it.id],
+                    mode = if (it.id == g.device) syncMode else modes[it.id],
                 )
             }
         }
@@ -501,6 +517,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      */
     private fun adopt(g: PhoneGroup) {
         synchronized(lock) {
+            if (state == null) newDeviceMode()
             state?.let { g.add(it.records.records) }
             g.save(file)
             state = g
@@ -554,7 +571,10 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
         if (joined == null) throw Failure(Failure.Kind.TIMED_OUT)
         withContext(Dispatchers.IO) {
-            synchronized(lock) { state = PhoneGroup.joined(joined) }
+            synchronized(lock) {
+                newDeviceMode()
+                state = PhoneGroup.joined(joined)
+            }
             startSync()
         }
     }
@@ -633,6 +653,57 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val r = withContext(Dispatchers.IO) { g.thaw(id, ca, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
         currentNode?.sendRecords(listOf(r))
+    }
+
+    /** Gives a phone that just made or joined a group the sync mode of a new device, own, unless it has one from an earlier group. */
+    private fun newDeviceMode() {
+        if (!modeFile.exists()) setOwnMode("own")
+    }
+
+    /** Sets this phone's own sync mode and keeps it. */
+    fun setOwnMode(mode: String) {
+        require(mode in Member.MODES) { "unknown sync mode $mode" }
+        val tmp = File(modeFile.parentFile, "mode.tmp")
+        tmp.writeText(mode + "\n")
+        if (!tmp.renameTo(modeFile)) throw IOException("cannot save the sync mode")
+        Log.i(TAG, "the sync mode is $mode now")
+    }
+
+    /**
+     * Carries out a command a member sent this phone (docs/protocol.md,
+     * section 15): a mode command an admin of the group signed for it, not
+     * expired and not carried out before. A phone takes no hub command.
+     */
+    private fun command(peer: String?, c: Member.Record): Member.CommandResult {
+        val id = Commands.idOf(c) ?: ""
+        fun refused(reason: String): Member.CommandResult {
+            Log.w(TAG, "refused a command from $peer: $reason")
+            return Member.CommandResult(id, "refused", reason)
+        }
+        val g = synchronized(lock) { state } ?: return refused("this device is in no group")
+        val now = System.currentTimeMillis()
+        val body = try {
+            synchronized(lock) { Commands.verify(c, g.records, g.device, now) }
+        } catch (e: Commands.Refused) {
+            return refused(e.message ?: "the command is not valid")
+        }
+        synchronized(lock) {
+            commands.entries.removeAll { it.value <= now }
+            if (body.id in commands) return refused("this command was carried out already")
+            if (commands.size >= MAX_COMMANDS) return refused("too many commands; try again in a minute")
+            commands[body.id] = body.expiresMS
+        }
+        if (body.type != "mode") return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
+        val mode = body.mode?.takeIf { it in Member.MODES } ?: return refused("unknown sync mode ${body.mode}")
+        return try {
+            setOwnMode(mode)
+            Log.i(TAG, "${body.by} set the sync mode to $mode")
+            onModeChanged?.invoke()
+            Member.CommandResult(body.id, "done")
+        } catch (e: IOException) {
+            Log.e(TAG, "cannot save the sync mode", e)
+            Member.CommandResult(body.id, "failed", e.message)
+        }
     }
 
     /**
@@ -804,13 +875,18 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             records = Records(),
             os = "android",
             device = ownDevice,
+            mode = { syncMode },
+            onCommand = ::command,
             renew = ::renew,
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a
             // hello brings it on connecting, would overwrite what the phone
             // copied since.
+            // Only in a sync mode that takes the group's copies.
             onChange = { e ->
-                if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS) onCopy?.invoke(e.text, e.kind)
+                if (!e.isMark && e.text.isNotEmpty() && e.origin != g.device && e.ageMS < SyncRule.RECENT_COPY_MS && Member.receives(syncMode)) {
+                    onCopy?.invoke(e.text, e.kind)
+                }
             },
             tunnelKey = { if (isHub) null else a.keys },
             onTunnel = a::keep,
@@ -1012,11 +1088,17 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      */
     @Volatile var onCopy: ((String, Member.Kind) -> Unit)? = null
 
+    /** Called when an admin changed this phone's sync mode, on the node's thread. */
+    @Volatile var onModeChanged: (() -> Unit)? = null
+
     /** Called on the node's thread when records arrived that change the group, for the notifications. */
     @Volatile var onRecords: (() -> Unit)? = null
 
     companion object {
         private const val TAG = "clipboardbridge"
+
+        /** The most command IDs the replay cache keeps; a command lives at most 30 s, as Go's maxCommandIDs. */
+        private const val MAX_COMMANDS = 4096
 
         /** The forms of devices that are always on, as their hellos state them. */
         private val ALWAYS_ON = setOf("desktop", "server", "board", "router")

@@ -97,6 +97,14 @@ class MemberNode(
     private val onHubs: (String, List<ByteArray>, Member.HubShare) -> Unit = { _, _, _ -> },
     /** This device's operating system, which the hellos state. */
     val os: String? = null,
+    /** This phone's sync mode, which the hellos state; null for a phone without one, which shares. */
+    private val mode: () -> String? = { null },
+    /**
+     * Carries out a command a peer sent (docs/protocol.md, section 15), with
+     * the device ID the caller of serve named the peer by, and returns the
+     * result the peer gets; without it every command is refused.
+     */
+    private val onCommand: ((String?, Member.Record) -> Member.CommandResult)? = null,
     /** This device's form, system version and version, which the hellos state too. */
     device: Member.DeviceInfo? = null,
 ) {
@@ -221,7 +229,7 @@ class MemberNode(
         synchronized(lock) {
             conns.add(c)
             val keys = tunnelKey()
-            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device)
+            val hello = engine.hello(name).copy(records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device, mode = mode())
             c.enqueue(Member.Message.Hello(role, hello))
         }
         c.start()
@@ -282,9 +290,11 @@ class MemberNode(
                             }
                         }
                     }
-                    // A phone has no sync mode yet and takes no commands.
                     is Member.Message.Command -> c.enqueue(
-                        Member.Message.Result(Member.CommandResult(Commands.idOf(m.command) ?: "", "refused", "this device takes no commands")),
+                        Member.Message.Result(
+                            onCommand?.invoke(c.peer, m.command)
+                                ?: Member.CommandResult(Commands.idOf(m.command) ?: "", "refused", "this device takes no commands"),
+                        ),
                     )
                     is Member.Message.Result -> synchronized(lock) {
                         waiting[m.result.id]?.takeIf { it.first == c.peer }?.second?.complete(m.result)

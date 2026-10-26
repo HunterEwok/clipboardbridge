@@ -1560,15 +1560,17 @@ so a copy on one computer replaces what was just copied on another. Each device 
   so the devices list shows it.
 - Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
   in every mode.
-- Built so far: the mode on the computers (`cbb mode`, the file `mode` in the service's state
-  directory, the hello's `mode` and the devices list), with own for a device that makes or
-  joins a group and shared for one that joined before 0.5, which has no mode file; the
-  admin's signed `mode` command (`cbb mode -on DEVICE`, docs/protocol.md section 15), sent
-  directly to a connected member, and in the phone kits the hello's `mode`, the commands and
-  their results; the Mac app and the tray app set this computer's mode and, on an admin,
-  another computer's, and an admin phone sets a computer's from its page. Still to come in
-  0.5: the phones' and the lite member's own modes; they share until then, and refuse a
-  `mode` command.
+- Built: the mode on every member. A computer keeps it in the file `mode` in the service's
+  state directory (`cbb mode`), as does the lite member (`sudo cbb mode`); the phones keep it
+  in the app's storage and set it on their own page. A device that makes or joins a group
+  starts in own; one that joined before 0.5 has no mode and shares. Every member reports its
+  mode in its hello, so the devices list shows it, and takes an admin's signed `mode` command
+  (`cbb mode -on DEVICE`, an admin phone's device page, docs/protocol.md section 15), sent
+  directly to a connected member. On a phone the mode decides what its own automatic paths
+  do: Android's foreground service writes the group's copies to the clipboard only in a mode
+  that receives, and its accessibility service sends copies by itself only in one that sends;
+  the iPhone, which has no copy watching, writes a group copy from the last 45 seconds to the
+  pasteboard while the app is open in a mode that receives. The buttons work in every mode.
 
 ## Remote paste (planned for 0.6)
 

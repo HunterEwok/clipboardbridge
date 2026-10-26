@@ -2,7 +2,7 @@
 # Copyright (C) 2026 HunterEwok
 
 [Unit]
-Description=clipboardbridge shared clipboard
+Description=Clipboard Bridge shared clipboard
 Documentation=https://github.com/HunterEwok/clipboardbridge
 After=network-online.target
 Wants=network-online.target

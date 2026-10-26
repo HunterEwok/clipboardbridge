@@ -97,10 +97,9 @@ The order may change.
     5. the lite member's target, then the Nano ESP32's keyboard.
 19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
-    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built on the
-    computers (`cbb mode`) with the admin's signed `mode` command (`cbb mode -on`) and in
-    the phone kits and apps (an admin sets a computer's mode; the Mac and tray apps set their
-    own); the phones' and the lite member's own modes are next.**
+    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built: on the
+    computers (`cbb mode`), the lite member and both phones, with the admin's signed `mode`
+    command (`cbb mode -on`, an admin phone's device page) that every member takes.**
 20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
@@ -157,7 +156,7 @@ The order may change.
     from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
     never to an older or unsigned version, and automatically where the user allows it. See
     "Secure updates" below.
-30. **Planned for 0.5; steps 1 to 5 are built.** The phone as the hub while its app is open: a
+30. **Planned for 0.5; steps 1 to 7 are built.** The phone as the hub while its app is open: a
     group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
     afar while the app is open, through the project's forwarder; once a computer that is
     always on joins, the app suggests moving the hub there, and the user may keep it on the
@@ -595,7 +594,7 @@ device and Android would need more rights than the app should hold.
 
 ## The phone as the hub
 
-Planned for 0.5; steps 1 to 5 are done. The design, and the other cases of a group without a
+Planned for 0.5; steps 1 to 7 are done. The design, and the other cases of a group without a
 working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open-planned-for-05) (D-64).
 
 Everyone has a phone; not everyone has a computer. A group made on a phone gets a hub at once,

@@ -24,7 +24,7 @@ meta=$(mktemp)
 trap 'rm -f "$meta"' EXIT
 cargo metadata --locked --format-version 1 >"$meta"
 
-echo "The lite member of clipboardbridge is free software under the GNU Affero General"
+echo "The lite member of Clipboard Bridge is free software under the GNU Affero General"
 echo "Public License v3.0 only (LICENSE). It is built with the crates below, under"
 echo "their own licenses. The source code of each is on crates.io, at the version"
 echo "shown (https://crates.io/crates/NAME/VERSION)."

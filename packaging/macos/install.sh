@@ -122,7 +122,7 @@ if [ -e /usr/local/bin/clipbridge ] || [ -e "/Library/LaunchDaemons/$old.plist" 
 	rm -rf "/Library/Application Support/clipbridge" /Library/Logs/clipbridge
 	dscl . -delete /Users/_clipbridge 2>/dev/null || true
 	dscl . -delete /Groups/_clipbridge 2>/dev/null || true
-	echo "Removed clipbridge, as clipboardbridge was called before; pair this Mac again."
+	echo "Removed clipbridge, as Clipboard Bridge was called before; pair this Mac again."
 fi
 
 name=_clipboardbridge
@@ -139,7 +139,7 @@ if ! dscl . -read "/Users/$name" >/dev/null 2>&1; then
 	dscl . -create "/Users/$name" PrimaryGroupID "$gid"
 	dscl . -create "/Users/$name" UserShell /usr/bin/false
 	dscl . -create "/Users/$name" NFSHomeDirectory /var/empty
-	dscl . -create "/Users/$name" RealName "clipboardbridge service"
+	dscl . -create "/Users/$name" RealName "Clipboard Bridge service"
 	dscl . -create "/Users/$name" IsHidden 1
 fi
 
@@ -248,10 +248,10 @@ if [ -x "$fw" ]; then
 	if "$fw" --getglobalstate 2>/dev/null | grep -q enabled; then
 		fwstate=on
 	fi
-	echo "Firewall: the macOS application firewall ($fwstate). clipboardbridge requires this rule:"
+	echo "Firewall: the macOS application firewall ($fwstate). Clipboard Bridge requires this rule:"
 	echo "  1. Allow incoming connections to $service. Purpose: connections from the group's devices"
 	echo "     on TCP $port and finding them on UDP 5353 (mDNS). The application firewall allows a"
-	echo "     program on every port and from every address; clipboardbridge itself accepts only"
+	echo "     program on every port and from every address; Clipboard Bridge itself accepts only"
 	echo "     the home network."
 	yes=$firewall
 	how=
@@ -265,7 +265,7 @@ if [ -x "$fw" ]; then
 		fi
 	fi
 	if [ "$yes" != yes ] && [ "$yes" != no ] && [ "$yes" != express ]; then
-		echo "With Yes, clipboardbridge adds this rule, keeps it current on every update and removes it on uninstall."
+		echo "With Yes, Clipboard Bridge adds this rule, keeps it current on every update and removes it on uninstall."
 		printf 'Add this rule now? [y/N] '
 		yes=
 		how=
@@ -289,13 +289,13 @@ if [ -x "$fw" ]; then
 		"$fw" --add "$service" >/dev/null
 		"$fw" --unblockapp "$service" >/dev/null
 		echo "$service" >"$listed"
-		echo "Added the rule above$how. clipboardbridge manages it from now on."
+		echo "Added the rule above$how. Clipboard Bridge manages it from now on."
 	else
-		echo "No firewall rule was added. clipboardbridge works only while the firewall allows the rule above."
+		echo "No firewall rule was added. Clipboard Bridge works only while the firewall allows the rule above."
 		echo "To add it by hand, run:"
 		echo "  sudo $fw --add \"$service\""
 		echo "  sudo $fw --unblockapp \"$service\""
-		echo "To let clipboardbridge add and manage it, run the installer again with --express."
+		echo "To let Clipboard Bridge add and manage it, run the installer again with --express."
 	fi
 fi
 
@@ -321,8 +321,8 @@ if [ -n "$user" ] && [ "$user" != root ]; then
 	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi
 if [ "$port" != 8764 ]; then
-	echo "clipboardbridge uses TCP port $port instead of 8764. If a firewall on the network limits"
+	echo "Clipboard Bridge uses TCP port $port instead of 8764. If a firewall on the network limits"
 	echo "incoming connections, allow TCP $port from the home network. The iPhone shortcut works only"
-	echo "with 8764; the clipboardbridge app takes any port."
+	echo "with 8764; the Clipboard Bridge app takes any port."
 fi
-echo "clipboardbridge is running on TCP port $port. Join a group: sudo cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: sudo cbb new."
+echo "Clipboard Bridge is running on TCP port $port. Join a group: sudo cbb pair, and scan its QR code with the phone or type the code from cbb pair on the group's root or an admin; or start a group: sudo cbb new."

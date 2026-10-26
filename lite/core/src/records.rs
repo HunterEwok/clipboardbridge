@@ -31,6 +31,68 @@ const NAMED_PHONE: u8 = 1;
 const NAMED_OTHER: u8 = 2;
 const MAX_BODY: usize = 8 << 10;
 const VERSION: i64 = 1;
+/// The most bytes of a command's body: a hub command carries up to 256
+/// clients' keys.
+const MAX_COMMAND_BODY: usize = 64 << 10;
+/// How long a command lives at most after it was signed.
+pub const COMMAND_LIFETIME_MS: i64 = 30_000;
+/// How far ahead of the receiver's clock a command's time may be.
+pub const COMMAND_AHEAD_MS: i64 = 60_000;
+
+/// A command (docs/protocol.md, section 15), as its receiver checked it.
+#[derive(Deserialize, Default, Clone, Debug)]
+pub struct Command {
+    #[serde(default)]
+    v: i64,
+    /// `mode` or `hub`.
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub group: String,
+    /// The signer's device ID, for showing.
+    #[serde(default)]
+    pub by: String,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub time_ms: i64,
+    #[serde(default)]
+    pub expires_ms: i64,
+    /// In a mode command, the mode; not checked against the known modes
+    /// here.
+    #[serde(default)]
+    pub mode: String,
+    /// In a hub command, the order.
+    #[serde(default)]
+    pub hub: Option<serde_json::Value>,
+}
+
+impl Command {
+    fn check(&self) -> Result<()> {
+        if self.v != VERSION {
+            return Err(Error::msg(format!("unknown command version {}", self.v)));
+        }
+        if !certs::is_id(&self.id) {
+            return Err(Error::msg("the command has no valid ID"));
+        }
+        let hub = self.hub.as_ref().is_some_and(|h| !h.is_null());
+        match self.kind.as_str() {
+            "mode" if self.mode.is_empty() || hub => return Err(Error::msg("a mode command names no mode")),
+            "hub" if !hub || !self.mode.is_empty() => return Err(Error::msg("a hub command has no order")),
+            "mode" | "hub" => {}
+            k => return Err(Error::msg(format!("unknown command type {k:?}"))),
+        }
+        if !certs::is_id(&self.to) {
+            return Err(Error::msg("the command names no valid device"));
+        }
+        if self.expires_ms <= self.time_ms || self.expires_ms - self.time_ms > COMMAND_LIFETIME_MS {
+            return Err(Error::msg("the command's lifetime is not valid"));
+        }
+        Ok(())
+    }
+}
 
 /// A signed record: the body's exact bytes, an ECDSA signature over them,
 /// and the signer's certificates below the group CA.
@@ -386,16 +448,11 @@ impl Records {
         }
     }
 
-    fn verify(&self, r: &Record) -> Result<Signed> {
-        if r.body.len() > MAX_BODY {
-            return Err(Error::msg("the record is too large"));
-        }
-        let body: Body = serde_json::from_slice(&r.body).context("a record does not decode")?;
-        body.check()?;
-        if body.group != self.tag {
-            return Err(Error::msg("the record is for another group"));
-        }
-        let (signer, anchor) = match r.chain.len() {
+    /// The key that signed r and the root it is anchored to: a root's own
+    /// key (no chain), or an admin CA under one of the roots (a chain of
+    /// one).
+    fn signer_of(&self, r: &Record) -> Result<(KeyHash, KeyHash)> {
+        Ok(match r.chain.len() {
             0 => {
                 // Signed by a root's own key.
                 let k = self
@@ -420,7 +477,19 @@ impl Records {
                 (admin.key_hash(), anchor)
             }
             _ => return Err(Error::msg("a record's chain is too long")),
-        };
+        })
+    }
+
+    fn verify(&self, r: &Record) -> Result<Signed> {
+        if r.body.len() > MAX_BODY {
+            return Err(Error::msg("the record is too large"));
+        }
+        let body: Body = serde_json::from_slice(&r.body).context("a record does not decode")?;
+        body.check()?;
+        if body.group != self.tag {
+            return Err(Error::msg("the record is for another group"));
+        }
+        let (signer, anchor) = self.signer_of(r)?;
         let mut root = None;
         if body.kind == "root" {
             // A legacy group CA hands the group to its first root itself,
@@ -926,6 +995,42 @@ impl Records {
             return true;
         }
         self.devices().iter().any(|d| d.id == dev && d.admin)
+    }
+
+    /// Checks a command for the member `me` at now_ms, as Go's
+    /// Records.VerifyCommand: its signer is an admin of the group now (a
+    /// root on the path, or an admin CA under one that is neither revoked
+    /// nor frozen), it is for `me` in this group, it has not expired and it
+    /// was not signed in the future. The caller keeps the replay cache.
+    pub fn verify_command(&self, c: &Record, me: &str, now_ms: i64) -> Result<Command> {
+        if c.body.len() > MAX_COMMAND_BODY {
+            return Err(Error::msg("the command is too large"));
+        }
+        let body: Command = serde_json::from_slice(&c.body).context("a command does not decode")?;
+        body.check()?;
+        if body.group != self.tag {
+            return Err(Error::msg("the command is for another group"));
+        }
+        if body.to != me {
+            return Err(Error::msg("the command is for another device"));
+        }
+        let not_admin = || Error::msg("the command's signer is not an admin of the group");
+        let (signer, anchor) = self.signer_of(c).map_err(|_| not_admin())?;
+        let on_path = self.path().iter().any(|root| root.key_hash() == anchor);
+        if !on_path
+            || self.revoked(&signer)
+            || self.frozen(&signer)
+            || !(signer == anchor || self.issued(&anchor, &signer))
+        {
+            return Err(not_admin());
+        }
+        if body.expires_ms <= now_ms {
+            return Err(Error::msg("the command expired; check the clocks of both devices"));
+        }
+        if body.time_ms > now_ms + COMMAND_AHEAD_MS {
+            return Err(Error::msg("the command was signed in the future; check the clocks of both devices"));
+        }
+        Ok(body)
     }
 
     /// The devices that may be the group's hubs, in the order in which

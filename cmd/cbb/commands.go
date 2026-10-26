@@ -187,7 +187,7 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	}
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
 	if st.Removed {
-		fmt.Fprintln(w, "This device was removed from the group: its members refuse it. To join again, remove clipboardbridge with its keys (uninstall --purge), install it again and join.")
+		fmt.Fprintln(w, "This device was removed from the group: its members refuse it. To join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.")
 	}
 	if st.Mode != "" {
 		fmt.Fprintln(w, modeLine(st.Mode))
@@ -373,7 +373,7 @@ func cmdPairPhone(newToken bool, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "\n  (or open http://%s/ in Safari)\n\n", m.Address)
 	fmt.Fprintf(stdout, "The profile's fingerprint must start with:  %s\n", shortFingerprint(m.Fingerprint))
 	fmt.Fprintln(stdout, "  Compare it on the iPhone before you trust the profile: Settings > General >")
-	fmt.Fprintln(stdout, "  VPN & Device Management > clipboardbridge > More Details. Only this terminal")
+	fmt.Fprintln(stdout, "  VPN & Device Management > Clipboard Bridge > More Details. Only this terminal")
 	fmt.Fprintln(stdout, "  shows the right one; if it differs, remove the profile and stop.")
 	fmt.Fprintf(stdout, "The code the shortcut asks for:            %s %s\n", m.Code[:3], m.Code[3:])
 	fmt.Fprintf(stdout, "\nWaiting up to %d minutes. Press Ctrl+C to cancel.\n", m.Expires/60)
@@ -434,7 +434,7 @@ func joinByQR(stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(m.Addrs) == 0 {
 		return fail(stderr, errors.New("this device has no address on the home network; connect it to the network, or use cbb pair -code"))
 	}
-	fmt.Fprintln(stdout, "In the clipboardbridge app, tap \"Connect a new device\" (or run the shortcut")
+	fmt.Fprintln(stdout, "In the Clipboard Bridge app, tap \"Connect a new device\" (or run the shortcut")
 	fmt.Fprintln(stdout, "\"clipboardbridge: add a computer\") and scan this:")
 	fmt.Fprintln(stdout)
 	jc := phone.JoinCode{Code: h.Code, Addrs: m.Addrs, Fingerprint: m.Fingerprint}

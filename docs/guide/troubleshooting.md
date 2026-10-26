@@ -15,7 +15,7 @@ the underlying error under it. The service's log always has the details:
 
 ## Commands
 
-**"the clipboardbridge service is not running"**: start it
+**"the Clipboard Bridge service is not running"**: start it
 (`sudo systemctl start clipboardbridge` on Linux; `sudo launchctl kickstart -k system/io.github.hunterewok.clipboardbridge`
 on a Mac; `Start-Service clipboardbridge` on Windows) and look at its log.
 

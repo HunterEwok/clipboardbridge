@@ -54,6 +54,11 @@ class AppModel(private val app: Context) {
         private set
     var devices by mutableStateOf(group.devices)
         private set
+
+    init {
+        // A command from an admin changes this phone's mode on the node's thread.
+        group.onModeChanged = { Handler(Looper.getMainLooper()).post { devices = group.devices } }
+    }
     val computers: List<LiveGroup.Device> get() = devices.filter { !it.isSelf }
     var message by mutableStateOf<Note?>(null)
     var busy by mutableStateOf(false)
@@ -479,10 +484,10 @@ class AppModel(private val app: Context) {
         update()
     }
 
-    /** Sets a computer's sync mode; the reason it refused, if it does, shows under the message. */
+    /** Sets a device's sync mode, this phone's own without a command; the reason a device refused, if it does, shows under the message. */
     suspend fun setMode(id: String, mode: String) {
         message = try {
-            group.setMode(id, mode)
+            if (devices.firstOrNull { it.id == id }?.isSelf == true) withContext(Dispatchers.IO) { group.setOwnMode(mode) } else group.setMode(id, mode)
             Note(R.string.mode_set)
         } catch (e: CancellationException) {
             throw e

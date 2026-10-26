@@ -169,6 +169,10 @@
     <string name="mode_shared">Общий</string>
     <string name="mode_receive">Только приём</string>
     <string name="mode_send">Только отправка</string>
+    <string name="mode_own_note">Его копии остаются на нём, копии группы не приходят; отправить или забрать вручную по-прежнему можно.</string>
+    <string name="mode_shared_note">Его копии уходят в группу, копии группы приходят к нему.</string>
+    <string name="mode_receive_note">Копии группы приходят к нему, свои остаются на нём.</string>
+    <string name="mode_send_note">Его копии уходят в группу, копии группы не приходят.</string>
     <string name="mode_set">Режим синхронизации изменён.</string>
     <string name="reason_set_mode">Изменить режим синхронизации компьютера</string>
     <string name="error_command_refused">Компьютер отказался.</string>
