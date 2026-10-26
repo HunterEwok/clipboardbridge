@@ -28,6 +28,10 @@ accounts. Its command is `cbb`.
 
 3. Run `sudo cbb pair` on the computer and scan its QR code in the app.
 
+No computer? A group of phones only works too: the phone is the hub while its app is open.
+A computer that is often on is simpler, though, since it keeps sync away from home going at
+any time ([two kinds of group](docs/guide/how-it-works.md#two-kinds-of-group)).
+
 The [quick start](docs/guide/quickstart.md) walks through it step by step;
 [Installing](docs/guide/install.md) has Homebrew, winget, Docker and the firewall.
 
