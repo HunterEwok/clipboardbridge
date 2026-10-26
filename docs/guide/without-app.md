@@ -61,8 +61,11 @@ comes to the iPhone; otherwise a new copy on the iPhone goes to the computers.
 Make a second computer an admin, so it can add and remove devices too:
 
 ```sh
-sudo cbb admin NAME          # on the root; NAME as cbb status shows it, and it must be on
+sudo cbb admin -allow-file-key NAME   # on the root; NAME as cbb status shows it, and it must be on
 ```
+
+The computer keeps its keys in a file, so whoever copies that file acts as an admin until another
+admin removes the computer: make an admin only of a computer you keep safe.
 
 If the root is lost or broken, the admin takes the group over, and every other device stays:
 
