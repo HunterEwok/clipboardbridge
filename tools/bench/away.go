@@ -293,11 +293,15 @@ func Relay(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 			continue
 		}
 		if r.Do("relay/P12/"+d.Name+"/on", func() error {
+			// The relay is part of sync away from home, which comes first.
+			if _, err := Run(ctx, d, adminCmd(d)+" global on", "yes\n"); err != nil {
+				return noSudo(d, err)
+			}
+			g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, d) })
 			_, err := Run(ctx, d, adminCmd(d)+" global relay "+rel.Address+" -key "+rel.Key+" -yes", "")
-			return noSudo(d, err)
+			return err
 		}) == nil {
 			met = append(met, d)
-			g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, d) })
 		}
 	}
 	if len(met) < 2 {
