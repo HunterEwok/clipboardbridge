@@ -834,23 +834,38 @@ jobs:
           cache: false
       # The runners' Ubuntu mirror sometimes serves these packages at a few
       # kB/s until the job's time is up, so the downloaded .deb files are
-      # kept between runs and only the recommended extras are left out.
-      - name: cache GTK 4 and WebKitGTK packages
+      # kept between runs and only the recommended extras are left out. The
+      # download has its own time limit and what it fetched is saved even
+      # when it runs out, so a slow mirror only delays the job by a run or two
+      # instead of never filling the cache.
+      - name: restore GTK 4 and WebKitGTK packages
         if: runner.os == 'Linux'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
-          key: trayapp-apt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: trayapp-apt-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: trayapp-apt-${{ runner.os }}-${{ runner.arch }}-
       - name: GTK 4 and WebKitGTK, which Wails builds on
         if: runner.os == 'Linux'
+        id: gtk
+        timeout-minutes: 13
         # A stalled download gives up early and tries again.
         run: |
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
           mkdir -p ~/apt-archives/partial
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: tidy the package cache
+        if: always() && runner.os == 'Linux' && steps.gtk.outcome != 'skipped'
+        run: |
+          sudo rm -rf ~/apt-archives/partial ~/apt-archives/lock
           sudo chown -R "$USER" ~/apt-archives
+      - name: save GTK 4 and WebKitGTK packages
+        if: always() && runner.os == 'Linux' && steps.gtk.outcome != 'skipped'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: trayapp-apt-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
       # A Windows checkout gives go.sum CR LF line ends, which -diff reports.
       - name: go mod tidy
         if: runner.os == 'Linux'
