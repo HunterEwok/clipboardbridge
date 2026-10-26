@@ -70,7 +70,8 @@ const (
 var english = Language{Code: "en", Name: "English", Tag: "en"}
 
 // loadLanguages returns English and every language of site/l10n, in the
-// order of their codes after English.
+// order of their own names: the Latin ones alphabetically, then each other
+// script together, as the menu lists them.
 func loadLanguages(root string) ([]Language, error) {
 	langs := []Language{english}
 	files, err := filepath.Glob(filepath.Join(root, "l10n", "*.json"))
@@ -97,6 +98,7 @@ func loadLanguages(root string) ([]Language, error) {
 		}
 		langs = append(langs, l)
 	}
+	slices.SortFunc(langs, func(a, b Language) int { return strings.Compare(a.Name, b.Name) })
 	return langs, nil
 }
 
