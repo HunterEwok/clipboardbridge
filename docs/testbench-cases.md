@@ -244,7 +244,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P35)
+## 3. Features and platforms (section 7, P1 to P38)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -325,10 +325,20 @@ fails for a reason a real phone would share.
 6. A hub with only an IPv6 address; a hub behind CGNAT (only the forwarder).
 Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing.
 
-**P12. Blind relay.** Runs: planned (self-hosted only).
-1. On the relay `cbb relay -group TAG`; on two members `cbb global relay ADDR:PORT -key KEY`.
-2. Copy each way; capture on the relay (R7).
-Pass: they sync; the relay sees only TLS between members, no marker.
+**P12. Blind relay.** Runs: manual (the open relay on `relay`, beside the forwarder).
+Devices: `relay`, `deck`, `vps`; the group of R2 without a hub (no `cbb global hub` on any
+device). The relay runs `cbb relay -open -listen :PORT` as its own service, on a port of its
+own (the forwarder keeps 8764), opened in the server's firewall for UDP and TCP.
+1. On `relay` `cbb relay -show-key` gives KEY.
+2. On `deck` and `vps` `sudo cbb global relay RELAY:PORT -key KEY`; read what it says the
+   relay learns, type `yes`; then `cbb global` on each.
+3. Copy each way between `vps` and `deck` (R4, R5); capture on the relay (R7).
+4. Restart `vps`'s service; copy again once it is back.
+5. Give `vps` a wrong `-key`.
+Pass: they sync both ways, also after the restart (within the 60 s backoff); `cbb global`
+names the relay; the capture has only WireGuard UDP and the registration's TLS (no server
+name), no marker; with the wrong key nothing is sent and the error says the key does not
+match.
 
 **P13. Status, revoke, version.** Runs: partly auto (`check`, R3).
 1. On every platform `cbb version`, `cbb status`.
@@ -474,6 +484,17 @@ logs once that there is no watch.
 Pass: in own neither copy crosses, and `cbb paste` on deck prints win's text; in receive only
 win's copy reaches deck, in send only deck's reaches win; the mode survives the restart and
 win lists it; in shared both cross (R5).
+5. On `rpi0w` `sudo cbb mode own`, copy on `deck`, then `cbb paste` on `rpi0w`; `sudo cbb
+   mode shared` and copy again. The same on `nas` through `docker exec`, and on `mac` in the
+   Mac app's Settings.
+6. On `deck` (the root) `cbb mode -on mac receive`, then `cbb mode -on rpi0w send`; `cbb mode`
+   on each. On `win` before it is an admin `cbb mode -on deck own`. With `mac`'s service
+   stopped, `cbb mode -on mac shared` on `deck`.
+Pass (steps 5 and 6): the lite member keeps its mode in its `mode` file and prints the
+group's text in own; the container and the Mac follow the same rules as `deck`; the root's
+commands are taken and each target's `cbb mode` shows the new mode; a member that is not an
+admin is refused with a clear message; a stopped target gives an error within 10 s and
+nothing changes.
 
 **P35. A member in a container.** Runs: auto (`full`, steps 1 to 4, when the inventory has a
 device with `os = "docker"`), manual (step 5).
@@ -501,6 +522,46 @@ group's CA keys, and they stay off a container.
 Pass: steps 1 to 4 as written, with no step needing more than the compose file gives (no
 `NET_ADMIN`, no `/dev/net/tun`, no `--privileged`); in step 5 a copy on `vps` arrives on
 `deck` and back (R5), and `cbb status` on `vps` names `nas` as its hub.
+
+**P36. Several hubs.** Runs: manual.
+Devices: `deck` (the root), `mac` (an admin), `vps` (away), `relay` (the forwarder). The order
+of the hubs is the root first, then the others by device ID (docs/protocol.md, section 11,
+"Several hubs"); phones are out of this run.
+1. The group of R2. On `deck` `sudo cbb global on` and `cbb global hub -forwarder ...` (as in
+   P11); `cbb admin mac`; on `mac` the same two commands. `vps` joins by `cbb invite` from
+   `deck` (P11).
+2. `cbb global` on all three.
+3. Stop `deck`'s service. Copy on `vps` every 10 s and watch `cbb global` on `vps` and `mac`.
+4. Start `deck`'s service; keep copying on `vps` for 20 minutes.
+5. Capture `vps`'s uplink during steps 3 and 4 (R7).
+Pass: in step 2 `deck` serves, `mac` is `deck`'s client and `vps` knows both hubs; in step 3
+`mac` serves within about a minute and `vps` reaches it with no new invitation, and the
+copies resume on `mac`; in step 4 `mac` stops serving once `deck` says it serves, and `vps` is
+back on `deck` within 5 minutes; no copy is lost (the last one wins everywhere); the capture
+shows only WireGuard to the forwarder or the hubs. The switch times go into the report.
+
+**P37. Moving the hub.** Runs: manual.
+Devices: `deck` (the root and the hub), `mac` (an admin with sync away from home on and no hub
+set up), `rpi0w`, `nas`, `vps` (away, connected through `deck`).
+1. The setup of P36 step 1 without the hub on `mac`.
+2. On `deck` `cbb global move rpi0w`, then `cbb global move nas`.
+3. On `deck` `cbb global move mac`.
+4. Copy each way between `vps` and `mac`, and `deck`; `cbb global` on all three.
+5. Turn `vps`'s sync away from home off and on, and copy again.
+Pass: step 2 is refused with a clear message (a lite member and a container cannot be the
+hub); after step 3 `mac` serves with `deck`'s forwarder, `deck` is its client, and `vps`
+follows without coming home or a new invitation; copies arrive both ways (R5).
+
+**P38. The open relay's limits.** Runs: planned (a helper that starts throwaway groups in
+containers on the controller).
+Devices: `relay`, the controller.
+1. Start 17 throwaway groups on the controller, each a container with `CBB_KEYS_IN_FILE=yes`
+   that runs `cbb new` and `cbb global relay` to the relay of P12; they share one address.
+2. Send texts at the size limit in a loop in one group for a minute (above 1 MiB a second).
+3. Remove each group's last device; with `CBB_DEBUG=1` on the relay, read its counts.
+Pass: the 17th registration from one address is refused with a clear message, and the 16
+others work; the busy group is slowed and no other group is; the counts drop to zero groups
+once their last devices leave; the relay writes nothing to disk (as S8).
 
 ## 4. Failure cases (section 8)
 
@@ -610,13 +671,16 @@ Pass: the hub dropped its tunnel key; no sync; rejoin refused.
    fingerprints shown on both sides.
 Pass: second use, expired and `no` are refused; the fingerprints match.
 
-**S8. The relay learns little.** Runs: planned (with step 6 of testbench.md).
+**S8. The relay learns little.** Runs: manual (the forwarder and the open relay of P12 on
+`relay`).
 1. Two groups registered at the forwarder; from a client of one try to reach the other's hub.
-2. Before and after a run, list every file changed on the forwarder's server (`find / -xdev
-   -newer STAMP` outside /proc, /sys, /run) and its journal.
-3. Register a hub with a wrong certificate chain.
-Pass: groups cannot reach each other; no file and no log line about them; the bad registration
-is refused.
+   The same at the open relay: from a device of one group `dial` a device of the other.
+2. Before and after a run, list every file changed on the server (`find / -xdev -newer STAMP`
+   outside /proc, /sys, /run) and the journals of both services.
+3. Register a hub with a wrong certificate chain at the forwarder, and a device with one at
+   the relay; register at the relay a device that the group's records revoke.
+Pass: groups cannot reach each other; no file and no log line about them (besides the key
+files); each bad registration is refused.
 
 **S9. Fail closed.** Runs: manual.
 1. Break the tunnel (block the hub's UDP port on the away computer).
@@ -660,6 +724,16 @@ Pass: no hit.
 **S16. Files at rest.** Runs: manual.
 1. List the state directories with permissions after `full`.
 Pass: only keys and certificates, owner-only permissions; no clipboard text anywhere.
+
+**S17. Commands.** Runs: manual (step 3 planned: a helper that captures and replays a command).
+Devices: `deck` (the root), `win` or `mac` (an admin), `rpi0w`.
+1. On the admin `cbb mode -on rpi0w own`; then on `deck` `cbb freeze` the admin and repeat;
+   `cbb unfreeze` it.
+2. Set `rpi0w`'s clock 2 minutes back, send a mode command, set the clock right.
+3. Send one command twice with the same `id`.
+Pass: the admin's command is taken, a frozen admin's is refused; a command more than 60 s
+ahead of the receiver's clock is refused; the second copy is refused by the replay cache;
+each refusal says why on the sender, and the receiver's log names the sender.
 
 ## 6. Long run (section 10)
 
