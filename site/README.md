@@ -2,7 +2,7 @@
 # The website
 
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
-security and privacy) in English and every language of `l10n/`, built by
+security and privacy) in English and every language of `l10n/` (Chinese, Spanish, Russian, Arabic, Swahili, Hebrew), built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
 sites and has no scripts.
 
