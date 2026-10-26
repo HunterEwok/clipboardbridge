@@ -319,6 +319,17 @@ class MemberNode(
     /** Closes the connections to a device, for example one just removed. */
     fun close(peer: String) = synchronized(lock) { conns.filter { it.peer == peer }.forEach { it.goodbye() } }
 
+    /**
+     * Says goodbye, after what is queued for them, on the connections to
+     * peers, and waits up to timeoutMS until they ended: an old hub's
+     * clients then have the new hub's offer before its tunnel stops.
+     */
+    fun sayGoodbye(peers: Collection<String>, timeoutMS: Long) {
+        val closing = synchronized(lock) { conns.filter { it.peer in peers }.onEach { it.goodbye() } }
+        val deadline = System.nanoTime() + timeoutMS * 1_000_000
+        while (synchronized(lock) { closing.any { it in conns } } && System.nanoTime() < deadline) Thread.sleep(50)
+    }
+
     /** Sends records made on this phone to every connected member. */
     fun sendRecords(rs: List<Member.Record>) = synchronized(lock) {
         sendRecords(rs, null)

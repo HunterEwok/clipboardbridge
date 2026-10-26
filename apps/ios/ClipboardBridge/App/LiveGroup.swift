@@ -771,6 +771,10 @@ final class LiveGroup: GroupController {
     /// the hub to a computer").
     static let keepsPhoneHubKey = "KeepsPhoneHub"
 
+    /// The longest the old hub waits for its clients' connections to end
+    /// after it passed the new hub's offer on.
+    static let moveGrace: Duration = .seconds(10)
+
     /// The forms of devices that are always on, as their hellos state them.
     private static let alwaysOn: Set<String> = ["desktop", "server", "board", "router"]
 
@@ -802,9 +806,12 @@ final class LiveGroup: GroupController {
             if !wasOn { try? await away.turnOff() }
             throw error
         }
-        await node.sendTunnel { hub.movedOffer(device: $0, newHub: id, offer: offer) }
-        // The clients that came through the tunnel get the offer before it closes.
-        try? await Task.sleep(for: .seconds(2))
+        let sent = await node.sendTunnel { hub.movedOffer(device: $0, newHub: id, offer: offer) }
+        // The clients that came through the tunnel get the offer before it
+        // closes: each connection ends after the offer and a goodbye, and
+        // the last packets get a second more.
+        await node.sayGoodbye(to: sent, timeout: Self.moveGrace)
+        try? await Task.sleep(for: .seconds(1))
         try hub.turnOff()
         await away.keep(from: id, offer: offer.with(psk: psk, hub: nil))
         await restartSync()

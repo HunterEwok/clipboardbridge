@@ -807,9 +807,12 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             if (!wasOn) a.turnOff()
             throw CommandRefused(r.reason ?: r.status)
         }
-        n.sendTunnel { dev -> h.movedOffer(dev, id, offer) }
-        // The clients that came through the tunnel get the offer before it closes.
-        delay(MOVE_GRACE_MS)
+        val sent = n.sendTunnel { dev -> h.movedOffer(dev, id, offer) }
+        // The clients that came through the tunnel get the offer before it
+        // closes: each connection ends after the offer and a goodbye, and
+        // the last packets get a second more.
+        withContext(Dispatchers.IO) { n.sayGoodbye(sent, MOVE_GRACE_MS) }
+        delay(MOVE_LINGER_MS)
         h.turnOff()
         a.keep(id, offer.with(psk, null))
         withContext(Dispatchers.IO) { restartSync() }
@@ -1183,8 +1186,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         /** How long a hub command may take: the computer starts its hub before it answers. */
         private const val MOVE_TIMEOUT_MS = 20_000L
 
-        /** How long the old hub waits, after it passed on the new hub's offer, before it stops, as Go's moveGrace. */
-        private const val MOVE_GRACE_MS = 2_000L
+        /** The longest the old hub waits for its clients' connections to end after it passed the new hub's offer on, as Go's moveGrace. */
+        private const val MOVE_GRACE_MS = 10_000L
+
+        /** How long it keeps its tunnel after they ended, for the last packets, as Go's moveLinger. */
+        private const val MOVE_LINGER_MS = 1_000L
 
         /** How long a member that browsing finds counts as at home without a connection to it. */
         private const val NEAR_GRACE_MS = 30_000L
