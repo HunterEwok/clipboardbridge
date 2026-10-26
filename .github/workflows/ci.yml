@@ -538,7 +538,7 @@ jobs:
             $env:CBB_RELEASE_ROOTS = $roots
             $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
             Write-Host $out
-            if ($out -notmatch 'signature checks out \(0\.6\.0\)') { throw 'get.ps1 did not check the signature' }
+            if ($out -notmatch 'signature checks out \(0\.6\.0\)' -or $out -match 'failed') { throw 'get.ps1 did not install the signed release' }
             Remove-Item (Join-Path $rel 'stable.json')
             $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
             Write-Host $out
@@ -547,6 +547,8 @@ jobs:
             Write-Host "$($_.Exception.Message)`n$($_.ScriptStackTrace)"
             exit 1
           }
+          # Not the exit code of the last program get.ps1 ran.
+          exit 0
       - name: install.ps1 keeps a port and the firewall rules follow it, and uninstall.ps1 removes it all
         env:
           CBB_ERROR_DETAILS: "1"

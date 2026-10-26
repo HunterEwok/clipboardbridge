@@ -40,6 +40,15 @@
 	# made, releases carry no signed files and nothing is checked.
 	$releaseRoots = @()
 
+	# Invoke-Quietly runs a program without its output and returns its exit
+	# code. Windows PowerShell 5.1 turns a program's redirected stderr into
+	# errors, which Stop would throw, so the preference is relaxed here only.
+	function Invoke-Quietly {
+		$ErrorActionPreference = 'Continue'
+		& $args[0] @($args | Select-Object -Skip 1) *> $null
+		return $LASTEXITCODE
+	}
+
 	# Get-ReleaseFile downloads a release file, or copies it from CBB_RELEASE_DIR.
 	function Get-ReleaseFile($url, $path) {
 		if ($env:CBB_RELEASE_DIR) {
@@ -229,13 +238,11 @@
 			$gh = Get-Command gh -ErrorAction SilentlyContinue
 			$signedIn = $false
 			if ($gh) {
-				& $gh.Source auth status *> $null
-				$signedIn = $LASTEXITCODE -eq 0
+				$signedIn = (Invoke-Quietly $gh.Source auth status) -eq 0
 			}
 			if ($env:CBB_RELEASE_DIR -or $attestation -eq 'skip') {
 			} elseif ($signedIn) {
-				& $gh.Source attestation verify (Join-Path $tmp $archive) --repo HunterEwok/clipboardbridge *> $null
-				if ($LASTEXITCODE -ne 0) {
+				if ((Invoke-Quietly $gh.Source attestation verify (Join-Path $tmp $archive) --repo HunterEwok/clipboardbridge) -ne 0) {
 					throw "$archive does not have this repository's build attestation; not installing it"
 				}
 				Write-Host "The archive's build attestation checks out."
