@@ -76,7 +76,7 @@ func run(args []string) error {
 		if !*allowDrop {
 			for _, s := range last.AndroidRevoked {
 				if _, found := slices.BinarySearchFunc(revoked, s, compareSerials); !found {
-					return fmt.Errorf("Google's list no longer revokes %s; check it and run again with -allow-drop", s)
+					return fmt.Errorf("the list from Google no longer revokes %s; check it and run again with -allow-drop", s)
 				}
 			}
 		}
@@ -112,7 +112,7 @@ func fetch() ([]string, int64, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("Google's list: %s", resp.Status)
+		return nil, 0, fmt.Errorf("the list from Google: %s", resp.Status)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
@@ -124,10 +124,10 @@ func fetch() ([]string, int64, error) {
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(data, &list); err != nil {
-		return nil, 0, fmt.Errorf("Google's list: %w", err)
+		return nil, 0, fmt.Errorf("the list from Google: %w", err)
 	}
 	if list.Entries == nil {
-		return nil, 0, errors.New("Google's list has no entries")
+		return nil, 0, errors.New("the list from Google has no entries")
 	}
 	var out []string
 	for serial, e := range list.Entries {
@@ -137,7 +137,7 @@ func fetch() ([]string, int64, error) {
 		}
 		n, ok := new(big.Int).SetString(serial, 16)
 		if !ok || n.Sign() < 0 {
-			return nil, 0, fmt.Errorf("Google's list names %q, not a serial number", serial)
+			return nil, 0, fmt.Errorf("the list from Google names %q, not a serial number", serial)
 		}
 		out = append(out, n.Text(16))
 	}
