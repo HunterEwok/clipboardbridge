@@ -33,6 +33,9 @@ func (b *Board) Write(string, bool) (int64, error) { return 0, ErrUnsupported }
 // WriteImage fails in this build.
 func (b *Board) WriteImage(string, []byte, string) (int64, error) { return 0, ErrUnsupported }
 
+// WriteHTML fails in this build.
+func (b *Board) WriteHTML(string, string) (int64, error) { return 0, ErrUnsupported }
+
 // WriteFiles fails in this build.
 func (b *Board) WriteFiles([]string) (int64, error) { return 0, ErrUnsupported }
 

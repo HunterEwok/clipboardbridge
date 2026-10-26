@@ -498,7 +498,7 @@ func (s *Service) write(w node.Write) {
 	w, ok := s.mediaWritten(w)
 	// A watcher that takes images or files gets such a copy whole, once
 	// it has arrived; the others get its plain-text alternative, if any.
-	whole := s.content != nil && media.Media != nil && (imageCopy(media.Media) || media.Media.Files())
+	whole := s.content != nil && media.Media != nil && (imageCopy(media.Media) || htmlCopy(media.Media) || media.Media.Files())
 	if whole && !s.content.complete(media.Media) {
 		s.mediaWait = &media
 	}
@@ -533,6 +533,16 @@ func imageCopy(m *clip.Manifest) bool {
 		return false
 	}
 	return slices.ContainsFunc(m.Parts, func(p clip.Part) bool { return p.Type == clip.TypePNG || p.Type == clip.TypeJPEG })
+}
+
+// htmlCopy reports whether a copy is clipboard data with formatted text,
+// which a watcher that takes it puts into the clipboard with the copy's
+// plain text.
+func htmlCopy(m *clip.Manifest) bool {
+	if m == nil || m.Files() {
+		return false
+	}
+	return slices.ContainsFunc(m.Parts, func(p clip.Part) bool { return p.Type == clip.TypeHTML })
 }
 
 // mediaArrived gives the watchers that take images or files the copy m

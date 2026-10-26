@@ -190,6 +190,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   keeps its own clipboard out, and serves it to the members that reach only it, both ways.
   Through its tunnel it serves only copies within that limit (`cbb config max-copy-away`),
   so the hub's limit caps its whole star; a larger copy stays at home and the hub logs it.
+- Formatted text in the desktop connectors (design.md, "Images and files", step 6): text
+  copied with its formatting in a browser or an office program on Wayland, X11, a Mac or
+  Windows (`text/html`, `public.html`, `HTML Format`) is pasted with it on the other
+  computers, and as plain text on the phones and the lite member. A secret's formatting is
+  never read; formatted text over 8 MiB, or with a text over 256 KiB, goes as its text alone.
+  A watch request asks for it with `html` (docs/protocol.md, section 8).
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 

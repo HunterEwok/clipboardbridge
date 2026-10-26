@@ -938,6 +938,7 @@ Header fields (all omitted when empty):
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
 | `images` | bool | `watch`: the watcher writes images, so the service sends it copies with images as a `write` of kind `media` |
 | `files` | bool | `watch`: the same for copies of files and folders |
+| `html` | bool | `watch`: the same for formatted text, a copy with a `text/html` part whose plain-text alternative is its text; such a watcher reports formatted text with `copied-media` and the text as the alternative, and the others get the text |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |

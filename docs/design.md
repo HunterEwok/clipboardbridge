@@ -604,7 +604,7 @@ multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
 
-Steps 1 to 5 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+Steps 1 to 6 are built (docs/protocol.md, section 4, "Media" and "Content", and the
 watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
 over the control socket and saves them in the user's cache (`~/.cache/clipboardbridge/received`,
 `~/Library/Caches` on a Mac, `%LocalAppData%` on Windows), a folder for each copy readable
@@ -619,7 +619,11 @@ through the FileTransfer portal; files a Flatpak app copies are under the docume
 3. Files and folders in the desktop connectors.
 4. The phone apps: images, then files and the share targets.
 5. Away from home: the away limit, the hub serving its clients, the bench's tests.
-6. HTML, optional.
+6. HTML in the desktop connectors: `text/html` on Wayland and X11, `public.html` on a Mac
+   and `HTML Format` on Windows, read next to the text and never with a secret. It goes as
+   a media copy with the text as its alternative, so the phones, the lite member and older
+   connectors get the text; formatted text over 8 MiB, or whose text is over 256 KiB, goes
+   as its text alone.
 
 ## Security
 

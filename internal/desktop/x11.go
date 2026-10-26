@@ -72,6 +72,8 @@ type x11Read struct {
 	image   string      // the image type it reads, "" for a text
 	files   string      // the type of a list of files it reads, "" for none
 	text    xproto.Atom // the text target to read when the list holds no file
+	html    bool        // the owner offers formatted text, read after the text
+	plain   []byte      // the text, while the formatted text is read
 	limit   int         // the most bytes it takes: maxText, or more for an image or files
 	initial bool        // the clipboard at open: what it holds, not a change
 	data    []byte
@@ -103,7 +105,7 @@ type sendKey struct {
 
 var x11Atoms = []string{"CLIPBOARD", "PRIMARY", "TARGETS", "UTF8_STRING", "STRING", "TEXT", "text/plain;charset=utf-8",
 	"text/plain", "INCR", "ATOM", "TIMESTAMP", secretType, "CBB_SELECTION", "MULTIPLE", clip.TypePNG, clip.TypeJPEG,
-	uriListType, gnomeFilesType, portalFilesType}
+	clip.TypeHTML, uriListType, gnomeFilesType, portalFilesType}
 
 // OpenX11 connects to the X server in $DISPLAY.
 func OpenX11(logf func(string, ...any)) (*X11, error) {
@@ -284,19 +286,19 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 		return
 	}
 	if e.Property == xproto.AtomNone {
-		b.finishRead(connector.Item{}, false) // the owner refused
+		b.failRead() // the owner refused
 		return
 	}
 	prop, err := xproto.GetProperty(b.x, true, b.win, e.Property, xproto.GetPropertyTypeAny, 0, uint32(r.limit+3)/4).Reply()
 	if err != nil {
-		b.finishRead(connector.Item{}, false)
+		b.failRead()
 		return
 	}
 	if prop.BytesAfter > 0 {
 		// More than the group carries, in one piece: skip it rather than
 		// report the beginning as the whole text.
 		b.logf("cbb: the clipboard holds more than %d bytes", r.limit)
-		b.finishRead(connector.Item{}, false)
+		b.failRead()
 		return
 	}
 	switch r.stage {
@@ -334,6 +336,7 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 			// UTF8_STRING, as many old programs do.
 			target = b.atoms["UTF8_STRING"]
 		}
+		r.html = !r.secret && slices.Contains(r.targets, b.atoms[clip.TypeHTML])
 		r.stage = readText
 		xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], target, b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
 	case readText:
@@ -346,7 +349,8 @@ func (b *X11) converted(e xproto.SelectionNotifyEvent) {
 }
 
 // finished ends a read with the bytes read, or reads the text instead of
-// a list of files that names no file here.
+// a list of files that names no file here, or the formatted text after
+// the text.
 func (b *X11) finished(data []byte) {
 	r := b.read
 	if r.files != "" && len(filePaths(r.files, data)) == 0 && r.text != 0 {
@@ -354,8 +358,24 @@ func (b *X11) finished(data []byte) {
 		xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], r.text, b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
 		return
 	}
+	if r.html && r.plain == nil && r.image == "" && r.files == "" && len(data) > 0 {
+		r.plain, r.stage, r.limit, r.data = data, readText, connector.MaxHTML, nil
+		xproto.ConvertSelection(b.x, b.win, b.atoms["CLIPBOARD"], b.atoms[clip.TypeHTML], b.atoms["CBB_SELECTION"], xproto.TimeCurrentTime)
+		return
+	}
 	it := r.item(data)
-	b.finishRead(it, len(data) > 0 && (r.files == "" || len(it.Files) > 0))
+	b.finishRead(it, r.plain != nil || len(data) > 0 && (r.files == "" || len(it.Files) > 0))
+}
+
+// failRead ends a read that failed: with the text alone when it was the
+// formatted text that failed, else with nothing.
+func (b *X11) failRead() {
+	if r := b.read; r != nil && r.plain != nil {
+		b.logf("cbb: the clipboard's formatted text could not be read; its text goes alone")
+		b.finishRead(connector.Item{Text: string(r.plain)}, true)
+		return
+	}
+	b.finishRead(connector.Item{}, false)
 }
 
 // item makes the item of the bytes read.
@@ -365,6 +385,9 @@ func (r *x11Read) item(data []byte) connector.Item {
 	}
 	if r.files != "" {
 		return connector.Item{Files: filePaths(r.files, data)}
+	}
+	if r.plain != nil {
+		return connector.Item{Text: string(r.plain), HTML: htmlText(data)}
 	}
 	return connector.Item{Text: string(data), Secret: r.secret}
 }
@@ -379,7 +402,7 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 		}
 		prop, err := xproto.GetProperty(b.x, true, b.win, e.Atom, xproto.GetPropertyTypeAny, 0, uint32(r.limit+3)/4).Reply()
 		if err != nil {
-			b.finishRead(connector.Item{}, false)
+			b.failRead()
 			return
 		}
 		if len(prop.Value) == 0 {
@@ -389,7 +412,7 @@ func (b *X11) property(e xproto.PropertyNotifyEvent) {
 		r.data = append(r.data, prop.Value...)
 		if len(r.data) > r.limit {
 			b.logf("cbb: the clipboard holds more than %d bytes", r.limit)
-			b.finishRead(connector.Item{}, false)
+			b.failRead()
 		}
 		return
 	}
@@ -521,6 +544,12 @@ func (b *X11) Write(text string, secret bool) error {
 // any.
 func (b *X11) WriteImage(img connector.Image, text string) error {
 	return b.write(connector.Item{Text: text, Image: &img}, map[string][]byte{img.Type: img.Data}, []string{img.Type})
+}
+
+// WriteHTML owns CLIPBOARD and PRIMARY with formatted text and its plain
+// text.
+func (b *X11) WriteHTML(html, text string) error {
+	return b.write(connector.Item{Text: text, HTML: html}, map[string][]byte{clip.TypeHTML: []byte(html)}, []string{clip.TypeHTML})
 }
 
 // WriteFiles owns CLIPBOARD and PRIMARY with the files, as a file manager

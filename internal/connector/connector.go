@@ -47,10 +47,22 @@ type Item struct {
 	Image *Image
 	// Files are the paths of the clipboard's files, on a FileBoard.
 	Files []string
+	// HTML is the clipboard's formatted text, on an HTMLBoard; Text is
+	// then its plain text.
+	HTML string
 }
 
-// media says whether the item is an image or files.
-func (it Item) media() bool { return it.Image != nil || len(it.Files) > 0 }
+// media says whether the item is an image, files, or formatted text that
+// goes with its plain text (formatted).
+func (it Item) media() bool { return it.Image != nil || len(it.Files) > 0 || it.formatted() }
+
+// formatted says whether the item's formatted text goes to the group: a
+// copy whose plain text fits as its alternative, and which is no secret.
+// The others go as their plain text alone.
+func (it Item) formatted() bool {
+	return it.HTML != "" && len(it.HTML) <= MaxHTML && utf8.ValidString(it.HTML) && !it.Secret &&
+		it.Text != "" && len(it.Text) <= clip.MaxAltText && utf8.ValidString(it.Text)
+}
 
 // A Board is a desktop clipboard.
 type Board interface {
@@ -246,6 +258,7 @@ func session(ctx context.Context, cfg Config, exp *expiry, cp *copies) error {
 	}
 	watchReq.Act = cfg.Actor != nil || cfg.Commands
 	_, watchReq.Images = cfg.Board.(ImageBoard)
+	_, watchReq.HTML = cfg.Board.(HTMLBoard)
 	watchReq.Files = cp != nil
 	if cfg.Board != nil {
 		if it, ok, err := cfg.Board.Current(); err == nil && ok && !it.media() {
@@ -319,7 +332,10 @@ func watch(ctx context.Context, socket string, b Board, send func(*control.Messa
 			go func() {
 				if err := sendMedia(mctx, socket, it, logf); err != nil && mctx.Err() == nil {
 					what := "a copied image"
-					if it.Image == nil {
+					switch {
+					case it.formatted():
+						what = "a copied formatted text"
+					case it.Image == nil:
 						what = "copied files"
 					}
 					logf("cbb: %s not synced: %v", what, err)
@@ -387,18 +403,21 @@ func apply(ctx context.Context, socket string, b Board, tgt Target, act Actor, c
 				}
 				ib, images := b.(ImageBoard)
 				fb, files := b.(FileBoard)
+				hb, html := b.(HTMLBoard)
 				switch {
 				case err != nil:
 					err = fmt.Errorf("fetching it: %w", err)
 				case got.image != nil && images:
 					err = ib.WriteImage(*got.image, got.text)
+				case got.html != "" && html:
+					err = hb.WriteHTML(got.html, got.text)
 				case got.files != nil && files:
 					err = fb.WriteFiles(got.files)
 				default:
 					err = errors.New("this clipboard does not take the copy")
 				}
 				if err != nil {
-					logf("cbb: the group's copy of images or files: %v", err)
+					logf("cbb: the group's copy of images, files or formatted text: %v", err)
 					if text == "" {
 						return
 					}

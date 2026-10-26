@@ -179,6 +179,50 @@ long cb_write_image(const char *name, const void *data, long len, int type, cons
 	}
 }
 
+// cb_read_html reads the pasteboard's formatted text, public.html, as
+// UTF-8 in *html, which the caller frees. It returns 1, 0 for none, -1
+// out of memory and -2 for more than max bytes.
+int cb_read_html(const char *name, char **html, long *len, long max) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		*html = NULL;
+		*len = 0;
+		NSString *s = [pb stringForType:NSPasteboardTypeHTML];
+		NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
+		if (d == nil || [d length] == 0) {
+			return 0;
+		}
+		if ((long)[d length] > max) {
+			return -2;
+		}
+		*html = malloc([d length]);
+		if (*html == NULL) {
+			return -1;
+		}
+		memcpy(*html, [d bytes], [d length]);
+		*len = (long)[d length];
+		return 1;
+	}
+}
+
+// cb_write_html puts formatted text on the pasteboard, as public.html,
+// with its plain text.
+long cb_write_html(const char *name, const char *html, long len, const char *text, long textlen) {
+	@autoreleasepool {
+		NSPasteboard *pb = board(name);
+		NSString *h = [[NSString alloc] initWithBytes:html length:(NSUInteger)len encoding:NSUTF8StringEncoding];
+		NSString *s = [[NSString alloc] initWithBytes:text length:(NSUInteger)textlen encoding:NSUTF8StringEncoding];
+		if (h == nil || s == nil) {
+			return -1;
+		}
+		[pb clearContents];
+		if (![pb setString:h forType:NSPasteboardTypeHTML] || ![pb setString:s forType:NSPasteboardTypeString]) {
+			return -1;
+		}
+		return (long)[pb changeCount];
+	}
+}
+
 // cb_read_files reads the pasteboard's file URLs, as the Finder copies
 // files: their paths, each ended by a NUL, in *paths, which the caller
 // frees. It returns 1, 0 for no files and -1 out of memory.
