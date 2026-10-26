@@ -5,6 +5,7 @@ package io.github.hunterewok.clipboardbridge.kit
 
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -23,6 +24,8 @@ class AttestationTest {
         )
         // Moving bytes between the fields changes it.
         val a = Attestation.challenge("ab", byteArrayOf(1), salt)
+        // The same value as Go's internal/attest TestChallenge.
+        assertEquals("aac189125c2fbb83190c46e0864cc0c74f3463664c6b0c71bf8911a18a1723d8", hex(a))
         val b = Attestation.challenge("a", "b".toByteArray() + byteArrayOf(1), salt)
         assertFalse(hex(a) == hex(b))
         assertFailsWith<IllegalArgumentException> { Attestation.challenge("", ByteArray(0), ByteArray(15)) }
