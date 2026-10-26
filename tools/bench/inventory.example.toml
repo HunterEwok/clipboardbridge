@@ -2,13 +2,13 @@
 # controller and fill in the real names. It never goes into the repository.
 # docs/testbench.md, section 13, describes each key.
 
-controller = "pi4"
+controller = "controller"
 
 # ssh: the user signed in on the device's desktop, so the bench reaches the
 # desktop clipboard; its key must work without a prompt (BatchMode).
-[device.deck]
+[device.desktop]
 os = "linux"
-ssh = "user@deck.lan"
+ssh = "user@desktop.lan"
 # GNOME has no Wayland data-control protocol: cbb agent and the bench use
 # its XWayland display. On KDE or wlroots, "wayland".
 clipboard = "x11"
@@ -16,7 +16,7 @@ roles = ["member", "hub", "away"]
 # reset: the installer opens the member port in the firewall.
 firewall = "yes"
 
-[device.rpi0w]
+[device.lite]
 os = "linux-lite"
 ssh = "user@pi.lan"
 roles = ["member"]
@@ -34,9 +34,9 @@ clipboard = "windows"
 roles = ["member"]
 vm = { host = "mac", vmx = "~/Virtual Machines.localized/Windows 11 64-bit Arm.vmwarevm", snapshot = "clean" }
 
-[device.vps]
+[device.remote]
 os = "linux"
-ssh = "user@vps.example.net"
+ssh = "user@remote.example.net"
 clipboard = "none"
 roles = ["away"]
 # A server that does other work: reset leaves its firewall alone.
@@ -47,7 +47,7 @@ firewall = "no"
 # prepares the host and starts the container.
 [device.nas]
 os = "docker"
-ssh = "user@pi4.lan"
+ssh = "user@controller.lan"
 roles = ["member"]
 # reset: setup-docker.sh in a checkout of the repository on the host.
 setup = "~/clipboardbridge/tools/bench/setup-docker.sh"

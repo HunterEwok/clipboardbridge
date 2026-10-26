@@ -17,10 +17,10 @@ Docker e2e of three members, Wayland and X11 under headless compositors, the Win
 installer on windows-latest, the cross tests between Go, Swift and Kotlin, the lite member among
 Go members). The bench covers what CI cannot:
 
-- real hardware and real operating systems: ARMv6 Pi Zero W, Pi 4, Steam Deck, an Apple
-  Silicon Mac, Windows 11 on ARM, an Android phone;
-- the real desktop clipboards in a signed-in session (GNOME on the Deck, the macOS
-  pasteboard, the Win32 clipboard), not only the service's own store;
+- real hardware and real operating systems: an ARMv6 board for the lite member, a Linux
+  desktop, a Mac, Windows, an Android phone;
+- the real desktop clipboards in a signed-in session (GNOME or another Linux desktop, the
+  macOS pasteboard, the Win32 clipboard), not only the service's own store;
 - a real home network: Wi-Fi, mDNS on the router, two subnets, firewalls the installers
   configure;
 - the real internet path: the hub's WireGuard tunnel from outside the home, the relay
@@ -36,7 +36,7 @@ In scope for 0.4:
 | Install, update, remove | `get.sh`/`install.sh`/`uninstall.sh` on Linux and macOS (and Homebrew on macOS), `get.ps1`/`install.ps1`/`uninstall.ps1` on Windows, `get.sh --lite` for the lite member, which moves an old `cbb-lite` install to `cbb`; update from 0.3.x; firewall rules added and removed; `--purge` |
 | Group and pairing | `cbb pair` / `cbb pair -code` (with and without an address), `cbb join -code` on the lite member, joining by QR from the Android app, wrong code, expired code, revoke, renewal, admin computers |
 | Sync on the home network | every sender to every receiver, every content class (section 6), ordering and conflicts, `copy -secret` and its 60 s expiry, the holder of `clipboardbridge.local` and its handover |
-| Between subnets | the main LAN and the IoT subnet (Pi Zero W): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
+| Between subnets | the main LAN and a second subnet (the lite member's): mDNS does not cross, so `-peer` / addresses and, later, the tunnel |
 | Sync away from home | `cbb global hub`, `cbb global on/off`, `cbb invite` / `cbb pair -invite`, a device on another network (mobile data), reconnect, roaming |
 | The relay server (forwarder) | `cbb forward` on the relay, the hub registered with `cbb global hub -forwarder ADDR:PORT -forwarder-key KEY`: registration by certificate chain, routing by `mac1`, per-group limits, the computed hourly fallback port (once built), isolation of groups, nothing written to disk or logged |
 | Failure cases | section 8 |
@@ -49,17 +49,19 @@ the Arduino, app store and TestFlight builds, performance beyond the limits in s
 
 ## 3. Devices under test
 
-| Name | Hardware / OS | Network | Role on the bench |
+Devices are named by their role; the inventory (section 13) maps each role to a real device.
+
+| Role | What it needs | Network | On the bench |
 |---|---|---|---|
-| `pi4` | Raspberry Pi 4, Debian arm64, headless | home network | **the bench controller** (section 11); not a device under test, but the host of `nas` |
-| `nas` | the Docker image on `pi4` (`linux/arm64`), from `packaging/docker/compose.home.yaml` | home network (the host's) | an ordinary member in a container, as on a NAS or a home server (P35); never the root or an admin, since the CA keys stay off a container; no desktop clipboard |
-| `rpi0w` | Pi Zero W, Raspberry Pi OS armv6l, Wi-Fi only, no keyboard | a second subnet (IoT) | the lite member; cross-subnet case; must never lose Wi-Fi from a test |
-| `deck` | Steam Deck, Ubuntu, GNOME (Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
-| `mac` | MacBook, Apple Silicon | LAN | macOS member and agent; host of the Windows VM |
-| `win` | Windows 11 ARM in VMware Fusion on the Mac | LAN, bridged | Windows service and `cbbw.exe` agent, `windows/arm64` build; reverted to a clean snapshot before each run |
-| `phone` | Android emulator on the Mac (arm64 image); no real phone | the emulator's own NAT | Android app: root of a phone group, sync; limited, see below |
-| `vps` | a VPS, Linux, public address | internet | a headless Linux member away from home: no NAT, public IPv4/IPv6; also covers `cbb copy`/`paste` without a desktop |
-| `relay` | a VPS, Ubuntu, public IPv4 and IPv6 | internet | the project's production forwarder (`cbb forward`); packet capture point; never a group member |
+| `controller` | an always-on Linux computer (an ARM board will do), headless | home network | **the bench controller** (section 11); not a device under test, but it may host `nas` |
+| `nas` | the Docker image on a host (`linux/arm64` or `amd64`), from `packaging/docker/compose.home.yaml` | home network (the host's) | an ordinary member in a container, as on a NAS or a home server (P35); never the root or an admin, since the CA keys stay off a container; no desktop clipboard |
+| `lite` | an ARMv6 or other small Linux board, Wi-Fi, no keyboard | a second subnet, if there is one | the lite member; the cross-subnet case; must never lose its network from a test |
+| `desktop` | a Linux computer with a desktop (GNOME, Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
+| `mac` | a Mac | LAN | macOS member and agent; may host the Windows VM |
+| `win` | Windows, a VM will do | LAN, bridged | Windows service and `cbbw.exe` agent; reverted to a clean snapshot before each run |
+| `phone` | an Android phone, or the emulator | its own NAT for the emulator | Android app: root of a phone group, sync; limited in the emulator, see below |
+| `remote` | a Linux server with a public address | internet | a headless Linux member away from home: no NAT, public IPv4/IPv6; also covers `cbb copy`/`paste` without a desktop |
+| `relay` | a Linux server with a public address | internet | the forwarder (`cbb forward`) and the open relay (`cbb relay -open`); packet capture point; never a group member |
 
 The emulator sits behind its own NAT: it reaches LAN addresses but sees no mDNS from the
 home network and takes no incoming connections without port forwarding, and its camera
@@ -70,10 +72,10 @@ accessibility overlay) stays in the README's status table as "not yet" until the
 
 Two group layouts are tested, because both exist for users:
 
-- **A. A computer's group**: `deck` runs `cbb new` and is the root; the others join by
-  code; `deck` makes `win` an admin (`cbb admin win`).
+- **A. A computer's group**: `desktop` runs `cbb new` and is the root; the others join by
+  code; `desktop` makes `win` an admin (`cbb admin win`).
 - **B. A phone's group** (needs `phone`): the Android app is the root; computers and
-  `rpi0w` join by its QR code; `mac` becomes an admin.
+  `lite` join by its QR code; `mac` becomes an admin.
 
 ## 4. Network environments
 
@@ -81,10 +83,10 @@ Two group layouts are tested, because both exist for users:
 |---|---|---|
 | N1 | One LAN, mDNS works | the home network as it is |
 | N2 | Two subnets (LAN + IoT) | the existing IoT subnet; the bench switches the OpenWrt firewall rules between them (open, LAN to IoT only, closed) |
-| N3 | Away: one device on a different network | a separate network on the OpenWrt router (its own VLAN, Wi-Fi name and subnet, internet only, no route to the LAN or IoT); the bench moves `deck` there and back. The second VPS (`vps`) is an away computer with a public address and no NAT |
+| N3 | Away: one device on a different network | a separate network on the OpenWrt router (its own VLAN, Wi-Fi name and subnet, internet only, no route to the LAN or IoT); the bench moves `desktop` there and back. The second VPS (`remote`) is an away computer with a public address and no NAT |
 | N4 | Away through the relay | as N3, with the hub reachable only through the forwarder |
 | N5 | Bad network | `tc netem` on the Linux devices: latency, loss, reordering, bandwidth limit; always with an automatic revert timer |
-| N6 | Network gone | firewall rules that drop the member port or the tunnel port for a time, with an automatic revert; no Wi-Fi switching on `rpi0w` |
+| N6 | Network gone | firewall rules that drop the member port or the tunnel port for a time, with an automatic revert; no Wi-Fi switching on `lite` |
 | N7 | IPv6 only / IPv4 only for the tunnel | address family chosen per run on the hub's `cbb global hub` addresses |
 
 ## 5. Test design
@@ -98,9 +100,9 @@ The observation is always end to end, at the user's clipboard where one exists:
 
 | Device | Put text in | Read text out |
 |---|---|---|
-| `vps` (headless) | `cbb copy` | `cbb paste` |
-| `rpi0w` | `cbb copy` | `cbb watch -0` |
-| `deck` | `xclip` on the GNOME session's XWayland | `xclip -o` on the same display |
+| `remote` (headless) | `cbb copy` | `cbb paste` |
+| `lite` | `cbb copy` | `cbb watch -0` |
+| `desktop` | `xclip` on the GNOME session's XWayland | `xclip -o` on the same display |
 | `mac` | `pbcopy` as the signed-in user | `pbpaste` |
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
 | `phone` | the app's UI through UI Automator over `adb` (bench only; users never need `adb`) | the app's UI / the system clipboard as the app sees it |
@@ -113,7 +115,7 @@ clipboard can never pass a test.
 
 ## 6. Test matrix: sync on the home network (N1)
 
-Senders and receivers on the home network: `rpi0w`, `deck`, `mac`, `win`, `phone`; `vps` joins them in the away cases. Every ordered pair
+Senders and receivers on the home network: `lite`, `desktop`, `mac`, `win`, `phone`; `remote` joins them in the away cases. Every ordered pair
 that the protocol allows (20 pairs) runs the content classes:
 
 | Class | Content |
@@ -136,21 +138,21 @@ the same text is on every device at the end.
 - Join with a wrong code (refused, the attempt counter works), with an expired code, twice
   with the same code.
 - Revoke a device: it stops receiving within one sync round, cannot rejoin with its old
-  keys, and its certificate is refused by every member including `rpi0w`.
+  keys, and its certificate is refused by every member including `lite`.
 - Renewal: certificates near expiry are renewed (the bench sets the clock forward on a
   disposable device, or uses a short test lifetime build).
 - Admin: `mac` made an admin in layout B pairs and revokes; in layout A `win`, made an admin
-  by `deck`, pairs a device, serves the shortcut while `deck` is off, and when `deck` removes
-  it, `deck` replaces the iPhone CA and the shortcut iPhones pair again.
-- Takeover in layout A: with `deck` off, `win` runs `cbb takeover deck`; `win` is the root,
+  by `desktop`, pairs a device, serves the shortcut while `desktop` is off, and when `desktop` removes
+  it, `desktop` replaces the iPhone CA and the shortcut iPhones pair again.
+- Takeover in layout A: with `desktop` off, `win` runs `cbb takeover desktop`; `win` is the root,
   every other device stays and syncs, the shortcut iPhones pair again, `win` makes another
-  admin, and `deck` is refused when it comes back.
+  admin, and `desktop` is refused when it comes back.
 - Removing a member that is no admin in layout A (a Linux one, a Windows one, the Mac): the
   group stays, nobody pairs again.
 - The holder of `clipboardbridge.local` goes away; another member takes it over.
 - Upgrade: every device on 0.3.x, then updated one by one to the 0.4 candidate; mixed
   versions keep syncing during the upgrade; state and keys survive. Then `cbb upgrade` on
-  `deck` with `win` off: `deck` is the root, the others delete the old keys, `cbb status`
+  `desktop` with `win` off: `desktop` is the root, the others delete the old keys, `cbb status`
   marks `win` until it is back, `cbb revoke win` is refused until then, and nobody pairs
   again except the shortcut iPhones.
 - Uninstall: no service, no firewall rule, no leftover files (except keys without
@@ -171,7 +173,7 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P7 | Homebrew on the Mac, `install.sh --in-place`, `uninstall.sh` before `brew uninstall` | the agent runs Homebrew's binary, the service a root-owned copy of it; nothing is left |
 | P8 | Text console: `install.sh --console` (tmux) on a Linux member | copy and paste work in tmux |
 | P9 | The Windows service before sign-in, the agent after it; fast user switching on Windows and the Mac | the clipboard of the signed-in user only; no text reaches another user's session |
-| P10 | A phone group (layout B in the emulator): QR join of a computer and of `rpi0w`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
+| P10 | A phone group (layout B in the emulator): QR join of a computer and of `lite`, "Make it an admin" for the Mac, renewal | as on a real phone, within the emulator's limits (section 3) |
 | P11 | Sync away from home: `cbb invite` from the hub, `cbb pair -invite`, `cbb global on/off`, a hub with only IPv6 or behind CGNAT | joins and syncs; `cbb global` explains what is missing |
 | P12 | A blind relay for a group without a hub: `cbb relay -open` beside the forwarder, `cbb global relay` on two members | members meet through it; it sees only TLS between members |
 | P13 | `cbb status` (with the devices list), `cbb revoke` by name and by ID, `cbb version` on every platform | the output matches the state |
@@ -186,7 +188,7 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P22 | `cbb global off` then `on` on a client and on the hub; a forwarder restart | keys are forgotten and made again; hubs register again by themselves |
 | P23 | macOS pasteboard privacy: the alert for pasting from other apps turned on by hand, then on macOS 27.2 with its defaults | the report records whether the agent's reading of the types asks the user; text keeps syncing |
 | P24 | GNOME on the Steam Deck: a copy in a native Wayland app (GNOME Text Editor); a received text pasted into it without clicking any window; the same right after sign-in, before any X11 app has started XWayland | the copy arrives within the usual latency; the paste gives the received text |
-| P25 | The Mac holds `clipboardbridge.local`: the other full members off or set to `cbb holder never` | `cbb status` on the Mac shows it holds the name; `avahi-resolve` on `deck` and `Resolve-DnsName` on `win` resolve it to the Mac |
+| P25 | The Mac holds `clipboardbridge.local`: the other full members off or set to `cbb holder never` | `cbb status` on the Mac shows it holds the name; `avahi-resolve` on `desktop` and `Resolve-DnsName` on `win` resolve it to the Mac |
 | P26 | The Mac's application firewall set to "Block all incoming connections" | the Mac still finds the members and reaches them; whether they find and reach it is recorded |
 | P27 | The phone apps' Glass design: each of the ten colours in dark, light and system; tiles, list and orbits; a device's page; an iPad and a foldable's inner screen | every device shows its icon, system and live dot; the details match `cbb status`; a phone's MAC address reads "hidden by the system" |
 | P28 | The group's events on both phones: a device added, removed, made an admin, frozen and unfrozen, a takeover, the hub off while away; each switch off in turn | one notification per event, in its words, none for a switch that is off; nothing shows the clipboard |
@@ -195,15 +197,15 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P31 | The Mac app: the window and the menu bar item, send and fetch, each layout, rename, remove, freeze, unfreeze, make an admin and sync away from home after the password, the prompt cancelled, the service stopped, error details on and off | each action does what the same `cbb` command does; a cancelled prompt changes nothing and says nothing; a stopped service is explained, with the error underneath when details are on |
 | P32 | The tray app on the Linux members (GNOME, KDE, the Steam Deck) and on Windows: the tray item and the window, send and fetch, each layout, the group's changes after pkexec or UAC, the prompt dismissed, the service stopped, error details on and off, Russian | as P31; the tray item shows on each desktop (GNOME needs the AppIndicator extension) |
 | P33 | The Wear OS app with its Android phone: the devices, the away switch, the latest events; the phone out of reach; a phone without Google Play services | as P29; without Play services the phone app works as before |
-| P34 | Sync modes: own, receive, send and shared on `deck` with `win`, then on the lite member, the container and the Mac; a restart; `cbb paste` in own; an admin's `cbb mode -on` | each mode lets through only what design.md says; the mode survives the restart and the others list it; in own `cbb paste` prints the group's text |
-| P35 | A member in a container (`nas`): it joins the hub's group; its settings; its process killed, a restart and a new container from the same volume; then, by the owner's explicit choice, an admin with its keys in a file and the hub for `vps` | it runs unprivileged as compose.home.yaml sets it; the group, the mode and sync survive each restart; as the hub `vps` syncs through its tunnel with no `NET_ADMIN` |
+| P34 | Sync modes: own, receive, send and shared on `desktop` with `win`, then on the lite member, the container and the Mac; a restart; `cbb paste` in own; an admin's `cbb mode -on` | each mode lets through only what design.md says; the mode survives the restart and the others list it; in own `cbb paste` prints the group's text |
+| P35 | A member in a container (`nas`): it joins the hub's group; its settings; its process killed, a restart and a new container from the same volume; then, only by an explicit choice for the run, an admin with its keys in a file and the hub for `remote` | it runs unprivileged as compose.home.yaml sets it; the group, the mode and sync survive each restart; as the hub `remote` syncs through its tunnel with no `NET_ADMIN` |
 | P36 | Several hubs: the root and an admin computer each with a hub set up, an away device; the root's hub stopped and started again | the admin serves while the root is gone and gives way when it is back; the away device follows both ways with no invitation and loses no copy |
 | P37 | Moving the hub with `cbb global move`: to the lite member and to the container (refused), to an admin computer | the new hub serves with the old one's forwarder; the old one becomes its client; the away device follows without coming home |
 | P38 | The open relay's limits: registrations from one address, a busy group, groups leaving | over a limit refused with a clear message; one busy group does not slow the others; a group is forgotten when its last device leaves |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
-(`windows/amd64`) and no ARMv7 Linux; those builds are covered only by CI. The ARM64 Linux
-build runs on the bench only in the container on the Pi 4 (`nas`). It has no real Android phone and no iPhone app
+(`windows/amd64`) and no ARMv7 Linux; those builds are covered only by CI. Builds without a device of their own run on the bench only where a host has one (the ARM64
+Linux build in the container, `nas`, on an ARM controller). It has no real Android phone and no iPhone app
 (section 3).
 
 
@@ -212,7 +214,7 @@ build runs on the bench only in the container on the Pi 4 (`nas`). It has no rea
 | ID | Case | Expected |
 |---|---|---|
 | F1 | Kill the service (`SIGKILL`) on each device | restarts by its service manager; catches up on the latest text |
-| F2 | Reboot `deck`, `win`, `mac`; power cycle `rpi0w` (a manual step: the bench pauses and asks the maintainer to pull the plug) | comes back, rejoins without a person |
+| F2 | Reboot `desktop`, `win`, `mac`; power cycle `lite` (a manual step: the bench pauses and asks the maintainer to pull the plug) | comes back, rejoins without a person |
 | F3 | Mac sleeps and wakes; the VM pauses and resumes | reconnects within 30 s of wake |
 | F4 | 30% loss, 300 ms latency, reordering (N5) | texts arrive, no duplicates, no crash |
 | F5 | Member port blocked for 5 minutes (N6) | texts copied meanwhile arrive after the block ends (latest wins) |
@@ -278,7 +280,7 @@ Mac the file also allows `launchctl kill KILL` of the daemon, for F1. The emulat
 `adb` on the Mac.
 
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
-on: `pi4`. It is never a device under test, so reboots and failures of
+on: `controller`. It is never a device under test, so reboots and failures of
 the others do not stop a run. It reaches the router over SSH to switch networks, the Mac
 to start and revert the Windows VM and the emulator (`vmrun`, `emulator`, `adb`), and the
 relay over SSH.
@@ -338,11 +340,11 @@ The controller keeps the bench's inventory in `~/.config/cbb-bench/inventory.tom
 the repository: it names the home network's addresses and the keys. Its shape:
 
 ```toml
-controller = "pi4"
+controller = "controller"
 
-[device.deck]
+[device.desktop]
 os = "linux"           # linux, linux-lite, darwin, windows, docker
-ssh = "user@deck.lan"     # the user signed in on the desktop
+ssh = "user@desktop.lan"     # the user signed in on the desktop
 clipboard = "wayland"  # wayland, x11, none (cbb copy and paste), macos, windows
 roles = ["member", "hub", "away"]
 
@@ -354,7 +356,7 @@ vm = { host = "mac", vmx = "~/Virtual Machines.localized/win.vmwarevm", snapshot
 
 [device.nas]
 os = "docker"          # cbb in a container on the host ssh reaches
-ssh = "user@pi4.lan"   # a user in the docker group
+ssh = "user@controller.lan"   # a user in the docker group
 container = "clipboardbridge"  # the default, compose.home.yaml's name
 roles = ["member"]     # never hub: that device makes the group and holds its keys
 
@@ -363,9 +365,9 @@ ssh = "root@router.lan"
 kind = "openwrt"
 away_network = "bench_away"   # the network the bench moves the away device to
 
-[device.vps]
+[device.remote]
 os = "linux"
-ssh = "user@vps.example.net"
+ssh = "user@remote.example.net"
 roles = ["away"]       # away only: it joins by invitation in the away suite
 
 [forwarder]

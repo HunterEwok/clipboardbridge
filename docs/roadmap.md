@@ -640,7 +640,7 @@ better hub, so the app suggests it when there is one, and the user decides.
    `cbb`, the lite member and both kits, `cbb global move`, and in both apps "Move the hub
    to a computer" with the suggestion of a computer that is always on, and the hub moving
    with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
-   Still to do on the bench: moving from a phone to the deck with the lite member far away.
+   Still to do on the bench: moving from a phone to the Linux desktop with the lite member far away.
 7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
    the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
    member), the clients keeping every hub's offer with a preshared key of their own, the

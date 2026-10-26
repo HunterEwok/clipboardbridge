@@ -16,15 +16,15 @@ import (
 func TestInventory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inventory.toml")
 	os.WriteFile(path, []byte(`
-controller = "pi4"
+controller = "controller"
 
-[device.deck]
+[device.desktop]
 os = "linux"
-ssh = "user@deck.lan"
+ssh = "user@desktop.lan"
 clipboard = "wayland"
 roles = ["member", "hub"]
 
-[device.rpi0w]
+[device.lite]
 os = "linux-lite"
 ssh = "user@pi.lan"
 
@@ -43,13 +43,13 @@ kind = "openwrt"
 		t.Fatal(err)
 	}
 	ds, err := inv.Select("")
-	if err != nil || len(ds) != 3 || ds[0].Name != "deck" || !ds[0].Has("hub") {
+	if err != nil || len(ds) != 3 || ds[0].Name != "desktop" || !ds[0].Has("hub") {
 		t.Fatalf("Select = %v, %v", ds, err)
 	}
 	if ds[1].Clipboard != "none" || ds[2].VM.Snapshot != "clean" {
 		t.Fatalf("defaults: %+v %+v", ds[1], ds[2].VM)
 	}
-	if _, err := inv.Select("deck,nope"); err == nil {
+	if _, err := inv.Select("desktop,nope"); err == nil {
 		t.Fatal("Select took an unknown device")
 	}
 
@@ -112,7 +112,7 @@ func TestPatterns(t *testing.T) {
 		t.Fatalf("address: %v", m)
 	}
 	for _, s := range []string{
-		"Device deck (linux), group 0a1b2c3d4e5f6a7b",
+		"Device desktop (linux), group 0a1b2c3d4e5f6a7b",
 		"device  abc\ngroup   0a1b2c3d4e5f6a7b\nrole    lite",
 	} {
 		if m := groupRE.FindStringSubmatch(s); m == nil || m[1] != "0a1b2c3d4e5f6a7b" {
@@ -228,14 +228,14 @@ func TestAdmin(t *testing.T) {
 func TestAway(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inventory.toml")
 	os.WriteFile(path, []byte(`
-[device.deck]
+[device.desktop]
 os = "linux"
-ssh = "a@deck"
+ssh = "a@desktop"
 roles = ["member", "hub", "away"]
 
-[device.vps]
+[device.remote]
 os = "linux"
-ssh = "a@vps"
+ssh = "a@remote"
 roles = ["away"]
 
 [forwarder]
@@ -256,10 +256,10 @@ key = "sha256:BBBB"
 		t.Fatalf("servers: %+v %+v", inv.Forwarder, inv.Relay)
 	}
 	ds, _ := inv.Select("")
-	if home := atHome(ds); len(home) != 1 || home[0].Name != "deck" {
+	if home := atHome(ds); len(home) != 1 || home[0].Name != "desktop" {
 		t.Fatalf("atHome = %v", home)
 	}
-	if away := awayOnly(ds); len(away) != 1 || away[0].Name != "vps" {
+	if away := awayOnly(ds); len(away) != 1 || away[0].Name != "remote" {
 		t.Fatalf("awayOnly = %v", away)
 	}
 	if m := fingerprintRE.FindStringSubmatch("Its key fingerprint:  ab12 cd34 ef56"); m == nil || m[1] != "ab12 cd34 ef56" {
