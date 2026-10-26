@@ -58,7 +58,7 @@ Devices are named by their role; the inventory (section 13) maps each role to a 
 | `lite` | an ARMv6 or other small Linux board, Wi-Fi, no keyboard | a second subnet, if there is one | the lite member; the cross-subnet case; must never lose its network from a test |
 | `desktop` | a Linux computer with a desktop (GNOME, Wayland), ufw | LAN, or the router's away network | the Linux member: the root in layout A, the hub, the real desktop clipboard (through XWayland, as `cbb agent` uses it on GNOME); also the away device (plugged in, sleep off) |
 | `mac` | a Mac | LAN | macOS member and agent; may host the Windows VM |
-| `win` | Windows, a VM will do | LAN, bridged | Windows service and `cbbw.exe` agent; reverted to a clean snapshot before each run |
+| `win` | Windows, a VM will do | LAN, bridged | Windows service and `cbbw.exe` agent; reset by `uninstall.ps1 -Purge` and `install.ps1` before each run |
 | `phone` | an Android phone, or the emulator | its own NAT for the emulator | Android app: root of a phone group, sync; limited in the emulator, see below |
 | `remote` | a Linux server with a public address | internet | a headless Linux member away from home: no NAT, public IPv4/IPv6; also covers `cbb copy`/`paste` without a desktop |
 | `relay` | a Linux server with a public address | internet | the forwarder (`cbb forward`) and the open relay (`cbb relay -open`); packet capture point; never a group member |
@@ -282,7 +282,7 @@ Mac the file also allows `launchctl kill KILL` of the daemon, for F1. The emulat
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
 on: `controller`. It is never a device under test, so reboots and failures of
 the others do not stop a run. It reaches the router over SSH to switch networks, the Mac
-to start and revert the Windows VM and the emulator (`vmrun`, `emulator`, `adb`), and the
+to start the Windows VM and the emulator (`vmrun`, `emulator`, `adb`), and the
 relay over SSH.
 
 **Starting a run**:
@@ -352,7 +352,7 @@ roles = ["member", "hub", "away"]
 os = "windows"
 ssh = "user@win.lan"
 clipboard = "windows"
-vm = { host = "mac", vmx = "~/Virtual Machines.localized/win.vmwarevm", snapshot = "clean" }
+firewall = "yes"       # linux, windows: reset lets the installer open the member port; "no" leaves the firewall alone
 
 [device.nas]
 os = "docker"          # cbb in a container on the host ssh reaches
@@ -455,7 +455,7 @@ One pull request per step, merged in order:
    report, the `check` and `smoke` suites on N1; the Windows setup script.
 3. The full matrix (section 6), the life-cycle cases and the features and platforms (P1 to
    P33, section 7): installing and
-   removing with the installers, the snapshot of the Windows VM, the emulator, the
+   removing with the installers (on Windows too, without a VM snapshot), the emulator, the
    router's away network.
 4. Failure cases (section 8) with the network tools and automatic reverts.
 5. Away cases through the hub (N3, N7) and security tests S1 to S7, S9 to S16.

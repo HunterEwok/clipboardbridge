@@ -117,6 +117,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   whose keys are in hardware unless the user allows keys in files. Limits per sender and a log
   of the last 100, as for remote paste; `cbb action off -on DEVICE` or `-all` turns them off
   from afar. Linux runs every preset; a Mac and Windows only `restart` for now.
+- The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
+  nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
 ### Changed
 
