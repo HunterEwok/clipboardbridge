@@ -524,20 +524,29 @@ jobs:
           CBB_FIREWALL: express
         run: |
           $ErrorActionPreference = 'Stop'
-          $rel = Join-Path $env:RUNNER_TEMP 'signed'
-          New-Item -ItemType Directory $rel | Out-Null
-          $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
-          Copy-Item (Join-Path $env:RUNNER_TEMP 'release\clipboardbridge-windows-amd64.zip') $zip
-          "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
-          go run ./tools/release-sign drill -version 0.6.0 $rel (Join-Path $env:RUNNER_TEMP 'roots.pem')
-          if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
-          $env:CBB_RELEASE_DIR = $rel
-          $env:CBB_RELEASE_ROOTS = Join-Path $env:RUNNER_TEMP 'roots.pem'
-          $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
-          if ($out -notmatch 'signature checks out \(0\.6\.0\)') { throw "get.ps1 did not check the signature: $out" }
-          Remove-Item (Join-Path $rel 'stable.json')
-          $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
-          if ($out -notmatch 'failed') { throw "get.ps1 installed a release without stable.json: $out" }
+          try {
+            $rel = Join-Path $env:RUNNER_TEMP 'signed'
+            New-Item -ItemType Directory $rel | Out-Null
+            $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
+            Copy-Item (Join-Path $env:RUNNER_TEMP 'release\clipboardbridge-windows-amd64.zip') $zip
+            "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
+            $roots = Join-Path $env:RUNNER_TEMP 'roots.pem'
+            # Through cmd: Windows PowerShell stops on a native program's stderr (go's "downloading").
+            cmd /c "go run ./tools/release-sign drill -version 0.6.0 `"$rel`" `"$roots`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
+            $env:CBB_RELEASE_DIR = $rel
+            $env:CBB_RELEASE_ROOTS = $roots
+            $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+            Write-Host $out
+            if ($out -notmatch 'signature checks out \(0\.6\.0\)') { throw 'get.ps1 did not check the signature' }
+            Remove-Item (Join-Path $rel 'stable.json')
+            $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+            Write-Host $out
+            if ($out -notmatch 'failed') { throw 'get.ps1 installed a release without stable.json' }
+          } catch {
+            Write-Host "$($_.Exception.Message)`n$($_.ScriptStackTrace)"
+            exit 1
+          }
       - name: install.ps1 keeps a port and the firewall rules follow it, and uninstall.ps1 removes it all
         env:
           CBB_ERROR_DETAILS: "1"
