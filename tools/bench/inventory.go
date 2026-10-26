@@ -18,6 +18,7 @@ type Inventory struct {
 	Controller string             `toml:"controller"`
 	Device     map[string]*Device `toml:"device"`
 	Router     *Host              `toml:"router"`
+	Forwarder  *Host              `toml:"forwarder"`
 	Relay      *Host              `toml:"relay"`
 }
 
@@ -40,11 +41,15 @@ type VM struct {
 	Snapshot string `toml:"snapshot"`
 }
 
-// Host is a machine that is not a member: the router or the relay.
+// Host is a machine that is not a member: the router, the forwarder or the
+// blind relay.
 type Host struct {
 	SSH         string `toml:"ssh"`
 	Kind        string `toml:"kind"`
 	AwayNetwork string `toml:"away_network"` // the router's network for the away device
+	Address     string `toml:"address"`      // the forwarder's or relay's address:port
+	Key         string `toml:"key"`          // its key, as cbb forward -show-key or cbb relay -show-key prints it
+	Service     string `toml:"service"`      // its systemd unit, which F7 stops and starts
 }
 
 var (

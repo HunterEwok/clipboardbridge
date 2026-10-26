@@ -50,5 +50,15 @@ roles = ["member"]
 ssh = "root@router.lan"
 kind = "openwrt"
 
-[relay]
+# The forwarder the hub registers with in the away suite; ssh and service
+# only for F7 (-stop-forwarder), which stops it.
+[forwarder]
+address = "relay.example.net:8764"
+key = "sha256:the key cbb forward -show-key prints"
 ssh = "user@relay.example.net"
+service = "cbb-forward"
+
+# The blind relay of the relay suite (P12).
+[relay]
+address = "relay.example.net:8765"
+key = "sha256:the key cbb relay -show-key prints"

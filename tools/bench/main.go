@@ -4,12 +4,14 @@
 // Command bench runs the hardware test bench of docs/testbench.md: it drives
 // real devices over SSH from the bench's controller and reports what passed.
 //
-//	go run ./tools/bench [-inventory FILE] [-report DIR] [-only a,b] check
-//	go run ./tools/bench [-inventory FILE] [-report DIR] [-only a,b] smoke
+//	go run ./tools/bench [-inventory FILE] [-report DIR] [-only a,b] check|smoke|full|away|relay
 //
 // check only reaches every device and prints what it finds; smoke makes a
 // group of the devices and sends one text from each device to all the
-// others. The inventory lives on the controller, never in the repository
+// others; full runs the sync matrix and the failure, mode and security
+// cases on top; away adds the devices away from home by invitation through
+// the hub and its forwarder (with -stop-forwarder also F7, which stops the
+// forwarder); relay meets the group at the blind relay. The inventory lives on the controller, never in the repository
 // (docs/testbench.md, section 13). Devices must be in no group before smoke;
 // the bench never removes a group it did not make.
 //
@@ -41,11 +43,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	reportDir := fs.String("report", "", "write report.xml (JUnit) and report.txt here")
 	only := fs.String("only", "", "comma-separated devices to use instead of all of them")
 	timeout := fs.Duration("timeout", 20*time.Second, "how long a text may take to arrive")
+	stopForwarder := fs.Bool("stop-forwarder", false, "away: also stop and start the forwarder (F7), which other groups may use")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|smoke|full")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|smoke|full|away|relay")
 		return 2
 	}
 	inv, err := LoadInventory(*invPath)
@@ -69,6 +72,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Smoke(ctx, r, inv, devices, *timeout)
 	case "full":
 		Full(ctx, r, devices, *timeout)
+	case "away":
+		Away(ctx, r, inv, devices, *timeout, *stopForwarder)
+	case "relay":
+		Relay(ctx, r, inv, devices, *timeout)
 	default:
 		fmt.Fprintf(stderr, "bench: unknown suite %q\n", fs.Arg(0))
 		return 2

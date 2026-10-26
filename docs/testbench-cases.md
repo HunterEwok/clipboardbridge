@@ -140,7 +140,7 @@ message that names the limit, and nothing changes.
 Pass: step 2 arrives everywhere; step 3 fails and its message says "larger than", "too large"
 or names the limit; R6 holds. Fail: the larger text is taken, or the message is generic.
 
-**C6. Secret copy.** Runs: manual (S10 automates the disk part).
+**C6. Secret copy.** Runs: auto (`full`, with S10).
 Rule: `cbb copy -secret` arrives, is gone 60 s after the copy everywhere, and never reaches a
 disk.
 1. On a Linux member `printf 'cbb-bench RUN secret' | cbb copy -secret`; note the time.
@@ -315,7 +315,7 @@ emulator can dial).
 Pass: each step succeeds within the emulator's limits (testbench.md section 3). Fail: a step
 fails for a reason a real phone would share.
 
-**P11. Sync away from home.** Runs: manual (run on the bench with the away computer).
+**P11. Sync away from home.** Runs: auto (`away`, steps 1 to 5 through the forwarder); step 6 manual.
 1. On the hub `cbb global hub ADDRESS:PORT` (or with `-forwarder`), `sudo cbb global on`.
 2. On the hub `cbb invite -o FILE`; copy the file to the away computer over SSH.
 3. On the away computer `sudo cbb pair -invite FILE`; compare the fingerprints on both sides;
@@ -325,7 +325,7 @@ fails for a reason a real phone would share.
 6. A hub with only an IPv6 address; a hub behind CGNAT (only the forwarder).
 Pass: it joins, syncs both ways (seconds), and `cbb global` explains anything missing.
 
-**P12. Blind relay.** Runs: manual (the open relay on `relay`, beside the forwarder).
+**P12. Blind relay.** Runs: auto (`relay`: steps 2, 3 and 5 among the home members); steps 1 and 4 and the capture manual.
 Devices: `relay`, `deck`, `vps`; the group of R2 without a hub (no `cbb global hub` on any
 device). The relay runs `cbb relay -open -listen :PORT` as its own service, on a port of its
 own (the forwarder keeps 8764), opened in the server's firewall for UDP and TCP.
@@ -474,7 +474,7 @@ the texts are Russian.
 Pass: as P29, also with the phone app closed; without Play services the phone app works and
 logs once that there is no watch.
 
-**P34. Sync modes.** Runs: manual (deck and win, the group of R2).
+**P34. Sync modes.** Runs: auto (`full`: steps 1 to 4 on the hub against another member, the headless members of step 5, and `-on` of step 6); the Mac app and the refused and stopped targets of step 6 manual.
 1. On deck `cbb mode own`; copy on deck's desktop, then on win's.
 2. On deck `cbb paste`; then `cbb mode receive` and copy on deck and on win; then `cbb mode
    send` and do the same.
@@ -597,12 +597,12 @@ Pass: every marker arrives; no duplicate; no crash; the last one is on every mem
 3. After the block: wait.
 Pass: the member ends on the last marker.
 
-**F6. Hub down while away.** Runs: manual (run on the bench).
+**F6. Hub down while away.** Runs: auto (`away`, without the capture).
 1. With the away computer syncing, stop the hub's service.
 2. `cbb global` and `cbb status` on the away computer; capture its uplink (R7).
 Pass: both say the hub is unreachable; nothing is sent to any other address.
 
-**F7. Forwarder down.** Runs: manual (run on the bench).
+**F7. Forwarder down.** Runs: auto (`away -stop-forwarder` only, without the capture; the forwarder serves others too).
 1. With a hub registered at the forwarder, stop the forwarder.
 2. On the away computer watch `cbb global`; capture.
 Pass: the fallback port is tried as designed, then a clear error; no cleartext path.
@@ -687,14 +687,14 @@ files); each bad registration is refused.
 2. Copy on the away computer; capture its uplink for 2 minutes.
 Pass: no packet to any address but the hub and forwarder; nothing in clear.
 
-**S10. Secrets never reach a disk.** Runs: manual (passed on the bench).
+**S10. Secrets never reach a disk.** Runs: auto (`full`; Windows not yet).
 1. `copy -secret` a marker on each kind of member.
 2. On each, search the state directories and `/tmp` for it (`grep -r MARKER`); check swap is off
    for the service on Linux (`systemctl show clipboardbridge -p MemorySwapMax` is 0).
 3. After 65 s read every clipboard.
 Pass: no hit; swap off; gone.
 
-**S11. Local access.** Runs: manual (passed on the Linux devices).
+**S11. Local access.** Runs: auto (`full`, Linux, the lite member and the Mac); Windows manual.
 1. As a user outside the `clipboardbridge` group run `cbb status` and `cbb paste`, on Linux,
    macOS and Windows.
 Pass: refused with a message that names the group; the admin socket refuses non-admins too.
@@ -716,12 +716,12 @@ Pass: no text, record or device list crosses; neither pairs into the other witho
 Pass: refused each time; the counter stops guessing after three; nothing about the group is
 learned (no names, no tag in any answer).
 
-**S15. Logs.** Runs: manual.
+**S15. Logs.** Runs: auto (`full`, in the build's error mode; the other mode manual).
 1. After `full`, in both modes (`CBB_DEBUG=0` and `1`), search every log (R6) for markers,
    pairing codes and key material.
 Pass: no hit.
 
-**S16. Files at rest.** Runs: manual.
+**S16. Files at rest.** Runs: auto (`full`; Windows not yet).
 1. List the state directories with permissions after `full`.
 Pass: only keys and certificates, owner-only permissions; no clipboard text anywhere.
 

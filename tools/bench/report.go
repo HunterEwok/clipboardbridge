@@ -45,7 +45,10 @@ func (r *Report) Do(name string, f func() error) error {
 	start := time.Now()
 	err := f()
 	c := Case{Name: name, Duration: time.Since(start)}
-	if err != nil {
+	var skip skipError
+	if errors.As(err, &skip) {
+		c.Skipped = string(skip)
+	} else if err != nil {
 		c.Failure = err.Error()
 		var re interface{ Details() string }
 		if errors.As(err, &re) {
@@ -55,6 +58,14 @@ func (r *Report) Do(name string, f func() error) error {
 	r.add(c)
 	return err
 }
+
+// Skipped is an error for Do: the case could not run, for the reason why,
+// and is reported as skipped, not failed.
+func Skipped(why string) error { return skipError(why) }
+
+type skipError string
+
+func (e skipError) Error() string { return string(e) }
 
 // Skip records a case that did not run.
 func (r *Report) Skip(name, why string) { r.add(Case{Name: name, Skipped: why}) }

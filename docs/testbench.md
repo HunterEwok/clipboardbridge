@@ -268,9 +268,13 @@ signed in on each device's desktop, so the bench reaches the real clipboard: `wl
 session cannot reach the desktop clipboard, so `tools/bench/setup-windows.ps1` turns on the
 OpenSSH server and registers two scheduled tasks that run in the signed-in session and move
 text between a file and the clipboard. Headless devices, the lite member too, use `cbb copy`
-and `cbb paste`. The install and uninstall cases need `sudo` without a
-password for the installers only, set up by a sudoers file in step 3; on the Mac the file also
-allows `launchctl kill KILL` of the daemon, for F1. The emulator over
+and `cbb paste`. Commands that change the group (`cbb new`, `pair`, `mode`, `revoke`, `global`
+and the others on the admin socket) run as root, so the bench calls them with `sudo -n`: on
+Linux the bench user needs `sudo` without a password, and on the Mac a sudoers rule for
+`/usr/local/bin/cbb` (below). A device whose `sudo -n` asks for a password has its steps
+skipped, with the reason, instead of failing the run. The install and uninstall cases need
+`sudo` without a password for the installers too, set up by a sudoers file in step 3; on the
+Mac the file also allows `launchctl kill KILL` of the daemon, for F1. The emulator over
 `adb` on the Mac.
 
 **The controller** is the machine that runs the harness. It has to be on the LAN and always
@@ -303,7 +307,9 @@ suite. Reports stay on the controller, never in the public repository: they show
 | Suite | Contents | Time | When |
 |---|---|---|---|
 | smoke | the clocks, every device in no group, pair each one into the hub's group, one text from each device to every other | ~10 min | after each merge that touches the service, on request |
-| full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, F1 (the Mac's service is skipped: killing it needs the owner's password), and P35 for a member in a container | ~2 h | before each release candidate |
+| full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, F1, P35 for a member in a container, P34 (sync modes), C6 and S10 (a secret copy), S11 (local access), S15 (logs) and S16 (files at rest) | ~2 h | before each release candidate |
+| away | P11 (the away devices join by invitation through the hub and its forwarder, sync both ways, `cbb global off` and `on`), F6 (the hub's service stopped); F7 (the forwarder stopped) only with `-stop-forwarder`, since other groups use it | ~15 min | before each release, after each change to the tunnel |
+| relay | P12: the members meet at the blind relay, sync, and a wrong key is refused | ~5 min | before each release, after each change to the relay |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
 
@@ -356,8 +362,27 @@ ssh = "root@router.lan"
 kind = "openwrt"
 away_network = "bench_away"   # the network the bench moves the away device to
 
+[device.vps]
+os = "linux"
+ssh = "user@vps.example.net"
+roles = ["away"]       # away only: it joins by invitation in the away suite
+
+[forwarder]
+address = "relay.example.net:8764"
+key = "sha256:..."     # cbb forward -show-key on the server
+ssh = "user@relay.example.net"  # for F7 only, which stops it
+service = "cbb-forward"
+
 [relay]
-ssh = "root@relay.example.net"
+address = "relay.example.net:8765"
+key = "sha256:..."     # cbb relay -show-key on the server
+```
+
+On the Mac the bench user runs `cbb` as root without a password through one sudoers rule,
+`/etc/sudoers.d/cbbbench` (with `visudo -f`), beside the installers' and F1's:
+
+```
+USER ALL=(root) NOPASSWD: /usr/local/bin/cbb
 ```
 
 A device with `os = "docker"` is the image running on a host: the bench calls `docker exec
