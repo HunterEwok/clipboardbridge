@@ -96,7 +96,7 @@
     <string name="share_forget">Снова спрашивать все приложения</string>
     <string name="tile_label">Отправить буфер</string>
     <string name="accessibility_label">Отправлять скопированное само</string>
-    <string name="accessibility_description">Замечает, когда вы копируете текст, на мгновение читает буфер обмена и отправляет текст на ваши компьютеры. Больше ничего на экране не читает.</string>
+    <string name="accessibility_description">Замечает, когда вы копируете текст, на мгновение читает буфер обмена и отправляет текст на ваши компьютеры. Если вы включили удалённую вставку, вставляет текст от админа группы в поле ввода с фокусом. Больше ничего на экране не читает.</string>
     <string name="auto_send_body">Android даёт приложению читать буфер обмена, только пока оно на экране. Включите Clipboard Bridge в спец. возможностях, и скопированное будет уходить на компьютеры без нажатий; Android при этом каждый раз пишет «CBB вставил из буфера обмена». Без этого пользуйтесь плиткой «Отправить буфер», кнопкой «Отправить» в уведомлении или меню «Поделиться».</string>
     <string name="auto_send_on">Включено</string>
     <string name="auto_send_off">Выключено</string>
@@ -264,4 +264,11 @@
     <string name="pasted">Вставлено.</string>
     <string name="error_paste_refused">Устройство не вставило текст.</string>
     <string name="reason_paste">Вставить на устройстве</string>
+    <string name="remote_paste">Удалённая вставка</string>
+    <string name="remote_paste_switch">Разрешить админам группы вставлять сюда</string>
+    <string name="remote_paste_enter">Разрешить вставке нажимать Enter</string>
+    <string name="remote_paste_body">Тогда админ группы сможет вставить текст в поле ввода с фокусом на этом телефоне: из своего приложения или командой cbb paste. Телефон покажет, кто вставил, и сохранит журнал последних вставок без самого текста. На экране блокировки вставка не работает.</string>
+    <string name="remote_paste_needs_service">Вставка идёт через службу «Отправлять скопированное само», а она выключена. Включите её в настройках специальных возможностей.</string>
+    <string name="channel_pastes">Удалённые вставки</string>
+    <string name="pasted_from">Вставлено с устройства %1$s</string>
 </resources>

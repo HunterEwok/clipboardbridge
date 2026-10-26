@@ -97,6 +97,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - "Paste on it…" in the iPhone and Android apps: an admin phone puts a text where a
   computer's focus is, pasted or typed, with Enter or as a secret if asked, after Face ID or
   the fingerprint.
+- Remote paste onto an Android phone: once its user turns it on in Settings, an admin's paste
+  goes into the focused text field of another app through the accessibility service, pasted
+  or typed, with Enter from Android 11. It refuses while the phone is locked, keeps a log of
+  the last pastes without their text, and names the sender in a notification.
 - Commands reach a member this one is not connected to: a member connected to it, such as
   the hub, passes a `mode`, `paste` or `paste-off` command on and its result back.
 

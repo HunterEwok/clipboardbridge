@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -83,6 +84,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import io.github.hunterewok.clipboardbridge.kit.RemotePaste
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -423,6 +425,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         }
         if (model.phase == AppModel.Phase.HOME) AutoSend()
         if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
+        if (model.phase == AppModel.Phase.HOME) RemotePasteSection(model.group.pastes)
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
@@ -526,6 +529,48 @@ private fun AutoSend() {
                         )
                     }) { Text(stringResource(R.string.app_info), color = palette.accent) }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Remote paste on this phone (docs/design.md, "Remote paste"): the switch
+ * that lets the group's admins paste into the focused text field, the one
+ * for Enter, and the accessibility service it needs.
+ */
+@Composable
+private fun RemotePasteSection(pastes: PasteReceiver) {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    var set by remember { mutableStateOf(pastes.settings) }
+    var service by remember { mutableStateOf(CopyWatcher.isOn(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        set = pastes.settings
+        service = CopyWatcher.isOn(context)
+    }
+    fun change(new: RemotePaste.Settings) {
+        runCatching { pastes.settings = new }.onFailure { Log.e("clipboardbridge", "saving the remote paste switches", it) }
+        set = pastes.settings
+    }
+    Section(stringResource(R.string.remote_paste)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Switch) { change(RemotePaste.Settings(on = !set.on)) }, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.remote_paste_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = set.on, onCheckedChange = null)
+            }
+            if (set.on) {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Switch) { change(set.copy(enter = !set.enter)) }, verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.remote_paste_enter), modifier = Modifier.weight(1f))
+                    Switch(checked = set.enter, onCheckedChange = null)
+                }
+            }
+            Text(stringResource(R.string.remote_paste_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+            if (set.on && !service) {
+                Text(stringResource(R.string.remote_paste_needs_service), style = MaterialTheme.typography.bodyMedium, color = palette.danger)
+                TextButton(onClick = {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Text(stringResource(R.string.open_accessibility), color = palette.accent) }
             }
         }
     }
