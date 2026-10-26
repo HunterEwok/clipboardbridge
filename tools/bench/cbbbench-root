@@ -10,8 +10,8 @@
 #   cbbbench-root install ARCHIVE [SUMS SIG]
 #                                  install a release archive, only one whose
 #                                  SHA-256 is in sums the bench's signing key
-#                                  signed (SUMS, SIG), or in the sums the owner
-#                                  trusted (setup-mac.sh trust)
+#                                  signed (SUMS, SIG), or in the sums trusted
+#                                  with setup-mac.sh trust
 #   cbbbench-root grep RUN         files in the state directory or /tmp that hold RUN
 #   cbbbench-root perms            files in the state directory open to others
 #   cbbbench-root stranger         cbb status as the user nobody (S11)

@@ -17,7 +17,7 @@
 # bench's signing key (-signer: its public half, kept root-owned as
 # allowed_signers; the private half stays on the controller, which signs
 # each build with ssh-keygen -Y sign -n cbbbench), or in a SHA256SUMS the
-# owner trusted here. So the rule lets nobody run any installer as root,
+# person who set up the bench trusted here. So the rule lets nobody run any installer as root,
 # and a new build needs no password: whoever holds the signing key can
 # have this Mac install a build, which is why the key stays on the bench's
 # controller. cbb itself runs as root through the rule, which is as much as an
