@@ -154,10 +154,10 @@ The order may change.
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**
-29. **Proposed for 0.6.** Secure updates: every program updates itself, or is told to,
-    from a release signed with the project's own key, downloaded from cbb.tools or GitHub,
-    never to an older or unsigned version, and automatically where the user allows it. See
-    "Secure updates" below.
+29. **Planned for 0.6.** Secure updates: every program updates itself, or is told to,
+    from a release signed with the project's own keys (D-69), downloaded from GitHub or the
+    `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
+    the user allows it. See "Secure updates" below.
 30. **Planned for 0.5; steps 1 to 7 are built.** The phone as the hub while its app is open: a
     group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
     afar while the app is open, through the project's forwarder; once a computer that is
@@ -172,9 +172,21 @@ The order may change.
     the group's records, so they see no device ID, name, system, role or dates. See "What
     the servers learn" below, with the research of what is left to hide (the addresses
     and online times, stable pseudonyms, the group tag, the count of devices).
-33. **To research in 0.6.** The iPhone as a hub in the background: the hub run as a
-    Network Extension (a packet tunnel provider), which iOS does not suspend while the
-    tunnel is on. See "Research: the iPhone hub in a Network Extension" below.
+33. **Researched; not built (D-73).** The iPhone as a hub in the background, as a Network
+    Extension. See "Research: the iPhone hub in a Network Extension" below for the reasons.
+34. **Planned for 0.6.** Collections in the apps: the user's own sets of devices and the
+    order of the tiles, arranged by dragging, personal to each app installation (D-72). See
+    "Collections" below.
+35. **Planned for 0.6, after all the other items.** A review of all the documentation against
+    the code at the end of 0.6: each fact in one place, every "planned" line settled, the
+    lists of what is not yet verified on real devices brought up to date from the bench.
+36. **Planned for 0.6, after item 35.** Russian versions of the documentation for users:
+    the README, the guide and the reference pages for users, in `docs/ru/` and
+    `README.ru.md`; the documents for developers stay in English. The rule of D-8 then
+    allows Cyrillic in those two places as well as in the apps' translations, and
+    `tools/repocheck` checks that each Russian page has its English original with the same
+    sections, so a translation cannot fall behind unnoticed. The Russian text uses the words
+    of the apps' Russian translations.
 
 ## OpenWrt routers
 
@@ -218,21 +230,35 @@ packaging around what exists.
 - **`/var` is in RAM.** The state goes to `/etc/clipboardbridge`, which survives reboots,
   and a file in `/lib/upgrade/keep.d` keeps it across `sysupgrade`. The service writes it
   rarely (the identity, the records, the clock mark), so the flash does not wear.
-- **The firewall is fw4 (nftables), driven by UCI.** The installer adds named rules
-  (`clipboardbridge ...`): the member port and mDNS from the zones the user names (the
-  `lan` zone already accepts input; an IoT zone usually does not), and the hub's UDP port
-  from `wan` only while the router is the hub. It remembers what it added and removes
-  exactly that, as on other Linux.
+- **The firewall is fw4 (nftables).** The rules are published by the procd service as its
+  data, so they exist only while the service runs: the member port and mDNS from the zones
+  the user names (the `lan` zone already accepts input; an IoT zone usually does not), and
+  the hub's UDP port from `wan` only while the router is the hub. `uci commit` rewrites
+  `/etc/config/firewall` and drops its comments, so the installer writes UCI rules only for
+  zones the user names, and removes exactly those. `firewall.sh` learns a `fw4` kind ahead of
+  plain nftables, whose rules fw4 would flush.
 - **mDNS only on the inside.** Today `cbb` announces on every interface. On a router that
   would send the group's names and device IDs onto the provider's network, so the service
   gets a list of interfaces for mDNS and the member port, by default the devices of the
   `lan` zone. Avahi, already installed on many routers, keeps working: `cbb` shares port
   5353 with it as it does on desktop Linux.
 - **Time.** Many routers have no clock that runs while they are off, and certificates need
-  the right time, so the init script starts the service after NTP has set the clock.
-- **Packages.** OpenWrt 25.12 installs `.apk` packages (apk 3); 24.10 and older use
-  `.ipk` (opkg). The first step installs with a script, as `get.sh` does elsewhere;
-  packages built with the OpenWrt SDK in CI come after.
+  the right time, so the service starts after NTP has set the clock: a hook in
+  `/etc/hotplug.d/ntp` leaves a flag in `/var/state`, as dnsmasq does.
+- **The member port and WAN.** The listener checks the interface each connection arrives
+  on, so the member port refuses WAN even when the firewall is opened by mistake; binding to
+  addresses would break when DHCP or PPPoE changes them.
+- **Packages.** OpenWrt 25.12 and later only, which install `.apk` packages (apk 3); 24.10
+  and older (`.ipk`, opkg) are not supported. The first step installs with a script, as
+  `get.sh` does elsewhere; then a signed apk feed of our own on `cbb.tools`, built by the
+  release job, since the 25.12 SDK's Go is older than the one `go.mod` needs. ASU and owut
+  drop a package from another feed on upgrade, and the docs say so.
+- **What the base system lacks.** No curl (`get.sh` fetches with `uclient-fetch`, whose
+  `wget` does not take `--https-only`), no `useradd` or `sudo`, and no `/usr/local`; the
+  socket and state paths are set per platform. Measured on a BPI-R4 with 25.12.6: 4 GB of
+  RAM, eMMC, avahi; the full `cbb` builds for mips and mipsle (softfloat) without a change
+  and passes its tests under qemu-mips (29 MB stripped, 6 MB with xz; UPX is not used, since
+  it costs RAM).
 - **The router's own WireGuard or AmneziaWG** stays separate: `cbb` runs its tunnel in its
   own process (amneziawg-go with netstack) on a port of its own and adds no interface or
   route.
@@ -254,9 +280,10 @@ One pull request each, smaller ones together:
 3. The router as the hub: `cbb global hub` opens its UDP port on `wan` and `cbb global off`
    closes it; the bench gets the router as a device under test with cases for it in
    [testbench.md](testbench.md).
-4. `.apk` and `.ipk` packages from the OpenWrt SDK in CI, attached to each release.
-5. The lite member on OpenWrt: its procd script and installer path, builds for armv7 and, with
-   nightly Rust, mips and mipsle.
+4. A signed apk feed on `cbb.tools`, built by the release job.
+5. The lite member on OpenWrt: its procd script and installer path, builds for aarch64 and
+   armv7; mips and mipsle with nightly Rust once GotaTun works without 64-bit atomics (asked
+   upstream in mullvad/gotatun#209), or a mips build without the tunnel until then.
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
 
@@ -322,8 +349,10 @@ service needs from the system:
 - **The service.** An rc.d script that runs `cbb` as its own user through daemon(8), with
   the state in `/var/db/clipboardbridge`; `get.sh` recognises FreeBSD and installs it, and
   a port and `pkg` package follow.
-- **The control socket.** Its check of the connecting user takes the peer's credentials
-  with `getpeereid`/`LOCAL_PEERCRED` on FreeBSD, where Linux uses `SO_PEERCRED`.
+- **The control socket.** As on every system, the socket's file modes decide who may
+  connect, and FreeBSD honours them; `cbb` checks no peer credentials anywhere today. Reading
+  them (`LOCAL_PEERCRED` on FreeBSD, `SO_PEERCRED` on Linux) for the log is optional
+  hardening.
 - **The firewall.** FreeBSD has pf and ipfw; `cbb` detects which one is active and asks as on
   the other systems (the same consent prompt, the same rules: the member port and mDNS from
   the home subnets only, the hub's UDP port while it is the hub). On OPNsense and pfSense
@@ -344,7 +373,11 @@ Steps:
    job that runs the Go tests in a FreeBSD virtual machine.
 2. The rc.d script, `get.sh`, the pf and ipfw rules with the consent prompt.
 3. The desktop connector on FreeBSD.
-4. OPNsense and pfSense as the hub, after the OpenWrt steps; the port in the ports tree.
+4. OPNsense and pfSense as the hub, after the OpenWrt steps: an OPNsense `plugins.inc.d` hook
+   in our own package, from our own pkg repository on `cbb.tools` and kept in this
+   repository under the AGPL; printed rules only, unsupported, on pfSense; the port in the
+   ports tree after one release in the field. First check whether OPNsense's mdns-repeater,
+   which binds port 5353 without `SO_REUSEPORT`, leaves room for the service's socket.
 
 ## Devices that are hard to type into
 
@@ -481,6 +514,13 @@ One pull request each, smaller ones together:
    and the serial console.
 5. The iPad build of the iPhone app.
 
+The TV variant is part of the one APK of the phone app. For Apple TV a spike with pyatv on a
+real Apple TV with tvOS 26 comes before the Companion protocol in Go; if text input does not
+work there, Apple TV is reached through the Bluetooth keyboards only. A keyboard types with
+whatever layout the user sets for the target. In keyboard mode the Nano ESP32 swaps its
+USB-JTAG console for a CDC console with a "reboot to flash" command, and a reset of its
+settings also erases its Bluetooth pairings.
+
 ## Watches
 
 Steps 1 and 2 done in 0.4; the rest planned for 0.6. Decided on 2026-10-24: a watch is never
@@ -512,8 +552,11 @@ the iPhone's key already sits in the Secure Enclave behind Face ID, so the group
 
 ### The watch's admin key
 
-A key in the watch's Secure Enclave (on Wear OS, the watch's Keystore), which the root
-certifies as an admin CA once, as it does an admin phone. The watch's device record has its
+A key in the watch's Secure Enclave (on Wear OS, the watch's Keystore, where a key in the
+TEE is enough and StrongBox is not required), which the root certifies as an admin CA once,
+as it does an admin phone. A watch without a passcode, or with wrist detection off, is not
+certified; the key is usable only while the watch is unlocked, and the watch checks wrist
+detection before each signature. The watch's device record has its
 own role, `watch`. A watch on the wrist stays unlocked without asking for Face ID or a
 fingerprint at each signature, so it signs the emergency actions above and nothing else: it
 freezes admin computers (D-60) and removes ordinary devices, but never removes an admin,
@@ -531,8 +574,13 @@ at once. On the iPhone the app has no background sync and learns of events only 
 syncs, so a notification may come late. To make it prompt, the hub could wake the phone with
 an Apple push whose content is encrypted to the phone's key and decrypted only on the phone
 (a Notification Service Extension); Apple would see that a push was sent, and when, but
-nothing in it. Whether to use Apple's push service at all is the owner's decision, made
-before step 3; without it, iPhone notifications come with the next sync.
+nothing in it. Decided (D-74): the push goes through a stateless sender at `cbb.tools`,
+since only the app's developer holds the key for Apple's push service, and the user agrees
+to it first, after being told what Apple and `cbb.tools` learn (that a push was sent and
+when; the push token, the hub's address and the time). It needs the Apple developer
+account; until then, and for users who do not agree, iPhone notifications come with the
+next sync or a background refresh. The lock screen shows the full text, and the app points
+to the system setting that hides previews until the phone is unlocked.
 
 ### Steps
 
@@ -546,7 +594,8 @@ One pull request each, smaller ones together:
    Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
    that turns sync away from home off on a member.
 4. Emergency actions on the watch, and the quick actions of item 27.
-5. If the owner agrees, prompt iPhone notifications through an encrypted Apple push.
+5. Prompt iPhone notifications through an encrypted Apple push (D-74), after the Apple
+   developer account.
 
 Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
 waking the phone app in the background long enough to send a record, the Data Layer
@@ -569,9 +618,21 @@ action is defined on the member that runs it, and the button sends only its name
 - **The user's own**: added on the device itself, with a name and a command line,
   `cbb action add <name> -- <command>` or in the settings of the Mac and Windows apps. The
   command takes no arguments from the network, so nothing a sender writes reaches a shell.
-  It runs as the desktop user; an action that needs root, like reboot, gets exactly that
-  right when it is added (a sudoers or polkit rule on Linux, the matching rights on a Mac and
-  on Windows), after a prompt that lists what it grants, as the firewall prompt does.
+  It runs as the desktop user. An action that needs root, like reboot, gets exactly that
+  right only with the user's consent, after a prompt that lists what it grants, as the
+  firewall prompt does; the installer adds nothing by itself (D-71):
+  - on Linux the service's unit sets `NoNewPrivileges=yes`, so sudo cannot work for it: the
+    presets go to logind over D-Bus with a polkit rule, and sudoers lines are only for
+    actions the agent runs as the desktop user;
+  - on a Mac, the loginwindow Apple events for the presets, and a sudoers line for a forced
+    shutdown;
+  - on Windows the service runs as `NT SERVICE\clipboardbridge` with almost no rights, and the
+    agent runs the presets as the signed-in user; for a PC with nobody signed in the service
+    gets `SeShutdownPrivilege` and nothing more.
+- **Consent on the device only.** Every action, preset or own, is off until the device's own
+  user turns it on there, never by a command from the network. The device may ask at the
+  first request when someone is at its screen; a device without a screen answers "turn it on
+  here: `cbb action enable reboot`". Any admin may turn actions off remotely.
 - The member lists its actions in its hello, so the apps and the watch show them as buttons.
   A preset may ask for a second tap (reboot, shut down).
 
@@ -581,7 +642,11 @@ The command is signed by the sender's admin key and checked by the member, as a 
 is: the action exists and is on, the signer is an admin that is neither removed nor frozen,
 the signer's kind is allowed for that action (each action lists the kinds that may run it:
 the root, admin phones, watches, admin computers; all admins by default), and the command is
-fresh and not a replay. The member answers with the exit status only; it sends output back
+fresh and not a replay. Reboot and shut down are allowed by default only to admins whose key
+is in hardware (the phones, the watches, computers with the key in a TPM or the Secure
+Enclave), and the device's user can change that per action; the phones ask for a second tap.
+Commands are limited per signer, so a stolen admin cannot reboot a member in a loop. The
+member answers with the exit status only; it sends output back
 only for an action whose user allowed that. Any admin turns quick actions off on any member
 with a signed command, and the member logs every action it runs and who asked.
 
@@ -598,6 +663,38 @@ device and Android would need more rights than the app should hold.
 2. The buttons in the phone apps and `cbb run`.
 3. The presets on the lite member.
 4. The buttons on the watch (item 26, step 4).
+
+## Collections
+
+Planned for 0.6 (D-72). A user with many devices puts them into collections and sets the
+order of the tiles in every graphical app: the phones, the Mac app, the tray app, and the
+watches, which show their phone's arrangement as sections.
+
+- **The word.** "Collection", translated as such in the apps' String Catalogs: "group" is
+  the sync group, "tag" the group tag, and "folder" will mean copied folders (item 20).
+- **Personal.** Each app installation keeps its own arrangement beside its other settings
+  (UserDefaults on the iPhone and the Mac, the app's preferences on Android, `desktop.json`
+  in the tray app). A group record would need an admin's signature for every drag, would
+  let two admins undo each other, would keep nobody but admins from arranging their own
+  screen, and would bring the collections' names to the forwarder.
+- **Simple.** One level; a device is in at most one collection; this device's own tile is
+  always first. A device that joins goes to the end, a removed one leaves its collection.
+- **Arranging.** An Arrange mode on every platform, as the iPhone's home screen has: drag a
+  tile to its place, or onto another tile to make a collection. Every drag also has a menu
+  item ("Move to collection…"), a VoiceOver and TalkBack action, and keyboard keys on the
+  computers. A collection's tile shows how many devices it holds, how many are online, and a
+  warning when one of them needs attention. Search and the filters "Online" and "Needs
+  attention" help with many devices.
+- **Display only in 0.6.** The device picker of remote paste follows the same order. Actions
+  on a whole collection come later, if at all; remote paste to several devices at once never.
+
+Per platform: SwiftUI's own grid reordering needs iOS and macOS 27 while the apps support
+iOS 17 and macOS 14, so they use drop delegates; Android uses the `sh.calvin.reorderable`
+library (Apache-2.0); the tray app uses pointer events of its own, not HTML drag and drop
+(WebKitGTK bug 265857), and pauses its redraw of the list every 4 s while a drag is on.
+
+Steps: the docs and a shared model with test vectors first, then the iPhone, Android, the
+watches, the Mac and the tray app.
 
 ## The phone as the hub
 
@@ -655,37 +752,35 @@ retries, and the Android foreground service as a hub across battery savers.
 
 ### Research: the iPhone hub in a Network Extension
 
-To research in 0.6, no release chosen. Today the iPhone is the hub only while its app is open; iOS
-suspends the app soon after it leaves the screen. Android can keep the hub running in the
-foreground service, at a battery cost. The one way known for the iPhone is to run the hub as
-a Network Extension, a packet tunnel provider, a separate process that iOS keeps running
-while the tunnel is on. What the hub needs fits it on paper: an outgoing registration with
-the forwarder, WireGuard for the clients (the WireGuard app runs wireguard-go the same way),
-and member connections; it needs no clipboard. Questions to answer before any work:
+Researched for 0.6 and not built (D-73). Today the iPhone is the hub only while its app is
+open, and that stays. The one way known to keep it running in the background is a Network
+Extension, a packet tunnel provider, and each condition for it fails or is doubtful:
 
-1. Whether it works: whether the extension may run cbbtun's hub (WireGuard, gVisor's
-   netstack, the registration) and the kit's member node within its memory limit (about
-   50 MB), reach the member key in the keychain (a shared access group) and the group's
-   state (an App Group), and route nothing of the phone's own traffic (only the tunnel's
-   prefix, or none). Also whether it may listen on the home network and publish itself by
-   Bonjour, or serves only through the forwarder.
-2. iOS allows one VPN at a time: a user who keeps another VPN on, common where a VPN is needed
-   to reach the internet, cannot run both. Check what happens when the other one starts, and
-   say it in the app.
-3. Apple's rules: the App Review Guidelines (section 5.4) allow VPN apps only through
-   NEVPNManager and, as we read them, only from developers enrolled as an organization, with
-   a clear account of what data the app sees; background use must be for the stated purpose
-   (2.5.4). Check the current text, whether the owner's developer account qualifies, and
-   whether review accepts a tunnel that carries only the group's own sync.
-4. The cost: the battery with the extension always on, measured on a real iPhone, against the
-   hub moving to a computer that is always on (step 6 above).
+1. **Apple's rules.** Guideline 5.4 allows VPN apps only from developers enrolled as an
+   organization, and App Review applies it to every app that installs a VPN profile; the
+   project's Apple developer account is a personal one. Guideline 2.5.4 and Apple's TN3120
+   ("Do not use a packet tunnel provider to host a network listener or proxy server") make a
+   rejection likely in any case.
+2. **One VPN at a time.** iOS keeps one tunnel-type VPN on; any other VPN app turns ours off
+   and stops its on-demand rules. Per-app VPN, app proxies and DNS proxies need a managed
+   device.
+3. **Memory.** A packet tunnel extension gets 50 MiB on iOS 15 to 26. cbbtun's hub alone uses
+   about 4 MiB with no clients and 11 MiB with 256 on Linux, so a small group would fit only
+   after tuning (the forwarder code pulls Xray-core into the hub, gVisor allows 1 MiB per
+   connection), and the Swift member node comes on top.
+4. **The cost.** A hub on cellular keeps the radio from idling (a packet every 15 s to the
+   forwarder plus each client's keepalive every 25 s); there are no published measurements.
 
-The answers decide whether this becomes a step of the plan, an option the user turns on, or
-is dropped in favour of a computer or a second hub (D-65).
+Instead, a computer, the router or a Docker container is the hub, a group without one uses
+the blind relay (item 28), and a second hub (D-65) covers the hours the first is off.
+
+Found on the way and worth fixing anyway: the phones' member key is kept with the keychain's
+"when unlocked" accessibility, so nothing in the background can use it while the phone is
+locked.
 
 ## Secure updates
 
-Proposed for 0.6. Today a release has `SHA256SUMS` and GitHub's build provenance attestation:
+Planned for 0.6 (D-69). Today a release has `SHA256SUMS` and GitHub's build provenance attestation:
 `get.sh` checks the sums, which come from the same place as the archives, and checks the
 attestation only with `gh` and `CBB_ATTESTATION=require`. Nothing updates by itself, and
 nothing pins who may sign a release. The aim is that a program updates only to a release the
@@ -694,28 +789,42 @@ token cannot slip in another build or an older one.
 
 ### The signed manifest
 
-- Each release gets `release.json`: the version, the date, an expiry date, the channel
-  (stable or beta), the lowest version that may update to it directly, and the SHA-256 and
-  size of every file. It is signed with the project's **release key**. The signature uses
-  Ed25519, or P-256 if the key is kept in the Secure Enclave of the owner's Mac.
-- The programs pin the release key's public half. `release.json` may name the next key,
-  signed by the current one, so the key can be changed without a manual reinstall. A lost
-  key needs a release installed by hand, and the documentation says so.
-- **The key never sits in CI.** The release workflow builds the files and their sums and
-  stops. The owner signs `release.json` on the Mac (`tools/release-sign`, one command after
-  the tag), and the workflow publishes it. A stolen GitHub token can then publish files but
-  not a manifest that any program accepts. The build attestation stays as a second,
-  independent check.
-- The check refuses a manifest whose signature fails, one whose expiry date has passed (so a
-  mirror cannot freeze a device on an old release), a version lower than the installed one
-  (rollback), and a file whose SHA-256 differs.
+- **Two tiers of keys.** Two **root keys**, each on its own hardware key (YubiKey) kept
+  offline and apart, certify the **release key** in `keys.json`. The release key lives in
+  the Secure Enclave of the owner's Mac and asks for Touch ID at each signature; `keys.json`
+  expires and is signed again every 90 days. The programs pin the root keys, so a lost or
+  stolen Mac is replaced by a new release key certified by a root, with no reinstall, and a
+  thief of the Mac cannot rotate to a key of their own.
+- All signatures are P-256 in the envelope of the group's records (`body`, `sig` and the key's
+  hash), which Go, `lite/core` (no_std), CryptoKit, Kotlin, openssl and PowerShell verify
+  with what they already have. Each file has a `type`, so one kind is never taken for
+  another.
+- Each release gets `release.json`: the version, the date, the channel, the lowest version
+  that may update to it directly, and the SHA-256 and size of every file, with the hashes of
+  the binaries inside each archive and the Docker image's digest. GitHub releases are
+  immutable, so a small `stable.json` beside it names the current release of the channel with
+  a sequence number and an expiry, and is signed again before it expires; a mirror then cannot
+  freeze a device on an old release.
+- **The key never sits in CI.** The release workflow builds the files and an unsigned
+  `release.json` into a draft and stops. `tools/release-sign` on the owner's Mac checks the
+  build attestations against the commit of the tag the owner pushed, optionally rebuilds the
+  targets without cgo and compares the hashes, signs, and publishes the release. Only then a
+  second workflow updates Docker, Homebrew, winget and the mirror, after checking the
+  signature. A stolen GitHub token can publish files but not a manifest any program accepts.
+- The check refuses a signature that fails, an expired `keys.json` or `stable.json`, a
+  version lower than the highest the device has ever seen (not only the installed one), and
+  a file whose SHA-256 differs. `get.sh` and `get.ps1` carry the root keys and check the
+  manifest with openssl or .NET; without openssl they warn and go on unless
+  `CBB_VERIFY=require`.
 
 ### Where updates come from
 
-- `https://cbb.tools/releases/` mirrors each release: the same files and the same signed
-  manifest, copied by the release workflow. Programs try cbb.tools first and GitHub second;
-  a setting names another mirror or turns the check off. Since the signature is checked, the
-  mirror is not trusted.
+- GitHub Releases is the source, and `https://dl.cbb.tools/` mirrors each release with the
+  same files and signed manifests, on a name of its own, apart from the forwarder. A setting
+  names another mirror or turns the check off. Since the signature is checked, neither is
+  trusted.
+- Members pass the signed manifest and the archives to each other inside the group, so about
+  one device per group asks the internet; each still checks the signatures itself.
 - An update check tells the server the device's address, its system and its version. It is
   at most once a day, sends no group data and works with sync away from home off. The
   documentation says so, and the check can be turned off.
@@ -736,8 +845,10 @@ token cannot slip in another build or an older one.
   tool. `cbb update` sees how it was installed and prints the command (`brew upgrade`,
   `winget upgrade`, `docker compose pull`) instead of replacing files. The release workflow
   already publishes the formula and the winget manifest from the same sums.
-- **Windows:** the files are also Authenticode-signed when the certificate is in the
-  secrets, and `cbb update` checks that signature too when the installed copy has one.
+- **Windows:** the files are also Authenticode-signed once the project has a certificate
+  (an application to the SignPath Foundation, which signs open-source projects for free,
+  after the signing is written), and `cbb update` checks that signature too when the
+  installed copy has one.
 - **The tray app** checks with the service and shows "update available" with a button that
   runs `cbb update` through UAC or pkexec, like its other admin actions.
 - **The Mac app:** Sparkle with its EdDSA signature, once the app is signed and notarized
@@ -764,18 +875,29 @@ token cannot slip in another build or an older one.
 
 ### Steps
 
-1. The manifest, the release key and `tools/release-sign`; the release workflow publishes
-   the manifest and mirrors to cbb.tools; `get.sh` and `get.ps1` check the manifest.
-2. `cbb update` and `-check` on Linux, macOS and Windows: download, check, swap, restart and
-   roll back; detection of Homebrew, winget, Docker and packages; tests with a tampered
-   file, a bad signature, an expired manifest and an older version.
-3. Automatic updates: the installers' question, the timers, `cbb update -auto`.
-4. The tray app and `cbb status`.
-5. The Android app's own update for the sideloaded APK.
-6. The lite member, then OTA on the Nano ESP32.
-7. Sparkle in the Mac app, after the Apple account.
-8. On the bench: an update from the previous release on every device (L9), a refused
-   downgrade and a refused unsigned build.
+1. The keys and the format: the root keys on the hardware keys, the release key in the
+   Mac's Secure Enclave, `keys.json`, `release.json` and `stable.json`, with verifiers in
+   Go, `lite/core`, the Swift kit and the Kotlin kit and shared vectors (valid, bad
+   signature, expired, wrong type, older version, wrong key, the `keys.json` chain).
+2. The release flow: the draft, `tools/release-sign`, the publishing workflow, the mirror,
+   and `get.sh` and `get.ps1` checking the manifest.
+3. `cbb update` and `-check` on Linux, macOS and Windows: download, check, rename into place
+   (never copy over: macOS kills an overwritten signed binary, and Windows renames the
+   running file aside first), restart, and roll back when the new service does not become
+   healthy, keeping a list of failed versions; detection of Homebrew, winget, Docker and
+   packages; tests with a tampered file, a bad signature, an expired manifest, an older
+   version and a new binary that never becomes healthy.
+4. Automatic updates: the installers' question, the timers, `cbb update -auto`.
+5. The tray app and `cbb status`; members passing manifests and archives to each other.
+6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
+   registration with Google's developer verification.
+7. The lite member; then the Nano ESP32: a new partition table and a bootloader with
+   rollback (one reflash over USB), and OTA from a member.
+8. Sparkle in the Mac app, after the Apple account, with its own Ed25519 key and the appcast
+   made by `tools/release-sign`.
+9. On the bench: an update from the previous release on every device (L9), a refused
+   downgrade, a refused unsigned build, a rotation of the release key by a root, and a drill
+   for a lost release key.
 
 ## Key levels
 
@@ -804,7 +926,27 @@ The user picks one of three levels for the group, at its root:
 
 - A device that shows signs of being broken into (a jailbreak or root, an unlocked
   bootloader, a Keystore in software, which attestation reports) counts as a key in a file,
-  and the devices list marks it.
+  and the devices list marks it. A custom system whose bootloader is locked again with its
+  own key, such as GrapheneOS, counts as hardware.
+- Decided after the research (D-70):
+  - Proofs that need nobody outside the group (Android chains, a TPM whose maker's
+    certificate is on the chip) mark a key "proven" at level 2 as well.
+  - Level 1 accepts App Attest for Apple devices, and the guide says it proves a genuine
+    copy of the app on Apple's hardware, not that our own key is in the Secure Enclave.
+  - Level 1 accepts only Android chains issued through Remote Key Provisioning, since
+    leaked factory keys can forge a green, locked attestation on a rooted phone.
+  - Only level 1 asks Intel or AMD for a TPM's certificate. The address of that request
+    names the TPM for good, so the user is warned first.
+  - `cbb.tools` fetches Google's list of revoked attestation keys once a day and serves it
+    signed. No device asks Google, and no copy goes into the releases.
+  - Groups made before 0.6 are offered, never forced, a move of the root to a proven key.
+- Found on the way:
+  - Android keys made today carry no attestation challenge, so each phone makes a new key
+    to be proven.
+  - The Mac's service runs as a LaunchDaemon, and a daemon cannot use the Secure Enclave,
+    so the signing moves to the user's LaunchAgent.
+  - The Linux unit's `PrivateDevices=yes` hides `/dev/tpmrm0` and changes with the TPM
+    work.
 - Groups made before 0.6 keep working; one whose root or admins hold keys in files shows a
   warning and suggests moving the root to a phone.
 - The guide "Keys and attestation" (docs/guide) says all of this plainly.
@@ -832,34 +974,30 @@ credentials made for them instead, signed with the group's keys:
 - Face ID is asked only when the credentials change (a device admitted or removed, a hub
   set) and once per expiry. Inside the group cbb keeps using the full records.
 
-### Research for 0.6: what is left to hide
+### What is left to hide
 
-To research in 0.6, with the credentials above and the several hubs (D-65). Even with them,
-the servers see something. From the most to the least revealing:
+Researched for 0.6 (D-75). Even with the credentials the servers see something; from the
+most to the least revealing: the addresses of the hub and its clients, their online times
+and the volume; a stable pseudonym per device; the group tag; how many devices there are;
+when the root changes; the root certificate. Decided:
 
-1. the addresses of the hub and its clients, the times they are online, and the volume;
-2. a stable pseudonym per device (its key hash);
-3. the group tag;
-4. how many devices there are;
-5. when the root changes (a takeover);
-6. the root certificate.
-
-Proposals to study:
-
-- **No logs on cbb.tools**: the forwarder and the relay we run keep no logs and no
-  addresses on disk; say so in the docs, and check it on the test bench.
-- **The address**: document that a system VPN hides the user's address from cbb.tools;
-  maybe a setting to reach cbb.tools through a proxy or a VPN of the user's choice.
-- **The hub's online times**: optionally keep the hub registered all the time, so its
-  hours are not seen. On Android in the foreground service, at a battery cost; on the
-  iPhone only as a Network Extension (item 33, "Research: the iPhone hub in a Network
-  Extension").
-- **Rotating pseudonyms**: new device pseudonyms and a new group tag with each renewal of
-  the credentials (about every 30 days), derived from a group secret the servers do not
-  know. Today the forwarder sees the hub's member key, which never changes, so this needs
-  a separate short-lived key for the servers, signed by the root.
-- **Padding**: the credentials' lists padded to 4, 8 or 16 entries, so the count of
+- **The forwarder stores nothing about a group.** Today `cbb forward` keeps a file per group
+  with its tag, root certificates and removals (device IDs and dates); in 0.6 only a hash of
+  the tag and the version of the group's newest credential remain, enough to refuse an older
+  credential. The relay keeps pseudonyms, not device IDs.
+- **Padding.** The credentials' lists are padded to 4, 8 or 16 entries, so the count of
   devices shows only roughly.
+- **Rotating keys and pseudonyms.** Each device talks to the servers with a key of its own,
+  made every 30 days and signed by the root, and the group tag the servers see is derived
+  from a group secret, so a server cannot link a device or a group across renewals. The
+  hub's WireGuard key is renewed with each credential. In Go, Rust, Swift and Kotlin with
+  interop vectors, after the credentials.
+- **No logs.** The forwarder and the relay on `cbb.tools` keep no logs and no addresses on
+  disk, with a hardened systemd unit; a bench case checks it, and the docs say what the
+  hosting provider still sees and that a system VPN hides the user's address.
+- **Not done:** a transparency report or warrant canary (the defence is that the servers
+  hold almost nothing), and keeping the hub registered all the time (the iPhone cannot, D-73;
+  Android could, at a battery cost).
 
 ## Device keys in hardware
 
@@ -871,10 +1009,13 @@ The plan:
 
 - **Hardware where there is some.** Linux and Windows keep the member key (P-256) and the
   admin key in the TPM 2.0 (Linux through the kernel's TPM device, Windows through the
-  Platform Crypto Provider), and a Mac in the Secure Enclave (Apple silicon or the T2
+  Platform Crypto Provider; the Go library go-attestation cannot make such keys on Windows,
+  so the calls are our own), and a Mac in the Secure Enclave (Apple silicon or the T2
   chip), so the keys are used there and never leave it. WireGuard's X25519 is not offered
   by these chips; that key is kept sealed by the TPM or the Secure Enclave and opened only
-  in the service's memory.
+  in the service's memory. A LaunchDaemon cannot use the Secure Enclave, so on a Mac the
+  keys are used by the user's LaunchAgent on the service's behalf; on Linux the unit gives
+  the service `/dev/tpmrm0` in place of `PrivateDevices=yes`.
 - **Without hardware** (many Raspberry Pis and older PCs, Intel Macs without the T2): the
   key stays in a file readable only by the service, on Linux sealed with `systemd-creds`
   (by the TPM when there is one, else by the machine's own key readable only by root), on
@@ -889,17 +1030,13 @@ The plan:
   (the certificate renewal and a new tunnel key through the tunnel), so a copied key stops
   working even when nobody noticed the theft.
 - Removing a device stays the main answer to a stolen key in every case.
-- **Attestation (planned, off by default).** A TPM can sign that a key was made inside it and
-  cannot leave it, with a chain up to its maker's certificate (the endorsement key);
-  Android's Key Attestation does the same with Google's root. The admin checks that chain
-  when the device joins, and the device then carries a mark "key in hardware, proven". It
-  is checked only offline, with the makers' roots shipped in `cbb` and the apps: a TPM
-  whose endorsement certificate must be fetched from its maker's server (some Intel and AMD
-  firmware TPMs) does not pass, and Apple offers no attestation that works without its
-  servers or MDM, so Macs and iPhones are never marked. It is off by default and not used
-  in the project's own setup; the user turns it on at the hub, which then lets only marked
-  devices sync away from home. What it does not do: it does not stop malware on the device
-  itself from using the key while it runs there, and it is no stronger than the chip.
+- **Attestation.** A TPM can sign that a key was made inside it and cannot leave it, with a
+  chain up to its maker's certificate (the endorsement key); Android's Key Attestation does
+  the same with Google's root, and App Attest proves a genuine copy of the app on Apple's
+  hardware. How these mark a device, and which of them ask a server outside the group, is
+  in "Key levels" above (D-66, D-70). What attestation does not do: it does not stop malware
+  on the device itself from using the key while it runs there, and it is no stronger than
+  the chip.
 
 ## Future research (not planned)
 
