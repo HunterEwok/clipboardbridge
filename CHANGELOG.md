@@ -34,6 +34,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `get.ps1` no longer stops in Windows PowerShell 5.1 when `gh` is installed but not signed
   in.
 
+### Fixed
+
+- The iPhone's member key and its certificate are readable while the phone is locked, once
+  it was unlocked after starting, so that sync works in the background; the root and admin
+  keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
+  setting.
+
 ## [0.5.0] - 2026-10-26
 
 ### Added
