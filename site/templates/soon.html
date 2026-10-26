@@ -1,0 +1,22 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- What everyone sees while the site is closed (site/deploy/nginx.conf):
+     one page, every language on it, built outside layout.html. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Clipboard Bridge</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.png">
+</head>
+<body>
+<main class="wrap soon">
+  <picture><source srcset="/static/icon-dark.png" media="(prefers-color-scheme: dark)"><img src="/static/icon.png" alt="" width="96" height="96"></picture>
+  <h1>Clipboard Bridge</h1>
+  {{range .}}<p lang="{{.Lang.Tag}}" dir="{{if .Lang.RTL}}rtl{{else}}ltr{{end}}"><strong>{{.Coming}}</strong> {{.Meanwhile}}</p>
+  {{end}}
+</main>
+</body>
+</html>

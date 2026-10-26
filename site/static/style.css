@@ -205,3 +205,9 @@ th { white-space: nowrap; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes shrink { from { min-height: 60px; } to { min-height: 48px; } }
+
+.soon { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding-block: 40px; }
+.soon img { border-radius: 22px; display: block; }
+.soon h1 { margin-top: 20px; }
+.soon p { margin: 6px 0; }
+.soon p[dir="rtl"] { text-align: right; }

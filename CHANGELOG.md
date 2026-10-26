@@ -29,7 +29,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   motion, off for those who ask for less motion; no scripts. Error pages (404, 5xx) in the
   visitor's language, Open Graph, canonical and hreflang links, `sitemap.xml`, `robots.txt`
   and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
-  HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation.
+  HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
+  by GoatCounter on the same server, without cookies and without storing addresses. Until the
+  launch the site is closed: everyone sees "the website opens soon", and a secret link opens
+  the whole site in the owner's browsers.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

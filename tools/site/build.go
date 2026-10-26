@@ -170,9 +170,7 @@ var funcs = template.FuncMap{
 	"code": func(s string) template.HTML {
 		return template.HTML("<code>" + template.HTMLEscapeString(s) + "</code>")
 	},
-	"link": func(href string, text any) template.HTML {
-		return template.HTML(`<a href="` + template.HTMLEscapeString(href) + `">` + html(text) + `</a>`)
-	},
+	"link": link,
 	"dict": func(kv ...any) (map[string]any, error) {
 		if len(kv)%2 != 0 {
 			return nil, errors.New("dict: odd number of arguments")
@@ -191,6 +189,11 @@ var funcs = template.FuncMap{
 	},
 }
 
+// link returns a link to href that reads text.
+func link(href string, text any) template.HTML {
+	return template.HTML(`<a href="` + template.HTMLEscapeString(href) + `">` + html(text) + `</a>`)
+}
+
 // plain returns v as plain text when it is translated HTML without markup,
 // for JSON-LD; anything else stays as it is.
 func plain(v any) any {
@@ -198,6 +201,13 @@ func plain(v any) any {
 		return stdhtml.UnescapeString(string(h))
 	}
 	return v
+}
+
+// soonLine is one language's line of soon.html, the page everyone sees
+// while the site is closed.
+type soonLine struct {
+	Lang              Language
+	Coming, Meanwhile template.HTML
 }
 
 // qa is a question of the FAQ in one language.
@@ -242,6 +252,7 @@ func render(root string) (map[string][]byte, []*translator, error) {
 	}
 	out := map[string][]byte{}
 	var trs []*translator
+	var soon []soonLine
 	for _, lang := range langs {
 		tr := &translator{lang: lang, used: map[string]bool{}, missing: map[string]bool{}}
 		trs = append(trs, tr)
@@ -254,6 +265,14 @@ func render(root string) (map[string][]byte, []*translator, error) {
 			"faq":   func() []qa { return items },
 			"faqld": func() map[string]any { return faqLD(items) },
 		}
+		line := soonLine{Lang: lang}
+		if line.Coming, err = tr.t("The website opens soon."); err != nil {
+			return nil, nil, err
+		}
+		if line.Meanwhile, err = tr.t("Meanwhile, Clipboard Bridge is on %s.", link("https://github.com/HunterEwok/clipboardbridge", "GitHub")); err != nil {
+			return nil, nil, err
+		}
+		soon = append(soon, line)
 		for _, name := range append(slices.Clone(pages), errorPages...) {
 			tmpl, err := template.New("layout.html").Funcs(funcs).Funcs(perLang).ParseFiles(
 				filepath.Join(root, "templates", "layout.html"),
@@ -271,6 +290,15 @@ func render(root string) (map[string][]byte, []*translator, error) {
 	}
 	// Without the language chooser, "/" falls back to English.
 	out["index.html"] = []byte(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=en/"><title>Clipboard Bridge</title><a href="en/">Clipboard Bridge</a>` + "\n")
+	tmpl, err := template.ParseFiles(filepath.Join(root, "templates", "soon.html"))
+	if err != nil {
+		return nil, nil, err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, soon); err != nil {
+		return nil, nil, fmt.Errorf("soon.html: %w", err)
+	}
+	out["soon.html"] = b.Bytes()
 	out["sitemap.xml"] = sitemap(langs)
 	out["robots.txt"] = []byte("User-agent: *\n" +
 		"# \"/\" only redirects; \"/?lang=\" sets a cookie.\n" +

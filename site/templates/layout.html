@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" href="/static/icon.png">
 <link rel="apple-touch-icon" href="/static/icon.png">
+<script data-goatcounter="https://cbb.tools/count" async src="/count.js"></script>
 {{block "head" .}}{{end}}</head>
 <body>
 <a class="skip" href="#main">{{t "Skip to content"}}</a>
@@ -55,10 +56,10 @@
   <div class="wrap">
     <p>{{t "Clipboard Bridge is free software under the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/LICENSE" "GNU AGPL v3")}}
        {{t "Status: early development."}}</p>
-    <p>{{t "This site uses no analytics and sets one cookie only when you pick a language: %s." (link (printf "/%s/privacy.html#site" .Lang.Code) (t "what it knows about you"))}}
+    <p>{{t "This site counts visits without cookies, and sets one cookie only when you pick a language: %s." (link (printf "/%s/privacy.html#site" .Lang.Code) (t "what it knows about you"))}}
        <a href="https://db-ip.com">{{t "IP Geolocation by DB-IP"}}</a></p>
   </div>
 </footer>
-{{if ne .Page "download.html"}}<p class="dock"><a class="button accent go" href="/{{.Lang.Code}}/download.html">{{t "Download for free"}}</a></p>
+{{if ne .Page "download.html"}}<p class="dock"><a class="button accent go" href="/{{.Lang.Code}}/download.html" data-goatcounter-click="dock-download">{{t "Download for free"}}</a></p>
 {{end}}</body>
 </html>

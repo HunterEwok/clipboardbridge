@@ -224,8 +224,10 @@ func TestSite(t *testing.T) {
 	if len(sm.URLs) != len(pages)*len(langs) || len(sm.URLs[0].Links) != len(langs) {
 		t.Errorf("sitemap: %d pages, want %d, each with %d languages", len(sm.URLs), len(pages)*len(langs), len(langs))
 	}
-	if _, err := os.Stat(filepath.Join(out, "robots.txt")); err != nil {
-		t.Error(err)
+	for _, name := range []string{"robots.txt", "soon.html"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+			t.Error(err)
+		}
 	}
 }
 
