@@ -29,7 +29,7 @@ import io.github.hunterewok.clipboardbridge.kit.PairingMember
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.PhoneHub
 import io.github.hunterewok.clipboardbridge.kit.RecordStore
-import io.github.hunterewok.clipboardbridge.kit.Records
+import io.github.hunterewok.clipboardbridge.kit.Records as KitRecords
 import io.github.hunterewok.clipboardbridge.kit.SyncEngine
 import io.github.hunterewok.clipboardbridge.kit.TLSListener
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
@@ -192,7 +192,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     id = it.id, name = it.name, online = it.id == g.device || it.id in online, role = it.role, os = it.os, isSelf = it.id == g.device,
                     admin = it.admin || it.id == root, isRoot = it.id == root,
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
-                    keysInFile = Records.storeOf(stores[it.id] ?: it.store, it.role) == Records.FILE,
+                    keysInFile = KitRecords.storeOf(stores[it.id] ?: it.store, it.role) == KitRecords.FILE,
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
                     mode = if (it.id == g.device) syncMode else modes[it.id],
@@ -846,7 +846,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val n = synchronized(lock) { if (state?.isRoot == true) node else null }
         val key = n?.offeredAdminKeys?.get(id) ?: throw Failure(Failure.Kind.NOT_ADMIN)
         val store = n.keyStores[id]
-        if (Records.storeOf(store, "full") == Records.FILE && !allowFileKey) throw PhoneGroup.FileKey()
+        if (KitRecords.storeOf(store, "full") == KitRecords.FILE && !allowFileKey) throw PhoneGroup.FileKey()
         val root = caSigner(R.string.reason_make_admin)
         val g = copyOfState() ?: return
         val (ca, r) = withContext(Dispatchers.IO) { g.makeAdmin(id, key, root, Instant.now(), store, allowFileKey) }
