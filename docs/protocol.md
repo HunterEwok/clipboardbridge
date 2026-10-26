@@ -1274,7 +1274,8 @@ and then syncs at home only ("Through the tunnel" below).
   the user turns it on there (`cbb global on`, the control operation `away`). Go turns it on
   by writing `tunnel.json` next to the identity
   (mode 0600), which holds the device's own Curve25519 key pair, made on the device, and the
-  rest of this section's state. The lite member keeps its own `tunnel.json` there: `v` (1),
+  rest of this section's state; on a Linux computer with a TPM the private key is sealed by
+  it (`key_tpm` in place of `key`, section 17). The lite member keeps its own `tunnel.json` there: `v` (1),
   `group` (the group tag), `key` (its private key, base64), `psk` (the preshared key it chose)
   and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`); it reads the single
   `to_hub` of earlier versions into `hubs`. Every computer and the lite member keep
@@ -1971,6 +1972,11 @@ far.
   in `key_tpm` and `admin_key_tpm` instead of `key` and `admin_key`; the blob loads only in
   that TPM. `CBB_TPM=off` makes new keys in a file; a key already in a file stays there
   until the device joins again. The CA keys of a root computer stay in the file.
+- **The WireGuard key** (section 11) is sealed by the same TPM: a sealed data object under
+  the storage root key, its blob in `tunnel.json` as `key_tpm` in place of `key`. The key
+  crosses to and from the TPM in a session salted with the storage root key that encrypts
+  it, so it never shows on the chip's bus. A key in the file moves into the TPM when the
+  service next reads the state; WireGuard itself still uses it in memory.
   `CBB_TPM_SIMULATOR=host:port` points the service at a software TPM (swtpm), for tests.
 - A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
   root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
@@ -2030,6 +2036,42 @@ leaf certifies the key of the sender's TLS certificate and carries the challenge
 When that differs from the `store` or `kind` of the device's record, the root signs a new
 device record that keeps the rest and says what the attestation shows. A chain that proves
 nothing is logged and changes nothing.
+
+### TPM evidence
+
+A computer whose member key is in a TPM (above) proves it to the group's root in three
+`evidence` messages of key `member`, after the hellos. Every message carries `salt` and
+`chain`, empty where the format has none.
+
+1. **`tpm`**, the device to every peer: `chain` holds the endorsement key's certificate,
+   which the TPM's maker wrote in its NV (index `0x01c0000a` for the ECC P-256 EK, else
+   `0x01c00002` for the RSA 2048 one; a device whose TPM holds neither sends nothing), then
+   any certificates the device has between it and the maker; `tpm` holds base64 TPM
+   structures: `ek`, the EK's `TPM2B_PUBLIC` made from the TCG's template; `ak`, the
+   `TPM2B_PUBLIC` of an attestation key the device made under its storage root key, a
+   restricted P-256 ECDSA signing key fixed in the TPM; `key`, the member key's
+   `TPM2B_PUBLIC`; `attest`, the `TPMS_ATTEST` of `TPM2_Certify` of the member key by the AK
+   with the qualifying data the attestation challenge (above) of `group_tag`, an empty member
+   key and `salt`; and `signature`, the AK's `TPMT_SIGNATURE` of it.
+2. **`tpm-credential`**, the root to that device: the root checks that the EK certificate
+   leads to one of the TPM makers' certificates that releases ship
+   (`internal/attest/tpmroots`), that `ek` is a restricted decryption key with the
+   certificate's key, that `ak` is a restricted signing key made in the TPM, that `key` was
+   made in the TPM, cannot leave it, and is the key of the sender's TLS certificate, and that
+   the AK signed with ECDSA and SHA-256 a `TPM2_Certify` of `key` with the challenge. It then
+   encrypts 32 random bytes to the EK for the AK's name (`TPM2_MakeCredential`'s format) and
+   sends `credential`, the ID object, and `secret`, the encrypted seed.
+3. **`tpm-activated`**, the device to the root: `secret` holds what `TPM2_ActivateCredential`
+   recovered with the AK and the EK, which the TPM does only when both are its own.
+
+When it holds the 32 bytes, the root records the device's keys as `proven`, kind `tpm`, and
+`proof` the hex SHA-256 of the EK certificate. Anything that fails is logged and changes
+nothing: the record keeps the `hardware` of the device's hello. A computer whose record says
+`file` while its hello says `hardware` (its keys were in the TPM before the root saw its
+hello, as one admitted by pairing) gets a record that says `hardware`. Nothing goes to the
+TPM's maker: a TPM whose EK certificate is not in its NV, as Intel's and AMD's firmware TPMs
+often, stays `hardware` (the strict key level will fetch theirs). The phones do not check
+TPM evidence yet; a phone as the group's root ignores it.
 
 ### Revoked attestations
 

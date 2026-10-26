@@ -36,8 +36,11 @@ hardware can prove it:
   root fetches that copy, so your devices never ask Google. A phone on the list drops from
   proven to hardware.
 - **Linux computers with a TPM** keep their member and admin keys in it, so the keys count
-  as hardware. Proving them (the TPM's certificate) and **Apple devices** (App Attest) come
-  later in 0.6.
+  as hardware. A TPM whose maker wrote its certificate into the chip (Infineon, ST and
+  Nuvoton chips, as the Raspberry Pi TPM boards) proves it to the group's root, which then
+  records the computer as **proven**; nothing is asked of the maker. Intel's and AMD's
+  firmware TPMs often keep their certificate on the maker's server instead, so they stay
+  hardware. **Apple devices** (App Attest) come later in 0.6.
 
 ## The three levels
 

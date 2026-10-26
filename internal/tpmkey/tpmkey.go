@@ -41,6 +41,10 @@ type TPM struct {
 	mu  sync.Mutex
 	t   transport.TPMCloser
 	srk *tpm2.CreatePrimaryResponse // loaded on first use
+	ek  *Endorsement                // read on first use
+	// keys are the keys loaded, which room flushes when the TPM has no
+	// room for another object.
+	keys []*Key
 }
 
 // Open opens the TPM: Device, or the simulator that CBB_TPM_SIMULATOR names.
@@ -88,7 +92,33 @@ func (t *TPM) Close() error {
 		tpm2.FlushContext{FlushHandle: t.srk.ObjectHandle}.Execute(t.t)
 		t.srk = nil
 	}
+	t.evict()
+	t.ek = nil
 	return t.t.Close()
+}
+
+// room runs f, and again after flushing the loaded keys when the TPM had
+// no room for another object: a TPM without the kernel's resource manager,
+// as a simulator, holds three. Keys load again when they next sign.
+// t.mu is held.
+func (t *TPM) room(f func() error) error {
+	err := f()
+	if errors.Is(err, tpm2.TPMRCObjectMemory) && len(t.keys) > 0 {
+		t.evict()
+		err = f()
+	}
+	return err
+}
+
+// evict flushes the loaded keys; t.mu is held.
+func (t *TPM) evict() {
+	for _, k := range t.keys {
+		if k.handle != nil {
+			tpm2.FlushContext{FlushHandle: k.handle.ObjectHandle}.Execute(t.t)
+			k.handle = nil
+		}
+	}
+	t.keys = nil
 }
 
 // parent returns the storage root key, made from the standard template so
@@ -150,10 +180,14 @@ func (t *TPM) NewKey() (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := tpm2.Create{
-		ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
-		InPublic:     tpm2.New2B(keyTemplate),
-	}.Execute(t.t)
+	var rsp *tpm2.CreateResponse
+	err = t.room(func() (err error) {
+		rsp, err = tpm2.Create{
+			ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
+			InPublic:     tpm2.New2B(keyTemplate),
+		}.Execute(t.t)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("tpmkey: making a key: %w", err)
 	}
@@ -216,15 +250,20 @@ func (k *Key) loaded() (*tpm2.LoadResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := tpm2.Load{
-		ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
-		InPublic:     *pub,
-		InPrivate:    *priv,
-	}.Execute(k.tpm.t)
+	var rsp *tpm2.LoadResponse
+	err = k.tpm.room(func() (err error) {
+		rsp, err = tpm2.Load{
+			ParentHandle: tpm2.NamedHandle{Handle: srk.ObjectHandle, Name: srk.Name},
+			InPublic:     *pub,
+			InPrivate:    *priv,
+		}.Execute(k.tpm.t)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("tpmkey: loading the key, which another TPM may have made: %w", err)
 	}
 	k.handle = rsp
+	k.tpm.keys = append(k.tpm.keys, k)
 	return rsp, nil
 }
 

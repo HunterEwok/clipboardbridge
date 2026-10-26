@@ -188,6 +188,11 @@ not signed and the installers check nothing; the steps below are the plan.
   `keys.json` beside it. When it stops on a list that drops a serial number, check Google's
   list and run it once with `-allow-drop`; a stolen status key is dropped from the next
   `keys.json` like a release key.
+- **The TPM makers' certificates** in `internal/attest/tpmroots/roots.pem`, which decide
+  whose TPMs prove their keys (docs/protocol.md, section 17, "TPM evidence"): before a
+  release, download Microsoft's TrustedTpm.cab (its README says where), check its
+  Authenticode signature, extract the root and intermediate certificates as PEM, review the
+  diff (a maker added or gone) and note the date in the README.
 - `release-sign drill -version X.Y.Z DIR ROOTS.pem` signs DIR with throwaway keys in files,
   as CI does to test the installers, and for drills of the steps above.
 

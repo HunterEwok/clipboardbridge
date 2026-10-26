@@ -4,6 +4,7 @@
 package tpmkey_test
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -95,5 +96,45 @@ func TestKey(t *testing.T) {
 	bad.Private[len(bad.Private)-1] ^= 1
 	if _, err := tpm.LoadKey(bad); err == nil {
 		t.Error("a changed blob loaded")
+	}
+}
+
+func TestSeal(t *testing.T) {
+	tpmtest.Start(t)
+	tpm, err := tpmkey.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm.Close()
+	secret := bytes.Repeat([]byte{0x5a}, 32)
+	b, err := tpm.Seal(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(b.Private, secret) || bytes.Contains(b.Public, secret) {
+		t.Fatal("the blob holds the data in the clear")
+	}
+	// Another process, as after a restart, unseals it with the same TPM.
+	tpm.Close()
+	if tpm, err = tpmkey.Open(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := tpm.Unseal(b)
+	if err != nil || !bytes.Equal(got, secret) {
+		t.Fatalf("Unseal = %x, %v", got, err)
+	}
+	if _, err := tpm.Seal(make([]byte, tpmkey.MaxSealed+1)); err == nil {
+		t.Error("sealed more than MaxSealed")
+	}
+	b.Private[len(b.Private)-1] ^= 1
+	if _, err := tpm.Unseal(b); err == nil {
+		t.Error("unsealed a tampered blob")
+	}
+	k, err := tpm.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tpm.Unseal(k.Blob()); err == nil {
+		t.Error("unsealed a signing key")
 	}
 }
