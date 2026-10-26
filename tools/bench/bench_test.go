@@ -273,6 +273,8 @@ func TestReset(t *testing.T) {
 		{"docker", "aarch64", "clipboardbridge-linux-arm64.tar.gz"},
 		{"linux-lite", "armv6l", "clipboardbridge-lite-linux-armv6.tar.gz"},
 		{"darwin", "arm64", "clipboardbridge-darwin-arm64.tar.gz"},
+		{"windows", "ARM64", "clipboardbridge-windows-arm64.zip"},
+		{"windows", "AMD64", "clipboardbridge-windows-amd64.zip"},
 	} {
 		if got, err := archiveFor(&Device{OS: c.os}, c.machine); err != nil || got != c.want {
 			t.Errorf("archiveFor(%s, %s) = %q, %v", c.os, c.machine, got, err)
@@ -287,6 +289,10 @@ func TestReset(t *testing.T) {
 	b, err := LoadBuild(dir)
 	if err != nil || len(b.sums) != 1 || len(b.sums["clipboardbridge-linux-amd64.tar.gz"]) != 64 {
 		t.Fatalf("LoadBuild = %+v, %v", b, err)
+	}
+	os.WriteFile(filepath.Join(dir, "clipboardbridge-windows-arm64.zip"), []byte("zip"), 0o600)
+	if b, err := LoadBuild(dir); err != nil || len(b.sums) != 2 {
+		t.Fatalf("LoadBuild with a zip = %+v, %v", b, err)
 	}
 	os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte(strings.Repeat("0", 64)+"  clipboardbridge-linux-amd64.tar.gz\n"), 0o600)
 	if _, err := LoadBuild(dir); err == nil || !strings.Contains(err.Error(), "does not match") {

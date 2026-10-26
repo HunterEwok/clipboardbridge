@@ -39,6 +39,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   a laptop and a phone passing a clip in the first screen, and each kind of group as
   devices around its heart with flowing links; glass surfaces and soft glows; on a phone a
   sideways menu, the languages in a sheet from the bottom and a floating glass dock.
+  Two designs to choose from, switched by a button in the header while the owner picks one:
+  "Slate drawing" (the icon's brass clipboard holding a slate or paper sheet with a line
+  drawing, light and dark) and "Art deco and neon" (a gold sunburst and neon devices). Its
+  fonts (Old Standard TT, IBM Plex Sans and Mono, Forum, Jost, under the OFL) are served by
+  the site itself, so nginx allows `font-src 'self'`.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`
@@ -136,6 +141,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   polkit rule), `cancel-shutdown` and `restart`, each off until `sudo cbb action enable
   NAME` there; its hello names the ones that are on, and `lite/core` checks action commands
   and their signers against Go's vectors.
+- The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
+  nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
 ### Changed
 

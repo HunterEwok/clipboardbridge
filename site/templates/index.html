@@ -31,7 +31,6 @@
 <symbol id="i-noaccount" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6M3 3l18 18"/></symbol>
 <symbol id="i-noeye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
-<symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h4"/></symbol>
 </defs></svg>
 {{end}}
 
@@ -45,23 +44,64 @@
 
 {{define "content"}}
 <section class="hero">
-  <div class="wrap hero-grid">
-    <div>
-      <h1>{{t "Copy on one device. Paste on another."}}</h1>
-      <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
-      <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
-      <p class="actions">
-        <a class="button accent go" href="download.html" data-goatcounter-click="hero-download">{{t "Download for free"}}</a>
-        <a class="button" href="#how">{{t "How it works"}}</a>
-      </p>
-    </div>
-    <div class="scene" aria-hidden="true">
-      <div class="stage">
-        <svg class="laptop"><use href="#dev-laptop"/></svg>
-        <svg class="phone"><use href="#dev-phone"/></svg>
-        <div class="clip"><svg><use href="#i-clip"/></svg><i></i><i></i></div>
+  <div class="wrap">
+  <!-- The app's icon at the size of the page: a clipboard, its clip, and a
+       sheet with a lifted corner. The Deco style keeps only the sheet's
+       contents. -->
+  <div class="board">
+    <svg class="clamp" viewBox="0 0 420 200" aria-hidden="true">
+      <defs>
+        <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop class="m1" offset="0"/><stop class="m2" offset=".34"/><stop class="m3" offset=".52"/><stop class="m4" offset=".8"/><stop class="m5" offset="1"/></linearGradient>
+        <radialGradient id="sheen" cx=".36" cy=".2" r=".5"><stop class="h1" offset="0"/><stop class="h2" offset="1"/></radialGradient>
+      </defs>
+      <path class="metal" fill-rule="evenodd" d="M30 196Q14 196 14 180C16 160 22 140 30 128C38 116 52 110 74 109L112 108C124 107 128 100 129 88C132 40 166 6 210 6C254 6 288 40 291 88C292 100 296 107 308 108L346 109C368 110 382 116 390 128C398 140 404 160 406 180Q406 196 390 196ZM232 52A22 22 0 1 0 188 52A22 22 0 1 0 232 52Z"/>
+      <path class="sheen" fill-rule="evenodd" d="M30 196Q14 196 14 180C16 160 22 140 30 128C38 116 52 110 74 109L112 108C124 107 128 100 129 88C132 40 166 6 210 6C254 6 288 40 291 88C292 100 296 107 308 108L346 109C368 110 382 116 390 128C398 140 404 160 406 180Q406 196 390 196ZM232 52A22 22 0 1 0 188 52A22 22 0 1 0 232 52Z"/>
+      <path class="lip" d="M18 174C20 188 26 190 34 190H386C394 190 400 188 402 174"/>
+      <circle class="hole" cx="210" cy="52" r="22"/>
+    </svg>
+    <div class="sheet">
+      <svg class="sun" viewBox="0 0 1100 700" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path d="M550 700 0 80M550 700 110 0M550 700 250 0M550 700 390 0M550 700 470 0M550 700 550 0M550 700 630 0M550 700 710 0M550 700 850 0M550 700 990 0M550 700 1100 80M150 700a400 400 0 0 1 800 0M250 700a300 300 0 0 1 600 0M350 700a200 200 0 0 1 400 0"/></svg>
+      <div class="hero-grid">
+        <div class="hero-text">
+          <h1>{{t "Copy on one device. Paste on another."}}</h1>
+          <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
+          <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
+          <p class="actions">
+            <a class="button accent go" href="download.html" data-goatcounter-click="hero-download">{{t "Download for free"}}</a>
+            <a class="button" href="#how">{{t "How it works"}}</a>
+          </p>
+        </div>
+        <svg class="fig" viewBox="0 0 560 330" aria-hidden="true">
+          <!-- Slate: drawn like the icon, in one line with round ends. -->
+          <g class="chalk">
+            <rect x="26" y="112" width="138" height="88" rx="6"/><path d="M10 216h170l-10 12H20z"/><path d="M44 134h80M44 152h56M44 170h68"/>
+            <rect x="466" y="96" width="72" height="136" rx="14"/><path d="M490 218h24M482 128h40M482 146h26"/>
+            <circle cx="290" cy="92" r="44"/><path d="M256 108a36 36 0 0 1 0-32"/><circle cx="290" cy="70" r="10"/>
+            <path d="M280 136v108l10 20 10-20v-14l-6-6 6-6v-8l-6-6 6-6v-8l-6-6 6-6v-42"/><path d="M290 150v84"/>
+            <rect x="336" y="196" width="62" height="50" rx="8"/><path d="M348 196v-12a19 19 0 0 1 38 0v12"/><circle cx="367" cy="216" r="6"/><path d="M367 222v10"/>
+            <path d="M164 156h46l16-16h18"/><path d="M342 112h124"/>
+            <path d="M244 90h-30l-14-14h-12"/><circle cx="182" cy="76" r="6"/>
+            <path d="M244 118h-26l-12 12"/><circle cx="202" cy="134" r="6"/>
+            <path d="M244 176h-22l-16 16h-14"/><circle cx="186" cy="192" r="6"/>
+            <path d="M336 84h30l14-14h12"/><circle cx="398" cy="70" r="6"/>
+            <path d="M336 140h34l14 14"/><circle cx="388" cy="158" r="6"/>
+          </g>
+          <g class="chalk dots"><path d="M212 60h1M224 60h1M236 60h1M208 156h1M220 156h1M232 156h1M346 62h1M358 62h1M346 176h1M358 176h1M370 176h1"/></g>
+          <path class="signal" d="M164 156h46l16-16h18M342 112h124"/>
+          <!-- Deco: neon tubes and a gold diamond. -->
+          <g class="neon warm"><rect x="40" y="104" width="156" height="100" rx="8"/><path d="M22 222h192l-12 12H34z"/></g>
+          <g class="neon cold"><rect x="440" y="86" width="74" height="146" rx="16"/><path d="M466 216h22"/></g>
+          <path class="neon warm wire" d="M216 160H418"/>
+          <g class="deco-badge"><path d="M317 124 353 160 317 196 281 160z"/><rect x="306" y="146" width="22" height="28" rx="3"/><path d="M311 143h12v6h-12z"/></g>
+          <text x="95" y="268" text-anchor="middle">{{t "Computer"}}</text>
+          <text x="502" y="268" text-anchor="middle">{{t "Phone"}}</text>
+          <text class="for-slate" x="367" y="282" text-anchor="middle">TLS 1.3</text>
+          <text class="for-deco" x="317" y="234" text-anchor="middle">TLS 1.3</text>
+        </svg>
       </div>
     </div>
+    <svg class="curl" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="fold" x1="0" y1="0" x2="1" y2="1"><stop class="c1" offset="0"/><stop class="c2" offset="1"/></linearGradient></defs><path class="flap" d="M24 100A76 76 0 0 1 100 24C90 50 70 66 56 72C44 77 32 87 24 100Z"/><path class="edge" d="M100 24C90 50 70 66 56 72C44 77 32 87 24 100"/></svg>
+  </div>
   </div>
 </section>
 
