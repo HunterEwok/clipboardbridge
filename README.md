@@ -114,6 +114,17 @@ The order of what comes next is the [roadmap](docs/roadmap.md).
 Clipboard Bridge is free software, licensed under the
 [GNU Affero General Public License v3.0 only](LICENSE).
 
+One author holds all the rights, so a commercial license without the AGPL's obligations is
+also available, for example to build the lite member (`lite/`) into routers and other
+devices. To ask for one, open an issue with the **Commercial license** form on
+[GitHub](https://github.com/HunterEwok/clipboardbridge/issues/new/choose).
+
+Which builds are official, what others may do with the icon and the name, and the other
+projects with similar names: [BRAND.md](BRAND.md). The text of the protocol,
+[docs/protocol.md](docs/protocol.md), is under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), so anyone may write a compatible
+implementation.
+
 ## Security
 
 To report a vulnerability, follow [SECURITY.md](SECURITY.md). Please do not open a public issue.
