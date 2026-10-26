@@ -14,8 +14,11 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +26,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/attest/attesttest"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/release"
 )
 
 // fakePhone is the root phone of a group, which dials a computer and sends
@@ -288,6 +292,36 @@ func TestRename(t *testing.T) {
 // attestation proves: proven for a valid chain of its member key, nothing
 // for a chain of another key.
 func TestEvidence(t *testing.T) {
+	// The revocation list's mirror: keys.json from a root key, and a list
+	// the test changes.
+	rootKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	statusKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rootSPKI, _ := x509.MarshalPKIXPublicKey(&rootKey.PublicKey)
+	statusSPKI, _ := x509.MarshalPKIXPublicKey(&statusKey.PublicKey)
+	now := time.Now().UnixMilli()
+	keysFile, err := release.Sign(release.Keys{V: 1, Type: release.TypeKeys, Seq: 1, TimeMS: now, ExpiresMS: now + 3600_000,
+		Keys: []release.Key{{Key: statusSPKI, Name: "status", Use: release.UseStatus}}}, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listMu sync.Mutex
+	list := release.Status{V: 1, Type: release.TypeStatus, Seq: 1, TimeMS: now, ExpiresMS: now + 3600_000, AndroidRevoked: []string{}}
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listMu.Lock()
+		defer listMu.Unlock()
+		f := keysFile
+		if r.URL.Path == "/attest-status.json" {
+			if f, err = release.Sign(list, statusKey); err != nil {
+				t.Error(err)
+			}
+		}
+		json.NewEncoder(w).Encode(f)
+	}))
+	defer mirror.Close()
+	oldURL, oldRoots, oldEvery := statusURL, statusRoots, statusEvery
+	statusURL, statusRoots, statusEvery = mirror.URL+"/", func() [][]byte { return [][]byte{rootSPKI} }, 100*time.Millisecond
+	t.Cleanup(func() { statusURL, statusRoots, statusEvery = oldURL, oldRoots, oldEvery })
+
 	var h hub
 	pi := startService(t, &h, "pi")
 	deck := startService(t, &h, "deck")
@@ -319,14 +353,26 @@ func TestEvidence(t *testing.T) {
 	}
 	p.send(ev(wrong))
 	p.send(ev(chain))
-	waitFor(t, "the root records the deck's keys as proven", func() bool {
+	store := func() string {
 		for _, d := range pi.devices(t) {
 			if d.Name == "deck" {
-				return d.Store == group.StoreProven
+				return d.Store
 			}
 		}
-		return false
-	})
+		return ""
+	}
+	waitFor(t, "the root records the deck's keys as proven", func() bool { return store() == group.StoreProven })
+
+	// Google revokes the chain's attestation key: the root takes the new
+	// list and records the deck's keys as only in hardware.
+	ca, err := x509.ParseCertificate(chain[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	listMu.Lock()
+	list.Seq, list.AndroidRevoked = 2, []string{ca.SerialNumber.Text(16)}
+	listMu.Unlock()
+	waitFor(t, "the root records the deck's keys as in hardware", func() bool { return store() == group.StoreHardware })
 }
 
 func mustLoad(t *testing.T, dir string) *group.Identity {

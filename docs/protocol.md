@@ -1891,6 +1891,9 @@ them alike, against `testdata/interop/go-release.json`.
   both (their SubjectPublicKeyInfos); either one signs `keys.json`.
 - **Release keys**, P-256, which `keys.json` certifies. A release key signs `release.json`
   and the channel files.
+- A **status key**, P-256, which `keys.json` certifies with `use` `status`. It lives on the
+  mirror of Google's revocation list and signs only `attest-status.json` (section 17,
+  "Revoked attestations"), never a release.
 
 ### The envelope
 
@@ -1902,9 +1905,14 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 
 | `type` | Signed by | Fields |
 |--------|-----------|--------|
-| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes)`}` |
+| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes), `use` (`release` when absent, or `status`)`}` |
 | `release` (`release.json`) | a release key | `version`, `channel`, `time_ms`, `min_from` (a version, optional), `files`: 1 to 256 of `{name, size, sha256, binaries?}`, `docker` (optional `{image, digest}`) |
 | `channel` (`stable.json`, ...) | a release key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
+| `attest-status` (`attest-status.json`) | a status key | `seq` (from 1), `time_ms`, `expires_ms`, `source_ms` (when Google last changed its list, optional), `android_revoked`: the serial numbers |
+
+- A key of a `use` the reader does not know is in `keys.json` for newer programs and signs
+  nothing for it; a release key signs no `attest-status.json` and a status key no release
+  or channel file.
 
 - A version is `X.Y.Z` or, for a release candidate, `X.Y.Z-rc.N`: decimal numbers of at
   most 6 digits without leading zeros (`N` from 1), compared number by number, a release
@@ -1917,7 +1925,11 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 - `docker.digest` is `sha256:` and 64 hex digits.
 - A `keys` or `channel` file lives at most 100 days (`expires_ms` after `time_ms`, by at
   most 8 640 000 000 ms). `keys.json` is signed again every 90 days, and a channel file
-  before it expires.
+  before it expires. `attest-status.json` lives at most 8 days (691 200 000 ms) and is
+  signed again at least a day before it expires.
+- A serial number is lowercase hex without leading zeros (`0` for zero), at most 64
+  digits, as Google's list names them. `android_revoked` lists each once, shorter numbers
+  first and numbers of one length in string order, which is numeric order.
 
 ### The check
 
@@ -2007,4 +2019,26 @@ leaf certifies the key of the sender's TLS certificate and carries the challenge
 When that differs from the `store` or `kind` of the device's record, the root signs a new
 device record that keeps the rest and says what the attestation shows. A chain that proves
 nothing is logged and changes nothing.
+
+### Revoked attestations
+
+Google revokes the attestation keys of phones whose keys leaked (and suspends some for a
+while) in a list at `https://android.googleapis.com/attestation/status`, which is not
+signed. Devices never fetch it: a mirror on `cbb.tools` fetches it once a day, keeps the
+serial numbers that are revoked or suspended, and publishes them at
+`https://cbb.tools/attest/` as `attest-status.json` beside `keys.json`, signed with the
+status key (section 16; `tools/attest-status`). The mirror refuses a list that drops a
+serial number the last one revoked until its maintainer looks.
+
+- The group's root fetches both files when the group starts and once a day, and takes the
+  list when it passes the checks of section 16 and its `seq` is not below the last it took
+  (kept in the state directory). The request is the same for every device and names none.
+- The root checks every chain against the list it holds. A chain with a revoked
+  certificate proves nothing: the root keeps the last evidence of each peer and, when it
+  takes a new list, checks it again; a device recorded as `proven` whose chain is now
+  revoked gets a new record with `store` `hardware` (its hello's word), its `kind`, and no
+  `proof`, and the log says which certificate was revoked.
+- A root without a current list (the mirror unreachable for a week, or no root keys pinned
+  yet) checks chains without it. The strict key level (roadmap, item 31) will prove nothing
+  without one.
 

@@ -177,9 +177,14 @@ type Service struct {
 	// one and synced only because it dialed them back (cbb status).
 	unreached map[group.DeviceID]bool
 
-	listMu  sync.Mutex     // one ensureListed at a time, so a device is recorded once
-	recMu   sync.Mutex     // guards records; taken after mu, never before
-	records *group.Records // the group's device records; nil while in no group
+	listMu sync.Mutex // one ensureListed at a time, so a device is recorded once
+	// attMu guards the revocation list and the evidence of the connected
+	// peers (evidence.go); taken alone.
+	attMu       sync.Mutex
+	attRevoked  map[string]bool
+	attEvidence map[group.DeviceID]peerEvidence
+	recMu       sync.Mutex     // guards records; taken after mu, never before
+	records     *group.Records // the group's device records; nil while in no group
 
 	tunMu      sync.Mutex            // guards tunnel and the rest of the tun fields; taken after mu, before recMu
 	tunnel     *tunnel.State         // the tunnel keys (tunnel.go); nil while sync away from home is off
@@ -395,10 +400,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 		s.logf("cbb: trusting the group's new root: %v", err)
 	}
 	nd.Rejoin() // the service just started; there are no connections yet
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go func() {
 		defer s.wg.Done()
 		s.renewLoop(gctx)
+	}()
+	go func() {
+		defer s.wg.Done()
+		s.statusLoop(gctx)
 	}()
 	go func() {
 		defer s.wg.Done()

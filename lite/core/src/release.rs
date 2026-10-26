@@ -50,6 +50,10 @@ pub struct Key {
     #[serde(with = "b64")]
     pub key: Vec<u8>,
     pub name: String,
+    /// `release` when absent; a key of another use, such as the `status`
+    /// key of the revocation mirror, signs no release.
+    #[serde(default, rename = "use")]
+    pub usage: String,
 }
 
 /// The body of keys.json.
@@ -116,6 +120,13 @@ pub struct Seen {
     pub channel_seq: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub version: String,
+    /// The revocation list's, which the lite member does not take but keeps.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub status_seq: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl File {
@@ -219,9 +230,9 @@ fn decode_keys(body: &[u8]) -> Result<Keys> {
     }
     for key in &k.keys {
         if key.name.is_empty() || key.name.len() > 64 {
-            return Err(Error::msg("a release key has no valid name"));
+            return Err(Error::msg("a key has no valid name"));
         }
-        VerifyingKey::from_public_key_der(&key.key).map_err(|_| Error::msg("a release key is not P-256"))?;
+        VerifyingKey::from_public_key_der(&key.key).map_err(|_| Error::msg("a key is not P-256"))?;
     }
     Ok(k)
 }
@@ -295,7 +306,12 @@ pub fn check(
     seen: &Seen,
 ) -> Result<(Release, Seen)> {
     let k = verify_keys(keys, roots, now_ms, seen).map_err(|e| e.context("keys.json is not valid"))?;
-    let spkis: Vec<&[u8]> = k.keys.iter().map(|key| key.key.as_slice()).collect();
+    let spkis: Vec<&[u8]> = k
+        .keys
+        .iter()
+        .filter(|key| key.usage.is_empty() || key.usage == "release")
+        .map(|key| key.key.as_slice())
+        .collect();
     channel.verify(&spkis).map_err(|e| e.context(format!("{name}.json is not valid")))?;
     let c = decode_channel(&channel.body).map_err(|e| e.context(format!("{name}.json is not valid")))?;
     if c.channel != name {
@@ -326,7 +342,7 @@ pub fn check(
     } else {
         r.version.clone()
     };
-    Ok((r, Seen { keys_seq: k.seq, channel_seq: c.seq, version }))
+    Ok((r, Seen { keys_seq: k.seq, channel_seq: c.seq, version, status_seq: seen.status_seq }))
 }
 
 impl Release {

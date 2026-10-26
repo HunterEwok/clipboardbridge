@@ -20,7 +20,7 @@ class ReleasesTest {
         val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
         val now = v.getValue("now_ms").jsonPrimitive.long
         val cases = v.getValue("vectors").jsonArray.map { it.jsonObject }
-        assertEquals(23, cases.size)
+        assertEquals(27, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
@@ -32,6 +32,28 @@ class ReleasesTest {
                 assertEquals(c.str("version"), r.version, name)
                 assertEquals(r.version, next.version, name)
                 assertTrue(r.direct("0.5.3") && !r.direct("0.3.9"), name)
+            }
+        }
+    }
+
+    /** The revocation lists of the same file: which attest-status.json a root takes. */
+    @Test
+    fun goStatus() {
+        val v = Interop.read("go-release.json").jsonObject
+        val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
+        val now = v.getValue("now_ms").jsonPrimitive.long
+        val cases = v.getValue("status").jsonArray.map { it.jsonObject }
+        assertEquals(14, cases.size)
+        for (c in cases) {
+            val name = c.str("name")
+            val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
+            val s = c.getValue("seen").jsonObject
+            val seen = Releases.Seen(s.optLong("keys_seq") ?: 0, statusSeq = s.optLong("status_seq") ?: 0)
+            val got = runCatching { Releases.checkStatus(file("keys"), file("status"), roots, now, seen) }
+            assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
+            got.getOrNull()?.let { (st, next) ->
+                assertEquals(c.getValue("revoked").jsonArray.map { it.jsonPrimitive.content }, st.androidRevoked, name)
+                assertEquals(st.seq, next.statusSeq, name)
             }
         }
     }

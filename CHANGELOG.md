@@ -24,6 +24,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Revoked attestations: a mirror on cbb.tools signs Google's revocation list of Android
+  attestation keys every day (`attest-status.json`, with a status key that `keys.json`
+  certifies only for it), and the group's root takes it and records a phone whose chain was
+  revoked as only in hardware (docs/protocol.md, section 17).
 - A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
   admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
   means. `cbb new` warns that the root key is a file.

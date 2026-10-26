@@ -5,7 +5,9 @@
 // release (docs/protocol.md, section 16): keys.json, in which a root key
 // certifies the release keys; release.json, which lists a release's files
 // with their hashes; and a channel file such as stable.json, which names
-// the current release of its channel until it expires.
+// the current release of its channel until it expires. The same keys.json
+// certifies the status key that signs attest-status.json, the mirror of
+// Google's revocation list for Android attestations (section 17).
 package release
 
 import (
@@ -21,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +34,14 @@ const (
 	TypeKeys    = "keys"
 	TypeRelease = "release"
 	TypeChannel = "channel"
+	TypeStatus  = "attest-status"
+)
+
+// The uses keys.json gives its keys. A key of a use the reader does not
+// know signs nothing for it.
+const (
+	UseRelease = "release"
+	UseStatus  = "status"
 )
 
 const (
@@ -40,10 +51,13 @@ const (
 	// MaxLifetime is the longest a keys or channel file may stay valid
 	// after it was signed.
 	MaxLifetime = 100 * 24 * time.Hour
-	maxKeys     = 8
-	maxFiles    = 256
-	maxBinaries = 64
-	maxName     = 64
+	// MaxStatusLifetime is the longest attest-status.json stays valid: it
+	// is signed every day, and lives a week past a day without one.
+	MaxStatusLifetime = 8 * 24 * time.Hour
+	maxKeys           = 8
+	maxFiles          = 256
+	maxBinaries       = 64
+	maxName           = 64
 )
 
 // File is the envelope every release file has: the body's exact bytes, an
@@ -58,10 +72,12 @@ type File struct {
 // Hash returns SHA-256 over the body, which names a release.json.
 func (f File) Hash() [sha256.Size]byte { return sha256.Sum256(f.Body) }
 
-// Key is a release key that keys.json certifies.
+// Key is a key that keys.json certifies, for its Use: UseRelease when
+// empty.
 type Key struct {
 	Key  []byte `json:"key"` // SubjectPublicKeyInfo, DER
 	Name string `json:"name"`
+	Use  string `json:"use,omitempty"`
 }
 
 // Keys is the body of keys.json, signed by a root key.
@@ -119,12 +135,36 @@ type Channel struct {
 	ReleaseSHA256 string `json:"release_sha256"`
 }
 
+// Status is the body of attest-status.json, signed by a status key: the
+// serial numbers Google's list revokes, as attest.Policy takes them.
+type Status struct {
+	V         int    `json:"v"`
+	Type      string `json:"type"`
+	Seq       uint64 `json:"seq"`
+	TimeMS    int64  `json:"time_ms"`
+	ExpiresMS int64  `json:"expires_ms"`
+	// SourceMS is when Google last changed its list (Last-Modified), 0
+	// when it did not say.
+	SourceMS       int64    `json:"source_ms,omitempty"`
+	AndroidRevoked []string `json:"android_revoked"`
+}
+
+// Revoked returns the serial numbers as a set.
+func (s Status) Revoked() map[string]bool {
+	m := make(map[string]bool, len(s.AndroidRevoked))
+	for _, r := range s.AndroidRevoked {
+		m[r] = true
+	}
+	return m
+}
+
 // Seen is what a device keeps between checks so that nobody can take it
 // back: the highest sequence numbers and the highest version it has taken.
 type Seen struct {
 	KeysSeq    uint64 `json:"keys_seq"`
 	ChannelSeq uint64 `json:"channel_seq"`
 	Version    string `json:"version,omitempty"`
+	StatusSeq  uint64 `json:"status_seq,omitempty"`
 }
 
 var (
@@ -185,6 +225,8 @@ func checkBody(data []byte) error {
 		_, err = decodeRelease(data)
 	case TypeChannel:
 		_, err = decodeChannel(data)
+	case TypeStatus:
+		_, err = decodeStatus(data)
 	default:
 		err = fmt.Errorf("release: unknown type %q", b.Type)
 	}
@@ -225,6 +267,7 @@ var (
 	versionRE  = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})(-rc\.([1-9][0-9]{0,5}))?$`)
 	digestRE   = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	binaryName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]{0,255}$`)
+	serialRE   = regexp.MustCompile(`^(0|[1-9a-f][0-9a-f]{0,63})$`)
 )
 
 func decode(data []byte, typ string, v any) error {
@@ -248,7 +291,11 @@ func decode(data []byte, typ string, v any) error {
 }
 
 func lifetime(timeMS, expiresMS int64) error {
-	if expiresMS <= timeMS || expiresMS-timeMS > MaxLifetime.Milliseconds() {
+	return lifetimeUpTo(timeMS, expiresMS, MaxLifetime)
+}
+
+func lifetimeUpTo(timeMS, expiresMS int64, max time.Duration) error {
+	if expiresMS <= timeMS || expiresMS-timeMS > max.Milliseconds() {
 		return errors.New("release: the file's lifetime is out of range")
 	}
 	return nil
@@ -270,14 +317,14 @@ func decodeKeys(data []byte) (Keys, error) {
 	}
 	for _, key := range k.Keys {
 		if key.Name == "" || len(key.Name) > maxName {
-			return k, errors.New("release: a release key has no valid name")
+			return k, errors.New("release: a key has no valid name")
 		}
 		pub, err := x509.ParsePKIXPublicKey(key.Key)
 		if err != nil {
-			return k, fmt.Errorf("release: a release key: %w", err)
+			return k, fmt.Errorf("release: a key: %w", err)
 		}
 		if e, ok := pub.(*ecdsa.PublicKey); !ok || e.Curve != elliptic.P256() {
-			return k, errors.New("release: a release key is not P-256")
+			return k, errors.New("release: a key is not P-256")
 		}
 	}
 	return k, nil
@@ -341,6 +388,42 @@ func decodeChannel(data []byte) (Channel, error) {
 	return c, nil
 }
 
+func decodeStatus(data []byte) (Status, error) {
+	var s Status
+	if err := decode(data, TypeStatus, &s); err != nil {
+		return s, err
+	}
+	if s.Seq == 0 {
+		return s, errors.New("release: attest-status.json has no sequence number")
+	}
+	if err := lifetimeUpTo(s.TimeMS, s.ExpiresMS, MaxStatusLifetime); err != nil {
+		return s, err
+	}
+	if s.AndroidRevoked == nil {
+		return s, errors.New("release: attest-status.json has no list")
+	}
+	for i, r := range s.AndroidRevoked {
+		if !serialRE.MatchString(r) || i > 0 && !serialLess(s.AndroidRevoked[i-1], r) {
+			return s, fmt.Errorf("release: %q is not a serial number in order", r)
+		}
+	}
+	return s, nil
+}
+
+// serialLess orders serial numbers as numbers: the shorter first, then
+// as strings, which for lowercase hex without leading zeros is the same.
+func serialLess(a, b string) bool {
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
+}
+
+// SortSerials puts serial numbers in the order attest-status.json keeps.
+func SortSerials(s []string) {
+	sort.Slice(s, func(i, j int) bool { return serialLess(s[i], s[j]) })
+}
+
 // VerifyKeys checks keys.json against the pinned root keys (each a
 // SubjectPublicKeyInfo, DER) at now, and that it is not older than seen.
 func VerifyKeys(f File, roots [][]byte, now time.Time, seen Seen) (Keys, error) {
@@ -360,12 +443,45 @@ func VerifyKeys(f File, roots [][]byte, now time.Time, seen Seen) (Keys, error) 
 	return k, nil
 }
 
-func (k Keys) spkis() [][]byte {
-	out := make([][]byte, len(k.Keys))
-	for i, key := range k.Keys {
-		out[i] = key.Key
+// spkis returns the keys certified for use.
+func (k Keys) spkis(use string) [][]byte {
+	var out [][]byte
+	for _, key := range k.Keys {
+		u := key.Use
+		if u == "" {
+			u = UseRelease
+		}
+		if u == use {
+			out = append(out, key.Key)
+		}
 	}
 	return out
+}
+
+// CheckStatus verifies attest-status.json: keys.json under the roots, the
+// status file under a status key of it, its expiry, and that neither is
+// older than seen. It returns the list and the new Seen to keep.
+func CheckStatus(keys, status File, roots [][]byte, now time.Time, seen Seen) (Status, Seen, error) {
+	k, err := VerifyKeys(keys, roots, now, seen)
+	if err != nil {
+		return Status{}, seen, fmt.Errorf("keys.json: %w", err)
+	}
+	if err := status.verify(k.spkis(UseStatus)); err != nil {
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", err)
+	}
+	s, err := decodeStatus(status.Body)
+	if err != nil {
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", err)
+	}
+	switch {
+	case now.UnixMilli() >= s.ExpiresMS:
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", ErrExpired)
+	case s.Seq < seen.StatusSeq:
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", ErrRollback)
+	}
+	next := seen
+	next.KeysSeq, next.StatusSeq = k.Seq, s.Seq
+	return s, next, nil
 }
 
 // Check verifies a channel file and the release.json it names: keys.json
@@ -377,7 +493,7 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	if err != nil {
 		return Release{}, seen, fmt.Errorf("keys.json: %w", err)
 	}
-	if err := channel.verify(k.spkis()); err != nil {
+	if err := channel.verify(k.spkis(UseRelease)); err != nil {
 		return Release{}, seen, fmt.Errorf("%s.json: %w", name, err)
 	}
 	c, err := decodeChannel(channel.Body)
@@ -392,7 +508,7 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	case c.Seq < seen.ChannelSeq:
 		return Release{}, seen, fmt.Errorf("%s.json: %w", name, ErrRollback)
 	}
-	if err := rel.verify(k.spkis()); err != nil {
+	if err := rel.verify(k.spkis(UseRelease)); err != nil {
 		return Release{}, seen, fmt.Errorf("release.json: %w", err)
 	}
 	if h := rel.Hash(); hex.EncodeToString(h[:]) != c.ReleaseSHA256 {
@@ -408,7 +524,7 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	if seen.Version != "" && Compare(r.Version, seen.Version) < 0 {
 		return Release{}, seen, fmt.Errorf("release.json: %w", ErrRollback)
 	}
-	next := Seen{KeysSeq: k.Seq, ChannelSeq: c.Seq, Version: r.Version}
+	next := Seen{KeysSeq: k.Seq, ChannelSeq: c.Seq, Version: r.Version, StatusSeq: seen.StatusSeq}
 	if seen.Version != "" && Compare(seen.Version, r.Version) > 0 {
 		next.Version = seen.Version
 	}
