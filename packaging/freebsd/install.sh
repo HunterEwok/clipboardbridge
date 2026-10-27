@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on FreeBSD, as root:
 #
-#   sh install.sh [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
+#   sh install.sh [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb
 #
 # It installs the binary to /usr/local/bin, makes the user and group
 # clipboardbridge (pw), the rc.d script, which runs the service through
@@ -12,8 +12,8 @@
 # to the group, and starts or restarts the service. The keys live in
 # /var/db/clipboardbridge, the settings in /usr/local/etc/clipboardbridge;
 # desktop sessions start the clipboard agent from XDG autostart.
-# --port, --home-cgnat, --express and --no-firewall work as in the Linux
-# installer; the firewall is pf or ipfw (firewall.sh). On OPNsense it also
+# --port, --home-cgnat, --auto-update, --express and --no-firewall work as
+# in the Linux installer; the firewall is pf or ipfw (firewall.sh). On OPNsense it also
 # installs the plugin hook clipboardbridge.inc, which names the service's pf
 # anchor in OPNsense's ruleset and shows the service in its pages; on
 # pfSense, unsupported, it prints the rules and adds clipboardbridge.sh,
@@ -34,12 +34,13 @@ trap 'failed $?' EXIT
 export LC_ALL=C
 
 usage() {
-	echo "usage: sh install.sh [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sh install.sh [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 port=
 cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
+auto=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--express) firewall=express ;;
@@ -52,6 +53,13 @@ while [ $# -gt 1 ]; do
 		case $2 in
 		on) cgnat=1 ;;
 		off) cgnat=0 ;;
+		*) usage ;;
+		esac
+		shift
+		;;
+	--auto-update)
+		case $2 in
+		on | off) auto=$2 ;;
 		*) usage ;;
 		esac
 		shift
@@ -190,6 +198,10 @@ answers() { # cbb
 	return 1
 }
 answers /usr/local/bin/cbb || true
+# How this copy came, and automatic updates.
+# shellcheck source=packaging/update.sh
+. "$here/../update.sh"
+update_setup /usr/local/bin/cbb "$bin" "$auto"
 echo "Clipboard Bridge is running on TCP port $port. To remove it: sh /usr/local/share/clipboardbridge/uninstall.sh"
 case $appliance in
 opnsense) echo "OPNsense: it shows under System > Diagnostics > Services, and its rules follow every filter reload." ;;

@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Linux machine with systemd:
 #
-#   sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
+#   sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb
 #
 # The full member's archive and the lite member's
 # (clipboardbridge-lite-linux-*) both carry this script, each with its own systemd unit beside it; cbb version
@@ -28,7 +28,10 @@
 # 100.64.0.0/10, the carrier-grade NAT range, as the home network too, for a
 # home network that uses it: the service (CBB_HOME_CGNAT=1 in the same file), the systemd
 # unit's address limit and the firewall rules; --home-cgnat off goes back.
-# The full member only. uninstall.sh removes it all again.
+# The full member only. --auto-update on|off (or CBB_AUTO_UPDATE) answers
+# whether the full member updates itself once a day to a signed release,
+# which it asks otherwise and keeps (packaging/update.sh, cbb update -auto).
+# uninstall.sh removes it all again.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -47,7 +50,7 @@ trap 'failed $?' EXIT
 export LC_ALL=C
 
 usage() {
-	echo "usage: sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 console=no
@@ -55,6 +58,7 @@ uinput=no
 port=
 cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
+auto=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--console) console=yes ;;
@@ -69,6 +73,13 @@ while [ $# -gt 1 ]; do
 		case $2 in
 		on) cgnat=1 ;;
 		off) cgnat=0 ;;
+		*) usage ;;
+		esac
+		shift
+		;;
+	--auto-update)
+		case $2 in
+		on | off) auto=$2 ;;
 		*) usage ;;
 		esac
 		shift
@@ -316,6 +327,9 @@ fi
 
 systemctl daemon-reload
 systemctl enable clipboardbridge.service
+# A binary that kept failing (an update that cbb update takes back) may have
+# hit systemd's start limit, which a restart does not lift.
+systemctl reset-failed clipboardbridge.service >/dev/null 2>&1 || true
 systemctl restart clipboardbridge.service # also takes a new binary on a reinstall
 if [ -f /etc/systemd/system/clipboardbridge-console.service ]; then
 	systemctl enable clipboardbridge-console.service
@@ -367,6 +381,10 @@ if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away
 		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
 	fi
 fi
+# How this copy came, and automatic updates.
+# shellcheck source=packaging/update.sh
+. "$here/../update.sh"
+update_setup /usr/local/bin/cbb "$bin" "$auto"
 echo "Clipboard Bridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
 if [ "$kind" = lite ]; then
 	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."

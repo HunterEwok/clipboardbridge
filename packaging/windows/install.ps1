@@ -4,7 +4,7 @@
 # Installs or updates clipboardbridge on Windows 10 (1809 or later) or 11, in
 # an administrator PowerShell, from the unpacked release archive:
 #
-#   powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1 [-Port N] [-HomeCgnat on|off] [-Express | -NoFirewall]
+#   powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1 [-Port N] [-HomeCgnat on|off] [-AutoUpdate on|off] [-Express | -NoFirewall]
 #
 # It installs cbb.exe and the windowless cbbw.exe to Program Files and adds
 # them to PATH, makes the clipboardbridge local group and adds the signed-in
@@ -26,8 +26,11 @@
 # removes the rules it added before and adds them again, so an old port
 # stays closed. An outbound rule keeps the service on the home network
 # until cbb global on lifts it, as the unit does on Linux; it is a limit,
-# not an opening, so it is there whatever the answer. uninstall.ps1 removes
-# it all again.
+# not an opening, so it is there whatever the answer. -AutoUpdate on|off (or
+# CBB_AUTO_UPDATE) answers whether it updates itself once a day to a signed
+# release, from a scheduled task as SYSTEM, which it asks otherwise and keeps
+# (cbb update -auto); a copy from winget is left to winget. uninstall.ps1
+# removes it all again.
 #
 # A failure prints what failed and the system's message; -Details (or
 # CBB_ERROR_DETAILS=1) adds the full error record and where in the script
@@ -39,6 +42,8 @@ param(
 	[string]$HomeCgnat = '',
 	[switch]$Express,
 	[switch]$NoFirewall,
+	[ValidateSet('', 'on', 'off')]
+	[string]$AutoUpdate = '',
 	[switch]$Details,
 	[string]$Bin = ''
 )
@@ -139,9 +144,15 @@ if ($service -and $service.Status -ne 'Stopped') {
 # Stopping a process takes a moment, and an agent the last install started
 # may still be starting, so each try stops what runs, waits for it to exit,
 # and copies; a file still in use means another try.
+# cbb update waits for this script in the cbb that the user or the timer
+# started (CBB_UPDATE_PARENT), which is left running: its program is
+# renamed aside instead, as Windows lets a running program be renamed but
+# not overwritten.
+$parent = 0
+[void][int]::TryParse("$env:CBB_UPDATE_PARENT", [ref]$parent)
 $stopRunning = {
 	$running = @(Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
-		$_.Path -and $_.Path.StartsWith($programDir, [StringComparison]::OrdinalIgnoreCase)
+		$_.Id -ne $parent -and $_.Path -and $_.Path.StartsWith("$programDir\", [StringComparison]::OrdinalIgnoreCase)
 	})
 	$running | Stop-Process -Force -ErrorAction SilentlyContinue
 	$running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
@@ -152,6 +163,18 @@ New-Item -ItemType Directory -Force -Path $programDir | Out-Null
 for ($try = 1; ; $try++) {
 	& $stopRunning
 	try {
+		# The programs renamed aside before, those no longer running; a
+		# rollback renames the new ones aside while the old one still runs.
+		Get-ChildItem -Path $programDir -Filter 'cbb*.exe.*.old' -ErrorAction SilentlyContinue |
+			Remove-Item -Force -ErrorAction SilentlyContinue
+		if ($parent) {
+			foreach ($f in @('cbb.exe', 'cbbw.exe')) {
+				$prog = Join-Path $programDir $f
+				if (Test-Path $prog) {
+					Move-Item $prog "$prog.$([DateTime]::UtcNow.Ticks).old"
+				}
+			}
+		}
 		Copy-Item -Force $Bin (Join-Path $programDir 'cbb.exe')
 		Copy-Item -Force $binW (Join-Path $programDir 'cbbw.exe')
 		break
@@ -422,6 +445,42 @@ $step = 'writing the outbound rule for what the service reaches now'
 & $cbb global allow
 if ($LASTEXITCODE -ne 0) {
 	throw "cbb global allow exited with $LASTEXITCODE"
+}
+
+# How this copy came, kept for cbb update: winget's own folder, else the
+# installer's environment (CBB_INSTALL_METHOD), else get.ps1 or the zip,
+# which cbb update replaces by itself.
+$step = 'recording how Clipboard Bridge was installed'
+$method = if ($Bin -match '\\Microsoft\\WinGet\\') { 'winget' } elseif ($env:CBB_INSTALL_METHOD) { $env:CBB_INSTALL_METHOD } else { 'get' }
+if ((run $cbb @('update', '-installed-by', $method)).Code -ne 0) {
+	Write-Host 'Could not record how Clipboard Bridge was installed; cbb update takes it as get.ps1.'
+}
+# Automatic updates: as given, else as answered before, else asked. An
+# update (CBB_UPDATING, set by cbb update) asks nothing and writes the kept
+# task again.
+if ($method -eq 'get') {
+	$step = 'setting automatic updates'
+	$auto = if ($AutoUpdate) { $AutoUpdate } else { [string]$env:CBB_AUTO_UPDATE }
+	if ($auto -notin @('on', 'off')) {
+		$auto = (run $cbb @('update', '-auto')).Out
+	}
+	if ($auto -notin @('on', 'off') -and -not $env:CBB_UPDATING) {
+		Write-Host 'Clipboard Bridge can check once a day for a release the project signed and install it;'
+		Write-Host 'the check tells GitHub this device''s address, as any download does.'
+		if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+			$reply = Read-Host 'Update automatically? [y/N]'
+			$auto = if ($reply -match '^(y|yes)$') { 'on' } else { 'off' }
+		} else {
+			Write-Host 'Update automatically? [y/N] No console to answer on; not now. Later: cbb update -auto on'
+		}
+	}
+	if ($auto -in @('on', 'off')) {
+		$r = run $cbb @('update', '-auto', $auto)
+		Write-Host $r.Out
+		if ($r.Code -ne 0) {
+			Write-Host "Could not turn automatic updates $auto; run cbb update -auto $auto as administrator."
+		}
+	}
 }
 
 Write-Host "Clipboard Bridge $v is running on TCP port $Port; $user may use it."

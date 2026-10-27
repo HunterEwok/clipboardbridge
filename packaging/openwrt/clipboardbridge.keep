@@ -1,4 +1,5 @@
 /etc/clipboardbridge/
+/etc/clipboardbridge-update/
 /etc/config/clipboardbridge
 /etc/init.d/clipboardbridge
 /etc/hotplug.d/ntp/50-clipboardbridge

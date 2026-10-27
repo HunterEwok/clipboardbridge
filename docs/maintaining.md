@@ -162,8 +162,9 @@ not signed and the installers check nothing; the steps below are the plan.
   and touch for every signature (`yubico-piv-tool -a generate -s 9c -A ECCP256 --pin-policy=always
   --touch-policy=always`, then a self-signed certificate in the slot so the key can be read).
   Their public keys go into `packaging/get.sh` (`release_roots`), `packaging/windows/get.ps1`
-  (`$releaseRoots`) and the programs (`internal/release.Roots`, and the phone kits'
-  `Releases.roots`).
+  (`$releaseRoots`) and the programs (`internal/release.Roots`, the lite member's
+  `update::ROOTS` in `lite/src/update.rs`, and the phone kits' `Releases.roots`, which
+  also turn on the Android app's own update).
 - **The release key**, in the Mac's Secure Enclave, asking for Touch ID at each signature:
   `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
   certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
@@ -275,6 +276,38 @@ stay unsigned and SmartScreen warns on the first start. Setting it up, once:
 
 To check it without a release, run the release workflow from a branch: its Windows builds
 sign the programs.
+
+### SignPath Foundation
+
+Microsoft's Artifact Signing does not take individuals outside the USA and Canada, so the
+plan for a certificate without buying one is the [SignPath Foundation](https://signpath.org),
+which signs open-source projects for free with its own certificate:
+
+- [ ] Apply on signpath.org with this repository (AGPL-3.0, releases built by GitHub Actions
+  from tags, the code-signing policy page they ask for).
+- [ ] Once accepted, they give an organization id, a project slug and a signing policy; put
+  `SIGNPATH_API_TOKEN` in the Actions secrets and the ids in Actions variables.
+- [ ] The release workflow then uploads the unsigned `cbb.exe` and `cbbw.exe` as an
+  artifact, submits it with SignPath's GitHub action, and archives the signed programs it
+  gets back, in place of the `osslsigncode` step (which stays for a bought certificate).
+
+`cbb update` on Windows needs nothing more: once the installed programs carry a signature,
+it installs only programs with the same signer.
+
+## Updates of the Mac app (Sparkle)
+
+The Mac app is not yet in the releases; once the Apple developer account exists and the app
+is signed with a Developer ID and notarized, it updates with [Sparkle](https://sparkle-project.org):
+
+- [ ] Sparkle's own Ed25519 key, made with Sparkle's `generate_keys` on the maintainer's Mac
+  and kept in its keychain; the public key goes into the app's `Info.plist`
+  (`SUPublicEDKey`) in `apps/macos/project.yml`.
+- [ ] The release workflow builds, signs and notarizes `ClipboardBridge-X.Y.Z.zip`;
+  `release-sign manifest` lists it like the other files.
+- [ ] `appcast.xml` beside `stable.json`, with each version's EdDSA signature
+  (`sign_update`), made when `stable.json` is signed, so both name the same release.
+- [ ] The app checks the appcast once a day (`SUFeedURL` on GitHub's latest release, the
+  mirror second), and Settings gets "Check for updates" and "Update automatically".
 
 ## Android signing key
 

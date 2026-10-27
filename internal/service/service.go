@@ -81,6 +81,10 @@ type Config struct {
 	// fallbackAfter is how long a full member waits for one with a lower
 	// device ID to dial it before it dials that one; fallbackDial if zero.
 	fallbackAfter time.Duration
+	// ReleaseRoots are the release root keys that the signed releases the
+	// group passes around are checked against; release.Roots if nil.
+	ReleaseRoots [][]byte
+
 	// Container says that the service runs in the image (InContainer);
 	// there it makes no group and takes no admin key unless KeysInFile
 	// (KeysInFileAllowed).
@@ -215,6 +219,12 @@ type Service struct {
 	serverKeys  *group.ServerKeys  // this device's keys for the servers, under recMu as records
 	credChanged chan struct{}      // closed when creds change, under recMu
 	credMu      sync.Mutex         // serialises refreshCredential, taken before mu and recMu
+
+	// The newest signed release the group passed around (releases.go);
+	// relMu guards it, taken alone.
+	relMu  sync.Mutex
+	rel    *heldRelease
+	relRan bool // the file was read
 
 	// Images and files (media.go): the cache, which is nil until the
 	// service runs; mediaMu guards the rest, taken after mu, never before.
@@ -444,7 +454,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
 		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
-		Records: recordStore{s}, Credentials: credentialStore{s}, Allow: s.allow,
+		Records: recordStore{s}, Credentials: credentialStore{s}, Releases: releaseStore{s}, Allow: s.allow,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived, Evidence: s.ownEvidence(id),
 	})

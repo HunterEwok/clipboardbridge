@@ -10,4 +10,5 @@ if [ -x /etc/init.d/clipboardbridge ]; then
 	/etc/init.d/clipboardbridge disable >/dev/null 2>&1
 	/etc/init.d/firewall reload >/dev/null 2>&1
 fi
+rm -rf /etc/clipboardbridge-update /tmp/clipboardbridge-update
 exit 0

@@ -78,7 +78,7 @@ if [ "$os" = windows ]; then
 	exit 0
 fi
 cp "$bin" "$work/clipboardbridge/cbb"
-cp -R "$root/packaging/$dir" "$root/packaging/tmux" "$work/clipboardbridge/packaging/"
+cp -R "$root/packaging/$dir" "$root/packaging/tmux" "$root/packaging/update.sh" "$work/clipboardbridge/packaging/"
 # OpenWrt runs the Linux binary, with its own installer.
 if [ "$os" = linux ]; then
 	cp -R "$root/packaging/openwrt" "$work/clipboardbridge/packaging/"

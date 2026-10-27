@@ -460,6 +460,26 @@ its secrets are in [maintaining.md](maintaining.md#android-signing-key). The wat
 installed on the watch with `adb install` over the watch's wireless debugging until the apps
 are on Google Play.
 
+### Updates
+
+An APK installed from a release updates itself (`ApkUpdate.kt`): Settings, "Updates", checks
+for a newer release, and "Update automatically" (off until the user turns it on) checks once a
+day when the app comes to the front and installs what it finds. Each check fetches the signed
+`keys.json`, `stable.json` and `release.json` from GitHub, else `dl.cbb.tools`, and checks them
+as `cbb update` does (docs/protocol.md, section 16), sending no version, system or group data.
+The release's `clipboardbridge-X.Y.Z.apk` must match release.json's size and SHA-256, be this
+app with a higher version code, and carry this app's signing certificate before the system's
+`PackageInstaller` gets it with `USER_ACTION_NOT_REQUIRED`: the system asks only for the first
+update after an install from elsewhere, which also lets the app install updates ("Install
+unknown apps"). A copy that a store installed (Google Play, F-Droid, Amazon, Samsung, Huawei,
+Aurora) is left to its store and shows no section, and so does a build without the project's
+root keys. From 2027 a sideloaded app installs only when its developer is registered in
+Google's developer verification; the project's registration is under way.
+
+**To check on a device before building on it:** the first update's question, the second
+update without one, the question when the app is in the background, and an APK signed with
+another key refused with its message.
+
 ## Languages
 
 - Every user-facing string comes from the platform's catalog from the first screen on: a

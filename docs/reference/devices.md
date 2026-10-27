@@ -26,6 +26,7 @@ the same full member without a desktop.
 | Take remote paste | yes: X11, Wayland, GNOME and KDE, Windows, tmux, the text console | through the Mac app | yes, with the accessibility service | no: iOS allows no app to type into another | yes: tmux, the text console |
 | Take quick actions | yes, the presets and your own | yes | no | no | `reboot`, `cancel-shutdown`, `restart` |
 | Device keys | in the TPM on Linux when there is one, else in files | in files | in the security chip | in the Secure Enclave | in files |
+| Update itself ([how](../guide/install.md#updating)) | yes (`cbb update`, once a day if turned on); Homebrew, winget, Docker and packages through their own tools | yes, or Homebrew | the APK from a release, in Settings | through its store, once it is in one | yes, on Linux and OpenWrt |
 
 Items that password managers mark as secret are not synced automatically. Each remote paste
 target and each quick action is off until the device's own user turns it on.

@@ -58,7 +58,8 @@ test \"\$(uci get clipboardbridge.main.port)\" = 9000
 removed='
 set -e
 for f in /usr/bin/cbb /etc/init.d/clipboardbridge /etc/config/clipboardbridge /etc/hotplug.d/ntp/50-clipboardbridge \
-	/lib/upgrade/keep.d/clipboardbridge /etc/capabilities/clipboardbridge.json /usr/share/clipboardbridge /etc/clipboardbridge; do
+	/lib/upgrade/keep.d/clipboardbridge /etc/capabilities/clipboardbridge.json /usr/share/clipboardbridge /etc/clipboardbridge \
+	/etc/clipboardbridge-update; do
 	if [ -e "$f" ]; then echo "left behind: $f" >&2; exit 1; fi
 done
 if ls /etc/rc.d | grep -q clipboardbridge; then echo "left enabled" >&2; exit 1; fi
