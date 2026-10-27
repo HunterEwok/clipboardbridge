@@ -529,13 +529,47 @@ app with a higher version code, and carry this app's signing certificate before 
 `PackageInstaller` gets it with `USER_ACTION_NOT_REQUIRED`: the system asks only for the first
 update after an install from elsewhere, which also lets the app install updates ("Install
 unknown apps"). A copy that a store installed (Google Play, F-Droid, Amazon, Samsung, Huawei,
-Aurora) is left to its store and shows no section, and so does a build without the project's
-root keys. From 2027 a sideloaded app installs only when its developer is registered in
+Aurora) is left to its store and shows no section, and so do the F-Droid build, wherever it
+came from, and a build without the project's root keys. From 2027 a sideloaded app installs only when its developer is registered in
 Google's developer verification; the project's registration is under way.
 
 **To check on a device before building on it:** the first update's question, the second
 update without one, the question when the app is in the background, and an APK signed with
 another key refused with its message.
+
+### F-Droid
+
+One source gives two builds of the app, two Gradle flavors of `apps/android/app`:
+
+- **full**, `clipboardbridge-X.Y.Z.apk`: the releases on GitHub and, later, the stores. It
+  has the Wear OS watch, through `play-services-wearable` (`src/full`: `WatchLink.kt` and its
+  service in the manifest), and its own update with the installer's permissions.
+- **fdroid**, `clipboardbridge-fdroid-X.Y.Z.apk`: no Google Play services and no other
+  non-free code, which F-Droid requires. Its `WatchLink` (`src/fdroid`) reaches no watch, so
+  Settings offers none; `BuildConfig.SELF_UPDATE` is false and it has no installer
+  permission, so it leaves its updates to F-Droid. Everything else is the same code.
+
+F-Droid builds the fdroid flavor itself from each release's tag, by the recipe in
+`packaging/fdroid` (in fdroiddata once accepted), and checks it against our
+`clipboardbridge-fdroid-X.Y.Z.apk`: when the two are the same apart from the signature, it
+publishes ours. Both builds carry the same application id and key, so a phone moves between
+them by installing the other one over it, the group and the settings kept; F-Droid offers
+its updates to either. That needs the build to be reproducible:
+
+- the version in the source, `apps/android/version.properties`, which the release pull
+  request moves on with `CHANGELOG.md` (`tools/repocheck` checks the two agree);
+- the tunnel's library built with one NDK, `cbb.ndk` in `apps/android/gradle.properties`,
+  and the Go of go.mod's `toolchain` line, with `-trimpath`, no VCS stamp and from one
+  path, `/tmp/cbbtun-bind`, a link to the checkout (gomobile's go.mod names the module's
+  directory, which goes into the library's build info);
+- no dependency block (`dependenciesInfo`) and no commit details (`vcsInfo`) in the APK.
+
+CI's `fdroid` job builds the fdroid APK twice, the second time from a copy without `.git` in
+another directory, time zone and umask, and fails when the two differ
+(`packaging/fdroid/reproduce.sh`); the `android` job checks that its dependencies carry no
+Google Play services. The store texts and the icon are F-Droid's fastlane layout in
+`apps/android/app/fastlane/metadata/android`, in English and Russian; screenshots wait for
+the app on real devices.
 
 ## Languages
 
@@ -590,7 +624,9 @@ another key refused with its message.
   phone takes the group over (`PhoneGroup.takeOver`, protocol.md section 10, "Handing the
   group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
   `root` record with its admin key, then, as the new root, the revocation and its own record.
-- `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux.
+- `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux;
+  the app's `src/full` and `src/fdroid` hold what its two builds do differently, and
+  `packaging/fdroid` the F-Droid recipe.
 - `apps/macos/` — the Mac app (SwiftUI): `project.yml` for XcodeGen, like the iPhone app's.
 - `apps/desktop/` — the tray app for Linux and Windows (Go, Wails 3), a Go module of its own.
 - `apps/design/` — tokens and the icon (`icon/light.png` and `icon/dark.png`, the clipboard

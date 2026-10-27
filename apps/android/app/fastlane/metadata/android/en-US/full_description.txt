@@ -1,0 +1,20 @@
+Copy on one device, paste on another. Clipboard Bridge gives your phones and computers one clipboard: Android, iPhone, Linux, Windows and Mac, on your own network, with no cloud and no accounts.
+
+<b>How it works</b>
+<ul>
+<li>The app makes your group and keeps its key in the phone's security chip.</li>
+<li>A computer joins by the QR code of <tt>cbb pair</tt>; another phone joins from the app's start screen.</li>
+<li>A copy on a computer arrives on the phone by itself. A copy on the phone is sent by itself with the accessibility service, or with one tap: the tile, the widget, the notification or Share.</li>
+<li>Texts, images and files.</li>
+</ul>
+
+<b>Your network only</b>
+<ul>
+<li>At home the devices talk to each other directly. Away from home they reach a computer of yours at home through the group's own encrypted WireGuard tunnel.</li>
+<li>All traffic uses TLS, and a device talks only to the devices of its group.</li>
+<li>No telemetry, no ads, no account.</li>
+</ul>
+
+The computers run the Clipboard Bridge service, free software too: see the project's page for installing it on Linux, Windows or a Mac.
+
+This build has no Wear OS watch, which only Google Play services reach; the build on the project's releases page has it and is signed with the same key, so either updates the other.
