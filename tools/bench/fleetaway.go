@@ -86,20 +86,35 @@ func (in *internet) publish(ctx context.Context, pub string, d *Device) error {
 // It drops them before the address is passed on, so that a flow already
 // passed stops too.
 func (in *internet) block(ctx context.Context, pub, proto string) error {
-	_, err := Run(ctx, in.router, "iptables -t mangle -I PREROUTING "+blockRule(pub, proto), "")
+	_, err := Run(ctx, in.router, "iptables -t mangle -I PREROUTING "+blockRule(pub, proto, ""), "")
 	return err
 }
 
 func (in *internet) unblock(ctx context.Context, pub, proto string) error {
-	_, err := Run(context.WithoutCancel(ctx), in.router, "iptables -t mangle -D PREROUTING "+blockRule(pub, proto), "")
+	_, err := Run(context.WithoutCancel(ctx), in.router, "iptables -t mangle -D PREROUTING "+blockRule(pub, proto, ""), "")
 	return err
 }
 
-func blockRule(pub, proto string) string {
-	if proto != "" {
-		return "-d " + pub + " -p " + proto + " -j DROP"
+// blockFrom is block for the packets that come from the network net only,
+// as the network of a place away from home that blocks them.
+func (in *internet) blockFrom(ctx context.Context, net, pub, proto string) error {
+	subnet, err := docker(ctx, "network", "inspect", "-f", "{{(index .IPAM.Config 0).Subnet}}", net)
+	if err != nil {
+		return err
 	}
-	return "-d " + pub + " -j DROP"
+	_, err = Run(ctx, in.router, "iptables -t mangle -I PREROUTING "+blockRule(pub, proto, strings.TrimSpace(subnet)), "")
+	return err
+}
+
+func blockRule(pub, proto, from string) string {
+	rule := "-d " + pub
+	if from != "" {
+		rule = "-s " + from + " " + rule
+	}
+	if proto != "" {
+		rule += " -p " + proto
+	}
+	return rule + " -j DROP"
 }
 
 // awayGroup is a group whose hub is reached from the fleet's internet,
@@ -521,5 +536,119 @@ func awayHub(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 			err = fmt.Errorf("%s sent %d packets elsewhere: %s", c1.Name, n, out)
 		}
 		return err
+	})
+}
+
+// hubMoves (W14, W15): the hub moves to an admin computer and a client away
+// follows without coming home; then the root is a hub again beside the
+// admin, serves while the admin stands by, the admin serves while the root
+// is off, and gives way once it is back; a copy made meanwhile reaches the
+// root.
+func hubMoves(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
+	const p = "fleet/W15-move/"
+	a := newAwayGroup(ctx, r, f, "fleet/W15-move", 2)
+	if a == nil {
+		return
+	}
+	root, admin := a.hub, a.members[1]
+	c := a.join(ctx, r, p+"invited")
+	if c == nil {
+		return
+	}
+	wait := 3 * time.Minute
+	var rootID, adminID string
+	if r.Do(p+"admin", func() error {
+		var err error
+		if rootID, err = deviceOf(ctx, root); err != nil {
+			return err
+		}
+		if adminID, err = deviceOf(ctx, admin); err != nil {
+			return err
+		}
+		if err := succeeds(ctx, root, "cbb admin -allow-file-key "+admin.Name, "", "is an admin now"); err != nil {
+			return err
+		}
+		if err := listsAs(ctx, []*Device{admin}, admin.Name, "admin", false, timeout); err != nil {
+			return err
+		}
+		if _, err := Run(ctx, admin, "cbb global on", "yes\n"); err != nil {
+			return err
+		}
+		if err := a.in.publish(ctx, hubPublic2, admin); err != nil {
+			return err
+		}
+		return connected(ctx, c, wait)
+	}) != nil {
+		return
+	}
+	if r.Do("fleet/W15-move", func() error {
+		if _, err := Run(ctx, root, "cbb global move "+adminID+" "+hubPublic2+":8764", ""); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, admin, "this device is the hub", wait); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, root, "the hub is "+adminID, wait); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, c, "connected to the hub "+adminID, wait); err != nil {
+			return err
+		}
+		return syncs(ctx, a.benchGroup, admin, c, "from the new hub", 2*timeout)
+	}) != nil {
+		return
+	}
+	if r.Do("fleet/W14-root-serves", func() error {
+		if _, err := Run(ctx, root, a.hubCmd(hubPublic, a.fwdKey), ""); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, root, "this device is the hub", wait); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, admin, "stands by as its client", wait); err != nil {
+			return err
+		}
+		return globalShows(ctx, c, "connected to the hub "+rootID, wait)
+	}) != nil {
+		return
+	}
+	text := "cbb-bench " + a.run + " while the root was off"
+	r.Do("fleet/W14-failover", func() error {
+		if err := f.stop(ctx, root); err != nil {
+			return err
+		}
+		stopped := time.Now()
+		if err := globalShows(ctx, admin, "this device is the hub", 2*time.Minute); err != nil {
+			return err
+		}
+		fmt.Fprintf(r.out, "     W14: %s serves %v after the root stopped\n", admin.Name, time.Since(stopped).Round(time.Second))
+		if err := globalShows(ctx, c, "connected to the hub "+adminID, wait); err != nil {
+			return err
+		}
+		if err := Copy(ctx, c, text); err != nil {
+			return err
+		}
+		return arrives(ctx, admin, text, 2*timeout)
+	})
+	r.Do("fleet/W14-back", func() error {
+		if err := a.f.start(ctx, root); err != nil {
+			return err
+		}
+		// Its address may change with the container's network.
+		if err := a.in.publish(ctx, hubPublic, root); err != nil {
+			return err
+		}
+		started := time.Now()
+		if err := globalShows(ctx, admin, "stands by as its client", 6*time.Minute); err != nil {
+			return err
+		}
+		fmt.Fprintf(r.out, "     W14: %s gave way %v after the root came back\n", admin.Name, time.Since(started).Round(time.Second))
+		if err := arrives(ctx, root, text, 2*timeout); err != nil {
+			return err
+		}
+		if err := globalShows(ctx, c, "connected to the hub "+rootID, 6*time.Minute); err != nil {
+			return err
+		}
+		return syncs(ctx, a.benchGroup, root, c, "after the root came back", 2*timeout)
 	})
 }

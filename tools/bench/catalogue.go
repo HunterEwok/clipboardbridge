@@ -28,12 +28,15 @@ var automated = map[string][]string{
 	"U5": {"faults"}, "U6": {"faults"}, "U7": {"faults"}, "U10": {"full"},
 	"H6": {"full"}, "K8": {"full"},
 	// Away from home.
-	"W1": {"away"}, "W10": {"away"}, "W13": {"away"}, "W14": {"away"}, "W15": {"away"},
-	"W31": {"away"}, "W36": {"relay"},
+	"W1": {"away"}, "W10": {"away", "fleet"}, "W13": {"away", "fleet"}, "W14": {"away"}, "W15": {"away"},
+	"W31": {"away", "fleet"}, "W36": {"relay", "fleet"}, "W3": {"fleet"}, "W11": {"fleet"}, "W18": {"fleet"},
+	"W19": {"fleet"}, "W20": {"fleet"}, "W32": {"fleet"}, "W33": {"fleet"}, "W34": {"fleet"}, "W35": {"fleet"},
+	"W37": {"fleet"}, "W38": {"fleet"},
 	// Security.
 	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
+	"S3": {"fleet"}, "S4": {"fleet"}, "S5": {"fleet"}, "S8": {"fleet"},
 	// Load and faults.
-	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"},
+	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"}, "E6": {"fleet"},
 	// The fleet of containers.
 	"G5": {"fleet"}, "G6": {"fleet"}, "G9": {"fleet"}, "G20": {"fleet"}, "G21": {"fleet"},
 	"G22": {"fleet"}, "G26": {"fleet"}, "G30": {"fleet"}, "G42": {"fleet"}, "G43": {"fleet"},

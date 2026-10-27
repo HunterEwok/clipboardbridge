@@ -34,7 +34,7 @@ func globalShows(ctx context.Context, d *Device, want string, timeout time.Durat
 			return err
 		}
 		if !strings.Contains(out, want) {
-			return fmt.Errorf("cbb global on %s says %q, not %q", d.Name, firstLine(out), want)
+			return fmt.Errorf("cbb global on %s says %q, not %q", d.Name, strings.Join(strings.Fields(out), " "), want)
 		}
 		return nil
 	})

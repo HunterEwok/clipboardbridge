@@ -47,7 +47,10 @@ func (in *internet) countWireGuard(ctx context.Context) error {
 	_, err := Run(ctx, in.router, strings.Join([]string{
 		"iptables -N cbbwg",
 		// Rules with no target only count.
-		`iptables -A cbbwg -p udp -m u32 --u32 "0>>22&0x3C@8=0x01000000:0x04000000"`,
+		// The word, read big-endian, is exactly one of WireGuard's four
+		// types in little-endian: a range would also take a random first
+		// word now and then.
+		`iptables -A cbbwg -p udp -m u32 --u32 "0>>22&0x3C@8=0x01000000,0x02000000,0x03000000,0x04000000"`,
 		"iptables -A cbbwg -p udp -m length --length 176",
 		"iptables -A cbbwg -p udp -m length --length 120",
 		"iptables -I FORWARD -j cbbwg",
@@ -91,11 +94,15 @@ func (in *internet) zeroWireGuard(ctx context.Context) error {
 	return err
 }
 
-// noWireGuard fails when the router saw anything like WireGuard.
+// noWireGuard fails when the router saw anything that starts like
+// WireGuard. The handshake's sizes count only in plain WireGuard: an
+// obfuscated data message can have them by chance, its padding being one
+// fixed size for the group.
 func (in *internet) noWireGuard(ctx context.Context) error {
-	starts, sized, err := in.wireGuardSeen(ctx)
-	if err == nil && starts+sized > 0 {
-		err = fmt.Errorf("the router passed %d packets that start like WireGuard and %d of a handshake's size", starts, sized)
+	starts, _, err := in.wireGuardSeen(ctx)
+	if err == nil && starts > 0 {
+		out, _ := Run(ctx, in.router, "iptables -L cbbwg -v -x -n", "")
+		err = fmt.Errorf("the router passed %d packets that start like WireGuard: %s", starts, out)
 	}
 	return err
 }
@@ -155,7 +162,9 @@ func obfuscation(ctx context.Context, r *Report, f *Fleet, timeout time.Duration
 		if err := comeHome(ctx, f, c); err != nil {
 			return err
 		}
-		err := syncs(ctx, a.benchGroup, hub, c, "at home", 2*timeout)
+		// A network where it never met its group: it finds the hub there
+		// before it shows itself.
+		err := syncs(ctx, a.benchGroup, hub, c, "at home", 2*time.Minute)
 		// The hub's offer comes with the connection at home.
 		time.Sleep(10 * time.Second)
 		if err := a.in.zeroWireGuard(ctx); err != nil {
@@ -357,7 +366,7 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 	}
 	meet := func() error {
 		for _, d := range g.members {
-			if err := globalShows(ctx, d, "other devices of the group there", 2*time.Minute); err != nil {
+			if err := globalShows(ctx, d, "; connected to the relay", 2*time.Minute); err != nil {
 				return err
 			}
 		}
@@ -395,7 +404,7 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 			return err
 		}
 		time.Sleep(3 * time.Second)
-		if err := globalShows(ctx, m2, "other devices of the group there", 2*time.Minute); err != nil {
+		if err := globalShows(ctx, m2, "; connected to the relay", 2*time.Minute); err != nil {
 			return err
 		}
 		return syncs(ctx, g, m2, m3, "after the member restarted", 2*timeout)
@@ -415,7 +424,7 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		if err := on(m3, key); err != nil {
 			return err
 		}
-		return globalShows(ctx, m3, "other devices of the group there", 2*time.Minute)
+		return globalShows(ctx, m3, "; connected to the relay", 2*time.Minute)
 	})
 	r.Do("fleet/W37-removed", func() error {
 		if _, err := Run(ctx, home, "cbb revoke "+m3.Name, ""); err != nil {
@@ -589,7 +598,7 @@ func hubLoad(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 // vlessAway (W34): a forwarder that takes VLESS with REALITY too, borrowing
 // the TLS of a stand-in for a well-known site; once the hub says its
 // clients reach it only over VLESS, a client away syncs with every UDP
-// packet to the internet dropped, and anyone who is not a client gets the
+// packet from its network to the internet dropped, and anyone who is not a client gets the
 // borrowed site.
 func vlessAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	const p = "fleet/W34-vless/"
@@ -610,12 +619,18 @@ func vlessAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		if err := succeeds(ctx, hub, a.hubCmd(hubPublic, a.fwdKey, "-vless"), "", "VLESS"); err != nil {
 			return err
 		}
+		// The new offer reaches the client through the tunnel.
+		if err := globalShows(ctx, c, "VLESS", wait); err != nil {
+			return err
+		}
 		for _, pub := range []string{hubPublic, fwdPublic} {
-			if err := a.in.block(ctx, pub, "udp"); err != nil {
+			// From the client's network: the hub and the forwarder still
+			// talk over UDP.
+			if err := a.in.blockFrom(ctx, a.away, pub, "udp"); err != nil {
 				return err
 			}
 		}
-		if err := globalShows(ctx, c, "VLESS", wait); err != nil {
+		if err := cutOff(ctx, c, wait); err != nil {
 			return err
 		}
 		if err := connected(ctx, c, wait); err != nil {
