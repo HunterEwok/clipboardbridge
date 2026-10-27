@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//go:build linux
+//go:build linux || freebsd
 
 package desktop
 
@@ -217,7 +217,7 @@ func (w *Wayland) setKeymap(syms []string) error {
 	}
 	b.WriteString("};\n};\n")
 	keymap := append([]byte(b.String()), 0)
-	fd, err := unix.MemfdCreate("cbb-keymap", unix.MFD_CLOEXEC)
+	fd, err := anonFile("cbb-keymap")
 	if err != nil {
 		return fmt.Errorf("making the keymap: %w", err)
 	}

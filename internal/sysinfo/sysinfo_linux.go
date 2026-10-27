@@ -8,9 +8,14 @@ import (
 	"bytes"
 	"os"
 	"strings"
+
+	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
 )
 
 func form() string {
+	if openwrt.Is() {
+		return "router"
+	}
 	model, _ := os.ReadFile("/proc/device-tree/model")
 	product, _ := os.ReadFile("/sys/class/dmi/id/product_name")
 	chassis, _ := os.ReadFile("/sys/class/dmi/id/chassis_type")

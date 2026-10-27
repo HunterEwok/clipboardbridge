@@ -187,6 +187,11 @@ The order may change.
     `tools/repocheck` checks that each Russian page has its English original with the same
     sections, so a translation cannot fall behind unnoticed. The Russian text uses the words
     of the apps' Russian translations.
+37. **Planned for 0.7.** Sync away from home for the lite member on MIPS routers. In 0.6 the
+    lite member for mips and mipsle is built without the tunnel, since GotaTun, its
+    WireGuard library, needs 64-bit atomics that 32-bit MIPS lacks; such a router syncs only
+    at home. The aim is the full tunnel there too: GotaTun without 64-bit atomics, or
+    another WireGuard for that build (see "OpenWrt routers", step 5).
 
 ## OpenWrt routers
 
@@ -271,19 +276,30 @@ the hub's UDP port faces the internet.
 
 One pull request each, smaller ones together:
 
-1. The service on a router: a list of interfaces for mDNS and the member port, and release
-   builds for mips and mipsle (softfloat).
-2. `packaging/openwrt`: the procd script, the UCI file, install and uninstall through
-   `get.sh` (it recognises OpenWrt by `/etc/openwrt_release`), the fw4 rules, the state in
-   `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in an
-   OpenWrt root file system.
-3. The router as the hub: `cbb global hub` opens its UDP port on `wan` and `cbb global off`
-   closes it; the bench gets the router as a device under test with cases for it in
-   [testbench.md](testbench.md).
-4. A signed apk feed on `cbb.tools`, built by the release job.
-5. The lite member on OpenWrt: its procd script and installer path, builds for aarch64 and
-   armv7; mips and mipsle with nightly Rust once GotaTun works without 64-bit atomics (asked
-   upstream in mullvad/gotatun#209), or a mips build without the tunnel until then.
+1. Done. The service on a router: a list of interfaces for mDNS and the member port
+   (`CBB_INTERFACES`), the paths of OpenWrt (the socket in `/var/run`, the state in
+   `/etc/clipboardbridge/state`, `/usr/share` for the installer's files), release builds
+   for mips and mipsle (softfloat), and a CI job that runs the tests under qemu-mips.
+2. Done. `packaging/openwrt`: the procd script (its own user, no capabilities,
+   `no_new_privs`, `GOMEMLIMIT`), the UCI file, install and uninstall through `get.sh` (it
+   recognises OpenWrt by `/etc/openwrt_release`, fetches with `uclient-fetch` and tells mips
+   from mipsle by the package architecture), the fw4 rules as procd service data, the state
+   in `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in
+   OpenWrt's root file system and on OpenWrt booted in QEMU. Still to check on the BPI-R4:
+   that fw4 loads changed service data by itself (`firewall.sh` reloads it anyway).
+3. Done. The router as the hub: `cbb global hub` opens its UDP port on `wan` through the
+   service's own rules and `cbb global off` closes it; the bench takes the router (and a
+   FreeBSD computer) as a device under test ([testbench.md](testbench.md)). Still to run
+   on the BPI-R4.
+4. Done. A signed apk feed for `cbb.tools`, built by the release job once the feed's key is
+   in the secrets ([maintaining.md](maintaining.md#the-openwrt-feed)); CI installs from a
+   feed signed with a test key.
+5. The lite member on OpenWrt. Done: the procd script runs `cbb run` for it, `get.sh
+   --lite` installs it on aarch64, armv7, x86-64, mips and mipsle, and it takes
+   `CBB_INTERFACES`. On mips and mipsle it is built with nightly Rust (`-Zbuild-std`,
+   `lite/packaging/mips.sh`) and without the tunnel in 0.6, since GotaTun needs 64-bit
+   atomics; CI runs its Go tests under qemu-mips; the tunnel there is planned for 0.7
+   (item 37).
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
 
@@ -369,15 +385,29 @@ sync away from home is on, member TLS, and the tunnel away from home.
 
 Steps:
 
-1. Release builds for freebsd-amd64 and freebsd-arm64, the control socket's check, and a CI
-   job that runs the Go tests in a FreeBSD virtual machine.
-2. The rc.d script, `get.sh`, the pf and ipfw rules with the consent prompt.
-3. The desktop connector on FreeBSD.
-4. OPNsense and pfSense as the hub, after the OpenWrt steps: an OPNsense `plugins.inc.d` hook
-   in our own package, from our own pkg repository on `cbb.tools` and kept in this
-   repository under the AGPL; printed rules only, unsupported, on pfSense; the port in the
-   ports tree after one release in the field. First check whether OPNsense's mdns-repeater,
-   which binds port 5353 without `SO_REUSEPORT`, leaves room for the service's socket.
+1. Done. Release builds for freebsd-amd64 and freebsd-arm64, the paths (the socket in
+   `/var/run`, the state in `/var/db`, the settings in `/usr/local/etc`), FreeBSD's uptime
+   clock and system version, and a CI job that runs the Go tests in a FreeBSD 15.1 virtual
+   machine. The control socket needs no change: its file modes keep others out on FreeBSD
+   too.
+2. Done. The rc.d script, `get.sh` (with FreeBSD's own `fetch`), the pf anchor and the ipfw
+   rule set with the consent prompt; the CI job installs it, opens and closes the ports in pf
+   and removes it all.
+3. Done. The desktop connector on FreeBSD: X11 and Wayland's data control and remote paste
+   through XTEST and the virtual keyboard, started from XDG autostart; the lock check reads
+   the processes with ps, since FreeBSD has no logind, and refuses keys on GNOME, whose lock
+   screen nothing else tells. The RemoteDesktop portal, the ei protocol and uinput stay on
+   Linux. The CI job runs the X11 tests under Xvfb in the virtual machine.
+4. OPNsense and pfSense as the hub. Done: the OPNsense `plugins.inc.d` hook, kept here under
+   the AGPL, which the installer adds and which names the service's pf anchor in
+   OPNsense's ruleset and lists the service; printed rules only, unsupported, on pfSense,
+   with an rc.d `clipboardbridge.sh` since pfSense starts only those. The check of port
+   5353: FreeBSD lets a socket share a port with another user's only when root opened it,
+   so the service opens its mDNS sockets as root and then runs as its user, which shares
+   the port with avahi; mdns-repeater sets no `SO_REUSEPORT`, so it and the service still
+   exclude each other, and the guide says to turn it off. Still to come: our own pkg
+   repository on `cbb.tools`, and the port in the ports tree after one release in the
+   field.
 
 ## Devices that are hard to type into
 

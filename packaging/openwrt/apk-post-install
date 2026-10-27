@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# After apk installs or upgrades the package (feed.sh): the user and group
+# clipboardbridge, the state directory, and the service enabled and
+# (re)started, as install.sh does for a script install.
+
+# OpenWrt's functions.sh reads unset variables, such as IPKG_INSTROOT.
+# shellcheck disable=SC1091
+. /lib/functions.sh
+gid=$(group_add_next clipboardbridge)
+if ! user_exists clipboardbridge; then
+	user_add clipboardbridge "" "$gid" "Clipboard Bridge" /var/run/clipboardbridge /bin/false
+fi
+mkdir -p /etc/clipboardbridge/state
+chmod 0700 /etc/clipboardbridge/state
+chown clipboardbridge:clipboardbridge /etc/clipboardbridge/state
+
+# An image being built: the service starts at its first boot, after NTP.
+[ -z "$IPKG_INSTROOT" ] || exit 0
+/etc/init.d/clipboardbridge enable
+ubus call service list >/dev/null 2>&1 || exit 0
+# The router has set its clock long ago; the wait is for the next boot.
+mkdir -p /var/state
+touch /var/state/clipboardbridge.time
+/etc/init.d/clipboardbridge restart
+exit 0

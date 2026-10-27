@@ -895,6 +895,7 @@ Source: `internal/control`, `internal/service/socket.go`, `internal/connector/co
 | Platform | Path | Group |
 |----------|------|-------|
 | Linux | `/run/clipboardbridge/control.sock` | `clipboardbridge` |
+| OpenWrt, FreeBSD | `/var/run/clipboardbridge/control.sock` | `clipboardbridge` |
 | macOS | `/Library/Application Support/clipboardbridge/control.sock` | `_clipboardbridge` |
 
 `CBB_SOCKET` overrides the path for clients. The socket is a Unix stream socket with

@@ -7,6 +7,10 @@
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
 mod actions;
+#[cfg(feature = "tunnel")]
+mod away;
+#[cfg(not(feature = "tunnel"))]
+#[path = "away_off.rs"]
 mod away;
 mod control;
 mod device;
@@ -14,6 +18,7 @@ mod discovery;
 mod error;
 mod files;
 mod identity;
+mod interfaces;
 mod next;
 mod node;
 mod pair;
@@ -22,6 +27,7 @@ mod records;
 mod remotepaste;
 mod service;
 mod tls;
+#[cfg(feature = "tunnel")]
 mod tunnel;
 mod uptime;
 mod wire;
@@ -86,13 +92,21 @@ Commands:
 This is the lite member: the commands of a full member, such as pair or
 invite, are not here. The state directory is /var/lib/clipboardbridge
 (CBB_STATE), the control socket /run/clipboardbridge/control.sock
-(CBB_SOCKET). -debug, or CBB_DEBUG=1, shows the details of errors.
+(CBB_SOCKET); on OpenWrt /etc/clipboardbridge/state and
+/var/run/clipboardbridge/control.sock. CBB_INTERFACES limits the member
+port and mDNS to the network devices it names. -debug, or CBB_DEBUG=1, shows the details of errors.
 ";
 
 /// The commands of a full member (cmd/cbb) that the lite member does not
 /// have, so that it says so instead of "unknown command".
 const FULL_ONLY: &[&str] =
     &["revoke", "admin", "takeover", "new", "pair", "invite", "holder", "forward", "relay", "service", "agent"];
+
+/// Reports whether this is an OpenWrt router, whose /var is in RAM and
+/// which keeps /etc across upgrades.
+pub(crate) fn openwrt() -> bool {
+    std::path::Path::new("/etc/openwrt_release").exists()
+}
 
 struct Global {
     state: PathBuf,
@@ -103,12 +117,16 @@ fn main() {
     error::from_env();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut g = Global {
-        state: std::env::var_os("CBB_STATE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/var/lib/clipboardbridge")),
-        socket: std::env::var_os("CBB_SOCKET")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/run/clipboardbridge/control.sock")),
+        state: std::env::var_os("CBB_STATE").map(PathBuf::from).unwrap_or_else(|| {
+            PathBuf::from(if openwrt() { "/etc/clipboardbridge/state" } else { "/var/lib/clipboardbridge" })
+        }),
+        socket: std::env::var_os("CBB_SOCKET").map(PathBuf::from).unwrap_or_else(|| {
+            PathBuf::from(if openwrt() {
+                "/var/run/clipboardbridge/control.sock"
+            } else {
+                "/run/clipboardbridge/control.sock"
+            })
+        }),
     };
     while let Some(a) = args.first().cloned() {
         match flag(&a) {

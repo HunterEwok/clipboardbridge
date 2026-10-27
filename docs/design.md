@@ -163,7 +163,12 @@ apps" below).
   and A/AAAA records under their own host label `cb-<device ID>.local`, never the system
   host name. Macs only browse.
 - Linux members run Clipboard Bridge's own small mDNS responder, which shares UDP port 5353 with
-  avahi-daemon or systemd-resolved; a CI job checks that avahi browses and resolves it. It
+  avahi-daemon or systemd-resolved; a CI job checks that avahi browses and resolves it. On
+  FreeBSD a socket shares a port only with the sockets of its own user unless root opened
+  it, so the rc.d script starts `cbb service -user clipboardbridge` as root: it opens the
+  mDNS sockets, then runs as its user, and shares the port with avahi. OPNsense's
+  mdns-repeater sets no `SO_REUSEPORT`, so it and the service cannot both hold 5353; the
+  service's error names the program that holds it. It
   answers each query with the addresses of the interface the query arrived on, and with an
   NSEC record when the name has no address of the asked type, so a resolver does not wait
   for it. Records that name a host (SRV, A, AAAA) live 120 seconds, PTR and TXT 75 minutes.
@@ -217,6 +222,16 @@ apps" below).
   router where every member keeps quiet. A pairing window takes connections on any network
   while it is open. The lite member publishes itself everywhere: it runs on boards that stay
   at home.
+- **The interface list.** A router or a gateway is on the internet side and the home side
+  at once, and its internet side may even carry a private address (double NAT). So the
+  service can be limited to some interfaces by name (`CBB_INTERFACES`, which the router's
+  init script sets to the devices of its home zones): mDNS joins, publishes and browses only
+  there, those networks alone can become known, a listening join shows only their
+  addresses, and the member port takes a connection only when it came to an address of such
+  an interface from an address on that interface's own networks (a link-local one must name
+  it as its zone). The firewall should keep the internet side out as well; this holds even
+  when it is opened there by mistake. Without the list every interface counts, as on a
+  computer.
 
 ## Sync model
 

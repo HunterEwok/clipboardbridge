@@ -18,6 +18,12 @@ exclude = ["esp32"]
 name = "cbb"
 path = "src/main.rs"
 
+[features]
+default = ["tunnel"]
+# Sync away from home. GotaTun needs 64-bit atomics, which 32-bit MIPS lacks,
+# so the MIPS builds leave it out (docs/roadmap.md, item 37).
+tunnel = ["dep:gotatun", "dep:bytes", "dep:smoltcp"]
+
 [dependencies]
 clipboardbridge-core = { path = "core", features = ["std", "tls"] }
 if-addrs = "0.15.0"
@@ -28,10 +34,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # WireGuard for sync away from home: GotaTun's noise protocol, sans I/O, with
 # the ring stand-in below; smoltcp is the TCP inside the tunnel.
-gotatun = { version = "0.10.2", default-features = false, features = ["ring"] }
-bytes = "1"
+gotatun = { version = "0.10.2", default-features = false, features = ["ring"], optional = true }
+bytes = { version = "1", optional = true }
 getrandom = { version = "0.4", features = ["std"] }
-smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"], optional = true }
 
 # GotaTun's AEAD on RustCrypto instead of ring's C and assembly (ring-shim/src/lib.rs).
 [patch.crates-io]

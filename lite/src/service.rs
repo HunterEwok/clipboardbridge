@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -84,7 +84,7 @@ type Waiting = HashMap<u64, SyncSender<(String, String)>>;
 
 /// A watcher connected to the control socket.
 struct Watcher {
-    id: u64,
+    id: usize,
     /// The paste target it offers; empty for none.
     target: String,
     /// It holds a clipboard: tmux, the console and paste-only watchers do
@@ -112,7 +112,7 @@ struct Service {
     node: RwLock<Option<Arc<Node>>>,
     away: RwLock<Option<Arc<Away>>>,
     watchers: Mutex<Vec<Watcher>>,
-    next_watcher: AtomicU64,
+    next_watcher: AtomicUsize,
     /// The limits of remote paste per sender.
     pastes: Mutex<remotepaste::Limiter>,
     /// The limits of quick actions per sender, as remote paste's.
@@ -153,7 +153,7 @@ pub fn run(cfg: Config) -> Result<()> {
         node: RwLock::new(None),
         away: RwLock::new(None),
         watchers: Mutex::new(Vec::new()),
-        next_watcher: AtomicU64::new(0),
+        next_watcher: AtomicUsize::new(0),
         pastes: Mutex::new(remotepaste::Limiter::default()),
         acts: Mutex::new(remotepaste::Limiter::default()),
         pending: Mutex::new(None),
@@ -161,6 +161,10 @@ pub fn run(cfg: Config) -> Result<()> {
         commands: Mutex::new(HashMap::new()),
         log: log.clone(),
     });
+    let only = crate::interfaces::only();
+    if !only.is_empty() {
+        log(&format!("cbb: the member port and mDNS work only on {} (CBB_INTERFACES)", only.join(", ")));
+    }
     let admin_socket = control::admin_socket(&cfg.socket);
     for (ln, admin) in [(listen(&cfg.socket, false)?, false), (listen(&admin_socket, true)?, true)] {
         let svc = svc.clone();

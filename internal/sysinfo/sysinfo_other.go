@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
-//go:build !linux && !darwin && !windows
+//go:build !linux && !darwin && !windows && !freebsd
 
 package sysinfo
 

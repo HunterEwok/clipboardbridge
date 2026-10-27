@@ -22,7 +22,8 @@
 <meta name="twitter:card" content="summary_large_image">
 {{end}}<meta name="theme-color" content="#0B1A20" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#DCD3C1" media="(prefers-color-scheme: light)">
-<script src="{{asset "site.js"}}"></script>
+<script src="{{asset "theme.js"}}"></script>
+<script defer src="{{asset "site.js"}}"></script>
 <link rel="preload" href="/static/fonts/forum-400-{{if eq .Lang.Code "ru"}}cyrillic{{else}}latin{{end}}.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/jost-400-{{if eq .Lang.Code "ru"}}cyrillic{{else}}latin{{end}}.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{asset "style.css"}}">

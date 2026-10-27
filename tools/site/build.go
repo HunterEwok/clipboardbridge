@@ -143,7 +143,7 @@ func latestRelease(root string) (Release, error) {
 // browsers may keep it for good and still get each new version.
 func assets(root string) (map[string]string, map[string][]byte, error) {
 	names, out := map[string]string{}, map[string][]byte{}
-	for _, file := range []string{"style.css", "site.js"} {
+	for _, file := range []string{"style.css", "theme.js", "site.js"} {
 		data, err := os.ReadFile(filepath.Join(root, "static", file))
 		if err != nil {
 			return nil, nil, err

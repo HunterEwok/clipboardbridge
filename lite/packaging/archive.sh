@@ -11,7 +11,8 @@
 # THIRD_PARTY_NOTICES (the licenses of the crates for TARGET; see notices.sh)
 # and packaging/ laid out as in the full member's Linux archive: the same
 # install.sh, uninstall.sh and firewall.sh, the tmux configuration, the
-# console helper's unit, and the lite member's own systemd unit, so that
+# console helper's unit, the lite member's own systemd unit and OpenWrt's
+# installer (its init script runs cbb run for the lite member), so that
 # get.sh --lite and a manual install work as for a full member. The release
 # workflow and CI both use it.
 set -eu
@@ -34,6 +35,6 @@ sh "$root/lite/packaging/notices.sh" "$target" >"$dir/THIRD_PARTY_NOTICES"
 cp "$root/packaging/linux/install.sh" "$root/packaging/linux/uninstall.sh" "$root/packaging/linux/firewall.sh" \
 	"$root/packaging/linux/clipboardbridge.sysusers" "$root/packaging/linux/clipboardbridge-console.service" \
 	"$root/lite/packaging/clipboardbridge.service" "$dir/packaging/linux/"
-cp -R "$root/packaging/tmux" "$dir/packaging/"
+cp -R "$root/packaging/tmux" "$root/packaging/openwrt" "$dir/packaging/"
 tar -czf "$out/clipboardbridge-lite-linux-$name.tar.gz" -C "$work" clipboardbridge-lite
 echo "$out/clipboardbridge-lite-linux-$name.tar.gz"

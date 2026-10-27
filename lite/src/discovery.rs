@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::certs::DeviceId;
+use crate::interfaces;
 use crate::node::Node;
 use crate::pair::home_address;
 use crate::uptime;
@@ -85,7 +86,8 @@ pub fn listen(node: Arc<Node>, port: u16, log: Arc<dyn Fn(&str) + Send + Sync>) 
             }
             let Ok(sock) = conn else { continue };
             let Ok(addr) = sock.peer_addr() else { continue };
-            if !home_address(addr.ip()) || busy.load(Ordering::SeqCst) >= MAX_HANDSHAKES {
+            if !home_address(addr.ip()) || !interfaces::arrived(&sock) || busy.load(Ordering::SeqCst) >= MAX_HANDSHAKES
+            {
                 continue; // dropping the socket closes it
             }
             busy.fetch_add(1, Ordering::SeqCst);
@@ -142,6 +144,12 @@ fn browse(
     let daemon = mdns_sd::ServiceDaemon::new()?;
     // As Go's responder: no loopback interfaces.
     let _ = daemon.disable_interface(vec![mdns_sd::IfKind::LoopbackV4, mdns_sd::IfKind::LoopbackV6]);
+    // On a router, only the devices of the interface list.
+    let only = interfaces::only();
+    if !only.is_empty() {
+        let _ = daemon.disable_interface(mdns_sd::IfKind::All);
+        let _ = daemon.enable_interface(only.iter().map(|n| mdns_sd::IfKind::Name(n.clone())).collect::<Vec<_>>());
+    }
     let me = node.identity().id.clone();
     if let Some(port) = port {
         // The protocol version, the group tag and the role.

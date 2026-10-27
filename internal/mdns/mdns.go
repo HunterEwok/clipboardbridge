@@ -68,6 +68,12 @@ type Config struct {
 	// asked when the interfaces change and after Recheck.
 	Publish func(name string, prefixes []netip.Prefix) bool
 
+	// Interfaces, if set, limits the responder to the interfaces it allows,
+	// by name: it joins the multicast groups, publishes and browses only
+	// there, and ignores packets from elsewhere. A router lists its home
+	// zones, so that nothing is said or heard on the internet side.
+	Interfaces func(name string) bool
+
 	// Logf, if set, receives diagnostics.
 	Logf func(format string, args ...any)
 
@@ -215,7 +221,7 @@ func (r *Responder) Run(ctx context.Context) error {
 	tr := r.cfg.net
 	if tr == nil {
 		var err error
-		if tr, err = listen(r.logf); err != nil {
+		if tr, err = listen(r.logf, r.cfg.Interfaces); err != nil {
 			return err
 		}
 	}
@@ -388,6 +394,9 @@ func (s *state) rescan(now time.Time) {
 	if err != nil {
 		s.r.logf("mdns: listing interfaces: %v", err)
 		return
+	}
+	if only := s.r.cfg.Interfaces; only != nil {
+		ifaces = slices.DeleteFunc(ifaces, func(f iface) bool { return !only(f.name) })
 	}
 	for i := range ifaces {
 		ifc := &ifaces[i]

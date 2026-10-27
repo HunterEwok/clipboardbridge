@@ -1880,6 +1880,25 @@ func TestRecordsTheSystem(t *testing.T) {
 	pc.os = group.OSWindows
 	pc = restartService(t, &h, pc)
 	waitFor(t, "pc connects again", func() bool { return len(pi.status(t).Peers) == 1 })
+	// pi records the system while pc is connected; the list shows a
+	// connected device's system from its hello, so the record is read from
+	// pi's state before pc leaves.
+	id, err := group.Load(pi.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pi's record says Windows", func() bool {
+		recs, err := group.LoadRecords(pi.dir, id.GroupCA.Cert)
+		if err != nil {
+			return false
+		}
+		for _, d := range recs.Devices() {
+			if d.Name == "pc" {
+				return d.OS == group.OSWindows
+			}
+		}
+		return false
+	})
 	pc.stop()
 	waitFor(t, "pi records Windows", func() bool {
 		for _, d := range pi.devices(t) {

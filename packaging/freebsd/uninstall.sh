@@ -1,0 +1,65 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# Removes what install.sh installed on FreeBSD, as root:
+#
+#   sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
+#
+# It stops the service and removes the binary, the rc.d script and its
+# rc.conf line, the settings in /usr/local/etc/clipboardbridge and the
+# firewall rules that install.sh added, and only those. The device's keys
+# and group, in /var/db/clipboardbridge, stay for a reinstall unless
+# --purge; the clipboardbridge user and group stay too, since files may
+# still belong to them.
+set -eu
+
+if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
+	set -x
+fi
+failed() {
+	rc=$1
+	if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ "${CBB_ERROR_DETAILS:-}" != 1 ]; then
+		echo "uninstall.sh: failed (exit status $rc). For every command it ran: CBB_ERROR_DETAILS=1, and run it again." >&2
+	fi
+}
+trap 'failed $?' EXIT
+export LC_ALL=C
+
+purge=no
+case ${1:-} in
+'') ;;
+--purge) purge=yes ;;
+*)
+	echo "usage: sh uninstall.sh [--purge]" >&2
+	exit 2
+	;;
+esac
+if [ "$(id -u)" -ne 0 ]; then
+	echo "uninstall.sh: run it as root (sudo or doas)" >&2
+	exit 1
+fi
+
+if [ -x /usr/local/etc/rc.d/clipboardbridge ]; then
+	service clipboardbridge onestop >/dev/null 2>&1 || true
+fi
+sysrc -q -x clipboardbridge_enable >/dev/null 2>&1 || true
+share=/usr/local/share/clipboardbridge
+if [ -f "$share/firewall.sh" ]; then
+	sh "$share/firewall.sh" close
+	sh "$share/firewall.sh" hub-close
+fi
+rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/etc/rc.d/clipboardbridge.sh /usr/local/bin/cbb \
+	/usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+# OPNsense: without the hook, the next filter reload drops the anchor.
+if [ -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc ]; then
+	rm -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
+	configctl filter reload >/dev/null 2>&1 || true
+fi
+rm -rf "$share" /usr/local/etc/clipboardbridge /var/run/clipboardbridge
+if [ "$purge" = yes ]; then
+	rm -rf /var/db/clipboardbridge
+	echo "Clipboard Bridge is removed, with this device's keys; it left its group."
+else
+	echo "Clipboard Bridge is removed. Its keys stay in /var/db/clipboardbridge for a reinstall; --purge removes them."
+fi

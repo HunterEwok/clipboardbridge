@@ -8,14 +8,22 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
 
-// EnvFile is where the Linux installer keeps the settings it was given,
-// such as CBB_PORT; systemd passes them to the service, and the
-// command line reads them from here.
-var EnvFile = "/etc/clipboardbridge/clipboardbridge.env"
+// EnvFile is where the installer keeps the settings it was given, such as
+// CBB_PORT; systemd, rc.d or procd pass them to the service, and the
+// command line reads them from here. FreeBSD keeps it under /usr/local/etc.
+var EnvFile = envFile()
+
+func envFile() string {
+	if runtime.GOOS == "freebsd" {
+		return "/usr/local/etc/clipboardbridge/clipboardbridge.env"
+	}
+	return "/etc/clipboardbridge/clipboardbridge.env"
+}
 
 // Port returns the member port, which a listening join uses too: a
 // device that joins is in no group yet, so nothing else holds it.
@@ -93,4 +101,27 @@ func envFileValue(path, key string) (string, error) {
 		value = v // the last one wins, as in systemd
 	}
 	return value, sc.Err()
+}
+
+// Interfaces returns the network interfaces the service is limited to,
+// from CBB_INTERFACES in the environment or else in EnvFile: names
+// separated by commas or spaces, such as "br-lan,br-iot". A router's init
+// script sets it to the devices of its home zones, so that the member port
+// and mDNS never answer on the internet side even when the firewall is open
+// there by mistake. Empty means every interface, as on a computer.
+func Interfaces() ([]string, error) {
+	v, ok := os.LookupEnv("CBB_INTERFACES")
+	if !ok {
+		var err error
+		if v, err = envFileValue(EnvFile, "CBB_INTERFACES"); err != nil {
+			return nil, err
+		}
+	}
+	names := strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	for _, n := range names {
+		if len(n) > 15 || strings.ContainsAny(n, "/:%") {
+			return nil, fmt.Errorf("CBB_INTERFACES=%q: %q is not an interface name", v, n)
+		}
+	}
+	return names, nil
 }
