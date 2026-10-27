@@ -217,6 +217,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   fresh WireGuard key at each registration, and drops a device a newer members' credential
   leaves out; a relay that serves a fixed list of groups also sees the period credential and
   the group's roots. Devices and phones that do not sign credentials yet register as before.
+  The lite member's core reads and checks the credentials with the same vectors.
 - The hub takes a new WireGuard key for its clients with each period of the server
   credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
   three days ahead, then it serves with it and registers again with its forwarder, so the

@@ -492,6 +492,15 @@ pub mod b64 {
 
     pub mod hashes {
         use super::*;
+        use serde::ser::SerializeSeq;
+
+        pub fn serialize<S: Serializer>(v: &[[u8; 32]], s: S) -> Result<S::Ok, S::Error> {
+            let mut seq = s.serialize_seq(Some(v.len()))?;
+            for b in v {
+                seq.serialize_element(&STANDARD.encode(b))?;
+            }
+            seq.end()
+        }
 
         pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<[u8; 32]>, D::Error> {
             let v = Option::<Vec<String>>::deserialize(d)?.unwrap_or_default();

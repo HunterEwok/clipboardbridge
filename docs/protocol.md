@@ -2376,7 +2376,9 @@ from one month to the next ([design.md](design.md), D-67 and D-75). Implemented 
 `internal/service/credentials.go`). The vectors in `testdata/interop/go-credentials.json`
 (Go's `TestGoCredentialVectors`) give a group's records, the lists its credentials must hold,
 a period with its server credentials, its hubs' and members' credentials, and sets a server
-refuses.
+refuses. The lite member's core reads and checks them as Go does (`lite/core/src/credential.rs`:
+the lists, the signatures and types, and a server's check), and passes the vectors; it
+registers with no server, so it signs none and keeps none.
 
 The group lives in **periods** of about 30 days. For each, its root signs, inside the group,
 a fresh **tag** for the servers and a fresh **period key**; each device signs with its member
