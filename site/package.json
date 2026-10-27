@@ -1,6 +1,6 @@
 {
   "private": true,
-  "description": "Checks of the built website in CI: HTML validity and Lighthouse (see README.md); rough.js draws the chalk pictures (chalk.js).",
+  "description": "Checks of the built website in CI: HTML validity and Lighthouse (see README.md); rough.js draws the chalk pictures (chalk.js), and og.js the pictures for links (with Playwright).",
   "license": "AGPL-3.0-only",
   "devDependencies": {
     "html-validate": "11.17.0",
@@ -10,6 +10,7 @@
   "scripts": {
     "validate": "html-validate --config .htmlvalidate.json \"out/**/*.html\"",
     "lighthouse": "cd .. && go run ./tools/site lighthouse",
-    "chalk": "node chalk.js"
+    "chalk": "node chalk.js",
+    "og": "node og.js"
   }
 }

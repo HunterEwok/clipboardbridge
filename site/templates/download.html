@@ -8,15 +8,24 @@
   <p class="lead">{{t "Install the app on your phone and Clipboard Bridge on your computers. Every way installs the same program, and every release is free."}}</p>
   <p class="dim">{{t "Latest version: %s, released on %s." (link "https://github.com/HunterEwok/clipboardbridge/releases/latest" .Version) .Date}}
      {{t "What changed: %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/CHANGELOG.md" (t "the changelog"))}}</p>
+  <p class="actions pick" hidden>
+    <a class="button accent go" data-os="android" href="https://github.com/HunterEwok/clipboardbridge/releases/latest" data-goatcounter-click="pick-android" hidden>{{t "Download for Android"}}</a>
+    <a class="button accent go" data-os="iphone" href="#iphone" hidden>{{t "iPhone: what to do now"}}</a>
+    <a class="button accent go" data-os="windows" href="#windows" hidden>{{t "Install on Windows"}}</a>
+    <a class="button accent go" data-os="mac" href="#unix" hidden>{{t "Install on a Mac"}}</a>
+    <a class="button accent go" data-os="linux" href="#unix" hidden>{{t "Install on Linux"}}</a>
+  </p>
 
   <h2>{{t "Phones"}}</h2>
   <div class="cards two">
-    <div class="card">
+    <div class="card" id="android" data-os="android">
+      <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>Android</h3>
       <p>{{t "Android 10 or later. Download the APK from the latest release on the phone and open it."}}</p>
       <p><a class="button accent go" href="https://github.com/HunterEwok/clipboardbridge/releases/latest" data-goatcounter-click="android-apk">{{t "Download for Android"}}</a></p>
     </div>
-    <div class="card">
+    <div class="card" id="iphone" data-os="iphone">
+      <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>iPhone</h3>
       <p>{{t "The app comes with TestFlight, which is not open yet. Until then an iPhone joins with a shortcut, and a computer holds the group: see %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/without-app.md" (t "without the app"))}}</p>
     </div>
@@ -24,7 +33,8 @@
 
   <h2>{{t "Computers"}}</h2>
   <div class="cards pairs">
-    <div class="card">
+    <div class="card" id="unix" data-os="linux mac">
+      <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>{{t "Linux and Mac"}}</h3>
       <p>{{t "Any Linux with systemd (x86-64, ARM64, ARMv7, ARMv6) and any Mac. In a terminal:"}}</p>
       <pre><code>curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh</code></pre>
@@ -32,7 +42,8 @@
       <pre><code>brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"</code></pre>
     </div>
-    <div class="card">
+    <div class="card" id="windows" data-os="windows">
+      <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>Windows</h3>
       <p>{{t "Windows 10 (1809 or later) or 11, x86-64 or ARM64. In a PowerShell opened with “Run as administrator”:"}}</p>
       <pre><code>irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex</code></pre>
