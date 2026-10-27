@@ -23,7 +23,7 @@ class WearListener : WearableListenerService() {
             WatchState.ADMITTED_PATH -> {
                 val a = WatchState.Admission.decode(event.data)
                 val kept = a != null && WatchKey.admit(this, a)
-                WatchState.ADMITTED_PATH to (if (kept) a!!.device else "").toByteArray()
+                WatchState.ADMITTED_PATH to (if (kept) a.device else "").toByteArray()
             }
             WatchState.BODY_PATH, WatchState.DONE_PATH -> return WearModel.answered(event.data)
             else -> return
