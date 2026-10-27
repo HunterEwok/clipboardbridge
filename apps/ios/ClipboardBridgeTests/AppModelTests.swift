@@ -147,6 +147,48 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(m.message)
     }
 
+    func testArrangement() async {
+        let suite = "AppModelTests.arrangement"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let g = FakeGroup()
+        g.hasGroup = true
+        g.computers = [.init(id: "a", name: "pi", online: true), .init(id: "b", name: "deck", online: false),
+                       .init(id: "c", name: "mac", online: true)]
+        let m = AppModel(group: g, defaults: defaults)
+        // The group's order, this phone left out, and nothing stored.
+        XCTAssertEqual(m.arranged.map(\.id), ["d:a", "d:b", "d:c"])
+        XCTAssertNil(defaults.data(forKey: AppModel.arrangementKey))
+
+        XCTAssertEqual(m.newCollection("Office", devices: ["a", "c"]), "c1")
+        XCTAssertEqual(m.arranged.map(\.id), ["c:c1", "d:b"])
+        XCTAssertEqual(m.collection("c1")?.1.map(\.id), ["a", "c"])
+        XCTAssertEqual(m.collection(holding: "c")?.id, "c1")
+        XCTAssertEqual(m.collections(apartFrom: "b").map(\.id), ["c1"])
+        XCTAssertTrue(m.collections(apartFrom: "a").isEmpty)
+        XCTAssertTrue(m.arrange(.move(.device("b"), before: .collection("c1"))))
+        XCTAssertEqual(m.arranged.map(\.id), ["d:b", "c:c1"])
+
+        // A change that does not fit leaves it as it was and says why.
+        XCTAssertFalse(m.arrange(.rename(collection: "c9", name: "Kids")))
+        XCTAssertNotNil(m.message)
+        XCTAssertEqual(m.arranged.map(\.id), ["d:b", "c:c1"])
+
+        // Kept on the phone for the group, and read again.
+        let again = AppModel(group: g, defaults: defaults)
+        XCTAssertEqual(again.arranged.map(\.id), ["d:b", "c:c1"])
+
+        // A device that left goes once the list is whole; a collection
+        // that loses its last device goes with it.
+        g.computers.removeAll { $0.id != "b" }
+        await again.refresh()
+        XCTAssertEqual(again.arranged.map(\.id), ["d:b"])
+        XCTAssertEqual(Arrangement.decode(defaults.data(forKey: AppModel.arrangementKey), group: "group").items, [.device("b")])
+
+        // Another group starts afresh.
+        XCTAssertEqual(Arrangement.decode(defaults.data(forKey: AppModel.arrangementKey), group: "other").items, [])
+    }
+
     func testScanGoesHome() async {
         let g = FakeGroup()
         let m = AppModel(group: g)

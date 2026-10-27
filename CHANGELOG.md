@@ -12,6 +12,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the
   Swift kit, checked against shared vectors in `testdata/arrangement`. It is kept on each
   installation and never sent to the group.
+- The iPhone and iPad app arranges the devices: Arrange devices in the "…" menu or
+  Arrange on a long press, then drag the tiles, drop a device on a collection to put it
+  in, or use the same changes in each tile's menu and VoiceOver's actions. A collection
+  is a tile with its devices' icons and how many are online, a section in the list, and
+  a page of its own. With more than 12 devices Home has a search and the filters Online
+  and Needs attention.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the
