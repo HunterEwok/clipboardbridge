@@ -316,6 +316,70 @@ mod tests {
         assert_eq!(Layout::Us.untypeable("€ and €"), ['€']);
     }
 
+    /// testdata/interop/keyboard.json, which the Android kit's Keyboard
+    /// is checked against, so that the phone and the Nano type alike:
+    /// every layout's key for each candidate character, and the reports of
+    /// a few texts. CBB_UPDATE_VECTORS=1 writes it again.
+    #[test]
+    fn vectors() {
+        use serde_json::{Value, json};
+        let candidates: alloc::string::String = ['\n', '\t', '\r']
+            .into_iter()
+            .chain(' '..='~')
+            .chain('\u{0400}'..='\u{045f}')
+            .chain(['\u{2116}', '\u{20ac}', '\u{00e9}'])
+            .collect();
+        let mut layouts = serde_json::Map::new();
+        for l in Layout::ALL {
+            let keys: serde_json::Map<_, _> = candidates
+                .chars()
+                .filter_map(|c| l.key(c).map(|k| (c.to_string(), json!([k.modifiers, k.usage]))))
+                .collect();
+            layouts.insert(l.name().into(), Value::Object(keys));
+        }
+        let hex = |r: &[u8; 8]| r.iter().map(|b| alloc::format!("{b:02x}")).collect::<alloc::string::String>();
+        let texts: Vec<Value> = [
+            (Layout::Us, "aA\r\n"),
+            (Layout::Us, "Wi-Fi: home 42!"),
+            (Layout::Us, "\u{043f}\u{0440}\u{0438}\u{0432}\u{0435}\u{0442}"),
+            (Layout::Ru, "\u{041f}\u{0440}\u{0438}\u{0432}\u{0435}\u{0442}, \u{043c}\u{0438}\u{0440}!"),
+            (Layout::Ru, "Wi-Fi: \u{0434}\u{043e}\u{043c}"),
+            (Layout::Us, "\u{20ac} and \u{20ac}"),
+        ]
+        .into_iter()
+        .map(|(l, t)| {
+            let mut o = json!({"layout": l.name(), "text": t});
+            match l.reports(t) {
+                Some(r) => o["reports"] = r.iter().map(hex).collect(),
+                None => o["untypeable"] = l.untypeable(t).iter().map(|c| c.to_string()).collect(),
+            }
+            o
+        })
+        .collect();
+        let want = json!({"candidates": candidates, "layouts": layouts, "texts": texts});
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/keyboard.json");
+        if std::env::var("CBB_UPDATE_VECTORS").as_deref() == Ok("1") {
+            // ASCII only, as the repository's text is outside the apps' translations.
+            let mut out = alloc::string::String::new();
+            for c in serde_json::to_string_pretty(&want).unwrap().chars() {
+                if c.is_ascii() {
+                    out.push(c);
+                } else {
+                    out.push_str(&alloc::format!("\\u{:04x}", c as u32));
+                }
+            }
+            out.push('\n');
+            std::fs::write(&path, out).unwrap();
+        }
+        let got: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            got,
+            want,
+            "{} is out of date: CBB_UPDATE_VECTORS=1 cargo test -p clipboardbridge-core keyboard",
+            path.display()
+        );
+    }
+
     #[test]
     fn names() {
         for l in Layout::ALL {

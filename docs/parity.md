@@ -45,6 +45,7 @@ on every platform of the class, on the roadmap).
 | Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
 | Opening the hub's UDP port in the firewall, with consent | yes (ufw, firewalld; commands for nftables, iptables) | **OS** | yes | `cbb global hub` asks, `-firewall yes` without asking; the macOS application firewall already allows a listed program on every port |
 | Finding a firewall the installer does not know, by a check from home | yes | yes | yes | `cbb status` warns when the members at home could not connect and sync only because this computer dials them back |
+| Act as a Bluetooth keyboard for a TV, tablet or computer | yes (`cbb keyboard`, BLE) | **OS** | **OS** | macOS and Windows keep the HID service to the system |
 | Tested on a real device | yes | yes | not yet | the 0.4 bench |
 
 ## Phones
@@ -67,6 +68,7 @@ on every platform of the class, on the roadmap).
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
 | Remote paste, images and files | yes | yes | the iPhone takes no remote paste (**OS**: no app may type into another) |
 | Remote invitations | planned | planned | roadmap item 12; computers have them |
+| Act as a Bluetooth keyboard for a TV, tablet or computer | yes | **OS** | iOS keeps the HID service to the system; some Android makers leave the profile out, which the app says |
 | Tested on a real phone | not yet | not yet | |
 
 ## Lite devices

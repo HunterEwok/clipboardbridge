@@ -132,6 +132,11 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.6.2")
     implementation("androidx.camera:camera-view:1.6.2")
     implementation("com.google.zxing:core:3.5.4")
+    constraints {
+        // Guava comes in through the libraries above at 33.3.1, which GHSA-xxph-c9ww-hj94
+        // affects; 33.7.2 fixes it.
+        implementation("com.google.guava:guava:33.7.2-android")
+    }
 
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")

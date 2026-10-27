@@ -91,9 +91,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     the one difference between the computers, and it goes away with the app. The app's
     window and menu bar item over the installed service are there already (`apps/macos`,
     [apps.md](apps.md#the-mac-app)).
-- **25.** Devices that are hard to type into: the Android TV variant of the app and the Nano
-    ESP32's USB keyboard are done; the Bluetooth keyboards and the TVs' own remotes follow.
-    See "Devices that are hard to type into" below.
+- **25.** Devices that are hard to type into: the Android TV variant of the app, the Nano
+    ESP32's USB keyboard, and the Android phone and a Linux computer as a Bluetooth keyboard
+    ([apps.md](apps.md#android-the-bluetooth-keyboard), `cbb keyboard`) are done; the Nano's
+    Bluetooth keyboard and the TVs' own remotes follow. See "Devices that are hard to type
+    into" below.
 - **26.** Watches: the notifications, both watch apps, the watch's admin key and its emergency
     actions are done ([design](design.md#watches)); prompt delivery on the iPhone waits for
     the Apple account.
@@ -287,7 +289,8 @@ One pull request each, smaller ones together:
 3. The Bluetooth keyboard on Android and Linux.
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
    and the serial console.
-5. The iPad build of the iPhone app.
+5. The iPad build of the iPhone app (done in 0.6: CI tests it on an iPad simulator too,
+   and a keyboard's shortcuts work).
 
 The TV variant is part of the one APK of the phone app. For Apple TV a spike with pyatv on a
 real Apple TV with tvOS 26 comes before the Companion protocol in Go; if text input does not

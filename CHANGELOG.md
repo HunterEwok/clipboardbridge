@@ -8,6 +8,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
+  the clipboard, or remote pastes when the user sends them there, into a paired TV,
+  tablet, console or computer, which needs nothing installed. The user picks the device,
+  its layout (English (US) or Russian, the Nano ESP32's key tables) and the speed. A text
+  with characters the layout cannot type is refused, and the app names them. A phone whose
+  maker left the HID Device profile out says it cannot act as a keyboard.
+- `cbb keyboard` makes a Linux computer a Bluetooth LE keyboard (HID over GATT through
+  BlueZ) for a TV, tablet or computer near it: `pair` makes it discoverable for two minutes,
+  `type` types a text there, and `on -pastes` sends remote pastes there. It uses the same
+  layouts as the phone and the Nano.
+- iPad: keyboard shortcuts (Command-R sends or fetches, Command-N adds a device,
+  Command-comma opens Settings, Escape closes a device's details), and CI runs the app's
+  tests on an iPad simulator as well as an iPhone one. The iPad's Settings no longer speak
+  of a paired Apple Watch.
 - The Android app's F-Droid build, `clipboardbridge-fdroid-X.Y.Z.apk` in each release: the
   same app without Google Play services, so without the Wear OS watch, and without its own
   update, which F-Droid does. It builds reproducibly, as F-Droid needs to publish our signed

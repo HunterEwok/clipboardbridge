@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import SwiftUI
+import UIKit
 
 /// Colour and appearance, language, sync away from home, notifications,
 /// about.
@@ -442,7 +443,12 @@ struct NotificationSettings: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("The app notifies of these while it runs, and a paired Apple Watch shows them too. It hears of an event when it next syncs with the group.")
+            // An iPad pairs with no watch.
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Text("The app notifies of these while it runs. It hears of an event when it next syncs with the group.")
+            } else {
+                Text("The app notifies of these while it runs, and a paired Apple Watch shows them too. It hears of an event when it next syncs with the group.")
+            }
         }
         .listRowBackground(palette.surface)
     }
