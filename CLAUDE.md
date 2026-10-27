@@ -81,7 +81,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   in Go tests.
 - `lite/`: the lite member in Rust (its command is `cbb` too): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
-  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, CPace under `src/third_party`, the
+  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, `keyboard` (the layouts' keys), CPace under `src/third_party`, the
   interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
@@ -93,7 +93,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
   until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`
-  (settings in the flash partition `cbb` of `partitions.csv`), `net.rs` (Wi-Fi, embassy-net), `pair.rs` (the pairing task around `lite/embassy`);
+  (settings in the flash partition `cbb` of `partitions.csv`), `net.rs` (Wi-Fi, embassy-net), `pair.rs` (the pairing task around `lite/embassy`), `usb.rs` (the USB port as a keyboard and the console's serial port, on OTG), `out.rs` (where the console's lines go);
   `qemu-test.sh` types on the console and runs the self-test in Espressif's QEMU (the
   `qemu` feature: console on UART0, no Wi-Fi, without esp-hal's init and with a fixed
   pseudo-random generator, never for a real chip).

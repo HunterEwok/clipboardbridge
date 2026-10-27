@@ -9,8 +9,10 @@ and takes an address by DHCP, joins a group by the phone, and runs a self-test o
 protocol core: it makes two keys
 and self-signed certificates with the chip's true random number generator (fed by the
 ADC's noise), runs a pairing TLS 1.3 handshake between them in memory, passes a message
-and checks that both ends export the same key. Syncing (which needs the time of day, from
-SNTP) and typing over USB come next. It is not yet run on a real board.
+and checks that both ends export the same key. Its USB port can be a keyboard that types a
+text on the computer, TV or console it is plugged into (see "The USB keyboard" below).
+Syncing (which needs the time of day, from SNTP) comes next, and with it remote paste
+through the keyboard. It is not yet run on a real board.
 
 ## Build and flash
 
@@ -70,6 +72,11 @@ cbb> status
 | `leave` | forgets the group; remove the board in the app too, so the group revokes it |
 | `debug on`, `debug off` | shows the details of errors under their message, or not; saved in flash. Without it a debug build shows them and a release build does not |
 | `selftest` | runs the TLS 1.3 self-test |
+| `usb keyboard`, `usb console` | makes the USB port a keyboard with the console beside it, or the console again; saved, and the board restarts |
+| `layout [us\|ru]` | the layout active on the host the keyboard types on (default `us`); saved |
+| `rate [N]` | how many characters a second the keyboard types, 5 to 60 (default 20); saved |
+| `type TEXT` | types TEXT on the USB keyboard |
+| `flash` | restarts into the ROM's download mode, for espflash |
 
 The board joins WPA2 networks (and WPA2/WPA3 mixed ones), or open ones with an empty password; it joins
 again after the connection drops.
@@ -88,6 +95,30 @@ gives it, as a lite member without CA keys, and `status` shows the group.
 The board announces itself as a Linux lite member: the pairing knows only Linux and macOS
 as systems so far. A QR code drawn on the console, so the phone can scan the terminal, may
 follow.
+
+## The USB keyboard
+
+`usb keyboard` makes the board's USB port a USB device of two functions on the chip's OTG
+controller: a boot keyboard (it works in a BIOS, a UEFI setup, a disk-encryption prompt
+and on TVs and consoles that take a USB keyboard) and a serial port (CDC-ACM) for the
+console. The Nano ESP32's USB-C port has the chip's only USB PHY, so the USB serial of the
+console mode (with espflash's automatic reset) is gone in keyboard mode: open the new
+serial port in any terminal for the console, and type `flash` there before flashing.
+If the console is unreachable, short B1 to GND while pressing reset: the board then starts
+in download mode. A panic's message still goes to the USB serial, so in keyboard mode it is
+lost.
+
+`type TEXT` types TEXT with the board's `layout`, which must be the layout active on the
+host: a keyboard sends the position of a key, and the host's layout makes it a character.
+`us` types every printable ASCII character; `ru` the Russian letters, the digits and the
+punctuation of the Russian layout. A text with a character the layout has no key for is
+refused, and the board names those characters; it never types something else in their
+place. A new line presses Enter and a tab presses Tab. Each character is a key down and then
+every key up, `rate` characters a second, since some TVs drop keys that come faster. The
+tables live in the protocol core (`cbb_core::keyboard`), for the phones' keyboards too.
+
+The USB IDs are Espressif's vendor ID with the product ID its TinyUSB stack gives a device of
+a serial port and a HID function (303a:4005).
 
 ## Settings in flash
 
@@ -109,7 +140,7 @@ QEMU=path/to/qemu-system-xtensa ESPFLASH=path/to/espflash ./qemu-test.sh
 The script builds with the `qemu` feature, writes a flash image with the partition table,
 and `qemu-test.py` boots it in [Espressif's QEMU](https://github.com/espressif/qemu)
 (machine `esp32s3`) three times, typing on the console over UART0: it checks that `join`
-says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, checks that both are still there after a restart,
+says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, sets the keyboard's layout and rate, checks that `type` refuses what the layout cannot type and that the build has no USB keyboard, checks that all of it is still there after a restart,
 forgets the network and checks that it stays forgotten.
 
 That build has no Wi-Fi (QEMU does not emulate the S3's radio) and skips esp-hal's init,

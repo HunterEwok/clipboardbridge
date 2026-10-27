@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 
 use cbb_core::error::{Context, Error, Result};
 use cbb_core::identity::Identity;
+use cbb_core::keyboard::Layout;
 use cbb_core::store::{self, Fields};
 use esp_bootloader_esp_idf::partitions::{self, PartitionEntry, RawPartitionType};
 use esp_hal::Blocking;
@@ -33,7 +34,21 @@ pub mod tag {
     pub const DEBUG: u8 = 3;
     /// The member's identity in the group (cbb_core::identity's file form).
     pub const IDENTITY: u8 = 4;
+    /// The USB port is the keyboard and the console's serial port (1), or
+    /// the console on the USB serial (0 or unset).
+    pub const USB_KEYBOARD: u8 = 5;
+    /// The layout active on the host the keyboard types on, by its name
+    /// (cbb_core::keyboard::Layout); unset is us.
+    pub const LAYOUT: u8 = 6;
+    /// The characters the keyboard types a second; unset is RATE.
+    pub const RATE: u8 = 7;
 }
+
+/// The keyboard's characters a second unless the user sets another: some
+/// TVs drop keys that come faster.
+pub const RATE: u8 = 20;
+/// The rates the console takes.
+pub const RATES: core::ops::RangeInclusive<u8> = 5..=60;
 
 /// A Wi-Fi network to join.
 #[derive(Clone)]
@@ -80,6 +95,28 @@ impl Store {
         let ssid = String::from_utf8(self.fields.get(tag::WIFI_SSID)?.to_vec()).ok()?;
         let password = String::from_utf8(self.fields.get(tag::WIFI_PASSWORD).unwrap_or_default().to_vec()).ok()?;
         Some(Wifi { ssid, password })
+    }
+
+    /// Whether the USB port is the keyboard.
+    pub fn usb_keyboard(&self) -> bool {
+        self.fields.get(tag::USB_KEYBOARD) == Some(&[1])
+    }
+
+    /// The layout active on the host the keyboard types on.
+    pub fn layout(&self) -> Layout {
+        self.fields
+            .get(tag::LAYOUT)
+            .and_then(|n| core::str::from_utf8(n).ok())
+            .and_then(Layout::from_name)
+            .unwrap_or(Layout::Us)
+    }
+
+    /// The keyboard's characters a second.
+    pub fn rate(&self) -> u8 {
+        match self.fields.get(tag::RATE) {
+            Some(&[r]) if RATES.contains(&r) => r,
+            _ => RATE,
+        }
     }
 
     /// The identity in the group, if the board joined one.
