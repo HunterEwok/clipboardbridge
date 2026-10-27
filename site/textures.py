@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Makes the site's two textures in static/: the old polished walnut of the
-# boards' frames (wood-h.jpg, its grain along the rails, and wood-v.jpg,
-# the same turned upright) and the dark wool felt the pages lie on
-# (felt.jpg, a tile that wraps without seams). The seeds are fixed, so the
-# files come out the same each time. Needs NumPy and Pillow.
+# Makes the site's textures in static/, for each theme: the polished wood of
+# the boards' frames (old walnut for the dark theme, pale oak for the light
+# one; -h.jpg with its grain along the rails, -v.jpg the same turned
+# upright) and the wool felt the pages lie on (felt.jpg and felt-light.jpg,
+# tiles that wrap without seams). The seeds are fixed, so the files come out
+# the same each time. Needs NumPy and Pillow.
 import os
 import numpy as np
 from PIL import Image
@@ -12,7 +13,7 @@ from PIL import Image
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
-def wood():
+def wood(name, dark, mid, light):
     rng = np.random.default_rng(11)
     W, H = 1800, 120
 
@@ -30,14 +31,14 @@ def wood():
     figure = noise(9, 2)  # broad light and dark patches
     v = 0.30 * rings + 0.30 * fib + 0.12 * fib2 + 0.28 * figure - 0.10 * pores
     v = (v - v.min()) / (v.max() - v.min())
-    dark, mid, light = np.array([38, 22, 12]), np.array([86, 52, 27]), np.array([138, 92, 52])
+    dark, mid, light = np.array(dark), np.array(mid), np.array(light)
     c = np.where(v[..., None] < .5, dark + (mid - dark) * (v[..., None] / .5), mid + (light - mid) * ((v[..., None] - .5) / .5))
     img = Image.fromarray(np.clip(c, 0, 255).astype(np.uint8))
-    img.save(os.path.join(STATIC, "wood-h.jpg"), quality=82)
-    img.rotate(90, expand=True).save(os.path.join(STATIC, "wood-v.jpg"), quality=82)
+    img.save(os.path.join(STATIC, name + "-h.jpg"), quality=82)
+    img.rotate(90, expand=True).save(os.path.join(STATIC, name + "-v.jpg"), quality=82)
 
 
-def felt():
+def felt(name, base, amount):
     # Dense short fibres at every angle, a fine nap and a faint mottling,
     # filtered in the frequency domain so that the tile wraps.
     N = 512
@@ -63,11 +64,14 @@ def felt():
     fib = np.real(np.fft.ifft2(np.fft.fft2(fib) * np.exp(-(r ** 2) / (2 * .25 ** 2))))
     fib = (fib - fib.mean()) / fib.std()
     v = np.tanh((.55 * fine + .35 * mid + .45 * mott + .35 * fib) / 2.2)  # soft limits, no hard specks
-    base = np.array([13, 31, 38], float)  # the site's deep teal
-    img = base[None, None, :] * (1 + .42 * v[..., None])
-    Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(os.path.join(STATIC, "felt.jpg"), quality=88)
+    img = np.array(base, float)[None, None, :] * (1 + amount * v[..., None])
+    Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(os.path.join(STATIC, name + ".jpg"), quality=88)
 
 
 if __name__ == "__main__":
-    wood()
-    felt()
+    # the dark theme: old walnut on the site's deep teal
+    wood("wood", [38, 22, 12], [86, 52, 27], [138, 92, 52])
+    felt("felt", [13, 31, 38], .42)
+    # the light theme: pale waxed oak on a soft sand-coloured cloth
+    wood("oak", [150, 112, 70], [196, 156, 104], [228, 196, 146])
+    felt("felt-light", [214, 205, 186], .07)

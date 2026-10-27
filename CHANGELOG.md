@@ -31,18 +31,23 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computer at its heart and phones only, and says plainly why a computer is simpler. "/"
   picks the visitor's language by the language they picked before, their country (a local
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
-  The start page leads with what it does, then the platforms, a comparison with sending
-  yourself a message, three steps to start, uses and questions; every page ends with a next
-  step, and a phone keeps a "Download" button at the bottom of the screen. Short CSS-only
-  motion, off for those who ask for less motion; no scripts. Error pages (404, 5xx) in the
-  visitor's language, Open Graph, canonical and hreflang links, `sitemap.xml`, `robots.txt`
-  and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
+  The start page leads with "One clipboard to rule them all" and what it does, then the
+  platforms, a comparison with sending yourself a message and one with Apple's Universal
+  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet (from their makers' pages,
+  dated), three steps to start with a board each, uses and questions; every page ends with a
+  next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
+  light theme, following the system or the reader's choice in the header; the download page
+  puts the reader's system first, and every command has a copy button. Short CSS-only
+  motion (the hero's chalk is drawn in), off for those who ask for less motion; one small
+  script of its own, and every page works without it. A link's picture in each language; a
+  print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
+  hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
   HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
   by GoatCounter on the same server, without cookies and without storing addresses. Until the
   launch the site is closed: everyone sees "the website opens soon", and a secret link opens
   the whole site in the owner's browsers. CI validates its HTML and runs Lighthouse on it;
   the download page takes the latest version from this changelog; TLS 1.2 and 1.3 only,
-  pre-compressed files, a long-cached stylesheet, `security.txt` and a web manifest.
+  pre-compressed files, a long-cached stylesheet and script, preloaded fonts, `security.txt` and a web manifest.
   The design is art deco: gold lines and glass panes on dark wool felt, like the cloth of a
   billiard table. The pictures (a computer and a phone joined through the key, and each kind
   of group as devices around its heart) and the tables are drawn in chalk on black school
@@ -246,9 +251,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A fetch of an image or a file could wait for ever when the peer dropped its ranges, as
+  after it answered that it did not hold the part yet: a fetch that gets nothing for 15
+  seconds now gives up and asks again, a fetch that ends cancels the ranges still asked
+  for, and a chunk that comes after its fetch ended no longer blocks the connection.
 - A phone's fetch of an image or a file no longer waits for ever on a device that stopped
   sending: after 15 seconds without any of the part it gives up, and on "missing" or a stall
-  it cancels what it asked for, as the Go service does.
+  it cancels what it asked for, as computers now do.
 - The iPhone's member key and its certificate are readable while the phone is locked, once
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
