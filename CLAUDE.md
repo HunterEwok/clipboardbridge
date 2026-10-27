@@ -5,7 +5,8 @@ the home network. A Go service (`cmd/cbb`, `internal/...`) runs on the computers
 app (`apps/ios`) is in development, and in its groups the phone is the root of trust.
 Read [README.md](README.md), [docs/design.md](docs/design.md),
 [docs/protocol.md](docs/protocol.md) (the wire format, kept in step with the code) and
-[docs/apps.md](docs/apps.md) before larger changes.
+[docs/apps.md](docs/apps.md) before larger changes; [docs/README.md](docs/README.md) maps every
+page by its reader, and CONTRIBUTING's "Documentation" says where a change is written down.
 
 ## Working with the owner
 

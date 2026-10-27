@@ -53,6 +53,15 @@ The maintainer follows these rules; they are written down to keep the history co
   release and checks it against `SHA256SUMS`, an `install` for an unpacked archive, and an
   `uninstall` that the install leaves on the machine. `get.sh` serves Linux and macOS,
   `get.ps1` Windows; CI runs each of them.
+- **Documentation.** Each page says at the top who it is for and sits in its reader's part
+  of [docs/README.md](docs/README.md), which `repocheck` checks: users' guides in plain
+  words (`docs/guide`), administrators' pages (`docs/admin`), exact reference without the
+  reasons (`docs/reference`), and the engineers' pages. A new command, flag or `CBB_*`
+  variable goes into the reference in the same change. A change to the wire format changes
+  [the protocol](docs/protocol.md), which is normative (MUST, SHOULD), its registries
+  (section 19), the interop vectors and every implementation together
+  ([testing](docs/testing.md)). A design that is built moves from the roadmap into the
+  design.
 - **No secrets.** No tokens, keys, real addresses or device names in the repository.
   GitHub secret scanning with push protection is enabled.
 
