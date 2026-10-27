@@ -37,6 +37,16 @@ public protocol RecordStore: AnyObject, Sendable {
     func mayHost(_ device: String, chain: [Data]) -> Bool
 }
 
+/// Keeps the group's server credentials for a node (docs/protocol.md,
+/// section 18), which it sends each peer after the hello and passes on.
+public protocol CredentialKeeper: AnyObject, Sendable {
+    /// Every credential kept.
+    var all: [ServerCredentials.Credential] { get }
+    /// Takes credentials a peer sent and returns those that were new and
+    /// valid.
+    func add(_ credentials: [ServerCredentials.Credential]) -> [ServerCredentials.Credential]
+}
+
 public extension RecordStore {
     func refused(chain: [Data]) -> String? { nil }
     func mayHost(_ device: String, chain: [Data]) -> Bool { true }
@@ -80,6 +90,8 @@ public actor MemberNode {
     /// The images and files this phone holds whole, which it serves to its
     /// peers (section 4, "Content"); the hellos say so. nil serves none.
     private let content: ContentStore?
+    /// The group's server credentials; nil keeps none and passes none on.
+    private let credentials: CredentialKeeper?
     /// This phone's sync mode, which the hellos state; nil for a phone
     /// without one, which shares.
     public private(set) var mode: String?
@@ -142,12 +154,13 @@ public actor MemberNode {
                 mode: String? = nil,
                 onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil,
                 onEvidence: @escaping @Sendable (String?, [Data], Member.Evidence) -> Void = { _, _, _ in },
-                content: ContentStore? = nil) {
+                content: ContentStore? = nil,
+                credentials: CredentialKeeper? = nil) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
         (self.tunnelKey, self.tunnelPSK, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, tunnelPSK, onTunnel, hub, os, device?.cleaned)
         (self.hubShare, self.onHubs, self.mode, self.onCommand, self.onEvidence) = (hubShare, onHubs, mode, onCommand, onEvidence)
-        self.content = content
+        (self.content, self.credentials) = (content, credentials)
     }
 
     /// Replaces the sync mode that the next connections' hellos state.
@@ -356,6 +369,7 @@ public actor MemberNode {
                 if let hubShare, let p = c.peer, !t.peerChain.isEmpty, let share = hubShare(p, t.peerChain) {
                     c.enqueue(.hubs(share))
                 }
+                if let all = credentials?.all, !all.isEmpty { c.enqueue(.credentials(all)) }
                 continue
             }
             switch m {
@@ -371,6 +385,8 @@ public actor MemberNode {
                 if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onTunnel(p, o) }
             case let .hubs(share):
                 if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onHubs(p, t.peerChain, share) }
+            case let .credentials(cs) where !cs.isEmpty && cs.count <= ServerCredentials.maxCredentials:
+                if let fresh = credentials?.add(cs), !fresh.isEmpty { sendCredentials(fresh, except: id) }
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
                     let fresh = store.add(rs)
@@ -436,6 +452,17 @@ public actor MemberNode {
             }
         }
         ask()
+        // A peer that stops sending ends the fetch, as Go's fetchStall.
+        let stall = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if f.idle(longer: Self.fetchStall) {
+                    f.end(Failure.refused("the device sent nothing of the part for 15 seconds"))
+                    return
+                }
+            }
+        }
+        defer { stall.cancel() }
         while at < size {
             if Task.isCancelled {
                 cancel()
@@ -444,9 +471,12 @@ public actor MemberNode {
             let ch: Member.Chunk
             do {
                 ch = try await withTaskCancellationHandler { try await f.next() } onCancel: { f.end(CancellationError()) }
-            } catch is CancellationError {
+            } catch {
+                // Missing, stalled or cancelled: the ranges asked for after
+                // it may still be served, and would only cross the next
+                // fetch.
                 cancel()
-                throw CancellationError()
+                throw error
             }
             guard !ch.data.isEmpty, ch.offset + Int64(ch.data.count) <= size else {
                 cancel()
@@ -468,6 +498,8 @@ public actor MemberNode {
 
     /// The most bytes a fetch keeps asked for ahead of what it has.
     static let fetchAhead: Int64 = 4 << 20
+    /// How long a fetch waits for the next piece before it gives up.
+    static let fetchStall: TimeInterval = 15
     /// The most gets a peer may have waiting on one connection.
     static let maxGets = 64
     /// How many chunks a connection holds ready to write.
@@ -532,9 +564,11 @@ public actor MemberNode {
         private var chunks: [Member.Chunk] = []
         private var ended: Error?
         private var waiter: CheckedContinuation<Void, Never>?
+        private var last = Date()
 
         func push(_ c: Member.Chunk) {
             wake {
+                last = Date()
                 // The fetch asks for at most fetchAhead; a peer that sends
                 // much more ends it.
                 if chunks.count > Int(MemberNode.fetchAhead) / Member.chunkSize * 2 {
@@ -546,6 +580,9 @@ public actor MemberNode {
         }
 
         func end(_ e: Error) { wake { ended = ended ?? e } }
+
+        /// Whether no chunk came for longer than t.
+        func idle(longer t: TimeInterval) -> Bool { lock.withLock { Date().timeIntervalSince(last) > t } }
 
         private func wake(_ f: () -> Void) {
             let w: CheckedContinuation<Void, Never>? = lock.withLock {
@@ -624,6 +661,14 @@ public actor MemberNode {
     private func dropRefused() {
         guard let store = records else { return }
         for c in conns.values where store.refused(chain: c.transport.peerChain) != nil { c.goodbye() }
+    }
+
+    /// Sends server credentials signed on this phone to every connected
+    /// member.
+    public func sendCredentials(_ cs: [ServerCredentials.Credential]) { sendCredentials(cs, except: nil) }
+
+    private func sendCredentials(_ cs: [ServerCredentials.Credential], except: ObjectIdentifier?) {
+        for (id, c) in conns where id != except && c.peerRole != nil { c.enqueue(.credentials(cs)) }
     }
 
     private func sendRecords(_ rs: [Member.Record], except: ObjectIdentifier?) {

@@ -165,7 +165,7 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 	case run == nil || run.hub == nil:
 		err = fmt.Errorf("the hub's tunnel is not running: %s", s.tunErr)
 	default:
-		in.HubKey, in.Endpoints, in.Obfuscation = st.Key.Public(), st.HubEndpoints(), st.Obfuscation
+		in.HubKey, in.Endpoints, in.Obfuscation = st.ServingKey().Public(), st.HubEndpoints(), st.Obfuscation
 		if s.guests == nil {
 			s.guests = map[netip.Addr]*guest{}
 		}

@@ -472,6 +472,9 @@ them, by hash, and gets them in binary frames. The Go code is `internal/node/con
   in order for each part; one at an offset the fetch does not wait for is left from a fetch
   that was cancelled and is dropped. The receiver checks the whole part against its
   `sha256` before it uses it, and continues from what it has after a reconnect.
+- A fetch that ends before the part is whole, on a `missing`, its own cancel, or 15 seconds
+  without a chunk, sends the cancel (`length` 0), so the ranges it asked for after that do not
+  cross the next fetch; the member then asks again or asks another member.
 - The receiver's limit decides: by default 100 MiB a copy at home and 25 MiB from a member
   reached through the group's tunnel (`cbb config max-copy` and `max-copy-away`, 1 MiB to
   1 GiB). A copy over it is not fetched, and `cbb status` says so.
@@ -1417,7 +1420,7 @@ and then syncs at home only ("Through the tunnel" below).
   rest of this section's state; on a Linux computer with a TPM the private key is sealed by
   it (`key_tpm` in place of `key`, section 17). The lite member keeps its own `tunnel.json` there: `v` (1),
   `group` (the group tag), `key` (its private key, base64), `psk` (the preshared key it chose)
-  and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`); it reads the single
+  and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`, `next`); it reads the single
   `to_hub` of earlier versions into `hubs`. Every computer and the lite member keep
   their keys in files, so `cbb global on` asks for the user's consent there (`consent` in the
   request).
@@ -1441,6 +1444,7 @@ and then syncs at home only ("Through the tunnel" below).
 | `vless` | object or absent | the way to the hub's forwarder over VLESS ("VLESS" below); with it, the only way to the hub |
 | `hub` | string or absent | in an offer one hub passes on for another: that hub's device ID ("Several hubs", "Moving the hub" below) |
 | `moved` | bool or absent | `true` when the sender is no hub any more and hands its clients over to `hub` |
+| `next_key` | bytes or absent | the key the hub serves with in the next period, 32 bytes ("The hub's key" below) |
 
 - The hub keeps one preshared key per device: the one the device's hello offers, so every
   hub of the group uses the same. From a member without `tunnel_psk` it keeps the one it
@@ -1543,6 +1547,31 @@ later (D-65 in [design.md](design.md)).
 - A phone that is the hub shares its clients, takes the others' and passes their offers on,
   but does not yet stop serving for a hub above it, nor become another hub's client; as
   phones come first in the order, the computers' hubs give way to it.
+
+### The hub's key
+
+A hub serves its clients with a WireGuard key of its own for each period of the group's
+server credentials (section 18), apart from the key its hello offers, so that a server on the
+way, such as the forwarder, cannot link the group's traffic from one period to the next by
+the hub's key. Implemented in Go (`tunnel.State.Rotate`, `internal/service/tunnel.go`).
+
+- When a hub sees a period it has no key for, it makes the next key and gives its public key
+  as `next_key` in its offers from then on, to every connected client at once and to the
+  others when they connect. Three days later it serves with that key in place of the old
+  one: it starts its tunnel again and registers again with its forwarder (section 13). Until
+  the first period, and in a group without server credentials, it serves with the key its
+  hello offers.
+- `tunnel.json` keeps the key the hub serves with (`serving`, or `serving_tpm` when the TPM
+  seals it, and `serving_for`, the period's tag) and the next one (`next`, `next_tpm`,
+  `next_for`, and `next_at_ms`, when the hub moves on to it); a client keeps a hub's
+  `next_key` as `next` in its offer.
+- A client tries a hub with its key first and then with `next` when the offer has one, so a
+  client that was away while the hub moved on still reaches it; the offer it gets then
+  replaces the one it kept. A client that was away for the whole three days and never got
+  `next` reaches the hub again at home.
+- A hub refuses a client or another hub's offer with any of its own keys. The lite member
+  tries `next_key` as Go does (`lite/src/tunnel.rs`, `hubs_to_try`); the phone kits do not
+  yet: after the hub moves on, a phone reaches it again at home.
 
 ### Obfuscation
 
@@ -1713,49 +1742,51 @@ not built.
 
 ### What the forwarder learns
 
-Accepted by design ([design.md](design.md), "The forwarder"): the group tag and group CA,
-the hub's WireGuard public key, the group's obfuscation settings and VLESS user ID when set,
-the addresses of the hub and its clients, and the timing and sizes of their packets. A hub
-that registers with a credential (section 18) shows besides a certificate of its member key
-that names no device, and the group's hubs' credentials: key hashes, padded, versions, an
-expiry, and after a handover the new roots. A hub that registers with records shows instead
-its member certificate (device ID, validity, admin CA), the group's root certificates and
-its authority records, which name the root's and the admins' devices, with their names and
-systems, and the removals. It never sees a member key, a text, the other devices' records or
-names, or which client address is which device. On disk it keeps only a keyed hash of each
-group's tag with the version of its newest credential and a hash of its root ("What it
-keeps").
+Accepted by design ([design.md](design.md), "The forwarder"): the hub's WireGuard public
+key, the group's obfuscation settings and VLESS user ID when set, the addresses of the hub
+and its clients, and the timing and sizes of their packets. A hub that registers with a
+credential (section 18) shows besides only the period's tag, a certificate of its server key
+that names neither a device nor a group, and the period's hubs' credential: hashes of
+server keys, padded, a version, an expiry and the period key; all of it new each period, so
+the forwarder cannot tell one month of a group from the next. A hub that registers with
+records shows instead the group tag, its member certificate (device ID, validity, admin
+CA), the group's root certificates and its authority records, which name the root's and the
+admins' devices, with their names and systems, and the removals. It never sees a member key,
+a text, the other devices' records or names, or which client address is which device. On
+disk it keeps only a keyed hash of each period's tag with the version of its newest
+credential and a hash of its period key ("What it keeps").
 
 ### Registration
 
 1. The hub connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-forward/1` and no
-   server name. It accepts only the pinned key. A hub whose group's hubs' credential lists
-   its member key (section 18) presents a certificate of that key, self-signed, with the
-   subject `clipboardbridge hub`, no names, key usage digitalSignature and client use, then
-   the group CA. Any other hub presents its member certificate, its admin CA if it has one,
-   and the group's roots (the group CA, then any `root` records' CAs).
+   server name. It accepts only the pinned key. A hub whose period's hubs' credential lists
+   its server key (section 18) presents only a certificate of that key, self-signed, with
+   the subject `clipboardbridge server`, no names, key usage digitalSignature and client
+   use. Any other hub presents its member certificate, its admin CA if it has one, and the
+   group's roots (the group CA, then any `root` records' CAs).
 2. The forwarder takes the hub's certificate as a member certificate when it names a device
    (section 1), and verifies it, for client authentication, to a self-signed CA among the
-   presented certificates. Otherwise the second certificate must be a self-signed CA, the
-   group CA, and the hub must register with a credential. Either way that CA's tag names the
-   group (section 1). It knows no group beforehand: any group may register, but only its
+   presented certificates, whose tag names the group (section 1). Otherwise it must be the
+   only certificate, not a CA, and the hub must register with a credential, whose period's
+   tag names the group. It knows no group beforehand: any group may register, but only its
    hubs, its root or an admin can (step 3).
 3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
    `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string, "credentials":
    [credential], "admin": bytes, "admin_sig": bytes, "records": [record]}`, at most 1 MiB
-   with at most 1024 records and 17 credentials:
+   with at most 1024 records and 3 credentials:
    - `key` is its WireGuard public key, and `proof` is HMAC-SHA256 under X25519(the hub's
      WireGuard private key, `e`) of 32 bytes exported from the TLS session with the label
      `clipboardbridge forwarder key` and no context. So the hub proves it holds the key, on
      this connection only.
-   - A hub with a credential sends `credentials`, the chain from the group CA to the current
-     root (section 18, "The chain"), and neither `admin`, `admin_sig` nor `records`. The
-     forwarder checks the chain, that its last credential has not expired, that it lists the
-     key of the hub's certificate among the hubs, and that it is no older than what the
-     forwarder keeps for the group ("What it keeps"). It then keeps the last credential's
-     version and root for the group.
-   - Any other hub sends `admin`, `admin_sig` and `records`, and the forwarder refuses it
-     for a group that registered with a credential before.
+   - A hub with a credential sends `credentials`, the period's hubs' credential alone, and
+     neither `admin`, `admin_sig` nor `records`. The forwarder checks it (section 18, "What
+     a server checks"): it has not expired, lists the key of the hub's certificate among
+     the hubs, and the period key that signed it is the one the forwarder first saw for
+     its tag, at a version no older than the one it keeps ("What it keeps"). It then keeps
+     the version for the period.
+   - Any other hub sends `admin`, `admin_sig` and `records`. The forwarder keeps the
+     groups that registered with a credential apart from these, so a period's tag never
+     stands for a group CA's.
    - `admin_sig` is an ECDSA signature (ASN.1) of SHA-256 over 32 bytes exported with the label
      `clipboardbridge forwarder admin` followed by `key`. The key of the group's root or of
      the hub's admin CA signs it. `admin` is that admin CA (DER), left out for a root. The
@@ -1787,9 +1818,9 @@ keeps").
 4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
    and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
    and closes: the proof is wrong, the credentials do not verify, have expired, do not list
-   the hub or are older than the forwarder saw, no root or admin signed the registration,
-   the records remove or freeze the hub, the group registers with a credential and the hub
-   came with records, the obfuscation settings are outside their bounds,
+   the hub, are older than the forwarder saw or come from another period key than the one it
+   saw first for the tag, no root or admin signed the registration, the records remove or
+   freeze the hub, the obfuscation settings are outside their bounds,
    another group registered that key or that VLESS user ID, the forwarder has no VLESS
    and the hub asked for it, or the forwarder is full. To a hub that asked for VLESS the
    answer adds `"vless": {"port": number, "public_key": bytes, "short_id": string,
@@ -1799,8 +1830,8 @@ keeps").
 5. The registration lasts while the connection does; the hub sends nothing more on it. The
    forwarder sends `{"seen": "ip:port"}` whenever it learns a new address of the hub's
    WireGuard port. The hub registers again whenever the connection breaks, with a backoff of
-   1 s doubling to 60 s, and at once when the group's hubs' credential changes, so that the
-   forwarder learns the new version.
+   1 s doubling to 60 s, and at once when the period's hubs' credential changes, so that the
+   forwarder learns the new version, and with each new period under its new tag.
 
 ### Hellos
 
@@ -1879,15 +1910,14 @@ whole budget, so one still passes now and then on a forwarder with more groups t
 ### What it keeps
 
 Its own key file, and a state file (`cbb forward -state`, `forward-state.json` next to the
-key by default, `none` for memory only): for each group that registered with a credential,
-under HMAC-SHA256 of the group tag, the version of the group's newest hubs' credential and
-HMAC-SHA256 of the tag and the SHA-256 of its root's SubjectPublicKeyInfo, with a counter for
-the bound of 100,000 groups. The HMAC key is HMAC-SHA256 under the forwarder's private key
-(PKCS #8) of `clipboardbridge forwarder state`, so the file names no group by itself. A
-registration with a credential is refused when its last version is below the one kept, or
-when no credential in its chain comes from the root kept with a version no lower than the
-one kept: so after a handover the old root's credentials and another heir's link count for
-nothing. At start it deletes the files earlier versions kept, one per group with its roots
+key by default, `none` for memory only): for each period that registered with a credential,
+under HMAC-SHA256 of the period's tag, the version of its newest hubs' credential and
+HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter for the bound of
+100,000 periods, past which the one that registered least recently goes. The HMAC key is
+HMAC-SHA256 under the forwarder's private key (PKCS #8) of `clipboardbridge forwarder
+state`, so the file names no group by itself, and a period lasts about a month, so the file
+cannot link one month of a group to the next. A registration with a credential is refused
+when another period key signed it or its version is below the one kept. At start it deletes the files earlier versions kept, one per group with its roots
 and removals (`-records`, `groups` next to the key by default). Groups, addresses, sessions
 and the records of the hubs that register with them live in memory while the connections
 last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts each minute.
@@ -1916,25 +1946,37 @@ runs end to end between the two devices.
 ### Registration
 
 1. The device connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-relay/1` and no
-   server name. It accepts only the pinned key. It presents its member certificate, its
-   admin CA if it has one, and the group's roots (the group CA, then any `root` records'
-   CAs).
-2. The relay checks that the leaf names a device (section 1) and verifies it, for client
-   authentication, to one of the presented self-signed CAs whose tag is among the groups it
-   serves. That tag names the group. A group that took a new root (`root` records, section 10)
-   is served under each of its tags the relay is given.
+   server name. It accepts only the pinned key. A device whose period's members' credential
+   lists its server key (section 18) presents only the certificate of that key, as a hub to
+   its forwarder (section 13, step 1). Any other presents its member certificate, its admin
+   CA if it has one, and the group's roots (the group CA, then any `root` records' CAs).
+2. With a member certificate, the relay checks that the leaf names a device (section 1) and
+   verifies it, for client authentication, to one of the presented self-signed CAs whose
+   tag is among the groups it serves. That tag names the group. A group that took a new root
+   (`root` records, section 10) is served under each of its tags the relay is given.
 3. The key proof is the forwarder's (section 13, step 3) with the label
-   `clipboardbridge relay key`: `{"e": bytes}` from the relay, `{"key": bytes, "proof":
-   bytes, "records": [record]}` from the device, with the device's WireGuard key. `records`
-   are the group's authority records, as for the forwarder. The relay keeps them for the
-   group in memory while it runs. It refuses a device whose member certificate they revoke,
-   and drops a registered device as soon as a later registration's records revoke it.
+   `clipboardbridge relay key`: `{"e": bytes, "roots": bool}` from the relay, `{"key":
+   bytes, "proof": bytes, "records": [record], "credentials": [credential], "roots":
+   [bytes]}` from the device, with the device's WireGuard key.
+   - With a member certificate, `records` are the group's authority records, as for the
+     forwarder. The relay keeps them for the group in memory while it runs. It refuses a
+     device whose member certificate they revoke, and drops a registered device as soon as
+     a later registration's records revoke it.
+   - With a server certificate, `credentials` are the period's hubs' and members'
+     credentials, and the relay checks them (section 18, "What a server checks"); the
+     period's tag names the group, kept apart from the tags of group CAs. A relay that
+     serves a fixed list of groups sets `roots` in its challenge, and the device adds the
+     period credential to `credentials` and the group's roots, DER, the group CA first, as
+     `roots`; an open relay sets no `roots` and never sees them. The device uses a fresh
+     WireGuard key for each such registration, so the key links no two of them.
 4. The relay answers `{"key": bytes, "psk": bytes, "addr": string}`: its own WireGuard
    public key, a new preshared key for this registration, and the device's tunnel address,
    which the relay chooses at random in fd00:cbb::/32 (not from the device ID, so no group
    can take another's address). Or it answers `{"error": string}` and closes: the proof is
-   wrong, the records remove the device, another device registered that WireGuard key, or
-   the group has 64 devices there.
+   wrong, the records remove the device, the credentials do not verify, have expired, do not
+   list the device, are older than the relay saw or come from another period key than the
+   one it saw first for the tag, another device registered that WireGuard key, or the group
+   has 64 devices there.
    A device has one registration: a new one replaces the old, whose connection closes.
 5. The registration lasts while the connection does; neither side sends anything more on
    it. The relay keeps the device as a WireGuard peer, with its key, the preshared key and
@@ -1948,30 +1990,34 @@ The device runs a WireGuard client with the relay as its only peer, at the relay
 tunnel address `fd00:cbb::1`, with a keepalive every 25 s. The relay listens only on TCP
 8764 at that address, and knows each connection's device by its tunnel address. Each
 connection starts with one JSON line from the device, a request; the relay answers with
-lines of its own, notes:
+lines of its own, notes. A device's **name** there is its device ID when it registered with
+its member certificate, and its **pseudonym** when it registered with credentials: the hash
+of its server key in hex, 64 characters, which the other members map to its device through
+its server credential (section 18), and the relay to nothing. So the relay holds no device
+ID, and a device's pseudonym changes with each period.
 
 | Request | Meaning |
 |---------|---------|
 | `{"watch": true}` | keep this connection for the notes; a new watch replaces the old |
-| `{"dial": "<device ID>"}` | join this connection to that device's |
+| `{"dial": "<name>"}` | join this connection to that device's |
 | `{"answer": "<ticket>"}` | answer the call with that ticket |
 
 | Note | Meaning |
 |------|---------|
-| `{"online": [...]}` | on the watch: the device IDs of the group's other devices on the relay, sorted, sent at once and whenever they change |
-| `{"call": "<device ID>", "ticket": "<hex>"}` | on the watch: that device dials this one; the ticket is 16 random bytes in hex |
+| `{"online": [...]}` | on the watch: the names of the group's other devices on the relay, sorted, sent at once and whenever they change |
+| `{"call": "<name>", "ticket": "<hex>"}` | on the watch: that device dials this one; the ticket is 16 random bytes in hex |
 | `{"ok": true}` | on a dial and on its answer: the two connections are joined; the member protocol follows on both at once |
 | `{"error": string}` | the request failed; the relay closes the connection |
 
-1. Each device keeps one watch. For each device on the relay with a higher device ID than
+1. Each device keeps one watch. For each device on the relay with a higher name than
    its own (as byte strings), the device dials it whenever it has no member connection
    to it another way (at home, for example, it has one), with a backoff of 1 s doubling to
    60 s.
 2. The relay calls the other device only within the dialer's group, and only one that has a
    watch. It waits 10 s for the answer, then sends both connections `ok` and copies the
    bytes between them, unchanged, until either closes, and then closes both.
-3. The dialing device runs member TLS as the client for that device ID (section 4); the
-   answering one as the server, and it closes the connection unless the client
+3. The dialing device runs member TLS as the client for the device that name stands for
+   (section 4); the answering one as the server, and it closes the connection unless the client
    certificate names the device the call came from. So the relay can join two devices,
    but cannot pose as either.
    On a phone, cbbtun joins the answered connection to the app's member listener on the
@@ -1983,15 +2029,18 @@ lines of its own, notes:
 5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address
    and 64 from one network (an IPv4 /24 or an IPv6 /64); and 1 MiB a second of copying for
    each group, both ways together, after a burst of two seconds' worth. A registration over
-   a limit gets `{"error": string}`. It forgets a group's records once the group's last
-   device leaves.
+   a limit gets `{"error": string}`. It forgets a group's records, or its period's key,
+   versions and members' list, once the group's last device leaves.
 
 ### What it keeps
 
 Only its key file. Registrations and connections live in memory while they last; the relay
 logs none of them, and with `CBB_DEBUG=1` it logs counts each minute. It learns which
 devices of a group are on it, which of them connect to each other, when and how much,
-which a hub would not let out; what the devices send each other it cannot read.
+which a hub would not let out; what the devices send each other it cannot read. From devices
+that register with credentials it learns them only by pseudonym, under the period's tag,
+both new each period; from the others, their device IDs, the group's tag and roots, and
+its authority records.
 
 ## 15. Commands
 
@@ -2323,74 +2372,121 @@ serial number the last one revoked until its maintainer looks.
 
 ## 18. Server credentials
 
-What a forwarder checks in place of the group's records, so that no device ID, name, system
-or date leaves the group ([design.md](design.md), D-67 and D-75). Implemented in Go
-(`internal/group/credential.go`, `internal/forward`, `internal/service/credentials.go`). Go
-members keep and pass on the credentials and a computer that is the group's root signs them;
-the phone kits do not keep them yet, so a phone's group has none and its hubs register with
-records (section 13). The vectors in `testdata/interop/go-credentials.json` (Go's
-`TestGoCredentialVectors`) give a group's records, the lists its hubs' credential must hold,
-a chain across a handover and chains a server refuses. The members' credential for a relay
-comes later.
+What a forwarder and a relay check in place of the group's records, so that no device ID,
+name, system, root or date leaves the group, and a server cannot follow a group or a device
+from one month to the next ([design.md](design.md), D-67 and D-75). Implemented in Go
+(`internal/group/credential.go` and `serverkeys.go`, `internal/forward`, `internal/relay`,
+`internal/service/credentials.go`). The vectors in `testdata/interop/go-credentials.json`
+(Go's `TestGoCredentialVectors`) give a group's records, the lists its credentials must hold,
+a period with its server credentials, its hubs' and members' credentials, and sets a server
+refuses. The lite member's core reads and checks them as Go does (`lite/core/src/credential.rs`:
+the lists, the signatures and types, and a server's check), and passes the vectors; it
+registers with no server, so it signs none and keeps none. The phones' kits do what Go does
+(`Credentials.kt`, `Credentials.swift`: `ServerCredentials`, `CredentialStore`, and
+`CredentialRefresh`, which signs as Go's refresh does, the period on a root phone), keep them
+and pass them on in `MemberNode`, and pass the same vectors.
+
+The group lives in **periods** of about 30 days. For each, its root signs, inside the group,
+a fresh **tag** for the servers and a fresh **period key**; each device signs with its member
+key a fresh **server key** that it uses with the servers in that period only. The servers see
+only what the period key signs: the period's tag and lists of padded hashes of server keys.
+A device that registers this way presents a certificate of its server key alone, which names
+neither a device nor a group (`clipboardbridge server`, self-signed, no SAN, client
+authentication).
 
 ### The envelope
 
 A credential is `{"body": bytes, "sig": bytes, "key": bytes}`: the body, JSON, signed as
 these exact bytes; an ECDSA P-256 signature with SHA-256 over them, DER; and the signer's
 public key as a SubjectPublicKeyInfo, DER. Its ID is SHA-256 over `body`. Every body has
-`v` (1), `type` and `group` (the group tag), and nothing that names a device or a time of
-signing. Bodies are at most 16 KiB.
+`v` (1), `type`, `group` (16 lower-case hex characters), `version` (a positive integer) and
+`expires_ms`, and nothing that names a device or a time of signing. Bodies are at most 16
+KiB.
 
-| `type` | Fields | Signed by |
-|--------|--------|-----------|
-| `hubs` | `version` (a positive integer), `expires_ms`, `hubs`, `admins`, `heirs` (arrays of 32-byte key hashes) | a root of the group, its own key: `key` is that root's SubjectPublicKeyInfo |
-| `link` | `root`: the new root CA, DER, a self-signed CA with path length 1 and a P-256 key (section 10, rule 7) | an heir of the root it leaves: SHA-256 of `key` is among the `heirs` of that root's hubs' credential |
+| `type` | `group` | Other fields | Signed by | Seen by |
+|--------|---------|--------------|-----------|---------|
+| `period` | the group's tag (section 1) | `tag`: the period's tag, 8 random bytes in hex; `key`: the period key, a P-256 SubjectPublicKeyInfo | the group's current root | the members; a relay with a fixed list of groups |
+| `server` | the group's tag | `tag`: the period's; `key`: the device's server key | the device's member key | the members |
+| `hubs` | the period's tag | `hubs`, `admins`: arrays of 32-byte hashes of server keys | the period key | the members, the forwarder and the relay |
+| `members` | the period's tag | `members`: an array of 32-byte hashes of server keys | the period key, or a server key among the `admins` of the period's hubs' credential | the members and the relay |
 
-### The hubs' credential
+A key's hash is SHA-256 over its SubjectPublicKeyInfo. Each list is padded with random
+32-byte strings to 4, 8, 16, 32, 64, 128 or 256 entries, the smallest that holds it, so a
+server learns the number of devices only roughly. `hubs` holds at most 16 entries, `admins`
+64, `members` 256. The `server`, `hubs` and `members` credentials expire with their period.
 
-The current root signs it from its records alone:
+### The period
 
-- `hubs`: SHA-256 of the member key (the `key` of the device's record) of each device that
-  may be the hub, in the order of section 11, "Several hubs", at most 16.
-- `admins`: the admin CAs (`admin` of a device record) of the admins that are neither
-  removed nor frozen, the root's own device left out.
-- `heirs`: of those, the admin CAs that may hand the group to a new root (section 10, rule
-  2): an admin phone's, and in a group whose root is a computer, an admin computer's.
-- Each list is padded with random 32-byte strings to 4, 8, 16, 32 or 64 entries, the
-  smallest that holds it, so a server learns the number of devices only roughly.
-- `version` is one above the highest version of any hubs' credential the root keeps, or
-  the time in Unix seconds when that is more. `expires_ms` is 90 days after signing.
+The current root starts a period when it has none of its own, when the one it keeps is 30
+days old (it lasts 35), and when a device that sent a server credential for it is no longer
+in the group: a removed device knows the period's tag. It makes the period key (in the TPM
+where there is one) and a new tag, and signs the period with its root key; `version` is one
+above the period it keeps, or the time in Unix seconds when that is more. After a takeover
+(section 10) the new root starts its own period at once. A phone's root asks for Face ID for
+it about once a month, and with each removal, which asks anyway.
 
-The root signs a new one when it has none, when less than 60 days of it remain, or when the
-records call for other lists: a hub, an admin or an heir added or removed, a freeze, or
-another order. A list matches when its real entries come first in the records' order (the
-hubs) or in any order (the others), its length is the padded length, and no other entry is a
-key the records name (a device's key, an admin CA, a root, a revoked key). Go checks this
-when the group starts, every 12 hours, and after every new record; a phone's root will ask
-for Face ID for it.
+Every member that sees a period it has no server key for makes one (in the TPM where there is
+one) and signs its `server` credential with its member key. It keeps the keys of the current
+period only, in `server-keys.json` next to its identity, so the keys of a period are gone
+when it ends.
+
+### The lists
+
+The root signs the hubs' and members' credentials with the period key, from the records and
+the server credentials it keeps; an admin that the hubs' credential lists signs the members'
+credential with its server key. A device that sent no server credential for the period is
+left out until it does.
+
+- `hubs`: the server keys of the devices that may be the hub, in the order of section 11,
+  "Several hubs", at most 16.
+- `admins`: the server keys of the admins that are neither removed nor frozen, the root's own
+  device left out.
+- `members`: the server keys of the group's devices that are not frozen.
+
+A signer signs a new version when it has none for the period, or when a list does not match:
+its real entries are not first (the hubs, in their order) or not all there (the others), its
+length is not the padded length, or another entry is a server key it keeps. `version` is one
+above the version it keeps of that type, or the time in Unix seconds when that is more. Go
+checks all of this when the group starts, every 12 hours, after every new record and after
+every new credential.
 
 ### Keeping and passing them on
 
-A member keeps, in `credentials.json` next to its identity, for each root on the group's
-path (section 10, rule 7) the newest hubs' credential that root signed, and the link to each
-root after the group CA. It takes a hubs' credential only when a root on the path signed it
-and its version is above the one it keeps for that root, and a link only when the next root
-on the path is its `root` and an heir of the credential it keeps for the root before signed
-it. After the hello, a member that keeps any sends `{"t":"credentials","credentials":
-[credential, ...]}` with all of them, at most 34; a receiver keeps the new valid ones,
+A member keeps, in `credentials.json` next to its identity, the newest period that the
+group's current root signed, and for it the newest server credential of each member key of
+the group (a device's key that is neither revoked nor frozen), the newest hubs' credential
+that the period key signed, and the newest members' credential that the period key or an
+admin of that hubs' credential signed. A newer period drops the credentials of the one
+before. After the hello, a member that keeps any sends `{"t":"credentials","credentials":
+[credential, ...]}` with all of them, at most 259; a receiver keeps the new valid ones,
 passes them on to its other peers the same way, and logs and drops the others.
 
-An admin that takes the group over signs the link to its new root with its admin CA's key
-as soon as the `root` record is in, and, as the root, its own hubs' credential right after
-(Go's `cbb takeover`).
+A member that knows a pseudonym at the relay (section 14) finds the device it names through
+the server credential whose key has that hash.
 
-### The chain
+### What a server checks
 
-A hub presents its forwarder the chain from the group CA to the current root: the group
-CA's hubs' credential, then for each later root the link to it and that root's hubs'
-credential; at most 17 credentials, ending with a hubs' credential. A server checks it in
-order: each hubs' credential must be signed by the root reached so far, of the group, and
-have a version above the one before it; each link must be signed by an heir of the
-credential before it, and lead to a root not reached before. A hub uses the chain only when
-its last credential has not expired and lists the hub's member key; otherwise it registers
-with records.
+A device presents one hubs' credential, and to a relay also the members' credential, and to
+a relay that serves a fixed list of groups also the period credential with the group's roots
+(the relay's challenge asks with `"roots": true`). The server checks that:
+
+1. none has expired;
+2. the members' credential is of the same period (`group`) and the hubs' credential's
+   signer, or a key among its `admins`, signed it;
+3. the period credential, if any, has the hubs' credential's tag as `tag` and its signer's
+   key as `key`, and a relay with a fixed list of groups takes it only when one of the roots
+   shown is a self-signed CA of a group it serves whose key signed the period;
+4. the hash of the device's certificate key is among the `hubs` (the forwarder) or the
+   `members` (the relay);
+5. the period key is the one it first saw for the period's tag: the forwarder keeps, in
+   `forward-state.json`, HMAC-SHA256 under a secret from its own key of the tag, with the
+   newest hubs' version and the same HMAC of the tag and the period key's hash; the relay
+   keeps the same in memory while any device of the period is on it, with the newest
+   members' version and list. Older versions are refused, and a newer members' credential
+   drops the devices it no longer lists.
+
+The first period key a server sees for a tag counts: only the group's devices know the tag,
+and a removed device's period ends with its removal.
+
+A forwarder and a relay keep a group that registered with credentials apart from the groups
+that registered with records, which they name by the group CA's tag (sections 13 and 14).

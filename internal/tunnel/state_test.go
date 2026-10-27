@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"time"
 )
 
 func pubKey(t *testing.T) Key {
@@ -432,5 +433,63 @@ func TestTake(t *testing.T) {
 	}
 	if changed, err := s.Take(dev, pubKey(t), pubKey(t)); err != nil || changed {
 		t.Errorf("taking a client it met: %v, %v", changed, err)
+	}
+}
+
+func TestRotate(t *testing.T) {
+	s, err := NewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.UnixMilli(1_800_000_000_000)
+	if changed, _, _ := s.Rotate("p1", now, time.Hour); changed {
+		t.Error("a device that is no hub rotated")
+	}
+	s.IsHub = true
+	if changed, switched, err := s.Rotate("p1", now, time.Hour); err != nil || !changed || switched || s.Next.IsZero() || s.NextFor != "p1" {
+		t.Fatalf("a new period: %v %v %v, next %v for %q", changed, switched, err, s.Next, s.NextFor)
+	}
+	if s.ServingKey() != s.Key {
+		t.Error("the hub serves with the next key ahead of time")
+	}
+	next := s.Next
+	if changed, _, _ := s.Rotate("p1", now.Add(time.Minute), time.Hour); changed {
+		t.Error("the same period changed the state")
+	}
+
+	// The next key and when it starts survive a restart.
+	dir := t.TempDir()
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Next != next || got.NextFor != "p1" || !got.NextAt.Equal(now.Add(time.Hour)) || !got.Serving.IsZero() {
+		t.Fatalf("loaded next %v for %q at %v, serving %v", got.Next, got.NextFor, got.NextAt, got.Serving)
+	}
+
+	if changed, switched, _ := got.Rotate("p1", now.Add(time.Hour), time.Hour); !changed || !switched || got.ServingKey() != next || !got.Next.IsZero() || got.ServingFor != "p1" {
+		t.Fatalf("the switch: %v %v, serving %v for %q, next %v", changed, switched, got.ServingKey(), got.ServingFor, got.Next)
+	}
+	if err := got.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LoadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Serving != next || again.ServingFor != "p1" || again.Key != s.Key {
+		t.Errorf("loaded serving %v for %q", again.Serving, again.ServingFor)
+	}
+
+	// A client offering one of the hub's keys is refused.
+	a := newDevice(t)
+	if _, _, err := again.Admit(a.id, next.Public(), Key{}, [][]byte{[]byte("cert")}); err == nil {
+		t.Error("admitted a client with the hub's serving key")
+	}
+	if _, err := again.SetHub(HubLink{Device: a.id, PublicKey: pubKey(t), PresharedKey: a.psk, Next: next.Public()}); err == nil {
+		t.Error("kept a hub whose next key is this device's own")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
@@ -55,6 +56,18 @@ type MemberConfig struct {
 	// the devices the group removed.
 	Records func() []group.Record
 
+	// Credentialed, if set, returns what the member registers with when
+	// the period's members' credential lists it (docs/protocol.md,
+	// section 18), in place of Cert and Records; false registers with
+	// those.
+	Credentialed func() (Credentialed, bool)
+
+	// CredentialsChanged, if set, returns a channel that is closed when
+	// the group's credentials change next, so that a registered member
+	// looks at once whether it registers with other ones; it looks every
+	// credentialCheck as well.
+	CredentialsChanged func() <-chan struct{}
+
 	// Want tells whether to connect to a device through the relay now:
 	// false while it is connected already, for example on the home
 	// network.
@@ -72,6 +85,20 @@ type MemberConfig struct {
 
 	Logf    func(format string, args ...any)
 	Verbose bool // also log WireGuard's own messages
+}
+
+// Credentialed is what a member registers with when the group's
+// credentials list it: the relay then knows it by its pseudonym, and
+// learns neither its device ID nor its group's roots, unless it serves a
+// fixed list of groups.
+type Credentialed struct {
+	Cert  tls.Certificate    // the certificate of its server key (group.ServerCertificate)
+	Self  string             // its pseudonym (group.Pseudonym)
+	Creds []group.Credential // the period's hubs' and members' credentials
+	// Period and Roots are the period credential and the group's roots,
+	// the group CA first, for a relay that asks for them.
+	Period group.Credential
+	Roots  [][]byte
 }
 
 // Report is how a member's link to its relay stands.
@@ -108,6 +135,10 @@ func Join(ctx context.Context, cfg MemberConfig) {
 		if ctx.Err() != nil {
 			return
 		}
+		if errors.Is(err, errNewCredential) {
+			backoff = minBackoff
+			continue
+		}
 		cfg.Report(Report{Err: err})
 		if time.Since(start) > maxBackoff {
 			backoff = minBackoff
@@ -125,6 +156,7 @@ func Join(ctx context.Context, cfg MemberConfig) {
 type session struct {
 	cfg    MemberConfig
 	client *tunnel.Client
+	self   string // this device's name at the relay
 
 	wg      sync.WaitGroup // the dialers and the answers
 	mu      sync.Mutex
@@ -133,10 +165,48 @@ type session struct {
 	through int
 }
 
-func joinOnce(ctx context.Context, cfg MemberConfig) error {
+// errNewCredential ends a registration when what the member registers
+// with changed, a new period or a members' credential that lists it now,
+// so that it registers again at once.
+var errNewCredential = errors.New("the group's credentials changed")
+
+// credentialCheck is how often a registered member looks whether its
+// credentials changed.
+const credentialCheck = 5 * time.Second
+
+// credentialKey names what the member registers with: its name and the
+// IDs of its credentials, or nothing without them.
+func credentialKey(c Credentialed, ok bool) string {
+	if !ok {
+		return ""
+	}
+	k := c.Self
+	for _, cr := range c.Creds {
+		id := cr.ID()
+		k += " " + string(id[:])
+	}
+	return k
+}
+
+func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	tc, w, err := register(ctx, cfg)
+	live, was := cfg.Credentialed, ""
+	if live != nil {
+		// The registration is made with the credentials as they are now,
+		// so that a change from here on ends it.
+		c, ok := live()
+		was = credentialKey(c, ok)
+		cfg.Credentialed = func() (Credentialed, bool) { return c, ok }
+		if ok {
+			// With credentials the relay gets a fresh WireGuard key at each
+			// registration, so the key links no two of them.
+			if cfg.Key, err = tunnel.NewPrivateKey(); err != nil {
+				return err
+			}
+		}
+	}
+	tc, w, self, err := register(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -157,7 +227,7 @@ func joinOnce(ctx context.Context, cfg MemberConfig) error {
 		return err
 	}
 	defer client.Close()
-	s := &session{cfg: cfg, client: client, dialers: map[string]context.CancelFunc{}}
+	s := &session{cfg: cfg, client: client, self: self, dialers: map[string]context.CancelFunc{}}
 	defer func() {
 		cancel()
 		s.wg.Wait()
@@ -167,6 +237,35 @@ func joinOnce(ctx context.Context, cfg MemberConfig) error {
 		// when it is gone.
 		io.Copy(io.Discard, tc)
 		cancel()
+	}()
+	var renew atomic.Bool
+	if live != nil {
+		go func() {
+			t := time.NewTicker(credentialCheck)
+			defer t.Stop()
+			for {
+				var changed <-chan struct{}
+				if cfg.CredentialsChanged != nil {
+					changed = cfg.CredentialsChanged()
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				case <-changed:
+				}
+				if credentialKey(live()) != was {
+					renew.Store(true)
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+	defer func() {
+		if renew.Load() {
+			err = errNewCredential
+		}
 	}()
 
 	dctx, dcancel := context.WithTimeout(ctx, setupTimeout)
@@ -205,21 +304,30 @@ func joinOnce(ctx context.Context, cfg MemberConfig) error {
 }
 
 // register runs the registration's setup and returns its connection, which
-// the member keeps open while it is registered.
-func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error) {
+// the member keeps open while it is registered, and the name the relay
+// knows the member by.
+func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, string, error) {
+	cred, withCreds := Credentialed{}, false
+	if cfg.Credentialed != nil {
+		cred, withCreds = cfg.Credentialed()
+	}
+	cert, self := cfg.Cert(), cfg.Self
+	if withCreds {
+		cert, self = cred.Cert, cred.Self
+	}
 	d := net.Dialer{Timeout: setupTimeout, KeepAlive: 30 * time.Second, Control: netguard.Control}
 	raw, err := d.DialContext(ctx, "tcp", cfg.Link.Endpoint.String())
 	if err != nil {
-		return nil, welcome{}, fmt.Errorf("reaching the relay: %w", err)
+		return nil, welcome{}, "", fmt.Errorf("reaching the relay: %w", err)
 	}
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
-	fail := func(err error) (*tls.Conn, welcome, error) {
+	fail := func(err error) (*tls.Conn, welcome, string, error) {
 		stop()
 		raw.Close()
-		return nil, welcome{}, err
+		return nil, welcome{}, "", err
 	}
 	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, forward.TLSVerifiedByPin(cfg.Cert(), Protocol, cfg.Link.Pin, "relay"))
+	tc := tls.Client(raw, forward.TLSVerifiedByPin(cert, Protocol, cfg.Link.Pin, "relay"))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fail(fmt.Errorf("registering with the relay: %w", err))
 	}
@@ -246,7 +354,16 @@ func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error)
 		return fail(err)
 	}
 	c := claim{Key: priv.PublicKey().Bytes(), Proof: p}
-	if cfg.Records != nil {
+	switch {
+	case withCreds:
+		c.Credentials = cred.Creds
+		if ch.Roots {
+			// A relay that serves a fixed list of groups knows them by
+			// their roots.
+			c.Credentials = append(slices.Clone(c.Credentials), cred.Period)
+			c.Roots = cred.Roots
+		}
+	case cfg.Records != nil:
 		c.Records = cfg.Records()
 		if len(c.Records) > maxClaimRecords {
 			c.Records = c.Records[:maxClaimRecords]
@@ -264,7 +381,7 @@ func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, error)
 	}
 	raw.SetDeadline(time.Time{})
 	// The registration lasts until ctx is done or the relay drops it.
-	return tc, w, nil
+	return tc, w, self, nil
 }
 
 func (s *session) report() {
@@ -275,7 +392,7 @@ func (s *session) report() {
 }
 
 // setOnline keeps a dialer for each device on the relay that this one
-// dials: the ones with a higher ID.
+// dials: the ones with a higher name.
 func (s *session) setOnline(ctx context.Context, online []string) {
 	s.mu.Lock()
 	s.online = online
@@ -286,7 +403,7 @@ func (s *session) setOnline(ctx context.Context, online []string) {
 		}
 	}
 	for _, p := range online {
-		if _, ok := s.dialers[p]; ok || strings.Compare(s.cfg.Self, p) >= 0 {
+		if _, ok := s.dialers[p]; ok || strings.Compare(s.self, p) >= 0 {
 			continue
 		}
 		pctx, stop := context.WithCancel(ctx)

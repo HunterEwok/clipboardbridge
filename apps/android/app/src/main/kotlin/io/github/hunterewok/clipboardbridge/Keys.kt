@@ -12,6 +12,7 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import io.github.hunterewok.clipboardbridge.kit.Attestation
 import io.github.hunterewok.clipboardbridge.kit.CertificateSigner
+import io.github.hunterewok.clipboardbridge.kit.PeriodKeys
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.PrivateKey
@@ -31,6 +32,10 @@ import java.util.Base64
  *   records. They sign only for [AUTH_SECONDS] after the user passed the
  *   fingerprint, the face or the screen lock, as Face ID guards them on the
  *   iPhone.
+ *
+ * - The keys for the servers of each period (docs/protocol.md, section
+ *   18), the server key and on the root the period key, sign in the
+ *   background like the member key ([PhoneKeys]).
  *
  * Each key is made with an attestation challenge ([Attestation.challenge]),
  * so its certificate chain from the Keystore can prove later where it lives
@@ -152,6 +157,27 @@ object Keys {
     fun remove(alias: String) {
         val s = store()
         if (s.containsAlias(alias)) s.deleteEntry(alias)
+    }
+
+    /** The prefix of the keys for the servers, one per kind and period. */
+    private const val PERIOD = "clipboardbridge.period."
+
+    /** The keys for the servers of each period, in the TEE, without the user's authentication, since they sign in the background. */
+    object PhoneKeys : PeriodKeys {
+        private fun alias(kind: String, tag: String) = "$PERIOD$kind.$tag"
+
+        override fun get(kind: String, tag: String): CertificateSigner =
+            load(alias(kind, tag)) ?: generate(alias(kind, tag), auth = false, strongBox = false, challenge = null)
+
+        override fun has(kind: String, tag: String): Boolean = store().containsAlias(alias(kind, tag))
+
+        override fun keep(tag: String) {
+            val s = store()
+            for (a in s.aliases().toList()) if (a.startsWith(PERIOD) && !a.endsWith(".$tag")) s.deleteEntry(a)
+        }
+
+        /** Drops every key for the servers, as when the phone leaves the group. */
+        fun clear() = keep("")
     }
 
     private fun isDebuggable(context: Context): Boolean =

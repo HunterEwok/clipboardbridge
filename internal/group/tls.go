@@ -184,28 +184,23 @@ func (id *Identity) verifyClock(opt TLSOptions) func() time.Time {
 	return func() time.Time { return verifyTime(ca, opt.now()) }
 }
 
-// HubCertificateName is the subject of the certificate a hub registers
-// with on its forwarder when it has a credential: it names no device.
-const HubCertificateName = "clipboardbridge hub"
+// ServerCertificateName is the subject of the certificate a device
+// registers with on a server when it has the group's credentials: it names
+// no device and no group.
+const ServerCertificateName = "clipboardbridge server"
 
-// HubCertificate returns the certificate a hub registers with on its
-// forwarder when it has a credential (docs/protocol.md, section 18): a
-// certificate of its member key, signed by that key, that names no device,
-// then the group CA, which names the group.
-func (id *Identity) HubCertificate() (tls.Certificate, error) {
-	return HubCertificate(id.Key, id.GroupCA.Cert)
-}
-
-// HubCertificate returns a hub's certificate for key in the group of
-// groupCA, as Identity.HubCertificate.
-func HubCertificate(key crypto.Signer, groupCA *x509.Certificate) (tls.Certificate, error) {
+// ServerCertificate returns the certificate a device registers with on a
+// forwarder or a relay when it has the group's credentials
+// (docs/protocol.md, section 18): one of its server key, signed by that
+// key, that names neither a device nor a group.
+func ServerCertificate(key crypto.Signer) (tls.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
 	if err != nil {
 		return tls.Certificate{}, err
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: HubCertificateName},
+		Subject:      pkix.Name{CommonName: ServerCertificateName},
 		NotBefore:    time.Unix(0, 0).UTC(),
 		NotAfter:     time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -219,5 +214,5 @@ func HubCertificate(key crypto.Signer, groupCA *x509.Certificate) (tls.Certifica
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	return tls.Certificate{Certificate: [][]byte{der, groupCA.Raw}, PrivateKey: key, Leaf: leaf}, nil
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
 }

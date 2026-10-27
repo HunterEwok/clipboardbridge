@@ -159,7 +159,12 @@ func OpenX11(logf func(string, ...any)) (*X11, error) {
 	}
 	go b.loop()
 	// Read what the clipboard holds now; it is not reported as a change.
+	// An owner change can come before this request does: its read tells
+	// what the clipboard holds, and is a change.
 	b.request(func() {
+		if b.read != nil {
+			return
+		}
 		b.startRead()
 		b.read.initial = true
 	})

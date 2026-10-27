@@ -198,12 +198,15 @@ type Service struct {
 	attEvidence map[group.DeviceID]peerEvidence
 	// tpmMu guards this device's TPM attestation and, on the root, the
 	// credentials sent to peers (evidence_tpm.go); taken alone.
-	tpmMu      sync.Mutex
-	tpmAtt     *tpmAttestation
-	tpmPending map[group.DeviceID]tpmPending
-	recMu      sync.Mutex         // guards records; taken after mu, never before
-	records    *group.Records     // the group's device records; nil while in no group
-	creds      *group.Credentials // the group's server credentials, under recMu as records
+	tpmMu       sync.Mutex
+	tpmAtt      *tpmAttestation
+	tpmPending  map[group.DeviceID]tpmPending
+	recMu       sync.Mutex         // guards records; taken after mu, never before
+	records     *group.Records     // the group's device records; nil while in no group
+	creds       *group.Credentials // the group's server credentials, under recMu as records
+	serverKeys  *group.ServerKeys  // this device's keys for the servers, under recMu as records
+	credChanged chan struct{}      // closed when creds change, under recMu
+	credMu      sync.Mutex         // serialises refreshCredential, taken before mu and recMu
 
 	// Images and files (media.go): the cache, which is nil until the
 	// service runs; mediaMu guards the rest, taken after mu, never before.
@@ -412,6 +415,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
 	s.creds = s.loadCredentials(id, s.records)
+	s.serverKeys = s.loadServerKeys()
 	s.recMu.Unlock()
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()

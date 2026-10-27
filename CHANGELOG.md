@@ -216,24 +216,40 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computers, and as plain text on the phones and the lite member. A secret's formatting is
   never read; formatted text over 8 MiB, or with a text over 256 KiB, goes as its text alone.
   A watch request asks for it with `html` (docs/protocol.md, section 8).
-- The hubs' credential (D-67, docs/protocol.md, section 18): a computer that is the group's
-  root signs, from its records, the member key hashes of the group's hubs, its admins and the
-  admins that may take the group over, padded to 4, 8, 16 or more entries, with a version and
-  an expiry of 90 days, and the members pass it on. A hub then registers with its forwarder
-  with that credential and a certificate that names no device, so the forwarder no longer
-  sees the group's records, device IDs, names or dates. An admin that takes the group over
-  signs a link to its new root, which the forwarder follows.
+- Server credentials (D-67, D-75, docs/protocol.md, section 18). The group lives in periods
+  of about 30 days: a computer that is the group's root signs, inside the group, a fresh tag
+  for the servers and a fresh period key, every member signs a fresh server key with its
+  member key (both in the TPM where there is one), and the period key signs the hubs' and
+  the members' credentials: hashes of the server keys, padded to 4, 8, 16 or more entries,
+  with a version and an expiry. A removal or a takeover starts a new period at once. A hub
+  registers with its forwarder, and a device with its relay, with these credentials and a
+  certificate of its server key, so the servers no longer see the group's records, roots,
+  device IDs, names or dates, and cannot link a group or a device from one month to the
+  next. The relay knows the devices by pseudonyms, the hashes of their server keys, gets a
+  fresh WireGuard key at each registration, and drops a device a newer members' credential
+  leaves out; a relay that serves a fixed list of groups also sees the period credential and
+  the group's roots. Devices and phones that do not sign credentials yet register as before.
+  The lite member's core and the phones' kits read and check the credentials with the same
+  vectors. Both phone apps keep them, pass them on, and sign their server keys; a root phone
+  signs a new period while the user's last Face ID or fingerprint lasts, and the lists with a
+  period key in the Secure Enclave or the Keystore. The phones still register with a relay
+  by their member certificate.
+- The hub takes a new WireGuard key for its clients with each period of the server
+  credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
+  three days ahead, then it serves with it and registers again with its forwarder, so the
+  forwarder cannot link the group's traffic from one month to the next by the hub's key. Go
+  members, the lite member and both phone apps try a hub with its next key too, so one that
+  was away when the hub moved on still reaches it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
 ### Changed
 
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
-  (D-75): only `forward-state.json`, which holds, under a keyed hash of each group's tag,
-  the version of its newest credential and a hash of its root (`-state`, `none` for memory
-  only). It refuses an older credential, also after a restart, and records from a group that
-  registered with a credential; records from older hubs and from phones' groups stay in
-  memory only.
+  (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
+  the version of its newest credential and a hash of its period key (`-state`, `none` for
+  memory only). It refuses an older credential or another period key, also after a restart;
+  records from older hubs and from phones' groups stay in memory only.
 - The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
   so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
   each MiB.
@@ -245,6 +261,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A fetch of an image or a file could wait for ever when the peer dropped its ranges, as
+  after it answered that it did not hold the part yet: a fetch that gets nothing for 15
+  seconds now gives up and asks again, a fetch that ends cancels the ranges still asked
+  for, and a chunk that comes after its fetch ended no longer blocks the connection.
+- A phone's fetch of an image or a file no longer waits for ever on a device that stopped
+  sending: after 15 seconds without any of the part it gives up, and on "missing" or a stall
+  it cancels what it asked for, as computers now do.
 - The iPhone's member key and its certificate are readable while the phone is locked, once
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old

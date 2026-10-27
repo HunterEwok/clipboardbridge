@@ -12,6 +12,10 @@ import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
 import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
+import io.github.hunterewok.clipboardbridge.kit.CertificateInfo
+import io.github.hunterewok.clipboardbridge.kit.CredentialKeeper
+import io.github.hunterewok.clipboardbridge.kit.CredentialRefresh
+import io.github.hunterewok.clipboardbridge.kit.CredentialStore
 import io.github.hunterewok.clipboardbridge.kit.Commands
 import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.Discovery
@@ -34,6 +38,7 @@ import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.PhoneHub
 import io.github.hunterewok.clipboardbridge.kit.RecordStore
 import io.github.hunterewok.clipboardbridge.kit.Records as KitRecords
+import io.github.hunterewok.clipboardbridge.kit.ServerCredentials
 import io.github.hunterewok.clipboardbridge.kit.SyncEngine
 import io.github.hunterewok.clipboardbridge.kit.TLSListener
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
@@ -48,6 +53,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
@@ -142,6 +149,13 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private var relayLink: RelayOnPhone? = null
     private val relayFile = SealedFile(File(file.parentFile, "relay.bin"), "clipboardbridge.relay")
     private var relayListener: MemberListener? = null
+
+    /** The group's server credentials (docs/protocol.md, section 18), beside the group; read when first needed, under the lock. */
+    private val credentialsFile = File(file.parentFile, "credentials.json")
+    private var credentialStore: CredentialStore? = null
+
+    /** Brings the credentials up to date, one refresh at a time, off the node's threads. */
+    private val credentialWork = Executors.newSingleThreadExecutor { r -> Thread(r, "credentials").apply { isDaemon = true } }
 
     /** The hub's work, one change at a time, off the main thread. */
     private val hubWork = Executors.newSingleThreadExecutor { r -> Thread(r, "phone hub").apply { isDaemon = true } }
@@ -505,7 +519,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     // A group made on this phone has it as its hub from the start (D-64).
                     if (existing == null) setPhoneHub(true)
                 }
-                currentNode?.sendRecords(g.records.records)
+                published(g.records.records)
                 if (!admitted.confirmed) throw Failure(Failure.Kind.NOT_CONFIRMED)
                 return
             } catch (e: CancellationException) {
@@ -578,7 +592,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val admitted = g.admit(t, "", joinerCert, sid, Keys.loadOrCreate(context, alias), Instant.now(), invitation = invitation)
         guest.admitted()
         adopt(g)
-        currentNode?.sendRecords(g.records.records)
+        published(g.records.records)
         return admitted
     }
 
@@ -599,6 +613,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
         startSync()
         relay()
+        refreshCredentials()
         hubWork.execute(::hubRecords)
     }
 
@@ -700,7 +715,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = copyOfState() ?: return
         val r = withContext(Dispatchers.IO) { g.revoke(id, ca, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
-        currentNode?.sendRecords(listOf(r))
+        published(listOf(r))
         currentNode?.close(id)
     }
 
@@ -714,7 +729,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = copyOfState() ?: return
         val r = withContext(Dispatchers.IO) { g.rename(id, name, ca, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
-        currentNode?.sendRecords(listOf(r))
+        published(listOf(r))
     }
 
     /**
@@ -727,12 +742,89 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = copyOfState() ?: return
         val r = withContext(Dispatchers.IO) { g.thaw(id, ca, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
-        currentNode?.sendRecords(listOf(r))
+        published(listOf(r))
     }
 
     /** Gives a phone that just made or joined a group the sync mode of a new device, own, unless it has one from an earlier group. */
     private fun newDeviceMode() {
         if (!modeFile.exists()) setOwnMode("own")
+        // The credentials and the keys for the servers of an earlier group are of no use.
+        credentialStore = null
+        credentialsFile.delete()
+        runCatching { Keys.PhoneKeys.clear() }
+    }
+
+    /** The current root's key and whether a key hash is a member of the group, for the credentials. lock is held. */
+    private fun credentialRootLocked(g: PhoneGroup): Pair<ByteArray, (ByteArray) -> Boolean> {
+        val records = g.records
+        return CertificateInfo(g.currentRoot).publicKey to { k: ByteArray -> CredentialRefresh.isMember(records, k) }
+    }
+
+    /** The credentials kept for the group g, read from their file the first time. lock is held. */
+    private fun credentialsLocked(g: PhoneGroup): CredentialStore = credentialStore ?: run {
+        val (root, isMember) = credentialRootLocked(g)
+        val saved = runCatching { Json.parseToJsonElement(credentialsFile.readText()).jsonArray }.getOrNull()
+        (saved?.let { CredentialStore.fromJson(it, g.groupCA, root, isMember) } ?: CredentialStore(g.groupCA)).also { credentialStore = it }
+    }
+
+    private fun saveCredentialsLocked(s: CredentialStore) {
+        runCatching {
+            val tmp = File(credentialsFile.path + ".tmp")
+            tmp.writeText(s.toJson().toString())
+            tmp.renameTo(credentialsFile)
+        }.onFailure { Log.w(TAG, "saving the server credentials", it) }
+    }
+
+    /** The group's server credentials for the node, which keeps them with every member. */
+    private inner class Credentials : CredentialKeeper {
+        override val all: List<ServerCredentials.Credential>
+            get() = synchronized(lock) { state?.let { credentialsLocked(it).all }.orEmpty() }
+
+        override fun add(credentials: List<ServerCredentials.Credential>): List<ServerCredentials.Credential> {
+            val fresh = synchronized(lock) {
+                val g = state ?: return emptyList()
+                val s = credentialsLocked(g)
+                val (root, isMember) = credentialRootLocked(g)
+                val (fresh, errs) = s.add(root, isMember, credentials)
+                for (e in errs) Log.w(TAG, "dropped a server credential: $e")
+                if (fresh.isNotEmpty()) saveCredentialsLocked(s)
+                fresh
+            }
+            if (fresh.isNotEmpty()) refreshCredentials()
+            return fresh
+        }
+    }
+
+    /**
+     * Brings the group's server credentials up to date as far as this phone
+     * can (docs/protocol.md, section 18) and sends what it signed to the
+     * computers: its server key for the period; on the root, the period
+     * when one is due, while the user's last authentication lasts, and the
+     * hubs' and members' credentials; on a listed admin, the members'.
+     */
+    private fun refreshCredentials() {
+        credentialWork.execute {
+            val signed = runCatching {
+                synchronized(lock) {
+                    val g = state ?: return@execute
+                    val s = credentialsLocked(g)
+                    val root = if (g.isRoot) {
+                        { if (authenticator.isFresh) Keys.load(Keys.ROOT) else null }
+                    } else {
+                        null
+                    }
+                    CredentialRefresh.refresh(s, g.records, g.groupCA, g.currentRoot, memberSigner(), Keys.PhoneKeys, System.currentTimeMillis(), root)
+                        .also { if (it.isNotEmpty()) saveCredentialsLocked(s) }
+                }
+            }.onFailure { Log.w(TAG, "signing the server credentials", it) }.getOrNull().orEmpty()
+            if (signed.isNotEmpty()) currentNode?.sendCredentials(signed)
+        }
+    }
+
+    /** Sends records made on this phone to the computers, and brings the credentials up to date with them. */
+    private fun published(rs: List<Member.Record>) {
+        currentNode?.sendRecords(rs)
+        refreshCredentials()
     }
 
     /** Sets this phone's own sync mode and keeps it. */
@@ -914,7 +1006,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = copyOfState() ?: return
         val (ca, r) = withContext(Dispatchers.IO) { g.makeAdmin(id, key, root, Instant.now(), store, allowFileKey) }
         withContext(Dispatchers.IO) { adopt(g) }
-        currentNode?.sendRecords(listOf(r))
+        published(listOf(r))
         currentNode?.sendAdminCA(ca, id)
     }
 
@@ -934,7 +1026,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             adopt(g)
             rs
         } ?: return
-        currentNode?.sendRecords(rs)
+        published(rs)
         currentNode?.close(id)
         // The lost phone was the hub: this phone is the hub now (docs/design.md, "Losing the phone").
         val wasHub = awayFromHome?.hub == id
@@ -947,6 +1039,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private fun startSync() {
         val b = startBrowsing() ?: return
         b.start()
+        refreshCredentials()
         awayFromHome?.start()
         relay()
         refreshHub()
@@ -1028,6 +1121,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             evidence = ::ownEvidence,
             onEvidence = ::evidenceReceived,
             content = content,
+            credentials = Credentials(),
             adminCA = { key -> synchronized(lock) { state?.computerAdminCA(key) } },
             // A copy of a moment ago from another device; an older one, as a
             // hello brings it on connecting, would overwrite what the phone
@@ -1153,6 +1247,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             }
             if (fresh.isNotEmpty()) {
                 relay()
+                refreshCredentials()
                 hubWork.execute(::hubRecords)
                 onRecords?.invoke()
             }
@@ -1218,7 +1313,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         )
         if (rs.isEmpty()) return
         adopt(copy)
-        currentNode?.sendRecords(rs)
+        published(rs)
     }
 
     private fun prove(g: PhoneGroup, device: String, chain: List<ByteArray>, e: Member.Evidence, signer: KeystoreSigner, now: Instant) = try {

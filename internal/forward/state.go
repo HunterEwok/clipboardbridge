@@ -25,13 +25,15 @@ import (
 const stateLabel = "clipboardbridge forwarder state"
 
 // versions is all the forwarder keeps about the groups that registered with
-// a credential (docs/protocol.md, section 18): under a hash of each group's
-// tag, the version of its newest hubs' credential and a hash of the root
-// that signed it, so that an older credential, or one from a root that a
-// later one left behind, is refused. Both hashes are keyed with a secret
-// from the forwarder's own key, so the table names no group by itself. It
-// is bounded at rememberedGroups; past it the group that registered least
-// recently is forgotten first. With a file the table outlives a restart.
+// a credential (docs/protocol.md, section 18): under a hash of each
+// period's tag, the version of its newest hubs' credential and a hash of
+// the period key that signed it, so that an older credential, or one of
+// another key, is refused. Both hashes are keyed with a secret from the
+// forwarder's own key, so the table names no group by itself; and a period
+// lasts about a month, so it cannot link one month of a group to the next.
+// It is bounded at rememberedGroups; past it the period that registered
+// least recently is forgotten first. With a file the table outlives a
+// restart.
 type versions struct {
 	file   string // "" keeps it in memory only
 	secret []byte
@@ -41,12 +43,11 @@ type versions struct {
 	seq     uint64
 }
 
-// A versionEntry is one group's newest credential: its version, the
-// hashed key of its root, and when it was kept, as a counter, for the
-// bound.
+// A versionEntry is one period's newest credential: its version, the
+// hashed period key, and when it was kept, as a counter, for the bound.
 type versionEntry struct {
 	Version uint64 `json:"version"`
-	Root    string `json:"root"`
+	Key     string `json:"key"`
 	Seq     uint64 `json:"seq"`
 }
 
@@ -87,46 +88,33 @@ func (v *versions) hash(parts ...[]byte) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-// tagged reports whether the group of tag ever registered with a
-// credential: it never registers with records again.
-func (v *versions) tagged(tag string) bool {
+// check reports whether the period's credential may register its group:
+// with nothing kept for its tag, any (the first period key the forwarder
+// sees for a tag is the group's); else the same period key must have
+// signed it, at the version kept or later.
+func (v *versions) check(p *group.Presented) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	_, ok := v.entries[v.hash([]byte(tag))]
-	return ok
-}
-
-// check reports whether the checked chain may register the group of tag:
-// with nothing kept, any; else the chain must hold a credential from the
-// root kept, of the version kept or later, and end with one no older.
-func (v *versions) check(tag string, ch *group.CheckedChain) error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	e, ok := v.entries[v.hash([]byte(tag))]
-	if !ok {
+	e, ok := v.entries[v.hash([]byte(p.Tag))]
+	switch {
+	case !ok:
 		return nil
+	case v.hash([]byte(p.Tag), p.Signer[:]) != e.Key:
+		return errors.New("another key registered this group's period first")
+	case p.Hubs.Version < e.Version:
+		return errors.New("the group's hubs' credential is older than one this forwarder saw")
 	}
-	if ch.Last().Version < e.Version {
-		return errors.New("the group's credential is older than one this forwarder saw")
-	}
-	for i, root := range ch.Roots {
-		k := group.KeyHashOf(root)
-		if v.hash([]byte(tag), k[:]) == e.Root && ch.Hubs[i].Version >= e.Version {
-			return nil
-		}
-	}
-	return errors.New("the group's credential comes from a root that a later one replaced")
+	return nil
 }
 
-// keep remembers the chain's last credential as the group's newest, and
-// writes the table when it changed.
-func (v *versions) keep(tag string, ch *group.CheckedChain) error {
+// keep remembers the period's credential as the group's newest, and writes
+// the table when it changed.
+func (v *versions) keep(p *group.Presented) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	t := v.hash([]byte(tag))
-	k := group.KeyHashOf(ch.Roots[len(ch.Roots)-1])
-	next := versionEntry{Version: ch.Last().Version, Root: v.hash([]byte(tag), k[:])}
-	if e, ok := v.entries[t]; ok && e.Version == next.Version && e.Root == next.Root {
+	t := v.hash([]byte(p.Tag))
+	next := versionEntry{Version: p.Hubs.Version, Key: v.hash([]byte(p.Tag), p.Signer[:])}
+	if e, ok := v.entries[t]; ok && e.Version == next.Version && e.Key == next.Key {
 		return nil
 	}
 	v.seq++

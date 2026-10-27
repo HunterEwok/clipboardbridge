@@ -181,7 +181,8 @@ class EngineTest {
         // A bad offer is dropped; a good one reaches onTunnel.
         b.write(Member.encode(Member.Message.Tunnel(Member.TunnelOffer(ByteArray(31), ByteArray(32)))))
         b.write(Member.encode(Member.Message.Tunnel(null)))
-        val good = Member.TunnelOffer(ByteArray(32) { 2 }, ByteArray(32) { 3 }, listOf("192.0.2.1:8764"))
+        // With the hub's key for the next period, which reaches onTunnel too.
+        val good = Member.TunnelOffer(ByteArray(32) { 2 }, ByteArray(32) { 3 }, listOf("192.0.2.1:8764"), nextKey = ByteArray(32) { 4 })
         b.write(Member.encode(Member.Message.Tunnel(good)))
         val (from, got) = assertNotNull(offers.poll(10, TimeUnit.SECONDS))
         assertEquals(hub, from)
@@ -189,6 +190,35 @@ class EngineTest {
         phone.closeAll()
         task.join()
         assertTrue(offers.isEmpty())
+    }
+
+    /** The node sends the credentials it keeps after the hello, and takes those a peer sends. */
+    @Test
+    fun nodeSendsAndTakesCredentials() {
+        val signer = SoftwareSigner()
+        fun cred(v: Long) = ServerCredentials.sign(
+            ServerCredentials.Body(type = ServerCredentials.HUBS, group = "0123456789abcdef", version = v, expiresMS = 1, hubs = ServerCredentials.pad(emptyList())),
+            signer,
+        )
+        val kept = cred(1)
+        val took = LinkedBlockingQueue<List<ServerCredentials.Credential>>()
+        val keeper = object : CredentialKeeper {
+            override val all = listOf(kept)
+            override fun add(credentials: List<ServerCredentials.Credential>) = credentials.also { took.put(it) }
+        }
+        val phone = MemberNode(SyncEngine(SyncEngine.newID(), HybridClock()), "Pixel", credentials = keeper)
+        val (a, b) = Pipe.pair()
+        val task = Background { phone.serve(a, SyncEngine.newID()) }
+        assertIs<Member.Message.Hello>(Member.decode(b.read(Member.length(b.read(4)))))
+        b.write(Member.encode(Member.Message.Hello(Member.Role.FULL, Member.Hello(0))))
+        var m: Member.Message
+        do m = Member.decode(b.read(Member.length(b.read(4)))) while (m !is Member.Message.Credentials)
+        assertEquals(listOf(kept), m.credentials)
+        val sent = cred(2)
+        b.write(Member.encode(Member.Message.Credentials(listOf(sent))))
+        assertEquals(listOf(sent), took.poll(10, TimeUnit.SECONDS))
+        phone.closeAll()
+        task.join()
     }
 
     /** A RecordStore over a RecordSet. */

@@ -4,6 +4,7 @@
 package relay
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/rand"
@@ -15,6 +16,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -22,8 +25,12 @@ import (
 )
 
 // maxChain is the most certificates a member may present: its member
-// certificate, its admin CA and the group's roots.
-const maxChain = 8
+// certificate, its admin CA and the group's roots; and maxRoots the roots
+// it may show with its credentials.
+const (
+	maxChain = 8
+	maxRoots = 8
+)
 
 // maxClaim bounds a claim, which carries the group's authority records,
 // and maxClaimRecords the records in it, whose signatures the relay checks.
@@ -56,7 +63,7 @@ func (r *Relay) serverTLS() *tls.Config {
 			if cs.NegotiatedProtocol != Protocol {
 				return errors.New("relay: the device does not speak the registration protocol")
 			}
-			_, _, err := r.groupOf(cs.PeerCertificates, time.Now())
+			_, _, _, err := r.groupOf(cs.PeerCertificates, time.Now())
 			return err
 		},
 	}
@@ -64,15 +71,20 @@ func (r *Relay) serverTLS() *tls.Config {
 
 // groupOf checks that the certificates a device presented are a member
 // certificate with its chain to the root of a group the relay serves, and
-// returns that group's tag and the device's ID. A root that the device
-// presents counts only if the relay serves its group.
-func (r *Relay) groupOf(certs []*x509.Certificate, now time.Time) (tag, device string, err error) {
+// returns that group's tag and the device's ID; or a server certificate
+// alone, which names neither, for a device that registers with the
+// group's credentials (cred). A root that the device presents counts only
+// if the relay serves its group.
+func (r *Relay) groupOf(certs []*x509.Certificate, now time.Time) (tag, device string, cred bool, err error) {
 	if len(certs) == 0 || len(certs) > maxChain {
-		return "", "", errors.New("relay: the device presented no member certificate chain")
+		return "", "", false, errors.New("relay: the device presented no member certificate chain")
 	}
 	id, err := group.DeviceOf(certs[0])
 	if err != nil {
-		return "", "", fmt.Errorf("relay: %w", err)
+		if len(certs) == 1 && !certs[0].IsCA {
+			return "", "", true, nil
+		}
+		return "", "", false, fmt.Errorf("relay: %w", err)
 	}
 	inter := x509.NewCertPool()
 	var roots []*x509.Certificate
@@ -93,10 +105,86 @@ func (r *Relay) groupOf(certs []*x509.Certificate, now time.Time) (tag, device s
 			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		})
 		if err == nil {
-			return group.Tag(root), string(id), nil
+			return group.Tag(root), string(id), false, nil
 		}
 	}
-	return "", "", errors.New("relay: the device is not of a group this relay serves")
+	return "", "", false, errors.New("relay: the device is not of a group this relay serves")
+}
+
+// credentialTag is the name under which the relay keeps a group that
+// registered with the period's tag: apart from the tags of group CAs.
+func credentialTag(tag string) string { return "period " + tag }
+
+// credentialed checks a device that registers with credentials: the
+// period's hubs' and members' credentials (group.CheckPresented), which
+// list the key of its server certificate among the members; and on a
+// relay that serves a fixed list of groups, the period credential, signed
+// by one of the roots the device shows, which must be the root of a group
+// the relay serves.
+func (r *Relay) credentialed(leaf *x509.Certificate, c claim, now time.Time) (*group.Presented, error) {
+	p, err := group.CheckPresented(c.Credentials, now)
+	switch {
+	case err != nil && strings.Contains(err.Error(), "expired"):
+		return nil, errors.New("the group's credentials expired; the group's root starts a new period")
+	case err != nil:
+		return nil, errors.New("the group's credentials do not verify")
+	case p.Members == nil:
+		return nil, errors.New("the device sent no members' credential")
+	case !slices.Contains(p.Members.Members, group.KeyHashOf(leaf)):
+		return nil, errors.New("the group's members' credential does not list this device")
+	}
+	if r.cfg.Open {
+		return p, nil
+	}
+	if p.Period == nil || len(c.Roots) > maxRoots {
+		return nil, errors.New("the device showed no root of its group")
+	}
+	for _, der := range c.Roots {
+		root, err := x509.ParseCertificate(der)
+		if err != nil || !root.IsCA || root.CheckSignatureFrom(root) != nil || !bytes.Equal(root.RawSubjectPublicKeyInfo, p.PeriodRoot) {
+			continue
+		}
+		if r.allowed[group.Tag(root)] {
+			return p, nil
+		}
+	}
+	return nil, errors.New("the device is not of a group this relay serves")
+}
+
+// A period is what the relay holds, in memory, of a group that registered
+// with credentials: the period key it first saw for the period's tag, the
+// newest versions of its credentials, and the members the newest members'
+// credential lists.
+type period struct {
+	signer           group.KeyHash
+	hubs, membersVer uint64
+	members          []group.KeyHash
+}
+
+// checkPeriodLocked checks the credentials p against what the relay holds
+// for their period, and takes them when newer; the devices a newer
+// members' credential no longer lists go.
+func (r *Relay) checkPeriodLocked(tag string, p *group.Presented) error {
+	cur := r.periods[tag]
+	switch {
+	case cur == nil:
+		cur = &period{signer: p.Signer}
+		r.periods[tag] = cur
+	case cur.signer != p.Signer:
+		return errors.New("another key registered this group's period first")
+	case p.Hubs.Version < cur.hubs || p.Members.Version < cur.membersVer:
+		return errors.New("the group's credentials are older than ones this relay saw")
+	}
+	cur.hubs = p.Hubs.Version
+	if p.Members.Version > cur.membersVer || cur.members == nil {
+		cur.membersVer, cur.members = p.Members.Version, p.Members.Members
+		for _, o := range r.groups[tag] {
+			if !slices.Contains(cur.members, o.leaf) {
+				r.dropLocked(o)
+			}
+		}
+	}
+	return nil
 }
 
 // acceptRegistrations takes the members' TLS connections.
@@ -154,7 +242,7 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		return nil, err
 	}
 	cs := tc.ConnectionState()
-	tag, device, err := r.groupOf(cs.PeerCertificates, time.Now())
+	tag, device, cred, err := r.groupOf(cs.PeerCertificates, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +251,7 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		return nil, err
 	}
 	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, maxClaim))
-	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes()}); err != nil {
+	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes(), Roots: cred && !r.cfg.Open}); err != nil {
 		return nil, err
 	}
 	var c claim
@@ -196,15 +284,25 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		return refuse("too many records")
 	}
 	leaf := group.KeyHashOf(cs.PeerCertificates[0])
-	r.mu.Lock()
-	known := r.records[tag]
-	r.mu.Unlock()
-	// The signatures take time, so the records are checked outside the lock.
-	recs := group.NewRecords(rootOf(cs.PeerCertificates, tag))
-	recs.AddAll(known)
-	recs.AddAll(c.Records)
-	if recs.Revoked(leaf) {
-		return refuse("the device was removed from its group")
+	var recs *group.Records
+	var pr *group.Presented
+	if cred {
+		if pr, err = r.credentialed(cs.PeerCertificates[0], c, time.Now()); err != nil {
+			return refuse(err.Error())
+		}
+		tag, device = credentialTag(pr.Tag), group.Pseudonym(leaf)
+	} else {
+		r.mu.Lock()
+		known := r.records[tag]
+		r.mu.Unlock()
+		// The signatures take time, so the records are checked outside the
+		// lock.
+		recs = group.NewRecords(rootOf(cs.PeerCertificates, tag))
+		recs.AddAll(known)
+		recs.AddAll(c.Records)
+		if recs.Revoked(leaf) {
+			return refuse("the device was removed from its group")
+		}
 	}
 	psk, err := tunnel.NewPresharedKey()
 	if err != nil {
@@ -219,7 +317,12 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		return refuse("the relay is stopping")
 	default:
 	}
-	if len(c.Records) > 0 {
+	if pr != nil {
+		if err := r.checkPeriodLocked(tag, pr); err != nil {
+			r.mu.Unlock()
+			return refuse(err.Error())
+		}
+	} else if len(c.Records) > 0 {
 		if all := recs.All(); len(all) > len(r.records[tag]) {
 			r.records[tag] = all
 			// The devices the new records remove go now.

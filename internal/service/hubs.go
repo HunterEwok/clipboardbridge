@@ -74,6 +74,16 @@ func hubsToTry(order []group.DeviceID, self string, st *tunnel.State) []tunnel.H
 		}
 	}
 	slices.SortFunc(out, func(a, b tunnel.HubLink) int { return rankOf(order, a.Device) - rankOf(order, b.Device) })
+	// A hub that gave its key for the next period is tried with it too,
+	// right after its key now: it may have moved on to it while this
+	// member was away (docs/protocol.md, section 11, "The hub's key").
+	for i := 0; i < len(out); i++ {
+		if h := out[i]; !h.Next.IsZero() {
+			h.PublicKey, h.Next = h.Next, tunnel.Key{}
+			out = slices.Insert(out, i+1, h)
+			i++
+		}
+	}
 	return out
 }
 
@@ -134,8 +144,8 @@ func (s *Service) reachHubs(ctx context.Context, run *tunRun, standby bool) {
 			continue
 		}
 		reached := false
-		for i, h := range hubs {
-			if s.tryHub(ctx, run, nd, h, i > 0) {
+		for _, h := range hubs {
+			if s.tryHub(ctx, run, nd, h, h.Device != hubs[0].Device) {
 				reached = true
 				break
 			}
@@ -353,6 +363,9 @@ func (s *Service) hubOffersLocked(st *tunnel.State, client group.DeviceID, psk [
 // offerOf is the offer a member keeps as h, without its preshared key.
 func offerOf(h tunnel.HubLink) node.TunnelOffer {
 	o := node.TunnelOffer{HubKey: h.PublicKey[:]}
+	if !h.Next.IsZero() {
+		o.NextKey = h.Next[:]
+	}
 	for _, ep := range h.Endpoints {
 		o.Endpoints = append(o.Endpoints, ep.String())
 	}

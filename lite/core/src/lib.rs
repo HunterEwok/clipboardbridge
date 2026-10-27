@@ -22,6 +22,7 @@ extern crate alloc;
 
 pub mod certs;
 pub mod clip;
+pub mod credential;
 pub mod error;
 pub mod hlc;
 pub mod identity;

@@ -950,20 +950,23 @@ user can run `cbb forward` on a server of their own.
   WireGuard does. A packet is passed only to its own group's hub; there is no shared path
   between groups.
 - **Registration.** The hub keeps one connection out to the forwarder and registers its
-  WireGuard public key with the group's hubs' credential (D-67, [protocol.md](protocol.md),
-  section 18): the member key hashes of the group's hubs, its admins and its heirs, with a
-  version and an expiry, signed by the root, and after a handover the links from each root to
-  the next. Its TLS shows a certificate of its member key that names no device, and the group
-  CA. The forwarder takes a hub the newest credential lists, so a member that is no hub, or
-  one the group removed, cannot take the hub's place. Its state is the open connections and,
-  on disk, under a keyed hash of each group's tag, the version of the group's newest
-  credential and a hash of its root (D-75), so an older credential, or one from a root that a
-  handover left behind, is refused even after a restart. The files of earlier versions, one
-  per group with its roots and removals, are deleted. Built in Go for groups whose root is a
-  computer; a phone's root signs no credential yet, and its hubs, like hubs from before the
-  credentials, still register with their member certificate, a signature by the root or an
-  admin CA, and the group's authority records, which the forwarder keeps in memory only. A
-  group that registered with a credential is never taken with records again.
+  WireGuard public key with the period's hubs' credential (D-67, D-75,
+  [protocol.md](protocol.md), section 18). The group lives in periods of about 30 days: for
+  each, the root signs inside the group a fresh tag for the servers and a fresh period key,
+  and every device signs with its member key a fresh server key, which is all it shows the
+  servers. The period key signs the hubs' credential: the hashes of the hubs' and the admins'
+  server keys, padded, with a version and an expiry. The hub's TLS shows only a certificate
+  of its server key, which names neither a device nor a group. The forwarder takes the first
+  period key it sees for a tag and from then on only that one, and a hub its newest
+  credential lists, so a member that is no hub cannot take the hub's place; a removed device
+  knows a period's tag, so its removal starts a new period. Its state is the open connections
+  and, on disk, under a keyed hash of each period's tag, the version of the newest
+  credential and a hash of the period key, so an older credential is refused even after a
+  restart. The files of earlier versions, one per group with its roots and removals, are
+  deleted. Built in Go; the phone kits do not sign credentials yet, and the hubs of a phone's
+  group, like hubs from before the credentials, still register with their member
+  certificate, a signature by the root or an admin CA, and the group's authority records,
+  which the forwarder keeps in memory only.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
   memory. A group that reaches a limit is slowed down alone. Limits per source: registrations
   per address and per network (/24, /64), and a share of the budget for checking handshakes
@@ -971,11 +974,11 @@ user can run `cbb forward` on a server of their own.
   others.
 - **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
   the network and can at most stop forwarding.
-- It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
-  clients, and the timing and sizes of packets: any forwarder has to know which hub a client's
-  packets go to. From a registration with a credential it also learns the group CA, the
-  credential's key hashes, padded, its version and expiry, and after a handover the new roots
-  (D-67); from one with records, the hub's member certificate (its device ID, its validity and
+- It learns the hub's WireGuard public key, the addresses of the hub and its clients, and the
+  timing and sizes of packets: any forwarder has to know which hub a client's packets go to.
+  From a registration with a credential it also learns the period's tag, the hub's server
+  key, the credential's key hashes, padded, its version, expiry and period key, none of which
+  outlives the period (D-67, D-75); from one with records, the group tag, the hub's member certificate (its device ID, its validity and
   its admin CA if it has one), the group's root certificates and authority records. It also
   learns the group's obfuscation settings and, with VLESS, the group's VLESS user ID; and from the
   number of clients that send packets, roughly how many devices are away from home. It does
@@ -986,10 +989,10 @@ user can run `cbb forward` on a server of their own.
   connections last, but for the credentials' versions above. The clients' addresses cannot be hidden from it, since they are where its
   answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
   complexity that the project does not take on.
-- **Optional, off by default:** the hub can change its WireGuard key on a schedule, for
-  example weekly, handing the new key to its clients inside the tunnel, so that the forwarder
-  cannot link a group's traffic from one period to the next. The project's own forwarder does
-  not rely on it.
+- The hub changes its WireGuard key for its clients with each period of the server
+  credentials, about monthly, handing the next key to its clients inside the tunnel three
+  days ahead, so that the forwarder cannot link a group's traffic from one period to the
+  next by the hub's key ([protocol.md](protocol.md), section 11, "The hub's key").
 - The forwarder is `cbb` in a mode that holds no keys. A hub never runs on a rented server:
   that would put the decrypted clipboard on someone else's hardware.
 
@@ -1118,6 +1121,14 @@ relay, or a hub.
   much; it cannot read the clipboard or pose as a device. A device still revoked by the
   group's records can register, since the relay does not read the records, but the other
   devices' member TLS refuses it, so it learns only who is online.
+- A device whose group's credentials list it registers with them instead (D-67, D-75,
+  protocol.md, section 18): the relay then sees a certificate of the device's server key and
+  the period's hubs' and members' credentials, knows the device only by a pseudonym, the hash
+  of that key, under the period's tag, and gets a fresh WireGuard key at each registration;
+  all of it changes each month, and it holds no device ID, root or record. It refuses a
+  device the members' credential does not list, and drops one a newer credential leaves out.
+  A relay that serves a fixed list of groups also sees the period credential and the group's
+  roots, since it knows its groups by them; an open relay never does.
 - The wire format is in docs/protocol.md, section 14.
 
 ### Blocked networks

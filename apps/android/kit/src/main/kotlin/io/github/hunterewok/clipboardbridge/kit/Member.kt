@@ -316,17 +316,27 @@ object Member {
          * to hub: the client forgets the sender's own offer.
          */
         val moved: Boolean = false,
+        /**
+         * The key the hub serves with in the next period of the group's
+         * server credentials, which the client tries after hubKey (section
+         * 11, "The hub's key"); null for none.
+         */
+        val nextKey: ByteArray? = null,
     ) {
-        /** Whether both keys are 32 bytes, as a tunnel needs. */
-        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
+        /** Whether the keys are 32 bytes, as a tunnel needs. */
+        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8 && (nextKey == null || nextKey.size == 32)
 
         /** The same offer with another preshared key and hub, and moved set. */
         fun with(psk: ByteArray, hub: String?, moved: Boolean = false): TunnelOffer =
-            TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub, moved)
+            TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub, moved, nextKey)
+
+        /** The offer with the next key as the hub's key, or null without one. */
+        fun withNextKey(): TunnelOffer? = nextKey?.let { TunnelOffer(it, psk, endpoints, obfuscation, vless, hub, moved) }
 
         override fun equals(other: Any?): Boolean =
             other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints &&
-                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub && moved == other.moved
+                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub && moved == other.moved &&
+                (nextKey ?: ByteArray(0)).contentEquals(other.nextKey ?: ByteArray(0))
 
         override fun hashCode(): Int = hubKey.contentHashCode()
 
@@ -338,6 +348,7 @@ object Member {
             "vless" to vless?.let { Json.parseToJsonElement(it) },
             "hub" to Wire.str(hub),
             "moved" to if (moved) JsonPrimitive(true) else null,
+            "next_key" to nextKey?.let { Wire.bytes(it) },
         )
 
         companion object {
@@ -351,6 +362,7 @@ object Member {
                 o.optObject("vless")?.toString(),
                 o.optString("hub"),
                 o.optBool("moved") ?: false,
+                o.optBytes("next_key")?.takeIf { it.isNotEmpty() },
             )
         }
     }
@@ -505,6 +517,9 @@ object Member {
 
         data class Records(val records: List<Record>) : Message()
 
+        /** The group's server credentials the sender keeps, or new ones it passes on (section 18). */
+        data class Credentials(val credentials: List<ServerCredentials.Credential>) : Message()
+
         /** From the root: the receiver's admin CA, DER, for the admin key its hello offered. */
         class Admin(val adminCA: ByteArray) : Message() {
             override fun equals(other: Any?): Boolean = other is Admin && adminCA.contentEquals(other.adminCA)
@@ -576,6 +591,7 @@ object Member {
         Message.Bye -> Wire.obj("t" to Wire.str("bye"))
         is Message.Cert -> Wire.obj("t" to Wire.str("cert"), "cert" to Wire.bytes(m.cert), "issuer" to Wire.bytes(m.issuer))
         is Message.Records -> Wire.obj("t" to Wire.str("records"), "records" to JsonArray(m.records.map { it.toJson() }))
+        is Message.Credentials -> Wire.obj("t" to Wire.str("credentials"), "credentials" to JsonArray(m.credentials.map { it.toJson() }))
         is Message.Admin -> Wire.obj("t" to Wire.str("admin"), "admin_ca" to Wire.bytes(m.adminCA))
         is Message.Tunnel -> Wire.obj("t" to Wire.str("tunnel"), "tunnel" to m.offer?.toJson())
         is Message.Hubs -> Wire.obj("t" to Wire.str("hubs"), "hubs" to m.share.toJson())
@@ -693,6 +709,11 @@ object Member {
                 "cert" -> Message.Cert(o.optBytes("cert") ?: ByteArray(0), o.optBytes("issuer"))
                 "records" -> Message.Records(
                     o.optArray("records")?.map { Record.fromJson(it as? JsonObject ?: throw WireTypeException("records")) } ?: emptyList(),
+                )
+                "credentials" -> Message.Credentials(
+                    o.optArray("credentials")?.map {
+                        ServerCredentials.Credential.fromJson(it as? JsonObject ?: throw WireTypeException("credentials"))
+                    } ?: emptyList(),
                 )
                 "admin" -> Message.Admin(o.optBytes("admin_ca") ?: ByteArray(0))
                 "tunnel" -> Message.Tunnel(o.optObject("tunnel")?.let { TunnelOffer.fromJson(it) })
