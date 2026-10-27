@@ -990,7 +990,8 @@ Header fields (all omitted when empty):
 | `addrs` | array of strings | the first answer of a listening `join`: where it listens |
 | `port` | integer | `away hub`: the UDP port; 0 for 8764 |
 | `consent` | bool | `away on`: the user agreed to the warning about keys in files |
-| `device` | string | `mode`, `paste-on`, `paste-receive`: another device, by name or device ID |
+| `device` | string | `mode`, `paste-on`, `paste-receive`: another device, by name or device ID; `remote`: the TV, by its name |
+| `new_name` | string | `rename`: the device's new name; `remote add`: the TV's name here |
 | `method` | string | `paste-on`, `inject`: `paste` (the clipboard and the paste keys, the default) or `type` |
 | `enter` | bool | `paste-on`, `inject`: press Enter after the text; `paste-receive on`: allow that |
 | `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
@@ -1007,7 +1008,7 @@ Header fields (all omitted when empty):
 | `status` | object | for `status` |
 | `devices` | array | reserved |
 | `part` | object | `copy-media`'s `part` messages and `paste-media`'s answers: `{type?, path?, dir?, size?}`, a part of images or files without its hash |
-| `value` | string | `config`: the setting's new value |
+| `value` | string | `config`: the setting's new value; `remote add`: the TV's kind, `androidtv` (the default) or `roku`; `remote pastes`: `on` or `off` |
 
 A connection carries one request: the service reads the first message and dispatches on
 `op`; an unknown `op` fails. Every answer has `op` `reply`. A failure is
@@ -1033,6 +1034,7 @@ A connection carries one request: the service reads the first message and dispat
 | `paste-on` | `{device, method?, enter?, kind?}` + payload = the text | `{done}` once that device answered `done` to the `paste` command this admin signed (section 15), or an error with its reason. The text is cleaned first (design.md, "Remote paste"). Only on the admin socket |
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
 | `keyboard` | `{name?, keyboard?}` + payload for `type`: `name` `on`, `off`, `pair`, `type` or none | `{status, done}`: `on` saves the Bluetooth keyboard's settings and registers it with BlueZ (Linux only), `off` takes it off, `pair` makes it discoverable for two minutes, `type` types the payload on the connected device and answers once it is typed, none only answers the status. Only on the admin socket |
+| `remote` | `{name?, address?, value?, new_name?, consent?, code?, device?}` + payload for `type`: `name` `add`, `code`, `cancel`, `remove`, `pastes`, `type` or none | `{status, done}`: `add` pairs with the TV at `address` (an Android TV or a Google TV shows a code; a Roku, `value` `roku`, needs `consent`, as its control is plain HTTP), `code` finishes that pairing within two minutes, `cancel` ends it, `remove` forgets the TV `device`, `pastes` sends the group's remote pastes to it or not, `type` types the payload into the field open on the TV, none only answers the status; `status.tvs` = `[{name?, kind, host, pastes?, pairing?}]`. An address outside the home network fails. Only on the admin socket |
 | `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol

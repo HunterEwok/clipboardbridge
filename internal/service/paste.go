@@ -113,6 +113,9 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	if r, ok := s.keyboardPaste(body, text, set.Enter); ok {
 		return r
 	}
+	if r, ok := s.tvPaste(body, text, set.Enter); ok {
+		return r
+	}
 	lines := strings.Contains(text, "\n") && !set.Enter
 	if lines && body.Mode == group.PasteByTyping {
 		res.Reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line"
@@ -352,6 +355,9 @@ func (s *Service) pasteStatusLocked() *control.Paste {
 	}
 	if s.keyboardPastes() {
 		p.Targets = append(p.Targets, targetKeyboard)
+	}
+	if s.tvPastes() {
+		p.Targets = append(p.Targets, targetTV)
 	}
 	slices.Sort(p.Targets)
 	return p

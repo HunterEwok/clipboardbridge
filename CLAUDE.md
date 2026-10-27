@@ -55,6 +55,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   Android kit's `Keyboard`, all checked against `testdata/interop/keyboard.json`);
   `internal/blekeyboard`: a Linux computer as a BLE keyboard through BlueZ (`cbb keyboard`,
   `internal/service/keyboard.go`; `bluetest` plays BlueZ in tests).
+- `internal/tvremote`: a member as a TV's remote (`cbb remote`, `internal/service/tvremote.go`):
+  `androidtv` (Android TV Remote v2: pairing, the remote, `wire` its framing, `atvtest` a fake TV),
+  `roku` (ECP); only on the home network (`netguard.ControlHome`).
 - `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
   on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
   rule, `session_darwin.go` and `session_windows.go` in the agent); `internal/service/actions.go`
@@ -98,7 +101,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
   until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`
-  (settings in the flash partition `cbb` of `partitions.csv`), `net.rs` (Wi-Fi, embassy-net), `pair.rs` (the pairing task around `lite/embassy`), `usb.rs` (the USB port as a keyboard and the console's serial port, on OTG), `out.rs` (where the console's lines go);
+  (settings in the flash partition `cbb` of `partitions.csv`), `net.rs` (Wi-Fi, embassy-net), `pair.rs` (the pairing task around `lite/embassy`), `usb.rs` (the USB port as a keyboard and the console's serial port, on OTG), `ble.rs` (the board as a Bluetooth LE keyboard, trouble-host on esp-radio), `out.rs` (where the console's lines go);
   `qemu-test.sh` types on the console and runs the self-test in Espressif's QEMU (the
   `qemu` feature: console on UART0, no Wi-Fi, without esp-hal's init and with a fixed
   pseudo-random generator, never for a real chip).

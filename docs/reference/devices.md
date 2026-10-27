@@ -40,9 +40,12 @@ target and each quick action is off until the device's own user turns it on.
 | UDP 8764 | the hub | the internet | the group's tunnel, with a router port forward |
 | UDP and TCP 8764 | a forwarder or a relay | the internet | [your own servers](../admin/self-hosting.md) |
 | TCP 443 | a forwarder with VLESS | the internet | VLESS with REALITY |
+| TCP 6466 and 6467 | an Android TV or a Google TV | a computer at home | its remote and its pairing, for [`cbb remote`](cli.md) |
+| TCP 8060 | a Roku | a computer at home | its External Control Protocol, for [`cbb remote`](cli.md) |
 
-The member port can be changed when installing (`--port`, [settings](config.md)). The installers ask before they
-open any of these ([the firewall](../guide/install.md#the-firewall)).
+The member port can be changed when installing (`--port`, [settings](config.md)). The TVs' ports are
+on the TV; a computer only connects to them. The installers ask before they open any of the
+others ([the firewall](../guide/install.md#the-firewall)).
 
 ## Files and logs
 

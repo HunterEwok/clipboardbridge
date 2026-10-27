@@ -3,8 +3,9 @@
 
 //! The lite member on the Arduino Nano ESP32. So far it keeps its settings
 //! in flash, joins the Wi-Fi network set on its console, joins a group by
-//! the phone, types on its USB port as a keyboard and runs a TLS 1.3
-//! self-test on the protocol core; syncing comes next.
+//! the phone, types as a USB keyboard on its USB port or as a Bluetooth LE
+//! keyboard, and runs a TLS 1.3 self-test on the protocol core; syncing
+//! comes next.
 
 #![no_std]
 #![no_main]
@@ -25,6 +26,8 @@ use esp_hal::rng::{Trng, TrngSource};
 use crate::console::{Board, Console};
 use crate::store::{Store, tag};
 
+#[cfg(feature = "board")]
+mod ble;
 mod clock;
 mod console;
 #[cfg(feature = "board")]
@@ -95,7 +98,15 @@ mod qemu {
         }
 
         fn type_reports(&mut self, _: alloc::vec::Vec<[u8; 8]>, _: u64) -> cbb_core::error::Result<()> {
-            Err(cbb_core::error::Error::msg("the QEMU build has no USB keyboard"))
+            Err(cbb_core::error::Error::msg("the QEMU build has no keyboard"))
+        }
+
+        fn bluetooth(&self) -> String {
+            "not in the QEMU build".into()
+        }
+
+        fn ble_pair(&mut self) -> cbb_core::error::Result<()> {
+            Err(cbb_core::error::Error::msg("the QEMU build has no Bluetooth"))
         }
 
         fn restart(&mut self, _: bool) -> ! {
@@ -176,13 +187,39 @@ impl Board for Nano {
     }
 
     fn type_reports(&mut self, reports: alloc::vec::Vec<[u8; 8]>, gap_ms: u64) -> error::Result<()> {
-        if !usb::console_on_otg() {
-            return Err(error::Error::msg("the USB port is the console, not a keyboard: type usb keyboard first"));
-        }
-        if !usb::type_text(usb::Typing { reports, gap_ms }) {
+        // A connected Bluetooth host first, else the USB port.
+        let typing = usb::Typing { reports, gap_ms };
+        let queued = if ble::connected() {
+            ble::type_text(typing)
+        } else if usb::console_on_otg() {
+            usb::type_text(typing)
+        } else if ble::started() {
+            return Err(error::Error::msg(
+                "no Bluetooth host is connected, and the USB port is the console: pair a host with ble pair, or type usb keyboard",
+            ));
+        } else {
+            return Err(error::Error::msg(
+                "the USB port is the console, not a keyboard: type usb keyboard, or ble on for the Bluetooth keyboard",
+            ));
+        };
+        if !queued {
             return Err(error::Error::msg("the keyboard is still typing the last text; try again when it is done"));
         }
         Ok(())
+    }
+
+    fn bluetooth(&self) -> alloc::string::String {
+        use alloc::format;
+        match (ble::started(), ble::connected(), ble::visible_for()) {
+            (false, ..) => "off".into(),
+            (true, true, _) => "on, connected to a paired host".into(),
+            (true, false, Some(s)) => format!("on, discoverable for {s} s more"),
+            (true, false, None) => "on, waiting for a paired host".into(),
+        }
+    }
+
+    fn ble_pair(&mut self) -> error::Result<()> {
+        ble::make_visible()
     }
 
     fn restart(&mut self, download: bool) -> ! {
@@ -210,7 +247,7 @@ async fn read_console(
 #[cfg(feature = "board")]
 #[esp_hal::main]
 async fn main(spawner: embassy_executor::Spawner) -> ! {
-    use embassy_futures::select::{Either, select};
+    use embassy_futures::select::{Either3, select3};
     use esp_hal::timer::timg::TimerGroup;
     use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 
@@ -239,20 +276,32 @@ async fn main(spawner: embassy_executor::Spawner) -> ! {
     {
         println!("cbb-esp32: {}", e.for_user());
     }
+    if let Ok(s) = &store
+        && s.ble_keyboard()
+        && let Err(e) = ble::start(spawner, peripherals.BT, s.bonds())
+    {
+        println!("cbb-esp32: {}", e.for_user());
+    }
     let mut jtag = (!usb::console_on_otg()).then(|| UsbSerialJtag::new(peripherals.USB_DEVICE).into_async().split().0);
     let mut board = Nano { spawner, stack };
     let mut console = Console::new();
     console.start();
     let mut buf = [0u8; 64];
     loop {
-        let n = match select(read_console(&mut jtag, &mut buf), pair::JOINED.wait()).await {
-            Either::First(n) => n,
-            Either::Second(id) => {
+        let n = match select3(read_console(&mut jtag, &mut buf), pair::JOINED.wait(), ble::BONDED.wait()).await {
+            Either3::First(n) => n,
+            Either3::Second(id) => {
                 let saved = console::save_identity(&mut store, &id);
                 if let Err(e) = &saved {
                     println!("cbb-esp32: {}", e.for_user());
                 }
                 pair::SAVED.signal(saved.is_ok());
+                0
+            }
+            Either3::Third(bonds) => {
+                if let Err(e) = console::save_bonds(&mut store, &bonds) {
+                    println!("cbb-esp32: {}; the host must pair again after a restart", e.for_user());
+                }
                 0
             }
         };

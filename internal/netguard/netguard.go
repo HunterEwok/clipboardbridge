@@ -104,3 +104,17 @@ func Control(network, address string, _ syscall.RawConn) error {
 	}
 	return nil
 }
+
+// ErrNotHome is a connection to an address outside the home network for a
+// device that is reached only at home, as a TV.
+var ErrNotHome = errors.New("the address is not on the home network, where the device is reached only")
+
+// ControlHome is a net.Dialer's Control that refuses any address outside
+// the home network, whatever a name resolved to.
+func ControlHome(network, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil || !Home(ap.Addr()) {
+		return fmt.Errorf("%s: %w", address, ErrNotHome)
+	}
+	return nil
+}

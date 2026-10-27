@@ -47,6 +47,44 @@ impl Key {
 /// The report with every key up.
 pub const RELEASE: [u8; 8] = [0; 8];
 
+/// The HID boot keyboard's report descriptor (HID 1.11, appendix B.1):
+/// eight modifier bits, a reserved byte, five LEDs and six keys; the USB
+/// keyboard and the Bluetooth LE keyboard's report map.
+pub const DESCRIPTOR: [u8; 63] = [
+    0x05, 0x01, // usage page: generic desktop
+    0x09, 0x06, // usage: keyboard
+    0xa1, 0x01, // collection: application
+    0x05, 0x07, //   usage page: keyboard
+    0x19, 0xe0, //   usage minimum: left control
+    0x29, 0xe7, //   usage maximum: right GUI
+    0x15, 0x00, //   logical minimum: 0
+    0x25, 0x01, //   logical maximum: 1
+    0x75, 0x01, //   report size: 1
+    0x95, 0x08, //   report count: 8
+    0x81, 0x02, //   input: the modifiers
+    0x95, 0x01, //   report count: 1
+    0x75, 0x08, //   report size: 8
+    0x81, 0x01, //   input: the reserved byte
+    0x95, 0x05, //   report count: 5
+    0x75, 0x01, //   report size: 1
+    0x05, 0x08, //   usage page: LEDs
+    0x19, 0x01, //   usage minimum: num lock
+    0x29, 0x05, //   usage maximum: kana
+    0x91, 0x02, //   output: the LEDs
+    0x95, 0x01, //   report count: 1
+    0x75, 0x03, //   report size: 3
+    0x91, 0x01, //   output: padding
+    0x95, 0x06, //   report count: 6
+    0x75, 0x08, //   report size: 8
+    0x15, 0x00, //   logical minimum: 0
+    0x25, 0x65, //   logical maximum: 101
+    0x05, 0x07, //   usage page: keyboard
+    0x19, 0x00, //   usage minimum: 0
+    0x29, 0x65, //   usage maximum: 101
+    0x81, 0x00, //   input: the keys
+    0xc0, // end collection
+];
+
 /// A layout active on the host, by the name a user sets it with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {

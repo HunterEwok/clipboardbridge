@@ -92,10 +92,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     window and menu bar item over the installed service are there already (`apps/macos`,
     [apps.md](apps.md#the-mac-app)).
 - **25.** Devices that are hard to type into: the Android TV variant of the app, the Nano
-    ESP32's USB keyboard, and the Android phone and a Linux computer as a Bluetooth keyboard
-    ([apps.md](apps.md#android-the-bluetooth-keyboard), `cbb keyboard`) are done; the Nano's
-    Bluetooth keyboard and the TVs' own remotes follow. See "Devices that are hard to type
-    into" below.
+    ESP32's USB and Bluetooth LE keyboards (`lite/esp32/README.md`), the Android phone and a
+    Linux computer as a Bluetooth keyboard ([apps.md](apps.md#android-the-bluetooth-keyboard),
+    `cbb keyboard`), and a computer as the remote of an Android TV, a Google TV or a Roku
+    (`cbb remote`) are done; the Apple TV, Samsung and LG remotes, and the remotes in the
+    phones' apps, follow. See "Devices that are hard to type into" below.
 - **26.** Watches: the notifications, both watch apps, the watch's admin key and its emergency
     actions are done ([design](design.md#watches)); prompt delivery on the iPhone waits for
     the Apple account.
@@ -285,10 +286,13 @@ One pull request each, smaller ones together:
 
 1. The TV variant of the Android app, with the accessibility target of item 18, step 4.
 2. Remotes in Go: Android TV Remote v2 and the Apple TV Companion protocol first, then
-   Samsung and LG, Roku last; `cbb remote add` pairs a TV, and the apps add theirs.
+   Samsung and LG, Roku last; `cbb remote add` pairs a TV, and the apps add theirs (Android
+   TV and Roku done in 0.6, untried on real TVs; for now the user sends a computer's remote
+   pastes to one of its TVs with `cbb remote pastes`, as with `cbb keyboard on -pastes`,
+   and addressing a TV by name with `cbb paste -on` comes with the device list's targets).
 3. The Bluetooth keyboard on Android and Linux.
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
-   and the serial console.
+   and the serial console (done in 0.6: `ble on` on its console).
 5. The iPad build of the iPhone app (done in 0.6: CI tests it on an iPad simulator too,
    and a keyboard's shortcuts work).
 
