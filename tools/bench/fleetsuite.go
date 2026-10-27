@@ -51,6 +51,14 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G33-admins-at-once", func() { concurrentAdmins(ctx, r, f, timeout) }},
 		{"S24-stolen-admin", func() { stolenAdmin(ctx, r, f, timeout) }},
 		{"M4-mode-kept", func() { modeKept(ctx, r, f, timeout) }},
+		{"G4-paths", func() { joinPaths(ctx, r, f, timeout) }},
+		{"G7-two-windows", func() { twoWindows(ctx, r, f) }},
+		{"D2-who-dials", func() { whoDials(ctx, r, f, timeout) }},
+		{"D6-networks", func() { knownNetworks(ctx, r, f, timeout) }},
+		{"D12-heartbeats", func() { heartbeats(ctx, r, f, timeout) }},
+		{"I19-no-network", func() { noNetworkAtStart(ctx, r, f, timeout) }},
+		{"U8-disk-full", func() { diskFull(ctx, r, f, timeout) }},
+		{"U13-second-instance", func() { secondInstance(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
@@ -69,11 +77,24 @@ func scenario(name string) bool { return len(scenarios) == 0 || scenarios[name] 
 // fleetGroup starts n new members and forms a group of them, the first as
 // its root, every one in the sync mode shared (R2).
 func fleetGroup(ctx context.Context, r *Report, f *Fleet, suite string, n int, env ...string) *benchGroup {
-	var ds []*Device
+	return fleetGroupOn(ctx, r, f, f.net, suite, n, env...)
+}
+
+// fleetGroupOn is fleetGroup on the network net.
+func fleetGroupOn(ctx context.Context, r *Report, f *Fleet, net, suite string, n int, env ...string) *benchGroup {
+	ds := make([]*Device, n)
 	if r.Do(suite+"/start", func() error {
-		var err error
-		ds, err = f.AddN(ctx, n, env...)
-		return err
+		errs := make([]error, n)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ds[i], errs[i] = f.AddOn(ctx, net, env...)
+			}()
+		}
+		wg.Wait()
+		return errors.Join(errs...)
 	}) != nil {
 		return nil
 	}

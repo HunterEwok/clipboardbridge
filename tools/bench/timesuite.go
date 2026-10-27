@@ -429,4 +429,24 @@ func clocks(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		}
 		return both(c, "from a clock set right")
 	})
+
+	// Y14: a member killed right after a copy and started again with its
+	// clock an hour back still issues a later timestamp: its next copy wins
+	// over the one before.
+	r.Do("time/Y14-mark", func() error {
+		first := text("before the crash")
+		if err := Copy(ctx, d, first); err != nil {
+			return err
+		}
+		if err := setClock(ctx, d, "-1h"); err != nil {
+			return err
+		}
+		defer setClock(ctx, d, "")
+		for _, m := range []*Device{a, b, c} {
+			if err := arrives(ctx, m, first, timeout); err != nil {
+				return err
+			}
+		}
+		return both(d, "after the crash, an hour back")
+	})
 }

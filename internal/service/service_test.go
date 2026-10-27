@@ -870,6 +870,29 @@ func TestJoinRefusesTwoWindows(t *testing.T) {
 	}
 }
 
+func TestJoinWaitsForASecondWindow(t *testing.T) {
+	// A second window that answers a moment after the first still makes
+	// join refuse, rather than try the code on the first one found.
+	var h hub
+	a := startService(t, &h, "alpha")
+	d := startService(t, &h, "delta")
+	b := startService(t, &h, "beta")
+	ca, _ := openWindow(t, a)
+	defer ca.Close()
+	waitFor(t, "alpha's window published", func() bool { return slices.Contains(h.txtOf(a.status(t).Device), "p=1") })
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.do(t, control.Header{Op: control.OpJoin, Code: "123456"}, "")
+		done <- err
+	}()
+	time.Sleep(pairingSettle / 4)
+	cd, _ := openWindow(t, d)
+	defer cd.Close()
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "2 devices announce a pairing window") {
+		t.Errorf("join with a second window a moment later: %v", err)
+	}
+}
+
 // memberAddr returns the loopback address of the member port of the
 // service with this device ID, once its discovery runs.
 func (h *hub) memberAddr(t *testing.T, id string) string {
