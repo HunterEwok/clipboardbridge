@@ -1058,35 +1058,44 @@ jobs:
           # one still going after six is stopped and tried again on a freshly
           # booted simulator. A run that ends by itself, failed tests included,
           # counts as it is.
+          # The simulator sometimes never starts the app for its tests: xcodebuild then waits up
+          # to 17 minutes for the runner. A run with no test started after 150 seconds, or one
+          # that exits before any test ran, is retried on a freshly booted simulator; a run whose
+          # tests ran and failed is not.
           test_on() {
+            log="${RUNNER_TEMP:-/tmp}/test-$1.log"
             for attempt in 1 2 3; do
               xcrun simctl boot "$1" 2>/dev/null || true
               xcrun simctl bootstatus "$1" -b
-              # A first launch, so the launch service has settled.
-              xcrun simctl launch "$1" com.apple.Preferences >/dev/null
-              xcrun simctl terminate "$1" com.apple.Preferences || true
               xcodebuild test-without-building -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$1" \
-                "${sign[@]}" >test.log 2>&1 &
+                "${sign[@]}" >"$log" 2>&1 &
               pid=$!
-              for _ in $(seq 360); do
+              killed=
+              for second in $(seq 600); do
                 kill -0 "$pid" 2>/dev/null || break
+                if [ "$second" -ge 150 ] && ! grep -q "^Test Suite " "$log"; then killed=1; break; fi
                 sleep 1
               done
-              if kill -0 "$pid" 2>/dev/null; then
-                kill "$pid"
+              kill -0 "$pid" 2>/dev/null && killed=1
+              if [ -n "$killed" ]; then
+                kill "$pid" 2>/dev/null || true
+                pkill -f "simctl diagnose" || true
                 wait "$pid" || true
-                tail -n 30 test.log
-                echo "::warning::the tests on $1 did not finish in 6 minutes (attempt $attempt); booting the simulator again"
-                xcrun simctl shutdown "$1" || true
-                continue
+                status=124
+              else
+                status=0
+                wait "$pid" || status=$?
               fi
-              status=0
-              wait "$pid" || status=$?
-              tail -n 100 test.log
               xcrun simctl shutdown "$1" || true
-              return "$status"
+              if [ "$status" -eq 0 ] || grep -q "^Test Case " "$log"; then
+                tail -n 100 "$log"
+                [ -n "$killed" ] && echo "::error::the tests on $1 did not finish in 10 minutes"
+                return "$status"
+              fi
+              tail -n 30 "$log"
+              echo "::warning::no test started on $1 (attempt $attempt, status $status); booting the simulator again"
             done
-            echo "::error::the tests on $1 did not finish in three attempts"
+            echo "::error::no test started on $1 in three attempts"
             return 1
           }
           # Built once, then tested on one simulator at a time.
