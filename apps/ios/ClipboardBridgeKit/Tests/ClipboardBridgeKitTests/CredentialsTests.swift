@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 @testable import ClipboardBridgeKit
-import CryptoKit
+import Crypto
 import Foundation
 import XCTest
 
