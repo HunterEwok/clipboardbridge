@@ -34,6 +34,20 @@ class WatchStateTest {
     }
 
     @Test
+    fun emergencyActions() {
+        val d = WatchState.Device("a1", "deck", "desktop", true, listOf("remove", "paste-off", "action"), listOf("lock"))
+        assertEquals(WatchState(devices = listOf(d)), WatchState.decode(WatchState(devices = listOf(d)).encode()))
+        val ask = WatchState.Ask("action", "a1", "lock", "w1")
+        assertEquals(ask, WatchState.Ask.decode(ask.encode()))
+        assertEquals(WatchState.Ask("freeze", "a1", null, "w1"), WatchState.Ask.decode(WatchState.Ask("freeze", "a1", null, "w1").encode()))
+        val s = WatchState.Signed(byteArrayOf(1), byteArrayOf(2, 3), byteArrayOf(4))
+        assertEquals(s, WatchState.Signed.decode(s.encode()))
+        for (a in listOf(WatchState.Answer(body = byteArrayOf(5)), WatchState.Answer(done = true), WatchState.Answer(refused = "no"))) {
+            assertEquals(a, WatchState.Answer.decode(a.encode()))
+        }
+    }
+
+    @Test
     fun rejectsOther() {
         assertNull(WatchState.decode("not json".toByteArray()))
         assertNull(WatchState.decode(null))

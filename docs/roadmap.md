@@ -134,7 +134,7 @@ The order may change.
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
-26. **Partly: the notifications and both watch apps are done; the watch's admin key and its emergency actions are planned for 0.6.** Watches: the Apple Watch, and Wear OS after it, show the group's
+26. **Partly: the notifications, both watch apps, the watch's admin key and its emergency actions are done; prompt delivery on the iPhone waits for the Apple account.** Watches: the Apple Watch, and Wear OS after it, show the group's
     events, turn sync away from home on and off, and act at once on a stolen device with an
     admin key of their own. The root stays on the phone. See "Watches" below.
 27. **Planned for 0.6, after remote paste (item 18).** Quick actions: one button in the apps,
@@ -523,7 +523,8 @@ settings also erases its Bluetooth pairings.
 
 ## Watches
 
-Steps 1 and 2 done in 0.4; the rest planned for 0.6. Decided on 2026-10-24: a watch is never
+Steps 1 and 2 done in 0.4, step 3 and the admin key in 0.6; prompt delivery on the iPhone
+waits for the Apple developer account. Decided on 2026-10-24: a watch is never
 the group's root, but it carries notifications, a switch for sync away from home and the
 emergency actions, with an admin key of its own.
 
@@ -662,7 +663,7 @@ device and Android would need more rights than the app should hold.
    command and its checks in Go, with interop vectors for Rust, Swift and Kotlin.
 2. The buttons in the phone apps and `cbb run`.
 3. The presets on the lite member.
-4. The buttons on the watch (item 26, step 4).
+4. The buttons on the watch (item 26, step 3); done in 0.6.
 
 ## Collections
 

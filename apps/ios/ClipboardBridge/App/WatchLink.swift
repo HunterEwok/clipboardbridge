@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import ClipboardBridgeKit
 import Foundation
 import os
+import UIKit
 import WatchConnectivity
 
 private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "watch")
@@ -91,7 +93,8 @@ final class WatchLink: NSObject {
         var s = WatchState()
         s.hasGroup = model.phase == .home
         s.devices = model.devices.filter { !$0.isSelf }.map {
-            WatchState.Device(id: $0.id, name: $0.name, symbol: $0.kind.symbol, online: $0.online)
+            WatchState.Device(id: $0.id, name: $0.name, symbol: $0.kind.symbol, online: $0.online,
+                              can: model.group.watchActions(for: $0.id), actions: $0.actions)
         }
         s.away = model.away.map { a in
             guard a.on else { return .off }
@@ -105,6 +108,35 @@ final class WatchLink: NSObject {
         s.events = Notifier.shared.recent
         s.color = UserDefaults.standard.string(forKey: AccentChoice.key) ?? Tokens.colors[0].name
         return s
+    }
+}
+
+extension WatchLink {
+    /// The body of the emergency action the watch asks for.
+    static func body(for data: Data) -> [String: Any] {
+        do {
+            let ask = try JSONDecoder().decode(WatchState.Ask.self, from: data)
+            return [WatchState.bodyKey: try AppModel.shared.group.watchBody(ask)]
+        } catch {
+            return [WatchState.refusedKey: AppModel.describe(error)]
+        }
+    }
+
+    /// Brings what the watch signed into the group, in a background task:
+    /// the watch may have woken the app.
+    static func deliver(_ data: Data) async -> [String: Any] {
+        let task = UIApplication.shared.beginBackgroundTask(withName: "watch action")
+        defer { UIApplication.shared.endBackgroundTask(task) }
+        do {
+            let signed = try JSONDecoder().decode(WatchState.Signed.self, from: data)
+            try await AppModel.shared.group.deliverFromWatch(signed)
+            await AppModel.shared.refresh()
+            return [WatchState.doneKey: true]
+        } catch MemberNode.Failure.notConnected {
+            return [WatchState.refusedKey: String(localized: "The iPhone is not connected to that device. Open Clipboard Bridge on the iPhone, then try again.", bundle: .app)]
+        } catch {
+            return [WatchState.refusedKey: AppModel.describe(error)]
+        }
     }
 }
 
@@ -123,8 +155,16 @@ extension WatchLink: WCSessionDelegate {
 
     /// The watch's away switch: the same as the one in Settings.
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
-        guard let on = message[WatchState.awayKey] as? Bool else { return replyHandler([:]) }
         nonisolated(unsafe) let reply = replyHandler
+        if let d = message[WatchState.askKey] as? Data {
+            Task { @MainActor in reply(Self.body(for: d)) }
+            return
+        }
+        if let d = message[WatchState.signedKey] as? Data {
+            Task { @MainActor in reply(await Self.deliver(d)) }
+            return
+        }
+        guard let on = message[WatchState.awayKey] as? Bool else { return replyHandler([:]) }
         Task { @MainActor in
             let model = AppModel.shared
             await model.setAway(on)

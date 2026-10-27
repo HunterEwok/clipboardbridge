@@ -220,7 +220,14 @@ Enclave that works only while it is unlocked (`WatchKey`), and answers with the 
 device ID it picked. The phone, after Face ID, issues the admin CA and signs the watch's
 device record (`PhoneGroup.addWatch`), sends the record to the group and the admin CA to the
 watch. Removing the watch from the devices revokes the key; a new watch gets one after that.
-The emergency actions that use the key are roadmap item 26, step 4.
+
+On a watch that is an admin, a device in the list opens its emergency actions: freeze an
+admin computer, remove an ordinary device, turn remote paste, the quick actions or sync away
+from home off, or run one of its quick actions marked for a watch. The phone says which
+apply (`PhoneGroup.watchActions`). After a tap on what it signs, the watch asks the phone for
+the body (`PhoneGroup.watchBody`), checks that it says what was asked, checks the wrist and
+signs with its key; the phone adds the record to the group or passes the command on, and
+says when it is done.
 
 ## Wear OS
 
@@ -254,6 +261,10 @@ TEE) that works only while the watch is unlocked (`WatchKey`), and answers on `/
 After the fingerprint, the face or the screen lock, the phone sends the admin CA on
 `/cbb/admitted`, and the watch confirms on the same path. Wear OS has no common way to read
 the on-wrist setting, so the phone asks the user to keep it on.
+
+The emergency actions work as on the Apple Watch: the watch sends its ask on `/cbb/ask` and
+gets the body on `/cbb/body`, then sends what it signed on `/cbb/signed` and gets the
+phone's answer on `/cbb/done`; the key signs only while the watch is unlocked.
 
 ## The Mac app
 

@@ -646,6 +646,40 @@ final class LiveGroup: GroupController {
         return WatchState.Admission(device: request.device, adminCA: ca, group: g.tag)
     }
 
+    func watchActions(for id: String) -> [String] {
+        state?.watchActions(for: id).map(\.rawValue) ?? []
+    }
+
+    /// The body the watch signs (docs/protocol.md, section 10, rule 8): any
+    /// phone of the group builds it, since what counts is the watch's
+    /// signature.
+    func watchBody(_ ask: WatchState.Ask) throws -> Data {
+        guard let g = state, let action = PhoneGroup.WatchAction(rawValue: ask.action) else { throw PhoneGroup.Failure.notForWatch }
+        return try g.watchBody(action, device: ask.device, name: ask.name, watch: ask.watch, now: Date())
+    }
+
+    /// Brings what the watch signed into the group: a freeze or a removal
+    /// joins the records and goes to every member now or at the next sync, a
+    /// command goes to its device, which must be connected.
+    func deliverFromWatch(_ signed: WatchState.Signed) async throws {
+        let r = PhoneGroup.watchRecord(body: signed.body, signature: signed.signature, watchCA: signed.adminCA)
+        let o = try JSONSerialization.jsonObject(with: signed.body) as? [String: Any]
+        let type = o?["type"] as? String
+        if type == "freeze" || type == "revoke" {
+            guard var g = state else { throw PhoneGroup.Failure.notAWatch }
+            guard g.add([r]).count == 1 else { throw CommandRefused(reason: "the group did not take the watch's record") }
+            try g.save(to: file)
+            state = g
+            groupChanged()
+            await node?.sendRecords([r])
+            return
+        }
+        guard let to = o?["to"] as? String else { throw PhoneGroup.Failure.notForWatch }
+        guard let node else { throw MemberNode.Failure.notConnected }
+        let res = try await node.command(r, to: to, timeout: 25, via: true)
+        if !res.done { throw CommandRefused(reason: res.reason ?? res.status) }
+    }
+
     /// Makes a computer an admin; one whose keys sit in a file only with
     /// allowFileKey, else PhoneGroup.Failure.fileKey.
     private func makeAdmin(_ id: String, allowFileKey: Bool) async throws {

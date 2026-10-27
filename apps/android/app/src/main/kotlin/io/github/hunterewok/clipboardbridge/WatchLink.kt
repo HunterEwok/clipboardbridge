@@ -9,6 +9,7 @@ import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -100,7 +101,7 @@ object WatchLink {
 
     fun state(model: AppModel) = WatchState(
         hasGroup = model.phase == AppModel.Phase.HOME,
-        devices = model.computers.map { WatchState.Device(it.id, it.name, it.kind.form, it.online) },
+        devices = model.computers.map { WatchState.Device(it.id, it.name, it.kind.form, it.online, model.group.watchActions(it.id), it.actions) },
         away = model.away?.let { a ->
             if (!a.on) {
                 WatchState.Away.OFF
@@ -122,8 +123,39 @@ object WatchLink {
 
 /** The watch's away switch, the same as the one in Settings; Play services start it when the watch asks. */
 class WatchListener : WearableListenerService() {
+    /**
+     * The watch's emergency actions (docs/protocol.md, section 10, rule 8):
+     * the body it asks for, or what it signed brought into the group; the
+     * answer goes back to the watch that asked.
+     */
+    private fun emergency(event: MessageEvent) {
+        val model = (application as ClipboardBridgeApp).model
+        val (path, answer) = runBlocking(Dispatchers.Main) {
+            try {
+                if (event.path == WatchState.ASK_PATH) {
+                    val ask = WatchState.Ask.decode(event.data) ?: throw IllegalArgumentException("not an ask")
+                    WatchState.BODY_PATH to WatchState.Answer(body = model.group.watchBody(ask))
+                } else {
+                    val signed = WatchState.Signed.decode(event.data) ?: throw IllegalArgumentException("not a signed action")
+                    model.group.deliverFromWatch(signed)
+                    model.refresh()
+                    WatchState.DONE_PATH to WatchState.Answer(done = true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val note = model.describe(e)
+                val back = if (event.path == WatchState.ASK_PATH) WatchState.BODY_PATH else WatchState.DONE_PATH
+                back to WatchState.Answer(refused = getString(note.text) + (note.detail?.let { "\n\n" + it } ?: ""))
+            }
+        }
+        Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, path, answer.encode())
+            .addOnFailureListener { Log.e("clipboardbridge", "no answer sent to the watch", it) }
+    }
+
     override fun onMessageReceived(event: MessageEvent) {
         if (event.path == WatchState.KEY_PATH || event.path == WatchState.ADMITTED_PATH) return WatchLink.answered(event.path, event.data)
+        if (event.path == WatchState.ASK_PATH || event.path == WatchState.SIGNED_PATH) return emergency(event)
         if (event.path != WatchState.AWAY_PATH) return
         val on = event.data.firstOrNull() == 1.toByte()
         val model = (application as ClipboardBridgeApp).model

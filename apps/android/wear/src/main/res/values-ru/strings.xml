@@ -17,4 +17,19 @@
     <string name="no_phone">Телефон не подключён. Поднесите его ближе и попробуйте снова.</string>
     <string name="no_answer">Телефон не ответил. Попробуйте снова.</string>
     <string name="watch_admin">Эти часы админ группы.</string>
+    <string name="act_freeze">Заморозить этого админа</string>
+    <string name="act_remove">Удалить из группы</string>
+    <string name="act_paste_off">Выключить удалённую вставку</string>
+    <string name="act_actions_off">Выключить быстрые действия</string>
+    <string name="act_away_off">Выключить синхронизацию вне дома</string>
+    <string name="ask_freeze">Заморозить %1$s? Он останется админом по имени, но ничего из подписанного им не будет действовать, пока корень его не разморозит.</string>
+    <string name="ask_remove">Удалить %1$s из группы?</string>
+    <string name="ask_paste_off">Выключить удалённую вставку на %1$s?</string>
+    <string name="ask_actions_off">Выключить все быстрые действия на %1$s?</string>
+    <string name="ask_away_off">Выключить синхронизацию вне дома на %1$s?</string>
+    <string name="ask_action">Запустить %1$s на %2$s?</string>
+    <string name="done">Готово.</string>
+    <string name="not_done">Телефон этого не сделал. Попробуйте снова.</string>
+    <string name="not_done_because">Телефон этого не сделал.</string>
+    <string name="not_signed">Действие не подписано. Разблокируйте часы и попробуйте снова.</string>
 </resources>

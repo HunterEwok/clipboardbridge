@@ -16,6 +16,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   The root phone makes its Apple Watch or Wear OS watch an admin in Settings: the watch
   makes the key in its Secure Enclave or Keystore, only with a passcode (and wrist detection
   on the Apple Watch), and the key works only while the watch is unlocked.
+- Emergency actions on an admin watch: a device on the watch opens what the watch may do to
+  it (freeze an admin computer, remove an ordinary device, turn remote paste, quick actions
+  or sync away from home off, run a quick action marked for a watch). The phone builds what
+  the watch signs, the watch checks it, asks for a tap and signs it, and the phone carries
+  it into the group.
 - The `away-off` command turns sync away from home off on a member (`cbb global off -on
   DEVICE` on an admin computer); turning it on stays each device's own decision.
 - Quick actions take `watch` in `-by`, for actions a watch may run.

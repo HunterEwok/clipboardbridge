@@ -240,6 +240,41 @@ class PhoneGroupTest {
         assertFailsWith<PhoneGroup.Failure> { g.rename(SyncEngine.newID(), "x", root, t0) }
     }
 
+    /** The watch's emergency actions (section 10, rule 8): the phone builds the body, the watch signs it, and it counts as the rules say. */
+    @Test
+    fun watchActions() {
+        val root = SoftwareSigner()
+        val g = PhoneGroup.create(root, SoftwareSigner().publicKeyDER, t0)
+        val pi = SyncEngine.newID()
+        g.record(pi, "pi", "linux", Records.keyHashOfCert(GroupCertificates.member(pi, SoftwareSigner().publicKeyDER, g.groupCA, root, t0)), root, t0)
+        g.makeAdmin(pi, SoftwareSigner().publicKeyDER, root, t0.plusSeconds(1), allowFileKey = true)
+        val deck = SyncEngine.newID()
+        g.record(deck, "deck", "full", Records.keyHashOfCert(GroupCertificates.member(deck, SoftwareSigner().publicKeyDER, g.groupCA, root, t0)), root, t0)
+        val watchKey = SoftwareSigner()
+        val watch = SyncEngine.newID()
+        val (ca, _) = g.addWatch(watch, "Watch", "wearos", watchKey.publicKeyDER, root, t0.plusSeconds(1))
+        val all = listOf(PhoneGroup.WatchAction.PASTE_OFF, PhoneGroup.WatchAction.ACTIONS_OFF, PhoneGroup.WatchAction.AWAY_OFF, PhoneGroup.WatchAction.ACTION)
+        assertEquals(listOf(PhoneGroup.WatchAction.FREEZE) + all, g.watchActions(pi))
+        assertEquals(listOf(PhoneGroup.WatchAction.REMOVE) + all, g.watchActions(deck))
+        assertEquals(emptyList(), g.watchActions(g.device))
+        assertEquals(emptyList(), g.watchActions(watch))
+        assertFailsWith<PhoneGroup.Failure> { g.watchBody(PhoneGroup.WatchAction.REMOVE, pi, watch, t0) }
+        assertFailsWith<PhoneGroup.Failure> { g.watchBody(PhoneGroup.WatchAction.FREEZE, pi, deck, t0) }
+        val t2 = t0.plusSeconds(2)
+        fun signed(a: PhoneGroup.WatchAction, device: String, name: String? = null): Member.Record {
+            val body = g.watchBody(a, device, watch, t2, name)
+            return PhoneGroup.watchRecord(body, watchKey.signature(body), ca)
+        }
+        val now = t0.plusSeconds(3).toEpochMilli()
+        for (a in listOf(PhoneGroup.WatchAction.PASTE_OFF, PhoneGroup.WatchAction.ACTIONS_OFF, PhoneGroup.WatchAction.AWAY_OFF)) {
+            Commands.verify(signed(a, pi), g.records, pi, now)
+        }
+        Commands.verify(signed(PhoneGroup.WatchAction.ACTION, pi, "lock"), g.records, pi, now)
+        assertEquals(2, g.add(listOf(signed(PhoneGroup.WatchAction.FREEZE, pi), signed(PhoneGroup.WatchAction.REMOVE, deck))).size)
+        assertTrue(g.devices.first { it.id == pi }.frozen)
+        assertTrue(g.devices.none { it.id == deck })
+    }
+
     /** The root makes a watch an admin (section 10, rule 8): it may freeze but admits nobody, and removing it takes it out. */
     @Test
     fun addWatch() {

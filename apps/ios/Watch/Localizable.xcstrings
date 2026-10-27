@@ -61,6 +61,36 @@
         }
       }
     },
+    "Done." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Готово."
+          }
+        }
+      }
+    },
+    "Freeze %@? It stays an admin in name, but nothing it signs counts until the root unfreezes it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заморозить %@? Он останется админом по имени, но ничего из подписанного им не будет действовать, пока корень его не разморозит."
+          }
+        }
+      }
+    },
+    "Freeze this admin" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заморозить этого админа"
+          }
+        }
+      }
+    },
     "Latest": {
       "localizations": {
         "ru": {
@@ -101,12 +131,82 @@
         }
       }
     },
+    "Remove %@ from the group?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить %@ из группы?"
+          }
+        }
+      }
+    },
+    "Remove from the group" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить из группы"
+          }
+        }
+      }
+    },
+    "Run %@ on %@?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запустить %1$@ на %2$@?"
+          }
+        }
+      }
+    },
+    "Sign" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подписать"
+          }
+        }
+      }
+    },
+    "Sign the action with this watch's key" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подписать действие ключом этих часов"
+          }
+        }
+      }
+    },
+    "The action was not signed. Keep the watch on your wrist, then try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Действие не подписано. Не снимайте часы с руки и попробуйте снова."
+          }
+        }
+      }
+    },
     "The iPhone did not answer. Try again.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "iPhone не ответил. Попробуйте снова."
+          }
+        }
+      }
+    },
+    "The iPhone did not do it. Try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone этого не сделал. Попробуйте снова."
           }
         }
       }
@@ -127,6 +227,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "Через ваш хаб."
+          }
+        }
+      }
+    },
+    "Turn every quick action off on %@?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить все быстрые действия на %@?"
+          }
+        }
+      }
+    },
+    "Turn quick actions off" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить быстрые действия"
+          }
+        }
+      }
+    },
+    "Turn remote paste off" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить удалённую вставку"
+          }
+        }
+      }
+    },
+    "Turn remote paste off on %@?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить удалённую вставку на %@?"
+          }
+        }
+      }
+    },
+    "Turn sync away from home off" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить синхронизацию вне дома"
+          }
+        }
+      }
+    },
+    "Turn sync away from home off on %@?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить синхронизацию вне дома на %@?"
           }
         }
       }

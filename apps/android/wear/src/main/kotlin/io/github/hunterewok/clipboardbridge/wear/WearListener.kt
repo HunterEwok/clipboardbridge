@@ -13,7 +13,8 @@ import io.github.hunterewok.clipboardbridge.WatchState
 /**
  * The root phone's messages that certify the watch's admin key
  * (WatchKey): Play services start it when the phone asks, and it answers
- * the node that asked.
+ * the node that asked. The phone's answers to an emergency action go to
+ * the WearModel that waits for them.
  */
 class WearListener : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
@@ -24,6 +25,7 @@ class WearListener : WearableListenerService() {
                 val kept = a != null && WatchKey.admit(this, a)
                 WatchState.ADMITTED_PATH to (if (kept) a!!.device else "").toByteArray()
             }
+            WatchState.BODY_PATH, WatchState.DONE_PATH -> return WearModel.answered(event.data)
             else -> return
         }
         Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, answer.first, answer.second)

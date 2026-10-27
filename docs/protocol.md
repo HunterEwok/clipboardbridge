@@ -1320,7 +1320,11 @@ Validity and evaluation, which depend only on the set of records, never on their
    6); and of the commands (section 15) it signs only `paste-off`, `actions-off`, `away-off`
    and `action`. A watch is listed as an admin while its admin CA is neither revoked nor
    frozen, but it is never a hub (section 11) and no server credential names it (section
-   18): it reaches the group only through its phone, which carries what it signs.
+   18): it reaches the group only through its phone, which carries what it signs. The
+   phone builds the body (a `freeze` or `revoke` record, or a command with `by` the watch's
+   device ID), the watch checks its type, group, signer and, for a command, `to` and
+   `action`, then signs it; the phone adds the record to its records and sends it, or passes
+   the command on as it passes its own (section 15).
 
 **Handing the group over.** When the root is lost, an admin takes over: in a phone's group
 an admin phone, never a computer; in a group a computer created an admin computer, with

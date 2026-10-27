@@ -30,6 +30,13 @@ protocol GroupController: AnyObject {
     /// Makes the key the paired watch made an admin key with the role
     /// watch; only the root phone does. Returns what the watch keeps.
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission
+    /// What the group's watch may do to a device (PhoneGroup.WatchAction).
+    func watchActions(for id: String) -> [String]
+    /// The body the watch signs for what it asked.
+    func watchBody(_ ask: WatchState.Ask) throws -> Data
+    /// Brings what the watch signed into the group: a record to every member,
+    /// a command to its device.
+    func deliverFromWatch(_ signed: WatchState.Signed) async throws
     /// Gives a device another name; only an admin phone does.
     func rename(_ id: String, to name: String) async throws
     /// Sets the sync mode of a connected computer; only an admin phone does.
@@ -79,6 +86,9 @@ protocol GroupController: AnyObject {
 extension GroupController {
     func unfreeze(_ id: String) async throws {}
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission { throw PhoneGroup.Failure.notRoot }
+    func watchActions(for id: String) -> [String] { [] }
+    func watchBody(_ ask: WatchState.Ask) throws -> Data { throw PhoneGroup.Failure.notAWatch }
+    func deliverFromWatch(_ signed: WatchState.Signed) async throws { throw PhoneGroup.Failure.notAWatch }
     func rename(_ id: String, to name: String) async throws {}
     func setMode(_ id: String, to mode: String) async throws {}
     func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {}

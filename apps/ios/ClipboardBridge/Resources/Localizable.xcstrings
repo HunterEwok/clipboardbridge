@@ -51,6 +51,16 @@
         }
       }
     },
+    "The iPhone is not connected to that device. Open Clipboard Bridge on the iPhone, then try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone не подключён к этому устройству. Откройте Clipboard Bridge на iPhone и попробуйте снова."
+          }
+        }
+      }
+    },
     "The watch is an admin now. It can freeze an admin computer, remove a device that is no admin and turn things off." : {
       "localizations" : {
         "ru" : {

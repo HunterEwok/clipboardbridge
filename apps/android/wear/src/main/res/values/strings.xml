@@ -18,4 +18,19 @@
     <string name="no_phone">The phone is not connected. Bring it closer, then try again.</string>
     <string name="no_answer">The phone did not answer. Try again.</string>
     <string name="watch_admin">This watch is an admin of the group.</string>
+    <string name="act_freeze">Freeze this admin</string>
+    <string name="act_remove">Remove from the group</string>
+    <string name="act_paste_off">Turn remote paste off</string>
+    <string name="act_actions_off">Turn quick actions off</string>
+    <string name="act_away_off">Turn sync away from home off</string>
+    <string name="ask_freeze">Freeze %1$s? It stays an admin in name, but nothing it signs counts until the root unfreezes it.</string>
+    <string name="ask_remove">Remove %1$s from the group?</string>
+    <string name="ask_paste_off">Turn remote paste off on %1$s?</string>
+    <string name="ask_actions_off">Turn every quick action off on %1$s?</string>
+    <string name="ask_away_off">Turn sync away from home off on %1$s?</string>
+    <string name="ask_action">Run %1$s on %2$s?</string>
+    <string name="done">Done.</string>
+    <string name="not_done">The phone did not do it. Try again.</string>
+    <string name="not_done_because">The phone did not do it.</string>
+    <string name="not_signed">The action was not signed. Unlock the watch, then try again.</string>
 </resources>

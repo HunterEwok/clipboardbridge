@@ -181,6 +181,10 @@ object Records {
         adminCA: ByteArray? = null,
     ): Member.Record = sign(Body(type = "revoke", group = group, timeMS = now.toEpochMilli(), by = by, keys = keys, keep = keep), signer, adminCA)
 
+    /** A freeze record for the admin CAs with key hashes keys (docs/protocol.md, section 10, rule 4); records names what they signed until now, which keeps counting. */
+    fun freeze(keys: List<ByteArray>, records: List<ByteArray>, group: String, by: String, now: Instant, signer: CertificateSigner, adminCA: ByteArray? = null): Member.Record =
+        sign(Body(type = "freeze", group = group, timeMS = now.toEpochMilli(), by = by, keys = keys, records = records), signer, adminCA)
+
     /** A thaw record that ends the freeze records with the IDs freezes (docs/protocol.md, section 10, rule 4). */
     fun thaw(freezes: List<ByteArray>, group: String, by: String, now: Instant, signer: CertificateSigner, adminCA: ByteArray? = null): Member.Record =
         sign(Body(type = "thaw", group = group, timeMS = now.toEpochMilli(), by = by, records = freezes), signer, adminCA)
@@ -806,6 +810,9 @@ class RecordSet {
         }
         return keys
     }
+
+    /** The IDs of the records the CA with key hash admin signed: what a freeze of it keeps counting, as Go's Records.SignedBy. */
+    fun signedBy(admin: ByteArray): List<ByteArray> = Eval(this).entries.filter { it.signer == Key(admin) }.map { Records.id(it.record) }
 
     /**
      * The keys of the devices whose records the CA with key hash admin

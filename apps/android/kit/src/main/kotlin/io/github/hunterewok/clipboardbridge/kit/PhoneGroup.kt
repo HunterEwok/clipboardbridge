@@ -384,6 +384,68 @@ class PhoneGroup internal constructor(
         return ca to record(device, n, "watch", key, rootSigner, now, key, os, Records.HARDWARE)
     }
 
+    /** What a watch of the group may do from its wrist (section 10, rule 8). */
+    enum class WatchAction(val key: String) {
+        FREEZE("freeze"), REMOVE("remove"), PASTE_OFF("paste-off"), ACTIONS_OFF("actions-off"), AWAY_OFF("away-off"), ACTION("action");
+
+        companion object {
+            fun of(key: String?): WatchAction? = entries.firstOrNull { it.key == key }
+        }
+    }
+
+    /**
+     * What a watch may do to device: freeze it when it is an admin computer,
+     * remove it when it is no admin, and send a member the commands that
+     * turn things off or run a quick action. Nothing to the root, a phone or
+     * a watch.
+     */
+    fun watchActions(device: String): List<WatchAction> {
+        val d = devices.firstOrNull { it.id == device } ?: return emptyList()
+        if (device == records.rootDevice || (d.role != "full" && d.role != "lite")) return emptyList()
+        val out = mutableListOf<WatchAction>()
+        if (d.adminKey != null && d.role == "full" && !d.frozen) out.add(WatchAction.FREEZE)
+        if (d.adminKey == null && !d.admin) out.add(WatchAction.REMOVE)
+        return out + listOf(WatchAction.PASTE_OFF, WatchAction.ACTIONS_OFF, WatchAction.AWAY_OFF, WatchAction.ACTION)
+    }
+
+    /**
+     * The body the watch with the device ID watch signs for action on device
+     * (name is the quick action's, for ACTION): the phone builds it, the
+     * watch shows what it says and signs it with its admin key, and
+     * watchRecord puts the two together. Any phone of the group builds it,
+     * admin or not: what counts is the watch's signature.
+     */
+    fun watchBody(action: WatchAction, device: String, watch: String, now: Instant, name: String? = null): ByteArray {
+        val w = devices.firstOrNull { it.id == watch && it.role == "watch" }
+        val ca = w?.adminKey
+        if (ca == null || !records.isWatch(ca)) throw Failure(NOT_A_WATCH)
+        val d = devices.firstOrNull { it.id == device }
+        if (d == null || action !in watchActions(device)) throw Failure(NOT_FOR_WATCH)
+        val s = BodyOnly
+        val r = when (action) {
+            WatchAction.FREEZE -> {
+                val admin = d.adminKey ?: throw Failure(NOT_FOR_WATCH)
+                Records.freeze(listOf(admin), records.signedBy(admin), tag, watch, now, s)
+            }
+            WatchAction.REMOVE -> Records.revoke(d.keys, tag, watch, now, s)
+            WatchAction.PASTE_OFF -> Commands.pasteOff(device, tag, watch, now, s)
+            WatchAction.ACTIONS_OFF -> Commands.actionsOff(device, tag, watch, now, s)
+            WatchAction.AWAY_OFF -> Commands.awayOff(device, tag, watch, now, s)
+            WatchAction.ACTION -> {
+                if (name == null || !Commands.validActionName(name)) throw Failure(NOT_FOR_WATCH)
+                Commands.action(device, name, tag, watch, now, s)
+            }
+        }
+        return r.body
+    }
+
+    /** Signs nothing: the watch signs the body elsewhere. */
+    private object BodyOnly : CertificateSigner {
+        override val publicKeyDER = ByteArray(0)
+
+        override fun signature(data: ByteArray) = ByteArray(0)
+    }
+
     /**
      * Checks the attestation a device sent of its member key (section 17,
      * "Evidence") and, on the root, returns a new device record with what
@@ -546,7 +608,11 @@ class PhoneGroup internal constructor(
 
         /** The message of the Failure for a name that the records do not accept. */
         const val INVALID_NAME = "a device name has 1 to 64 bytes and no control characters"
-        const val NOT_A_WATCH = "the watch's request names a device ID or system that is not a new watch's"
+        const val NOT_A_WATCH = "the watch's request names a device ID or system that is not a new watch's, or the device is no watch of the group"
+        const val NOT_FOR_WATCH = "a watch may not do that to this device"
+
+        /** The record or command a watch signed: body, its signature (ECDSA with SHA-256, DER) and the watch's admin CA. */
+        fun watchRecord(body: ByteArray, signature: ByteArray, watchCA: ByteArray): Member.Record = Member.Record(body, signature, listOf(watchCA))
 
         /** A name that the records accept: 1 to 64 bytes without control characters, or "Android". */
         fun validName(s: String): String {

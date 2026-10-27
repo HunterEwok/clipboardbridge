@@ -158,6 +158,47 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertTrue(g.records.revoked.contains(key))
     }
 
+    /// The watch's emergency actions (section 10, rule 8): the phone builds
+    /// the body, the watch signs it, and what it signed counts as the rules
+    /// say.
+    func testWatchActions() throws {
+        let t = try group()
+        var g = t.g
+        _ = try g.makeAdmin(device: t.pi, adminKey: SoftwareSigner().publicKeyDER, rootSigner: t.root, now: t1, allowFileKey: true)
+        let deck = SyncEngine.newID()
+        let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: g.groupCA, caSigner: t.root, now: t0)
+        _ = try g.record(device: deck, name: "deck", role: "full", key: Records.keyHash(cert: deckCert), caSigner: t.root, now: t0)
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        let (ca, _) = try g.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)
+
+        XCTAssertEqual(g.watchActions(for: t.pi), [.freeze, .pasteOff, .actionsOff, .awayOff, .action])
+        XCTAssertEqual(g.watchActions(for: deck), [.remove, .pasteOff, .actionsOff, .awayOff, .action])
+        XCTAssertEqual(g.watchActions(for: g.device), [])
+        XCTAssertEqual(g.watchActions(for: watch), [])
+        XCTAssertThrowsError(try g.watchBody(.remove, device: t.pi, watch: watch, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .notForWatch)
+        }
+        XCTAssertThrowsError(try g.watchBody(.freeze, device: t.pi, watch: deck, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .notAWatch)
+        }
+        func signed(_ a: PhoneGroup.WatchAction, _ device: String, name: String? = nil) throws -> Member.Record {
+            let body = try g.watchBody(a, device: device, name: name, watch: watch, now: t1.addingTimeInterval(1))
+            return PhoneGroup.watchRecord(body: body, signature: try watchKey.signature(for: body), watchCA: ca)
+        }
+
+        // A command reaches pi and counts there.
+        let now = Records.ms(t1.addingTimeInterval(2))
+        for a in [PhoneGroup.WatchAction.pasteOff, .actionsOff, .awayOff] {
+            XCTAssertNoThrow(try Commands.verify(try signed(a, t.pi), records: g.records, me: t.pi, nowMS: now), a.rawValue)
+        }
+        XCTAssertNoThrow(try Commands.verify(try signed(.action, t.pi, name: "lock"), records: g.records, me: t.pi, nowMS: now))
+
+        // The freeze and the removal count.
+        XCTAssertEqual(g.add([try signed(.freeze, t.pi), try signed(.remove, deck)]).count, 2)
+        XCTAssertTrue(try XCTUnwrap(g.devices.first { $0.id == t.pi }).frozen)
+        XCTAssertFalse(g.devices.contains { $0.id == deck })
+    }
+
     /// Reads the next message from the phone, at most ten tries, until one
     /// is what want accepts.
     func next(from t: Pipe, _ want: (Member.Message) -> Bool) async throws -> Member.Message? {

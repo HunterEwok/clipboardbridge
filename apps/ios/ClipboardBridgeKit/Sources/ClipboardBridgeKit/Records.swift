@@ -120,6 +120,16 @@ public enum Records {
         return try sign(b, with: signer, adminCA: adminCA)
     }
 
+    /// A freeze record for the admin CAs with key hashes keys (docs/protocol.md,
+    /// section 10, rule 4); records names what they signed until now, which
+    /// keeps counting.
+    public static func freeze(_ keys: [Data], records: [Data], group: String, by: String, now: Date,
+                              signer: CertificateSigner, adminCA: Data? = nil) throws -> Member.Record {
+        var b = Body(type: "freeze", group: group, timeMS: ms(now), by: by)
+        (b.keys, b.records) = (keys, records)
+        return try sign(b, with: signer, adminCA: adminCA)
+    }
+
     /// A thaw record that ends the freeze records with the IDs freezes
     /// (docs/protocol.md, section 10, rule 4).
     public static func thaw(_ freezes: [Data], group: String, by: String, now: Date, signer: CertificateSigner,
@@ -756,6 +766,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
             for k in e.body.keys ?? [] where (ev.revokers[k] ?? []).contains(id) && !keys.contains(k) { keys.append(k) }
         }
         return keys
+    }
+
+    /// The IDs of the records the CA with key hash admin signed: what a
+    /// freeze of it keeps counting, as Go's Records.SignedBy.
+    public func signed(by admin: Data) -> [Data] {
+        Eval(self).entries.filter { $0.signer == admin }.map { Records.id($0.record) }
     }
 
     /// The keys of the devices whose records the CA with key hash admin

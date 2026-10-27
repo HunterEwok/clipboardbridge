@@ -1069,6 +1069,42 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         return WatchState.Admission(request.device, ca, g.tag)
     }
 
+    /** What the group's watch may do to a device (PhoneGroup.WatchAction keys). */
+    fun watchActions(id: String): List<String> = synchronized(lock) { state?.watchActions(id).orEmpty().map { it.key } }
+
+    /**
+     * The body the watch signs (docs/protocol.md, section 10, rule 8): any
+     * phone of the group builds it, since what counts is the watch's
+     * signature.
+     */
+    fun watchBody(ask: WatchState.Ask): ByteArray {
+        val g = copyOfState() ?: throw PhoneGroup.Failure(PhoneGroup.NOT_A_WATCH)
+        val a = PhoneGroup.WatchAction.of(ask.action) ?: throw PhoneGroup.Failure(PhoneGroup.NOT_FOR_WATCH)
+        return g.watchBody(a, ask.device, ask.watch, Instant.now(), ask.name)
+    }
+
+    /**
+     * Brings what the watch signed into the group: a freeze or a removal
+     * joins the records and goes to every member now or at the next sync, a
+     * command goes to its device, which must be connected.
+     */
+    suspend fun deliverFromWatch(signed: WatchState.Signed) {
+        val r = PhoneGroup.watchRecord(signed.body, signed.signature, signed.adminCA)
+        val o = org.json.JSONObject(String(signed.body))
+        val type = o.optString("type")
+        if (type == "freeze" || type == "revoke") {
+            val g = copyOfState() ?: throw PhoneGroup.Failure(PhoneGroup.NOT_A_WATCH)
+            if (g.add(listOf(r)).size != 1) throw CommandRefused("the group did not take the watch's record")
+            withContext(Dispatchers.IO) { adopt(g) }
+            published(listOf(r))
+            return
+        }
+        val to = o.optString("to").takeIf { it.isNotEmpty() } ?: throw PhoneGroup.Failure(PhoneGroup.NOT_FOR_WATCH)
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        val res = withContext(Dispatchers.IO) { n.command(to, r, 25_000, via = true) }
+        if (!res.done) throw CommandRefused(res.reason ?: res.status)
+    }
+
     /**
      * Removes the phone that holds the group's root, when it is lost: this
      * admin phone makes a new root key and takes the group over
