@@ -239,6 +239,8 @@ func TestStatus(t *testing.T) {
 		{control.Status{Role: "full", OS: "macos"}, "Run cbb new here to start one"},
 		{control.Status{Role: "full", OS: "windows", Device: "d1", Group: "g1", Holder: true}, "Device d1 (Windows, full), group g1"},
 		{control.Status{Role: "full", OS: "macos", Device: "d2", Group: "g1", Removed: true}, "This device was removed from the group"},
+		{control.Status{Role: "full", OS: "linux", Device: "d3", Group: "g1", CertEndsMS: time.Now().Add(-time.Hour).UnixMilli()}, "This device's certificate ended on"},
+		{control.Status{Role: "full", OS: "linux", Device: "d3", Group: "g1", CertEndsMS: time.Now().Add(certWarning / 2).UnixMilli()}, "no admin has renewed it"},
 	} {
 		st := tt.st
 		fakeService(t, control.Message{Header: control.Header{Status: &st, Done: true}})
@@ -425,5 +427,15 @@ func TestFailDetails(t *testing.T) {
 		if strings.Contains(out, "dial unix") != c.detail || strings.Contains(out, "Detail:") != c.detail {
 			t.Errorf("CBB_DEBUG=%s: %q", c.debug, out)
 		}
+	}
+}
+
+func TestCertLine(t *testing.T) {
+	now := time.Now()
+	if l := certLine(now.Add(365*24*time.Hour).UnixMilli(), now); l != "" {
+		t.Errorf("a certificate with a year left: %q", l)
+	}
+	if l := certLine(0, now); l != "" {
+		t.Errorf("no certificate: %q", l)
 	}
 }

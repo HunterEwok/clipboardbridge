@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/actions"
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -214,6 +215,27 @@ func noPasteboard() string {
 	return "This cbb was built without cgo, so it has no pasteboard support: its agent cannot link this Mac's clipboard. Install a release build, or build with CGO_ENABLED=1."
 }
 
+// certWarning is how long before its end status warns that this device's
+// member certificate was not renewed: an admin renews it from 240 days
+// before, so this late no admin has met the device for months.
+var certWarning = benchtime.D(30 * 24 * time.Hour)
+
+// certLine warns when this device's member certificate has ended, or ends
+// soon, or says nothing.
+func certLine(endsMS int64, now time.Time) string {
+	if endsMS == 0 {
+		return ""
+	}
+	end := time.UnixMilli(endsMS)
+	switch {
+	case !now.Before(end):
+		return fmt.Sprintf("This device's certificate ended on %s, before an admin renewed it: the group's members refuse it. To join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.", end.Local().Format(time.DateOnly))
+	case end.Sub(now) < certWarning:
+		return fmt.Sprintf("This device's certificate ends on %s and no admin has renewed it: connect it to the group's root or an admin before then, or it must join again.", end.Local().Format(time.DateOnly))
+	}
+	return ""
+}
+
 // writeStatus prints this device, its group and the group's devices.
 func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
@@ -227,6 +249,8 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
 	if st.Removed {
 		fmt.Fprintln(w, "This device was removed from the group: its members refuse it. To join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.")
+	} else if c := certLine(st.CertEndsMS, now); c != "" {
+		fmt.Fprintln(w, c)
 	}
 	if st.Mode != "" {
 		fmt.Fprintln(w, modeLine(st.Mode))

@@ -21,6 +21,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   each run, for the cases that need many devices or would harm the real ones: the pairing
   window, admins and their limits, freezing, removal, a takeover, two groups side by side,
   network splits, the modes, junk on the member port, restarts and up to 32 members.
+- The bench's time-scaled build (`go build -tags benchtime`, never released): certificates,
+  their renewal and the server credentials' periods run 100000 times faster, and
+  `CBB_TEST_CLOCK` moves a member's clock. The `time` suite runs it in the fleet: renewal,
+  new periods, and a certificate that ends while no admin is on.
 - The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
@@ -284,6 +288,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- `cbb status` says when this device's certificate has ended, or ends within 30 days with no
+  admin to renew it; before, a member whose certificate ended while no admin was on was
+  refused by the group with no word why.
 - After `cbb takeover` the new root could not admit a computer: the joiner refused the
   member certificate it still had from its admin CA. The new root now issues its own
   certificate from the new root at once. A pairing that fails a certificate check shows
