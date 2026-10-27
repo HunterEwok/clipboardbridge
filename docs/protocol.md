@@ -2384,7 +2384,10 @@ the lists, the signatures and types, and a server's check), and passes the vecto
 registers with no server, so it signs none and keeps none. The phones' kits do what Go does
 (`Credentials.kt`, `Credentials.swift`: `ServerCredentials`, `CredentialStore`, and
 `CredentialRefresh`, which signs as Go's refresh does, the period on a root phone), keep them
-and pass them on in `MemberNode`, and pass the same vectors.
+and pass them on in `MemberNode`, and pass the same vectors. A phone registers with a relay
+by them once the members' credential lists its server key (`CredentialStore.registration`,
+cbbtun's `Relay.SetCredentials`); it maps the pseudonyms the relay names back to device IDs
+by the server credentials.
 
 The group lives in **periods** of about 30 days. For each, its root signs, inside the group,
 a fresh **tag** for the servers and a fresh **period key**; each device signs with its member

@@ -378,6 +378,23 @@ final class AppModel: ObservableObject {
         return message ?? ""
     }
 
+    /// Hears of the group's events while iOS runs the app in the
+    /// background for a moment (BackgroundRefresh): it waits up to wait for
+    /// a computer to connect, then gives the records a moment to arrive.
+    /// The clipboard stays as it is: iOS lets only the app in front read it.
+    func refreshInBackground(wait: Duration = .seconds(20), records: Duration = .seconds(3)) async {
+        let deadline = ContinuousClock.now + wait
+        while group.hasGroup, ContinuousClock.now < deadline {
+            await refresh()
+            if computers.contains(where: \.online) {
+                try? await Task.sleep(for: records)
+                await refresh()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+    }
+
     /// Updates which computers are online.
     func refresh() async {
         await group.refresh()

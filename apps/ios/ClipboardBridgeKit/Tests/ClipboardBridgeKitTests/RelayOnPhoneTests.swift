@@ -21,7 +21,12 @@ final class RelayOnPhoneTests: XCTestCase {
         init(args: [String], memberPort: UInt16, records: String, events: RelayLinkEvents) {
             (self.args, self.memberPort, self.records, self.events) = (args, memberPort, records, events)
         }
+        /// The creds of each setCredentials, "" back to the member certificate.
+        var credentials: [String] = []
         func setRecords(_ records: String) throws { self.records = records }
+        func setCredentials(serverKey: Data, sign: @escaping @Sendable (Data) throws -> Data, creds: String, roots: String, names: String) throws {
+            credentials.append(creds)
+        }
         func close() { closed = true }
     }
 
@@ -103,6 +108,24 @@ final class RelayOnPhoneTests: XCTestCase {
         XCTAssertNil(saved.settings)
         XCTAssertTrue(links.started[1].closed)
         XCTAssertEqual(r.status(paused: false).0, .off)
+    }
+
+    func testCredentialsGoToTheLinkOnce() throws {
+        let links = FakeLinks(), saved = Saved()
+        let r = relay(links, saved, settings: RelaySettings(key: Data(repeating: 1, count: 32),
+                                                            relay: HubState.Forwarder(endpoint: "203.0.113.9:8764", pin: pin)))
+        let reg = CredentialStore.Registration(credentials: [], roots: [Data([1])], names: ["ab": pc])
+        r.setCredentials(RelayOnPhone.Credentials(serverKey: Data([2]), sign: { $0 }, registration: reg))
+        r.start(group())
+        let l = try XCTUnwrap(links.started.first)
+        XCTAssertEqual(l.credentials, ["[]"], "kept for the link when it starts")
+        r.setCredentials(RelayOnPhone.Credentials(serverKey: Data([2]), sign: { $0 }, registration: reg))
+        XCTAssertEqual(l.credentials.count, 1, "the same again: no new registration")
+        r.setCredentials(nil)
+        XCTAssertEqual(l.credentials, ["[]", ""])
+        r.stop()
+        r.start(group())
+        XCTAssertEqual(links.started.last?.credentials, [], "back with the member certificate: nothing to hand over")
     }
 
     func testReports() throws {

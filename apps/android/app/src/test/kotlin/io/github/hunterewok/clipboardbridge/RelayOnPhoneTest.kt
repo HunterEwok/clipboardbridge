@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge
 
+import io.github.hunterewok.clipboardbridge.kit.CredentialStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,8 +20,13 @@ class RelayOnPhoneTest {
 
     private class FakeLink(val args: List<String>, val memberPort: Int, var shown: String) : RelayLink {
         @Volatile var closed = false
+        /** The creds of each SetCredentials, "" back to the member certificate. */
+        val credentials = mutableListOf<String>()
         override fun setRecords(records: String) {
             shown = records
+        }
+        override fun setCredentials(serverKey: ByteArray, sign: (ByteArray) -> ByteArray, creds: String, roots: String, names: String) {
+            credentials.add(creds)
         }
         override fun close() {
             closed = true
@@ -97,6 +103,24 @@ class RelayOnPhoneTest {
         assertEquals("the relay refused: too many groups", why)
         r.changed("not json") // logged, the last report stays
         assertEquals(RelayOnPhone.Status.FAILED, r.status(false).first)
+    }
+
+    @Test
+    fun credentialsGoToTheLinkOnce() {
+        val links = FakeLinks()
+        val r = relay(links, mutableListOf(), initial = RelaySettings(ByteArray(32) { 1 }, HubState.Forwarder("203.0.113.9:8764", pin)))
+        val reg = CredentialStore.Registration(emptyList(), listOf(byteArrayOf(1)), mapOf("ab" to pc))
+        r.setCredentials(RelayOnPhone.Credentials(byteArrayOf(2), { it }, reg))
+        r.start(group())
+        val l = links.started.single()
+        assertEquals("kept for the link when it starts", listOf("[]"), l.credentials)
+        r.setCredentials(RelayOnPhone.Credentials(byteArrayOf(2), { it }, reg))
+        assertEquals("the same again: no new registration", 1, l.credentials.size)
+        r.setCredentials(null)
+        assertEquals(listOf("[]", ""), l.credentials)
+        r.stop()
+        r.start(group())
+        assertTrue("back with the member certificate: nothing to hand over", links.started[1].credentials.isEmpty())
     }
 
     @Test

@@ -156,5 +156,6 @@ events of each maker's apps, the foreground service across reboots and battery s
 Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
 Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
 for a joining phone (`TLSListener`), the admin CA in the TLS chain, making a computer an admin and the takeover (a new
-Secure Enclave root key signed right after the admin key). Test these on
+Secure Enclave root key signed right after the admin key), and a run of the background app refresh
+(the simulator has no BGTaskScheduler). Test these on
 a device before relying on them.

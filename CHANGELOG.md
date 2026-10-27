@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
+  seconds, and it hears of the group's events then, without being opened. Push
+  notifications follow with the Apple developer account.
+- Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
+  the Linux archive; docs/reference/self-hosting.md installs them and says what the server
+  keeps, what its hosting provider sees, and what a system VPN on a device hides.
 - BRAND.md: which builds are official and how to check them, what belongs to the project
   (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
   build with changes should not do; it names the other projects called Clipboard Bridge.
@@ -33,8 +39,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
   The start page leads with "One clipboard to rule them all" and what it does, then the
   platforms, a comparison with sending yourself a message and one with Apple's Universal
-  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet (from their makers' pages,
-  dated), three steps to start with a board each, uses and questions; every page ends with a
+  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet, platform by platform (from
+  their makers' pages, dated), three steps to start with a board each, uses and questions; every page ends with a
   next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
   light theme, following the system or the reader's choice in the header; the download page
   puts the reader's system first, and every command has a copy button. Short CSS-only
@@ -232,8 +238,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   The lite member's core and the phones' kits read and check the credentials with the same
   vectors. Both phone apps keep them, pass them on, and sign their server keys; a root phone
   signs a new period while the user's last Face ID or fingerprint lasts, and the lists with a
-  period key in the Secure Enclave or the Keystore. The phones still register with a relay
-  by their member certificate.
+  period key in the Secure Enclave or the Keystore. Once the members' credential lists a
+  phone's server key, the phone registers with a relay by the credentials too, under its
+  pseudonym (cbbtun's `Relay.SetCredentials`).
 - The hub takes a new WireGuard key for its clients with each period of the server
   credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
   three days ahead, then it serves with it and registers again with its forwarder, so the
@@ -250,6 +257,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the version of its newest credential and a hash of its period key (`-state`, `none` for
   memory only). It refuses an older credential or another period key, also after a restart;
   records from older hubs and from phones' groups stay in memory only.
+- `cbb forward` and `cbb relay` log no address and no WireGuard key: an error from the network
+  or from WireGuard, and with `CBB_DEBUG=1` WireGuard's own messages, are logged without
+  them.
 - The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
   so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
   each MiB.
@@ -272,6 +282,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
   setting.
+- `cbb status` away from home could show a peer at the relay by its pseudonym instead of
+  its device, when the credential that names it came after the relay reported it online:
+  the names are now mapped each time the status is asked for.
 
 ## [0.5.0] - 2026-10-26
 
