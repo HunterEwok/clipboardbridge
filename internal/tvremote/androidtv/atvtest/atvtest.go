@@ -59,9 +59,21 @@ func (c *remoteConn) send(m wire.Builder) error {
 // New starts a TV, closed with the test.
 func New(t testing.TB) *TV {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	tv, err := Start("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
+	}
+	t.Cleanup(tv.Close)
+	return tv
+}
+
+// Start starts a TV whose pairing port listens at addr, the remote port
+// one below; port 0 picks two free ports in a row. The bench's forge runs
+// it as a TV on the network; the caller closes it.
+func Start(addr string) (*TV, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
@@ -70,7 +82,7 @@ func New(t testing.TB) *TV {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	tv := &TV{
 		key:     key,
@@ -79,25 +91,31 @@ func New(t testing.TB) *TV {
 		changed: make(chan struct{}, 1),
 	}
 	cfg := &tls.Config{Certificates: []tls.Certificate{tv.cert}, ClientAuth: tls.RequireAnyClientCert}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
 	// The remote port is the one below the pairing port, as on a TV.
 	for range 100 {
-		if tv.pair, err = tls.Listen("tcp", "127.0.0.1:0", cfg); err != nil {
-			t.Fatal(err)
+		if tv.pair, err = tls.Listen("tcp", net.JoinHostPort(host, port), cfg); err != nil {
+			return nil, err
 		}
-		port := tv.pair.Addr().(*net.TCPAddr).Port
-		if tv.remote, err = tls.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port-1), cfg); err == nil {
+		p := tv.pair.Addr().(*net.TCPAddr).Port
+		if tv.remote, err = tls.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(p-1)), cfg); err == nil {
 			break
 		}
 		tv.pair.Close()
 		tv.pair = nil
+		if port != "0" {
+			return nil, err
+		}
 	}
 	if tv.remote == nil {
-		t.Fatal("no two ports in a row are free")
+		return nil, errors.New("no two ports in a row are free")
 	}
-	t.Cleanup(tv.Close)
 	go tv.accept(tv.pair, tv.servePairing)
 	go tv.accept(tv.remote, tv.serveRemote)
-	return tv
+	return tv, nil
 }
 
 // Addr is the TV's address with its pairing port, the remote port the one

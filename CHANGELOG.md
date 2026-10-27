@@ -426,6 +426,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - `cbb revoke`, `takeover`, `freeze`, `unfreeze` and `holder` with `-h` print their usage
   instead of asking the service about a device named `-h`.
+- The TV remote's errors name `cbb remote add`, the command that adds a TV, instead of
+  `cbb tv add`, which does not exist.
 - A device that registers with its relay again, after the group's credentials changed, no
   longer stays off the relay for up to 25 seconds: a dial or an answer it was waiting on
   ends with the old registration instead of at its timeout, and the device says in its log
