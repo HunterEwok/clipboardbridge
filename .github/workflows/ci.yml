@@ -1076,7 +1076,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: apps/desktop
@@ -1104,7 +1104,7 @@ jobs:
       - name: GTK 4 and WebKitGTK, which Wails builds on
         if: runner.os == 'Linux'
         id: gtk
-        timeout-minutes: 13
+        timeout-minutes: 25
         # A stalled download gives up early and tries again.
         run: |
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
