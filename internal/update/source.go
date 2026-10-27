@@ -165,8 +165,8 @@ func readMax(r io.Reader, max int64) ([]byte, error) {
 
 // download writes the asset of version to path, checking its size and
 // SHA-256 against release.json as it arrives.
-func download(ctx context.Context, src Source, a release.Asset, version, path string) error {
-	body, err := src.Open(ctx, a.Name, version)
+func download(ctx context.Context, open func(context.Context) (io.ReadCloser, error), a release.Asset, path string) error {
+	body, err := open(ctx)
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", a.Name, err)
 	}

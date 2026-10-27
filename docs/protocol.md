@@ -2275,8 +2275,16 @@ it checks what it downloads.
   version, and the devices list marks the devices that run an older one. Taking a release
   only informs: a device installs one only through its own update (`cbb update`, its timer,
   the app store), which checks the files again.
-- The archives do not pass through the group yet; each device downloads its own (roadmap,
-  item 29).
+- The archives pass through the group as images and files do ("Content", section 4): a
+  member serves, by its SHA-256, a file of the release it holds once it holds it whole, and
+  `get` asks for it like a part. `cbb update` hands the archive it installed to the service
+  (control operation `release-file`), which keeps it (`release-files/` in its state
+  directory, named by the SHA-256) only when the held `release.json` lists it with that size
+  and hash. Before downloading, `cbb update` asks its service (`release-get`), which fetches
+  the archive from its peers that send `media`, and downloads it from the server only when
+  no peer has it; it checks the archive against `release.json` either way. A member deletes
+  the archives of a release once it holds a newer one, and serves them through the group's
+  tunnel too.
 - A member that does not know `release` ignores it, as it ignores every message of a type it does not know.
 
 ## 17. Key stores

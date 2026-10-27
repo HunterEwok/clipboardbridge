@@ -929,13 +929,14 @@ token cannot slip in another build or an older one.
 4. **Built:** automatic updates: the installers' question (`--auto-update`, kept), the
    timers (systemd, launchd, a scheduled task as SYSTEM, cron on OpenWrt and FreeBSD),
    `cbb update -auto`, at most one check a day, the failed versions skipped.
-5. **Built, but the archives:** members pass the newest signed release to each other
+5. **Built:** members pass the newest signed release to each other
    (protocol section 16, "In the group": `release_seq` in the hello, the `release`
    message, checked as a download is), `cbb update` hands what it fetched to the service,
    `cbb status` says when a newer release is out and marks the devices that run an older
    one, and the tray app shows "Update to X", which runs `cbb update` through UAC or
-   pkexec. Still to come: the archives passing through the group, for devices without
-   internet access.
+   pkexec. The archives pass through the group too: the service keeps the archive
+   `cbb update` installed and serves it by its hash, and `cbb update` on another member
+   takes it from the group before it downloads.
 6. **Built:** the Android app's own update for the sideloaded APK (`ApkUpdate.kt`,
    docs/apps.md, "Updates"): the signed files checked with the Kotlin kit, the APK's hash
    and signing certificate, `PackageInstaller` with `USER_ACTION_NOT_REQUIRED`, Settings'

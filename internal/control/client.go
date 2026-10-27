@@ -42,7 +42,7 @@ func AdminSocketFor(path string) string {
 // the control socket for the members of the service's group.
 func IsAdmin(op string) bool {
 	switch op {
-	case OpCopy, OpPaste, OpCopyMedia, OpPasteMedia, OpCopiedMedia, OpPart, OpData, OpConfig, OpStatus, OpDevices, OpWatch, OpCopied, OpClipboard, OpAnswer, OpReply, OpWrite, OpInject, OpInjected, OpAct, OpActed, OpRelease:
+	case OpCopy, OpPaste, OpCopyMedia, OpPasteMedia, OpCopiedMedia, OpPart, OpData, OpConfig, OpStatus, OpDevices, OpWatch, OpCopied, OpClipboard, OpAnswer, OpReply, OpWrite, OpInject, OpInjected, OpAct, OpActed, OpRelease, OpReleaseGet:
 		return false
 	}
 	return true

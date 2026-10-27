@@ -208,6 +208,7 @@ func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 		Dir: dir, Work: work, Roots: roots, Sources: sources,
 		Installed: installed, Archive: update.ArchiveName(), Programs: progs,
 		Now: time.Now, Install: update.Install, Healthy: update.Healthy, Verify: update.VerifySigner,
+		Group: groupArchive, Keep: keepArchive,
 		Log: out,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
@@ -284,6 +285,87 @@ func shareRelease(found update.Found) {
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	c.Do(&control.Message{Header: control.Header{Op: control.OpRelease}, Payload: data})
+}
+
+// groupArchive asks the service for the archive a, which it holds or
+// fetches from the group's members (docs/protocol.md, section 16, "In the
+// group"); the caller checks what it reads against the release.
+func groupArchive(ctx context.Context, a release.Asset) (io.ReadCloser, error) {
+	c, err := control.DialFor(control.OpReleaseGet)
+	if err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { c.SetDeadline(time.Now()) })
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpReleaseGet, Value: a.SHA256}})
+	if err == nil && (m.Part == nil || m.Part.Size != a.Size) {
+		err = errors.New("the service answered with another file")
+	}
+	if err != nil {
+		stop()
+		c.Close()
+		return nil, err
+	}
+	return &partReader{c: c, stop: stop}, nil
+}
+
+// partReader reads the data answers of a part until Done.
+type partReader struct {
+	c    *control.Client
+	stop func() bool
+	buf  []byte
+	done bool
+}
+
+func (p *partReader) Read(b []byte) (int, error) {
+	for len(p.buf) == 0 {
+		if p.done {
+			return 0, io.EOF
+		}
+		m, err := p.c.Receive()
+		if err != nil {
+			return 0, err
+		}
+		p.buf, p.done = m.Payload, m.Done
+	}
+	n := copy(b, p.buf)
+	p.buf = p.buf[n:]
+	return n, nil
+}
+
+func (p *partReader) Close() error {
+	p.stop()
+	return p.c.Close()
+}
+
+// keepArchive hands the service the archive at path, now installed, so
+// that it serves it to the group's members. A service that does not take
+// it costs nothing but their downloads.
+func keepArchive(path string, a release.Asset) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	c, err := control.DialFor(control.OpReleaseFile)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(2 * time.Minute))
+	if c.Send(&control.Message{Header: control.Header{Op: control.OpReleaseFile, Value: a.SHA256, Part: &control.Part{Size: a.Size}}}) != nil {
+		return
+	}
+	buf := make([]byte, 1<<20)
+	for {
+		n, err := io.ReadFull(f, buf)
+		if n > 0 && c.Send(&control.Message{Header: control.Header{Op: control.OpData}, Payload: buf[:n]}) != nil {
+			return
+		}
+		if err != nil {
+			break
+		}
+	}
+	c.Receive()
 }
 
 func updateCommand() string {

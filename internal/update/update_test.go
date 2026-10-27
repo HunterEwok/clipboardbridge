@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -214,6 +215,54 @@ func TestUpdate(t *testing.T) {
 	u.Installed = "0.6.1"
 	if found, err = u.Check(context.Background(), State{Seen: found.Seen}, ""); err != nil || found.Newer {
 		t.Errorf("after the update: %+v, %v", found, err)
+	}
+}
+
+// The archive comes from the group when it has it, the server otherwise,
+// and one from the group that does not match release.json is not used.
+func TestFromGroup(t *testing.T) {
+	data := goodArchive(t, "0.6.1")
+	for _, tc := range []struct {
+		name  string
+		group []byte // nil: the group does not have it
+		from  string
+	}{
+		{"group", data, "the group"},
+		{"server", nil, "the server"},
+		{"bad copy", append(slices.Clone(data[:len(data)-1]), data[len(data)-1]^1), "the server"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.publish(t, "0.6.1", data, nil, 30*24*time.Hour)
+			sys := &system{running: "0.6.0"}
+			u := f.updater(t, sys)
+			var log strings.Builder
+			u.Log = &log
+			u.Group = func(_ context.Context, a release.Asset) (io.ReadCloser, error) {
+				if a.Name != archive || tc.group == nil {
+					return nil, errors.New("no member has it")
+				}
+				return io.NopCloser(bytes.NewReader(tc.group)), nil
+			}
+			var kept []byte
+			u.Keep = func(path string, a release.Asset) {
+				kept, _ = os.ReadFile(path)
+			}
+			found, err := u.Check(context.Background(), State{}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := u.Apply(context.Background(), found.Source, State{}, found.Release); err != nil {
+				t.Fatal(err)
+			}
+			fromGroup := strings.Contains(log.String(), "from the group.")
+			if fromGroup != (tc.from == "the group") {
+				t.Errorf("not from %s:\n%s", tc.from, log.String())
+			}
+			if sys.running != "0.6.1" || !bytes.Equal(kept, data) {
+				t.Errorf("running %s, kept %d bytes", sys.running, len(kept))
+			}
+		})
 	}
 }
 

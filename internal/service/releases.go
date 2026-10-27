@@ -27,6 +27,7 @@ const releaseFile = "release.json"
 type heldRelease struct {
 	set       node.ReleaseSet
 	seen      release.Seen
+	release   release.Release
 	version   string
 	expiresMS int64
 }
@@ -74,7 +75,7 @@ func (s *Service) checkRelease(set node.ReleaseSet, seen release.Seen) (*heldRel
 	if err := json.Unmarshal(set.Channel.Body, &c); err != nil {
 		return nil, err
 	}
-	return &heldRelease{set: set, seen: next, version: r.Version, expiresMS: c.ExpiresMS}, nil
+	return &heldRelease{set: set, seen: next, release: r, version: r.Version, expiresMS: c.ExpiresMS}, nil
 }
 
 // heldRelease returns the release this device holds, nil for none or
@@ -142,6 +143,7 @@ func (s *Service) takeRelease(set node.ReleaseSet) (bool, error) {
 	if offered(h.version) {
 		s.logf("cbb: Clipboard Bridge %s is available; cbb update installs it", h.version)
 	}
+	go s.pruneReleaseFiles()
 	return true, nil
 }
 

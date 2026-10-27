@@ -154,6 +154,18 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
+	case control.OpReleaseFile:
+		if err := s.receiveReleaseFile(r, m); err != nil {
+			fail(c, err)
+			c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			io.Copy(io.Discard, c)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
+	case control.OpReleaseGet:
+		if err := s.sendReleaseFile(ctx, c, m); err != nil {
+			fail(c, err)
+		}
 	case control.OpPasteOn:
 		if err := s.sendPaste(ctx, m); err != nil {
 			fail(c, err)

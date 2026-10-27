@@ -28,7 +28,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   peers whose hello names an older one, and each member checks them as a download is
   checked. `cbb status` says when a newer release is out and lists each device's version,
   marking the older ones; the tray app offers "Update to X", which runs `cbb update` as the
-  administrator.
+  administrator. The archives pass through the group too: a member keeps the archive it
+  installed and serves it, and `cbb update` takes it from the group before downloading.
 - The lite member's `cbb update` on Linux and OpenWrt, as the full member's: the signed
   files checked with `lite/core`, the download through the system's curl, wget or
   uclient-fetch, the archive's installer, the rollback, `-check`, `-auto on|off` and

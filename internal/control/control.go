@@ -73,6 +73,8 @@ const (
 	OpCopiedMedia = "copied-media"  // watcher → service: the clipboard changed to an image, as copy-media carries it
 	OpConfig      = "config"        // client → service: show the settings, or set the setting Name to Value
 	OpRelease     = "release"       // client → service: the payload a Release in JSON, a signed release cbb update fetched, for the group
+	OpReleaseFile = "release-file"  // client → service: an archive of the held release that cbb update installed, Value its SHA-256 and Part its size, its bytes in data messages
+	OpReleaseGet  = "release-get"   // client → service: the archive of the held release whose SHA-256 is Value, from this device or its peers; a reply with Part, its bytes, then Done
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.

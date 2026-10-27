@@ -4,12 +4,16 @@
 package service
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -48,6 +52,12 @@ func (s *releaseSigner) roots(t *testing.T) [][]byte {
 // sign returns the signed files of version on the stable channel at seq.
 func (s *releaseSigner) sign(t *testing.T, version string, seq uint64) *control.Release {
 	t.Helper()
+	return s.signArchive(t, version, seq, []byte{0})
+}
+
+// signArchive is sign with data as the release's archive.
+func (s *releaseSigner) signArchive(t *testing.T, version string, seq uint64, data []byte) *control.Release {
+	t.Helper()
 	key, err := x509.MarshalPKIXPublicKey(&s.key.PublicKey)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +70,7 @@ func (s *releaseSigner) sign(t *testing.T, version string, seq uint64) *control.
 		t.Fatal(err)
 	}
 	rel, err := release.Sign(release.Release{V: 1, Type: release.TypeRelease, Version: version, Channel: "stable", TimeMS: at,
-		Files: []release.Asset{{Name: "clipboardbridge-linux-amd64.tar.gz", Size: 1, SHA256: hex.EncodeToString(make([]byte, 32))}}}, s.key)
+		Files: []release.Asset{{Name: "clipboardbridge-linux-amd64.tar.gz", Size: int64(len(data)), SHA256: hexSum(data)}}}, s.key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +130,99 @@ func TestReleaseSpreads(t *testing.T) {
 	if got := pc.status(t).Release; got != "0.6.1" {
 		t.Errorf("pc holds %q after a restart", got)
 	}
+}
+
+// TestReleaseArchives passes an archive of the held release through the
+// group, as cbb update hands it over and asks for it: the member that
+// installed it serves it, another fetches it from there, a file the
+// release does not list is refused, and a newer release drops it.
+func TestReleaseArchives(t *testing.T) {
+	signer := newReleaseSigner(t)
+	withRoots := func(c *Config) { c.ReleaseRoots = signer.roots(t) }
+	var h hub
+	pi := startWith(t, &h, "pi", "linux", withRoots)
+	pc := startWith(t, &h, "pc", "linux", withRoots)
+	pairWith(t, pi, pc)
+	waitFor(t, "pc is connected", func() bool { return len(pi.status(t).Peers) == 1 })
+
+	data := bytes.Repeat([]byte("cbb 0.6.1 "), 300_000) // three chunks of the control socket
+	sum := hexSum(data)
+	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.signArchive(t, "0.6.1", 2, data))); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pc holds 0.6.1", func() bool { return pc.status(t).Release == "0.6.1" })
+	if _, err := getArchive(t, pc, sum); err == nil {
+		t.Fatal("pc got an archive no member holds")
+	}
+
+	if err := putArchive(t, pi, hexSum([]byte("other")), []byte("other")); err == nil {
+		t.Error("pi took a file the release does not list")
+	}
+	if err := putArchive(t, pi, sum, data[1:]); err == nil {
+		t.Error("pi took a short archive")
+	}
+	if err := putArchive(t, pi, sum, data); err != nil {
+		t.Fatal(err)
+	}
+	got, err := getArchive(t, pc, sum)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("pc got %d bytes, %v", len(got), err)
+	}
+	if _, err := os.Stat(filepath.Join(pc.dir, releaseFilesDir, sum)); err != nil {
+		t.Errorf("pc does not keep the archive it fetched: %v", err)
+	}
+
+	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.2", 3))); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pi and pc drop the archive of 0.6.1", func() bool {
+		_, err1 := os.Stat(filepath.Join(pi.dir, releaseFilesDir, sum))
+		_, err2 := os.Stat(filepath.Join(pc.dir, releaseFilesDir, sum))
+		return os.IsNotExist(err1) && os.IsNotExist(err2)
+	})
+}
+
+// putArchive hands s an archive as cbb update does after an install.
+func putArchive(t *testing.T, s *testService, sum string, data []byte) error {
+	t.Helper()
+	c := s.dial(t)
+	defer c.Close()
+	if err := c.Send(&control.Message{Header: control.Header{Op: control.OpReleaseFile, Value: sum, Part: &control.Part{Size: int64(len(data))}}}); err != nil {
+		return err
+	}
+	for len(data) > 0 {
+		n := min(len(data), 1<<20)
+		if err := c.Send(&control.Message{Header: control.Header{Op: control.OpData}, Payload: data[:n]}); err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	_, err := c.Receive()
+	return err
+}
+
+// getArchive asks s for an archive as cbb update does before downloading.
+func getArchive(t *testing.T, s *testService, sum string) ([]byte, error) {
+	t.Helper()
+	c := s.dial(t)
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpReleaseGet, Value: sum}})
+	if err != nil {
+		return nil, err
+	}
+	var out []byte
+	for !m.Done {
+		if m, err = c.Receive(); err != nil {
+			return nil, err
+		}
+		out = append(out, m.Payload...)
+	}
+	return out, nil
+}
+
+func hexSum(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }
 
 func releaseJSON(t *testing.T, r *control.Release) string {

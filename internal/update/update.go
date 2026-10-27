@@ -50,6 +50,10 @@ const Channel = "stable"
 // HealthTimeout is how long the new service has to report its version.
 const HealthTimeout = time.Minute
 
+// groupTimeout is how long the group has to hand over an archive before
+// the server is asked.
+const groupTimeout = 10 * time.Minute
+
 // checkEvery is how often a timer checks at most: once a day, with room
 // for a timer that fires a little early.
 const checkEvery = 20 * time.Hour
@@ -134,7 +138,13 @@ type Updater struct {
 	// Verify, when set, checks the new programs further before they are
 	// installed: on Windows, their Authenticode signer.
 	Verify func(installed, unpacked []string) error
-	Log    io.Writer
+	// Group, when set, gets the archive from the group's members through
+	// the service, before the server is asked (docs/protocol.md, section
+	// 16, "In the group"); Keep hands the service the archive once it is
+	// installed, for the members after this one.
+	Group func(ctx context.Context, a release.Asset) (io.ReadCloser, error)
+	Keep  func(path string, a release.Asset)
+	Log   io.Writer
 }
 
 func (u *Updater) logf(format string, args ...any) {
@@ -259,10 +269,25 @@ func (u *Updater) Apply(ctx context.Context, src Source, st State, r release.Rel
 	if err := os.MkdirAll(u.Work, 0o700); err != nil {
 		return st, err
 	}
-	u.logf("Downloading %s (%s)...", u.Archive, r.Version)
 	path := filepath.Join(u.Work, u.Archive)
-	if err := download(ctx, src, asset, r.Version, path); err != nil {
-		return st, err
+	fromGroup := false
+	if u.Group != nil {
+		gctx, cancel := context.WithTimeout(ctx, groupTimeout)
+		err := download(gctx, func(ctx context.Context) (io.ReadCloser, error) { return u.Group(ctx, asset) }, asset, path)
+		cancel()
+		if err == nil {
+			fromGroup = true
+			u.logf("Took %s (%s) from the group.", u.Archive, r.Version)
+		} else {
+			u.logf("Not from the group: %v", err)
+		}
+	}
+	if !fromGroup {
+		u.logf("Downloading %s (%s)...", u.Archive, r.Version)
+		open := func(ctx context.Context) (io.ReadCloser, error) { return src.Open(ctx, asset.Name, r.Version) }
+		if err := download(ctx, open, asset, path); err != nil {
+			return st, err
+		}
 	}
 	defer os.Remove(path)
 	unpacked := filepath.Join(u.Work, "new")
@@ -314,6 +339,9 @@ func (u *Updater) Apply(ctx context.Context, src Source, st State, r release.Rel
 		st.Failed = slices.DeleteFunc(st.Failed, func(v string) bool { return v == r.Version })
 		st.Available = ""
 		u.logf("Clipboard Bridge %s is installed.", r.Version)
+		if u.Keep != nil {
+			u.Keep(path, asset)
+		}
 		return st, nil
 	}
 	if !slices.Contains(st.Failed, r.Version) {
