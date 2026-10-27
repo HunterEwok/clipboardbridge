@@ -71,7 +71,10 @@ func startForwarderWith(t *testing.T, cfg Config) (*Forwarder, string) {
 		}
 		cfg.Cert = cert
 	}
-	cfg.Listen, cfg.Logf = "127.0.0.1:0", t.Logf
+	cfg.Listen = "127.0.0.1:0"
+	if cfg.Logf == nil {
+		cfg.Logf = t.Logf
+	}
 	f, err := Listen(cfg)
 	if err != nil {
 		t.Fatal(err)

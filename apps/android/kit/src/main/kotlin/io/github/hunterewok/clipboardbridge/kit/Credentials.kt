@@ -371,6 +371,30 @@ class CredentialStore(private val groupCA: ByteArray) {
 
     fun toJson(): JsonArray = JsonArray(all.map { it.toJson() })
 
+    /**
+     * What a device registers with at a relay (docs/protocol.md, section
+     * 18): the hubs' and the members' credentials, then the period; the
+     * group's roots, the group CA first; and the pseudonyms of the group's
+     * devices with the IDs they stand for.
+     */
+    class Registration(val credentials: List<ServerCredentials.Credential>, val roots: List<ByteArray>, val names: Map<String, String>)
+
+    /**
+     * The registration with these credentials for the device whose server
+     * key hashes to mine, or null until the members' credential lists it;
+     * root is the current root's key, records the group's records.
+     */
+    fun registration(records: RecordSet, root: ByteArray, mine: ByteArray): Registration? {
+        val (pc, _) = period(root) ?: return null
+        val (hc, _) = hubs() ?: return null
+        val (mc, mb) = members() ?: return null
+        if (mb.members.none { it.contentEquals(mine) }) return null
+        val names = buildMap {
+            for (d in records.devices) for (k in d.keys) server(k)?.let { put(ServerCredentials.pseudonym(it), d.id) }
+        }
+        return Registration(listOf(hc, mc, pc), listOf(groupCA) + records.roots, names)
+    }
+
     companion object {
         /** A store with the credentials of a saved array, those that still count. */
         fun fromJson(a: JsonArray, groupCA: ByteArray, root: ByteArray, isMember: (ByteArray) -> Boolean): CredentialStore =

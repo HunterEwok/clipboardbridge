@@ -60,6 +60,26 @@ final class AppModelTests: XCTestCase {
         XCTAssertLessThan(ContinuousClock.now - started, .seconds(4))
     }
 
+    func testRefreshInBackground() async {
+        let g = FakeGroup()
+        g.hasGroup = true
+        g.computers = [.init(id: "a", name: "pi", online: true)]
+        let m = AppModel(group: g, defaults: freshDefaults())
+        await m.refreshInBackground(wait: .seconds(5), records: .milliseconds(10))
+        // Once when a computer is online, and again after the records' moment.
+        XCTAssertEqual(g.refreshed, 2)
+        XCTAssertEqual(m.computers.map(\.id), ["a"])
+    }
+
+    func testRefreshInBackgroundWithoutAGroupDoesNotWait() async {
+        let g = FakeGroup()
+        let m = AppModel(group: g, defaults: freshDefaults())
+        let started = ContinuousClock.now
+        await m.refreshInBackground(wait: .seconds(5))
+        XCTAssertEqual(g.refreshed, 0)
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(4))
+    }
+
     func testIPv4AddressesFirst() {
         XCTAssertEqual(LiveGroup.ordered(["[fd00::5]:8767", "192.168.1.20:8767", "[fe80::1]:8767", "10.0.0.2:8767"]),
                        ["192.168.1.20:8767", "10.0.0.2:8767", "[fd00::5]:8767", "[fe80::1]:8767"])
@@ -88,7 +108,8 @@ final class AppModelTests: XCTestCase {
             computers = [.init(id: "a", name: "pi", online: true)]
         }
         func sync() async throws -> AppModel.SyncResult { .sent }
-        func refresh() async {}
+        var refreshed = 0
+        func refresh() async { refreshed += 1 }
         var devices: [AppModel.Computer] { computers + [.init(id: "me", name: "iPhone", online: true, role: "phone", isSelf: true)] }
         func remove(_ id: String) async throws { computers.removeAll { $0.id == id } }
         func rename(_ id: String, to name: String) async throws {

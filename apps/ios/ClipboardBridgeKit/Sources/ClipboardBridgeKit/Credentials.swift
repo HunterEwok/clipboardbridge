@@ -412,6 +412,30 @@ public struct CredentialStore: Sendable {
         let head = Set(got.prefix(want.count))
         return want.contains { !head.contains($0) }
     }
+
+    /// What a device registers with at a relay (docs/protocol.md, section
+    /// 18): the hubs' and the members' credentials, then the period; the
+    /// group's roots, the group CA first; and the pseudonyms of the group's
+    /// devices with the IDs they stand for.
+    public struct Registration: Sendable, Equatable {
+        public var credentials: [Credential]
+        public var roots: [Data]
+        public var names: [String: String]
+    }
+
+    /// The registration with these credentials for the device whose server
+    /// key hashes to mine, or nil until the members' credential lists it;
+    /// root is the current root's key, records the group's records.
+    public func registration(records: RecordSet, root: Data, mine: Data) -> Registration? {
+        guard let (pc, _) = period(root: root), let (hc, _) = hubs, let (mc, mb) = members, mb.members.contains(mine) else { return nil }
+        var names: [String: String] = [:]
+        for d in records.devices {
+            for k in d.keys {
+                if let s = server(member: k) { names[ServerCredentials.pseudonym(s)] = d.id }
+            }
+        }
+        return Registration(credentials: [hc, mc, pc], roots: [groupCA] + records.roots, names: names)
+    }
 }
 
 /// A device's keys for the servers, one set per period (Go's

@@ -261,6 +261,9 @@ func Listen(cfg Config) (*Forwarder, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
+	// The forwarder keeps no logs about the hubs and their clients: what it
+	// logs goes without the addresses in it.
+	logf = tunnel.Redacted(logf)
 	limits := cfg.Limits
 	if limits == (Limits{}) {
 		limits = DefaultLimits

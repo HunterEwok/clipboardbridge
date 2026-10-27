@@ -760,6 +760,18 @@ Pass: the admin's command is taken, a frozen admin's is refused; a command more 
 ahead of the receiver's clock is refused; the second copy is refused by the replay cache;
 each refusal says why on the sender, and the receiver's log names the sender.
 
+**S18. The servers keep nothing.** Runs: manual (the forwarder and the relay of P12, with
+`cbb-forward.service` and `cbb-relay.service` from packaging/linux).
+1. With `CBB_DEBUG=0`, then `1`: run P11 through the forwarder and P12 through the relay,
+   with a hub and a device on another network, and one handshake with a key the group does
+   not know (S5).
+2. Search the services' journal (`journalctl -u cbb-forward -u cbb-relay`), the system log
+   and every file under the units' state directories and `/var/log` for the addresses of the
+   hub and the devices, the group tag, the device IDs and names, and the markers.
+3. `systemd-analyze security cbb-forward cbb-relay` on the server.
+Pass: no hit; the state directories hold only the keys and the forwarder's state; the
+exposure is 2.0 or less.
+
 ## 6. Long run (section 10)
 
 **Soak.** Runs: planned (24 h).

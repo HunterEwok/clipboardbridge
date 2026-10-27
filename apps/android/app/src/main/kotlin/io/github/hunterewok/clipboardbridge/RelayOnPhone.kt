@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge
 
+import io.github.hunterewok.clipboardbridge.kit.CredentialStore
 import io.github.hunterewok.clipboardbridge.kit.Member
 import io.github.hunterewok.clipboardbridge.kit.TLSTransport
 import kotlinx.serialization.json.Json
@@ -59,6 +60,8 @@ interface RelayLinkEvents {
 /** A running link of mobile/cbbtun to a blind relay. */
 interface RelayLink {
     fun setRecords(records: String)
+    /** cbbtun's Relay.SetCredentials: an empty creds goes back to the member certificate. */
+    fun setCredentials(serverKey: ByteArray, sign: (ByteArray) -> ByteArray, creds: String, roots: String, names: String)
     fun close()
 }
 
@@ -87,6 +90,8 @@ object GoRelayLinks : RelayLinks {
             })
         return object : RelayLink {
             override fun setRecords(records: String) = r.setRecords(records)
+            override fun setCredentials(serverKey: ByteArray, sign: (ByteArray) -> ByteArray, creds: String, roots: String, names: String) =
+                r.setCredentials(serverKey, cbbtun.Signer { sign(it) }, creds, roots, names)
             override fun close() = r.close()
         }
     }
@@ -94,9 +99,11 @@ object GoRelayLinks : RelayLinks {
 
 /**
  * The phone at a blind relay while it syncs (docs/protocol.md, section 14):
- * it registers by its member key and the group's authority records, and
- * the relay joins its member connections to the other devices of the group
- * there, which the relay cannot read: member TLS runs end to end. The
+ * it registers by its member key and the group's authority records, or,
+ * once the group's server credentials list its server key, with them under
+ * a pseudonym (section 18), and the relay joins its member connections to
+ * the other devices of the group there, which the relay cannot read:
+ * member TLS runs end to end. The
  * device with the lower ID dials, so the phone both dials and answers. An
  * answered call comes to the loopback member listener, which serves it only
  * when the client certificate names the device the relay said calls
@@ -118,6 +125,16 @@ class RelayOnPhone(
     /** What the screens show. */
     enum class Status { OFF, PAUSED, CONNECTING, CONNECTED, FAILED }
 
+    /** What the phone registers with in place of its member certificate: its server key for the period, SubjectPublicKeyInfo DER, how it signs a SHA-256 digest with it, and the registration the credentials give. */
+    class Credentials(val serverKey: ByteArray, val sign: (ByteArray) -> ByteArray, val registration: CredentialStore.Registration) {
+        val creds: String get() = JsonArray(registration.credentials.map { it.toJson() }).toString()
+        val roots: String get() = JsonArray(registration.roots.map { bytes(it) }).toString()
+        val names: String get() = JsonObject(registration.names.mapValues { JsonPrimitive(it.value) }).toString()
+
+        /** What the relay sees of it, to tell whether it changed. */
+        val shown: String get() = listOf(Base64.getEncoder().encodeToString(serverKey), creds, roots, names).joinToString("\n")
+    }
+
     /** How the link stands, as cbbtun reports it: registered, the other devices of the group at the relay, the connections through it, why it is not connected. */
     data class Report(val connected: Boolean = false, val online: List<String> = emptyList(), val through: Int = 0, val error: String? = null)
 
@@ -126,6 +143,9 @@ class RelayOnPhone(
     private var link: RelayLink? = null
     private var report = Report()
     private var failure: String? = null
+    private var credentials: Credentials? = null
+    /** What the running link registers with: Credentials.shown, or null with the member certificate. */
+    private var applied: String? = null
 
     /** The callers by the source port of their loopback connections, oldest first. */
     private val calls = LinkedHashMap<Int, String>()
@@ -168,10 +188,33 @@ class RelayOnPhone(
                     link = l
                     failure = null
                     report = Report()
+                    applied = null
                 }
             }
         }
-        if (!kept) runCatching { l.close() }
+        if (!kept) runCatching { l.close() } else applyCredentials()
+    }
+
+    /** Registers with the credentials c from now on, or with the member certificate when null; the link registers again only when they changed. */
+    fun setCredentials(c: Credentials?) {
+        synchronized(lock) { credentials = c }
+        applyCredentials()
+    }
+
+    private fun applyCredentials() {
+        val (l, c) = synchronized(lock) {
+            val l = link ?: return
+            val c = credentials
+            if (c?.shown == applied) return
+            applied = c?.shown
+            l to c
+        }
+        runCatching {
+            if (c == null) l.setCredentials(ByteArray(0), { it }, "", "", "") else l.setCredentials(c.serverKey, c.sign, c.creds, c.roots, c.names)
+        }.onFailure {
+            log("cannot hand the server credentials to the relay", it)
+            synchronized(lock) { if (link == l) applied = null }
+        }
     }
 
     /** Leaves the relay; the next start registers again. */

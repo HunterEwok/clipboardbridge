@@ -142,6 +142,13 @@ class CredentialsTest {
         assertEquals(1, asked)
         val mine = sha256(keys.get(PeriodKeys.SERVER_KEY, store.period(rootKey.publicKeyDER)!!.second.tag).publicKeyDER)
         assertTrue(store.members()!!.second.members.any { it.contentEquals(mine) })
+        // What it registers with at a relay.
+        val reg = assertNotNull(store.registration(g.records, rootKey.publicKeyDER, mine))
+        assertEquals(listOf("hubs", "members", "period"), reg.credentials.map { it.open().type })
+        assertEquals(listOf(b64(g.groupCA)), reg.roots.map { b64(it) })
+        assertEquals(mapOf(ServerCredentials.pseudonym(mine) to g.records.devices.single().id), reg.names)
+        assertNotNull(ServerCredentials.checkPresented(reg.credentials, now).period)
+        assertNull(store.registration(g.records, rootKey.publicKeyDER, sha256(SoftwareSigner().publicKeyDER)))
         // Nothing changed: nothing to sign, no Face ID.
         assertEquals(0, CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now + 1000, root).size)
         assertEquals(1, asked)
