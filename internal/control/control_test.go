@@ -5,6 +5,7 @@ package control
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -80,8 +81,13 @@ func TestSocketPath(t *testing.T) {
 
 func TestDialErrors(t *testing.T) {
 	_, err := Dial("/nonexistent/clipboardbridge.sock")
-	if err == nil || !strings.Contains(err.Error(), "not running") {
+	if err == nil || !strings.Contains(err.Error(), "not running") || !strings.Contains(err.Error(), "start it") {
 		t.Errorf("Dial of a missing socket: %v", err)
+	}
+	// The cause is for debug mode only, never in the message itself.
+	var de *DialError
+	if !errors.As(err, &de) || de.Err == nil || strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("Dial of a missing socket: %#v", err)
 	}
 }
 

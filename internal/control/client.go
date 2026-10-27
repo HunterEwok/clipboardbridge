@@ -87,7 +87,7 @@ func dial(path, denied string) (*Client, error) {
 		if errors.Is(err, os.ErrPermission) {
 			return nil, &DialError{Msg: denied, Denied: true, Err: err}
 		}
-		return nil, &DialError{Msg: "the Clipboard Bridge service is not running (" + err.Error() + ")", Err: err}
+		return nil, &DialError{Msg: "the Clipboard Bridge service is not running; " + startHint, Err: err}
 	}
 	SetBuffers(c)
 	return &Client{c: c, r: NewReader(c)}, nil
@@ -109,7 +109,8 @@ func SetBuffers(c net.Conn) {
 
 // A DialError is a connection to the service that failed: Denied when the
 // socket's permissions keep this user out, else the service is not
-// running. Msg is for the user, and Err is the error underneath.
+// running. Msg is for the user, and Err is the error underneath, which
+// cbb shows only in debug mode (CBB_DEBUG).
 type DialError struct {
 	Msg    string
 	Denied bool
