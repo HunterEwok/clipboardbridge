@@ -17,16 +17,7 @@
 {{end}}
 
 {{define "sprites"}}<svg class="sprites" aria-hidden="true" focusable="false">
-<!-- The devices, drawn in isometric projection; their faces take their
-     colours from the stylesheet, so they follow the theme. -->
 <defs>
-<linearGradient id="screen" x1="0" y1="0" x2="1" y2="1"><stop class="s1" offset="0"/><stop class="s2" offset="1"/></linearGradient>
-<symbol id="dev-phone" viewBox="-7 -72 38 94"><path class="body fl" d="M-4.3 2.5 L25.1 19.5 L25.1 -50.5 L-4.3 -67.5 Z"/><path class="body fr" d="M29.4 17.0 L25.1 19.5 L25.1 -50.5 L29.4 -53.0 Z"/><path class="body ft" d="M0.0 -70.0 L29.4 -53.0 L25.1 -50.5 L-4.3 -67.5 Z"/><path class="screen" d="M-2.2 0.7 L22.9 15.2 L22.9 -48.8 L-2.2 -63.2 Z"/><path class="cam" d="M8.7 -55.4 L12.1 -53.4 L12.1 -55.2 L8.7 -57.2 Z"/><path class="ui" d="M1.7 -42.0 L19.1 -32.0 L19.1 -36.0 L1.7 -46.0 Z"/><path class="ui dim" d="M1.7 -34.0 L13.9 -27.0 L13.9 -30.0 L1.7 -37.0 Z"/><path class="ui card" d="M1.7 -6.0 L19.1 4.0 L19.1 -5.0 L1.7 -15.0 Z"/></symbol>
-<symbol id="dev-tablet" viewBox="-7 -82 59 116"><path class="body fl" d="M-4.3 2.5 L45.9 31.5 L45.9 -48.5 L-4.3 -77.5 Z"/><path class="body fr" d="M50.2 29.0 L45.9 31.5 L45.9 -48.5 L50.2 -51.0 Z"/><path class="body ft" d="M0.0 -80.0 L50.2 -51.0 L45.9 -48.5 L-4.3 -77.5 Z"/><path class="screen" d="M-1.3 0.7 L42.9 26.2 L42.9 -46.8 L-1.3 -72.2 Z"/><path class="ui" d="M4.3 -48.5 L37.2 -29.5 L37.2 -34.5 L4.3 -53.5 Z"/><path class="ui dim" d="M4.3 -38.5 L28.6 -24.5 L28.6 -28.5 L4.3 -42.5 Z"/><path class="ui card" d="M4.3 -4.5 L37.2 14.5 L37.2 -1.5 L4.3 -20.5 Z"/></symbol>
-<symbol id="dev-laptop" viewBox="-53 -60 127 133"><path class="body fl" d="M-50.2 29.0 L22.5 71.0 L22.5 67.0 L-50.2 25.0 Z"/><path class="body fr" d="M72.7 42.0 L22.5 71.0 L22.5 67.0 L72.7 38.0 Z"/><path class="body ft" d="M0.0 -4.0 L72.7 38.0 L22.5 67.0 L-50.2 25.0 Z"/><path class="keys" d="M-1.7 3.0 L60.6 39.0 L32.9 55.0 L-29.4 19.0 Z"/><path class="pad" d="M-11.3 32.5 L9.5 44.5 L0.0 50.0 L-20.8 38.0 Z"/><path class="body fl" d="M-2.6 -2.5 L70.1 39.5 L70.1 -14.5 L-2.6 -56.5 Z"/><path class="body fr" d="M72.7 38.0 L70.1 39.5 L70.1 -14.5 L72.7 -16.0 Z"/><path class="body ft" d="M0.0 -58.0 L72.7 -16.0 L70.1 -14.5 L-2.6 -56.5 Z"/><path class="screen" d="M0.0 -4.0 L67.5 35.0 L67.5 -13.0 L0.0 -52.0 Z"/><path class="ui" d="M6.1 -33.5 L40.7 -13.5 L40.7 -18.5 L6.1 -38.5 Z"/><path class="ui dim" d="M6.1 -25.5 L54.6 2.5 L54.6 -0.5 L6.1 -28.5 Z"/><path class="ui card" d="M6.1 -7.5 L35.5 9.5 L35.5 -2.5 L6.1 -19.5 Z"/></symbol>
-<symbol id="dev-computer" viewBox="-17 -76 90 126"><path class="body fl" d="M-1.7 31.0 L27.7 48.0 L27.7 45.0 L-1.7 28.0 Z"/><path class="body fr" d="M53.7 33.0 L27.7 48.0 L27.7 45.0 L53.7 30.0 Z"/><path class="body ft" d="M24.2 13.0 L53.7 30.0 L27.7 45.0 L-1.7 28.0 Z"/><path class="body fl" d="M26.8 23.5 L35.5 28.5 L35.5 2.5 L26.8 -2.5 Z"/><path class="body fr" d="M39.8 26.0 L35.5 28.5 L35.5 2.5 L39.8 -0.0 Z"/><path class="body ft" d="M31.2 -5.0 L39.8 -0.0 L35.5 2.5 L26.8 -2.5 Z"/><path class="body fl" d="M-14.7 -13.5 L66.7 33.5 L66.7 -24.5 L-14.7 -71.5 Z"/><path class="body fr" d="M71.0 31.0 L66.7 33.5 L66.7 -24.5 L71.0 -27.0 Z"/><path class="body ft" d="M-10.4 -74.0 L71.0 -27.0 L66.7 -24.5 L-14.7 -71.5 Z"/><path class="screen" d="M-12.1 -15.0 L64.1 29.0 L64.1 -23.0 L-12.1 -67.0 Z"/><path class="ui" d="M-6.1 -48.5 L32.0 -26.5 L32.0 -32.5 L-6.1 -54.5 Z"/><path class="ui dim" d="M-6.1 -39.5 L47.6 -8.5 L47.6 -12.5 L-6.1 -43.5 Z"/><path class="ui card" d="M-6.1 -19.5 L26.8 -0.5 L26.8 -14.5 L-6.1 -33.5 Z"/></symbol>
-<symbol id="dev-mac" viewBox="-17 -78 90 126"><path class="body fl" d="M1.7 31.0 L27.7 46.0 L27.7 43.0 L1.7 28.0 Z"/><path class="body fr" d="M52.0 32.0 L27.7 46.0 L27.7 43.0 L52.0 29.0 Z"/><path class="body ft" d="M26.0 14.0 L52.0 29.0 L27.7 43.0 L1.7 28.0 Z"/><path class="body fl" d="M26.8 23.5 L35.5 28.5 L35.5 6.5 L26.8 1.5 Z"/><path class="body fr" d="M39.8 26.0 L35.5 28.5 L35.5 6.5 L39.8 4.0 Z"/><path class="body ft" d="M31.2 -1.0 L39.8 4.0 L35.5 6.5 L26.8 1.5 Z"/><path class="body fl" d="M-14.7 -9.5 L66.7 37.5 L66.7 -26.5 L-14.7 -73.5 Z"/><path class="body fr" d="M71.0 35.0 L66.7 37.5 L66.7 -26.5 L71.0 -29.0 Z"/><path class="body ft" d="M-10.4 -76.0 L71.0 -29.0 L66.7 -26.5 L-14.7 -73.5 Z"/><path class="screen" d="M-12.1 -22.0 L64.1 22.0 L64.1 -25.0 L-12.1 -69.0 Z"/><path class="ui" d="M-6.1 -50.5 L32.0 -28.5 L32.0 -34.5 L-6.1 -56.5 Z"/><path class="ui dim" d="M-6.1 -41.5 L47.6 -10.5 L47.6 -14.5 L-6.1 -45.5 Z"/><path class="ui card" d="M-6.1 -24.5 L26.8 -5.5 L26.8 -17.5 L-6.1 -36.5 Z"/><path class="chin" d="M-14.7 -9.5 L66.7 37.5 L66.7 25.5 L-14.7 -21.5 Z"/></symbol>
-<symbol id="dev-tv" viewBox="-15 -69 105 131"><path class="body fl" d="M-6.9 18.0 L-1.7 21.0 L-1.7 13.0 L-6.9 10.0 Z"/><path class="body fr" d="M13.9 12.0 L-1.7 21.0 L-1.7 13.0 L13.9 4.0 Z"/><path class="body ft" d="M8.7 1.0 L13.9 4.0 L-1.7 13.0 L-6.9 10.0 Z"/><path class="body fl" d="M60.6 57.0 L65.8 60.0 L65.8 52.0 L60.6 49.0 Z"/><path class="body fr" d="M81.4 51.0 L65.8 60.0 L65.8 52.0 L81.4 43.0 Z"/><path class="body ft" d="M76.2 40.0 L81.4 43.0 L65.8 52.0 L60.6 49.0 Z"/><path class="body fl" d="M-12.1 -1.0 L84.9 55.0 L84.9 -9.0 L-12.1 -65.0 Z"/><path class="body fr" d="M88.3 53.0 L84.9 55.0 L84.9 -9.0 L88.3 -11.0 Z"/><path class="body ft" d="M-8.7 -67.0 L88.3 -11.0 L84.9 -9.0 L-12.1 -65.0 Z"/><path class="screen" d="M-10.0 -2.3 L82.7 51.2 L82.7 -7.8 L-10.0 -61.2 Z"/><path class="ui" d="M-1.7 -39.0 L41.6 -14.0 L41.6 -21.0 L-1.7 -46.0 Z"/><path class="ui dim" d="M-1.7 -29.0 L58.9 6.0 L58.9 2.0 L-1.7 -33.0 Z"/><path class="ui card" d="M-1.7 -7.0 L36.4 15.0 L36.4 -1.0 L-1.7 -23.0 Z"/></symbol>
 <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 6 2 12l6 6M16 6l6 6-6 6M14 4l-4 16"/></symbol>
 <symbol id="i-noaccount" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6M3 3l18 18"/></symbol>
 <symbol id="i-noeye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></symbol>
@@ -34,74 +25,23 @@
 </defs></svg>
 {{end}}
 
-{{define "orbit"}}
-<div class="orbit" aria-hidden="true">
-  <svg class="links" viewBox="0 0 300 240" preserveAspectRatio="none"><path d="M150 125 52 40M150 125 248 40M150 125 52 205M150 125 248 205"/><path class="flow" d="M150 125 52 40M150 125 248 40M150 125 52 205M150 125 248 205"/></svg>
-  {{range $i, $d := .}}<figure class="dev d{{$i}}"><svg><use href="#dev-{{index $d 0}}"/></svg><figcaption>{{index $d 1}}</figcaption></figure>
-  {{end}}
-</div>
-{{end}}
+{{define "words"}}<g class="words">{{range .}}<text x="{{index . 0}}" y="{{index . 1}}" text-anchor="middle" class="{{if index . 3}}y {{end}}{{fit (index . 2)}}">{{index . 2}}</text>{{end}}</g>{{end}}
 
 {{define "content"}}
 <section class="hero">
   <div class="wrap">
-  <!-- The app's icon at the size of the page: a clipboard, its clip, and a
-       sheet with a lifted corner. The Deco style keeps only the sheet's
-       contents. -->
-  <div class="board">
-    <svg class="clamp" viewBox="0 0 420 200" aria-hidden="true">
-      <defs>
-        <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop class="m1" offset="0"/><stop class="m2" offset=".34"/><stop class="m3" offset=".52"/><stop class="m4" offset=".8"/><stop class="m5" offset="1"/></linearGradient>
-        <radialGradient id="sheen" cx=".36" cy=".2" r=".5"><stop class="h1" offset="0"/><stop class="h2" offset="1"/></radialGradient>
-      </defs>
-      <path class="metal" fill-rule="evenodd" d="M30 196Q14 196 14 180C16 160 22 140 30 128C38 116 52 110 74 109L112 108C124 107 128 100 129 88C132 40 166 6 210 6C254 6 288 40 291 88C292 100 296 107 308 108L346 109C368 110 382 116 390 128C398 140 404 160 406 180Q406 196 390 196ZM232 52A22 22 0 1 0 188 52A22 22 0 1 0 232 52Z"/>
-      <path class="sheen" fill-rule="evenodd" d="M30 196Q14 196 14 180C16 160 22 140 30 128C38 116 52 110 74 109L112 108C124 107 128 100 129 88C132 40 166 6 210 6C254 6 288 40 291 88C292 100 296 107 308 108L346 109C368 110 382 116 390 128C398 140 404 160 406 180Q406 196 390 196ZM232 52A22 22 0 1 0 188 52A22 22 0 1 0 232 52Z"/>
-      <path class="lip" d="M18 174C20 188 26 190 34 190H386C394 190 400 188 402 174"/>
-      <circle class="hole" cx="210" cy="52" r="22"/>
-    </svg>
-    <div class="sheet">
-      <svg class="sun" viewBox="0 0 1100 700" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path d="M550 700 0 80M550 700 110 0M550 700 250 0M550 700 390 0M550 700 470 0M550 700 550 0M550 700 630 0M550 700 710 0M550 700 850 0M550 700 990 0M550 700 1100 80M150 700a400 400 0 0 1 800 0M250 700a300 300 0 0 1 600 0M350 700a200 200 0 0 1 400 0"/></svg>
-      <div class="hero-grid">
-        <div class="hero-text">
-          <h1>{{t "Copy on one device. Paste on another."}}</h1>
-          <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
-          <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
-          <p class="actions">
-            <a class="button accent go" href="download.html" data-goatcounter-click="hero-download">{{t "Download for free"}}</a>
-            <a class="button" href="#how">{{t "How it works"}}</a>
-          </p>
-        </div>
-        <svg class="fig" viewBox="0 0 560 330" aria-hidden="true">
-          <!-- Slate: drawn like the icon, in one line with round ends. -->
-          <g class="chalk">
-            <rect x="26" y="112" width="138" height="88" rx="6"/><path d="M10 216h170l-10 12H20z"/><path d="M44 134h80M44 152h56M44 170h68"/>
-            <rect x="466" y="96" width="72" height="136" rx="14"/><path d="M490 218h24M482 128h40M482 146h26"/>
-            <circle cx="290" cy="92" r="44"/><path d="M256 108a36 36 0 0 1 0-32"/><circle cx="290" cy="70" r="10"/>
-            <path d="M280 136v108l10 20 10-20v-14l-6-6 6-6v-8l-6-6 6-6v-8l-6-6 6-6v-42"/><path d="M290 150v84"/>
-            <rect x="336" y="196" width="62" height="50" rx="8"/><path d="M348 196v-12a19 19 0 0 1 38 0v12"/><circle cx="367" cy="216" r="6"/><path d="M367 222v10"/>
-            <path d="M164 156h46l16-16h18"/><path d="M342 112h124"/>
-            <path d="M244 90h-30l-14-14h-12"/><circle cx="182" cy="76" r="6"/>
-            <path d="M244 118h-26l-12 12"/><circle cx="202" cy="134" r="6"/>
-            <path d="M244 176h-22l-16 16h-14"/><circle cx="186" cy="192" r="6"/>
-            <path d="M336 84h30l14-14h12"/><circle cx="398" cy="70" r="6"/>
-            <path d="M336 140h34l14 14"/><circle cx="388" cy="158" r="6"/>
-          </g>
-          <g class="chalk dots"><path d="M212 60h1M224 60h1M236 60h1M208 156h1M220 156h1M232 156h1M346 62h1M358 62h1M346 176h1M358 176h1M370 176h1"/></g>
-          <path class="signal" d="M164 156h46l16-16h18M342 112h124"/>
-          <!-- Deco: neon tubes and a gold diamond. -->
-          <g class="neon warm"><rect x="40" y="104" width="156" height="100" rx="8"/><path d="M22 222h192l-12 12H34z"/></g>
-          <g class="neon cold"><rect x="440" y="86" width="74" height="146" rx="16"/><path d="M466 216h22"/></g>
-          <path class="neon warm wire" d="M216 160H418"/>
-          <g class="deco-badge"><path d="M317 124 353 160 317 196 281 160z"/><rect x="306" y="146" width="22" height="28" rx="3"/><path d="M311 143h12v6h-12z"/></g>
-          <text x="95" y="268" text-anchor="middle">{{t "Computer"}}</text>
-          <text x="502" y="268" text-anchor="middle">{{t "Phone"}}</text>
-          <text class="for-slate" x="367" y="282" text-anchor="middle">TLS 1.3</text>
-          <text class="for-deco" x="317" y="234" text-anchor="middle">TLS 1.3</text>
-        </svg>
-      </div>
-    </div>
-    <svg class="curl" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="fold" x1="0" y1="0" x2="1" y2="1"><stop class="c1" offset="0"/><stop class="c2" offset="1"/></linearGradient></defs><path class="flap" d="M24 100A76 76 0 0 1 100 24C90 50 70 66 56 72C44 77 32 87 24 100Z"/><path class="edge" d="M100 24C90 50 70 66 56 72C44 77 32 87 24 100"/></svg>
-  </div>
+    <h1>{{t "Copy on one device. Paste on another."}}</h1>
+    <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
+    <!-- A school board in a walnut frame, the picture drawn on it in chalk:
+         the computer and the phone joined through the key. -->
+    <div class="frame hero-board">{{template "rails"}}<div class="surface">
+      <svg viewBox="0 0 640 330" aria-hidden="true"><g class="chalk">{{template "chalk-hero"}}</g>{{template "words" (list (list 95 228 (t "Computer") false) (list 455 292 "TLS 1.3" true) (list 576 228 (t "Phone") false))}}</svg>
+    </div></div>
+    <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
+    <p class="actions">
+      <a class="button accent go" href="download.html" data-goatcounter-click="hero-download">{{t "Download for free"}}</a>
+      <a class="button" href="#how">{{t "How it works"}}</a>
+    </p>
   </div>
 </section>
 
@@ -126,17 +66,17 @@
 <section class="wrap reveal">
   <h2>{{t "Why not just send it to yourself?"}}</h2>
   <p>{{t "A message to yourself works, but it takes several steps every time, and your text stays on someone else's server. A clipboard built into one system works only within it."}}</p>
-  <div class="table">
-  <table class="compare">
+  <div class="frame board-table">{{template "rails"}}<div class="surface">
+  <table class="chalk-table compare">
     <thead><tr><td></td><th scope="col">{{t "Just copy and paste"}}</th><th scope="col">{{t "Text stays on your devices"}}</th><th scope="col">{{t "Between any systems"}}</th></tr></thead>
     <tbody>
-    <tr class="us"><th scope="row">Clipboard Bridge</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th scope="row">{{t "A message to yourself"}}</th><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th scope="row">{{t "A cloud clipboard app"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td></tr>
-    <tr><th scope="row">{{t "The clipboard of one system"}}</th><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td><span aria-hidden="true">✓</span><span class="sr">{{t "yes"}}</span></td><td class="no"><span aria-hidden="true">✕</span><span class="sr">{{t "no"}}</span></td></tr>
+    <tr class="us"><th scope="row">Clipboard Bridge</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "A message to yourself"}}</th><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "A cloud clipboard app"}}</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "The clipboard of one system"}}</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td></tr>
     </tbody>
   </table>
-  </div>
+  </div></div>
 </section>
 
 <section class="wrap reveal" id="how">
@@ -153,11 +93,10 @@
 <section class="wrap reveal" id="groups">
   <h2>{{t "Two ways to build your group"}}</h2>
   <p>{{t "Your devices form a group. Only devices you let in belong to it, and they talk only to each other. A group can have a computer at its heart, or only phones: both are fully supported. We will be honest, though: with a computer everything is simpler."}}</p>
-  <div class="cards two">
+  <div class="cards two groups">
     <article class="card">
-      <p class="badge">{{t "Simplest"}}</p>
-      <h3>{{t "With a computer"}}</h3>
-      {{template "orbit" (list (list "computer" (t "Computer")) (list "phone" (t "Phone")) (list "laptop" (t "Laptop")) (list "phone" (t "Phone")) (list "mac" (t "Mac")))}}
+      <header><p class="badge">{{t "Simplest"}}</p><h3>{{t "With a computer"}}</h3></header>
+      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-computer"}}</g>{{template "words" (list (list 210 226 (t "Computer") true) (list 76 122 (t "Phone") false) (list 344 116 (t "Laptop") false) (list 76 302 (t "Phone") false) (list 344 302 (t "Mac") false))}}</svg></div></div>
       <ul>
         <li>{{t "A Linux or Windows computer that is often on, such as a desktop, a Raspberry Pi or a home server, keeps the group going."}}</li>
         <li>{{t "Away from home, your phone and laptop sync through it at any time: it is the group's hub."}}</li>
@@ -166,8 +105,8 @@
       </ul>
     </article>
     <article class="card">
-      <h3>{{t "Phones only"}}</h3>
-      {{template "orbit" (list (list "phone" (t "Phone")) (list "phone" (t "Phone")) (list "tv" (t "TV")) (list "tablet" (t "Tablet")) (list "phone" (t "Phone")))}}
+      <header><h3>{{t "Phones only"}}</h3></header>
+      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-phones"}}</g>{{template "words" (list (list 210 230 (t "Phone") true) (list 76 122 (t "Phone") false) (list 344 116 (t "TV") false) (list 76 302 (t "Tablet") false) (list 344 302 (t "Phone") false))}}</svg></div></div>
       <ul>
         <li>{{t "No computer needed: the phone makes the group, keeps its key in its security chip and adds the other devices by QR code."}}</li>
         <li>{{t "At home every device syncs directly with the others."}}</li>

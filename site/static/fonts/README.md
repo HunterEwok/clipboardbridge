@@ -8,8 +8,7 @@ SIL Open Font License 1.1, in the `OFL-*.txt` file of its name:
 
 | Family | Source | License |
 | --- | --- | --- |
-| Old Standard TT | <https://fonts.google.com/specimen/Old+Standard+TT> | `OFL-oldstandardtt.txt` |
-| IBM Plex Sans | <https://fonts.google.com/specimen/IBM+Plex+Sans> | `OFL-ibmplexsans.txt` |
 | IBM Plex Mono | <https://fonts.google.com/specimen/IBM+Plex+Mono> | `OFL-ibmplexmono.txt` |
 | Forum | <https://fonts.google.com/specimen/Forum> | `OFL-forum.txt` |
 | Jost | <https://fonts.google.com/specimen/Jost> | `OFL-jost.txt` |
+| Caveat | <https://fonts.google.com/specimen/Caveat> | `OFL-caveat.txt` |
