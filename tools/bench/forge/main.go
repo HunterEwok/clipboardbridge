@@ -1,0 +1,243 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+// Command forge is the bench's stand-in for an attacker on the member
+// protocol (docs/testbench-catalogue.md, T8, S17, S23): in a fleet
+// container, with a member's state copied from another, it connects to a
+// target as that member and sends it commands that an admin's state signs,
+// some of them replayed, changed or made for another group or device, and
+// prints what the target answered, one line per case:
+//
+//	forge -state DIR -signer DIR -to DEVICE -addr HOST:PORT replay altered other-group other-target
+//	forge ... flood:N:DEVICE
+//	forge ... make:N:FILE send:FILE:SEED
+//
+// Each line of the commands is "CASE N: done", "CASE N: refused: REASON" or
+// "CASE N: no answer: ERROR". flood signs N renames of DEVICE with the
+// signer's key and sends them (G32); make signs N renames of the listed
+// devices at times out of order into FILE, and send sends FILE's records in
+// an order SEED picks (G31). It is never part of a release.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"math/rand/v2"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+)
+
+func main() {
+	state := flag.String("state", "", "the state directory of the member to connect as")
+	signer := flag.String("signer", "", "the state directory of the admin whose key signs the commands")
+	to := flag.String("to", "", "the target's device ID")
+	addr := flag.String("addr", "", "the target's member port, HOST:PORT")
+	flag.Parse()
+	if err := run(*state, *signer, group.DeviceID(*to), *addr, flag.Args()); err != nil {
+		fmt.Fprintln(os.Stderr, "forge:", err)
+		os.Exit(1)
+	}
+}
+
+func run(state, signerDir string, to group.DeviceID, addr string, cases []string) error {
+	id, err := group.Load(state)
+	if err != nil {
+		return err
+	}
+	admin, err := group.Load(signerDir)
+	if err != nil {
+		return err
+	}
+	ca, chain := admin.Signer()
+	if ca == nil {
+		return fmt.Errorf("%s holds no admin key", signerDir)
+	}
+	eng := clip.New(clip.Config{Self: string(id.ID), Clock: hlc.NewClock(nil, hlc.Timestamp{}, nil)})
+	n := node.New(node.Config{Identity: id, Role: node.Full, Engine: eng, Name: "forge", OS: "linux"})
+	defer n.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	dialed := make(chan error, 1)
+	go func() { dialed <- n.Dial(ctx, to, addr) }()
+	for len(n.Peers()) == 0 {
+		select {
+		case err := <-dialed:
+			return fmt.Errorf("connecting to %s: %v", addr, err)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	tag := group.Tag(id.GroupCA.Cert)
+	body := func(target group.DeviceID, mode string) group.CommandBody {
+		now := time.Now()
+		return group.CommandBody{Type: group.CommandMode, Group: tag, By: admin.ID, To: target, ID: group.NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Mode: mode}
+	}
+	send := func(name string, cmd group.Record, cmdID string) {
+		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		res, err := n.SendCommand(cctx, to, cmd, cmdID, false)
+		switch {
+		case err != nil:
+			fmt.Printf("%s: no answer: %v\n", name, err)
+		case res.Status == node.ResultDone:
+			fmt.Printf("%s: done\n", name)
+		default:
+			fmt.Printf("%s: refused: %s\n", name, res.Reason)
+		}
+	}
+	// rename signs a record that renames the device d.
+	rename := func(d group.Device, name string, at time.Time) (group.Record, error) {
+		key := d.Key
+		return group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: at.UnixMilli(), By: admin.ID,
+			Device: d.ID, Name: name, Role: d.Role, OS: d.OS, Key: &key, Admin: d.AdminKey, Store: d.Store, Kind: d.Kind, Proof: d.Proof},
+			ca.Key, chain...)
+	}
+	devices := func() ([]group.Device, error) {
+		rs, err := group.LoadRecords(signerDir, admin.GroupCA.Cert)
+		if err != nil {
+			return nil, err
+		}
+		return rs.Devices(), nil
+	}
+	sendAll := func(rs []group.Record) {
+		for len(rs) > 0 {
+			k := min(len(rs), 64)
+			n.SendRecords(rs[:k])
+			rs = rs[k:]
+		}
+		// The records leave before the connection closes.
+		time.Sleep(3 * time.Second)
+	}
+	for _, c := range cases {
+		parts := strings.Split(c, ":")
+		switch parts[0] {
+		case "flood", "make":
+			if len(parts) != 3 {
+				return fmt.Errorf("%s takes N and a device or a file", parts[0])
+			}
+			count, err := strconv.Atoi(parts[1])
+			if err != nil {
+				return err
+			}
+			list, err := devices()
+			if err != nil {
+				return err
+			}
+			var rs []group.Record
+			now := time.Now()
+			for i := range count {
+				d := list[i%len(list)]
+				if parts[0] == "flood" {
+					if d, err = find(list, parts[2]); err != nil {
+						return err
+					}
+				}
+				// make: times out of order, some of them equal.
+				at := now.Add(-time.Duration(rand.IntN(count/2+1)) * time.Second)
+				if parts[0] == "flood" {
+					at = now.Add(time.Duration(i) * time.Millisecond)
+				}
+				r, err := rename(d, fmt.Sprintf("%s-%d", parts[0], i), at)
+				if err != nil {
+					return err
+				}
+				rs = append(rs, r)
+			}
+			if parts[0] == "make" {
+				b, err := json.Marshal(rs)
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(parts[2], b, 0o600); err != nil {
+					return err
+				}
+				fmt.Printf("make: %d records\n", len(rs))
+				continue
+			}
+			sendAll(rs)
+			fmt.Printf("flood: sent %d records\n", len(rs))
+		case "send":
+			if len(parts) != 3 {
+				return fmt.Errorf("send takes a file and a seed")
+			}
+			b, err := os.ReadFile(parts[1])
+			if err != nil {
+				return err
+			}
+			var rs []group.Record
+			if err := json.Unmarshal(b, &rs); err != nil {
+				return err
+			}
+			seed, _ := strconv.ParseUint(parts[2], 10, 64)
+			rand.New(rand.NewPCG(seed, seed)).Shuffle(len(rs), func(i, j int) { rs[i], rs[j] = rs[j], rs[i] })
+			sendAll(rs)
+			fmt.Printf("send: sent %d records\n", len(rs))
+		}
+		switch c {
+		case "replay":
+			// The same signed command twice, as one captured on the way.
+			b := body(to, "receive")
+			cmd, err := group.SignCommand(b, ca.Key, chain...)
+			if err != nil {
+				return err
+			}
+			send("replay 1", cmd, b.ID)
+			send("replay 2", cmd, b.ID)
+		case "altered":
+			// A command changed after it was signed, as by a member that
+			// passes it on.
+			b := body(to, "own")
+			cmd, err := group.SignCommand(b, ca.Key, chain...)
+			if err != nil {
+				return err
+			}
+			cmd.Body = []byte(strings.Replace(string(cmd.Body), `"own"`, `"send"`, 1))
+			send("altered 1", cmd, b.ID)
+		case "other-group":
+			// Signed by the root of a group of its own.
+			root, err := group.NewRootCA(time.Now())
+			if err != nil {
+				return err
+			}
+			b := body(to, "send")
+			b.Group = group.Tag(root.Cert)
+			cmd, err := group.SignCommand(b, root.Key)
+			if err != nil {
+				return err
+			}
+			send("other-group 1", cmd, b.ID)
+		case "other-target":
+			// Signed for another device, sent to this one.
+			b := body(group.NewDeviceID(), "send")
+			cmd, err := group.SignCommand(b, ca.Key, chain...)
+			if err != nil {
+				return err
+			}
+			send("other-target 1", cmd, b.ID)
+		default:
+			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" {
+				return fmt.Errorf("no case %q", c)
+			}
+		}
+	}
+	return nil
+}
+
+// find returns the device named name, by name or device ID.
+func find(list []group.Device, name string) (group.Device, error) {
+	for _, d := range list {
+		if d.Name == name || string(d.ID) == name {
+			return d, nil
+		}
+	}
+	return group.Device{}, fmt.Errorf("no device %q in the records", name)
+}

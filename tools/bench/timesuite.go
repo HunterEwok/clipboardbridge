@@ -449,4 +449,22 @@ func clocks(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		}
 		return both(d, "after the crash, an hour back")
 	})
+
+	// T8: a command is refused, with its reason, when it reached its target
+	// after it expired by the target's clock, was signed more than a minute
+	// ahead of it, or the target's clock is not set.
+	command := func(name string, from, to, clock *Device, at, reason string) {
+		r.Do("time/T8-"+name, func() error {
+			if err := setClock(ctx, clock, at); err != nil {
+				return err
+			}
+			defer setClock(ctx, clock, "")
+			return eventually(ctx, timeout, func() error {
+				return errorShown(ctx, from, errorCase{cmd: "cbb mode -on " + to.Name + " own", want: []string{reason}})
+			})
+		})
+	}
+	command("expired", a, b, b, "2m", "expired")
+	command("ahead", a, b, a, "2m", "signed in the future")
+	command("clock-not-set", a, b, b, "1970-01-01T00:00:00Z", "signed in the future")
 }

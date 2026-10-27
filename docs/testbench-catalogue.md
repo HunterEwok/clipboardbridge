@@ -171,7 +171,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | K11 | Old groups whose root or admins hold file keys are warned and offered a move to a proven root | fleet | |
 | K12 | The shortcut's token: kept hashed, passed to the admins; `-new-token` revokes every token | fleet | |
 | K13 | The TPM evidence flow: AK made under the EK, credential activation, the result shown by `cbb status`; Windows through the platform crypto provider | real, helper | |
-| K14 | Chains through an admin CA: a device certified by an admin presents the admin CA in TLS; every member, the lite member and both kits accept it, and refuse it once that admin is removed | fleet | |
+| K14 | Chains through an admin CA: a device certified by an admin presents the admin CA in TLS; every member, the lite member and both kits accept it, and still accept it once that admin is removed, since the removal keeps the devices it admitted | fleet | |
 
 ## 4. Discovery and connections (D)
 

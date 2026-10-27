@@ -61,6 +61,10 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"U13-second-instance", func() { secondInstance(ctx, r, f, timeout) }},
 		{"Q6-actions", func() { quickActions(ctx, r, f, timeout) }},
 		{"X2-shortcut", func() { phoneShortcut(ctx, r, f, timeout) }},
+		{"S17-commands", func() { forgedCommands(ctx, r, f, timeout) }},
+		{"G31-converge", func() { converge(ctx, r, f, timeout) }},
+		{"G32-limits", func() { recordLimits(ctx, r, f, timeout) }},
+		{"K14-admin-chain", func() { adminChain(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {

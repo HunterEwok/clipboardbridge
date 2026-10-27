@@ -45,8 +45,9 @@ var automated = map[string][]string{
 	"D2": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
 	"I19": {"fleet"}, "U8": {"fleet"}, "U13": {"fleet"}, "Q1": {"fleet"}, "Q4": {"fleet"},
 	"Q6": {"fleet"}, "Q7": {"fleet"}, "X2": {"fleet"}, "X3": {"fleet"}, "K12": {"fleet"},
+	"S17": {"fleet"}, "S23": {"fleet"}, "G31": {"fleet"}, "G32": {"fleet"}, "K14": {"fleet"},
 	// The time-scaled build.
-	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"},
+	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"},
 }
 
