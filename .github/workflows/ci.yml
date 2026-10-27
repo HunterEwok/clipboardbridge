@@ -1054,14 +1054,10 @@ jobs:
           # The simulator at times fails to launch the app for its tests
           # ("Failed to launch app", or the app held at dyld's start, or XCTest
           # never loaded in it), and xcodebuild then waits 8 to 17 minutes
-          # before it gives up. A run that starts takes under three minutes, so
-          # one still going after six is stopped and tried again on a freshly
-          # booted simulator. A run that ends by itself, failed tests included,
+          # before it gives up. A run with no test started after 150 seconds,
+          # or one that exits before any test ran, is tried again on a freshly
+          # booted simulator; a run whose tests ran, failed ones included,
           # counts as it is.
-          # The simulator sometimes never starts the app for its tests: xcodebuild then waits up
-          # to 17 minutes for the runner. A run with no test started after 150 seconds, or one
-          # that exits before any test ran, is retried on a freshly booted simulator; a run whose
-          # tests ran and failed is not.
           test_on() {
             log="${RUNNER_TEMP:-/tmp}/test-$1.log"
             for attempt in 1 2 3; do
