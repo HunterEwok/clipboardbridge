@@ -41,6 +41,9 @@ public protocol RelayLinkEvents: AnyObject, Sendable {
 /// A running link of mobile/cbbtun to a blind relay.
 public protocol RelayLink: AnyObject, Sendable {
     func setRecords(_ records: String) throws
+    /// cbbtun's Relay.SetCredentials: an empty creds goes back to the
+    /// member certificate.
+    func setCredentials(serverKey: Data, sign: @escaping @Sendable (Data) throws -> Data, creds: String, roots: String, names: String) throws
     func close()
 }
 
@@ -55,7 +58,8 @@ public protocol RelayLinks: Sendable {
 
 /// The phone at a blind relay while the app is open (docs/protocol.md,
 /// section 14): it registers by its member key and the group's authority
-/// records, and the relay joins its member connections to the other
+/// records, or, once the group's server credentials list its server key,
+/// with them under a pseudonym (section 18), and the relay joins its member connections to the other
 /// devices of the group there, which the relay cannot read: member TLS
 /// runs end to end. The device with the lower ID dials, so the phone both
 /// dials and answers. An answered call comes to the loopback member
@@ -83,6 +87,33 @@ public final class RelayOnPhone: RelayLinkEvents, @unchecked Sendable {
         }
     }
 
+    /// What the phone registers with in place of its member certificate:
+    /// its server key for the period, SubjectPublicKeyInfo DER, how it
+    /// signs a SHA-256 digest with it, and the registration the credentials
+    /// give.
+    public struct Credentials: Sendable {
+        public var serverKey: Data
+        public var sign: @Sendable (Data) throws -> Data
+        public var registration: CredentialStore.Registration
+
+        public init(serverKey: Data, sign: @escaping @Sendable (Data) throws -> Data, registration: CredentialStore.Registration) {
+            (self.serverKey, self.sign, self.registration) = (serverKey, sign, registration)
+        }
+
+        var creds: String { json(registration.credentials) }
+        var roots: String { json(registration.roots) }
+        var names: String { json(registration.names) }
+
+        /// What the relay sees of it, to tell whether it changed.
+        var shown: String { [serverKey.base64EncodedString(), creds, roots, names].joined(separator: "\n") }
+
+        private func json<T: Encodable>(_ v: T) -> String {
+            let e = JSONEncoder()
+            e.outputFormatting = .sortedKeys
+            return String(decoding: (try? e.encode(v)) ?? Data(), as: UTF8.self)
+        }
+    }
+
     public typealias Dial = @Sendable (_ port: UInt16, _ peer: String) async throws -> ClosableTransport
     public typealias Serve = @Sendable (ClosableTransport, _ peer: String) async throws -> Void
 
@@ -101,6 +132,10 @@ public final class RelayOnPhone: RelayLinkEvents, @unchecked Sendable {
     private var link: RelayLink?
     private var report = Report()
     private var failure: String?
+    private var credentials: Credentials?
+    /// What the running link registers with: Credentials.shown, or nil with
+    /// the member certificate.
+    private var applied: String?
     /// The callers by the source port of their loopback connections, oldest first.
     private var calls: [(port: UInt16, peer: String)] = []
 
@@ -156,10 +191,37 @@ public final class RelayOnPhone: RelayLinkEvents, @unchecked Sendable {
         }
         let kept = lock.withLock {
             guard link == nil, settings == s else { return false }
-            (link, failure, report) = (l, nil, Report())
+            (link, failure, report, applied) = (l, nil, Report(), nil)
             return true
         }
-        if !kept { l.close() }
+        if kept { applyCredentials() } else { l.close() }
+    }
+
+    /// Registers with the credentials c from now on, or with the member
+    /// certificate when nil; the link registers again only when they
+    /// changed.
+    public func setCredentials(_ c: Credentials?) {
+        lock.withLock { credentials = c }
+        applyCredentials()
+    }
+
+    private func applyCredentials() {
+        let next = lock.withLock { () -> (RelayLink, Credentials?)? in
+            guard let l = link, credentials?.shown != applied else { return nil }
+            applied = credentials?.shown
+            return (l, credentials)
+        }
+        guard let (l, c) = next else { return }
+        do {
+            if let c {
+                try l.setCredentials(serverKey: c.serverKey, sign: c.sign, creds: c.creds, roots: c.roots, names: c.names)
+            } else {
+                try l.setCredentials(serverKey: Data(), sign: { $0 }, creds: "", roots: "", names: "")
+            }
+        } catch {
+            log("cannot hand the server credentials to the relay", error)
+            lock.withLock { if link === l { applied = nil } }
+        }
     }
 
     /// Leaves the relay; the next start registers again.

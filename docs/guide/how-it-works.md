@@ -25,8 +25,8 @@ keys in files that only Clipboard Bridge reads.
 ## Two kinds of group
 
 A group can have a computer at its heart, or be made of phones only. Both are supported in
-full, and you can move from one to the other at any time, but a computer makes things
-simpler, and we would rather say so.
+full, and you can move from one to the other at any time. We recommend a computer that is
+often on, for the reason below the table.
 
 | | With a computer | Phones only |
 |---|---|---|
@@ -35,7 +35,7 @@ simpler, and we would rather say so.
 | Sync away from home | through the computer as the hub, at any time | through the phone as the hub while its app is open (on Android also in the background), or a blind relay |
 | What you need | a Linux or Windows computer that is often on | nothing more |
 
-Why a computer is simpler: it is on far more often than an app is open on a phone, and the
+Why we recommend a computer: it is on far more often than an app is open on a phone, and the
 iPhone gives an app little time in the background, so sync away from home just works. A Mac
 can be a member of either kind but cannot be the hub yet. When a computer that is always on
 joins a group of phones, the phone app offers to make it the hub.

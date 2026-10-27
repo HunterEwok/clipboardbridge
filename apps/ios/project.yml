@@ -49,6 +49,10 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSSupportsLiveActivities: true
+        # Now and then iOS wakes the app for a moment to hear of the group's
+        # events (BackgroundRefresh.swift).
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [io.github.hunterewok.clipboardbridge.refresh]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSBonjourServices: [_clipboardbridge._tcp]

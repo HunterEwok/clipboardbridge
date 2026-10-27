@@ -2,6 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 import ClipboardBridgeKit
+import CryptoKit
 import Foundation
 import os
 
@@ -102,6 +103,20 @@ final class CredentialBox: CredentialKeeper, @unchecked Sendable {
         }
         if !fresh.isEmpty { onAdd?() }
         return fresh
+    }
+
+    /// What the phone registers with at a blind relay once the members'
+    /// credential lists its server key, so the relay knows it only by a
+    /// pseudonym; nil until then.
+    func relayCredentials(keys: PhoneKeys) -> RelayOnPhone.Credentials? {
+        lock.withLock {
+            guard let root = try? CertificateInfo(der: _group.currentRoot).publicKey,
+                  let tag = store.period(root: root)?.1.tag, keys.has(PeriodKeyKind.serverKey, tag: tag),
+                  let k = (try? keys.get(PeriodKeyKind.serverKey, tag: tag)) as? SecKeySigner,
+                  let reg = store.registration(records: _group.records, root: root, mine: Data(SHA256.hash(data: k.publicKeyDER)))
+            else { return nil }
+            return RelayOnPhone.Credentials(serverKey: k.publicKeyDER, sign: { try k.signature(digest: $0) }, registration: reg)
+        }
     }
 
     /// Brings the credentials up to date as far as this phone can

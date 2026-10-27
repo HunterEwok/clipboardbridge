@@ -326,6 +326,7 @@ func (s *Service) status() *control.Status {
 	st.Port, _ = Port()
 	st.Quiet = s.nets.Unknown()
 	st.Away = s.awayStatus()
+	s.relayNames(st.Away)
 	st.Paste = s.pasteStatusLocked()
 	st.Actions = s.actionStatus()
 	st.Media = s.mediaStatus()
