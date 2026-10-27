@@ -204,6 +204,8 @@ type Service struct {
 	recMu      sync.Mutex         // guards records; taken after mu, never before
 	records    *group.Records     // the group's device records; nil while in no group
 	creds      *group.Credentials // the group's server credentials, under recMu as records
+	serverKeys *group.ServerKeys  // this device's keys for the servers, under recMu as records
+	credMu     sync.Mutex         // serialises refreshCredential, taken before mu and recMu
 
 	// Images and files (media.go): the cache, which is nil until the
 	// service runs; mediaMu guards the rest, taken after mu, never before.
@@ -412,6 +414,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
 	s.creds = s.loadCredentials(id, s.records)
+	s.serverKeys = s.loadServerKeys()
 	s.recMu.Unlock()
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()

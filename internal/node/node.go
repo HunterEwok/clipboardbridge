@@ -905,9 +905,9 @@ func (n *Node) helloed() []*conn {
 // revocation made on this member.
 func (n *Node) SendRecords(rs []group.Record) { n.sendRecords(rs, nil) }
 
-// maxCredentials bounds the credentials of one message: a hubs' credential
-// for each root of the path, and the links between them.
-const maxCredentials = 2 * group.MaxCredentialChain
+// maxCredentials bounds the credentials of one message: all that a member
+// keeps for a period.
+const maxCredentials = group.MaxCredentials
 
 // SendCredentials sends server credentials made on this member to the
 // peers.

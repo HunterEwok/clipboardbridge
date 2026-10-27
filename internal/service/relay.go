@@ -39,9 +39,15 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			}
 			return s.id.ForwarderCertificate()
 		},
-		Records: s.authorityRecords,
+		Records:      s.authorityRecords,
+		Credentialed: s.relayCredentials,
+		// The relay names a device by its ID, or by its pseudonym when the
+		// device registered with the group's credentials.
 		Want: func(peer string) bool {
-			id := group.DeviceID(peer)
+			id, ok := s.relayPeer(peer)
+			if !ok {
+				return false
+			}
 			s.mu.Lock()
 			nd, near := s.nd, s.nearLocked(id)
 			s.mu.Unlock()
@@ -52,12 +58,20 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			if nd == nil {
 				return errNoNode
 			}
-			return nd.DialConn(ctx, group.DeviceID(peer), c)
+			id, ok := s.relayPeer(peer)
+			if !ok {
+				return fmt.Errorf("no device of the group is %s", peer)
+			}
+			return nd.DialConn(ctx, id, c)
 		},
 		Called: func(ctx context.Context, peer string, c net.Conn) error {
 			nd := s.node()
 			if nd == nil {
 				return errNoNode
+			}
+			want, ok := s.relayPeer(peer)
+			if !ok {
+				return fmt.Errorf("no device of the group is %s", peer)
 			}
 			// The relay says who calls; the member certificate must say
 			// the same.
@@ -69,7 +83,7 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 						return err
 					}
 				}
-				if id, err := group.PeerID(cs); err != nil || string(id) != peer {
+				if id, err := group.PeerID(cs); err != nil || id != want {
 					return fmt.Errorf("the relay said %s calls, but the certificate is another device's", peer)
 				}
 				return nil
@@ -77,6 +91,15 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			return nd.Serve(ctx, tls.Server(c, cfg))
 		},
 		Report: func(r relay.Report) {
+			// Status names the devices, not their pseudonyms.
+			online := make([]string, 0, len(r.Online))
+			for _, name := range r.Online {
+				if id, ok := s.relayPeer(name); ok {
+					name = string(id)
+				}
+				online = append(online, name)
+			}
+			r.Online = online
 			s.tunMu.Lock()
 			defer s.tunMu.Unlock()
 			if s.tunRun != run {

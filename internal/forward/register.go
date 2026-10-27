@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -81,9 +82,9 @@ type (
 		// (group.Records.AuthorityRecords), so that the forwarder refuses
 		// a removed or frozen hub; a hub with a credential sends none.
 		Records []group.Record `json:"records,omitempty"`
-		// Credentials are the chain of the group's hubs' credentials, from
-		// the group CA to its current root (docs/protocol.md, section 18),
-		// in place of the records, the admin and its signature.
+		// Credentials are the period's hubs' credential
+		// (docs/protocol.md, section 18), in place of the records, the
+		// admin and its signature.
 		Credentials []group.Credential `json:"credentials,omitempty"`
 	}
 	answer struct {
@@ -121,31 +122,30 @@ func (f *Forwarder) serverTLS(cert tls.Certificate) *tls.Config {
 	}
 }
 
-// presented is what a hub's TLS certificates say: its group's tag and CA,
-// and whether it registers with its member certificate and the group's
-// records, or with a credential (docs/protocol.md, section 18).
+// presented is what a hub's TLS certificates say: whether it registers
+// with its member certificate and the group's records, and then its
+// group's tag, or with a credential (docs/protocol.md, section 18), whose
+// tag the credential gives.
 type presented struct {
-	tag     string
-	groupCA *x509.Certificate
-	member  bool
+	tag    string
+	member bool
 }
 
-// groupOf checks the certificates a hub presented, and returns its group.
-// A hub that registers with a credential presents a certificate of its
-// member key that names no device, then the group CA; one that registers
-// with records presents its member certificate with its chain to a root of
-// the group, the self-signed CA among them. Any group may register, but
-// only its hubs can register it.
+// groupOf checks the certificates a hub presented. A hub that registers
+// with a credential presents one certificate of its server key, which
+// names neither a device nor a group; one that registers with records
+// presents its member certificate with its chain to a root of the group,
+// the self-signed CA among them, which names the group. Any group may
+// register, but only its hubs can register it.
 func groupOf(certs []*x509.Certificate, now time.Time) (presented, error) {
-	if len(certs) < 2 || len(certs) > maxChain {
-		return presented{}, errors.New("forward: the hub presented no certificate chain")
+	if len(certs) == 0 || len(certs) > maxChain {
+		return presented{}, errors.New("forward: the hub presented no certificate")
 	}
 	if _, err := group.DeviceOf(certs[0]); err != nil {
-		ca := certs[1]
-		if certs[0].IsCA || !ca.IsCA || ca.CheckSignatureFrom(ca) != nil {
-			return presented{}, errors.New("forward: the hub presented neither a member certificate nor a hub's certificate with its group CA")
+		if len(certs) != 1 || certs[0].IsCA {
+			return presented{}, errors.New("forward: the hub presented neither a member certificate nor a server certificate")
 		}
-		return presented{tag: group.Tag(ca), groupCA: ca}, nil
+		return presented{}, nil
 	}
 	roots, inter := x509.NewCertPool(), x509.NewCertPool()
 	for _, c := range certs[1:] {
@@ -163,7 +163,7 @@ func groupOf(certs []*x509.Certificate, now time.Time) (presented, error) {
 		return presented{}, fmt.Errorf("forward: the hub's certificate: %w", err)
 	}
 	c := chains[0]
-	return presented{tag: group.Tag(c[len(c)-1]), groupCA: c[len(c)-1], member: true}, nil
+	return presented{tag: group.Tag(c[len(c)-1]), member: true}, nil
 }
 
 // acceptRegistrations takes the hubs' TLS connections.
@@ -290,7 +290,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	if len(c.Records) > maxClaimRecords {
 		return refuse("too many records")
 	}
-	if len(c.Credentials) > group.MaxCredentialChain {
+	if len(c.Credentials) > 3 {
 		return refuse("too many credentials")
 	}
 	if len(c.Key) != 32 {
@@ -324,22 +324,22 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 			return refuse("the VLESS user ID is not usable")
 		}
 	}
-	var chain *group.CheckedChain
+	var cred *group.Presented
 	var adminMsg []byte
 	if p.member {
-		if f.versions.tagged(tag) {
-			return refuse("this group registers with its hubs' credential; update cbb on the hub")
-		}
 		if adminMsg, err = adminMessage(cs, c.Key); err != nil {
 			return nil, err
 		}
 	} else {
-		if chain, err = credentialed(p.groupCA, cs.PeerCertificates[0], c.Credentials, time.Now()); err != nil {
+		if cred, err = credentialed(cs.PeerCertificates[0], c.Credentials, time.Now()); err != nil {
 			return refuse(err.Error())
 		}
-		if err := f.versions.check(tag, chain); err != nil {
+		if err := f.versions.check(cred); err != nil {
 			return refuse(err.Error())
 		}
+		// A period's tag is the group's own choice: it never meets a tag
+		// from a group CA.
+		tag = credentialTag(cred.Tag)
 	}
 	r := &reg{tag: tag, obf: c.Obfuscation, vlessID: c.VLESS, seen: make(chan netip.AddrPort, 1), clients: map[netip.AddrPort]int{}, conn: tc, raw: raw}
 	copy(r.key[:], c.Key)
@@ -414,7 +414,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	f.mu.Unlock()
 	if p.member {
 		f.memory.keep(tag, records)
-	} else if err := f.versions.keep(tag, chain); err != nil {
+	} else if err := f.versions.keep(cred); err != nil {
 		f.logf("forward: keeping the state: %v", err)
 	}
 	if err := enc.Encode(a); err != nil {
@@ -427,26 +427,29 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	return r, nil
 }
 
-// credentialed checks a hub that registers with a credential: the chain
-// from the group CA (group.CheckChain), whose last credential has not
-// expired and lists the key of the hub's certificate among the hubs.
-func credentialed(groupCA, leaf *x509.Certificate, chain []group.Credential, now time.Time) (*group.CheckedChain, error) {
-	if len(chain) == 0 {
-		return nil, errors.New("the hub sent no credential")
+// credentialed checks a hub that registers with a credential: the
+// period's hubs' credential (group.CheckPresented), which has not expired
+// and lists the key of the hub's certificate among the hubs.
+func credentialed(leaf *x509.Certificate, cs []group.Credential, now time.Time) (*group.Presented, error) {
+	if len(cs) != 1 {
+		return nil, errors.New("the hub sent no hubs' credential")
 	}
-	ch, err := group.CheckChain(groupCA, chain)
+	p, err := group.CheckPresented(cs, now)
 	if err != nil {
-		return nil, errors.New("the group's credentials do not verify")
+		if strings.Contains(err.Error(), "expired") {
+			return nil, errors.New("the group's hubs' credential expired; the group's root starts a new period")
+		}
+		return nil, errors.New("the group's hubs' credential does not verify")
 	}
-	last := ch.Last()
-	if !now.Before(last.Expires()) {
-		return nil, errors.New("the group's hubs' credential expired; the group's root signs a new one")
-	}
-	if !slices.Contains(last.Hubs, group.KeyHashOf(leaf)) {
+	if !slices.Contains(p.Hubs.Hubs, group.KeyHashOf(leaf)) {
 		return nil, errors.New("the group's hubs' credential does not list this hub")
 	}
-	return ch, nil
+	return p, nil
 }
+
+// credentialTag is the name under which the forwarder keeps a group that
+// registered with the period's tag: apart from the tags of group CAs.
+func credentialTag(tag string) string { return "period " + tag }
 
 // adminMessage is what the hub's root or admin CA signs: SHA-256 of a key
 // from this TLS session and the hub's WireGuard key, so the signature

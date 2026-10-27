@@ -37,6 +37,7 @@ type device struct {
 	id      string
 	key     tunnel.Key
 	records []group.Record
+	cred    *Credentialed // registers with credentials; id is then its pseudonym
 }
 
 func newDevice(t *testing.T, ca *group.CA) device {
@@ -131,7 +132,13 @@ func join(t *testing.T, link Link, d device) *joined {
 		Link: link, Self: d.id, Key: d.key,
 		Cert:    func() tls.Certificate { return d.cert },
 		Records: func() []group.Record { return d.records },
-		Want:    func(string) bool { return true },
+		Credentialed: func() (Credentialed, bool) {
+			if d.cred == nil {
+				return Credentialed{}, false
+			}
+			return *d.cred, true
+		},
+		Want: func(string) bool { return true },
 		Dialed: func(ctx context.Context, peer string, c net.Conn) error {
 			msg := "hello from " + d.id + "\n"
 			if _, err := c.Write([]byte(msg)); err != nil {
@@ -279,7 +286,7 @@ func rawTunnel(t *testing.T, link Link, d device) (*tunnel.Client, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := MemberConfig{Link: link, Self: d.id, Key: d.key, Cert: func() tls.Certificate { return d.cert }}
-	tc, w, err := register(ctx, cfg)
+	tc, w, _, err := register(ctx, cfg)
 	if err != nil {
 		cancel()
 		t.Fatal(err)
@@ -306,7 +313,7 @@ func TestRefused(t *testing.T) {
 	ctx := context.Background()
 
 	stranger := newDevice(t, other)
-	_, _, err := register(ctx, MemberConfig{Link: link, Key: stranger.key, Cert: func() tls.Certificate { return stranger.cert }})
+	_, _, _, err := register(ctx, MemberConfig{Link: link, Key: stranger.key, Cert: func() tls.Certificate { return stranger.cert }})
 	if err == nil {
 		t.Error("a device of a group the relay does not serve registered")
 	}
@@ -314,24 +321,24 @@ func TestRefused(t *testing.T) {
 	d := newDevice(t, g)
 	bad := link
 	bad.Pin = "sha256:" + strings.Repeat("A", 43)
-	_, _, err = register(ctx, MemberConfig{Link: bad, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
+	_, _, _, err = register(ctx, MemberConfig{Link: bad, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
 	if err == nil || !strings.Contains(err.Error(), "not the one given") {
 		t.Errorf("a wrong pin: %v", err)
 	}
 
-	tc, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
+	tc, _, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tc.Close()
 	thief := newDevice(t, g)
-	_, _, err = register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return thief.cert }})
+	_, _, _, err = register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return thief.cert }})
 	if err == nil || !strings.Contains(err.Error(), "another device") {
 		t.Errorf("another device with the same WireGuard key: %v", err)
 	}
 
 	// The same device registering again takes the place of the first.
-	tc2, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
+	tc2, _, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +358,7 @@ func TestOpenRelay(t *testing.T) {
 	r, link := startWith(t, Config{Open: true, Limits: Limits{Groups: 2, PerAddress: 3}})
 	ctx := context.Background()
 	reg := func(d device) error {
-		tc, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
+		tc, _, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
 		if err == nil {
 			t.Cleanup(func() { tc.Close() })
 		}

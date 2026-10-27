@@ -80,6 +80,9 @@ type Relay struct {
 	// records are each group's authority records, from all its members'
 	// registrations, in memory while the relay runs.
 	records map[string][]group.Record
+	// periods are what it holds of the groups that registered with
+	// credentials, by their period's tag.
+	periods map[string]*period
 }
 
 // member is a registered device.
@@ -155,7 +158,7 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
-		records: map[string][]group.Record{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{}}
+		records: map[string][]group.Record{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{}}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
 	}
@@ -319,6 +322,7 @@ func (r *Relay) dropLocked(m *member) {
 			if r.cfg.Open {
 				delete(r.records, m.tag)
 			}
+			delete(r.periods, m.tag)
 		}
 	}
 	if r.byAddr[m.addr] == m {
