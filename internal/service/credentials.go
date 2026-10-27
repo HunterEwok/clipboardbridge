@@ -89,8 +89,23 @@ func (s *Service) addCredentials(from group.DeviceID, cs []group.Credential) []g
 		if err := s.creds.Save(s.cfg.StateDir); err != nil {
 			s.logf("cbb: saving the server credentials: %v", err)
 		}
+		if s.credChanged != nil {
+			close(s.credChanged)
+			s.credChanged = nil
+		}
 	}
 	return fresh
+}
+
+// credentialsChanged returns a channel that is closed when the group's
+// server credentials change next.
+func (s *Service) credentialsChanged() <-chan struct{} {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.credChanged == nil {
+		s.credChanged = make(chan struct{})
+	}
+	return s.credChanged
 }
 
 // refreshCredential brings the group's server credentials up to date as

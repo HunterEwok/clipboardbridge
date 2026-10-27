@@ -39,8 +39,9 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			}
 			return s.id.ForwarderCertificate()
 		},
-		Records:      s.authorityRecords,
-		Credentialed: s.relayCredentials,
+		Records:            s.authorityRecords,
+		Credentialed:       s.relayCredentials,
+		CredentialsChanged: s.credentialsChanged,
 		// The relay names a device by its ID, or by its pseudonym when the
 		// device registered with the group's credentials.
 		Want: func(peer string) bool {

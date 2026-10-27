@@ -62,6 +62,12 @@ type MemberConfig struct {
 	// those.
 	Credentialed func() (Credentialed, bool)
 
+	// CredentialsChanged, if set, returns a channel that is closed when
+	// the group's credentials change next, so that a registered member
+	// looks at once whether it registers with other ones; it looks every
+	// credentialCheck as well.
+	CredentialsChanged func() <-chan struct{}
+
 	// Want tells whether to connect to a device through the relay now:
 	// false while it is connected already, for example on the home
 	// network.
@@ -234,10 +240,15 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 			t := time.NewTicker(credentialCheck)
 			defer t.Stop()
 			for {
+				var changed <-chan struct{}
+				if cfg.CredentialsChanged != nil {
+					changed = cfg.CredentialsChanged()
+				}
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
+				case <-changed:
 				}
 				if credentialKey(cfg) != was {
 					renew.Store(true)
