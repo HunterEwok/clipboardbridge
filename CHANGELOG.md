@@ -364,6 +364,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admin to renew it; before, a member whose certificate ended while no admin was on was
   refused by the group with no word why. When the certificate has ended by this device's
   clock, it names that date too, in case the clock is wrong.
+- `cbb pair` on a new computer, with two pairing windows open on the network, could try the
+  code on whichever window answered first, a wrong code there that counts toward closing it,
+  when the other answered a moment later. It now listens two more seconds after finding one
+  window and, with two, asks for the address that `cbb pair` showed.
 - `cbb paste-receive on -enter` and `on -console`, as the usage and the refusals say, stopped
   with the usage on a full member: the flags were taken only before `on`. Both orders work
   now.
