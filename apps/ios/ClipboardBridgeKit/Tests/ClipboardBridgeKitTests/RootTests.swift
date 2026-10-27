@@ -319,6 +319,58 @@ final class RootTests: XCTestCase {
         }
     }
 
+    /// Watches (go-watch.json, from Go's TestGoWatchVectors; docs/protocol.md
+    /// section 10, rule 8): a watch freezes and removes as a computer's admin
+    /// CA does, but admits nobody, never makes a root, is never a hub and
+    /// signs only the commands that turn things off and action.
+    func testGoWatch() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Device: Decodable { var id: String, name: String, role: String, admin: Bool }
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool, frozen: Bool, watch: Bool }
+            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
+            struct Command: Decodable { var name: String, command: Member.Record, ok: Bool }
+            struct Case: Decodable {
+                var name: String
+                var group_ca: Data
+                var records: [Member.Record]
+                var dropped: Int?
+                var devices: [Device]
+                var keys: [Key]
+                var chains: [Chain]?
+                var hubs: [String]
+                var `self`: String?
+                var now_ms: Int64?
+                var commands: [Command]?
+                var digest: String
+            }
+            var cases: [Case]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-watch.json")))
+        XCTAssertEqual(v.cases.count, 3)
+        for c in v.cases {
+            var set = RecordSet()
+            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count - (c.dropped ?? 0), c.name)
+            XCTAssertEqual(set.digest, c.digest, c.name)
+            XCTAssertEqual(set.roots, [], c.name)
+            XCTAssertEqual(set.devices.map { "\($0.id) \($0.name) \($0.role) \($0.admin)" },
+                           c.devices.map { "\($0.id) \($0.name) \($0.role) \($0.admin)" }, c.name)
+            for k in c.keys {
+                XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(c.name): \(k.name) revoked")
+                XCTAssertEqual(set.isFrozen(k.key), k.frozen, "\(c.name): \(k.name) frozen")
+                XCTAssertEqual(set.isWatch(k.key), k.watch, "\(c.name): \(k.name) watch")
+            }
+            for ch in c.chains ?? [] { XCTAssertEqual(set.refused(chain: ch.chain) != nil, ch.refused, "\(c.name): \(ch.name)") }
+            XCTAssertEqual(set.hubOrder, c.hubs, c.name)
+            for d in set.devices where d.role == "watch" { XCTAssertFalse(set.mayHost(d.id), c.name) }
+            for cmd in c.commands ?? [] {
+                let ok = (try? Commands.verify(cmd.command, records: set, me: c.`self` ?? "", nowMS: c.now_ms ?? 0)) != nil
+                XCTAssertEqual(ok, cmd.ok, "\(c.name): \(cmd.name)")
+            }
+        }
+    }
+
     /// Writes swift-root.json for internal/group's TestSwiftRoot: a takeover
     /// as this kit signs it.
     func testTakeOverForGo() throws {

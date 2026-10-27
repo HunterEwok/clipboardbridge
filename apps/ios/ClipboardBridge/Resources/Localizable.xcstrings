@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Apple Watch" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Watch"
+          }
+        }
+      }
+    },
+    "Make the watch an admin" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделать часы админом"
+          }
+        }
+      }
+    },
+    "Open Clipboard Bridge on the watch, then try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Откройте Clipboard Bridge на часах и попробуйте снова."
+          }
+        }
+      }
+    },
     "Saved in Files, On My iPhone, Clipboard Bridge.": {
       "localizations": {
         "ru": {
@@ -17,6 +47,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось получить картинку с компьютеров. Скопируйте её там ещё раз и повторите."
+          }
+        }
+      }
+    },
+    "The iPhone is not connected to that device. Open Clipboard Bridge on the iPhone, then try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone не подключён к этому устройству. Откройте Clipboard Bridge на iPhone и попробуйте снова."
+          }
+        }
+      }
+    },
+    "The watch is an admin now. It can freeze an admin computer, remove a device that is no admin and turn things off." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Теперь часы админ. Они могут заморозить компьютер-админ, удалить устройство, которое не админ, и выключать функции."
+          }
+        }
+      }
+    },
+    "The watch needs a passcode and wrist detection, and must be on your wrist. Turn them on in the Watch app on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часам нужны код-пароль и распознавание запястья, и они должны быть на руке. Включите их в приложении Watch на этом iPhone."
           }
         }
       }
@@ -1324,6 +1384,26 @@
         }
       }
     },
+    "This watch cannot keep a key in its Secure Enclave." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эти часы не могут хранить ключ в Secure Enclave."
+          }
+        }
+      }
+    },
+    "To give a new watch the key, remove this one from the devices first." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтобы дать ключ другим часам, сначала удалите эти из устройств."
+          }
+        }
+      }
+    },
     "TV": {
       "localizations": {
         "ru": {
@@ -2550,6 +2630,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Запустить быстрое действие"
+          }
+        }
+      }
+    },
+    "With a key of its own, the watch can freeze an admin computer, remove a device that is no admin, and turn remote paste, quick actions and sync away from home off. It needs a passcode and wrist detection. Open Clipboard Bridge on the watch first." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Со своим ключом часы могут заморозить компьютер-админ, удалить устройство, которое не админ, и выключить удалённую вставку, быстрые действия и синхронизацию вне дома. Нужны код-пароль и распознавание запястья. Сначала откройте Clipboard Bridge на часах."
           }
         }
       }

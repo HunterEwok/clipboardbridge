@@ -175,6 +175,7 @@ struct DeviceDetailView: View {
         case "phone": Text("Phone app")
         case "lite": Text("Lite member")
         case "shortcut": Text("Shortcut")
+        case "watch": Text("Watch")
         default: Text("Full member")
         }
     }

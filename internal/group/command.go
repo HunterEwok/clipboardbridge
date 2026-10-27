@@ -24,7 +24,10 @@ import (
 // CommandPasteOff turns remote paste off on the receiver (design.md,
 // "Remote paste"); CommandAction runs one of the receiver's quick actions
 // by its name, and CommandActionsOff turns them all off there (design.md,
-// "Quick actions").
+// "Quick actions"); CommandAwayOff turns sync away from home off on the
+// receiver, which only its own user turns on again (design.md, "Sync away
+// from home"). A watch signs only the commands that turn things off and
+// action (WatchCommand).
 const (
 	CommandMode       = "mode"
 	CommandHub        = "hub"
@@ -32,7 +35,20 @@ const (
 	CommandPasteOff   = "paste-off"
 	CommandAction     = "action"
 	CommandActionsOff = "actions-off"
+	CommandAwayOff    = "away-off"
 )
+
+// WatchCommand reports whether a watch's admin key may sign a command of
+// type t (docs/protocol.md, section 10, rule 8): one that turns remote
+// paste, the quick actions or sync away from home off, or that runs a
+// quick action, which the receiver's user allows for each kind of signer.
+func WatchCommand(t string) bool {
+	switch t {
+	case CommandPasteOff, CommandActionsOff, CommandAwayOff, CommandAction:
+		return true
+	}
+	return false
+}
 
 // MaxActionName bounds the name of a quick action.
 const MaxActionName = 32
@@ -201,7 +217,7 @@ func (b *CommandBody) check() error {
 		if err := b.checkPaste(); err != nil {
 			return err
 		}
-	case CommandPasteOff, CommandActionsOff:
+	case CommandPasteOff, CommandActionsOff, CommandAwayOff:
 		if b.Mode != "" || b.Hub != nil {
 			return fmt.Errorf("group: a %s command carries an order", b.Type)
 		}
@@ -226,7 +242,8 @@ func (b *CommandBody) check() error {
 
 // VerifyCommand checks a command for the member self at the time now: its
 // signer is an admin of the group now (a root on the path, or an admin CA
-// under one that is neither revoked nor frozen), it is for self in this
+// under one that is neither revoked nor frozen, and a watch's only for the
+// commands WatchCommand allows), it is for self in this
 // group, it has not expired, and it was not signed in the future. The
 // caller keeps the replay cache.
 func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (CommandBody, error) {
@@ -255,6 +272,9 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	}
 	if !s.onPath()[anchor] || s.Revoked(signer) || s.Frozen(signer) || !s.fromRoot(&signedRecord{signer: signer, anchor: anchor}) {
 		return body, errors.New("group: the command's signer is not an admin of the group")
+	}
+	if s.Watch(signer) && !WatchCommand(body.Type) {
+		return body, fmt.Errorf("group: a watch does not sign %s commands", body.Type)
 	}
 	ms := now.UnixMilli()
 	switch {

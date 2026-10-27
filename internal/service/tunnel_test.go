@@ -154,6 +154,33 @@ func TestTunnelKeys(t *testing.T) {
 	})
 }
 
+// TestAwayOffCommand checks that an admin turns sync away from home off on
+// another member with an away-off command (cbb global off -on), which
+// takes its keys too, and that a member that is no admin sends none.
+func TestAwayOffCommand(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	turnTunnelOn(t, deck)
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	if st := deck.status(t); st.Away == nil {
+		t.Fatal("sync away from home is not on on the deck")
+	}
+	if _, err := deck.do(t, control.Header{Op: control.OpAway, Name: "off", Device: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "only an admin") {
+		t.Errorf("the deck turned it off on the pi: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "off", Device: "deck"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if st := deck.status(t); st.Away != nil {
+		t.Errorf("away is still on on the deck: %+v", st.Away)
+	}
+	if _, err := os.Stat(filepath.Join(deck.dir, tunnel.StateFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the deck's tunnel state is still there: %v", err)
+	}
+}
+
 // TestTunnelOffByDefault checks that a member where sync away from home is
 // off offers no key and makes no tunnel state, even when the group has a
 // hub.

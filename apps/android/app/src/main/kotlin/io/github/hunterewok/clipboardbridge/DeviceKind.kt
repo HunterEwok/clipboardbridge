@@ -43,6 +43,7 @@ val LiveGroup.Device.kind: DeviceKind
     get() = DeviceKind.of(device?.form) ?: when {
         role == "phone" || role == "shortcut" -> DeviceKind.PHONE
         role == "lite" -> DeviceKind.BOARD
+        role == "watch" -> DeviceKind.WATCH
         os == "macos" -> DeviceKind.LAPTOP
         os == "ios" || os == "android" -> DeviceKind.PHONE
         else -> DeviceKind.DESKTOP
@@ -56,6 +57,8 @@ val LiveGroup.Device.system: String?
         "macos" -> "macOS"
         "ios" -> "iOS"
         "android" -> "Android"
+        "watchos" -> "watchOS"
+        "wearos" -> "Wear OS"
         else -> null
     }
 

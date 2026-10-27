@@ -40,14 +40,11 @@ struct WatchHome: View {
         }
         Section {
             ForEach(model.state.devices) { d in
-                HStack {
-                    Image(systemName: d.symbol).foregroundStyle(palette.accent).frame(width: 24).accessibilityHidden(true)
-                    Text(verbatim: d.name).lineLimit(1)
-                    Spacer()
-                    Circle().fill(d.online ? palette.accent : palette.textDim.opacity(0.4)).frame(width: 8, height: 8)
+                if model.admission != nil, !(d.can ?? []).isEmpty {
+                    NavigationLink { WatchDeviceView(device: d) } label: { row(d) }
+                } else {
+                    row(d)
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityValue(d.online ? Text("online") : Text("offline"))
             }
         } header: {
             Text("Devices")
@@ -61,9 +58,23 @@ struct WatchHome: View {
                 Text("Latest")
             }
         }
+        if model.admission != nil {
+            Text("This watch is an admin of the group.").font(.caption2).foregroundStyle(palette.textDim)
+        }
         if !model.reachable {
             Text("As the iPhone last said.").font(.caption2).foregroundStyle(palette.textDim)
         }
+    }
+
+    private func row(_ d: WatchState.Device) -> some View {
+        HStack {
+            Image(systemName: d.symbol).foregroundStyle(palette.accent).frame(width: 24).accessibilityHidden(true)
+            Text(verbatim: d.name).lineLimit(1)
+            Spacer()
+            Circle().fill(d.online ? palette.accent : palette.textDim.opacity(0.4)).frame(width: 8, height: 8)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(d.online ? Text("online") : Text("offline"))
     }
 
     private func awayLine(_ away: WatchState.Away) -> Text {

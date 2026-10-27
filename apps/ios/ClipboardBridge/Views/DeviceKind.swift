@@ -50,6 +50,7 @@ extension AppModel.Computer {
         return switch (role, os) {
         case ("phone", _), ("shortcut", _): .phone
         case ("lite", _): .board
+        case ("watch", _): .watch
         case (_, "macos"): .laptop
         case (_, "ios"), (_, "android"): .phone
         default: .desktop
@@ -65,6 +66,8 @@ extension AppModel.Computer {
         case "macos": "macOS"
         case "ios": "iOS"
         case "android": "Android"
+        case "watchos": "watchOS"
+        case "wearos": "Wear OS"
         default: nil
         }
     }

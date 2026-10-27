@@ -864,9 +864,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Carries out a command a member sent this phone (docs/protocol.md,
-     * section 15): a mode, paste or paste-off command an admin of the group
-     * signed for it, not expired and not carried out before. A phone takes
-     * no hub command.
+     * section 15): a mode, paste, paste-off or away-off command an admin of
+     * the group signed for it, not expired and not carried out before. A
+     * phone takes no hub command.
      */
     private fun command(peer: String?, c: Member.Record): Member.CommandResult {
         val id = Commands.idOf(c) ?: ""
@@ -892,6 +892,23 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             "paste-off" -> {
                 Log.i(TAG, "${body.by} turned remote paste off")
                 return pastes.turnOff()?.copy(id = body.id) ?: Member.CommandResult(body.id, "done")
+            }
+            "away-off" -> {
+                val a = awayFromHome ?: return Member.CommandResult(body.id, "done")
+                try {
+                    a.turnOff()
+                } catch (e: Exception) {
+                    Log.e(TAG, "cannot turn sync away from home off", e)
+                    return Member.CommandResult(body.id, "failed", e.message)
+                }
+                Log.i(TAG, "${body.by} turned sync away from home off")
+                // Connects again once the result has gone back on the
+                // connection that brought the command.
+                Thread {
+                    Thread.sleep(AWAY_OFF_RESTART_MS)
+                    restartSync()
+                }.apply { isDaemon = true }.start()
+                return Member.CommandResult(body.id, "done")
             }
         }
         if (body.type != "mode") return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
@@ -1034,6 +1051,58 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         withContext(Dispatchers.IO) { adopt(g) }
         published(listOf(r))
         currentNode?.sendAdminCA(ca, id)
+    }
+
+    /**
+     * Makes the watch's key an admin key with the role watch (docs/protocol.md,
+     * section 10, rule 8): the root key, after the fingerprint, the face or
+     * the screen lock, issues its admin CA and signs its device record, which
+     * every member gets. Returns what the watch keeps.
+     */
+    suspend fun addWatch(request: WatchState.KeyRequest): WatchState.Admission {
+        if (synchronized(lock) { state?.isRoot } != true) throw PhoneGroup.Failure("only the root makes admins")
+        val root = caSigner(R.string.reason_add_watch)
+        val g = copyOfState() ?: throw Failure(Failure.Kind.NOT_ADMIN)
+        val (ca, r) = withContext(Dispatchers.IO) { g.addWatch(request.device, request.name, "wearos", request.key, root, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        published(listOf(r))
+        return WatchState.Admission(request.device, ca, g.tag)
+    }
+
+    /** What the group's watch may do to a device (PhoneGroup.WatchAction keys). */
+    fun watchActions(id: String): List<String> = synchronized(lock) { state?.watchActions(id).orEmpty().map { it.key } }
+
+    /**
+     * The body the watch signs (docs/protocol.md, section 10, rule 8): any
+     * phone of the group builds it, since what counts is the watch's
+     * signature.
+     */
+    fun watchBody(ask: WatchState.Ask): ByteArray {
+        val g = copyOfState() ?: throw PhoneGroup.Failure(PhoneGroup.NOT_A_WATCH)
+        val a = PhoneGroup.WatchAction.of(ask.action) ?: throw PhoneGroup.Failure(PhoneGroup.NOT_FOR_WATCH)
+        return g.watchBody(a, ask.device, ask.watch, Instant.now(), ask.name)
+    }
+
+    /**
+     * Brings what the watch signed into the group: a freeze or a removal
+     * joins the records and goes to every member now or at the next sync, a
+     * command goes to its device, which must be connected.
+     */
+    suspend fun deliverFromWatch(signed: WatchState.Signed) {
+        val r = PhoneGroup.watchRecord(signed.body, signed.signature, signed.adminCA)
+        val o = org.json.JSONObject(String(signed.body))
+        val type = o.optString("type")
+        if (type == "freeze" || type == "revoke") {
+            val g = copyOfState() ?: throw PhoneGroup.Failure(PhoneGroup.NOT_A_WATCH)
+            if (g.add(listOf(r)).size != 1) throw CommandRefused("the group did not take the watch's record")
+            withContext(Dispatchers.IO) { adopt(g) }
+            published(listOf(r))
+            return
+        }
+        val to = o.optString("to").takeIf { it.isNotEmpty() } ?: throw PhoneGroup.Failure(PhoneGroup.NOT_FOR_WATCH)
+        val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
+        val res = withContext(Dispatchers.IO) { n.command(to, r, 25_000, via = true) }
+        if (!res.done) throw CommandRefused(res.reason ?: res.status)
     }
 
     /**
@@ -1498,6 +1567,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
         /** The most command IDs the replay cache keeps; a command lives at most 30 s, as Go's maxCommandIDs. */
         private const val MAX_COMMANDS = 4096
+
+        /** How long after an away-off command the phone connects again, as Go's restartAfter. */
+        private const val AWAY_OFF_RESTART_MS = 500L
 
         /** The forms of devices that are always on, as their hellos state them. */
         private val ALWAYS_ON = setOf("desktop", "server", "board", "router")

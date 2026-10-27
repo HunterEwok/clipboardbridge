@@ -63,6 +63,9 @@ struct SettingsView: View {
             if let relay = model.blindRelay {
                 relaySection(relay)
             }
+            if model.devices.contains(where: { $0.isSelf && $0.isRoot }), WatchLink.shared.watchApp {
+                watchSection
+            }
             NotificationSettings()
             Section {
                 LabeledContent {
@@ -392,6 +395,40 @@ struct ColorSwatches: View {
             }
         }
         .padding(.vertical, Tokens.spacingSmall)
+    }
+}
+
+extension SettingsView {
+    /// The root phone makes its paired watch an admin, for the emergency
+    /// actions (docs/protocol.md, section 10, rule 8).
+    @ViewBuilder var watchSection: some View {
+        let watches = model.devices.filter { $0.role == "watch" }
+        Section {
+            ForEach(watches) { w in
+                Text(verbatim: w.name)
+            }
+            if watches.isEmpty {
+                Button {
+                    Task {
+                        switching = true
+                        await model.addWatch()
+                        switching = false
+                    }
+                } label: {
+                    Text("Make the watch an admin")
+                }
+                .disabled(switching)
+            }
+        } header: {
+            Text("Apple Watch")
+        } footer: {
+            if watches.isEmpty {
+                Text("With a key of its own, the watch can freeze an admin computer, remove a device that is no admin, and turn remote paste, quick actions and sync away from home off. It needs a passcode and wrist detection. Open Clipboard Bridge on the watch first.")
+            } else {
+                Text("To give a new watch the key, remove this one from the devices first.")
+            }
+        }
+        .listRowBackground(palette.surface)
     }
 }
 

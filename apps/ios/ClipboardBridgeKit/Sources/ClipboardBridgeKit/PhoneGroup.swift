@@ -154,6 +154,11 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// warning (docs/protocol.md, section 17).
     public enum Failure: Error, Equatable {
         case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey
+        /// A watch's request names a device ID or system that is not a new watch's,
+        /// or a device that is not a watch of the group.
+        case notAWatch
+        /// A watch may not do that to the device (section 10, rule 8).
+        case notForWatch
     }
 
     /// Adds records from other members, then follows the roots they lead
@@ -301,7 +306,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         // a member nobody sees.
         var keys = d.keys, keep: [Data]?
         if let admin = d.adminKey {
-            keys.append(admin)
+            // A watch's record names its admin CA as its key already.
+            if !keys.contains(admin) { keys.append(admin) }
             // Its own removals stop counting with it, so this record names them again.
             for k in records.revokedBy(admin) where !keys.contains(k) { keys.append(k) }
             keep = records.admitted(by: admin).filter { !keys.contains($0) }
@@ -360,6 +366,87 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                            store: store, kind: proven ? d.kind : nil, proof: proven ? d.proof : nil, caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
         return (ca, r)
+    }
+
+    /// Makes a watch an admin (section 10, rule 8): the root issues an
+    /// admin CA for the key the watch made in its Secure Enclave or
+    /// Keystore (adminKey, a SubjectPublicKeyInfo) and signs the watch's
+    /// device record, whose key and admin both name that CA, since a watch
+    /// has no member key. device is the ID the watch picked, os "watchos"
+    /// or "wearos". It returns the admin CA, for the watch, and the record
+    /// to send. Only the root does it; the watch checked its passcode and
+    /// wrist detection before it made the key.
+    public mutating func addWatch(device: String, name: String, os: String, adminKey: Data, rootSigner: CertificateSigner,
+                                  now: Date) throws -> (adminCA: Data, record: Member.Record) {
+        guard isRoot else { throw Failure.notRoot }
+        guard device.count == 32, device.allSatisfy({ $0.isHexDigit && !$0.isUppercase }), os == "watchos" || os == "wearos",
+              !devices.contains(where: { $0.id == device }) else { throw Failure.notAWatch }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
+        let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
+        let key = try Records.keyHash(cert: ca)
+        let r = try record(device: device, name: name, role: "watch", os: os, key: key, admin: key, store: Records.hardware,
+                           caSigner: rootSigner, now: now)
+        return (ca, r)
+    }
+
+    /// What a watch of the group may do from its wrist (section 10, rule 8).
+    public enum WatchAction: String, Codable, CaseIterable, Sendable {
+        case freeze, remove, pasteOff = "paste-off", actionsOff = "actions-off", awayOff = "away-off", action
+    }
+
+    /// What a watch may do to device: freeze it when it is an admin
+    /// computer, remove it when it is no admin, and send a member the
+    /// commands that turn things off or run a quick action. Nothing to the
+    /// root, a phone or a watch.
+    public func watchActions(for device: String) -> [WatchAction] {
+        guard let d = devices.first(where: { $0.id == device }), device != records.rootDevice,
+              d.role == "full" || d.role == "lite" else { return [] }
+        var out: [WatchAction] = []
+        if d.adminKey != nil, d.role == "full", !d.frozen { out.append(.freeze) }
+        if d.adminKey == nil, !d.admin { out.append(.remove) }
+        return out + [.pasteOff, .actionsOff, .awayOff, .action]
+    }
+
+    /// The body the watch with the device ID watch signs for action on
+    /// device (name is the quick action's, for action): the phone builds it,
+    /// the watch shows what it says and signs it with its admin key, and
+    /// watchRecord puts the two together. Any phone of the group builds
+    /// it, admin or not: what counts is the watch's signature.
+    public func watchBody(_ action: WatchAction, device: String, name: String? = nil, watch: String, now: Date) throws -> Data {
+        guard let w = devices.first(where: { $0.id == watch && $0.role == "watch" }), let ca = w.adminKey, records.isWatch(ca) else {
+            throw Failure.notAWatch
+        }
+        guard watchActions(for: device).contains(action), let d = devices.first(where: { $0.id == device }) else {
+            throw Failure.notForWatch
+        }
+        let s = BodyOnly()
+        let r: Member.Record
+        switch action {
+        case .freeze:
+            guard let admin = d.adminKey else { throw Failure.notForWatch }
+            r = try Records.freeze([admin], records: records.signed(by: admin), group: tag, by: watch, now: now, signer: s)
+        case .remove: r = try Records.revoke(d.keys, group: tag, by: watch, now: now, signer: s)
+        case .pasteOff: r = try Commands.pasteOff(to: device, group: tag, by: watch, now: now, signer: s)
+        case .actionsOff: r = try Commands.actionsOff(to: device, group: tag, by: watch, now: now, signer: s)
+        case .awayOff: r = try Commands.awayOff(to: device, group: tag, by: watch, now: now, signer: s)
+        case .action:
+            guard let name, Commands.validActionName(name) else { throw Failure.notForWatch }
+            r = try Commands.action(to: device, name: name, group: tag, by: watch, now: now, signer: s)
+        }
+        return r.body
+    }
+
+    /// The record or command a watch signed: body, its signature (ECDSA
+    /// with SHA-256, DER) and the watch's admin CA.
+    public static func watchRecord(body: Data, signature: Data, watchCA: Data) -> Member.Record {
+        Member.Record(body: body, sig: signature, chain: [watchCA])
+    }
+
+    /// Signs nothing: the watch signs the body elsewhere.
+    private struct BodyOnly: CertificateSigner {
+        var publicKeyDER: Data { Data() }
+        func signature(for data: Data) throws -> Data { Data() }
     }
 
     /// Checks the attestation a device sent of its member key (section 17,

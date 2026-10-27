@@ -49,6 +49,7 @@ extension Control.Device {
         return switch (role, os) {
         case ("phone", _), ("shortcut", _): .phone
         case ("lite", _): .board
+        case ("watch", _): .watch
         case (_, "macos"): .laptop
         case (_, "ios"), (_, "android"): .phone
         default: .desktop
@@ -63,6 +64,8 @@ extension Control.Device {
         case "macos": "macOS"
         case "ios": "iOS"
         case "android": "Android"
+        case "watchos": "watchOS"
+        case "wearos": "Wear OS"
         default: nil
         }
     }
@@ -89,6 +92,7 @@ extension Control.Device {
         case "phone": "Phone app"
         case "lite": "Lite member"
         case "shortcut": "Shortcut"
+        case "watch": "Watch"
         default: "Full member"
         }
     }

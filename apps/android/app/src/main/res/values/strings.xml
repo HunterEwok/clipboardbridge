@@ -299,4 +299,12 @@
     <string name="remote_paste_needs_service">It pastes through the service "Send my copies by themselves", which is off: turn it on in the system\'s accessibility settings.</string>
     <string name="channel_pastes">Remote pastes</string>
     <string name="pasted_from">Pasted from %1$s</string>
+    <string name="reason_add_watch">Make the watch an admin</string>
+    <string name="watch_title">Wear OS watch</string>
+    <string name="watch_make_admin">Make the watch an admin</string>
+    <string name="watch_made_admin">The watch is an admin now. It can freeze an admin computer, remove a device that is no admin and turn things off.</string>
+    <string name="watch_not_reachable">The watch did not answer. Is it connected to this phone, with Clipboard Bridge installed?</string>
+    <string name="watch_not_protected">The watch needs a screen lock. Set one on the watch, keep it on your wrist, then try again.</string>
+    <string name="watch_body">With a key of its own, the watch can freeze an admin computer, remove a device that is no admin, and turn remote paste, quick actions and sync away from home off. It needs a screen lock, and its on-wrist detection should be on.</string>
+    <string name="watch_replace">To give a new watch the key, remove this one from the devices first.</string>
 </resources>

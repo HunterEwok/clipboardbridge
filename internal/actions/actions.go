@@ -42,15 +42,16 @@ var Presets = []string{Lock, Sleep, Reboot, Shutdown, Cancel, Restart}
 func IsPreset(name string) bool { return slices.Contains(Presets, name) }
 
 // The kinds of signers an action may allow: the group's root, an admin
-// phone, an admin computer.
+// phone, an admin computer, a watch with an admin key of its own.
 const (
 	ByRoot     = "root"
 	ByPhone    = "phone"
 	ByComputer = "computer"
+	ByWatch    = "watch"
 )
 
 // Kinds lists the kinds of signers.
-var Kinds = []string{ByRoot, ByPhone, ByComputer}
+var Kinds = []string{ByRoot, ByPhone, ByComputer, ByWatch}
 
 // An Action is one action as this device's user set it: on or off, the
 // kinds of admins that may run it (every kind when none), and whether a
@@ -225,7 +226,7 @@ func ParseKinds(s string) ([]string, error) {
 			continue
 		}
 		if !slices.Contains(Kinds, k) {
-			return nil, fmt.Errorf("%q is not a kind of admin: root, phone or computer", k)
+			return nil, fmt.Errorf("%q is not a kind of admin: root, phone, computer or watch", k)
 		}
 		if !slices.Contains(out, k) {
 			out = append(out, k)
@@ -238,7 +239,7 @@ func ParseKinds(s string) ([]string, error) {
 // records show it (group.Records.CommandSigner).
 type Signer struct {
 	Root  bool   // the group's root key signed it
-	Role  string // the device's role, group.RolePhone or group.RoleFull; "" when no record names it
+	Role  string // the device's role, group.RolePhone, group.RoleFull or group.RoleWatch; "" when no record names it
 	Store string // where its keys live, group.StoreFile and the others; "" when unknown
 }
 
@@ -254,6 +255,8 @@ func (s Signer) Kinds() []string {
 		out = append(out, ByPhone)
 	case group.RoleFull:
 		out = append(out, ByComputer)
+	case group.RoleWatch:
+		out = append(out, ByWatch)
 	}
 	return out
 }

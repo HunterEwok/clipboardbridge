@@ -197,6 +197,52 @@ class RecordsTest {
     }
 
     /**
+     * Watches (go-watch.json, from Go's TestGoWatchVectors; docs/protocol.md section 10, rule 8): a watch freezes
+     * and removes as a computer's admin CA does, but admits nobody, never makes a root, is never a hub and signs
+     * only the commands that turn things off and action.
+     */
+    @Test
+    fun goWatch() {
+        val cases = Interop.read("go-watch.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+        assertEquals(3, cases.size)
+        for (c in cases) {
+            val name = c.str("name")
+            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
+            val set = RecordSet()
+            val dropped = c["dropped"]?.jsonPrimitive?.int ?: 0
+            assertEquals(records.size - dropped, set.addAll(records, b64(c.str("group_ca"))).size, name)
+            assertEquals(c.str("digest"), set.digest, name)
+            assertTrue(set.roots.isEmpty(), name)
+            val devices = c.getValue("devices").jsonArray.map { it.jsonObject }
+            assertEquals(devices.map { listOf(it.str("id"), it.str("name"), it.str("role"), it.getValue("admin").jsonPrimitive.boolean.toString()) },
+                set.devices.map { listOf(it.id, it.name, it.role, it.admin.toString()) }, name)
+            for (k in c.getValue("keys").jsonArray) {
+                val o = k.jsonObject
+                val key = b64(o.str("key"))
+                val what = "$name: ${o.str("name")}"
+                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(key), "$what revoked")
+                assertEquals(o.getValue("frozen").jsonPrimitive.boolean, set.isFrozen(key), "$what frozen")
+                assertEquals(o.getValue("watch").jsonPrimitive.boolean, set.isWatch(key), "$what watch")
+            }
+            for (ch in (c["chains"] as? JsonArray).orEmpty()) {
+                val o = ch.jsonObject
+                val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
+                assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, "$name: ${o.str("name")}")
+            }
+            assertEquals(c.getValue("hubs").jsonArray.map { it.jsonPrimitive.content }, set.hubOrder, name)
+            for (d in set.devices) if (d.role == "watch") assertFalse(set.mayHost(d.id), name)
+            val self = c["self"]?.jsonPrimitive?.content ?: ""
+            val now = c["now_ms"]?.jsonPrimitive?.content?.toLong() ?: 0L
+            for (cmd in (c["commands"] as? JsonArray).orEmpty()) {
+                val o = cmd.jsonObject
+                val r = Member.Record.fromJson(o.getValue("command").jsonObject)
+                val got = runCatching { Commands.verify(r, set, self, now) }
+                assertEquals(o.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${o.str("name")}: ${got.exceptionOrNull()}")
+            }
+        }
+    }
+
+    /**
      * Writes records this kit signed for internal/group's TestSwiftRecords,
      * under the Swift kit's file name, when CBB_INTEROP_OUT names a directory.
      */

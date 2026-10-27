@@ -662,15 +662,21 @@ func TestLiteMemberAway(t *testing.T) {
 	}
 	waitFor(t, "the lite member has it", func() bool { return away.paste(t) == "to the lite member, away" })
 
-	// Off: the key is gone, and so is the connection through the tunnel.
-	if _, err := away.do(t, control.Header{Op: control.OpAway, Name: "off"}, ""); err != nil {
+	// Off, from an admin (cbb global off -on, an away-off command
+	// through the tunnel): the key is gone, and so is the connection
+	// through the tunnel. Its own user turning it off again changes
+	// nothing.
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "off", Device: "lite"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "tunnel.json")); !os.IsNotExist(err) {
-		t.Errorf("tunnel.json after cbb global off: %v", err)
+		t.Errorf("tunnel.json after the away-off command: %v", err)
 	}
 	waitFor(t, "the lite member syncs at home only", func() bool {
 		st := away.status(t)
 		return st.Away == nil && len(st.Peers) == 0
 	})
+	if _, err := away.do(t, control.Header{Op: control.OpAway, Name: "off"}, ""); err != nil {
+		t.Fatal(err)
+	}
 }

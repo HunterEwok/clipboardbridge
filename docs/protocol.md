@@ -361,7 +361,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `current` | Event or absent | the sender's current event with its age as of sending; for a secret only its mark (text `""`), whatever its age; absent when there is none |
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
-| `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one |
+| `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one. A watch's device record says `watchos` or `wearos` (section 10) |
 | `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
@@ -1095,7 +1095,8 @@ chains and records signed through one are implemented on both sides: Go's
 `adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
 ClipboardBridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
-`testdata/interop/go-root.json` holds a handover for the phone kit to check) and in
+`testdata/interop/go-root.json` holds a handover for the phone kit to check; `go-watch.json`
+what a watch's admin key may do, rule 8) and in
 ClipboardBridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
 `roots`; `TestSwiftRoot` checks a takeover the kit signs). Admins are
 implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, the hello's
@@ -1200,7 +1201,7 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token; records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token, `watch` for a watch with an admin key of its own (rule 8); records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello, and `watchos` or `wearos` for a watch; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID; for a watch, which has no member key, of its admin key, as in `admin`), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root: a takeover in a group with a root, or `cbb upgrade` in a legacy group |
 | `freeze` | `keys` (the SHA-256 of admin CAs' SubjectPublicKeyInfos), `records` (array of record IDs: the records of those admins that stay) | stops admin computers until the root or an admin phone decides (rule 4) |
@@ -1308,6 +1309,23 @@ Validity and evaluation, which depend only on the set of records, never on their
    keeps the path next to its identity, replacing it whenever the records lead to another
    path (compared by content, not by length; an empty set changes nothing). A new member gets
    the path in the Welcome's `roots`, with the path records that lead to it in `records`.
+8. **Watches.** A watch's admin key sits in its Secure Enclave or Keystore, but a watch on
+   the wrist signs without Face ID or a fingerprint, so its powers are few. A **watch's
+   admin CA** is one that a `device` record with role `watch`, signed by a known root's own
+   key, names in `admin`. For rules 3 and 4 it is a computer's admin CA: its revocations
+   count when they name no admin or root key, its freezes count, any admin freezes it, and
+   only the root and the admin phones remove it. Beyond that, nothing else it signs counts:
+   a `device` record it signs counts for nothing (rule 5), so it admits nobody; a `root`
+   record it signs makes no root known (rules 2 and 7), so it never takes the group over,
+   not even in a group whose root is a computer; a certificate it issues is refused (rule
+   6); and of the commands (section 15) it signs only `paste-off`, `actions-off`, `away-off`
+   and `action`. A watch is listed as an admin while its admin CA is neither revoked nor
+   frozen, but it is never a hub (section 11) and no server credential names it (section
+   18): it reaches the group only through its phone, which carries what it signs. The
+   phone builds the body (a `freeze` or `revoke` record, or a command with `by` the watch's
+   device ID), the watch checks its type, group, signer and, for a command, `to` and
+   `action`, then signs it; the phone adds the record to its records and sends it, or passes
+   the command on as it passes its own (section 15).
 
 **Handing the group over.** When the root is lost, an admin takes over: in a phone's group
 an admin phone, never a computer; in a group a computer created an admin computer, with
@@ -1393,7 +1411,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, os, form, os_version, version, mac, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected; `form`, `os_version`, `version` and `mac` are what its hello says (section 4, "Device"), for this device and the connected ones only |
-| `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`; `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
+| `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "off", device}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer for now); `off` deletes `tunnel.json`, and with `device`, on an admin, sends that device an `away-off` command (section 15); `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
 | `upgrade` | none | `{done}` or an error. Only on a member that holds the keys of a legacy group: gives the group a root, this member ("Upgrading a legacy group") |
@@ -2050,7 +2068,8 @@ An admin orders one member to do something with a **command**: signed like a rec
 makes the receiver the group's hub (section 11, "Moving the hub"); `paste` puts a text where
 the receiver's focus is, and `paste-off` turns remote paste off on the receiver (design.md,
 "Remote paste"); `action` runs one of the receiver's quick actions, and `actions-off` turns
-them all off there (roadmap.md, "Quick actions").
+them all off there (roadmap.md, "Quick actions"); `away-off` turns sync away from home off on
+the receiver (section 11), which only its own user turns on again (D-45).
 
 ### The command
 
@@ -2059,7 +2078,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `v` | integer | `1` |
-| `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action` or `actions-off` |
+| `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
@@ -2091,7 +2110,7 @@ commands, such as one before 0.5, ignores the message, so the sender gives up af
 (20 s for `hub`).
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
-`action` or `actions-off` command to every member it is connected to (a `hub` command only goes directly). A member
+`action`, `actions-off` or `away-off` command to every member it is connected to (a `hub` command only goes directly). A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
 command expires, at most 4096), and passes the receiver's `result` back to the member it
@@ -2107,7 +2126,8 @@ The receiver takes a command only when:
 - its body decodes, with a known `type` and a lifetime of at most 30 s;
 - `group` is its group and `to` its own device ID;
 - the signature verifies under a root on the path of the group's records, and the signer is
-  that root or an admin CA under it that is neither revoked nor frozen;
+  that root or an admin CA under it that is neither revoked nor frozen; a watch's admin CA
+  (section 10, rule 8) signs only `paste-off`, `actions-off`, `away-off` and `action`;
 - `expires_ms` is after its clock and `time_ms` at most 60 s ahead of it;
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
   until they expire (at most 4096 at a time).
@@ -2140,8 +2160,8 @@ agent of the user signed in runs; nothing in the command reaches its arguments, 
 the exit status comes back. The receiver refuses it unless its user turned that action on there, and then:
 
 - unless the signer is of a kind the user allowed for it, when the user named kinds: `root`
-  (the root's own key signed it), `phone` or `computer` (the role of the signer's device, the
-  device record whose `admin` is the signer's admin CA, or the root's own device);
+  (the root's own key signed it), `phone`, `computer` or `watch` (the role of the signer's
+  device, the device record whose `admin` is the signer's admin CA, or the root's own device);
 - for `reboot` and `shutdown`, unless that device's record says its keys are in hardware
   (`store` `hardware` or `proven`), or the user allowed keys in files for that action;
 - beyond one a second and 30 a minute from one signer.
@@ -2150,7 +2170,12 @@ It answers `done` when the system took the action (a reboot that is scheduled co
 `refused` with the reason (the action is off, the signer is not allowed, the system refused
 it) or `failed`, and keeps the last 100 actions in a log (sender, time, action, result). An
 `actions-off` command turns every action off on the receiver, keeping who may run each; only
-the device's own user turns them on again. The lite member knows only `reboot`,
+the device's own user turns them on again.
+
+An `away-off` command turns sync away from home off on the receiver as its user's own
+`off` does (section 11, the control operation `away`): its tunnel keys go, and the members
+connect again once the result is sent. It answers `done` also when sync away from home was
+off already. A member before 0.6 refuses it as an unknown type. The lite member knows only `reboot`,
 `cancel-shutdown` and `restart`. A member before 0.6 refuses both as an unknown type.
 
 

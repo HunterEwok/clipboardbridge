@@ -27,6 +27,16 @@ protocol GroupController: AnyObject {
     func makeAdmin(_ id: String) async throws
     /// Unfreezes an admin computer that another admin froze.
     func unfreeze(_ id: String) async throws
+    /// Makes the key the paired watch made an admin key with the role
+    /// watch; only the root phone does. Returns what the watch keeps.
+    func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission
+    /// What the group's watch may do to a device (PhoneGroup.WatchAction).
+    func watchActions(for id: String) -> [String]
+    /// The body the watch signs for what it asked.
+    func watchBody(_ ask: WatchState.Ask) throws -> Data
+    /// Brings what the watch signed into the group: a record to every member,
+    /// a command to its device.
+    func deliverFromWatch(_ signed: WatchState.Signed) async throws
     /// Gives a device another name; only an admin phone does.
     func rename(_ id: String, to name: String) async throws
     /// Sets the sync mode of a connected computer; only an admin phone does.
@@ -75,6 +85,10 @@ protocol GroupController: AnyObject {
 
 extension GroupController {
     func unfreeze(_ id: String) async throws {}
+    func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission { throw PhoneGroup.Failure.notRoot }
+    func watchActions(for id: String) -> [String] { [] }
+    func watchBody(_ ask: WatchState.Ask) throws -> Data { throw PhoneGroup.Failure.notAWatch }
+    func deliverFromWatch(_ signed: WatchState.Signed) async throws { throw PhoneGroup.Failure.notAWatch }
     func rename(_ id: String, to name: String) async throws {}
     func setMode(_ id: String, to mode: String) async throws {}
     func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {}
@@ -110,7 +124,7 @@ final class AppModel: ObservableObject {
         let id: String
         var name: String
         var online: Bool
-        /// "full", "phone", "lite" or "shortcut".
+        /// "full", "phone", "lite", "shortcut" or "watch".
         var role = "full"
         /// Its operating system; nil when its record does not tell.
         var os: String?
@@ -684,6 +698,27 @@ final class AppModel: ObservableObject {
             message = Self.describe(error)
         }
         await group.refresh()
+        devices = group.devices
+    }
+
+    /// Makes the paired Apple Watch an admin with a key of its own, for the
+    /// emergency actions (docs/protocol.md, section 10, rule 8): the watch,
+    /// whose app is open, makes the key, and the root signs after Face ID.
+    func addWatch() async {
+        do {
+            let request = try await WatchLink.shared.keyRequest()
+            let admission = try await group.addWatch(request)
+            try await WatchLink.shared.admit(admission)
+            message = String(localized: "The watch is an admin now. It can freeze an admin computer, remove a device that is no admin and turn things off.", bundle: .app)
+        } catch WatchLink.Failure.notReachable {
+            message = String(localized: "Open Clipboard Bridge on the watch, then try again.", bundle: .app)
+        } catch WatchLink.Failure.notProtected {
+            message = String(localized: "The watch needs a passcode and wrist detection, and must be on your wrist. Turn them on in the Watch app on this iPhone.", bundle: .app)
+        } catch WatchLink.Failure.noSecureEnclave {
+            message = Self.describe(WatchLink.Failure.noSecureEnclave, summary: String(localized: "This watch cannot keep a key in its Secure Enclave.", bundle: .app))
+        } catch {
+            message = Self.describe(error)
+        }
         devices = group.devices
     }
 

@@ -160,7 +160,9 @@ func (s *Records) CredentialLists() CredentialLists {
 		}
 	}
 	for _, d := range devs {
-		if d.Frozen {
+		// A watch reaches the group only through its phone, so no server
+		// needs its key.
+		if d.Frozen || d.Role == RoleWatch {
 			continue
 		}
 		if d.Admin && d.ID != root && len(l.Admins) < maxCredentialList {

@@ -520,3 +520,66 @@ fn go_credentials() {
     // Encoding again gives the same JSON as Go's.
     assert_eq!(serde_json::to_value(&hubs).unwrap(), v["hubs"]);
 }
+
+/// What a watch's admin key may do (docs/protocol.md, section 10, rule 8),
+/// as Go's TestGoWatchVectors writes it: in a phone's group it freezes an
+/// admin computer and removes an ordinary device, and nothing more; an
+/// admin computer freezes it; in a group whose root is a computer it does
+/// not take the group over.
+#[test]
+fn go_watch() {
+    let v = vectors("go-watch.json");
+    let cases = v["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 3);
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let mut s = Records::new(&cert(&c["group_ca"]));
+        let mut rs = records(&c["records"]);
+        rs.reverse();
+        let (_, errs) = s.add_all(&rs);
+        assert_eq!(errs.len(), c["dropped"].as_u64().unwrap_or(0) as usize, "{name}: {errs:?}");
+        let got: Vec<(String, String, String, bool)> =
+            s.devices().into_iter().map(|d| (d.id, d.name, d.role, d.admin)).collect();
+        let want: Vec<(String, String, String, bool)> = c["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["id"].as_str().unwrap().to_string(),
+                    d["name"].as_str().unwrap().to_string(),
+                    d["role"].as_str().unwrap().to_string(),
+                    d["admin"].as_bool().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(got, want, "{name}");
+        for k in c["keys"].as_array().unwrap() {
+            let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+            let what = k["name"].as_str().unwrap();
+            assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{name}: {what} revoked");
+            assert_eq!(s.frozen(&key), k["frozen"].as_bool().unwrap(), "{name}: {what} frozen");
+            assert_eq!(s.watch(&key), k["watch"].as_bool().unwrap(), "{name}: {what} watch");
+        }
+        for ch in c["chains"].as_array().into_iter().flatten() {
+            let chain: Vec<Cert> = ch["chain"].as_array().unwrap().iter().map(cert).collect();
+            assert_eq!(s.refused(&chain).is_some(), ch["refused"].as_bool().unwrap(), "{name}: {}", ch["name"]);
+        }
+        assert!(s.roots().is_empty(), "{name}");
+        let hubs: Vec<String> = c["hubs"].as_array().unwrap().iter().map(|h| h.as_str().unwrap().to_string()).collect();
+        assert_eq!(s.hub_order(), hubs, "{name}");
+        for d in s.devices() {
+            if d.role == "watch" {
+                assert!(!s.may_host(&d.id), "{name}");
+            }
+        }
+        let me = c["self"].as_str().unwrap_or("");
+        let now = c["now_ms"].as_i64().unwrap_or(0);
+        for cmd in c["commands"].as_array().into_iter().flatten() {
+            let r: Record = serde_json::from_value(cmd["command"].clone()).unwrap();
+            let got = s.verify_command(&r, me, now);
+            assert_eq!(got.is_ok(), cmd["ok"].as_bool().unwrap(), "{name}: {}: {got:?}", cmd["name"]);
+        }
+        assert_eq!(s.digest(), c["digest"].as_str().unwrap(), "{name}");
+    }
+}

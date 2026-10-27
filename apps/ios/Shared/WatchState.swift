@@ -12,6 +12,11 @@ struct WatchState: Codable, Equatable {
         /// An SF Symbol for its kind.
         var symbol: String
         var online: Bool
+        /// What this watch may do to it, as PhoneGroup.WatchAction's raw
+        /// values; nil from a phone before 0.6.
+        var can: [String]?
+        /// The quick actions it has on, while it is connected.
+        var actions: [String]?
     }
 
     /// Where sync away from home stands, as the phone's Settings say it.
@@ -31,6 +36,57 @@ struct WatchState: Codable, Equatable {
     static let key = "state"
     /// The message that turns the phone's sync away from home on or off.
     static let awayKey = "away"
+
+    /// The root phone's ask that the watch make its admin key (docs/protocol.md,
+    /// section 10, rule 8); the watch answers with requestKey, a KeyRequest,
+    /// or refusedKey, why it made none.
+    static let certifyKey = "certify", requestKey = "request", refusedKey = "refused"
+    /// The root's answer once it certified the key: an Admission.
+    static let admittedKey = "admitted"
+    /// Why a watch makes no key: no passcode or no wrist detection, or no
+    /// Secure Enclave.
+    static let notProtected = "not-protected", noSecureEnclave = "no-secure-enclave"
+
+    /// The key a watch made for the root to certify.
+    struct KeyRequest: Codable, Equatable {
+        /// The device ID the watch picked for itself.
+        var device: String
+        var name: String
+        /// Its SubjectPublicKeyInfo, DER.
+        var key: Data
+    }
+
+    /// The watch's ask that the phone build the body of an emergency action
+    /// (docs/protocol.md, section 10, rule 8); the phone answers with bodyKey
+    /// or refusedKey.
+    static let askKey = "ask", bodyKey = "body"
+    /// What the watch signed, which the phone brings into the group; it
+    /// answers with doneKey, true, or refusedKey.
+    static let signedKey = "signed", doneKey = "done"
+
+    struct Ask: Codable, Equatable {
+        /// A PhoneGroup.WatchAction's raw value.
+        var action: String
+        var device: String
+        /// The quick action's name, for action.
+        var name: String?
+        /// The watch's own device ID.
+        var watch: String
+    }
+
+    struct Signed: Codable, Equatable {
+        var body: Data
+        /// ECDSA with SHA-256 over body, DER.
+        var signature: Data
+        var adminCA: Data
+    }
+
+    /// What the root gave the watch: its admin CA, in the group with that tag.
+    struct Admission: Codable, Equatable {
+        var device: String
+        var adminCA: Data
+        var group: String
+    }
 
     var data: [String: Any] {
         (try? JSONEncoder().encode(self)).map { [Self.key: $0] } ?? [:]

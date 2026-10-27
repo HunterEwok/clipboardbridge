@@ -5,6 +5,7 @@ package io.github.hunterewok.clipboardbridge
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
 /**
  * What the phone tells its Wear OS watch, through the Wearable Data Layer:
@@ -23,7 +24,77 @@ data class WatchState(
     /** Whether the phone shows the error under its messages (its Settings); the watch does as it does. */
     val details: Boolean = false,
 ) {
-    data class Device(val id: String, val name: String, val form: String, val online: Boolean)
+    /** can: what this watch may do to it (the kit's PhoneGroup.WatchAction keys); actions: the quick actions it has on, while connected. */
+    data class Device(
+        val id: String,
+        val name: String,
+        val form: String,
+        val online: Boolean,
+        val can: List<String> = emptyList(),
+        val actions: List<String> = emptyList(),
+    )
+
+    /** The watch's ask that the phone build the body of an emergency action (docs/protocol.md, section 10, rule 8). */
+    data class Ask(val action: String, val device: String, val name: String?, val watch: String) {
+        fun encode(): ByteArray = JSONObject()
+            .put("action", action).put("device", device).put("name", name ?: JSONObject.NULL).put("watch", watch)
+            .toString().toByteArray()
+
+        companion object {
+            fun decode(data: ByteArray?): Ask? = data?.let {
+                runCatching {
+                    val o = JSONObject(String(it))
+                    Ask(o.getString("action"), o.getString("device"), if (o.isNull("name")) null else o.optString("name"), o.getString("watch"))
+                }.getOrNull()
+            }
+        }
+    }
+
+    /** What the watch signed: the body, its signature (ECDSA with SHA-256, DER) and its admin CA. */
+    data class Signed(val body: ByteArray, val signature: ByteArray, val adminCA: ByteArray) {
+        fun encode(): ByteArray = JSONObject()
+            .put("body", b64(body)).put("signature", b64(signature)).put("adminCA", b64(adminCA))
+            .toString().toByteArray()
+
+        override fun equals(other: Any?): Boolean =
+            other is Signed && body.contentEquals(other.body) && signature.contentEquals(other.signature) && adminCA.contentEquals(other.adminCA)
+
+        override fun hashCode(): Int = body.contentHashCode()
+
+        companion object {
+            fun decode(data: ByteArray?): Signed? = data?.let {
+                runCatching {
+                    val o = JSONObject(String(it))
+                    Signed(unb64(o.getString("body")), unb64(o.getString("signature")), unb64(o.getString("adminCA")))
+                }.getOrNull()
+            }
+        }
+    }
+
+    /** The phone's answer to an Ask (the body) or to a Signed (done), or why it refused. */
+    data class Answer(val body: ByteArray? = null, val done: Boolean = false, val refused: String? = null) {
+        fun encode(): ByteArray = JSONObject()
+            .put("body", body?.let { b64(it) } ?: JSONObject.NULL).put("done", done).put("refused", refused ?: JSONObject.NULL)
+            .toString().toByteArray()
+
+        override fun equals(other: Any?): Boolean =
+            other is Answer && (body?.contentEquals(other.body ?: ByteArray(0)) ?: (other.body == null)) && done == other.done && refused == other.refused
+
+        override fun hashCode(): Int = done.hashCode()
+
+        companion object {
+            fun decode(data: ByteArray?): Answer? = data?.let {
+                runCatching {
+                    val o = JSONObject(String(it))
+                    Answer(
+                        if (o.isNull("body")) null else unb64(o.getString("body")),
+                        o.optBoolean("done"),
+                        if (o.isNull("refused")) null else o.optString("refused"),
+                    )
+                }.getOrNull()
+            }
+        }
+    }
 
     /** Where sync away from home stands, as the phone's Settings say it. */
     enum class Away(val key: String) {
@@ -34,11 +105,72 @@ data class WatchState(
         }
     }
 
+    /**
+     * The watch's answer to the root phone's CERTIFY_PATH (docs/protocol.md,
+     * section 10, rule 8): the key it made, under the device ID it picked,
+     * or why it made none (refused, NOT_PROTECTED or another reason).
+     */
+    data class KeyRequest(val device: String = "", val name: String = "", val key: ByteArray = ByteArray(0), val refused: String? = null) {
+        fun encode(): ByteArray = JSONObject()
+            .put("device", device)
+            .put("name", name)
+            .put("key", Base64.getEncoder().encodeToString(key))
+            .put("refused", refused ?: JSONObject.NULL)
+            .toString()
+            .toByteArray()
+
+        override fun equals(other: Any?): Boolean =
+            other is KeyRequest && device == other.device && name == other.name && key.contentEquals(other.key) && refused == other.refused
+
+        override fun hashCode(): Int = device.hashCode()
+
+        companion object {
+            fun decode(data: ByteArray?): KeyRequest? = data?.let {
+                runCatching {
+                    val o = JSONObject(String(it))
+                    KeyRequest(
+                        o.optString("device"), o.optString("name"), Base64.getDecoder().decode(o.optString("key")),
+                        if (o.isNull("refused")) null else o.optString("refused"),
+                    )
+                }.getOrNull()
+            }
+        }
+    }
+
+    /** What the root gave the watch: its admin CA, in the group with that tag. */
+    data class Admission(val device: String, val adminCA: ByteArray, val group: String) {
+        fun encode(): ByteArray = JSONObject()
+            .put("device", device)
+            .put("adminCA", Base64.getEncoder().encodeToString(adminCA))
+            .put("group", group)
+            .toString()
+            .toByteArray()
+
+        override fun equals(other: Any?): Boolean =
+            other is Admission && device == other.device && adminCA.contentEquals(other.adminCA) && group == other.group
+
+        override fun hashCode(): Int = device.hashCode()
+
+        companion object {
+            fun decode(data: ByteArray?): Admission? = data?.let {
+                runCatching {
+                    val o = JSONObject(String(it))
+                    Admission(o.getString("device"), Base64.getDecoder().decode(o.getString("adminCA")), o.getString("group"))
+                }.getOrNull()
+            }
+        }
+    }
+
     fun encode(): ByteArray = JSONObject()
         .put("hasGroup", hasGroup)
         .put(
             "devices",
-            JSONArray(devices.map { JSONObject().put("id", it.id).put("name", it.name).put("form", it.form).put("online", it.online) }),
+            JSONArray(
+                devices.map {
+                    JSONObject().put("id", it.id).put("name", it.name).put("form", it.form).put("online", it.online)
+                        .put("can", JSONArray(it.can)).put("actions", JSONArray(it.actions))
+                },
+            ),
         )
         .put("away", away?.key ?: JSONObject.NULL)
         .put("events", JSONArray(events))
@@ -54,6 +186,32 @@ data class WatchState(
         /** The watch's message that turns the phone's sync away from home on (1) or off (0). */
         const val AWAY_PATH = "/cbb/away"
 
+        /** The root phone's ask that the watch make its admin key; the watch answers on KEY_PATH. */
+        const val CERTIFY_PATH = "/cbb/certify"
+
+        /** The watch's KeyRequest. */
+        const val KEY_PATH = "/cbb/key"
+
+        /** The root's Admission; the watch answers on ADMITTED_PATH with the device ID it kept, or nothing. */
+        const val ADMITTED_PATH = "/cbb/admitted"
+
+        /** Why a watch makes no key: it has no secure lock screen. */
+        const val NOT_PROTECTED = "not-protected"
+
+        /** The watch's Ask; the phone answers on BODY_PATH. */
+        const val ASK_PATH = "/cbb/ask"
+        const val BODY_PATH = "/cbb/body"
+
+        /** What the watch signed; the phone answers on DONE_PATH. */
+        const val SIGNED_PATH = "/cbb/signed"
+        const val DONE_PATH = "/cbb/done"
+
+        private fun b64(b: ByteArray): String = Base64.getEncoder().encodeToString(b)
+
+        private fun unb64(s: String): ByteArray = Base64.getDecoder().decode(s)
+
+        private fun strings(a: JSONArray?): List<String> = a?.let { (0 until it.length()).map { i -> it.getString(i) } } ?: emptyList()
+
         /** The state the phone sent, or null for anything else. */
         fun decode(data: ByteArray?): WatchState? = data?.let {
             runCatching {
@@ -64,7 +222,10 @@ data class WatchState(
                     hasGroup = o.optBoolean("hasGroup"),
                     devices = (0 until ds.length()).map { i ->
                         val d = ds.getJSONObject(i)
-                        Device(d.getString("id"), d.getString("name"), d.optString("form", "other"), d.optBoolean("online"))
+                        Device(
+                            d.getString("id"), d.getString("name"), d.optString("form", "other"), d.optBoolean("online"),
+                            strings(d.optJSONArray("can")), strings(d.optJSONArray("actions")),
+                        )
                     },
                     away = if (o.isNull("away")) null else Away.of(o.optString("away")),
                     events = (0 until es.length()).map { i -> es.getString(i) },

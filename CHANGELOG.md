@@ -8,6 +8,22 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The `watch` role for a watch's admin key (docs/protocol.md, section 10, rule 8), in Go,
+  the lite member and both phone kits, with interop vectors: a watch freezes admin
+  computers, removes ordinary devices and signs only the commands that turn things off and
+  quick actions; it never admits devices, removes an admin, takes the group over or acts as
+  a hub. Any admin can freeze a watch; removing one takes the root or an admin phone.
+  The root phone makes its Apple Watch or Wear OS watch an admin in Settings: the watch
+  makes the key in its Secure Enclave or Keystore, only with a passcode (and wrist detection
+  on the Apple Watch), and the key works only while the watch is unlocked.
+- Emergency actions on an admin watch: a device on the watch opens what the watch may do to
+  it (freeze an admin computer, remove an ordinary device, turn remote paste, quick actions
+  or sync away from home off, run a quick action marked for a watch). The phone builds what
+  the watch signs, the watch checks it, asks for a tap and signs it, and the phone carries
+  it into the group.
+- The `away-off` command turns sync away from home off on a member (`cbb global off -on
+  DEVICE` on an admin computer); turning it on stays each device's own decision.
+- Quick actions take `watch` in `-by`, for actions a watch may run.
 - The bench's catalogue for 0.6 (docs/testbench-catalogue.md): 287 cases in one line each,
   by area, with where each runs (real devices, a fleet of containers, a time-scaled build,
   a test release feed, UI automation, a person) and what it still needs; and every function

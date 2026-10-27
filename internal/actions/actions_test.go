@@ -17,6 +17,7 @@ func TestCheck(t *testing.T) {
 	rootPhone := Signer{Root: true, Role: group.RolePhone, Store: group.StoreHardware}
 	fileComputer := Signer{Role: group.RoleFull, Store: group.StoreFile}
 	tpmComputer := Signer{Role: group.RoleFull, Store: group.StoreProven}
+	watch := Signer{Role: group.RoleWatch, Store: group.StoreHardware}
 	unknown := Signer{}
 	for _, tt := range []struct {
 		a      Action
@@ -36,6 +37,9 @@ func TestCheck(t *testing.T) {
 		{Action{Name: Shutdown, On: true}, phone, ""},
 		{Action{Name: Shutdown, On: true, AnyKey: true}, fileComputer, ""},
 		{Action{Name: Sleep, On: true}, fileComputer, ""},
+		{Action{Name: Lock, On: true, By: []string{ByPhone, ByComputer}}, watch, "only for phone, computer"},
+		{Action{Name: Lock, On: true, By: []string{ByWatch}}, watch, ""},
+		{Action{Name: Reboot, On: true}, watch, ""},
 	} {
 		err := Check(tt.a, tt.s)
 		var r *Refusal
@@ -72,8 +76,11 @@ func TestSettings(t *testing.T) {
 	if k, err := ParseKinds("phone, computer,phone"); err != nil || fmt.Sprint(k) != "[phone computer]" {
 		t.Errorf("ParseKinds: %v, %v", k, err)
 	}
-	if _, err := ParseKinds("watch"); err == nil {
+	if _, err := ParseKinds("tv"); err == nil {
 		t.Error("ParseKinds took a kind it does not know")
+	}
+	if k, err := ParseKinds("watch"); err != nil || fmt.Sprint(k) != "[watch]" {
+		t.Errorf("ParseKinds(watch): %v, %v", k, err)
 	}
 	for i := range LogSize + 3 {
 		if err := Append(dir, Entry{TimeMS: int64(i), By: "x", Action: Lock, Result: "done"}); err != nil {

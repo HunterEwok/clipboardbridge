@@ -138,6 +138,7 @@ private fun roleTitle(role: String) = when (role) {
     "phone" -> R.string.role_phone
     "lite" -> R.string.role_lite
     "shortcut" -> R.string.role_shortcut
+    "watch" -> R.string.kind_watch
     else -> R.string.role_full
 }
 

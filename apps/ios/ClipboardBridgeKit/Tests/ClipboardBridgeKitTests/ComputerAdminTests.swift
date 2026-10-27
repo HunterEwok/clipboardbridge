@@ -114,6 +114,91 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertNil(g.computerAdminCA(for: adminKey.publicKeyDER))
     }
 
+    /// The root makes a watch an admin (section 10, rule 8): its record
+    /// names the admin CA as key and admin, it may freeze but admits
+    /// nobody, and removing it takes it out of the list.
+    func testAddWatch() throws {
+        let t = try group()
+        var g = t.g
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        for (id, os) in [("ABC", "watchos"), (watch.uppercased(), "watchos"), (watch, "ios"), (g.device, "watchos")] {
+            XCTAssertThrowsError(try g.addWatch(device: id, name: "Watch", os: os, adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)) {
+                XCTAssertEqual($0 as? PhoneGroup.Failure, .notAWatch, "\(id) \(os)")
+            }
+        }
+        var notRoot = g
+        notRoot.isRoot = false
+        XCTAssertThrowsError(try notRoot.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER,
+                                                  rootSigner: t.root, now: t1)) { XCTAssertEqual($0 as? PhoneGroup.Failure, .notRoot) }
+        let (ca, r) = try g.addWatch(device: watch, name: " My watch ", os: "watchos", adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)
+        XCTAssertEqual(try CertificateInfo(der: ca).publicKey, watchKey.publicKeyDER)
+        XCTAssertTrue(g.records.records.contains(r))
+        let d = try XCTUnwrap(g.devices.first { $0.id == watch })
+        let key = try Records.keyHash(cert: ca)
+        XCTAssertEqual(d.name, "My watch")
+        XCTAssertEqual(d.role, "watch")
+        XCTAssertEqual(d.os, "watchos")
+        XCTAssertEqual(d.store, Records.hardware)
+        XCTAssertEqual(d.key, key)
+        XCTAssertEqual(d.adminKey, key)
+        XCTAssertTrue(d.admin)
+        XCTAssertTrue(g.records.isWatch(key))
+        XCTAssertFalse(g.records.mayHost(watch))
+
+        // A device record the watch signs admits nobody.
+        let deck = SyncEngine.newID()
+        let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: ca, caSigner: watchKey, now: t0)
+        g.add([try Records.device(deck, name: "deck", role: "linux", key: Records.keyHash(cert: deckCert), group: g.tag, by: watch, now: t1,
+                                  signer: watchKey, adminCA: ca)])
+        XCTAssertFalse(g.devices.contains { $0.id == deck })
+        XCTAssertNotNil(g.records.refused(chain: [deckCert, ca]))
+
+        _ = try g.revoke(device: watch, caSigner: t.root, now: t1.addingTimeInterval(1))
+        XCTAssertFalse(g.devices.contains { $0.id == watch })
+        XCTAssertTrue(g.records.revoked.contains(key))
+    }
+
+    /// The watch's emergency actions (section 10, rule 8): the phone builds
+    /// the body, the watch signs it, and what it signed counts as the rules
+    /// say.
+    func testWatchActions() throws {
+        let t = try group()
+        var g = t.g
+        _ = try g.makeAdmin(device: t.pi, adminKey: SoftwareSigner().publicKeyDER, rootSigner: t.root, now: t1, allowFileKey: true)
+        let deck = SyncEngine.newID()
+        let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: g.groupCA, caSigner: t.root, now: t0)
+        _ = try g.record(device: deck, name: "deck", role: "full", key: Records.keyHash(cert: deckCert), caSigner: t.root, now: t0)
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        let (ca, _) = try g.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)
+
+        XCTAssertEqual(g.watchActions(for: t.pi), [.freeze, .pasteOff, .actionsOff, .awayOff, .action])
+        XCTAssertEqual(g.watchActions(for: deck), [.remove, .pasteOff, .actionsOff, .awayOff, .action])
+        XCTAssertEqual(g.watchActions(for: g.device), [])
+        XCTAssertEqual(g.watchActions(for: watch), [])
+        XCTAssertThrowsError(try g.watchBody(.remove, device: t.pi, watch: watch, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .notForWatch)
+        }
+        XCTAssertThrowsError(try g.watchBody(.freeze, device: t.pi, watch: deck, now: t1)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .notAWatch)
+        }
+        func signed(_ a: PhoneGroup.WatchAction, _ device: String, name: String? = nil) throws -> Member.Record {
+            let body = try g.watchBody(a, device: device, name: name, watch: watch, now: t1.addingTimeInterval(1))
+            return PhoneGroup.watchRecord(body: body, signature: try watchKey.signature(for: body), watchCA: ca)
+        }
+
+        // A command reaches pi and counts there.
+        let now = Records.ms(t1.addingTimeInterval(2))
+        for a in [PhoneGroup.WatchAction.pasteOff, .actionsOff, .awayOff] {
+            XCTAssertNoThrow(try Commands.verify(try signed(a, t.pi), records: g.records, me: t.pi, nowMS: now), a.rawValue)
+        }
+        XCTAssertNoThrow(try Commands.verify(try signed(.action, t.pi, name: "lock"), records: g.records, me: t.pi, nowMS: now))
+
+        // The freeze and the removal count.
+        XCTAssertEqual(g.add([try signed(.freeze, t.pi), try signed(.remove, deck)]).count, 2)
+        XCTAssertTrue(try XCTUnwrap(g.devices.first { $0.id == t.pi }).frozen)
+        XCTAssertFalse(g.devices.contains { $0.id == deck })
+    }
+
     /// Reads the next message from the phone, at most ten tries, until one
     /// is what want accepts.
     func next(from t: Pipe, _ want: (Member.Message) -> Bool) async throws -> Member.Message? {

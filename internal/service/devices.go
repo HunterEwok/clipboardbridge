@@ -470,8 +470,8 @@ func (s *Service) revoke(target string) (string, error) {
 	s.recMu.Unlock()
 	admin := s.adminKeyOf(group.DeviceID(d.ID))
 	// An admin of a group whose root is a computer held the iPhone CA,
-	// which goes with it.
-	replace := admin != nil && !id.Legacy() && (id.IsRoot() || s.computerRooted())
+	// which goes with it; a watch never held it.
+	replace := admin != nil && d.Role != group.RoleWatch && !id.Legacy() && (id.IsRoot() || s.computerRooted())
 	switch {
 	case !id.IsAdmin():
 		return "", errNotAdmin

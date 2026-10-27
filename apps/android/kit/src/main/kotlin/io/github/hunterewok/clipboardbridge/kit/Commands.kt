@@ -17,7 +17,9 @@ import java.time.Instant
  * puts a text where the receiver's focus is, and paste-off turns remote
  * paste off on the receiver (design.md, "Remote paste"); an action command
  * runs one of the receiver's quick actions by its name, and actions-off
- * turns them all off there (roadmap.md, "Quick actions").
+ * turns them all off there (roadmap.md, "Quick actions"); away-off turns
+ * sync away from home off on the receiver. A watch signs only those that
+ * turn things off and action ([WATCH_TYPES]).
  */
 object Commands {
     /** How long after signing a command expires; the receivers take at most 30 s. */
@@ -216,6 +218,20 @@ object Commands {
         id: String = newID(),
     ): Member.Record = signed("actions-off", to, group, by, now, signer, adminCA, id)
 
+    /** An away-off command for the device to: it turns sync away from home off there, and its tunnel keys go. Signed as mode. */
+    fun awayOff(
+        to: String,
+        group: String,
+        by: String,
+        now: Instant,
+        signer: CertificateSigner,
+        adminCA: ByteArray? = null,
+        id: String = newID(),
+    ): Member.Record = signed("away-off", to, group, by, now, signer, adminCA, id)
+
+    /** The commands a watch's admin key may sign (docs/protocol.md, section 10, rule 8), as Go's WatchCommand. */
+    val WATCH_TYPES = setOf("paste-off", "actions-off", "away-off", "action")
+
     private fun signed(
         type: String,
         to: String,
@@ -306,7 +322,7 @@ object Commands {
         when (type) {
             "mode" -> if (b.mode.isNullOrEmpty() || o.opt("hub") != null) throw Refused("a mode command names no mode")
             "hub" -> if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
-            "paste-off", "actions-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a $type command carries an order")
+            "paste-off", "actions-off", "away-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a $type command carries an order")
             "action" -> {
                 if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("an action command carries an order")
                 if (!validActionName(b.action ?: "")) throw Refused("an action command names no valid action")
@@ -331,6 +347,7 @@ object Commands {
         if (b.group != GroupCertificates.tag(ca)) throw Refused("the command is for another group")
         if (b.to != self) throw Refused("the command is for another device")
         if (!records.signedByAdmin(c)) throw Refused("the command's signer is not an admin of the group")
+        if (type !in WATCH_TYPES && records.signedByWatch(c)) throw Refused("a watch does not sign $type commands")
         if (b.expiresMS <= nowMS) throw Refused("the command expired; check the clocks of both devices")
         if (b.timeMS > nowMS + AHEAD_MS) throw Refused("the command was signed in the future; check the clocks of both devices")
         return b
