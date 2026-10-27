@@ -155,11 +155,16 @@ vm)
 	run '
 		set -ex
 		ubus call service list "{\"name\":\"clipboardbridge\"}" | grep -q "\"running\": true"
-		for i in $(seq 30); do cbb status 2>&1 | grep -q "in a group" && break; sleep 1; done
-		cbb status 2>&1 | grep -q "in a group"
+		for i in $(seq 30); do cbb status 2>&1 | grep -q "Not in a group" && break; sleep 1; done
+		cbb status 2>&1 | grep -q "Not in a group"
 		logread -e cbb | grep -q "work only on br-lan"
+		# Out of a group the member port opens only for a join: cbb pair
+		# waits for the phone there.
+		cbb pair </dev/null >/tmp/pair.out 2>&1 &
+		for i in $(seq 20); do netstat -ltn | grep -q ":9000 " && break; sleep 1; done
 		netstat -ltn | grep -q ":9000 "
-		echo "vm: the service runs on br-lan, port 9000"
+		kill $!
+		echo "vm: the service runs on br-lan, and a join waits on port 9000"
 
 		# The port of the hub: service data, which fw4 loads.
 		sh /usr/share/clipboardbridge/firewall.sh hub-open 51820
