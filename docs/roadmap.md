@@ -187,6 +187,11 @@ The order may change.
     `tools/repocheck` checks that each Russian page has its English original with the same
     sections, so a translation cannot fall behind unnoticed. The Russian text uses the words
     of the apps' Russian translations.
+37. **Planned for 0.7.** Sync away from home for the lite member on MIPS routers. In 0.6 the
+    lite member for mips and mipsle is built without the tunnel, since GotaTun, its
+    WireGuard library, needs 64-bit atomics that 32-bit MIPS lacks; such a router syncs only
+    at home. The aim is the full tunnel there too: GotaTun without 64-bit atomics, or
+    another WireGuard for that build (see "OpenWrt routers", step 5).
 
 ## OpenWrt routers
 
@@ -291,8 +296,8 @@ One pull request each, smaller ones together:
    feed signed with a test key.
 5. The lite member on OpenWrt. Done: the procd script runs `cbb run` for it, `get.sh
    --lite` installs it on aarch64, armv7 and x86-64, and it takes `CBB_INTERFACES`. Still
-   to come: mips and mipsle with nightly Rust once GotaTun works without 64-bit atomics
-   (mullvad/gotatun#209), or a mips build without the tunnel until then.
+   to come: mips and mipsle with nightly Rust, without the tunnel in 0.6, since GotaTun
+   needs 64-bit atomics; the tunnel there is planned for 0.7 (item 37).
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
 
