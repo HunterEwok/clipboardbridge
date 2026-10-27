@@ -15,9 +15,9 @@ use embassy_executor::Spawner;
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use esp_println::println;
 
 use crate::clock;
+use crate::println;
 
 /// A pairing's new identity, for main to save; it answers on SAVED.
 pub static JOINED: Signal<CriticalSectionRawMutex, Identity> = Signal::new();

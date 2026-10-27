@@ -10,14 +10,16 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use cbb_core::error::{self, Error, Result};
+use cbb_core::keyboard::Layout;
 use cbb_core::store::Fields;
-use esp_println::{print, println};
 
 use crate::selftest;
-use crate::store::{Store, Wifi, tag};
+use crate::store::{RATES, Store, Wifi, tag};
+use crate::{print, println};
 
-/// The longest line the console takes; a Wi-Fi password is at most 64 bytes.
-const MAX_LINE: usize = 128;
+/// The longest line the console takes: a Wi-Fi password is at most 64
+/// bytes, a text to type may be longer.
+const MAX_LINE: usize = 256;
 
 /// What the console asks of the rest of the firmware.
 pub trait Board {
@@ -28,6 +30,13 @@ pub trait Board {
     /// Starts listening for the phone, under this name; returns the QR
     /// code's text.
     fn join(&mut self, name: &str) -> Result<String>;
+    /// Types these reports on the USB keyboard, gap_ms apart, and returns
+    /// at once; an error when the USB port is not the keyboard or is still
+    /// typing.
+    fn type_reports(&mut self, reports: Vec<[u8; 8]>, gap_ms: u64) -> Result<()>;
+    /// Restarts the board; with download, into the ROM's download mode,
+    /// for espflash.
+    fn restart(&mut self, download: bool) -> !;
 }
 
 enum Ask {
@@ -101,7 +110,11 @@ impl Console {
                             print!("*");
                         }
                     } else {
-                        print!("{}", b as char);
+                        // A character once its last byte is in.
+                        let start = self.line.iter().rposition(|c| c & 0xc0 != 0x80).unwrap_or(0);
+                        if let Ok(c) = core::str::from_utf8(&self.line[start..]) {
+                            print!("{c}");
+                        }
                     }
                 }
             }
@@ -153,6 +166,16 @@ impl Console {
                 println!("  leave         forget the group (remove the board in the app too)");
                 println!("  debug on|off  show the details of errors, or not (debug build: on by default)");
                 println!("  selftest      run the TLS 1.3 self-test");
+                println!("  usb keyboard  make the USB port a keyboard, with the console beside it; restarts");
+                println!("  usb console   make the USB port the console again; restarts");
+                println!("  layout [us|ru] the layout active on the host the keyboard types on");
+                println!(
+                    "  rate [N]      how many characters a second the keyboard types ({}-{})",
+                    RATES.start(),
+                    RATES.end()
+                );
+                println!("  type TEXT     type TEXT on the USB keyboard");
+                println!("  flash         restart into download mode, for espflash");
             }
             (Some("status"), None, _) => {
                 println!("  firmware: cbb-esp32 {}", env!("CARGO_PKG_VERSION"));
@@ -171,6 +194,10 @@ impl Console {
                     }
                 }
                 println!("  network: {}", board.network());
+                if let Ok(s) = store {
+                    let usb = if s.usb_keyboard() { "keyboard and console" } else { "console" };
+                    println!("  USB port: {usb}; layout {}, {} characters a second", s.layout().name(), s.rate());
+                }
                 println!("  error details: {}", if error::show_details() { "on" } else { "off" });
             }
             (Some("wifi"), None, _) => {
@@ -217,6 +244,80 @@ impl Console {
                 Ok(()) => println!("The board left its group. Remove it in the app too, so the group revokes it."),
                 Err(e) => println!("{}", e.for_user()),
             },
+            (Some("usb"), None, _) => match store {
+                Ok(s) if s.usb_keyboard() => println!("The USB port is a keyboard, with the console beside it."),
+                Ok(_) => println!("The USB port is the console. Type usb keyboard to make it a keyboard."),
+                Err(e) => println!("{}", e.for_user()),
+            },
+            (Some("usb"), Some(mode @ ("keyboard" | "console")), None) => {
+                let keyboard = mode == "keyboard";
+                match edit(store, |f| f.set(tag::USB_KEYBOARD, [keyboard as u8])) {
+                    Ok(()) => {
+                        if keyboard {
+                            println!(
+                                "Restarting with the USB port as a keyboard. The console is then a serial port of its own:"
+                            );
+                            println!(
+                                "open it in a terminal (espflash monitor finds it too). To flash, type flash there."
+                            );
+                        } else {
+                            println!("Restarting with the USB port as the console.");
+                        }
+                        board.restart(false);
+                    }
+                    Err(e) => println!("{}", e.for_user()),
+                }
+            }
+            (Some("layout"), None, _) => match store {
+                Ok(s) => println!("The keyboard types for the layout {}.", s.layout().name()),
+                Err(e) => println!("{}", e.for_user()),
+            },
+            (Some("layout"), Some(name), None) => match Layout::from_name(name) {
+                Some(l) => match edit(store, |f| f.set(tag::LAYOUT, l.name().as_bytes())) {
+                    Ok(()) => {
+                        println!("The keyboard types for the layout {} now; set the same layout on the host.", l.name())
+                    }
+                    Err(e) => println!("{}", e.for_user()),
+                },
+                None => println!("The keyboard knows the layouts us and ru."),
+            },
+            (Some("rate"), None, _) => match store {
+                Ok(s) => println!("The keyboard types {} characters a second.", s.rate()),
+                Err(e) => println!("{}", e.for_user()),
+            },
+            (Some("rate"), Some(n), None) => match n.parse::<u8>() {
+                Ok(r) if RATES.contains(&r) => match edit(store, |f| f.set(tag::RATE, [r])) {
+                    Ok(()) => println!("The keyboard types {r} characters a second now."),
+                    Err(e) => println!("{}", e.for_user()),
+                },
+                _ => println!("A rate is {} to {} characters a second.", RATES.start(), RATES.end()),
+            },
+            (Some("type"), Some(_), _) => {
+                let text = line["type".len()..].trim_start();
+                let (layout, rate) = match store {
+                    Ok(s) => (s.layout(), s.rate()),
+                    Err(_) => (Layout::Us, crate::store::RATE),
+                };
+                match layout.reports(text) {
+                    Some(reports) => {
+                        // Two reports a character: the key down, then up.
+                        match board.type_reports(reports, 500 / u64::from(rate)) {
+                            Ok(()) => println!("Typing {} characters.", text.chars().count()),
+                            Err(e) => println!("{}", e.for_user()),
+                        }
+                    }
+                    None => {
+                        let missing: String = layout.untypeable(text).into_iter().collect();
+                        println!("The layout {} has no keys for: {missing}", layout.name());
+                    }
+                }
+            }
+            (Some("flash"), None, _) => {
+                println!(
+                    "Restarting into download mode for espflash. Flashing, or the reset button, starts the firmware again."
+                );
+                board.restart(true);
+            }
             (Some("selftest"), None, _) => match selftest::run() {
                 Ok(()) => println!("cbb-esp32: self-test passed"),
                 Err(e) => println!("cbb-esp32: self-test failed: {}", e.for_user()),

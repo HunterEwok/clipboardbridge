@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
+  and a serial port for the console on the chip's OTG controller, `type TEXT` with the
+  layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into
+  download mode. A text with characters the layout cannot type is refused, naming them. The
+  layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
+  the keyboard follows the board's sync.
 - The Android app on a TV (Android TV, Google TV, Fire OS; docs/apps.md, "Android TV"):
   a launcher banner, every control on the D-pad with a visible focus ring, and no touch
   screen or camera needed. A TV joins a phone's group by the QR code it shows, as a member
@@ -350,6 +356,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A device that registers with its relay again, after the group's credentials changed, no
+  longer stays off the relay for up to 25 seconds: a dial or an answer it was waiting on
+  ends with the old registration instead of at its timeout, and the device says in its log
+  that it registers again.
 - `cbb status` says when this device's certificate has ended, or ends within 30 days with no
   admin to renew it; before, a member whose certificate ended while no admin was on was
   refused by the group with no word why. When the certificate has ended by this device's
