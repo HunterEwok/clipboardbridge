@@ -3,11 +3,16 @@
 
 // The Wear OS app: the group as the phone sees it, through the Wearable Data
 // Layer (docs/apps.md, Wear OS). It has the phone app's application id and
-// release key, which the Data Layer requires of the two.
+// release key, which the Data Layer requires of the two. F-Droid's build has no watch, so
+// F-Droid builds only the app (docs/apps.md, "F-Droid").
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val release = Properties().apply { rootDir.resolve("version.properties").reader().use { load(it) } }
 
 android {
     namespace = "io.github.hunterewok.clipboardbridge.wear"
@@ -18,8 +23,8 @@ android {
         // Wear OS 3.
         minSdk = 30
         targetSdk = 37
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = findProperty("versionName") as String? ?: "0.3.0-dev"
+        versionCode = (findProperty("versionCode") as String? ?: release.getProperty("versionCode")).toInt()
+        versionName = findProperty("versionName") as String? ?: release.getProperty("versionName")
     }
 
     val keystore = System.getenv("CBB_ANDROID_KEYSTORE")

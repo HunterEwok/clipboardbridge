@@ -31,6 +31,29 @@ go build -o "$bin/" golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gob
 PATH="$bin:$PATH"
 export PATH
 mkdir -p "$(dirname "$out")"
+# gomobile's go.mod replaces this module and amneziawg-go by their directories, which go
+# into the library's build info even with -trimpath; binding from one fixed path, a link
+# to the checkout, gives the same library wherever the checkout is. The lock keeps another
+# bind on this computer from moving the link meanwhile.
+link=/tmp/cbbtun-bind
+n=0
+until mkdir "$link.lock" 2>/dev/null; do
+	n=$((n + 1))
+	if [ $n -ge 600 ]; then
+		echo "bind.sh: $link.lock is still there; remove it if no bind is running" >&2
+		exit 1
+	fi
+	sleep 1
+done
+trap 'rm -rf "$bin"; rm -f "$link"; rmdir "$link.lock"' EXIT
+ln -sfn "$root" "$link"
+cd "$link"
+PWD=$link
+export PWD
+# No VCS stamp: the same tag gives the same library from a checkout or a tarball, which
+# F-Droid's reproducible build needs (docs/apps.md, "F-Droid").
+GOFLAGS="${GOFLAGS:+$GOFLAGS }-buildvcs=false"
+export GOFLAGS
 case $target in
 android) gomobile bind -target=android -androidapi 29 -trimpath -ldflags=-s -o "$out" ./mobile/cbbtun ;;
 ios) gomobile bind -target=ios,iossimulator -iosversion 17.0 -trimpath -ldflags=-s -o "$out" ./mobile/cbbtun ;;

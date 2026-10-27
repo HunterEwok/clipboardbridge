@@ -107,12 +107,15 @@ cd lite && cargo build --release -p clipboardbridge-embassy --features host && c
 ```
 
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
-no Android dependencies and builds anywhere; the app needs the Android SDK with its NDK, Go
-for the tunnel (see below) and Google's Maven repository (CI, or a Mac with Android Studio):
+no Android dependencies and builds anywhere; the app needs the Android SDK with the NDK of
+`cbb.ndk` in `apps/android/gradle.properties`, Go for the tunnel (see below) and Google's
+Maven repository (CI, or a Mac with Android Studio). It has two builds, full and fdroid
+([docs/apps.md](docs/apps.md#f-droid)):
 
 ```sh
 cd apps/android && ./gradlew -p kit test
-cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+cd apps/android && ./gradlew :app:assembleDebug :app:testFullDebugUnitTest :app:testFdroidDebugUnitTest :app:lintFullDebug :app:lintFdroidDebug
+sh packaging/fdroid/reproduce.sh . /tmp/cbb-reproduce   # the F-Droid build is reproducible
 cd apps/android && ./gradlew :shared:testDebugUnitTest :wear:assembleDebug :wear:lintDebug
 ```
 
