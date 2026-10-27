@@ -1645,13 +1645,14 @@ the hub's key. Implemented in Go (`tunnel.State.Rotate`, `internal/service/tunne
   seals it, and `serving_for`, the period's tag) and the next one (`next`, `next_tpm`,
   `next_for`, and `next_at_ms`, when the hub moves on to it); a client keeps a hub's
   `next_key` as `next` in its offer.
-- A client tries a hub with its key first and then with `next` when the offer has one, so a
-  client that was away while the hub moved on still reaches it; the offer it gets then
-  replaces the one it kept. A client that was away for the whole three days and never got
-  `next` reaches the hub again at home.
-- A hub refuses a client or another hub's offer with any of its own keys. The lite member
-  tries `next_key` as Go does (`lite/src/tunnel.rs`, `hubs_to_try`); the phone kits do not
-  yet: after the hub moves on, a phone reaches it again at home.
+- A client tries a hub with its key and, when the offer has one, with `next`, so a client
+  that was away while the hub moved on still reaches it; the offer it gets then replaces the
+  one it kept. Go tries both keys at once (`tryHub`, `internal/service/hubs.go`), so the key
+  the hub no longer serves with, which gets no answer, costs no time; the lite member
+  (`lite/src/tunnel.rs`, `hubs_to_try`) and the phone kits (`TunnelOffer.withNextKey`) try
+  them in turn, the old key first. A client that was away for the whole three days and
+  never got `next` reaches the hub again at home.
+- A hub refuses a client or another hub's offer with any of its own keys.
 
 ### Obfuscation
 

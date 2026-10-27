@@ -429,6 +429,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer that comes back after its hub moved on to its key for the new period reaches
+  the hub at once: it tries the hub's old key and the next one together instead of waiting
+  10 seconds for the old key's handshake first. The hub starts its tunnel with the new key
+  before its state names it.
+- The Android app's dependencies take Guava 33.7.2, which fixes GHSA-xxph-c9ww-hj94 in the
+  33.3.1 that CameraX and Media3 bring in.
 - A device that registers with its relay again, after the group's credentials changed, no
   longer stays off the relay for up to 25 seconds: a dial or an answer it was waiting on
   ends with the old registration instead of at its timeout, and the device says in its log

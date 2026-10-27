@@ -74,16 +74,6 @@ func hubsToTry(order []group.DeviceID, self string, st *tunnel.State) []tunnel.H
 		}
 	}
 	slices.SortFunc(out, func(a, b tunnel.HubLink) int { return rankOf(order, a.Device) - rankOf(order, b.Device) })
-	// A hub that gave its key for the next period is tried with it too,
-	// right after its key now: it may have moved on to it while this
-	// member was away (docs/protocol.md, section 11, "The hub's key").
-	for i := 0; i < len(out); i++ {
-		if h := out[i]; !h.Next.IsZero() {
-			h.PublicKey, h.Next = h.Next, tunnel.Key{}
-			out = slices.Insert(out, i+1, h)
-			i++
-		}
-	}
 	return out
 }
 
@@ -197,6 +187,11 @@ func (s *Service) setUsing(run *tunRun, hub string, through bool) {
 // when one answers, it serves the member connection to the hub until it
 // ends, or until upCheck when up is true, so the hubs above are tried
 // again. It reports whether it reached the hub.
+//
+// A hub that gave its key for the next period is tried with both keys at
+// once: it may have moved on to the next one while this member was away
+// or while the connection was down (docs/protocol.md, section 11, "The
+// hub's key"), and the key it no longer serves with gets no answer at all.
 func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunnel.HubLink, up bool) bool {
 	self, err := tunnel.Addr(s.tunSelf)
 	if err != nil {
@@ -225,37 +220,43 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		defer vc.Close()
 		eps = []netip.AddrPort{vc.Addr()}
 	}
-	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
-		HubPublicKey: h.PublicKey, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
-		Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
-	if err != nil {
-		s.tunReport(run, "the tunnel to the hub could not start", err)
-		return false
+	hubKeys := []tunnel.Key{h.PublicKey}
+	if !h.Next.IsZero() {
+		hubKeys = append(hubKeys, h.Next)
 	}
-	defer c.Close()
+	var cs []*tunnel.Client
+	defer func() {
+		for _, c := range cs {
+			c.Close()
+		}
+	}()
+	for _, k := range hubKeys {
+		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
+			HubPublicKey: k, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
+			Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
+		if err != nil {
+			s.tunReport(run, "the tunnel to the hub could not start", err)
+			return false
+		}
+		cs = append(cs, c)
+	}
 	s.tunMu.Lock()
 	if s.tunRun != run {
 		s.tunMu.Unlock()
 		return false
 	}
-	run.client = c
+	run.clients = cs
 	s.tunMu.Unlock()
 	defer func() {
 		s.tunMu.Lock()
-		if run.client == c {
-			run.client = nil
+		if slices.Equal(run.clients, cs) {
+			run.clients = nil
 		}
 		s.tunMu.Unlock()
 	}()
 	hub := group.DeviceID(h.Device)
 	for _, ep := range eps {
-		var raw net.Conn
-		err := c.SetEndpoint(ep)
-		if err == nil {
-			dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-			raw, err = c.Dial(dctx)
-			cancel()
-		}
+		raw, err := dialAny(ctx, cs, ep)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false
@@ -278,6 +279,48 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		return true
 	}
 	return false
+}
+
+// dialAny points each client at ep and dials the hub through all of them
+// at once, for up to handshakeTimeout; the first connection wins and the
+// other tries end. The clients that lose stay up until tryHub returns, and
+// nothing goes through them.
+func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, error) {
+	dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	results := make(chan result, len(cs))
+	for _, c := range cs {
+		go func() {
+			if err := c.SetEndpoint(ep); err != nil {
+				results <- result{nil, err}
+				return
+			}
+			conn, err := c.Dial(dctx)
+			results <- result{conn, err}
+		}()
+	}
+	var won net.Conn
+	var errs []error
+	for range cs {
+		r := <-results
+		switch {
+		case r.err != nil:
+			errs = append(errs, r.err)
+		case won == nil:
+			won = r.conn
+			cancel()
+		default:
+			r.conn.Close()
+		}
+	}
+	if won != nil {
+		return won, nil
+	}
+	return nil, errors.Join(errs...)
 }
 
 // tunReport keeps what went wrong for status, while run is the tunnel at

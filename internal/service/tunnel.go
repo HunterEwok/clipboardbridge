@@ -195,14 +195,17 @@ func (s *Service) rotateHubKey() {
 	if !changed {
 		return
 	}
-	if err := st.Save(s.cfg.StateDir); err != nil {
-		s.logf("cbb: saving the tunnel state: %v", err)
-		return
-	}
+	// The tunnel starts again with the new key before the state says so,
+	// so a state on disk never names a key the hub does not serve with
+	// yet; a hub that stops in between switches again at its next check.
 	if switched && s.tunServing {
 		s.logf("cbb: the hub serves with its key for the new period from now on")
 		s.stopTunnelLocked()
 		s.runTunnelLocked()
+	}
+	if err := st.Save(s.cfg.StateDir); err != nil {
+		s.logf("cbb: saving the tunnel state: %v", err)
+		return
 	}
 	s.sendOffersLocked()
 	s.shareLocked()
@@ -408,10 +411,10 @@ const awayCheck = 5 * time.Second
 
 // tunRun is the tunnel at work: the hub, or this member's link to it.
 type tunRun struct {
-	cancel context.CancelFunc
-	hub    *tunnel.Hub
-	client *tunnel.Client
-	vless  *vless.Client // the client's way to the hub's forwarder over VLESS
+	cancel  context.CancelFunc
+	hub     *tunnel.Hub
+	clients []*tunnel.Client // the link to the hub: one for each of its keys
+	vless   *vless.Client    // the client's way to the hub's forwarder over VLESS
 }
 
 // guardLocked lets the service reach the group's hub, forwarder and relay
@@ -500,8 +503,8 @@ func (s *Service) stopTunnelLocked() {
 	if r.hub != nil {
 		r.hub.Close()
 	}
-	if r.client != nil {
-		r.client.Close()
+	for _, c := range r.clients {
+		c.Close()
 	}
 	if r.vless != nil {
 		r.vless.Close()
