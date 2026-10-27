@@ -166,9 +166,11 @@ h3 { font-size: 20px; margin: 0 0 8px; }
 .wrap { max-width: 1160px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
 .dim { color: var(--dim); }
 .lead { font-size: clamp(18px, 1.7vw, 20px); color: var(--dim); }
-/* No word left alone on a line: centred text is balanced across its lines,
-   and the last line of any other paragraph keeps a few words. */
-p, li, dd, summary, td, th { text-wrap: pretty; }
+/* No word left alone on the last line of centred text: it is balanced
+   across its lines. Text set to the left fills each line as usual. */
+/* In the narrow columns of the cards long words break with a hyphen, so
+   no line ends far short of the edge. */
+.card p, .card li, .steps li { hyphens: auto; -webkit-hyphens: auto; hyphenate-limit-chars: 10 4 4; }
 .lead, .intro, .final p, .hero .platforms, .facts span, .steps.boards li { text-wrap: balance; }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
