@@ -104,6 +104,18 @@ type spentError struct{ err error }
 func (e *spentError) Error() string { return e.err.Error() }
 func (e *spentError) Unwrap() error { return e.err }
 
+// CauseError is a failure whose message is for the user and whose cause,
+// such as a certificate check's own words, is a detail: the service sends
+// it apart, and cbb shows it only in debug mode. Error gives both, for the
+// log.
+type CauseError struct {
+	Msg string
+	Err error
+}
+
+func (e *CauseError) Error() string { return e.Msg + ": " + e.Err.Error() }
+func (e *CauseError) Unwrap() error { return e.Err }
+
 // Spent reports whether a failed Join used up the code: the joiner sent its
 // confirmation tag, so whoever answered could check a guess of the code.
 // The joiner must not try the same code anywhere else then.

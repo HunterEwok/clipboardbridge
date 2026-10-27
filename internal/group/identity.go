@@ -215,8 +215,10 @@ func (id *Identity) WithAdminCA(der []byte, now time.Time) (*Identity, error) {
 // a lost root (docs/protocol.md, section 10): roots, as the records lead
 // to them after its root record, end with root, whose key this device
 // holds from now on as the group's root, and its admin key and admin CA
-// go.
-func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate) (*Identity, error) {
+// go. Its member certificate is reissued from the new root at once: a
+// Welcome names one issuer for the new device's certificate and the
+// admitter's alike, so a root admits only with a certificate of its own.
+func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate, now time.Time) (*Identity, error) {
 	switch {
 	case id.Legacy() || id.IsRoot() || id.AdminCA == nil:
 		return nil, errors.New("group: only an admin of a group with a root takes it over")
@@ -226,6 +228,11 @@ func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate) (*Identity, e
 	next := *id
 	next.Roots, next.RootKey = roots, root.Key
 	next.AdminKey, next.AdminCA = nil, nil
+	var err error
+	if next.Cert, err = root.IssueMember(id.ID, PublicKey(id.Key), now); err != nil {
+		return nil, err
+	}
+	next.Issuer = nil
 	if err := next.Check(); err != nil {
 		return nil, err
 	}

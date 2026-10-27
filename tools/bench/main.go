@@ -50,13 +50,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	stopForwarder := fs.Bool("stop-forwarder", false, "away: also stop and start the forwarder (F7), which other groups may use")
 	buildDir := fs.String("build", "", "reset: the directory with the release archives (and SHA256SUMS) to install")
 	quick := fs.Bool("quick", false, "reset: keep each device's install and only remove its state")
+	cbb := fs.String("cbb", "", "fleet, all: a static Linux cbb of the build under test for this computer's CPU, which the fleet's containers run")
+	fleetSize := fs.Int("fleet-size", 16, "fleet: the members of the many-members case (E3)")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|all|coverage")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|all|coverage")
 		return 2
+	}
+	if fs.Arg(0) == "fleet" {
+		// The fleet runs on this computer alone and needs no inventory.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		r := NewReport("fleet", stdout, debugMode())
+		FleetSuite(ctx, r, *cbb, *fleetSize, *timeout)
+		return finish(r, *reportDir, stderr)
 	}
 	if fs.Arg(0) == "coverage" {
 		if err := Coverage(stdout, *docs); err != nil {
@@ -93,7 +103,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "faults":
 		Faults(ctx, r, devices, *timeout)
 	case "all":
-		All(ctx, r, inv, devices, *timeout, *stopForwarder)
+		All(ctx, r, inv, devices, *timeout, *stopForwarder, *cbb, *fleetSize)
 	case "reset":
 		var b *Build
 		if *buildDir != "" {
@@ -107,14 +117,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bench: unknown suite %q\n", fs.Arg(0))
 		return 2
 	}
-	if *reportDir != "" {
-		if err := r.Write(*reportDir); err != nil {
+	code := finish(r, *reportDir, stderr)
+	if fs.Arg(0) == "all" {
+		allCoverage(stdout, stderr, *docs, *reportDir)
+	}
+	return code
+}
+
+// finish writes the report where -report asks and gives the exit status.
+func finish(r *Report, reportDir string, stderr io.Writer) int {
+	if reportDir != "" {
+		if err := r.Write(reportDir); err != nil {
 			fmt.Fprintf(stderr, "bench: %v\n", err)
 			return 1
 		}
-	}
-	if fs.Arg(0) == "all" {
-		allCoverage(stdout, stderr, *docs, *reportDir)
 	}
 	if r.Failed() > 0 {
 		return 1

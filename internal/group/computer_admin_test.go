@@ -216,15 +216,18 @@ func TestTakenOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	other, _ := NewRootCA(t0)
-	if _, err := admin.TakenOver(next, []*x509.Certificate{other.Cert}); err == nil {
+	if _, err := admin.TakenOver(next, []*x509.Certificate{other.Cert}, t0); err == nil {
 		t.Error("took the group over though the records lead to another root")
 	}
-	if _, err := m.TakenOver(next, []*x509.Certificate{next.Cert}); err == nil {
+	if _, err := m.TakenOver(next, []*x509.Certificate{next.Cert}, t0); err == nil {
 		t.Error("a member that is no admin took the group over")
 	}
-	took, err := admin.TakenOver(next, []*x509.Certificate{next.Cert})
+	took, err := admin.TakenOver(next, []*x509.Certificate{next.Cert}, t0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if took.Cert.CheckSignatureFrom(next.Cert) != nil || took.Issuer != nil {
+		t.Error("the new root keeps a member certificate from its admin CA, which a joiner rejects")
 	}
 	if !took.IsRoot() || took.AdminCA != nil || took.AdminKey != nil || took.NeedsAdminKey() {
 		t.Error("the admin that took the group over is not its root")

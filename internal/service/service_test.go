@@ -1513,7 +1513,8 @@ func TestAdminsShareTheIPhoneCA(t *testing.T) {
 // TestTakeover checks that an admin takes a group over from its lost root
 // computer: it becomes the root, the devices that the root and the admin
 // admitted stay and keep syncing, the iPhone CA is replaced, the new root
-// makes admins, and the old root is refused when it comes back.
+// admits a computer and makes admins, and the old root is refused when it
+// comes back.
 func TestTakeover(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
@@ -1580,6 +1581,14 @@ func TestTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "c has it", func() bool { return c.paste(t) == "after the takeover" })
+	// The new root admits a new computer by code: its own certificate
+	// comes from the new root, as the Welcome says.
+	d := startService(t, &h, "d")
+	pairWith(t, a, d)
+	if _, err := d.do(t, control.Header{Op: control.OpCopy}, "from the newcomer"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "c has the newcomer's copy", func() bool { return c.paste(t) == "from the newcomer" })
 	makeAdmin(t, a, b)
 	waitFor(t, "b takes the new iPhone CA", func() bool {
 		id, err := group.Load(b.dir)

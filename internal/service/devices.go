@@ -478,11 +478,11 @@ func (s *Service) revoke(target string) (string, error) {
 	case d.Self:
 		return "", errors.New("a device cannot remove itself; run cbb revoke on another member")
 	case id.Legacy() && keyHolder(d.Role, d.OS):
-		return "", errors.New("this member holds the group's keys, so removing it needs a new group; this is not supported yet")
+		return "", fmt.Errorf("%s holds the group's keys, so removing it needs a new group; this is not supported yet", d.Name)
 	case d.ID == string(root) && d.Role == group.RolePhone:
-		return "", errors.New("this phone holds the group's root; remove it from another admin phone, which takes the group over")
+		return "", fmt.Errorf("%s holds the group's root; remove it on another admin phone, which takes the group over", d.Name)
 	case d.ID == string(root):
-		return "", fmt.Errorf("this computer holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name)
+		return "", fmt.Errorf("%s holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name, d.Name)
 	case !id.Legacy() && s.holdsOldKeys(group.DeviceID(d.ID), peersOf(nd)):
 		return "", errOldKeys(d.Name)
 	case admin != nil && !id.IsRoot():
