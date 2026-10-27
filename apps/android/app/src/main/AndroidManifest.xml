@@ -17,6 +17,13 @@
     <!-- The QR code of a computer that joins. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- A TV (docs/apps.md, "Android TV"): its launcher, and no touch screen or camera needed. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Multicast for mDNS asks for no Wi-Fi: a TV may have only Ethernet. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <!-- The home screens, which may open the launcher entry without a question. -->
     <queries>
@@ -29,6 +36,7 @@
     <application
         android:name=".ClipboardBridgeApp"
         android:allowBackup="false"
+        android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -41,6 +49,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

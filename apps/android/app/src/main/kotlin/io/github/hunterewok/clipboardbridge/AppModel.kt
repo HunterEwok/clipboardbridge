@@ -40,6 +40,9 @@ class AppModel(private val app: Context) {
     data class Note(@StringRes val text: Int, val detail: String? = null, val error: Boolean = false)
 
     val settings = Settings(app)
+
+    /** On a TV: it joins a phone's group, as a member without an admin key, and takes the D-pad (Tv). */
+    val isTv = Tv.isTv(app)
     val notifier = Notifier(app).also { n ->
         // From the thread that saw the event: the watch hears of it on the main thread.
         n.onEvent = { Handler(Looper.getMainLooper()).post { WatchLink.update(app, this) } }

@@ -23,7 +23,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   job, a scheduled task as SYSTEM or cron on OpenWrt and FreeBSD checks once a day. The
   installers record how the program was installed, and the uninstallers remove the timer
   and cbb update's folder.
-
+- The Android app on a TV (Android TV, Google TV, Fire OS; docs/apps.md, "Android TV"):
+  a launcher banner, every control on the D-pad with a visible focus ring, and no touch
+  screen or camera needed. A TV joins a phone's group by the QR code it shows, as a member
+  without an admin key, says `tv` in its hello, starts receive only and takes remote
+  pastes. A paste that the system's stopped accessibility service could not make says so.
 - The `watch` role for a watch's admin key (docs/protocol.md, section 10, rule 8), in Go,
   the lite member and both phone kits, with interop vectors: a watch freezes admin
   computers, removes ordinary devices and signs only the commands that turn things off and

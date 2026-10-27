@@ -31,13 +31,17 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -176,7 +180,7 @@ fun AccentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
             disabledContainerColor = palette.accent.copy(alpha = 0.4f),
             disabledContentColor = palette.onAccent.copy(alpha = 0.5f),
         ),
-        modifier = modifier.fillMaxWidth().heightIn(min = 64.dp),
+        modifier = modifier.focusRing(RoundedCornerShape(Tokens.radiusButton)).fillMaxWidth().heightIn(min = 64.dp),
     ) {
         Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
     }
@@ -192,7 +196,7 @@ fun QuietButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface.copy(alpha = 0.85f), contentColor = palette.accent),
         border = null,
         contentPadding = PaddingValues(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall),
-        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
+        modifier = modifier.focusRing(RoundedCornerShape(Tokens.radiusButton)).fillMaxWidth().heightIn(min = 52.dp),
     ) {
         Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
     }
@@ -204,6 +208,18 @@ fun Modifier.card(radius: Dp = Tokens.radiusCard): Modifier {
     val palette = LocalPalette.current
     val shape = RoundedCornerShape(radius)
     return clip(shape).background(palette.glass).border(1.dp, palette.line, shape)
+}
+
+/**
+ * A ring in the accent colour while this, or what is inside it, has the
+ * focus: the cursor of a TV's D-pad, and of a keyboard. It goes before the
+ * clickable it rings.
+ */
+@Composable
+fun Modifier.focusRing(shape: Shape = RoundedCornerShape(Tokens.radiusCard)): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    val color = LocalPalette.current.accent
+    return onFocusChanged { focused = it.hasFocus }.then(if (focused) Modifier.border(3.dp, color, shape) else Modifier)
 }
 
 /** A tile of the devices: a card with the tiles' rounder corners. */

@@ -24,6 +24,9 @@
     <string name="join_title">Join a group</string>
     <string name="join_hint">On your other phone, tap + and scan this code. Keep this screen open.</string>
     <string name="join_qr_label">QR code to join the group</string>
+    <string name="join_tv">Join a phone\'s group</string>
+    <string name="join_tv_hint">This TV joins the group of your phone: it shows a QR code, and the phone scans it.</string>
+    <string name="join_hint_tv">On your phone, open CBB, tap + and scan this code. Keep this screen open.</string>
     <string name="send_or_fetch">Send or fetch</string>
     <string name="sent">Sent to the computers.</string>
     <string name="fetched">Fetched from the computers.</string>
@@ -297,6 +300,8 @@
     <string name="remote_paste_enter">Let a paste press Enter</string>
     <string name="remote_paste_body">An admin of the group then puts a text into the text field that has the focus on this phone, from its own app or with cbb paste. This phone shows who pasted, and keeps a log of the last pastes without their text. Never on the lock screen.</string>
     <string name="remote_paste_needs_service">It pastes through the service "Send my copies by themselves", which is off: turn it on in the system\'s accessibility settings.</string>
+    <string name="remote_paste_needs_service_tv">It pastes through Clipboard Bridge\'s accessibility service, which is off: turn it on in the TV\'s settings, under Accessibility.</string>
+    <string name="remote_paste_service_stopped">The accessibility service is on in the settings, but the system stopped it. Turn it off and on again there.</string>
     <string name="channel_pastes">Remote pastes</string>
     <string name="pasted_from">Pasted from %1$s</string>
     <string name="reason_add_watch">Make the watch an admin</string>
