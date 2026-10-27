@@ -154,7 +154,7 @@ The order may change.
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**
-29. **Planned for 0.6; the code of steps 1, 3 and 4 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
+29. **Planned for 0.6; the code of steps 1, 3, 4 and most of 5 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own keys (D-69), downloaded from GitHub or the
     `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
     the user allows it. See "Secure updates" below.
@@ -900,7 +900,8 @@ token cannot slip in another build or an older one.
 ### In the group
 
 - Each device's hello already carries its version. `cbb status` and the apps mark devices that
-  run an older version than the newest one any member has seen.
+  run an older version than the newest signed release the group passed around (built for
+  `cbb status`; the phone apps to come).
 - Later: an admin asks a member to update with a signed command, like `mode` (protocol
   section 15). The member still installs only a signed release and only if its own user
   allowed automatic updates.
@@ -928,7 +929,13 @@ token cannot slip in another build or an older one.
 4. **Built:** automatic updates: the installers' question (`--auto-update`, kept), the
    timers (systemd, launchd, a scheduled task as SYSTEM, cron on OpenWrt and FreeBSD),
    `cbb update -auto`, at most one check a day, the failed versions skipped.
-5. The tray app and `cbb status`; members passing manifests and archives to each other.
+5. **Built, but the archives:** members pass the newest signed release to each other
+   (protocol section 16, "In the group": `release_seq` in the hello, the `release`
+   message, checked as a download is), `cbb update` hands what it fetched to the service,
+   `cbb status` says when a newer release is out and marks the devices that run an older
+   one, and the tray app shows "Update to X", which runs `cbb update` through UAC or
+   pkexec. Still to come: the archives passing through the group, for devices without
+   internet access.
 6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
    registration with Google's developer verification.
 7. The lite member; then the Nano ESP32: a new partition table and a bootloader with

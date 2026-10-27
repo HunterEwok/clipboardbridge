@@ -13,11 +13,12 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/release"
 )
 
 // writeDevices prints the devices list, with the clock of each connected
 // peer from peers.
-func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
+func writeDevices(w io.Writer, devs, peers []control.Device, newest string, now time.Time) {
 	if len(devs) == 0 {
 		return
 	}
@@ -26,8 +27,8 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 		skew[p.ID] = p.SkewMS
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSYSTEM\tROLE\tADMIN\tKEYS\tMODE\tSEEN\tCLOCK\tID")
-	unlisted, oldKeys := false, false
+	fmt.Fprintln(tw, "NAME\tSYSTEM\tVERSION\tROLE\tADMIN\tKEYS\tMODE\tSEEN\tCLOCK\tID")
+	unlisted, oldKeys, old := false, false, false
 	for _, d := range devs {
 		name := d.Name
 		if d.Self {
@@ -56,12 +57,20 @@ func writeDevices(w io.Writer, devs, peers []control.Device, now time.Time) {
 				clock = fmt.Sprintf("off by %v; check its time", d.Round(time.Second))
 			}
 		}
-		// The sync mode, as each connected device's hello says it.
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), d.Role, admin, keys(d), d.Mode, seen(d, now), clock, d.ID)
+		// The version and the sync mode, as each device's hello says them.
+		ver := d.Version
+		if ver != "" && newest != "" && release.Compare(ver, newest) < 0 {
+			ver += " (old)"
+			old = true
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, group.OSName(d.OS), ver, d.Role, admin, keys(d), d.Mode, seen(d, now), clock, d.ID)
 	}
 	tw.Flush()
 	if unlisted {
 		fmt.Fprintln(w, "* not in the devices list yet; the group's root adds it when they meet.")
+	}
+	if old {
+		fmt.Fprintf(w, "(old): below Clipboard Bridge %s, the newest release the group passed around; update it.\n", newest)
 	}
 	if oldKeys {
 		fmt.Fprintln(w, "old keys: it may still hold the group's CA keys from before cbb upgrade; it deletes them when it next connects.")

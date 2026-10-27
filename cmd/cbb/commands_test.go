@@ -304,13 +304,13 @@ func TestWriteDevices(t *testing.T) {
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	var b bytes.Buffer
 	writeDevices(&b, []control.Device{
-		{ID: "a1", Name: "pi", Role: "full", OS: "linux", Admin: true, Root: true, Online: true, Self: true, Listed: true},
-		{ID: "b2", Name: "mac", Role: "full", OS: "macos", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true},
+		{ID: "a1", Name: "pi", Role: "full", OS: "linux", Admin: true, Root: true, Online: true, Self: true, Listed: true, Version: "0.6.1"},
+		{ID: "b2", Name: "mac", Role: "full", OS: "macos", LastSeenMS: now.Add(-5 * time.Minute).UnixMilli(), Listed: true, Version: "0.6.0"},
 		{ID: "c3", Name: "deck", Role: "full", OS: "windows", Admin: true, Online: true, Mode: "send"},
-	}, []control.Device{{ID: "c3", SkewMS: 9000}}, now)
+	}, []control.Device{{ID: "c3", SkewMS: 9000}}, "0.6.1", now)
 	out := b.String()
 	for _, want := range []string{"pi (this device)", "online", "5 min ago", "deck *", "not in the devices list yet",
-		"Linux", "macOS", "Windows", "root", "admin", "off by 9s", "MODE"} {
+		"Linux", "macOS", "Windows", "root", "admin", "off by 9s", "MODE", "VERSION", "0.6.0 (old)", "below Clipboard Bridge 0.6.1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -318,6 +318,9 @@ func TestWriteDevices(t *testing.T) {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, "c3") && !strings.Contains(line, "send") {
 			t.Errorf("deck's line lacks its mode: %q", line)
+		}
+		if strings.Contains(line, "a1") && strings.Contains(line, "(old)") {
+			t.Errorf("the newest version is marked old: %q", line)
 		}
 	}
 }

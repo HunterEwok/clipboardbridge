@@ -155,6 +155,9 @@ type Found struct {
 	// Source is the server the files came from, which the archive comes
 	// from too.
 	Source Source
+	// Keys, Chan and Rel are the signed files as fetched, for the group;
+	// Chan is empty for a version asked for by name.
+	Keys, Chan, Rel release.File
 }
 
 // Check fetches and verifies the channel's current release, or the
@@ -200,8 +203,9 @@ func (u *Updater) checkFrom(ctx context.Context, src Source, st State, version s
 	}
 	var r release.Release
 	var seen release.Seen
+	var ch, rel release.File
 	if version != "" {
-		rel, err := get("release.json", version)
+		rel, err = get("release.json", version)
 		if err != nil {
 			return Found{}, err
 		}
@@ -212,7 +216,7 @@ func (u *Updater) checkFrom(ctx context.Context, src Source, st State, version s
 			return Found{}, fmt.Errorf("release.json: it is %s, not %s", r.Version, version)
 		}
 	} else {
-		ch, err := get(Channel+".json", "")
+		ch, err = get(Channel+".json", "")
 		if err != nil {
 			return Found{}, err
 		}
@@ -220,7 +224,7 @@ func (u *Updater) checkFrom(ctx context.Context, src Source, st State, version s
 		if err := json.Unmarshal(ch.Body, &c); err != nil || c.Release == "" {
 			return Found{}, fmt.Errorf("%s.json names no release", Channel)
 		}
-		rel, err := get("release.json", c.Release)
+		rel, err = get("release.json", c.Release)
 		if err != nil {
 			return Found{}, err
 		}
@@ -234,6 +238,9 @@ func (u *Updater) checkFrom(ctx context.Context, src Source, st State, version s
 		Failed:  slices.Contains(st.Failed, r.Version),
 		Seen:    seen,
 		Source:  src,
+		Keys:    keys,
+		Chan:    ch,
+		Rel:     rel,
 	}, nil
 }
 

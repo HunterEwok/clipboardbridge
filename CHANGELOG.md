@@ -23,6 +23,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   job, a scheduled task as SYSTEM or cron on OpenWrt and FreeBSD checks once a day. The
   installers record how the program was installed, and the uninstallers remove the timer
   and cbb update's folder.
+- The group passes the newest signed release around (docs/protocol.md, section 16, "In the
+  group"): `cbb update` hands the files it checked to the service, members send them to
+  peers whose hello names an older one, and each member checks them as a download is
+  checked. `cbb status` says when a newer release is out and lists each device's version,
+  marking the older ones; the tray app offers "Update to X", which runs `cbb update` as the
+  administrator.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
   layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into

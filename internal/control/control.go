@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/HunterEwok/clipboardbridge/internal/release"
 )
 
 const (
@@ -69,6 +71,7 @@ const (
 	OpPasteMedia  = "paste-media"   // client → service: ask for the images or files of the member's own clipboard; parts follow
 	OpCopiedMedia = "copied-media"  // watcher → service: the clipboard changed to an image, as copy-media carries it
 	OpConfig      = "config"        // client → service: show the settings, or set the setting Name to Value
+	OpRelease     = "release"       // client → service: the payload a Release in JSON, a signed release cbb update fetched, for the group
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
@@ -165,6 +168,15 @@ type Part struct {
 	Size int64  `json:"size,omitempty"`
 }
 
+// Release is a signed release (docs/protocol.md, section 16): keys.json,
+// the channel file and release.json, each as published. It goes in the
+// payload, which may be larger than a header.
+type Release struct {
+	Keys    release.File `json:"keys"`
+	Channel release.File `json:"channel"`
+	Release release.File `json:"release"`
+}
+
 // Status describes the service for cbb status.
 type Status struct {
 	Device string `json:"device"`
@@ -206,6 +218,11 @@ type Status struct {
 	// being fetched; nil when in no group.
 	Media   *Media `json:"media,omitempty"`
 	Version string `json:"version"`
+	// Release is the newest signed release the group passed around, and
+	// Update that version again when this device runs an older one; ""
+	// when none checked out.
+	Release string `json:"release,omitempty"`
+	Update  string `json:"update,omitempty"`
 }
 
 // Media describes images and files on this device: the largest copy it

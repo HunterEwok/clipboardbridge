@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -142,6 +143,17 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpStatus:
 		reply(c, control.Header{Status: s.statusWithRemoved(), Done: true}, nil)
+	case control.OpRelease:
+		var r node.ReleaseSet
+		if err := json.Unmarshal(m.Payload, &r); err != nil {
+			fail(c, fmt.Errorf("the request carries no release: %w", err))
+			return
+		}
+		if err := s.putRelease(r); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpPasteOn:
 		if err := s.sendPaste(ctx, m); err != nil {
 			fail(c, err)
@@ -318,6 +330,7 @@ func (s *Service) status() *control.Status {
 	defer s.mu.Unlock()
 	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder,
 		HoldSetting: s.holdSetting, HoldPriority: s.priorityLocked(s.id), Battery: s.battery}
+	st.Release, st.Update = s.releaseStatus()
 	if s.id == nil {
 		return st
 	}

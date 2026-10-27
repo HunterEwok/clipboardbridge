@@ -179,6 +179,11 @@ needs no trust, since the signatures are checked. The timer's log is `update.log
 `/var/db/clipboardbridge-update` (FreeBSD), `/Library/Application Support/clipboardbridge-update`
 (Mac) or `C:\Program Files\clipboardbridge-update` (Windows).
 
+The devices of a group tell each other of the newest signed release any of them has seen, so
+one device's check is enough for `cbb status` and the tray app on the others to say that a
+newer release is out ("Update to X" in the tray app runs `cbb update` as the administrator).
+Each device still checks the signatures itself and downloads its own archive.
+
 Running the same install command again also updates. With Homebrew or winget, upgrade
 there and run the second line again; `cbb update` says so. Docker and the OpenWrt package
 update through `docker compose pull` and `apk upgrade`.

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/release"
 	"github.com/HunterEwok/clipboardbridge/internal/update"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
@@ -218,6 +220,7 @@ func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, fmt.Errorf("checking for an update: %w", err))
 	}
 	r := found.Release
+	shareRelease(found)
 	if elevated {
 		st.Seen, st.CheckedMS, st.Available = found.Seen, time.Now().UnixMilli(), ""
 		if found.Newer && !found.Failed {
@@ -263,6 +266,26 @@ func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// shareRelease hands the signed release that cbb update fetched from the
+// channel to the service, which passes it to the group (docs/protocol.md,
+// section 16, "In the group"). A service that does not run misses it.
+func shareRelease(found update.Found) {
+	if len(found.Chan.Body) == 0 {
+		return
+	}
+	data, err := json.Marshal(control.Release{Keys: found.Keys, Channel: found.Chan, Release: found.Rel})
+	if err != nil {
+		return
+	}
+	c, err := control.DialFor(control.OpRelease)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	c.Do(&control.Message{Header: control.Header{Op: control.OpRelease}, Payload: data})
+}
+
 func updateCommand() string {
 	if runtime.GOOS == "windows" {
 		return "cbb update (as administrator)"
@@ -291,9 +314,18 @@ func updateRoots() ([][]byte, []update.Source, error) {
 	if file == "" {
 		return release.Roots, src, nil
 	}
-	data, err := os.ReadFile(file)
+	roots, err := readRoots(file)
 	if err != nil {
 		return nil, nil, err
+	}
+	return roots, src, nil
+}
+
+// readRoots reads the public keys in a PEM file.
+func readRoots(file string) ([][]byte, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
 	}
 	var roots [][]byte
 	for {
@@ -306,9 +338,9 @@ func updateRoots() ([][]byte, []update.Source, error) {
 		}
 	}
 	if len(roots) == 0 {
-		return nil, nil, fmt.Errorf("%s holds no PUBLIC KEY", file)
+		return nil, fmt.Errorf("%s holds no PUBLIC KEY", file)
 	}
-	return roots, src, nil
+	return roots, nil
 }
 
 // updateLog opens the timer's log in the updater's folder, update.log,
