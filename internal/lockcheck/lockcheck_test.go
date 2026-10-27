@@ -36,15 +36,8 @@ func TestLockerRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { cmd.Process.Kill(); cmd.Wait() }()
-	// On FreeBSD the list comes from ps, which a busy machine (CI's virtual
-	// machine runs the other packages' tests at once) can make slow: look
-	// for a few seconds rather than once.
-	var why string
-	for range 50 {
-		if why = Reason(); why == "the screen is locked (swaylock runs)" {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	if why := Reason(); why != "the screen is locked (swaylock runs)" {
+		t.Errorf("with swaylock running: %q", why)
 	}
-	t.Errorf("with swaylock running: %q", why)
 }

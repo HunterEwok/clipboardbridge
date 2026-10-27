@@ -16,7 +16,9 @@ import (
 func processes() []process {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "uid=,comm=").Output()
+	// One -o each: FreeBSD's ps takes everything after "=" as the header,
+	// commas too, so "uid=,comm=" would print the user alone.
+	out, err := exec.CommandContext(ctx, "ps", "-ax", "-o", "uid=", "-o", "comm=").Output()
 	if err != nil {
 		return nil
 	}
