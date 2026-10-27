@@ -12,7 +12,12 @@ private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge.mac", 
 @MainActor
 final class MacModel: ObservableObject {
     @Published private(set) var status: Control.Status?
-    @Published private(set) var devices: [Control.Device] = []
+    @Published private(set) var devices: [Control.Device] = [] {
+        didSet { loadArrangement() }
+    }
+    /// The user's order of the tiles and their collections (docs/apps.md,
+    /// "Collections and the order of the tiles"); nil outside a group.
+    @Published private(set) var arrangement: Arrangement?
     /// Why the service cannot be reached; nil while it answers.
     @Published private(set) var problem: String?
     /// The outcome of the last action, for a line under it.
@@ -21,9 +26,14 @@ final class MacModel: ObservableObject {
     /// Whether macOS lets the app press keys for remote paste.
     @Published private(set) var pasteAllowed = Injector.allowed
 
+    private let defaults: UserDefaults
     private let client = ControlClient()
     private let pasteTarget = PasteTarget()
     private var timer: Timer?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     var inGroup: Bool { status?.group?.isEmpty == false && status?.removed != true }
     var this: Control.Device? { devices.first { $0.isSelf } }
@@ -51,16 +61,112 @@ final class MacModel: ObservableObject {
         pasteAllowed = Injector.allowed
         do {
             let (answer, _) = try await client.request(.init(op: "status"))
-            status = answer.status
-            if inGroup {
-                devices = try await client.request(.init(op: "devices")).0.devices ?? []
-            } else {
-                devices = []
+            var list: [Control.Device] = []
+            if let st = answer.status, st.group?.isEmpty == false, st.removed != true {
+                list = try await client.request(.init(op: "devices")).0.devices ?? []
             }
+            show(status: answer.status, devices: list)
             problem = nil
         } catch {
             problem = Self.describe(error)
         }
+    }
+
+    /// Shows what the service said: its status, then the group's devices.
+    func show(status: Control.Status?, devices: [Control.Device]) {
+        self.status = status
+        self.devices = devices
+    }
+
+    /// A tile below this Mac's: a device, or a collection with its devices
+    /// as the group lists them.
+    enum Arranged: Identifiable, Equatable {
+        case device(Control.Device)
+        case collection(Arrangement.Collection, [Control.Device])
+
+        var id: String {
+            switch self {
+            case .device(let d): "d:" + d.id
+            case .collection(let c, _): "c:" + c.id
+            }
+        }
+
+        var ref: Arrangement.Ref {
+            switch self {
+            case .device(let d): .device(d.id)
+            case .collection(let c, _): .collection(c.id)
+            }
+        }
+    }
+
+    static let arrangementKey = "deviceArrangement"
+
+    /// The devices and collections below this Mac, in the user's order: the
+    /// group's order until the user changes it.
+    var arranged: [Arranged] {
+        let others = self.others
+        guard let a = arrangement else { return others.map { .device($0) } }
+        let byID = Dictionary(others.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return a.view(devices: devices.map(\.id), self: this?.id).compactMap { item in
+            switch item {
+            case .device(let id): byID[id].map { .device($0) }
+            case .collection(let c): .collection(c, c.devices.compactMap { byID[$0] })
+            }
+        }
+    }
+
+    /// The collection with the ID, as the window shows it.
+    func collection(_ id: String) -> (Arrangement.Collection, [Control.Device])? {
+        for case let .collection(c, ds) in arranged where c.id == id { return (c, ds) }
+        return nil
+    }
+
+    /// The collections that a device can go into: every one but its own.
+    func collections(apartFrom device: String) -> [Arrangement.Collection] {
+        arranged.compactMap {
+            guard case let .collection(c, _) = $0, !c.devices.contains(device) else { return nil }
+            return c
+        }
+    }
+
+    /// The collection a device is in, if any.
+    func collection(holding device: String) -> Arrangement.Collection? {
+        for case let .collection(c, _) in arranged where c.devices.contains(device) { return c }
+        return nil
+    }
+
+    /// Reads the group's arrangement once its tag is known, and drops the
+    /// devices that left once the list is whole: the group loaded, this Mac
+    /// in it. Until the user changes something nothing is stored.
+    private func loadArrangement() {
+        guard inGroup, let tag = status?.group else {
+            if arrangement != nil { arrangement = nil }
+            return
+        }
+        var a = Arrangement.decode(defaults.data(forKey: Self.arrangementKey), group: tag)
+        if let current = arrangement, current.group == tag { a = current }
+        if this != nil, defaults.data(forKey: Self.arrangementKey) != nil {
+            let before = a
+            a.prune(devices: devices.map(\.id))
+            if a != before { defaults.set(a.encoded(), forKey: Self.arrangementKey) }
+        }
+        if a != arrangement { arrangement = a }
+    }
+
+    /// Makes a change to the arrangement and keeps it; one that does not
+    /// fit leaves it as it was and says so.
+    @discardableResult
+    func arrange(_ op: Arrangement.Op) -> Bool {
+        guard var a = arrangement else { return false }
+        do {
+            try a.apply(op, devices: devices.map(\.id), self: this?.id)
+        } catch {
+            message = Self.describe(error)
+            return false
+        }
+        defaults.set(a.encoded(), forKey: Self.arrangementKey)
+        arrangement = a
+        return true
     }
 
     /// Asks macOS to let the app press keys for remote paste.
@@ -172,6 +278,8 @@ final class MacModel: ObservableObject {
             return (String(localized: "cbb is not installed in /usr/local/bin or /opt/homebrew/bin."), String(reflecting: error))
         case Admin.Failure.failed(let text, let detail):
             return (text, detail)
+        case is Arrangement.Refused:
+            return (String(localized: "The tiles stay as they were: that change does not fit."), String(reflecting: error))
         default:
             return (String(localized: "The service answered something unexpected."), String(reflecting: error))
         }

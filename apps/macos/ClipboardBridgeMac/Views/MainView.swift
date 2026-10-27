@@ -35,6 +35,13 @@ struct MainView: View {
     @State private var selected: String?
     @State private var adding = false
     @State private var turningAwayOn = false
+    @StateObject private var arrange = ArrangeState()
+    @State private var query = ""
+    @State private var filter: DeviceFilter?
+
+    /// With more devices than fit the window, it offers a search and filters.
+    private var many: Bool { model.others.count > 12 }
+    private var searching: Bool { many && (!query.isEmpty || filter != nil) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -71,10 +78,24 @@ struct MainView: View {
                 .pickerStyle(.segmented)
             }
             ToolbarItem {
+                Menu {
+                    Button { arrange.on.toggle() } label: { arrange.on ? Text("Done arranging") : Text("Arrange devices") }
+                        .disabled(searching)
+                    if model.arrangement?.items.isEmpty == false {
+                        Button { model.arrange(.reset) } label: { Text("Back to the group's order") }
+                    }
+                } label: { Label("Arrange devices", systemImage: "square.grid.3x3.square") }
+                .disabled(model.arrangement == nil)
+            }
+            ToolbarItem {
                 Button { adding = true } label: { Label("Add a device", systemImage: "plus") }
             }
         }
         .sheet(isPresented: $adding) { AddDeviceSheet().modifier(Themed()) }
+        .environmentObject(arrange)
+        .modifier(ArrangePrompts())
+        // Arrange mode is off while a search or a filter is on.
+        .onChange(of: searching) { _, on in if on { arrange.on = false } }
         .task { model.start() }
     }
 
@@ -105,14 +126,26 @@ struct MainView: View {
 
     @ViewBuilder private var devices: some View {
         let others = model.others
+        let shown = DeviceLayout(rawValue: layout) ?? .tiles
         if others.isEmpty {
             Notice(symbol: "plus.circle", title: "No other devices yet", text: Text("Add one with the + button."))
+        } else if let id = arrange.opened {
+            CollectionPage(id: id, layout: shown == .list ? .list : .tiles, selected: selected) { selected = $0 }
+        } else if !searching && (shown != .orbit || arrange.on) {
+            if many { DeviceSearchBar(query: $query, filter: $filter) }
+            ArrangedDevices(layout: shown == .list ? .list : .tiles, selected: selected) { selected = $0 }
+        } else if searching && found.isEmpty {
+            DeviceSearchBar(query: $query, filter: $filter)
+            Text("No devices match.").foregroundStyle(palette.textDim).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            switch DeviceLayout(rawValue: layout) ?? .tiles {
+            if many { DeviceSearchBar(query: $query, filter: $filter) }
+            // A search shows the devices it finds, flat; the orbit keeps the group's order.
+            let list = searching ? found : others
+            switch searching && shown == .orbit ? DeviceLayout.tiles : shown {
             case .tiles:
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Tokens.spacingMedium)], spacing: Tokens.spacingMedium) {
-                        ForEach(others) { d in
+                        ForEach(list) { d in
                             Button { selected = d.id } label: { DeviceTile(device: d, selected: d.id == selected) }
                                 .buttonStyle(.plain)
                         }
@@ -121,7 +154,7 @@ struct MainView: View {
             case .list:
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(Array(others.enumerated()), id: \.element.id) { i, d in
+                        ForEach(Array(list.enumerated()), id: \.element.id) { i, d in
                             if i > 0 { Divider().overlay(palette.line) }
                             Button { selected = d.id } label: { DeviceRow(device: d, selected: d.id == selected) }
                                 .buttonStyle(.plain)
@@ -130,10 +163,18 @@ struct MainView: View {
                     .glassTile(cornerRadius: Tokens.radiusCard)
                 }
             case .orbit:
-                OrbitView(devices: others, selected: selected, busy: model.busy) { selected = $0 } sync: {
+                OrbitView(devices: list, selected: selected, busy: model.busy) { selected = $0 } sync: {
                     Task { await model.send() }
                 }
             }
+        }
+    }
+
+    /// The devices the search and the filter leave.
+    private var found: [Control.Device] {
+        model.others.filter { d in
+            (query.isEmpty || d.name.localizedCaseInsensitiveContains(query) || (d.system?.localizedCaseInsensitiveContains(query) ?? false))
+                && (filter != .online || d.online) && (filter != .attention || d.frozen)
         }
     }
 

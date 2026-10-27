@@ -26,6 +26,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   tiles and rows are dragged, a right click or a tile's ⋮ button opens its menu, and Alt
   with the arrow keys moves the focused tile. A collection opens its own page; the
   arrangement is kept in `desktop.json`.
+- The Mac app arranges the devices as well, with the Swift kit's model: Arrange devices
+  in the toolbar, drag and drop, the same changes in each tile's right-click menu and
+  VoiceOver's actions, and Option with the arrow keys for the focused tile.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,
