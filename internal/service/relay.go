@@ -47,11 +47,15 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 		Want: func(peer string) bool {
 			id, ok := s.relayPeer(peer)
 			if !ok {
+				s.logf("DBG want %s: unknown", peer)
 				return false
 			}
 			s.mu.Lock()
 			nd, near := s.nd, s.nearLocked(id)
 			s.mu.Unlock()
+			if near || nd == nil || slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id }) {
+				s.logf("DBG want %s: no (near %v)", peer, near)
+			}
 			return nd != nil && !near && !slices.ContainsFunc(nd.Peers(), func(p node.Peer) bool { return p.ID == id })
 		},
 		Dialed: func(ctx context.Context, peer string, c net.Conn) error {

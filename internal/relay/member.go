@@ -135,6 +135,7 @@ func Join(ctx context.Context, cfg MemberConfig) {
 		if ctx.Err() != nil {
 			return
 		}
+		cfg.Logf("DBG %s relay join ended: %v", time.Now().Format("15:04:05.000"), err)
 		if errors.Is(err, errNewCredential) {
 			backoff = minBackoff
 			continue
@@ -254,7 +255,8 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 				case <-t.C:
 				case <-changed:
 				}
-				if credentialKey(live()) != was {
+				if now := credentialKey(live()); now != was {
+					cfg.Logf("DBG %s credentials changed: %.20q -> %.20q", time.Now().Format("15:04:05.000"), was, now)
 					renew.Store(true)
 					cancel()
 					return
@@ -292,8 +294,10 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 		}
 		switch {
 		case n.Online != nil:
+			cfg.Logf("DBG %s online %v (self %s)", time.Now().Format("15:04:05.000"), *n.Online, self)
 			s.setOnline(ctx, *n.Online)
 		case n.Call != "" && n.Ticket != "":
+			cfg.Logf("DBG %s call from %s", time.Now().Format("15:04:05.000"), n.Call)
 			s.wg.Add(1)
 			go func() {
 				defer s.wg.Done()
@@ -435,7 +439,9 @@ func (s *session) dial(ctx context.Context, peer string) {
 		wait := wantCheck
 		if s.cfg.Want(peer) {
 			start := time.Now()
+			s.cfg.Logf("DBG %s dial %s", time.Now().Format("15:04:05.000"), peer)
 			err := s.dialOnce(ctx, peer)
+			s.cfg.Logf("DBG %s dial %s done after %v: %v", time.Now().Format("15:04:05.000"), peer, time.Since(start), err)
 			if ctx.Err() != nil {
 				return
 			}
@@ -465,7 +471,9 @@ func (s *session) dialOnce(ctx context.Context, peer string) error {
 
 // answer takes a call from peer and runs the member protocol on it.
 func (s *session) answer(ctx context.Context, peer, ticket string) {
+	s.cfg.Logf("DBG %s answering %s", time.Now().Format("15:04:05.000"), peer)
 	c, err := s.open(ctx, request{Answer: ticket})
+	s.cfg.Logf("DBG %s answer open %s: %v (ctx %v)", time.Now().Format("15:04:05.000"), peer, err, ctx.Err())
 	if err != nil {
 		if ctx.Err() == nil {
 			s.cfg.Logf("cbb: sync away from home: answering %s through the relay: %v", peer, err)

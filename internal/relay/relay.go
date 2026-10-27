@@ -301,6 +301,7 @@ func (r *Relay) dropLocked(m *member) {
 	if m.dropped {
 		return
 	}
+	r.logf("DBG %s relay: drops %s", time.Now().Format("15:04:05.000"), m.device)
 	m.dropped = true
 	m.raw.Close()
 	for c := range m.streams {
@@ -545,6 +546,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 	}
 	r.mu.Unlock()
 	r.freeSlot()
+	r.logf("DBG %s relay: %s calls %s: %q", time.Now().Format("15:04:05.000"), m.device, to, msg)
 	if msg != "" {
 		refuse(msg)
 		return
@@ -568,6 +570,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 		}
 	}
 	t.calls--
+	r.logf("DBG %s relay: %s calls %s: answered %v, dropped %v %v", time.Now().Format("15:04:05.000"), m.device, to, other != nil, m.dropped, t.dropped)
 	ok := other != nil && !m.dropped && !t.dropped && *m.pairs < maxPairs
 	if ok {
 		*m.pairs++
@@ -597,6 +600,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 func (r *Relay) serveAnswer(m *member, c net.Conn, ticket string) {
 	r.mu.Lock()
 	cl := r.calls[ticket]
+	r.logf("DBG %s relay: %s answers, call found %v", time.Now().Format("15:04:05.000"), m.device, cl != nil)
 	if cl != nil && cl.to == m {
 		delete(r.calls, ticket)
 		cl.answered <- c
