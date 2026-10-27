@@ -38,7 +38,6 @@ func pasteInto(ctx context.Context, d *Device, dir string, timeout time.Duration
 // not; cbb paste -o never replaces a file; images and the text that goes
 // with a copy; each device's limits.
 func files(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
-	const p = "fleet/O2-files/"
 	g := fleetGroup(ctx, r, f, "fleet/O2-files", 3)
 	if g == nil || len(g.members) < 3 {
 		return
@@ -278,7 +277,6 @@ func commandLine(ctx context.Context, r *Report, f *Fleet) {
 // secret, of which a hello carries only the mark. Then a member's address
 // changes and it syncs on.
 func freshness(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
-	const p = "fleet/Y20-fresh/"
 	g := fleetGroup(ctx, r, f, "fleet/Y20-fresh", 3)
 	if g == nil || len(g.members) < 3 {
 		return
