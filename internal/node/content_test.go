@@ -215,6 +215,9 @@ func TestFetchStall(t *testing.T) {
 		t.Fatalf("a fetch from a peer that sends nothing: %v", err)
 	}
 	close(store.gate)
+	// The next fetch has the usual wait: under emulation (CI's MIPS job runs
+	// the tests in qemu) a part's chunk can take longer than the 300 ms above.
+	fetchStall = old
 	if got, err := fetchAll(ctx, pi, mac, p, 0); err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("the next fetch: %d bytes, %v", len(got), err)
 	}
