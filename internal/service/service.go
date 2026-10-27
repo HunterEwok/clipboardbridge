@@ -23,6 +23,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -256,7 +257,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.Discover = mdnsDiscovery
 	}
 	if cfg.now == nil {
-		cfg.now = time.Now
+		cfg.now = benchtime.Now
 	}
 	if cfg.browseFor == 0 {
 		cfg.browseFor = 10 * time.Second
@@ -317,7 +318,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	clock := hlc.NewClock(nil, floor, func(m hlc.Timestamp) error {
+	clock := hlc.NewClock(benchtime.Now, floor, func(m hlc.Timestamp) error {
 		err := atomicfile.Write(filepath.Join(cfg.StateDir, markFile), []byte(m.String()+"\n"), 0o600)
 		if err != nil {
 			cfg.Logf("cbb: saving the clock mark: %v", err)

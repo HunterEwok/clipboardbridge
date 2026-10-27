@@ -322,6 +322,7 @@ func (s *Service) status() *control.Status {
 		return st
 	}
 	st.Device, st.Group = string(s.id.ID), group.Tag(s.id.GroupCA.Cert)
+	st.CertEndsMS = s.id.Cert.NotAfter.UnixMilli()
 	st.Mode = s.eng.Mode().String()
 	skews := s.eng.Skews()
 	for _, p := range s.nd.Peers() {

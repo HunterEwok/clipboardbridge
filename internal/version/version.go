@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 )
 
 // Version is the release version. Release builds set it with
@@ -31,7 +33,12 @@ func String() string {
 			}
 		}
 	}
-	return describe(Version, mainVersion, runtime.GOOS, runtime.GOARCH, goarm)
+	s := describe(Version, mainVersion, runtime.GOOS, runtime.GOARCH, goarm)
+	if benchtime.Enabled() {
+		// Never to be mistaken for a release: its certificates last minutes.
+		s += " (time-scaled bench build)"
+	}
+	return s
 }
 
 func describe(version, mainVersion, goos, goarch, goarm string) string {

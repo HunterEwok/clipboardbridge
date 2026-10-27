@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 )
 
 // MemberProtocol is the ALPN protocol of connections between members.
@@ -33,7 +35,7 @@ func (o TLSOptions) now() time.Time {
 	if o.Now != nil {
 		return o.Now()
 	}
-	return time.Now()
+	return benchtime.Now()
 }
 
 // ServerTLS returns the TLS configuration for accepting connections from
