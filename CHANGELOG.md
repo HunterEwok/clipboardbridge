@@ -394,6 +394,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   actions, secure updates, watches, what the servers learn, the phone hub's steps, OpenWrt,
   Docker and FreeBSD. The roadmap keeps what comes next, its items sorted into done, partly
   done and next, under the same numbers.
+- docs/protocol.md is normative: BCP 14 keywords (RFC 2119, RFC 8174) mark what an
+  implementation must do to interoperate and to keep the group safe, the edition and its
+  rule for changes are stated, the registries of every name in use are in section 19
+  (ALPN IDs, exporter labels, certificate names, messages, values, addresses), and the
+  security considerations in section 20. Stale notes about design.md's line numbers are
+  gone.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for

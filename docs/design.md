@@ -510,8 +510,8 @@ sync away from home, the admins, and remote paste.
   reaches the exchange and does not succeed counts as a failure. The new member then
   receives, over the TLS session that CPace authenticated, a certificate for the key it
   presented, the group CA and the group state, and checks the member's certificate against
-  that CA. A computer that is made an admin later receives the iPhone CA key and the token
-  hashes with its admin CA, and issues its own `clipboardbridge.local` certificate. Sending the certificate is the point of no return:
+  that CA. A computer that is made an admin later receives the iPhone CA key with its admin
+  CA, and issues its own `clipboardbridge.local` certificate. Sending the certificate is the point of no return:
   the window then records the device and closes, and reports whether the device confirmed
   that it stored its identity. Errors travel as short codes, never as text, so a device that
   has not proved it knows the code cannot put words in front of the user. The five minutes
@@ -541,7 +541,8 @@ sync away from home, the admins, and remote paste.
 
   A relay on the home network cannot present a certificate from the verified CA, so it sees
   neither the code nor the token. The profile has a fixed identifier, so a new one replaces
-  the old. Only a hash of each token is stored, and the hashes spread to the root and every admin.
+  the old. No list of tokens is stored: each is derived from the iPhone CA key, so the root
+  and every admin check any token (docs/protocol.md, section 7).
 - **Devices and revocation**: `cbb status` lists the members and iPhones;
   `cbb revoke <name>` removes one. Revocations are signed records that only grow and
   spread to every member, which then refuse the revoked keys. Removing an admin that held
