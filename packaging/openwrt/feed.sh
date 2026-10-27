@@ -6,8 +6,8 @@
 #
 #   sh packaging/openwrt/feed.sh VERSION DIST OUTDIR [KEY]
 #
-# It runs on OpenWrt 25.12 or later, or in its openwrt/rootfs image, whose
-# apk makes the packages. For each Linux archive in DIST
+# It runs where apk-tools 3 has mkpkg and mkndx, as in Alpine 3.23 and later:
+# OpenWrt's own apk leaves them out. For each Linux archive in DIST
 # (clipboardbridge-linux-<arch>.tar.gz) it writes OUTDIR/<arch>/ with
 # clipboardbridge-<version>.apk and the index packages.adb, signed with the
 # ECDSA P-256 key KEY when one is given. One package serves every OpenWrt

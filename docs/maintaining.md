@@ -246,8 +246,8 @@ request. winget takes a package only by a pull request to
 ## The OpenWrt feed
 
 The release workflow's `openwrt-feed` job wraps each Linux archive in an apk package for
-OpenWrt 25.12 and later (`packaging/openwrt/feed.sh`, run in the pinned `openwrt/rootfs`
-image, whose apk makes the packages), one feed per Go architecture, and signs each index
+OpenWrt 25.12 and later (`packaging/openwrt/feed.sh`, run in the pinned `alpine:3.23`
+image, whose apk has mkpkg and mkndx, which OpenWrt's leaves out), one feed per Go architecture, and signs each index
 with the feed's ECDSA P-256 key. It publishes them with the release as
 `openwrt-feed.tar.gz`: `<arch>/packages.adb`, `<arch>/clipboardbridge-<version>.apk` and
 the public key `clipboardbridge.pem`. CI's `openwrt` job builds a feed with a test key on

@@ -6,7 +6,7 @@
 #
 #   sh tools/e2e/openwrt.sh rootfs RELEASE_DIR   # in openwrt/rootfs, with docker
 #   sh tools/e2e/openwrt.sh vm RELEASE_DIR       # OpenWrt booted in QEMU with KVM
-#   sh tools/e2e/openwrt.sh feed RELEASE_DIR     # the apk feed, in openwrt/rootfs
+#   sh tools/e2e/openwrt.sh feed RELEASE_DIR     # the apk feed, built in Alpine
 #
 # RELEASE_DIR holds a linux-amd64 release archive, SHA256SUMS and get.sh, as
 # get.sh's CBB_RELEASE_DIR takes them. rootfs installs and removes it in
@@ -15,13 +15,15 @@
 # the procd instance, the interface list, the hub's firewall rule (procd
 # service data that fw4 loads), the wait for NTP, and the removal. feed
 # builds the signed apk feed with packaging/openwrt/feed.sh and a key made
-# for the test, and installs and removes the package from it with apk.
+# for the test in Alpine, whose apk has mkpkg and mkndx (OpenWrt's leaves
+# them out), and installs and removes the package from it in openwrt/rootfs.
 # The scripts in single quotes run on OpenWrt, which expands them.
 # shellcheck disable=SC2016
 set -eu
 
 release=25.12.6
 image=openwrt/rootfs:x86_64-$release@sha256:14401c04218c2e0da0448f099710ada2460636a92395f353351cc616cf3f67af
+alpine=alpine:3.23@sha256:3d67941fed5ae436b2bb9791cb3f50a252441c7706bbc5b4e738936df8ff8306
 
 [ $# -eq 2 ] || {
 	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm|feed RELEASE_DIR" >&2
@@ -84,10 +86,12 @@ feed)
 	mkdir -p "$work/key"
 	openssl ecparam -name prime256v1 -genkey -noout -out "$work/key/private.pem"
 	openssl ec -in "$work/key/private.pem" -pubout -out "$work/key/public.pem" 2>/dev/null
-	docker run --rm -v "$rel:/rel:ro" -v "$src:/src:ro" -v "$work/key:/key:ro" "$image" /bin/sh -c "
+	mkdir -p "$work/feed"
+	docker run --rm -v "$rel:/rel:ro" -v "$src:/src:ro" -v "$work/key:/key:ro" -v "$work/feed:/feed" "$alpine" \
+		sh /src/packaging/openwrt/feed.sh v0.0.0-ci.1 /rel /feed /key/private.pem
+	docker run --rm -v "$work/feed:/feed:ro" -v "$work/key:/key:ro" "$image" /bin/sh -c "
 		set -e
 		mkdir -p /var/lock /var/run /tmp
-		sh /src/packaging/openwrt/feed.sh v0.0.0-ci.1 /rel /feed /key/private.pem
 		test -f /feed/amd64/packages.adb
 		# Without our key apk refuses the feed.
 		if apk add --repositories-file /dev/null --repository /feed/amd64/packages.adb clipboardbridge 2>/dev/null; then

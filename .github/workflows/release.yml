@@ -221,7 +221,7 @@ jobs:
           path: ${{ runner.temp }}/dist
           pattern: clipboardbridge-linux-*
           merge-multiple: true
-      - name: build and sign the feed in OpenWrt's root file system
+      - name: build and sign the feed in Alpine, whose apk has mkpkg
         env:
           FEED_KEY: ${{ secrets.CBB_OPENWRT_FEED_KEY }}
         run: |
@@ -234,7 +234,7 @@ jobs:
           (umask 077 && printf '%s\n' "$FEED_KEY" >"$key/private.pem")
           trap 'rm -rf "$key"' EXIT
           docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -v "$PWD:/src:ro" -v "$key:/key:ro" -v "$RUNNER_TEMP/feed:/feed" \
-            openwrt/rootfs:x86_64-25.12.6@sha256:14401c04218c2e0da0448f099710ada2460636a92395f353351cc616cf3f67af \
+            alpine:3.23@sha256:3d67941fed5ae436b2bb9791cb3f50a252441c7706bbc5b4e738936df8ff8306 \
             sh /src/packaging/openwrt/feed.sh "$GITHUB_REF_NAME" /dist /feed /key/private.pem
           openssl ec -in "$key/private.pem" -pubout -out "$RUNNER_TEMP/feed/clipboardbridge.pem" 2>/dev/null
           mkdir -p "$RUNNER_TEMP/out"
