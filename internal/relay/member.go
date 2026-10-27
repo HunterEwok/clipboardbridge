@@ -176,8 +176,7 @@ const credentialCheck = 5 * time.Second
 
 // credentialKey names what the member registers with: its name and the
 // IDs of its credentials, or nothing without them.
-func credentialKey(cfg MemberConfig) string {
-	c, ok := cfg.Credentialed()
+func credentialKey(c Credentialed, ok bool) string {
 	if !ok {
 		return ""
 	}
@@ -192,8 +191,14 @@ func credentialKey(cfg MemberConfig) string {
 func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if cfg.Credentialed != nil {
-		if _, ok := cfg.Credentialed(); ok {
+	live, was := cfg.Credentialed, ""
+	if live != nil {
+		// The registration is made with the credentials as they are now,
+		// so that a change from here on ends it.
+		c, ok := live()
+		was = credentialKey(c, ok)
+		cfg.Credentialed = func() (Credentialed, bool) { return c, ok }
+		if ok {
 			// With credentials the relay gets a fresh WireGuard key at each
 			// registration, so the key links no two of them.
 			if cfg.Key, err = tunnel.NewPrivateKey(); err != nil {
@@ -234,8 +239,7 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 		cancel()
 	}()
 	var renew atomic.Bool
-	if cfg.Credentialed != nil {
-		was := credentialKey(cfg)
+	if live != nil {
 		go func() {
 			t := time.NewTicker(credentialCheck)
 			defer t.Stop()
@@ -250,7 +254,7 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 				case <-t.C:
 				case <-changed:
 				}
-				if credentialKey(cfg) != was {
+				if credentialKey(live()) != was {
 					renew.Store(true)
 					cancel()
 					return

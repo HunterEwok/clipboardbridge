@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"net"
 	"net/netip"
@@ -212,6 +213,141 @@ func TestPhoneAtRelay(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("the kit never heard that both computers are on the relay")
+		}
+	}
+}
+
+// TestPhoneAtRelayWithCredentials: a phone and a computer register with
+// the group's server credentials, so the relay knows them by pseudonyms;
+// the kit still hears of the computer by its device ID.
+func TestPhoneAtRelayWithCredentials(t *testing.T) {
+	keys, err := relay.NewKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := relay.Listen(relay.Config{Listen: "127.0.0.1:0", Keys: keys, Open: true, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		r.Serve(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-served
+	}()
+	link := relay.Link{Endpoint: netip.MustParseAddrPort(r.Addr().String()), Pin: keys.Pin()}
+
+	// The period, the two server keys and the lists.
+	ca, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	tag, _ := group.NewPeriodTag()
+	periodKey, _ := group.NewKey()
+	pc, err := group.SignPeriod(group.Tag(ca.Cert), tag, &periodKey.PublicKey, 1, now, ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := pc.Open()
+	phoneKey, _ := group.NewKey()
+	pcKey, _ := group.NewKey()
+	phoneHash, pcHash := group.PublicKeyHash(&phoneKey.PublicKey), group.PublicKeyHash(&pcKey.PublicKey)
+	hubs, err := group.SignHubs(p, []group.KeyHash{pcHash}, nil, 1, periodKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members, err := group.SignMembers(p, []group.KeyHash{phoneHash, pcHash}, 1, periodKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pcID := "f0000000000000000000000000000000"
+	pcCert, err := group.ServerCertificate(pcKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wgPC, _ := tunnel.NewPrivateKey()
+	pcCtx, pcCancel := context.WithCancel(context.Background())
+	pcDone := make(chan struct{})
+	go func() {
+		defer close(pcDone)
+		relay.Join(pcCtx, relay.MemberConfig{
+			Link: link, Self: pcID, Key: wgPC,
+			Cert: func() tls.Certificate { return tls.Certificate{} },
+			Credentialed: func() (relay.Credentialed, bool) {
+				return relay.Credentialed{Cert: pcCert, Self: group.Pseudonym(pcHash), Creds: []group.Credential{hubs, members}}, true
+			},
+			Want: func(string) bool { return true },
+			Dialed: func(ctx context.Context, _ string, c net.Conn) error {
+				c.Write([]byte("hello from the computer\n"))
+				if _, err := bufio.NewReader(c).ReadString('\n'); err != nil {
+					return err
+				}
+				<-ctx.Done()
+				return nil
+			},
+			Called: func(ctx context.Context, _ string, c net.Conn) error {
+				line, err := bufio.NewReader(c).ReadString('\n')
+				if err != nil {
+					return err
+				}
+				c.Write([]byte(line))
+				<-ctx.Done()
+				return nil
+			},
+		})
+	}()
+	defer func() {
+		pcCancel()
+		<-pcDone
+	}()
+
+	phone := "80000000000000000000000000000000"
+	memberKey, _ := group.NewKey()
+	leaf, err := ca.IssueMember(group.DeviceID(phone), &memberKey.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain, _ := json.Marshal([][]byte{leaf.Raw, ca.Cert.Raw})
+	wg, _ := NewKey()
+	kit := newFakeKit(t)
+	ph, err := StartRelay(wg, phone, link.Endpoint.String(), keys.Pin(), string(chain), keySigner{memberKey}, "", kit.ln.Addr().(*net.TCPAddr).Port, kit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ph.Close()
+	spki, _ := x509.MarshalPKIXPublicKey(&phoneKey.PublicKey)
+	creds, _ := json.Marshal([]group.Credential{hubs, members, pc})
+	names, _ := json.Marshal(map[string]string{group.Pseudonym(pcHash): pcID})
+	if err := ph.SetCredentials(spki, keySigner{phoneKey}, string(creds), "", string(names)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ph.SetCredentials(spki, keySigner{phoneKey}, string(creds[:len(creds)-2]), "", ""); err == nil {
+		t.Error("credentials that do not decode")
+	}
+
+	deadline := time.After(30 * time.Second)
+	select {
+	case s := <-kit.served:
+		if s != "dial "+pcID && s != "call "+pcID {
+			t.Fatalf("the kit served %q, want the computer by its ID", s)
+		}
+	case <-deadline:
+		t.Fatal("timed out waiting for the computer through the relay")
+	}
+	for {
+		select {
+		case st := <-kit.states:
+			if st.Connected && len(st.Online) == 1 && st.Online[0] == pcID {
+				return
+			}
+		case <-deadline:
+			t.Fatal("the kit never heard that the computer is on the relay")
 		}
 	}
 }
