@@ -35,8 +35,13 @@ func unpack(file, dir string, a release.Asset) (string, error) {
 	got := make(map[string]bool)
 	var total int64
 	put := func(name string, mode os.FileMode, isDir bool, r io.Reader) error {
+		// A release never has ".." in a name, so any name with it is
+		// refused whole, before it reaches a path.
+		if strings.Contains(name, "..") {
+			return fmt.Errorf("it holds the path %q", name)
+		}
 		clean := path.Clean(name)
-		if path.IsAbs(clean) || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "\\") {
+		if path.IsAbs(clean) || clean == "." || strings.Contains(clean, "\\") || !filepath.IsLocal(filepath.FromSlash(clean)) {
 			return fmt.Errorf("it holds the path %q", name)
 		}
 		first, _, _ := strings.Cut(clean, "/")
