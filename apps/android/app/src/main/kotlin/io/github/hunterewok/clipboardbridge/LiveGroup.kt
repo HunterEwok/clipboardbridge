@@ -34,6 +34,7 @@ import io.github.hunterewok.clipboardbridge.kit.MemoryContent
 import io.github.hunterewok.clipboardbridge.kit.Pairing
 import io.github.hunterewok.clipboardbridge.kit.PairingJoiner
 import io.github.hunterewok.clipboardbridge.kit.PairingMember
+import io.github.hunterewok.clipboardbridge.kit.PeriodKeys
 import io.github.hunterewok.clipboardbridge.kit.PhoneGroup
 import io.github.hunterewok.clipboardbridge.kit.PhoneHub
 import io.github.hunterewok.clipboardbridge.kit.RecordStore
@@ -60,6 +61,7 @@ import java.io.IOException
 import java.net.Inet4Address
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -351,6 +353,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }.onFailure { Log.w(TAG, "the relay's calls cannot be taken", it) }.getOrNull()?.also { l -> synchronized(lock) { relayListener = l } } ?: return
         // The relay takes the member chain and the group's roots after it, as a forwarder (docs/protocol.md, section 14).
         r.start(HubOnPhone.Group(loop.port, g.memberChain + g.trusted, member::signDigest, g.records.authorityRecords))
+        relayCredentials()
     }
 
     private fun stopRelay() {
@@ -752,6 +755,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         credentialStore = null
         credentialsFile.delete()
         runCatching { Keys.PhoneKeys.clear() }
+        relayLink?.setCredentials(null)
     }
 
     /** The current root's key and whether a key hash is a member of the group, for the credentials. lock is held. */
@@ -818,7 +822,29 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 }
             }.onFailure { Log.w(TAG, "signing the server credentials", it) }.getOrNull().orEmpty()
             if (signed.isNotEmpty()) currentNode?.sendCredentials(signed)
+            relayCredentials()
         }
+    }
+
+    /**
+     * Hands the blind relay what the phone registers with there: its server
+     * key and the group's credentials once the members' credential lists
+     * that key, so the relay knows the phone only by a pseudonym.
+     */
+    private fun relayCredentials() {
+        val r = synchronized(lock) { relayLink } ?: return
+        val c = runCatching {
+            synchronized(lock) {
+                val g = state ?: return
+                val s = credentialsLocked(g)
+                val (root, _) = credentialRootLocked(g)
+                val tag = s.period(root)?.second?.tag?.takeIf { Keys.PhoneKeys.has(PeriodKeys.SERVER_KEY, it) }
+                val k = tag?.let { Keys.PhoneKeys.get(PeriodKeys.SERVER_KEY, it) } as? KeystoreSigner ?: return@synchronized null
+                val reg = s.registration(g.records, root, MessageDigest.getInstance("SHA-256").digest(k.publicKeyDER)) ?: return@synchronized null
+                RelayOnPhone.Credentials(k.publicKeyDER, k::signDigest, reg)
+            }
+        }.onFailure { Log.w(TAG, "the server credentials for the relay", it) }.getOrNull()
+        r.setCredentials(c)
     }
 
     /** Sends records made on this phone to the computers, and brings the credentials up to date with them. */
