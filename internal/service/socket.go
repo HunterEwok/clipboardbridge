@@ -34,6 +34,7 @@ func (s *Service) serveControl(ctx context.Context, ln net.Listener, admin bool)
 		what = "the admin socket"
 	}
 	acceptLoop(ctx, ln, s.logf, what, func(c net.Conn) {
+		control.SetBuffers(c)
 		go s.handleControl(ctx, c, admin)
 	})
 }
