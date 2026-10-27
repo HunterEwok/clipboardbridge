@@ -50,12 +50,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	stopForwarder := fs.Bool("stop-forwarder", false, "away: also stop and start the forwarder (F7), which other groups may use")
 	buildDir := fs.String("build", "", "reset: the directory with the release archives (and SHA256SUMS) to install")
 	quick := fs.Bool("quick", false, "reset: keep each device's install and only remove its state")
+	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|away|relay")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|all|coverage")
 		return 2
+	}
+	if fs.Arg(0) == "coverage" {
+		if err := Coverage(stdout, *docs); err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	inv, err := LoadInventory(*invPath)
 	if err != nil {
@@ -82,6 +90,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Away(ctx, r, inv, devices, *timeout, *stopForwarder)
 	case "relay":
 		Relay(ctx, r, inv, devices, *timeout)
+	case "faults":
+		Faults(ctx, r, devices, *timeout)
+	case "all":
+		All(ctx, r, inv, devices, *timeout, *stopForwarder)
 	case "reset":
 		var b *Build
 		if *buildDir != "" {
@@ -100,6 +112,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "bench: %v\n", err)
 			return 1
 		}
+	}
+	if fs.Arg(0) == "all" {
+		allCoverage(stdout, stderr, *docs, *reportDir)
 	}
 	if r.Failed() > 0 {
 		return 1

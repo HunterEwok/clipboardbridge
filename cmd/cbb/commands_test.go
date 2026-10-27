@@ -409,3 +409,21 @@ func TestPasteTerminal(t *testing.T) {
 		t.Errorf("-lines without -terminal: %d", code)
 	}
 }
+
+func TestFailDetails(t *testing.T) {
+	err := &control.DialError{Msg: "the Clipboard Bridge service is not running; start it", Err: errors.New("dial unix /run/x: connect: no such file or directory")}
+	for _, c := range []struct {
+		debug  string
+		detail bool
+	}{{"0", false}, {"1", true}} {
+		t.Setenv("CBB_DEBUG", c.debug)
+		var b strings.Builder
+		if fail(&b, err) != 1 {
+			t.Fatal("fail did not return 1")
+		}
+		out := b.String()
+		if strings.Contains(out, "dial unix") != c.detail || strings.Contains(out, "Detail:") != c.detail {
+			t.Errorf("CBB_DEBUG=%s: %q", c.debug, out)
+		}
+	}
+}
