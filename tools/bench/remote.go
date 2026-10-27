@@ -123,6 +123,10 @@ func StreamIn(ctx context.Context, d *Device, cmd, stdin string, lines func(stri
 }
 
 func command(ctx context.Context, d *Device, cmd string) *exec.Cmd {
+	if d.OS == "fleet" {
+		// A member of the fleet is a container on the controller.
+		return exec.CommandContext(ctx, "docker", "exec", "-i", d.Container, "sh", "-c", cmd)
+	}
 	args := append(append([]string{}, sshArgs...), d.SSH, "--")
 	if d.OS == "windows" {
 		args = append(args, "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePS(psScript(cmd)))

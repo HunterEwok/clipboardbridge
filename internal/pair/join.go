@@ -17,7 +17,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -311,7 +310,7 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("pair: the member's issuer: %w", err)
+			return nil, &CauseError{Msg: "pair: the member's admin CA is not from the group", Err: err}
 		}
 		issuers = append([]*x509.Certificate{id.Issuer}, issuers...)
 	}
@@ -325,7 +324,7 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("pair: the member's certificate is not from the group CA: %w", err)
+		return nil, &CauseError{Msg: "pair: the member's certificate is not from the group", Err: err}
 	}
 	if dev, err := group.DeviceOf(memberCert); err != nil || dev != member.Device {
 		return nil, errors.New("pair: the member's certificate does not name the member")
