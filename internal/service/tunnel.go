@@ -277,7 +277,12 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 		return err
 	}
 	forgot := o.Moved && len(st.ForgetHubs(func(k tunnel.HubLink) bool { return k.Device != string(from) })) > 0
-	old := st.Hub(string(hub)) != nil
+	var prev tunnel.HubLink
+	p := st.Hub(string(hub))
+	old := p != nil
+	if old {
+		prev = *p
+	}
 	changed, err := st.SetHub(h)
 	if err != nil {
 		return err
@@ -300,12 +305,24 @@ func (s *Service) tunnelOffered(from group.DeviceID, chain []*x509.Certificate, 
 		if r < rankOf(order, s.tunSelf) {
 			s.giveWayLocked(hub, &o)
 		}
+	case old && !forgot && s.tunThrough && s.tunUsing == string(hub) && s.tunRun != nil && s.tunRun.hubKey == h.PublicKey && sameWay(prev, h):
+		// The link up is already through the hub's new key, its next one
+		// until now: it stays up, and the next try takes the new offer.
+		// Starting it again at once would also cost a handshake that the
+		// hub refuses as too soon after the last one, and five seconds.
 	case s.tunUsing == "" || s.tunUsing == string(hub) || r < rankOf(order, s.tunUsing) || forgot && s.tunUsing == string(from):
 		// The hub in use changed, or one above it came: try again.
 		s.stopTunnelLocked()
 		s.runTunnelLocked()
 	}
 	return nil
+}
+
+// sameWay tells whether two offers of a hub reach it the same way, apart
+// from its keys.
+func sameWay(a, b tunnel.HubLink) bool {
+	return a.PresharedKey == b.PresharedKey && slices.Equal(a.Endpoints, b.Endpoints) &&
+		a.Obfuscation.Equal(b.Obfuscation) && a.VLESS.Equal(b.VLESS)
 }
 
 // hubLink is what a client keeps of the offer o of the hub hub.
@@ -414,6 +431,7 @@ type tunRun struct {
 	cancel  context.CancelFunc
 	hub     *tunnel.Hub
 	clients []*tunnel.Client // the link to the hub: one for each of its keys
+	hubKey  tunnel.Key       // the hub's key of the link while it is up
 	vless   *vless.Client    // the client's way to the hub's forwarder over VLESS
 }
 

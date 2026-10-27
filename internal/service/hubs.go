@@ -256,7 +256,7 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 	}()
 	hub := group.DeviceID(h.Device)
 	for _, ep := range eps {
-		raw, err := dialAny(ctx, cs, ep)
+		raw, won, err := dialAny(ctx, cs, ep)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false
@@ -264,6 +264,19 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 			s.tunReport(run, fmt.Sprintf("no answer through the tunnel from %s at %v: the hub is off or cannot be reached, or the forwarder on the way is down", h.Device, ep), err)
 			continue
 		}
+		// The other keys get no answer: their tunnels stop, so they do
+		// not keep sending handshakes.
+		s.tunMu.Lock()
+		for _, c := range cs {
+			if c != won {
+				c.Close()
+			}
+		}
+		cs = []*tunnel.Client{won}
+		if s.tunRun == run {
+			run.clients, run.hubKey = cs, won.HubKey()
+		}
+		s.tunMu.Unlock()
 		s.setUsing(run, h.Device, true)
 		s.tunReport(run, "", nil)
 		cctx, cancel := ctx, context.CancelFunc(func() {})
@@ -272,6 +285,9 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		}
 		err = nd.DialConn(cctx, hub, raw)
 		cancel()
+		s.tunMu.Lock()
+		run.hubKey = tunnel.Key{}
+		s.tunMu.Unlock()
 		s.setUsing(run, "", false)
 		if err != nil && ctx.Err() == nil && cctx.Err() == nil {
 			s.logf("cbb: the connection to the hub %s through the tunnel ended: %v", hub, err)
@@ -282,13 +298,13 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 }
 
 // dialAny points each client at ep and dials the hub through all of them
-// at once, for up to handshakeTimeout; the first connection wins and the
-// other tries end. The clients that lose stay up until tryHub returns, and
-// nothing goes through them.
-func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, error) {
+// at once, for up to handshakeTimeout; the first connection wins, with its
+// client, and the other tries end.
+func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, *tunnel.Client, error) {
 	dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	type result struct {
+		c    *tunnel.Client
 		conn net.Conn
 		err  error
 	}
@@ -296,31 +312,31 @@ func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.C
 	for _, c := range cs {
 		go func() {
 			if err := c.SetEndpoint(ep); err != nil {
-				results <- result{nil, err}
+				results <- result{c, nil, err}
 				return
 			}
 			conn, err := c.Dial(dctx)
-			results <- result{conn, err}
+			results <- result{c, conn, err}
 		}()
 	}
-	var won net.Conn
+	var won result
 	var errs []error
 	for range cs {
 		r := <-results
 		switch {
 		case r.err != nil:
 			errs = append(errs, r.err)
-		case won == nil:
-			won = r.conn
+		case won.conn == nil:
+			won = r
 			cancel()
 		default:
 			r.conn.Close()
 		}
 	}
-	if won != nil {
-		return won, nil
+	if won.conn != nil {
+		return won.conn, won.c, nil
 	}
-	return nil, errors.Join(errs...)
+	return nil, nil, errors.Join(errs...)
 }
 
 // tunReport keeps what went wrong for status, while run is the tunnel at
