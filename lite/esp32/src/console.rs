@@ -30,10 +30,14 @@ pub trait Board {
     /// Starts listening for the phone, under this name; returns the QR
     /// code's text.
     fn join(&mut self, name: &str) -> Result<String>;
-    /// Types these reports on the USB keyboard, gap_ms apart, and returns
-    /// at once; an error when the USB port is not the keyboard or is still
-    /// typing.
+    /// Types these reports, gap_ms apart, on a connected Bluetooth host or
+    /// else the USB keyboard, and returns at once; an error when neither is
+    /// there or the keyboard is still typing.
     fn type_reports(&mut self, reports: Vec<[u8; 8]>, gap_ms: u64) -> Result<()>;
+    /// How the Bluetooth keyboard is doing, in a line.
+    fn bluetooth(&self) -> String;
+    /// Makes the Bluetooth keyboard discoverable for two minutes.
+    fn ble_pair(&mut self) -> Result<()>;
     /// Restarts the board; with download, into the ROM's download mode,
     /// for espflash.
     fn restart(&mut self, download: bool) -> !;
@@ -174,7 +178,10 @@ impl Console {
                     RATES.start(),
                     RATES.end()
                 );
-                println!("  type TEXT     type TEXT on the USB keyboard");
+                println!("  ble on|off    make the board a Bluetooth LE keyboard, or not; restarts");
+                println!("  ble pair      let a TV, tablet or computer find the Bluetooth keyboard for 2 minutes");
+                println!("  ble forget    forget every host the Bluetooth keyboard is paired with; restarts");
+                println!("  type TEXT     type TEXT on the Bluetooth host if one is connected, else the USB keyboard");
                 println!("  flash         restart into download mode, for espflash");
             }
             (Some("status"), None, _) => {
@@ -197,6 +204,10 @@ impl Console {
                 if let Ok(s) = store {
                     let usb = if s.usb_keyboard() { "keyboard and console" } else { "console" };
                     println!("  USB port: {usb}; layout {}, {} characters a second", s.layout().name(), s.rate());
+                }
+                if let Ok(s) = store {
+                    let hosts = s.bonds().len();
+                    println!("  Bluetooth keyboard: {}; paired with {hosts} host(s)", board.bluetooth());
                 }
                 println!("  error details: {}", if error::show_details() { "on" } else { "off" });
             }
@@ -268,6 +279,40 @@ impl Console {
                     Err(e) => println!("{}", e.for_user()),
                 }
             }
+            (Some("ble"), None, _) => println!("The Bluetooth keyboard is {}.", board.bluetooth()),
+            (Some("ble"), Some(mode @ ("on" | "off")), None) => {
+                let on = mode == "on";
+                match edit(store, |f| f.set(tag::BLE_KEYBOARD, [on as u8])) {
+                    Ok(()) => {
+                        if on {
+                            println!(
+                                "Restarting as a Bluetooth keyboard. Then type ble pair, and pair the host from its"
+                            );
+                            println!("Bluetooth settings within two minutes.");
+                        } else {
+                            println!(
+                                "Restarting without the Bluetooth keyboard. The hosts stay paired; ble forget forgets them."
+                            );
+                        }
+                        board.restart(false);
+                    }
+                    Err(e) => println!("{}", e.for_user()),
+                }
+            }
+            (Some("ble"), Some("pair"), None) => match board.ble_pair() {
+                Ok(()) => {
+                    println!("For two minutes a TV, tablet or computer can find \"CBB Nano ESP32\" in its Bluetooth");
+                    println!("settings; pair it there. Then set its layout with layout us or ru.");
+                }
+                Err(e) => println!("{}", e.for_user()),
+            },
+            (Some("ble"), Some("forget"), None) => match edit(store, |f| f.remove(tag::BONDS)) {
+                Ok(()) => {
+                    println!("Forgot every paired host; forget the board on them too. Restarting.");
+                    board.restart(false);
+                }
+                Err(e) => println!("{}", e.for_user()),
+            },
             (Some("layout"), None, _) => match store {
                 Ok(s) => println!("The keyboard types for the layout {}.", s.layout().name()),
                 Err(e) => println!("{}", e.for_user()),
@@ -337,6 +382,12 @@ fn edit(store: &mut Result<Store>, change: impl FnOnce(&mut Fields)) -> Result<(
     let mut fields = s.fields().clone();
     change(&mut fields);
     s.save(fields)
+}
+
+/// Saves the hosts the Bluetooth keyboard is paired with.
+#[cfg_attr(feature = "qemu", allow(dead_code))]
+pub fn save_bonds(store: &mut Result<Store>, bonds: &[crate::store::Bond]) -> Result<()> {
+    edit(store, |f| f.set(tag::BONDS, crate::store::Bond::encode_all(bonds)))
 }
 
 /// Saves the identity the board joined with.

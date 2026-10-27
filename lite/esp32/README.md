@@ -10,7 +10,9 @@ protocol core: it makes two keys
 and self-signed certificates with the chip's true random number generator (fed by the
 ADC's noise), runs a pairing TLS 1.3 handshake between them in memory, passes a message
 and checks that both ends export the same key. Its USB port can be a keyboard that types a
-text on the computer, TV or console it is plugged into (see "The USB keyboard" below).
+text on the computer, TV or console it is plugged into (see "The USB keyboard" below), and
+the board can be a Bluetooth LE keyboard for a TV, tablet or computer nearby (see "The
+Bluetooth keyboard").
 Syncing (which needs the time of day, from SNTP) comes next, and with it remote paste
 through the keyboard. It is not yet run on a real board.
 
@@ -75,7 +77,10 @@ cbb> status
 | `usb keyboard`, `usb console` | makes the USB port a keyboard with the console beside it, or the console again; saved, and the board restarts |
 | `layout [us\|ru]` | the layout active on the host the keyboard types on (default `us`); saved |
 | `rate [N]` | how many characters a second the keyboard types, 5 to 60 (default 20); saved |
-| `type TEXT` | types TEXT on the USB keyboard |
+| `ble on`, `ble off` | makes the board a Bluetooth LE keyboard, or not; saved, and the board restarts |
+| `ble pair` | makes the Bluetooth keyboard discoverable for two minutes, for a host to pair with it |
+| `ble forget` | forgets every host the Bluetooth keyboard is paired with; the board restarts |
+| `type TEXT` | types TEXT on a connected Bluetooth host, or else on the USB keyboard |
 | `flash` | restarts into the ROM's download mode, for espflash |
 
 The board joins WPA2 networks (and WPA2/WPA3 mixed ones), or open ones with an empty password; it joins
@@ -120,6 +125,29 @@ tables live in the protocol core (`cbb_core::keyboard`), for the phones' keyboar
 The USB IDs are Espressif's vendor ID with the product ID its TinyUSB stack gives a device of
 a serial port and a HID function (303a:4005).
 
+## The Bluetooth keyboard
+
+`ble on` makes the board a Bluetooth LE keyboard: HID over GATT (HOGP), with
+[trouble-host](https://github.com/embassy-rs/trouble) on esp-radio's controller, which
+shares the one radio with Wi-Fi. The ESP32-S3 has no classic Bluetooth, so the host must take
+BLE keyboards: Android and Google TV, Fire TV, Apple TV, iPads and phones, Samsung and LG
+TVs, Windows, macOS and Linux do. It types with the same `layout` and `rate` as the USB
+keyboard, and the GATT services carry the same boot keyboard's report map, with the boot
+protocol's reports for a host that asks for them.
+
+`ble pair` makes the keyboard discoverable for two minutes: pair "CBB Nano ESP32" from the
+host's Bluetooth settings then. The board has no display for a code, so the pairing is Just
+Works (LE Secure Connections where the host has it), as with any keyboard without one. The
+rest of the time the board advertises without the discoverable flag, so the hosts it is
+paired with connect again by themselves and no other device lists it; a host that pairs
+outside the two minutes is dropped, and the board types only on a host it is paired with,
+over an encrypted link. It keeps up to four hosts in its settings (a fifth pushes out the
+oldest), under a static random address made from its Bluetooth MAC address, so the hosts
+know it after a restart. `ble forget` forgets them all; forget the board on the hosts too.
+
+While a paired host is connected, `type` types there; otherwise on the USB keyboard, if the
+USB port is one.
+
 ## Settings in flash
 
 The partition `cbb` (64 KB) holds two slots. A save goes to the slot that does not hold the
@@ -140,7 +168,7 @@ QEMU=path/to/qemu-system-xtensa ESPFLASH=path/to/espflash ./qemu-test.sh
 The script builds with the `qemu` feature, writes a flash image with the partition table,
 and `qemu-test.py` boots it in [Espressif's QEMU](https://github.com/espressif/qemu)
 (machine `esp32s3`) three times, typing on the console over UART0: it checks that `join`
-says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, sets the keyboard's layout and rate, checks that `type` refuses what the layout cannot type and that the build has no USB keyboard, checks that all of it is still there after a restart,
+says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, sets the keyboard's layout and rate, checks that `type` refuses what the layout cannot type and that the build has no keyboard and no Bluetooth, checks that all of it is still there after a restart,
 forgets the network and checks that it stays forgotten.
 
 That build has no Wi-Fi (QEMU does not emulate the S3's radio) and skips esp-hal's init,

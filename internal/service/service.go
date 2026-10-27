@@ -162,6 +162,8 @@ type Service struct {
 
 	// The Bluetooth keyboard, on Linux (keyboard_linux.go).
 	kbd keyboardState
+	// The TV pairing in progress (tvremote.go).
+	tv tvState
 
 	createMu      sync.Mutex // one group creation at a time
 	mu            sync.Mutex
@@ -392,6 +394,7 @@ func Run(ctx context.Context, cfg Config) error {
 	go s.watchSleep(ctx)
 	go s.applyKeyboard()
 	defer s.closeKeyboard()
+	defer s.endTVPairing()
 
 	select {
 	case <-ctx.Done():
