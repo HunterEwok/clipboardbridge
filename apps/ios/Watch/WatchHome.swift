@@ -38,16 +38,21 @@ struct WatchHome: View {
                 Text(verbatim: note).font(.caption2).foregroundStyle(palette.danger)
             }
         }
-        Section {
-            ForEach(model.state.devices) { d in
-                if model.admission != nil, !(d.can ?? []).isEmpty {
-                    NavigationLink { WatchDeviceView(device: d) } label: { row(d) }
-                } else {
-                    row(d)
+        // The devices in no collection, then each of the phone's collections.
+        ForEach(Array(model.state.sections.enumerated()), id: \.offset) { _, section in
+            if section.name == nil || !section.devices.isEmpty {
+                Section {
+                    ForEach(section.devices) { d in
+                        if model.admission != nil, !(d.can ?? []).isEmpty {
+                            NavigationLink { WatchDeviceView(device: d) } label: { row(d) }
+                        } else {
+                            row(d)
+                        }
+                    }
+                } header: {
+                    if let name = section.name { Text(verbatim: name) } else { Text("Devices") }
                 }
             }
-        } header: {
-            Text("Devices")
         }
         if !model.state.events.isEmpty {
             Section {

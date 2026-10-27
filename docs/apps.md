@@ -586,7 +586,68 @@ The rules:
    the app's as before.
 
 The apps reach every change in an Arrange mode, with a menu path, VoiceOver and TalkBack
-actions and the keyboard for each drag; their screens come in the next steps.
+actions and the keyboard for each drag.
+
+**On the iPhone and the iPad** (`Views/Arrange.swift`, the model in `AppModel`):
+
+- Arrange mode starts from **Arrange devices** in the "…" menu or **Arrange** in a tile's
+  menu (a long press), and ends with **Done**. In it a tap does not open a tile, tiles have
+  a dashed outline, and a drag moves a tile as it passes the others; a device dropped on a
+  collection goes into it. The drag carries a type of its own that stays in the app.
+- Each tile's menu has every change without a drag: **Move to collection** (each
+  collection, or **New collection…**), **Take out of collection**, **Move to start**,
+  **Move to end**, and on a collection **Rename collection…** and **Ungroup**. In Arrange
+  mode VoiceOver has the actions Move earlier, Move later, Move to start, Move to end and
+  Take out of collection.
+- A collection tile shows up to four of its devices' icons, its name, "2 of 5 online" and
+  the danger colour's mark when a device inside needs attention (it is frozen). In the
+  list a collection is a section with a header. A tap opens its page, with its devices,
+  Arrange mode for them, Rename and Ungroup.
+- With more than 12 devices Home has a search (names and systems) and the filters
+  **Online** and **Needs attention**; their results are flat, and Arrange mode is off
+  while one is on.
+- **Back to the group's order** in the "…" menu is *reset*.
+- The orbit on a big screen keeps the group's order for now.
+
+**On Android** (`Arrange.kt`, the model in `AppModel`, kept as `device_arrangement`):
+
+- Arrange mode starts from **Arrange devices** in the ⇅ menu beside the view button or
+  **Arrange** in a tile's menu (a long press), and ends with **Done**. In it a tap does
+  not open a tile, tiles have a dashed outline, and a long press then a drag carries a
+  tile over the others; it takes the place of the tile it is dropped on, and a device
+  dropped on a collection goes into it.
+- Each tile's menu has every change without a drag, as on the iPhone; in Arrange mode
+  each tile also has a ⋮ button for it, which a keyboard or the D-pad reaches. TalkBack
+  has the actions Move earlier, Move later, Move to start, Move to end and Take out of
+  collection.
+- The collection tile, the list's sections, the collection's page, the search and filters
+  and **Back to the group's order** are the iPhone's. The orbit keeps the group's order.
+
+**In the tray app** (`frontend/app.js`, the model in `arrange.go` through `Desk.Arrange`,
+kept as `arrangement` in `desktop.json`, which the window's other settings never
+overwrite):
+
+- The ⇅ button beside the views turns Arrange mode on and off, and Escape ends it. In it
+  a click does not open a tile, tiles and rows have a dashed outline and are dragged, a
+  device dropped on a collection goes into it, and the bar on top has **Back to the
+  group's order** and **Done**.
+- A right click on a tile, or its ⋮ button in Arrange mode, opens its menu with every
+  change. With the keyboard, Alt and the arrow keys move the focused tile, and Alt with
+  Home or End moves it to the start or the end.
+- A collection is a tile or a section in the list, and a click opens its page, with its
+  devices, Arrange mode for them and its menu. The search and filters come with more than
+  12 devices. The orbit keeps the group's order.
+
+**In the Mac app** (`Views/Arrange.swift`, the model in `MacModel`, which builds the Swift
+kit's `Arrangement.swift` in; kept as `deviceArrangement` in its defaults): as on the
+iPhone, with **Arrange devices** and **Back to the group's order** in the toolbar, each
+tile's menu on a right click, and Option with the arrow keys, Home or End moving the
+focused tile in Arrange mode.
+
+**On the watches**: the phone sends its devices in the user's order, each with the name
+of its collection (`collection` in WatchState, absent from a phone before 0.6), and the
+watch lists the devices in no collection under **Devices**, then a section for each
+collection. The watch does not change the arrangement.
 
 ## Releasing the Android app
 

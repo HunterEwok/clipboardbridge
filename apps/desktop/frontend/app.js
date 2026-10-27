@@ -12,6 +12,14 @@ const $ = (id) => document.getElementById(id);
 
 let state = null;
 let selected = null;
+// Arrange mode, the collection whose page is open, the tile being dragged
+// (docs/apps.md, "Collections and the order of the tiles"), and Home's
+// search and filter once there are many devices.
+let arranging = false;
+let opened = null;
+let dragging = null;
+let query = "";
+let filter = null;
 let tr = {};
 let lang = "";
 
@@ -168,19 +176,242 @@ function render() {
       `<p class="dim">${esc(t("Run cbb pair in a terminal and scan its QR code with the phone app, or make a group of computers with cbb new."))}</p></div>`;
   } else if (others.length === 0) {
     box.innerHTML = `<div class="notice"><div class="big">＋</div><h2>${esc(t("No other devices yet"))}</h2><p class="dim">${esc(t("Add one with the + button."))}</p></div>`;
-  } else if (s.settings.layout === "list") {
-    box.innerHTML = `<div class="list">${others.map((d) =>
-      `<button class="row${d.id === selected ? " selected" : ""}" data-id="${esc(d.id)}">${glyph(d, 32)}` +
-      `<span class="name">${esc(d.name)}</span><span class="dim">${esc(systemWithVersion(d))}</span>${dot(d.online)}</button>`).join("")}</div>`;
-  } else if (s.settings.layout === "orbit") {
+  } else if (s.settings.layout === "orbit" && !arranging && !searching() && !opened) {
+    // The orbit keeps the group's order.
     renderOrbit(box, others);
   } else {
-    box.innerHTML = `<div class="tiles">${others.map((d) =>
-      `<button class="tile${d.id === selected ? " selected" : ""}" data-id="${esc(d.id)}">` +
-      `<span class="top">${glyph(d)}${dot(d.online)}</span><span class="name">${esc(d.name)}</span>` +
-      `<span class="dim small">${esc(systems[d.os] ?? "")}</span></button>`).join("")}</div>`;
+    renderArranged(box, others);
+  }
+  $("arrange").setAttribute("aria-pressed", String(arranging));
+  $("arrange").hidden = !inGroup || others.length === 0;
+}
+
+// The devices as tiles or a list: in the user's order with the
+// collections, a collection's page, or flat while a search or a filter is
+// on (more than 12 devices).
+function renderArranged(box, others) {
+  const list = state.settings.layout === "list";
+  const byId = new Map(others.map((d) => [d.id, d]));
+  let head = "";
+  if (others.length > 12) {
+    head += `<div class="search"><input class="field" id="search" type="search" placeholder="${esc(t("Search devices"))}" ` +
+      `aria-label="${esc(t("Search devices"))}" value="${esc(query)}">` +
+      [["online", t("Online")], ["attention", t("Needs attention")]].map(([f, label]) =>
+        `<button class="chip" data-filter="${f}" aria-pressed="${filter === f}">${esc(label)}</button>`).join("") + `</div>`;
+  }
+  if (arranging) {
+    head += `<div class="card arrange-bar"><span class="dim small">${esc(t("Drag to arrange. Drop a device on a collection to put it in. Alt and the arrow keys move the focused tile."))}</span>` +
+      (state.custom && !opened ? `<button class="glass" id="arrange-reset">${esc(t("Back to the group's order"))}</button>` : "") +
+      `<button class="accent" id="arrange-done">${esc(t("Done"))}</button></div>`;
+  }
+  let body;
+  if (searching()) {
+    const q = query.trim().toLowerCase();
+    const found = others.filter((d) => (!q || d.name.toLowerCase().includes(q) || systemWithVersion(d).toLowerCase().includes(q)) &&
+      (filter !== "online" || d.online) && (filter !== "attention" || d.frozen));
+    body = found.length === 0 ? `<p class="dim">${esc(t("No devices match."))}</p>`
+      : list ? `<div class="list">${found.map((d) => deviceRow(d)).join("")}</div>`
+        : `<div class="tiles">${found.map((d) => deviceTile(d)).join("")}</div>`;
+  } else if (opened) {
+    const c = collectionOf(opened);
+    if (!c) {
+      // A collection that a move emptied goes away, and so does its page.
+      opened = null;
+      return renderArranged(box, others);
+    }
+    const ds = c.devices.map((id) => byId.get(id)).filter(Boolean);
+    const level = "c:" + c.id;
+    head = `<div class="collection-head"><button class="icon" id="collection-back" title="${esc(t("Back"))}" aria-label="${esc(t("Back"))}">‹</button>` +
+      `<h2>${esc(c.name)}</h2><button class="glass" data-menu="c:${esc(c.id)}" data-level="top">${esc(t("Menu"))}</button></div>` + head;
+    body = ds.length === 0 ? `<p class="dim">${esc(t("Drag devices here, or add them with Move to collection in a device's menu."))}</p>`
+      : list ? `<div class="list">${ds.map((d) => deviceRow(d, level)).join("")}</div>`
+        : `<div class="tiles">${ds.map((d) => deviceTile(d, level)).join("")}</div>`;
+  } else {
+    const items = (state.arranged ?? []).filter((it) => it.collection || byId.has(it.device));
+    if (list) {
+      body = `<div class="list">${items.map((it) => {
+        if (!it.collection) return deviceRow(byId.get(it.device), "top");
+        const c = it.collection, ds = c.devices.map((id) => byId.get(id)).filter(Boolean);
+        return collectionRow(c, ds) + ds.map((d) => deviceRow(d, "c:" + c.id, true)).join("");
+      }).join("")}</div>`;
+    } else {
+      body = `<div class="tiles">${items.map((it) => it.collection
+        ? collectionTile(it.collection, it.collection.devices.map((id) => byId.get(id)).filter(Boolean))
+        : deviceTile(byId.get(it.device), "top")).join("")}</div>`;
+    }
+  }
+  // The search keeps the focus and the cursor across a redraw.
+  const typing = document.activeElement?.id === "search";
+  box.innerHTML = head + body;
+  if (typing) {
+    const input = $("search");
+    input.focus();
+    input.setSelectionRange(query.length, query.length);
   }
 }
+
+const searching = () => state.devices.filter((d) => !d.self).length > 12 && (query.trim() !== "" || filter !== null);
+const collectionOf = (id) => (state.arranged ?? []).find((it) => it.collection?.id === id)?.collection;
+
+// cell wraps a tile or a row: in Arrange mode it can be dragged and has a
+// button for its menu; level is the order it moves in ("top", or "c:" and
+// a collection's ID), absent where nothing moves.
+function cell(ref, level, name, inner) {
+  if (!level) return inner;
+  const more = arranging ? `<button class="more" data-menu="${esc(ref)}" data-level="${esc(level)}" ` +
+    `title="${esc(t("Menu: %s", name))}" aria-label="${esc(t("Menu: %s", name))}">⋮</button>` : "";
+  return `<div class="cell${arranging ? " arranging" : ""}" data-ref="${esc(ref)}" data-level="${esc(level)}"` +
+    `${arranging ? ' draggable="true"' : ""}>${inner}${more}</div>`;
+}
+
+function deviceTile(d, level) {
+  return cell("d:" + d.id, level, d.name, `<button class="tile${d.id === selected ? " selected" : ""}" data-id="${esc(d.id)}">` +
+    `<span class="top">${glyph(d)}${dot(d.online)}</span><span class="name">${esc(d.name)}</span>` +
+    `<span class="dim small">${esc(systems[d.os] ?? "")}</span></button>`);
+}
+
+function deviceRow(d, level, inside) {
+  return cell("d:" + d.id, level, d.name, `<button class="row${d.id === selected ? " selected" : ""}${inside ? " inside" : ""}" data-id="${esc(d.id)}">${glyph(d, 32)}` +
+    `<span class="name">${esc(d.name)}</span><span class="dim">${esc(systemWithVersion(d))}</span>${dot(d.online)}</button>`);
+}
+
+// A collection as a tile: up to four of its devices' icons, its name and
+// how many are online, with a mark when one of them needs attention.
+function collectionTile(c, ds) {
+  const online = ds.filter((d) => d.online).length, attention = ds.some((d) => d.frozen);
+  const icons = [0, 1, 2, 3].map((i) => ds[i] ? glyph(ds[i], 20) : `<span class="glyph-gap"></span>`).join("");
+  const label = attention ? t("collection, %d of %d online, needs attention", online, ds.length) : t("collection, %d of %d online", online, ds.length);
+  return cell("c:" + c.id, "top", c.name, `<button class="tile collection" data-open="${esc(c.id)}" aria-label="${esc(c.name + ", " + label)}">` +
+    `<span class="top"><span class="minis">${icons}</span>${attention ? '<span class="attention">!</span>' : ""}</span>` +
+    `<span class="name">${esc(c.name)}</span><span class="dim small">${esc(ds.length ? t("%d of %d online", online, ds.length) : t("Drag devices here"))}</span></button>`);
+}
+
+// A collection in the list: a header with its name and how many are online.
+function collectionRow(c, ds) {
+  const online = ds.filter((d) => d.online).length;
+  return cell("c:" + c.id, "top", c.name, `<button class="row section" data-open="${esc(c.id)}"><span class="name">${esc(c.name)}</span>` +
+    `${ds.some((d) => d.frozen) ? '<span class="attention">!</span>' : ""}<span class="dim">${esc(t("%d of %d online", online, ds.length))}</span></button>`);
+}
+
+// The refs of a level, in order.
+function levelRefs(level) {
+  if (level === "top") return (state.arranged ?? []).map((it) => it.collection ? "c:" + it.collection.id : "d:" + it.device);
+  return (collectionOf(level.slice(2))?.devices ?? []).map((id) => "d:" + id);
+}
+
+const refJSON = (ref) => ref.startsWith("c:") ? { collection: ref.slice(2) } : { device: ref.slice(2) };
+
+// move puts ref before before (a ref, or null for the end of its level).
+const move = (ref, before) => arrange({ op: "move", item: refJSON(ref), before: before ? refJSON(before) : null });
+
+async function arrange(op) {
+  try {
+    await call("Arrange", op);
+  } catch (e) {
+    console.error("arrange", e);
+  }
+  await refresh();
+}
+
+// moveBy moves the tile by steps within its level: -1 earlier, 1 later,
+// -Infinity to the start, Infinity to the end.
+function moveBy(ref, level, steps) {
+  const refs = levelRefs(level), i = refs.indexOf(ref);
+  if (i < 0) return;
+  if (steps === -Infinity) return i > 0 && move(ref, refs[0]);
+  if (steps === Infinity) return i + 1 < refs.length && move(ref, null);
+  if (steps < 0) return i > 0 && move(ref, refs[i - 1]);
+  return i + 1 < refs.length && move(ref, refs[i + 2] ?? null);
+}
+
+// A tile's menu: every change a drag makes, and Move to collection.
+function openMenu(ref, level) {
+  const refs = levelRefs(level), i = refs.indexOf(ref);
+  const items = [];
+  if (!arranging) items.push(["arrange", t("Arrange")]);
+  if (ref.startsWith("d:")) {
+    const id = ref.slice(2);
+    for (const it of state.arranged ?? []) {
+      if (it.collection && !it.collection.devices.includes(id)) items.push([JSON.stringify({ op: "into", device: id, collection: it.collection.id }), t("Move to %s", it.collection.name)]);
+    }
+    items.push(["new", t("New collection…")]);
+    if ((state.arranged ?? []).some((it) => it.collection?.devices.includes(id))) items.push([JSON.stringify({ op: "out", device: id }), t("Take out of collection")]);
+  } else {
+    items.push(["rename", t("Rename collection…")]);
+    items.push([JSON.stringify({ op: "ungroup", collection: ref.slice(2) }), t("Ungroup")]);
+  }
+  if (i > 0) items.push(["start", t("Move to start")], ["earlier", t("Move earlier")]);
+  if (i >= 0 && i + 1 < refs.length) items.push(["later", t("Move later")], ["end", t("Move to end")]);
+  const dlg = $("tile-menu");
+  $("tile-menu-items").innerHTML = items.map(([v, label]) => `<button value="${esc(v)}" class="glass">${esc(label)}</button>`).join("");
+  dlg.returnValue = "";
+  dlg.onclose = () => menuChoice(dlg.returnValue, ref, level);
+  dlg.showModal();
+}
+
+async function menuChoice(v, ref, level) {
+  switch (v) {
+    case "": case "cancel": return;
+    case "arrange": arranging = true; return render();
+    case "start": return moveBy(ref, level, -Infinity);
+    case "earlier": return moveBy(ref, level, -1);
+    case "later": return moveBy(ref, level, 1);
+    case "end": return moveBy(ref, level, Infinity);
+    case "new": {
+      const name = await ask(t("New collection"), t("The collection is kept on this computer only."), t("Save"), "");
+      if (name && name.trim()) await arrange({ op: "new", name: name.trim(), devices: [ref.slice(2)] });
+      return;
+    }
+    case "rename": {
+      const c = collectionOf(ref.slice(2));
+      const name = await ask(t("Rename collection"), t("The collection is kept on this computer only."), t("Save"), c?.name ?? "");
+      if (name && name.trim()) await arrange({ op: "rename", collection: ref.slice(2), name: name.trim() });
+      return;
+    }
+  }
+  await arrange(JSON.parse(v));
+}
+
+// The drag: a device dropped on a collection goes into it, and a tile
+// dropped on another of its level takes its place.
+document.addEventListener("dragstart", (e) => {
+  const c = e.target.closest?.(".cell[draggable]");
+  if (!c) return;
+  dragging = { ref: c.dataset.ref, level: c.dataset.level };
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", "");
+  c.classList.add("dragging");
+});
+document.addEventListener("dragover", (e) => {
+  const c = e.target.closest?.(".cell");
+  if (!dragging || !c || c.dataset.ref === dragging.ref) return;
+  e.preventDefault();
+  for (const o of document.querySelectorAll(".cell.over")) if (o !== c) o.classList.remove("over");
+  c.classList.add("over");
+});
+document.addEventListener("dragend", () => {
+  dragging = null;
+  for (const o of document.querySelectorAll(".cell.over, .cell.dragging")) o.classList.remove("over", "dragging");
+});
+document.addEventListener("drop", async (e) => {
+  const c = e.target.closest?.(".cell");
+  const d = dragging;
+  dragging = null;
+  if (!d || !c || c.dataset.ref === d.ref) return;
+  e.preventDefault();
+  const target = c.dataset.ref;
+  if (d.ref.startsWith("d:") && target.startsWith("c:")) return arrange({ op: "into", device: d.ref.slice(2), collection: target.slice(2) });
+  if (c.dataset.level !== d.level) return;
+  const refs = levelRefs(d.level), from = refs.indexOf(d.ref), to = refs.indexOf(target);
+  if (from < 0 || to < 0) return;
+  await move(d.ref, from < to ? refs[to + 1] ?? null : target);
+});
+document.addEventListener("contextmenu", (e) => {
+  const c = e.target.closest?.(".cell");
+  if (!c) return;
+  e.preventDefault();
+  openMenu(c.dataset.ref, c.dataset.level);
+});
 
 function renderAway(away, inGroup) {
   $("away-switch").hidden = !inGroup;
@@ -371,6 +602,18 @@ document.addEventListener("click", async (e) => {
   if (el.dataset.color) return saveSettings({ color: el.dataset.color });
   if (el.dataset.appearance) return saveSettings({ appearance: el.dataset.appearance });
   if (el.dataset.action) return deviceAction(el.dataset.action);
+  if (el.dataset.menu) return openMenu(el.dataset.menu, el.dataset.level);
+  if (el.dataset.filter) {
+    filter = filter === el.dataset.filter ? null : el.dataset.filter;
+    if (searching()) arranging = false;
+    return render();
+  }
+  // In Arrange mode a tap does not open a tile.
+  if (arranging && el.closest(".cell")) return;
+  if (el.dataset.open) {
+    opened = el.dataset.open;
+    return render();
+  }
   if (el.dataset.mode) {
     await act("SetMode", el.dataset.modeFor, el.dataset.mode);
     return renderSettings();
@@ -381,6 +624,10 @@ document.addEventListener("click", async (e) => {
   }
   switch (el.id) {
     case "close": selected = null; return render();
+    case "arrange": arranging = !arranging; return render();
+    case "arrange-done": arranging = false; return render();
+    case "arrange-reset": return arrange({ op: "reset" });
+    case "collection-back": opened = null; arranging = false; return render();
     case "send": case "orbit-send": return act("Send");
     case "fetch": return act("Fetch");
     case "update": return act("Update");
@@ -401,12 +648,38 @@ $("away").addEventListener("change", async (e) => {
 
 $("details").addEventListener("change", (e) => saveSettings({ details: e.target.checked }));
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && selected && !document.querySelector("dialog[open]")) {
+  if (document.querySelector("dialog[open]")) return;
+  // Alt and the arrow keys move the focused tile in Arrange mode; Home and
+  // End with Alt to the start and the end.
+  const c = document.activeElement?.closest?.(".cell");
+  if (arranging && c && e.altKey) {
+    const steps = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1, Home: -Infinity, End: Infinity }[e.key];
+    if (steps !== undefined) {
+      e.preventDefault();
+      const ref = c.dataset.ref;
+      Promise.resolve(moveBy(ref, c.dataset.level, steps)).then(() => document.querySelector(`.cell[data-ref="${CSS.escape(ref)}"] button`)?.focus());
+      return;
+    }
+  }
+  if (e.key === "Escape" && arranging) {
+    arranging = false;
+    render();
+  } else if (e.key === "Escape" && selected) {
     selected = null;
     render();
+  } else if (e.key === "Escape" && opened) {
+    opened = null;
+    render();
   }
+});
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "search") return;
+  query = e.target.value;
+  if (searching()) arranging = false;
+  render();
 });
 addEventListener("resize", () => state && state.settings.layout === "orbit" && render());
 
 refresh();
-setInterval(() => !document.querySelector("dialog[open]") && refresh(), 4000);
+// Not while a dialog is open or a tile is being dragged, which a redraw would drop.
+setInterval(() => !document.querySelector("dialog[open]") && !dragging && refresh(), 4000);

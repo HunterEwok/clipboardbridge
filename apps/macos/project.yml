@@ -23,6 +23,8 @@ targets:
       - ClipboardBridgeMac
       # The phone's colours and glass.
       - ../ios/ClipboardBridge/Theme
+      # The arrangement of the tiles, the same model as the phone's.
+      - ../ios/ClipboardBridgeKit/Sources/ClipboardBridgeKit/Arrangement.swift
     info:
       path: ClipboardBridgeMac/Info.plist
       properties:
@@ -31,6 +33,10 @@ targets:
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, ru]
         LSApplicationCategoryType: public.app-category.utilities
+        # The type of a dragged tile, which stays in the app (Views/Arrange.swift).
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.hunterewok.clipboardbridge.mac.tile
+            UTTypeConformsTo: [public.data]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.hunterewok.clipboardbridge.mac
