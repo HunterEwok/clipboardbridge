@@ -88,7 +88,7 @@ feed)
 	openssl ec -in "$work/key/private.pem" -pubout -out "$work/key/public.pem" 2>/dev/null
 	mkdir -p "$work/feed"
 	docker run --rm -v "$rel:/rel:ro" -v "$src:/src:ro" -v "$work/key:/key:ro" -v "$work/feed:/feed" "$alpine" \
-		sh /src/packaging/openwrt/feed.sh v0.0.0-ci.1 /rel /feed /key/private.pem
+		sh /src/packaging/openwrt/feed.sh v0.0.0-rc.1 /rel /feed /key/private.pem
 	docker run --rm -v "$work/feed:/feed:ro" -v "$work/key:/key:ro" "$image" /bin/sh -c "
 		set -e
 		mkdir -p /var/lock /var/run /tmp

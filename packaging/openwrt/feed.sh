@@ -23,11 +23,20 @@ set -eu
 tag=$1 dist=$2 out=$3 key=${4:-}
 here=$(cd "$(dirname "$0")" && pwd)
 
-# apk's versions: 0.6.0-r1, and 0.6.0_rc1-r1 for v0.6.0-rc.1.
+# apk's versions: 0.6.0-r1, and 0.6.0_rc1-r1 for v0.6.0-rc.1. apk knows
+# only its own pre-release words, so a tag with another one (v0.6.0-ci.1)
+# stops here rather than in apk mkpkg.
 version=${tag#v}
 case $version in
 *-*)
 	pre=$(echo "${version#*-}" | tr -d '.')
+	case $pre in
+	alpha[0-9]* | beta[0-9]* | pre[0-9]* | rc[0-9]*) ;;
+	*)
+		echo "feed.sh: apk cannot take the pre-release \"${version#*-}\" of $tag: use alpha, beta, pre or rc and a number" >&2
+		exit 1
+		;;
+	esac
 	version=${version%%-*}_$pre
 	;;
 esac
