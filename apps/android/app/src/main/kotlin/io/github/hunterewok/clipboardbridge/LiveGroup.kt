@@ -205,6 +205,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     val hasGroup: Boolean get() = synchronized(lock) { state != null }
 
+    /** The group's tag, which the arrangement of the tiles is kept for; null without a group. */
+    val groupTag: String? get() = synchronized(lock) { state?.tag }
+
     /**
      * Whether this phone may add and remove devices: it made the group, or
      * the phone that did made it an admin. A phone without a group makes

@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.Arrangement
 import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
 import io.github.hunterewok.clipboardbridge.kit.JoinCode
@@ -59,10 +60,26 @@ class AppModel(private val app: Context) {
 
     var phase by mutableStateOf(if (group.hasGroup) Phase.HOME else Phase.START)
         private set
-    var devices by mutableStateOf(group.devices)
+    private var listed by mutableStateOf(group.devices)
+
+    /**
+     * The user's order of the tiles and their collections (docs/apps.md,
+     * "Collections and the order of the tiles"): null until the group's tag
+     * is known.
+     */
+    var arrangement by mutableStateOf<Arrangement?>(null)
         private set
 
+    /** Every device of the group, this phone included, in the group's order. */
+    var devices: List<LiveGroup.Device>
+        get() = listed
+        private set(v) {
+            listed = v
+            loadArrangement()
+        }
+
     init {
+        loadArrangement()
         // A command from an admin changes this phone's mode on the node's thread.
         group.onModeChanged = { Handler(Looper.getMainLooper()).post { devices = group.devices } }
     }
@@ -684,6 +701,97 @@ class AppModel(private val app: Context) {
         update()
     }
 
+    /** A tile below this phone's: a device, or a collection with its devices as the group lists them. */
+    sealed interface Arranged {
+        val key: String
+        val ref: Arrangement.Ref
+
+        data class Device(val device: LiveGroup.Device) : Arranged {
+            override val key get() = "d:" + device.id
+            override val ref get() = Arrangement.Ref.Device(device.id)
+        }
+
+        data class Collection(val collection: Arrangement.Item.Collection, val devices: List<LiveGroup.Device>) : Arranged {
+            override val key get() = "c:" + collection.id
+            override val ref get() = Arrangement.Ref.Collection(collection.id)
+        }
+    }
+
+    /** This phone's own ID, which the arrangement leaves out. */
+    private val selfId: String? get() = devices.firstOrNull { it.isSelf }?.id
+
+    /** The devices and collections below this phone, in the user's order: the group's order until the user changes it. */
+    val arranged: List<Arranged>
+        get() {
+            val others = devices.filter { !it.isSelf }
+            val a = arrangement ?: return others.map { Arranged.Device(it) }
+            val byId = others.associateBy { it.id }
+            return a.view(devices.map { it.id }, selfId).mapNotNull { item ->
+                when (item) {
+                    is Arrangement.Item.Device -> byId[item.id]?.let { Arranged.Device(it) }
+                    is Arrangement.Item.Collection -> Arranged.Collection(item, item.devices.mapNotNull { byId[it] })
+                }
+            }
+        }
+
+    /** The collection with the ID, as Home shows it. */
+    fun collection(id: String): Arranged.Collection? =
+        arranged.firstNotNullOfOrNull { (it as? Arranged.Collection)?.takeIf { c -> c.collection.id == id } }
+
+    /** The collections that a device can go into: every one but its own. */
+    fun collections(apartFrom: String): List<Arrangement.Item.Collection> =
+        arranged.mapNotNull { (it as? Arranged.Collection)?.collection?.takeIf { c -> apartFrom !in c.devices } }
+
+    /** The collection a device is in, if any. */
+    fun collectionHolding(device: String): Arrangement.Item.Collection? =
+        arranged.firstNotNullOfOrNull { (it as? Arranged.Collection)?.collection?.takeIf { c -> device in c.devices } }
+
+    /**
+     * Reads the group's arrangement once its tag is known, and drops the
+     * devices that left once the list is whole: the group loaded, this
+     * phone in it. Until the user changes something nothing is stored.
+     */
+    private fun loadArrangement() {
+        val tag = group.groupTag ?: run {
+            arrangement = null
+            return
+        }
+        val stored = settings.deviceArrangement
+        val current = arrangement?.takeIf { it.group == tag }
+        // A copy: the state's own object never changes, so Compose sees each change.
+        val a = Arrangement.decode(current?.encode() ?: stored, tag)
+        if (selfId != null && stored != null) {
+            val before = a.encode()
+            a.prune(devices.map { it.id })
+            if (a.encode() != before) settings.deviceArrangement = a.encode()
+        }
+        if (current == null || current.encode() != a.encode()) arrangement = a
+    }
+
+    /** Makes a change to the arrangement and keeps it; one that does not fit leaves it as it was and says so. */
+    fun arrange(op: Arrangement.Op): Boolean {
+        val a = arrangement?.let { Arrangement.decode(it.encode(), it.group) } ?: return false
+        try {
+            a.apply(op, devices.map { it.id }, selfId)
+        } catch (e: Arrangement.Refused) {
+            message = describe(e)
+            return false
+        }
+        settings.deviceArrangement = a.encode()
+        arrangement = a
+        return true
+    }
+
+    /** Makes a collection of the devices and returns its ID; null when it does not fit (a name too long, too many collections). */
+    fun newCollection(name: String, devices: List<String>): String? {
+        val before = collectionIds()
+        if (!arrange(Arrangement.Op.New(name, devices))) return null
+        return collectionIds().firstOrNull { it !in before }
+    }
+
+    private fun collectionIds(): List<String> =
+        arrangement?.items.orEmpty().mapNotNull { (it as? Arrangement.Item.Collection)?.id }
+
     /** The message for an error, with the error itself below it when details are on. The error is logged either way. */
     fun describe(e: Exception, @StringRes text: Int = summary(e), log: Boolean = true): Note {
         if (log) Log.e(TAG, app.getString(text), e)
@@ -718,6 +826,7 @@ class AppModel(private val app: Context) {
             }
             is Clipboard.Unreadable -> R.string.error_clipboard_unreadable
             is Content.TooLarge -> R.string.error_image_too_large
+            is Arrangement.Refused -> R.string.error_arrangement
             is MemberNode.MissingException, is MemberNode.ProtocolException -> R.string.error_image_unavailable
             is PairingMember.Failure ->
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused

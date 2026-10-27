@@ -18,6 +18,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   is a tile with its devices' icons and how many are online, a section in the list, and
   a page of its own. With more than 12 devices Home has a search and the filters Online
   and Needs attention.
+- The Android app arranges the devices the same way: Arrange devices in the ⇅ menu or
+  Arrange on a long press; in Arrange mode a long press drags a tile to where it is
+  dropped, each tile has a ⋮ menu with every change, and TalkBack has the moves as
+  actions.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,

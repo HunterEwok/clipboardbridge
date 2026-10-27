@@ -609,6 +609,20 @@ actions and the keyboard for each drag.
 - **Back to the group's order** in the "…" menu is *reset*.
 - The orbit on a big screen keeps the group's order for now.
 
+**On Android** (`Arrange.kt`, the model in `AppModel`, kept as `device_arrangement`):
+
+- Arrange mode starts from **Arrange devices** in the ⇅ menu beside the view button or
+  **Arrange** in a tile's menu (a long press), and ends with **Done**. In it a tap does
+  not open a tile, tiles have a dashed outline, and a long press then a drag carries a
+  tile over the others; it takes the place of the tile it is dropped on, and a device
+  dropped on a collection goes into it.
+- Each tile's menu has every change without a drag, as on the iPhone; in Arrange mode
+  each tile also has a ⋮ button for it, which a keyboard or the D-pad reaches. TalkBack
+  has the actions Move earlier, Move later, Move to start, Move to end and Take out of
+  collection.
+- The collection tile, the list's sections, the collection's page, the search and filters
+  and **Back to the group's order** are the iPhone's. The orbit keeps the group's order.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,
