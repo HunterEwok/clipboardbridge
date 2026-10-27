@@ -380,8 +380,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   in the TPM, FreeBSD and OpenWrt.
 - `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
   systemd units read is in `docs/reference/config.md`, that every page below `docs/` is
-  reached from `docs/README.md`, and that no page calls something "planned for" a version
-  that is out already.
+  reached from `docs/README.md`, that no page calls something "planned for" a version
+  that is out already, that every subcommand of `cbb` with flags of its own and each of
+  its flags is in `docs/reference/cli.md`, and that every port the code listens on by
+  default is in the ports table of `docs/reference/devices.md`.
 - docs/design.md follows arc42: goals and constraints, context, solution strategy, building
   blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
   and glossary. The decisions D-1 to D-78 have a register with their status

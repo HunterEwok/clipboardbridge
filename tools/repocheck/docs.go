@@ -20,6 +20,11 @@ import (
 //   - the project's old name does not come back, outside the changelog;
 //   - every command of cbb, the full and the lite member, is in docs/reference/cli.md,
 //     the lite member's in its section;
+//   - every subcommand of the full member that has flags of its own, and each
+//     of those flags, is in docs/reference/cli.md, the flags in a line that
+//     names the command;
+//   - every port the code listens on by default is in the ports table of
+//     docs/reference/devices.md;
 //   - every environment variable that the code, the installers or the units
 //     read (CBB_*) is in docs/reference/config.md;
 //   - every page below docs/ is reached from docs/README.md, the index;
@@ -35,9 +40,17 @@ var (
 	// envQuoted is a variable's name as a string in Go, Rust, Swift and
 	// Kotlin; envShell is one that a shell script, a systemd unit or
 	// PowerShell reads.
-	envQuoted  = regexp.MustCompile(`"(CBB_[A-Z0-9_]+)"`)
-	envShell   = regexp.MustCompile(`(?:\$\{?|\$env:|Environment=)(CBB_[A-Z0-9_]+)`)
-	mdPageRef  = regexp.MustCompile(`\]\(([^)#\s]+\.md)(?:#[^)]*)?\)`)
+	envQuoted = regexp.MustCompile(`"(CBB_[A-Z0-9_]+)"`)
+	envShell  = regexp.MustCompile(`(?:\$\{?|\$env:|Environment=)(CBB_[A-Z0-9_]+)`)
+	mdPageRef = regexp.MustCompile(`\]\(([^)#\s]+\.md)(?:#[^)]*)?\)`)
+	// flagSet starts a command's flags in cmd/cbb; goFlag is one flag of it.
+	flagSet = regexp.MustCompile(`flag\.NewFlagSet\("([a-z][a-z -]*)"`)
+	goFlag  = regexp.MustCompile(`\b\w+\.(?:String|Bool|Int|Int64|Uint|Duration|Float64|Func|BoolFunc)\("([A-Za-z][\w-]*)"|\b\w+\.(?:StringVar|BoolVar|IntVar|Int64Var|UintVar|DurationVar|Var|TextVar)\([^,()]+, "([A-Za-z][\w-]*)"`)
+	// goPort and rsPort are a port constant, listenPort a default listen
+	// address of a flag.
+	goPort     = regexp.MustCompile(`(?m)^\s*(?:const\s+)?\w*Port\s*=\s*(\d{2,5})\s*$`)
+	rsPort     = regexp.MustCompile(`const \w*PORT: u16 = (\d{2,5});`)
+	listenPort = regexp.MustCompile(`\.String\("[\w-]*listen", "[\w.]*:(\d{2,5})"`)
 	plannedFor = regexp.MustCompile(`(?i)\bplanned for (\d+)\.(\d+)\b`)
 	released   = regexp.MustCompile(`(?m)^## \[(\d+)\.(\d+)\.\d+\]`)
 )
@@ -316,6 +329,108 @@ func checkPlanned(files map[string][]byte) []string {
 					problems = append(problems, fmt.Sprintf("%s:%d: %q, but %d.%d is released; say whether it is built, moved or dropped", name, i+1, m[0], ma, mi))
 				}
 			}
+		}
+	}
+	return problems
+}
+
+// cliRef is the reference page of the commands.
+const cliRef = "docs/reference/cli.md"
+
+// checkFlags reports the subcommands of the full member with flags of their
+// own that docs/reference/cli.md does not name, and the flags it does not
+// name in a line about their command.
+func checkFlags(files map[string][]byte) []string {
+	ref, ok := files[cliRef]
+	if !ok {
+		return nil
+	}
+	lines := strings.Split(string(ref), "\n")
+	var problems []string
+	for _, name := range sortedKeys(files) {
+		if !strings.HasPrefix(name, "cmd/cbb/") || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src := string(files[name])
+		sets := flagSet.FindAllStringSubmatchIndex(src, -1)
+		for i, m := range sets {
+			cmd := src[m[2]:m[3]]
+			// A command's flags end at the next command's or at the next function.
+			end := len(src)
+			if i+1 < len(sets) {
+				end = sets[i+1][0]
+			}
+			body := src[m[1]:end]
+			if k := strings.Index(body, "\nfunc "); k >= 0 {
+				body = body[:k]
+			}
+			if !strings.Contains(string(ref), "`cbb "+cmd) {
+				problems = append(problems, fmt.Sprintf("%s:1: the command cbb %s (%s) is not described", cliRef, cmd, name))
+				continue
+			}
+			first, _, _ := strings.Cut(cmd, " ")
+			var about []string
+			for _, l := range lines {
+				if strings.Contains(l, "`cbb "+first) {
+					about = append(about, l)
+				}
+			}
+			for _, f := range goFlag.FindAllStringSubmatch(body, -1) {
+				flag := f[1] + f[2]
+				if !anyContains(about, "-"+flag) {
+					problems = append(problems, fmt.Sprintf("%s:1: the flag -%s of cbb %s (%s) is not described", cliRef, flag, cmd, name))
+				}
+			}
+		}
+	}
+	return problems
+}
+
+// anyContains reports whether any of lines contains s.
+func anyContains(lines []string, s string) bool {
+	for _, l := range lines {
+		if strings.Contains(l, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// devicesRef is the reference page with the ports table.
+const devicesRef = "docs/reference/devices.md"
+
+// checkPorts reports the ports that the code listens on by default and the
+// ports table of docs/reference/devices.md does not name.
+func checkPorts(files map[string][]byte) []string {
+	ref, ok := files[devicesRef]
+	if !ok {
+		return nil
+	}
+	_, table, _ := strings.Cut(string(ref), "\n## Ports\n")
+	table, _, _ = strings.Cut(table, "\n## ")
+	ports := make(map[string]string)
+	for _, name := range sortedKeys(files) {
+		var res []*regexp.Regexp
+		switch {
+		case thirdPartyDir(name) != "" || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "tools/"):
+			continue
+		case strings.HasSuffix(name, ".go"):
+			res = []*regexp.Regexp{goPort, listenPort}
+		case strings.HasSuffix(name, ".rs"):
+			res = []*regexp.Regexp{rsPort}
+		}
+		for _, re := range res {
+			for _, m := range re.FindAllStringSubmatch(string(files[name]), -1) {
+				if _, ok := ports[m[1]]; !ok {
+					ports[m[1]] = name
+				}
+			}
+		}
+	}
+	var problems []string
+	for _, p := range sortedKeys(ports) {
+		if !regexp.MustCompile(`\b` + p + `\b`).MatchString(table) {
+			problems = append(problems, fmt.Sprintf("%s:1: the port %s (%s) is not in the ports table", devicesRef, p, ports[p]))
 		}
 	}
 	return problems

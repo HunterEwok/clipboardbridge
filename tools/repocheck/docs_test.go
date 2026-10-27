@@ -142,3 +142,43 @@ func TestCheckPlanned(t *testing.T) {
 		t.Fatalf("checkPlanned() = %q, want lines 1 and 4 of docs/roadmap.md", got)
 	}
 }
+
+func TestCheckFlags(t *testing.T) {
+	files := map[string][]byte{
+		"cmd/cbb/a.go":          []byte("func a() {\n\tfs := flag.NewFlagSet(\"global hub\", flag.ContinueOnError)\n\tport := fs.Int(\"port\", 0, \"\")\n\tfs.StringVar(&fw, \"firewall\", \"ask\", \"\")\n}\n\nfunc b() {\n\tfs := flag.NewFlagSet(\"global move\", flag.ContinueOnError)\n\tfwd := fs.String(\"forwarder\", \"\", \"\")\n}\n\nfunc c() {\n\tfs := flag.NewFlagSet(\"forward\", flag.ContinueOnError)\n\tk := fs.String(\"key\", \"\", \"\")\n\ts := fs.Bool(\"show-key\", false, \"\")\n}\n"),
+		"cmd/cbb/a_test.go":     []byte("fs := flag.NewFlagSet(\"test\", 0)\n"),
+		"docs/reference/cli.md": []byte("| `cbb global hub [-port N]` | with `-firewall` |\n| `cbb forward [-key FILE]` | |\n\nAlso -show-key, but not about the command.\n"),
+	}
+	got := checkFlags(files)
+	want := []string{"the command cbb global move ", "the flag -show-key of cbb forward "}
+	if len(got) != len(want) {
+		t.Fatalf("checkFlags() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("problem %d = %q, want it to name %q", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckPorts(t *testing.T) {
+	files := map[string][]byte{
+		"internal/mdns/mdns.go":       []byte("const Port = 5353\n"),
+		"internal/service/service.go": []byte("const (\n\tMemberPort = 8764\n\tbacklog = 32\n)\n"),
+		"cmd/cbb/forward.go":          []byte(`v := fs.String("vless-listen", ":443", "")`),
+		"lite/src/tunnel.rs":          []byte("const MEMBER_PORT: u16 = 8765;\n"),
+		"internal/third_party/x/x.go": []byte("const Port = 9999\n"),
+		"internal/service/x_test.go":  []byte("const testPort = 1234\n"),
+		"docs/reference/devices.md":   []byte("# Devices\n\n## Ports\n\n| TCP 8764 | | UDP 5353 |\n\n## Files\n\n443\n"),
+	}
+	got := checkPorts(files)
+	want := []string{"the port 443 ", "the port 8765 "}
+	if len(got) != len(want) {
+		t.Fatalf("checkPorts() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("problem %d = %q, want it to name %q", i, got[i], w)
+		}
+	}
+}
