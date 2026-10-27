@@ -945,9 +945,9 @@ token cannot slip in another build or an older one.
    developer verification.
 7. **Built for Linux and OpenWrt:** the lite member's `cbb update` (`lite/src/update.rs`),
    checked with `lite/core`'s verifier, downloading with the system's curl, wget or
-   uclient-fetch, installing and rolling back as step 3 does, with the same timers. Then
-   the Nano ESP32: a new partition table and a bootloader with rollback (one reflash over
-   USB), and OTA from a member.
+   uclient-fetch, installing and rolling back as step 3 does, with the same timers. The
+   Nano ESP32 follows with its sync (item 15): a partition table with two app slots and a
+   bootloader with rollback, and OTA from a member, checked against the manifest.
 8. Sparkle in the Mac app, after the Apple account, with its own Ed25519 key and the appcast
    made by `tools/release-sign`.
 9. On the bench: an update from the previous release on every device (L9), a refused
