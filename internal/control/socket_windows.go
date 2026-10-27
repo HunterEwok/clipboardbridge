@@ -30,6 +30,9 @@ func ProgramData() string {
 // permissionHint tells a user without access to the socket what to do.
 const permissionHint = "add your user to the " + Group + " group (install.ps1 adds the user who runs it) and sign in again"
 
+// startHint tells a user whose service is not running how to start it.
+const startHint = "start it with: Start-Service clipboardbridge, in a terminal opened as administrator"
+
 // adminSocketName is the admin socket's place next to the control socket:
 // in a directory of its own, whose access list lets only the service and
 // administrators in.

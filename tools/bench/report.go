@@ -23,8 +23,9 @@ type Report struct {
 	debug bool
 	start time.Time
 
-	mu    sync.Mutex
-	cases []Case
+	mu     sync.Mutex
+	cases  []Case
+	prefix string // put before each case's name, as "all" does around its resets
 }
 
 // Case is one test case's result.
@@ -70,9 +71,18 @@ func (e skipError) Error() string { return string(e) }
 // Skip records a case that did not run.
 func (r *Report) Skip(name, why string) { r.add(Case{Name: name, Skipped: why}) }
 
+// within puts prefix before the names of the cases recorded until the next
+// call; "" ends it.
+func (r *Report) within(prefix string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.prefix = prefix
+}
+
 func (r *Report) add(c Case) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	c.Name = r.prefix + c.Name
 	r.cases = append(r.cases, c)
 	switch {
 	case c.Skipped != "":

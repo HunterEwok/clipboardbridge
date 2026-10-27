@@ -8,6 +8,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The bench's catalogue for 0.6 (docs/testbench-catalogue.md): 287 cases in one line each,
+  by area, with where each runs (real devices, a fleet of containers, a time-scaled build,
+  a test release feed, UI automation, a person) and what it still needs; and every function
+  of the product with its cases (docs/testbench-functions.md). `testbench coverage` counts
+  how many functions have a case, how many run by themselves and how many the harness runs
+  today; `testbench all` runs every suite in turn and ends with that table.
+- The bench's `faults` suite: a bad network at the hub, a blocked member port, a hung and a
+  stopped service, a damaged `identity.json`, each taken back by a timer on the device;
+  every error it expects is checked with `CBB_DEBUG=0` and `1`.
 - The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
@@ -310,6 +319,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- With the service stopped, `cbb` said "not running" followed by the system's error
+  (`dial unix …: connect: no such file or directory`) in a release build. It now says how
+  to start the service, and shows the system's error under it only with `CBB_DEBUG=1`.
 - A fetch of an image or a file could wait for ever when the peer dropped its ranges, as
   after it answered that it did not hold the part yet: a fetch that gets nothing for 15
   seconds now gives up and asks again, a fetch that ends cancels the ranges still asked

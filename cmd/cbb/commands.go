@@ -624,8 +624,13 @@ func cmdService(args []string, stderr io.Writer) int {
 
 func fail(stderr io.Writer, err error) int {
 	fmt.Fprintln(stderr, "clipboardbridge:", err)
-	if re := (*control.RequestError)(nil); errors.As(err, &re) && re.Detail != "" && debugErrors() {
+	if !debugErrors() {
+		return 1
+	}
+	if re := (*control.RequestError)(nil); errors.As(err, &re) && re.Detail != "" {
 		fmt.Fprintln(stderr, "  Detail:", re.Detail)
+	} else if de := (*control.DialError)(nil); errors.As(err, &de) && de.Err != nil {
+		fmt.Fprintln(stderr, "  Detail:", de.Err)
 	}
 	return 1
 }

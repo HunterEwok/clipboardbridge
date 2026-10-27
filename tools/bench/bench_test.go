@@ -4,10 +4,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -320,5 +322,90 @@ func TestReset(t *testing.T) {
 	}
 	if composeCmd("||") != "" {
 		t.Fatal("composeCmd of a container docker compose did not start")
+	}
+}
+
+func TestCatalogue(t *testing.T) {
+	cases, funcs, err := loadCatalogue(filepath.Join("..", "..", "docs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad := checkCatalogue(cases, funcs); len(bad) > 0 {
+		t.Fatalf("the catalogue does not hold together:\n%s", strings.Join(bad, "\n"))
+	}
+	// Every row of a table is read: a row the patterns miss would drop a
+	// case or a function without a word.
+	for _, f := range []struct {
+		name, row string
+		n         int
+	}{
+		{"testbench-catalogue.md", `^\| [A-Z][0-9]+ \|`, len(cases)},
+		{"testbench-functions.md", `^\| [A-Z]\.[0-9]+ \|`, len(funcs)},
+	} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "docs", f.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+		if rows := len(regexp.MustCompile(`(?m)`+f.row).FindAllIndex(b, -1)); rows != f.n {
+			t.Errorf("%s has %d rows, read %d", f.name, rows, f.n)
+		}
+	}
+	var out strings.Builder
+	if err := Coverage(&out, filepath.Join("..", "..", "docs")); err != nil || !strings.Contains(out.String(), "functions with a case") {
+		t.Fatalf("Coverage: %v\n%s", err, out.String())
+	}
+}
+
+func TestReadCatalogue(t *testing.T) {
+	cs, err := readCatalogue("| Y1 | Short ASCII, every pair [C1, F2] | real, fleet | |\n| T19 | TVs | person | phase 9, TV |\n")
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("readCatalogue = %v, %v", cs, err)
+	}
+	if !cs[0].automatic() || cs[1].automatic() || strings.Join(cs[0].Old, " ") != "C1 F2" || strings.Join(cs[1].Needs, "/") != "phase 9/TV" {
+		t.Fatalf("cases: %+v", cs)
+	}
+	if _, err := readCatalogue("| Y1 | a | robot | |\n"); err == nil {
+		t.Fatal("an unknown kind was taken")
+	}
+	if _, err := readCatalogue("| Y1 | a | real | |\n| Y1 | b | real | |\n"); err == nil {
+		t.Fatal("a case listed twice was taken")
+	}
+}
+
+func TestCheckMessage(t *testing.T) {
+	ec := errorCase{want: []string{"not running"}, detail: true}
+	for _, c := range []struct {
+		out, mode string
+		ok        bool
+	}{
+		{"clipboardbridge: the Clipboard Bridge service is not running; start it with: sudo systemctl start clipboardbridge", "0", true},
+		{"clipboardbridge: the Clipboard Bridge service is not running (dial unix /run/clipboardbridge/control.sock: connect: no such file or directory)", "0", false},
+		{"clipboardbridge: the service is not running\n  Detail: dial unix /run/x: connect: no such file or directory", "0", false},
+		{"clipboardbridge: the service is not running\n  Detail: dial unix /run/x: connect: no such file or directory", "1", true},
+		{"clipboardbridge: the service is not running", "1", false},
+		{"clipboardbridge: something went wrong", "0", false},
+		{"clipboardbridge: no group", "0", false},
+		{"", "0", false},
+	} {
+		if err := checkMessage(c.out, ec, c.mode); (err == nil) != c.ok {
+			t.Errorf("checkMessage(%q, %s) = %v", c.out, c.mode, err)
+		}
+	}
+}
+
+func TestWithDebug(t *testing.T) {
+	for _, c := range []struct {
+		os, cmd, mode, want string
+	}{
+		{"linux", "cbb status", "1", "CBB_DEBUG=1 cbb status"},
+		{"linux", "sudo -n cbb new", "0", "sudo -n env CBB_DEBUG=0 cbb new"},
+		{"darwin", "sudo -n cbb new", "", "sudo -n cbb new"},
+		{"windows", "cbb status", "1", "$env:CBB_DEBUG='1'; cbb status"},
+		{"docker", "docker exec -i clipboardbridge cbb status", "0", "docker exec -e CBB_DEBUG=0 -i clipboardbridge cbb status"},
+	} {
+		if got := withDebug(&Device{OS: c.os}, c.cmd, c.mode); got != c.want {
+			t.Errorf("withDebug(%s, %q, %q) = %q, want %q", c.os, c.cmd, c.mode, got, c.want)
+		}
 	}
 }
