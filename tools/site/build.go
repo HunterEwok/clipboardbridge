@@ -14,6 +14,7 @@ import (
 	stdhtml "html"
 	"html/template"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -378,7 +379,12 @@ func render(root string) (map[string][]byte, []*translator, error) {
 		return nil, nil, fmt.Errorf("soon.html: %w", err)
 	}
 	out["soon.html"] = b.Bytes()
-	out["sitemap.xml"] = sitemap(langs)
+	docs, docURLs, err := renderDocs(root, asset)
+	if err != nil {
+		return nil, nil, err
+	}
+	maps.Copy(out, docs)
+	out["sitemap.xml"] = sitemap(langs, docURLs)
 	out[".well-known/security.txt"] = securityTxt(release)
 	if out["site.webmanifest"], err = manifest(); err != nil {
 		return nil, nil, err
@@ -443,8 +449,8 @@ func gzipped(data []byte) ([]byte, error) {
 }
 
 // sitemap lists every page in every language, each with its translations
-// (hreflang), for search engines.
-func sitemap(langs []Language) []byte {
+// (hreflang), and the pages of the documentation, for search engines.
+func sitemap(langs []Language, docs []string) []byte {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
@@ -457,6 +463,9 @@ func sitemap(langs []Language) []byte {
 			}
 			b.WriteString("</url>\n")
 		}
+	}
+	for _, u := range docs {
+		fmt.Fprintf(&b, "<url><loc>%s</loc></url>\n", u)
 	}
 	b.WriteString("</urlset>\n")
 	return b.Bytes()

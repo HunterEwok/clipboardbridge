@@ -402,6 +402,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (ALPN IDs, exporter labels, certificate names, messages, values, addresses), and the
   security considerations in section 20. Stale notes about design.md's line numbers are
   gone.
+- The documentation is on the website too, at `cbb.tools/docs/`: `tools/site` renders every
+  page of `docs/` and the few it links to with goldmark, keeps GitHub's anchors, sends
+  links to the code to GitHub, and lists the pages in the sitemap; the site's "Docs" link
+  leads there.
 - New pages: docs/cryptography.md (every primitive, library and key, with its size,
   lifetime and storage), docs/testing.md (the test levels, the interop vectors, the cross
   tests, the bench), docs/admin/upgrade-and-backup.md and docs/admin/hardening.md. The

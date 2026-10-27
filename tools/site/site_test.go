@@ -256,8 +256,12 @@ func TestSite(t *testing.T) {
 	if err := xml.Unmarshal(data, &sm); err != nil {
 		t.Fatal(err)
 	}
-	if len(sm.URLs) != len(pages)*len(langs) || len(sm.URLs[0].Links) != len(langs) {
-		t.Errorf("sitemap: %d pages, want %d, each with %d languages", len(sm.URLs), len(pages)*len(langs), len(langs))
+	docs, err := docFiles("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sm.URLs) != len(pages)*len(langs)+len(docs) || len(sm.URLs[0].Links) != len(langs) {
+		t.Errorf("sitemap: %d pages, want %d and %d of the documentation, the site's each with %d languages", len(sm.URLs), len(pages)*len(langs), len(docs), len(langs))
 	}
 	checkLinks(t, out)
 	for _, name := range []string{"robots.txt", "soon.html", ".well-known/security.txt", "site.webmanifest", "en/index.html.gz"} {

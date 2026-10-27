@@ -608,3 +608,23 @@ nav a[aria-current] { color: var(--accent); }
   h2 { margin-top: 36px; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: .8em; color: var(--dim); word-break: break-all; }
 }
+
+/* The documentation (/docs/, tools/site/docs.go): the pages of docs/ as
+   they read on GitHub, in the site's colours, for long reading: a narrow
+   column, headings to the left, plain ruled tables that scroll on a phone. */
+.doc { max-width: 880px; line-height: 1.6; }
+.doc > h1 { text-align: start; font-size: clamp(30px, 3.6vw, 46px); }
+.doc h2, .doc h3, .doc h4, .doc h5, .doc h6 { text-align: start; color: var(--accent); margin: 40px 0 12px; scroll-margin-top: 80px; }
+.doc h2 { font-size: clamp(24px, 2.6vw, 30px); }
+.doc h2::after { display: none; }
+.doc h3 { font-size: 22px; }
+.doc h4, .doc h5, .doc h6 { font-family: var(--f-body); font-size: 18px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.doc ol { padding-inline-start: 26px; }
+.doc li + li { margin-top: 4px; }
+.doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 15px; }
+.doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: start; vertical-align: top; }
+.doc th { background: var(--raised); font-weight: 600; }
+.doc td code, .doc th code { white-space: normal; display: inline; }
+.doc img { max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
+.doc blockquote { margin: 16px 0; padding: 4px 16px; border-inline-start: 3px solid var(--accent); color: var(--dim); }
+.doc hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
