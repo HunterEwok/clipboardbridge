@@ -8,13 +8,12 @@
 // clock forward, so a copy made after another copy was seen always sorts
 // after it, even when the wall clocks of the devices differ.
 //
-// A timestamp is never refused for being ahead: members would disagree about
-// where to draw the line, and the group could split. The only bound is
-// MaxWall, the same on every member. A clock far ahead moves every member's
-// hybrid clock forward with it. Events that depend on each other stay in
-// order; while the hybrid clocks are ahead of real time, copies made
-// independently are ordered by the logical counter until real time catches
-// up. Nothing measures durations with this clock.
+// A clock ahead moves every member's hybrid clock forward with it, up to
+// MaxAhead: a timestamp further ahead of the receiver is refused (Ahead),
+// and none passes MaxWall, the same on every member. Events that depend on
+// each other stay in order; while the hybrid clocks are ahead of real time,
+// copies made independently are ordered by the logical counter until real
+// time catches up. Nothing measures durations with this clock.
 package hlc
 
 import (
@@ -161,6 +160,20 @@ func (c *Clock) Ahead(remote Timestamp) bool {
 	defer c.mu.Unlock()
 	ref := max(c.now().UnixMilli(), c.last.Wall)
 	return ref >= plausible && remote.Wall > ref+MaxAhead.Milliseconds()
+}
+
+// Floor returns where a restarted clock starts: the mark it saved, unless
+// the wall clock reads 2026 or later and the mark is more than MaxAhead
+// ahead of it. Such a mark comes from a clock that was set far ahead and
+// then right: every member with a right clock refused its timestamps, so
+// keeping it would leave the device's copies refused until real time
+// caught up. Then Floor returns the zero Timestamp and true.
+func Floor(mark Timestamp, now time.Time) (Timestamp, bool) {
+	wall := now.UnixMilli()
+	if wall >= plausible && mark.Wall > wall+MaxAhead.Milliseconds() {
+		return Timestamp{}, true
+	}
+	return mark, false
 }
 
 // Last returns the latest timestamp the clock has issued or observed.

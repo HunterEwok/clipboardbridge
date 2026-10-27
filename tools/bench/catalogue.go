@@ -28,19 +28,30 @@ var automated = map[string][]string{
 	"U5": {"faults"}, "U6": {"faults"}, "U7": {"faults"}, "U10": {"full"},
 	"H6": {"full"}, "K8": {"full"},
 	// Away from home.
-	"W1": {"away"}, "W10": {"away"}, "W13": {"away"}, "W14": {"away"}, "W15": {"away"},
-	"W31": {"away"}, "W36": {"relay"},
+	"W1": {"away"}, "W10": {"away", "fleet"}, "W13": {"away", "fleet"}, "W14": {"away"}, "W15": {"away"},
+	"W31": {"away", "fleet"}, "W36": {"relay", "fleet"}, "W3": {"fleet"}, "W11": {"fleet"}, "W18": {"fleet"},
+	"W19": {"fleet"}, "W20": {"fleet"}, "W32": {"fleet"}, "W33": {"fleet"}, "W34": {"fleet"}, "W35": {"fleet"},
+	"W37": {"fleet"}, "W38": {"fleet"},
 	// Security.
 	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
+	"S3": {"fleet"}, "S4": {"fleet"}, "S5": {"fleet"}, "S8": {"fleet"},
 	// Load and faults.
-	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"},
+	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"}, "E6": {"fleet"},
 	// The fleet of containers.
 	"G5": {"fleet"}, "G6": {"fleet"}, "G9": {"fleet"}, "G20": {"fleet"}, "G21": {"fleet"},
 	"G22": {"fleet"}, "G26": {"fleet"}, "G30": {"fleet"}, "G42": {"fleet"}, "G43": {"fleet"},
 	"Y12": {"fleet"}, "Y16": {"fleet"}, "M3": {"fleet"}, "M6": {"fleet"}, "D15": {"fleet"},
 	"E3": {"fleet"}, "E5": {"fleet"}, "E9": {"fleet"}, "S13": {"fleet"}, "S14": {"fleet"},
+	"T1": {"fleet"}, "T2": {"fleet"}, "T6": {"fleet"}, "T7": {"fleet"}, "T9": {"fleet"},
+	"T10": {"fleet"}, "T13": {"fleet"}, "T14": {"fleet"}, "G25": {"fleet"}, "G27": {"fleet"},
+	"G33": {"fleet"}, "S24": {"fleet"}, "M4": {"fleet"}, "G4": {"fleet"}, "G7": {"fleet"},
+	"D2": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
+	"I19": {"fleet"}, "U8": {"fleet"}, "U13": {"fleet"}, "Q1": {"fleet"}, "Q4": {"fleet"},
+	"Q6": {"fleet"}, "Q7": {"fleet"}, "X2": {"fleet"}, "X3": {"fleet"}, "K12": {"fleet"},
+	"S17": {"fleet"}, "S23": {"fleet"}, "G31": {"fleet"}, "G32": {"fleet"}, "K14": {"fleet"},
 	// The time-scaled build.
-	"K1": {"time"}, "K4": {"time"}, "K7": {"time"}, "W39": {"time"},
+	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
+	"Y13": {"time"}, "W39": {"time"},
 }
 
 // suites lists every suite `testbench` runs, in the order `all` runs them.

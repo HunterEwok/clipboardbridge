@@ -192,6 +192,10 @@ type Status struct {
 	// Removed says that the group's records revoke this device: its
 	// members refuse it until it pairs again.
 	Removed bool `json:"removed,omitempty"`
+	// TakenOverBy names the admin that took the group over from this
+	// device, the group's root computer, while it was away; removing that
+	// admin here undoes it. Removed is false then.
+	TakenOverBy string `json:"taken_over_by,omitempty"`
 	// CertEndsMS is when this device's member certificate ends, in Unix
 	// milliseconds: the members refuse it afterwards, unless an admin
 	// renews it before.

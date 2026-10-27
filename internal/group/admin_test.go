@@ -354,6 +354,13 @@ func TestComputerTakeover(t *testing.T) {
 		if err := s.Refused([]*x509.Certificate{laptop}); err != nil {
 			t.Errorf("the kept laptop is refused: %v", err)
 		}
+		// The old root's own device is refused, but connects for records.
+		if dev, ca, ok := s.TakenOver([]*x509.Certificate{holder}); !ok || ca != pcKey || dev == "" {
+			t.Errorf("the old root is not seen as taken over: %q, %v", dev, ok)
+		}
+		if _, _, ok := s.TakenOver([]*x509.Certificate{laptop}); ok {
+			t.Error("a member the old root admitted is seen as the old root")
+		}
 		// Another admin computer freezes it: the takeover stops counting
 		// until the root's own key thaws the freeze.
 		pc2 := adminCA(t, pg.root)
@@ -373,6 +380,9 @@ func TestComputerTakeover(t *testing.T) {
 		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
 		if len(s.Roots()) != 0 || s.Revoked(rootKey) || !s.Revoked(pcKey) {
 			t.Error("the old root did not undo the takeover by removing the admin")
+		}
+		if _, _, ok := s.TakenOver([]*x509.Certificate{holder}); ok || s.Refused([]*x509.Certificate{holder}) != nil {
+			t.Error("the old root is still refused after it undid the takeover")
 		}
 	}
 }
