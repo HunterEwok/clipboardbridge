@@ -69,7 +69,9 @@ Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
 Start-Sleep -Milliseconds 500
 
 $step = 'removing the update task and cbb update''s folder'
-Unregister-ScheduledTask -TaskName 'clipboardbridge update' -Confirm:$false -ErrorAction SilentlyContinue
+if (Get-ScheduledTask -TaskName 'clipboardbridge update' -ErrorAction SilentlyContinue) {
+	Unregister-ScheduledTask -TaskName 'clipboardbridge update' -Confirm:$false -ErrorAction SilentlyContinue
+}
 Remove-Item -Recurse -Force (Join-Path $env:ProgramFiles 'clipboardbridge-update') -ErrorAction SilentlyContinue
 
 $step = 'removing the firewall rules'

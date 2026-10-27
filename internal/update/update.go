@@ -312,6 +312,8 @@ func (u *Updater) Apply(ctx context.Context, src Source, st State, r release.Rel
 	if !slices.Contains(st.Failed, r.Version) {
 		st.Failed = append(st.Failed, r.Version)
 	}
+	// Not offered while automatic updates skip it.
+	st.Available = ""
 	u.logf("Putting %s back: %v", u.Installed, err)
 	if rerr := u.Install(ctx, root, filepath.Join(prev, filepath.Base(u.Programs[0]))); rerr != nil {
 		return st, fmt.Errorf("%w; and putting %s back failed too: %v", err, u.Installed, rerr)

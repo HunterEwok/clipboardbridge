@@ -226,15 +226,15 @@ func TestRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := u.Apply(context.Background(), found.Source, State{}, found.Release)
+	st, err := u.Apply(context.Background(), found.Source, State{Available: "0.6.1"}, found.Release)
 	if err == nil || !strings.Contains(err.Error(), "0.6.0 is back") {
 		t.Fatalf("Apply: %v", err)
 	}
 	if sys.running != "0.6.0" || !slices.Equal(sys.installs, []string{"0.6.1", "0.6.0"}) {
 		t.Errorf("running %s after installs %v", sys.running, sys.installs)
 	}
-	if !slices.Equal(st.Failed, []string{"0.6.1"}) {
-		t.Errorf("failed %v", st.Failed)
+	if !slices.Equal(st.Failed, []string{"0.6.1"}) || st.Available != "" {
+		t.Errorf("failed %v, available %q", st.Failed, st.Available)
 	}
 	if found, _ = u.Check(context.Background(), st, ""); !found.Failed {
 		t.Error("the failed version is not marked")

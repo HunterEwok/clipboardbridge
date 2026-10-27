@@ -201,7 +201,9 @@ func openwrtTimer(on bool, exe string) error {
 }
 
 func windowsTimer(on bool, exe string) error {
-	script := "Unregister-ScheduledTask -TaskName '" + windowsTask + "' -Confirm:$false -ErrorAction SilentlyContinue"
+	// Unregister-ScheduledTask fails without the task, whatever its
+	// ErrorAction says.
+	script := "if (Get-ScheduledTask -TaskName '" + windowsTask + "' -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName '" + windowsTask + "' -Confirm:$false }"
 	if on {
 		// The windowless cbbw.exe beside cbb.exe: no console flashes up.
 		w := filepath.Join(filepath.Dir(exe), "cbbw.exe")

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -219,7 +220,7 @@ func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 	r := found.Release
 	if elevated {
 		st.Seen, st.CheckedMS, st.Available = found.Seen, time.Now().UnixMilli(), ""
-		if found.Newer {
+		if found.Newer && !found.Failed {
 			st.Available = r.Version
 		}
 		if code := saveUpdateState(dir, st, stderr); code != 0 {
@@ -352,7 +353,9 @@ func updateFromCopy(dir, exe string, args []string, stdout, stderr io.Writer) in
 		return fail(stderr, fmt.Errorf("copying cbb to %s: %w", runDir, err))
 	}
 	cmd := exec.Command(cp, append([]string{"update"}, args...)...)
-	cmd.Env = append(os.Environ(), "CBB_UPDATE_FROM="+exe)
+	// install.ps1 leaves this process running and renames its program
+	// aside.
+	cmd.Env = append(os.Environ(), "CBB_UPDATE_FROM="+exe, "CBB_UPDATE_PARENT="+strconv.Itoa(os.Getpid()))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError

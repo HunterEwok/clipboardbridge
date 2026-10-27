@@ -114,6 +114,12 @@ func Healthy(ctx context.Context, version string) error {
 		v, err := serviceVersion()
 		switch {
 		case err != nil:
+			// Not the hint to start the service: the previous version
+			// goes back in and starts. The cause stays for debug mode.
+			var de *control.DialError
+			if errors.As(err, &de) {
+				err = &control.DialError{Msg: "it does not answer; the system's service log tells why", Denied: de.Denied, Err: de.Err}
+			}
 			last = err
 		case strings.Contains(v+" ", want):
 			return nil

@@ -144,9 +144,15 @@ if ($service -and $service.Status -ne 'Stopped') {
 # Stopping a process takes a moment, and an agent the last install started
 # may still be starting, so each try stops what runs, waits for it to exit,
 # and copies; a file still in use means another try.
+# cbb update waits for this script in the cbb that the user or the timer
+# started (CBB_UPDATE_PARENT), which is left running: its program is
+# renamed aside instead, as Windows lets a running program be renamed but
+# not overwritten.
+$parent = 0
+[void][int]::TryParse("$env:CBB_UPDATE_PARENT", [ref]$parent)
 $stopRunning = {
 	$running = @(Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
-		$_.Path -and $_.Path.StartsWith("$programDir\", [StringComparison]::OrdinalIgnoreCase)
+		$_.Id -ne $parent -and $_.Path -and $_.Path.StartsWith("$programDir\", [StringComparison]::OrdinalIgnoreCase)
 	})
 	$running | Stop-Process -Force -ErrorAction SilentlyContinue
 	$running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
@@ -157,6 +163,18 @@ New-Item -ItemType Directory -Force -Path $programDir | Out-Null
 for ($try = 1; ; $try++) {
 	& $stopRunning
 	try {
+		# The programs renamed aside before, those no longer running; a
+		# rollback renames the new ones aside while the old one still runs.
+		Get-ChildItem -Path $programDir -Filter 'cbb*.exe.*.old' -ErrorAction SilentlyContinue |
+			Remove-Item -Force -ErrorAction SilentlyContinue
+		if ($parent) {
+			foreach ($f in @('cbb.exe', 'cbbw.exe')) {
+				$prog = Join-Path $programDir $f
+				if (Test-Path $prog) {
+					Move-Item $prog "$prog.$([DateTime]::UtcNow.Ticks).old"
+				}
+			}
+		}
 		Copy-Item -Force $Bin (Join-Path $programDir 'cbb.exe')
 		Copy-Item -Force $binW (Join-Path $programDir 'cbbw.exe')
 		break
