@@ -28,7 +28,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The website for cbb.tools (`site/`, built by `tools/site`): the start page, download, and
   security and privacy, in English, Chinese, Hindi, Spanish, Russian, Arabic, Swahili and Hebrew
   (right to left for Arabic and Hebrew). It presents the two kinds of group, with a
-  computer at its heart and phones only, and says plainly why a computer is simpler. "/"
+  computer at its heart and phones only, and says why it recommends a computer. "/"
   picks the visitor's language by the language they picked before, their country (a local
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
   The start page leads with "One clipboard to rule them all" and what it does, then the
@@ -58,7 +58,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (`site/chalk.js`) and `site/textures.py` makes the wood and the felt. On a phone: a
   sideways menu, the languages in a sheet from the bottom, a docked download button, and the
   servers' table as a list. The download page writes the commands for Linux, Mac and
-  Windows on one board. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
+  Windows on one board, and the whole command for the lite member. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
   are served by the site itself, so nginx allows `font-src 'self'`. The text under the
   centred headings spans the page's width.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,

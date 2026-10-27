@@ -57,7 +57,8 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
     </div>
     <div class="card">
       <h3>{{t "Small devices"}}</h3>
-      <p>{{t "A router or a Raspberry Pi Zero that should only sync takes the lite member: add %s to the Linux command." (code "-s -- --lite")}}</p>
+      <p>{{t "A router or a Raspberry Pi Zero that should only sync takes the lite member. On Linux:"}}</p>
+      <pre><code>curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh -s -- --lite</code></pre>
     </div>
   </div>
   <p>{{t "The installer checks the download, starts Clipboard Bridge and asks before it opens the firewall for it. Then run %s and scan its QR code in the app." (code "sudo cbb pair")}}

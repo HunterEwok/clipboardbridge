@@ -100,6 +100,7 @@ function group(hub, scale, others) {
     yellow: draw(device(hub, 210, 150, scale)),
     white: draw(others.flatMap((kind, i) => device(kind, at[i][0], at[i][1]))),
     links: draw(links),
+    segs: links.map(([, x1, y1, x2, y2]) => [x1, y1, x2, y2]),
   };
 }
 // The three steps of setting up, each in a box of 200 by 150. White and
@@ -168,4 +169,5 @@ const out = `<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 {{define "chalk-step2"}}${lines(step2)}{{end}}
 {{define "chalk-step3"}}${lines(step3)}{{end}}
 `;
-fs.writeFileSync(path.join(__dirname, "templates", "chalk.html"), out);
+if (require.main === module) fs.writeFileSync(path.join(__dirname, "templates", "chalk.html"), out);
+module.exports = { draw, device, group, qr, hero, step1, step2, step3, computer, phones, setSeed: (n) => { seed = n; } };

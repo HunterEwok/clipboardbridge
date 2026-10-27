@@ -10,8 +10,8 @@ and lets each new device in, so nobody can join without you.
 It takes four steps: install the app, install Clipboard Bridge on a computer, scan the
 computer's QR code, and turn on sharing on that computer.
 
-A group can have a computer at its heart or be made of phones only: both work, and a computer
-that is often on makes sync away from home simpler ([two kinds of group](how-it-works.md#two-kinds-of-group)).
+A group can have a computer at its heart or be made of phones only: both work, and we recommend
+a computer that is often on, which keeps sync away from home going at any time ([two kinds of group](how-it-works.md#two-kinds-of-group)).
 With phones only, skip steps 2 to 4: on each other phone tap **I already use Clipboard Bridge
 on another phone**, and scan the code it shows with **Connect a new device** on the first.
 
