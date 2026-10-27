@@ -60,9 +60,12 @@ func TestMediaAway(t *testing.T) {
 		_, err := os.Stat(filepath.Join(s.dir, contentDir, hex.EncodeToString(sum[:])))
 		return err == nil
 	}
+	// Megabytes through the tunnel's WireGuard and TCP in the process take
+	// a fraction of a second, but ten times as long under the race
+	// detector, and longer still on CI's Mac runners: more than 30 s there.
 	arrives := func(s *testService, sent sentPart) {
 		t.Helper()
-		waitUpTo(t, 30*time.Second, s.name+" fetches the copy", func() bool { return has(s, sent.data) })
+		waitUpTo(t, 90*time.Second, s.name+" fetches the copy", func() bool { return has(s, sent.data) })
 		if _, got, err := s.pasteMedia(t); err != nil || len(got) != 1 || !bytes.Equal(got[0].data, sent.data) {
 			t.Errorf("the copy on %s: %d parts, %v", s.name, len(got), err)
 		}
