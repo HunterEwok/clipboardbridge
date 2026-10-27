@@ -18,6 +18,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which parts the pull request changes (.github/ci-changes.sh); the jobs of
+  # the other parts are skipped, and ci-ok counts them as passed.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.parts.outputs.core }}
+      tools: ${{ steps.parts.outputs.tools }}
+      lite: ${{ steps.parts.outputs.lite }}
+      ios: ${{ steps.parts.outputs.ios }}
+      macos: ${{ steps.parts.outputs.macos }}
+      desktop: ${{ steps.parts.outputs.desktop }}
+      android: ${{ steps.parts.outputs.android }}
+      zxnext: ${{ steps.parts.outputs.zxnext }}
+      site: ${{ steps.parts.outputs.site }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: the parts the pull request changes
+        id: parts
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: sh .github/ci-changes.sh "$BASE" "$HEAD" | tee -a "$GITHUB_OUTPUT"
+
   check:
     name: check
     runs-on: ubuntu-latest
@@ -61,6 +89,8 @@ jobs:
 
   test:
     name: test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tools == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -89,6 +119,8 @@ jobs:
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }})
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -168,6 +200,8 @@ jobs:
 
   mips:
     name: test (linux/mips under qemu)
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     # Big-endian and 32-bit at once, as on many OpenWrt routers: the
     # strictest of the release targets, for byte order and 64-bit atomics.
     runs-on: ubuntu-latest
@@ -197,6 +231,8 @@ jobs:
 
   freebsd:
     name: test (freebsd)
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -277,6 +313,8 @@ jobs:
 
   openwrt:
     name: OpenWrt
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.lite == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -310,6 +348,8 @@ jobs:
 
   avahi:
     name: mdns with avahi
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -338,6 +378,8 @@ jobs:
 
   e2e:
     name: e2e
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -357,6 +399,8 @@ jobs:
 
   desktop:
     name: desktop clipboards
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -393,6 +437,8 @@ jobs:
 
   packaging:
     name: packaging
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -404,7 +450,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh .github/ci-changes.sh
       - name: the OPNsense plugin hook
         run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
@@ -591,6 +637,8 @@ jobs:
 
   homebrew:
     name: homebrew
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     env:
@@ -702,7 +750,8 @@ jobs:
 
   windows:
     name: windows installer
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:
@@ -965,6 +1014,8 @@ jobs:
 
   kit:
     name: phone kit (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -1023,6 +1074,8 @@ jobs:
 
   app:
     name: iPhone app
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -1060,6 +1113,8 @@ jobs:
 
   macapp:
     name: Mac app
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -1080,6 +1135,8 @@ jobs:
 
   trayapp:
     name: tray app (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -1150,6 +1207,8 @@ jobs:
 
   android:
     name: Android app
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -1197,6 +1256,8 @@ jobs:
 
   fdroid:
     name: F-Droid build reproduces
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # F-Droid builds the fdroid APK from the tag and publishes ours only when its build is
@@ -1219,6 +1280,8 @@ jobs:
 
   litemips:
     name: lite member for MIPS (no tunnel)
+    needs: changes
+    if: needs.changes.outputs.lite == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -1252,6 +1315,8 @@ jobs:
 
   lite:
     name: lite member (Rust)
+    needs: changes
+    if: needs.changes.outputs.lite == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -1414,6 +1479,8 @@ jobs:
 
   esp32:
     name: lite core on the ESP32
+    needs: changes
+    if: needs.changes.outputs.lite == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -1483,6 +1550,8 @@ jobs:
 
   zxnext:
     name: ZX Spectrum Next
+    needs: changes
+    if: needs.changes.outputs.zxnext == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -1526,6 +1595,8 @@ jobs:
 
   phonetunnel:
     name: phone tunnel (${{ matrix.target }})
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -1603,6 +1674,8 @@ jobs:
 
   docker:
     name: docker image
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1635,6 +1708,8 @@ jobs:
 
   website:
     name: website
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1677,13 +1752,16 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
+    needs: [changes, check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: All jobs passed
         env:
-          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+          # A job is skipped only for a part the pull request leaves alone, once
+          # the changes job has said so; a job whose own needs failed is skipped
+          # too, but that failure is counted here.
+          FAILED: ${{ needs.changes.result != 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
           if [ "$FAILED" = "true" ]; then
             echo "A required job did not pass."

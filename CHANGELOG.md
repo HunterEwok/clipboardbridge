@@ -405,6 +405,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- CI runs only the jobs of the parts a pull request changes (`.github/ci-changes.sh`), so a
+  pull request of documentation no longer builds the phone apps, the lite member and the
+  firmware, and one brought up to date with main runs again only the jobs of its own parts.
 - The documentation is arranged by reader: the guide for users, `docs/admin/` for running
   servers (`self-hosting.md` moved there from `docs/reference/`), the reference, and the
   pages for engineers and maintainers, each part with its own table in `docs/README.md`.
