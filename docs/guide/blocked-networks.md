@@ -61,7 +61,7 @@ first, then the hub.
 
    The forwarder now also listens on TCP 443 (`-vless-listen` for another port). Open that
    port in the server's firewall, beside UDP and TCP 8764. Setting up the server is in
-   [running your own servers](../reference/self-hosting.md#vless-on-the-forwarder).
+   [running your own servers](../admin/self-hosting.md#vless-on-the-forwarder).
 
 2. **On the hub**:
 

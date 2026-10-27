@@ -2,7 +2,8 @@
 # The website
 
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
-security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), built by
+security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), and the
+documentation at `/docs/` in English, built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
 sites. Its scripts are all served by the same server: its own `static/theme.js`, a few lines
 that put the reader's light or dark theme on the page before it is drawn, and
@@ -45,6 +46,20 @@ every way to download is shown. It also has error pages (`404`, `50x`) in every 
   date, and marks what is partly true as such.
 - Present both kinds of group as nearly equal: with a computer at its heart (simpler, and
   said so) and phones only (fully supported).
+
+## The documentation
+
+`/docs/` is the repository's documentation as it reads on GitHub: every Markdown page below
+`docs/`, and the few pages elsewhere that it links to (`extraDocs` in
+[`tools/site/docs.go`](../tools/site/docs.go): CONTRIBUTING, SECURITY, the changelog, the
+lite member's and the Docker image's READMEs), rendered with goldmark inside
+`templates/doc.html`. Nothing is written for the site alone: change a page in `docs/` and
+the next build carries it. A link to another published page leads to its page here, a link
+to any other file of the repository to that file on GitHub, and `docs/images` is copied.
+The headings keep GitHub's anchors, so the links `tools/repocheck` checks work on both;
+anchors may begin with a digit, which `.htmlvalidate.json` allows. Each page links to its
+source on GitHub. The documentation's pages are in the sitemap, and Lighthouse measures its
+index and its longest page, the protocol.
 
 ## Previewing
 

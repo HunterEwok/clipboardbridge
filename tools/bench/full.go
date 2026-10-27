@@ -272,7 +272,7 @@ func killCmd(d *Device) string {
 	return ""
 }
 
-// lockedDown is what docs/roadmap.md, "Docker", promises of the container,
+// lockedDown is what docs/design.md, "Docker", promises of the container,
 // as docker inspect prints it, one field between bars: not privileged, a
 // read-only root, every capability dropped, the image's own user, no new
 // privileges, the host's network and a restart policy.

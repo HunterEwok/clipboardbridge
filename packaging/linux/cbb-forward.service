@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# cbb forward on a server (docs/reference/self-hosting.md): it passes the
+# cbb forward on a server (docs/admin/self-hosting.md): it passes the
 # encrypted WireGuard packets of the hubs whose clients cannot reach them
 # directly. It holds no group's keys and keeps nothing about the devices: no
 # log names an address, a group or a device, and on disk there is only its
 # key and a table of hashed tags.
 [Unit]
 Description=Clipboard Bridge forwarder
-Documentation=https://github.com/HunterEwok/clipboardbridge/blob/main/docs/reference/self-hosting.md
+Documentation=https://github.com/HunterEwok/clipboardbridge/blob/main/docs/admin/self-hosting.md
 After=network-online.target
 Wants=network-online.target
 

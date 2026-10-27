@@ -4,14 +4,11 @@
 Start with `cbb status` on the device that misbehaves: it says whether the service runs, which
 group it is in, which members are connected and the state of sync away from home. Each
 message is short; `CBB_DEBUG=1 cbb status` (on Windows `$env:CBB_DEBUG = "1"` first) shows
-the underlying error under it. The service's log always has the details:
-
-| System | Log |
-|---|---|
-| Linux | `journalctl -u clipboardbridge`; the desktop connector logs to the session's journal, `journalctl --user` |
-| macOS | `/Library/Logs/clipboardbridge/service.log` |
-| Windows | `ProgramData\clipboardbridge\logs\service.log`, and the agent's `LocalAppData\clipboardbridge\agent.log` |
-| Lite member | `journalctl -u clipboardbridge`, as on Linux |
+the underlying error under it. The service's log always has the details: on Linux
+`journalctl -u clipboardbridge`, and the desktop connector's in the session's journal,
+`journalctl --user`; the other systems are in [files and logs](../reference/devices.md#files-and-logs).
+The details switch of every part, the apps and the installers included, is in
+[error messages and details](../reference/errors.md).
 
 ## Commands
 
@@ -49,8 +46,9 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 - **The phone cannot reach the computer after scanning its QR code**: the phone and the
   computer must be on the same network, and the computer's port must be open (above). On
   iOS, allow Local Network for the app (Settings, Privacy & Security, Local Network).
-- **The shortcut cannot reach `clipboardbridge.local`**: only Linux members serve it, on
-  port 8764 only; at least one must be on. Check that the profile is installed and fully
+- **The shortcut cannot reach `clipboardbridge.local`**: only the group's root and admin
+  computers serve it, on port 8764 only; at least one must be on (`cbb holder` says which
+  one answers). Check that the profile is installed and fully
   trusted ([Without the app](without-app.md#3-add-an-iphone-with-the-shortcut)).
 
 ## Sync away from home

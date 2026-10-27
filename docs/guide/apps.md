@@ -62,7 +62,7 @@ Tap a device to see its kind, system, version and role. On an admin phone you ca
   it an admin, so that losing one phone loses nothing.
 - **A lost phone**: on your other phone, remove it in the devices list. The computers stay
   in the group; if the lost phone was the root, the other phone takes the group over in the
-  same step.
+  same step. More in [if a device is lost or stolen](lost-device.md).
 
 ### Settings
 

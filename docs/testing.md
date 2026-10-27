@@ -1,0 +1,95 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+# Testing
+
+For contributors and reviewers: how Clipboard Bridge is tested, from a single function to
+real devices, and which level answers which question. The commands are in
+[CONTRIBUTING.md](../CONTRIBUTING.md#development), the CI jobs one by one in
+[maintaining](maintaining.md#ci), and the tests on real devices in the
+[test bench](testbench.md).
+
+## Levels
+
+| Level | What it shows | Where | Runs |
+|---|---|---|---|
+| Unit tests | one package or type does what its comment says | `*_test.go`, `cargo test`, `swift test`, `./gradlew -p kit test` | every push, in CI |
+| Interop vectors | the five implementations read and write the same bytes | `testdata/interop` | every push, in CI |
+| Cross tests | two implementations talk over a real connection | Go tests that start the Swift or Kotlin `clipboardbridge-interop`, or the lite member | every push, in CI |
+| Service tests | several members, with their real services, in one process or as programs | `internal/service`, `cmd/cbb` | every push, in CI |
+| System tests | the built program on a real system: containers, sockets, a desktop, an installer | the `e2e`, `mdns with avahi`, `desktop clipboards`, `packaging`, `windows installer`, `OpenWrt`, `freebsd` jobs | every push, in CI |
+| App builds and tests | the apps build and their unit tests pass on simulators and runners | the `iPhone app`, `Mac app`, `tray app`, `Android app` jobs | every push, in CI |
+| Bench scenarios | real devices pass real copies over real networks | the [test bench](testbench.md), its [catalogue](testbench-catalogue.md) | before each release |
+
+A change is not done before the levels it touches pass locally (CONTRIBUTING lists the
+commands per part); CI then runs them all, and the `ci-ok` job sums them up for the branch
+rules.
+
+## Unit tests
+
+- Go tests run with the race detector on Linux x86-64, Linux ARM64 and macOS, under QEMU
+  for big-endian 32-bit MIPS, and on FreeBSD.
+- Time comes from the caller (`now time.Time`), so a test sets the clock; lifetimes and
+  renewals are tested at their edges without waiting.
+- The TPM code runs against swtpm (`internal/tpmkey`), the ei protocol against a test EIS
+  server (`internal/ei/eitest`), the clipboards against wl-clipboard and xclip.
+- The Rust core is `no_std`; its tests run on the host, and CI builds it for the ESP32-C6
+  and ESP32-S3 and runs the firmware's self-test in Espressif's QEMU.
+
+## Interop vectors
+
+`testdata/interop` holds JSON files of fixed inputs and the exact bytes each implementation
+must produce or accept: certificates, device and revocation records, freezes, takeovers,
+admin CAs, commands, quick actions, server credentials, releases, attestation evidence, the
+watch's state, content hashes, join QR codes and a CPace exchange.
+
+- The files named `go-*.json` and those without a prefix are written by Go tests with
+  `-update` and read by the Swift kit, the Kotlin kit and, for what it implements, the lite
+  core (`lite/core/src/vectors.rs`).
+- Files named `swift-*.json` are written by the Swift kit (`CBB_INTEROP_OUT`) and read by
+  Go; the Kotlin kit writes the same files, so Go checks both phones against one set.
+- A Go test fails when a committed vector is out of date, and names the command that
+  writes it again.
+
+A change to the wire format changes the vectors in the same pull request, together with
+[the protocol](protocol.md) and every implementation.
+
+## Cross tests
+
+- The Swift kit's `clipboardbridge-interop` and the Kotlin kit's (built by `./gradlew -p kit
+  interopScript`) play the phone in Go's pairing and member tests: over plain TCP on Linux,
+  over real TLS on macOS and with Conscrypt on Linux.
+- `TestLiteMember`, `TestLiteRemotePaste`, `TestLiteQuickActions` and `TestLiteMemberAway`
+  run the built lite member (`CBB_LITE`) among Go members, at home and through the hub's
+  tunnel.
+- `TestEmbassyJoiner` runs the Nano ESP32's network code on Linux over a TAP interface
+  (`CBB_ESP32_ON_LINUX`).
+
+## Service and system tests
+
+- `internal/service` starts whole members in one test: sync, pairing, remote paste, quick
+  actions, sync away from home through a hub, a forwarder (`TestAwayThroughForwarder`) and a
+  relay (`TestAwayThroughRelay`), with obfuscation (`TestAwayObfuscated`).
+- `tools/e2e/e2e.sh` runs the built static binary as three members and an avahi resolver
+  in Docker containers: mDNS, pairing with codes, sync, the holder of
+  `clipboardbridge.local` and its handover, a wrong code.
+- The installer jobs install, run and remove the service on each system they cover.
+
+## Bench scenarios
+
+Unit and CI tests cannot show that a copy on an iPhone reaches a Windows PC through a café's
+Wi-Fi. The [test bench](testbench.md) does, on the real devices of each platform, with the
+rules R1 to R7 ([cases](testbench-cases.md)), a catalogue of the cases of a release with how
+each runs, and a coverage report of the product's functions
+([functions](testbench-functions.md)). Security cases block a release; a case that cannot
+run yet is skipped with its reason and stays on the list.
+
+## Not tested yet
+
+What has not run on real devices is listed in the [README](../README.md#status): the
+phones' hardware keys, Face ID and the fingerprint, Android 17's local network permission,
+the background app refresh and the Windows service on a real PC among them. Do not rely on
+these before the bench has run them.
+
+## Red tests
+
+A failing test is a finding, never noise: find the cause before running it again. A test is
+never skipped, disabled or retried until green to make CI pass.

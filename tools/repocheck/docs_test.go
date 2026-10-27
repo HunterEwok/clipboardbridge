@@ -95,3 +95,101 @@ func TestCheckCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckEnv(t *testing.T) {
+	files := map[string][]byte{
+		"internal/a.go":                 []byte(`v := os.Getenv("CBB_PORT"); w := os.Getenv("CBB_GONE"); x.atoms["CBB_SELECTION"]`),
+		"packaging/get.sh":              []byte(`attestation=${CBB_ATTESTATION:-check}; echo $CBB_SHELL`),
+		"packaging/w/get.ps1":           []byte(`if ($env:CBB_VERIFY -eq 'skip') {}`),
+		"packaging/x.service":           []byte("Environment=CBB_UNIT=\n"),
+		"internal/third_party/lib/x.go": []byte(`os.Getenv("CBB_COPIED")`),
+		"docs/reference/config.md":      []byte("`CBB_PORT` and `CBB_ATTESTATION`, `CBB_VERIFY`."),
+	}
+	got := checkEnv(files)
+	want := []string{"CBB_GONE", "CBB_SHELL", "CBB_UNIT"}
+	if len(got) != len(want) {
+		t.Fatalf("checkEnv() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], "variable "+w+" ") {
+			t.Errorf("problem %d = %q, want it to name %s", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckIndex(t *testing.T) {
+	files := map[string][]byte{
+		"docs/README.md":           []byte("[a](guide/a.md) [d](decisions/README.md#top)"),
+		"docs/guide/a.md":          []byte("[b](b.md)"),
+		"docs/guide/b.md":          nil,
+		"docs/decisions/README.md": []byte("[1](0001-x.md)"),
+		"docs/decisions/0001-x.md": nil,
+		"docs/images/x.svg":        nil,
+	}
+	got := checkIndex(files)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "docs/guide/b.md:1:") {
+		t.Fatalf("checkIndex() = %q, want only docs/guide/b.md", got)
+	}
+}
+
+func TestCheckPlanned(t *testing.T) {
+	files := map[string][]byte{
+		"CHANGELOG.md":    []byte("## [Unreleased]\n\nplanned for 0.4\n\n## [0.5.0] - 2026-10-26\n"),
+		"docs/roadmap.md": []byte("1. **Planned for 0.5.** x\n2. planned for 0.6\n3. planned for 0.10\n4. Planned for 0.4.\n"),
+	}
+	got := checkPlanned(files)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "docs/roadmap.md:1:") || !strings.HasPrefix(got[1], "docs/roadmap.md:4:") {
+		t.Fatalf("checkPlanned() = %q, want lines 1 and 4 of docs/roadmap.md", got)
+	}
+}
+
+func TestCheckFlags(t *testing.T) {
+	files := map[string][]byte{
+		"cmd/cbb/a.go":          []byte("func a() {\n\tfs := flag.NewFlagSet(\"global hub\", flag.ContinueOnError)\n\tport := fs.Int(\"port\", 0, \"\")\n\tfs.StringVar(&fw, \"firewall\", \"ask\", \"\")\n}\n\nfunc b() {\n\tfs := flag.NewFlagSet(\"global move\", flag.ContinueOnError)\n\tfwd := fs.String(\"forwarder\", \"\", \"\")\n}\n\nfunc c() {\n\tfs := flag.NewFlagSet(\"forward\", flag.ContinueOnError)\n\tk := fs.String(\"key\", \"\", \"\")\n\ts := fs.Bool(\"show-key\", false, \"\")\n}\n"),
+		"cmd/cbb/a_test.go":     []byte("fs := flag.NewFlagSet(\"test\", 0)\n"),
+		"docs/reference/cli.md": []byte("| `cbb global hub [-port N]` | with `-firewall` |\n| `cbb forward [-key FILE]` | |\n\nAlso -show-key, but not about the command.\n"),
+	}
+	got := checkFlags(files)
+	want := []string{"the command cbb global move ", "the flag -show-key of cbb forward "}
+	if len(got) != len(want) {
+		t.Fatalf("checkFlags() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("problem %d = %q, want it to name %q", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckPorts(t *testing.T) {
+	files := map[string][]byte{
+		"internal/mdns/mdns.go":       []byte("const Port = 5353\n"),
+		"internal/service/service.go": []byte("const (\n\tMemberPort = 8764\n\tbacklog = 32\n)\n"),
+		"cmd/cbb/forward.go":          []byte(`v := fs.String("vless-listen", ":443", "")`),
+		"lite/src/tunnel.rs":          []byte("const MEMBER_PORT: u16 = 8765;\n"),
+		"internal/third_party/x/x.go": []byte("const Port = 9999\n"),
+		"internal/service/x_test.go":  []byte("const testPort = 1234\n"),
+		"docs/reference/devices.md":   []byte("# Devices\n\n## Ports\n\n| TCP 8764 | | UDP 5353 |\n\n## Files\n\n443\n"),
+	}
+	got := checkPorts(files)
+	want := []string{"the port 443 ", "the port 8765 "}
+	if len(got) != len(want) {
+		t.Fatalf("checkPorts() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("problem %d = %q, want it to name %q", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckOps(t *testing.T) {
+	files := map[string][]byte{
+		"internal/control/control.go": []byte("const (\n\tOpCopy       = \"copy\" // a copy\n\tOpPasteOn = \"paste-on\"\n\tOpNew = \"new\"\n\tOpThaw = \"thaw\"\n)\n"),
+		"docs/protocol.md":            []byte("# P\n\n## 7. Before\n\n`new`\n\n## 8. Local control socket\n\n| `copy` | |\n\n- `paste-on`: a paste\n\n## 9. After\n\n| `thaw` | |\n"),
+	}
+	got := checkOps(files)
+	if len(got) != 1 || !strings.Contains(got[0], "operation new ") {
+		t.Fatalf("checkOps() = %q, want one problem naming new", got)
+	}
+}

@@ -3,7 +3,7 @@
 
 The full service in a container, for machines that are always on but have no desktop: a
 NAS, a home server, or a rented server for a forwarder or a relay. The design is in
-[docs/roadmap.md](../../docs/roadmap.md#docker).
+[docs/roadmap.md](../../docs/design.md#docker).
 
 The image is built `FROM scratch`: the static `cbb` of a release, which carries its own
 certificate roots, a user (65532) and its two directories. It runs as that user, needs no

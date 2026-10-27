@@ -9,7 +9,7 @@ import Foundation
 /// puts a text where the receiver's focus is, and paste-off turns remote
 /// paste off on the receiver (design.md, "Remote paste"); an action command
 /// runs one of the receiver's quick actions by its name, and actions-off
-/// turns them all off there (roadmap.md, "Quick actions"); away-off turns
+/// turns them all off there (design.md, "Quick actions"); away-off turns
 /// sync away from home off on the receiver. A watch signs only those that
 /// turn things off and action (watchTypes).
 public enum Commands {

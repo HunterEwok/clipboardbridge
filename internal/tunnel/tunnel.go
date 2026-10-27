@@ -360,6 +360,25 @@ func (c *Client) Dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
+// Handshaked tells whether the client has made a WireGuard handshake with
+// the hub, so that packets pass both ways even if a connection through the
+// tunnel has not been set up yet.
+func (c *Client) Handshaked() bool {
+	cfg, err := c.dev.IpcGet()
+	if err != nil {
+		return false
+	}
+	for line := range strings.SplitSeq(cfg, "\n") {
+		if v, ok := strings.CutPrefix(line, "last_handshake_time_sec="); ok && v != "0" {
+			return true
+		}
+	}
+	return false
+}
+
+// HubKey returns the hub's public key the client was started with.
+func (c *Client) HubKey() Key { return c.hubKey }
+
 // SetEndpoint points the tunnel at another address of the hub, for example
 // after the hub's address changed.
 func (c *Client) SetEndpoint(ep netip.AddrPort) error {
