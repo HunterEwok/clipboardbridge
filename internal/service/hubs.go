@@ -209,58 +209,36 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 	}
 	key, psk := st.Key, h.PresharedKey
 	s.tunMu.Unlock()
+	eps := h.Endpoints
+	var vc *vless.Client
+	if h.VLESS != nil {
+		// The only way to the hub is VLESS to its forwarder.
+		if vc, err = vless.Dial(*h.VLESS); err != nil {
+			s.tunReport(run, "the way over VLESS to the hub's forwarder could not start", err)
+			return false
+		}
+		defer vc.Close()
+		eps = []netip.AddrPort{vc.Addr()}
+	}
 	hubKeys := []tunnel.Key{h.PublicKey}
 	if !h.Next.IsZero() {
 		hubKeys = append(hubKeys, h.Next)
 	}
-	// Each key gets a tunnel of its own and, over VLESS, a way of its
-	// own: one local VLESS port answers only the socket that sent last.
 	var cs []*tunnel.Client
-	var ways []*vless.Client
 	defer func() {
 		for _, c := range cs {
 			c.Close()
 		}
-		for _, vc := range ways {
-			vc.Close()
-		}
 	}()
 	for _, k := range hubKeys {
-		var ep netip.AddrPort
-		if h.VLESS == nil {
-			ep = h.Endpoints[0]
-		} else {
-			// The only way to the hub is VLESS to its forwarder.
-			vc, err := vless.Dial(*h.VLESS)
-			if err != nil {
-				s.tunReport(run, "the way over VLESS to the hub's forwarder could not start", err)
-				return false
-			}
-			ways = append(ways, vc)
-			ep = vc.Addr()
-		}
 		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
-			HubPublicKey: k, HubAddr: hubAddr, Endpoint: ep, Obfuscation: h.Obfuscation,
+			HubPublicKey: k, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
 			Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			s.tunReport(run, "the tunnel to the hub could not start", err)
 			return false
 		}
 		cs = append(cs, c)
-	}
-	// The endpoints to try in turn, one for each client: over VLESS the
-	// local port of its own way.
-	tries := make([][]netip.AddrPort, 0, len(h.Endpoints))
-	if h.VLESS != nil {
-		try := make([]netip.AddrPort, len(ways))
-		for i, vc := range ways {
-			try[i] = vc.Addr()
-		}
-		tries = append(tries, try)
-	} else {
-		for _, ep := range h.Endpoints {
-			tries = append(tries, slices.Repeat([]netip.AddrPort{ep}, len(cs)))
-		}
 	}
 	s.tunMu.Lock()
 	if s.tunRun != run {
@@ -277,32 +255,26 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		s.tunMu.Unlock()
 	}()
 	hub := group.DeviceID(h.Device)
-	for _, try := range tries {
-		raw, won, err := dialAny(ctx, cs, try)
+	for _, ep := range eps {
+		raw, won, err := dialAny(ctx, cs, ep)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false
 			}
-			s.tunReport(run, fmt.Sprintf("no answer through the tunnel from %s at %v: the hub is off or cannot be reached, or the forwarder on the way is down", h.Device, try[0]), err)
+			s.tunReport(run, fmt.Sprintf("no answer through the tunnel from %s at %v: the hub is off or cannot be reached, or the forwarder on the way is down", h.Device, ep), err)
 			continue
 		}
 		// The other keys get no answer: their tunnels stop, so they do
 		// not keep sending handshakes.
 		s.tunMu.Lock()
-		for i, c := range cs {
-			if i != won {
+		for _, c := range cs {
+			if c != won {
 				c.Close()
-				if ways != nil {
-					ways[i].Close()
-				}
 			}
 		}
-		if ways != nil {
-			ways = []*vless.Client{ways[won]}
-		}
-		cs = []*tunnel.Client{cs[won]}
+		cs = []*tunnel.Client{won}
 		if s.tunRun == run {
-			run.clients, run.hubKey = cs, cs[0].HubKey()
+			run.clients, run.hubKey = cs, won.HubKey()
 		}
 		s.tunMu.Unlock()
 		s.setUsing(run, h.Device, true)
@@ -325,29 +297,43 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 	return false
 }
 
-// dialAny points each client cs[i] at eps[i] and dials the hub through all
-// of them at once, for up to handshakeTimeout; the first connection wins,
-// with the index of its client, and the other tries end.
-func dialAny(ctx context.Context, cs []*tunnel.Client, eps []netip.AddrPort) (net.Conn, int, error) {
-	dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+// dialAny points each client at ep and dials the hub through all of them
+// at once, for up to handshakeTimeout; the first connection wins, with its
+// client, and the other tries end. A client that has made its WireGuard
+// handshake by then gets another handshakeTimeout for the connection: on a
+// slow way, such as VLESS on a busy machine, the handshake can take most of
+// the time, and starting over would throw it away and meet the same wait
+// again.
+func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, *tunnel.Client, error) {
+	dctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
-		i    int
+		c    *tunnel.Client
 		conn net.Conn
 		err  error
 	}
 	results := make(chan result, len(cs))
-	for i, c := range cs {
+	for _, c := range cs {
 		go func() {
-			if err := c.SetEndpoint(eps[i]); err != nil {
-				results <- result{i, nil, err}
+			if err := c.SetEndpoint(ep); err != nil {
+				results <- result{c, nil, err}
 				return
 			}
-			conn, err := c.Dial(dctx)
-			results <- result{i, conn, err}
+			cctx, cancel := context.WithCancel(dctx)
+			defer cancel()
+			t := time.AfterFunc(handshakeTimeout, func() {
+				if !c.Handshaked() {
+					cancel()
+					return
+				}
+				time.AfterFunc(handshakeTimeout, cancel)
+			})
+			defer t.Stop()
+			conn, err := c.Dial(cctx)
+			results <- result{c, conn, err}
 		}()
 	}
-	won := result{i: -1}
+	var won result
 	var errs []error
 	for range cs {
 		r := <-results
@@ -362,9 +348,9 @@ func dialAny(ctx context.Context, cs []*tunnel.Client, eps []netip.AddrPort) (ne
 		}
 	}
 	if won.conn != nil {
-		return won.conn, won.i, nil
+		return won.conn, won.c, nil
 	}
-	return nil, -1, errors.Join(errs...)
+	return nil, nil, errors.Join(errs...)
 }
 
 // tunReport keeps what went wrong for status, while run is the tunnel at

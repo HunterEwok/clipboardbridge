@@ -468,6 +468,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   names the key it already uses, instead of starting it again at once, which the hub refused
   as too soon after the last handshake and cost another 5 seconds. The hub starts its tunnel
   with the new key before its state names it.
+- A computer away from home reaches its hub over a slow way, such as VLESS on a busy
+  machine: a try whose WireGuard handshake has gone through gets another 10 seconds for the
+  connection, instead of being dropped and started over with a new handshake that took as
+  long again.
 - An image or file fetched again after a fetch that gave up no longer gives up itself on a
   slow link: the pieces the peer still sends for the first fetch now count as the peer
   sending, so only a peer that sends nothing for 15 seconds ends a fetch.
