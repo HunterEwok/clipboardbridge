@@ -16,6 +16,7 @@ Wants=network-online.target
 Type=simple
 # -vless-site, -vless-listen and the other flags of cbb forward go in
 # CBB_FORWARD_FLAGS in /etc/clipboardbridge/forward.env.
+Environment=CBB_FORWARD_FLAGS=
 EnvironmentFile=-/etc/clipboardbridge/forward.env
 ExecStart=/usr/local/bin/cbb forward $CBB_FORWARD_FLAGS
 DynamicUser=yes

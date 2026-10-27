@@ -15,6 +15,7 @@ Wants=network-online.target
 Type=simple
 # The groups to serve go in /etc/clipboardbridge/relay.env, as
 # CBB_RELAY_FLAGS="-group TAG" (or "-open"); cbb relay takes no other setting.
+Environment=CBB_RELAY_FLAGS=
 EnvironmentFile=-/etc/clipboardbridge/relay.env
 ExecStart=/usr/local/bin/cbb relay $CBB_RELAY_FLAGS
 DynamicUser=yes
