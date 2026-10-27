@@ -136,6 +136,7 @@ func Join(ctx context.Context, cfg MemberConfig) {
 			return
 		}
 		if errors.Is(err, errNewCredential) {
+			cfg.Logf("cbb: sync away from home: the group's credentials changed; registering with the relay again")
 			backoff = minBackoff
 			continue
 		}
@@ -486,23 +487,38 @@ func (s *session) open(ctx context.Context, req request) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLine(c, req, setupTimeout); err != nil {
+	if err := ask(ctx, c, req); err != nil {
 		c.Close()
 		return nil, err
 	}
+	return c, nil
+}
+
+// ask sends req on c and waits until the relay joined it, or until ctx is
+// done. A registration that ends waits for its dials and answers before it
+// closes its tunnel and registers again (joinOnce), and the relay that
+// dropped it sends nothing more on c: a wait to the timeout would keep the
+// device off the relay for that long.
+func ask(ctx context.Context, c net.Conn, req request) error {
+	stop := context.AfterFunc(ctx, func() { c.Close() })
 	var n note
-	if err := readLine(c, &n, callTimeout+setupTimeout); err != nil {
-		c.Close()
-		return nil, err
+	err := writeLine(c, req, setupTimeout)
+	if err == nil {
+		err = readLine(c, &n, callTimeout+setupTimeout)
 	}
-	if !n.OK {
-		c.Close()
+	if !stop() {
+		return ctx.Err()
+	}
+	switch {
+	case err != nil:
+		return err
+	case !n.OK:
 		if n.Error == "" {
 			n.Error = "no answer"
 		}
-		return nil, fmt.Errorf("the relay: %s", n.Error)
+		return fmt.Errorf("the relay: %s", n.Error)
 	}
-	return c, nil
+	return nil
 }
 
 // run runs a member connection the relay joined, counting it.
