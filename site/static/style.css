@@ -159,6 +159,10 @@ h3 { font-size: 20px; margin: 0 0 8px; }
 .wrap { max-width: 1160px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
 .dim { color: var(--dim); }
 .lead { font-size: clamp(18px, 1.7vw, 20px); color: var(--dim); }
+/* No word left alone on a line: centred text is balanced across its lines,
+   and the last line of any other paragraph keeps a few words. */
+p, li, dd, summary, td, th { text-wrap: pretty; }
+.lead, .intro, .final p, .hero .platforms, .facts span, .steps.boards li { text-wrap: balance; }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .sprites { position: absolute; width: 0; height: 0; overflow: hidden; }
