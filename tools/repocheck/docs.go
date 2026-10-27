@@ -52,7 +52,6 @@ var (
 	rsPort     = regexp.MustCompile(`const \w*PORT: u16 = (\d{2,5});`)
 	listenPort = regexp.MustCompile(`\.String\("[\w-]*listen", "[\w.]*:(\d{2,5})"`)
 	plannedFor = regexp.MustCompile(`(?i)\bplanned for (\d+)\.(\d+)\b`)
-	released   = regexp.MustCompile(`(?m)^## \[(\d+)\.(\d+)\.\d+\]`)
 )
 
 // notEnv are the CBB_ names in the code that are not environment variables.
