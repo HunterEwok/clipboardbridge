@@ -12,7 +12,8 @@ stolen is in [if a device is lost](../guide/lost-device.md).
    needs from you is said there.
 2. Update the computers first, then the phones and the other devices: `sudo cbb update`
    (on Windows in an administrator terminal), the app stores for the phones, `apk upgrade`
-   on an OpenWrt router installed from the feed, `docker compose pull` for Docker.
+   on an OpenWrt router installed from the feed, and for Docker
+   `docker compose -f FILE pull && docker compose -f FILE up -d` with your compose file.
 3. Run `cbb status` on any computer of the group: a device that still runs an older release
    than the newest the group knows is marked `(old)`.
 
@@ -45,6 +46,7 @@ phones and computers pass them on. What a backup can add is a way back for the g
 | The root computer (a group made with `cbb new`) | yes, encrypted, or keep an admin | its state folder holds the group's root key and the iPhone CA |
 | An admin computer | no, if the root or another admin remains | the root makes a new admin in a minute |
 | Any other device | no | pairing it again is quicker than a restore, and a copied key is a risk |
+| A forwarder or a relay | its key file | a new key means giving every hub the new one; see [running your own servers](self-hosting.md#updating) |
 
 The state folder of each system is in [devices, ports and files](../reference/devices.md#files-and-logs).
 Back it up only with the service stopped, and only into storage that is encrypted: whoever
@@ -60,7 +62,8 @@ The safest way back is a second device that may act for the group:
   phone, "Make it an admin"). If the root phone is lost, the admin phone takes the group
   over and every device stays in it.
 - **In a computer's group**, make another computer an admin (`sudo cbb admin NAME` on the
-  root). If the root is lost, `sudo cbb takeover NAME` on the admin makes it the root.
+  root). If the root is lost, `sudo cbb takeover LOST_ROOT` on the admin, with the lost
+  root's name or ID, makes the admin the root.
 
 ## Bringing a device back
 
@@ -68,10 +71,10 @@ The safest way back is a second device that may act for the group:
 |---|---|
 | A device was reinstalled or replaced | remove the old one (`sudo cbb revoke NAME`, or Remove in the app), then pair the new one as a new device |
 | A computer was restored from its own backup, on the same hardware | start the service; it rejoins with its old keys, as long as nobody removed it |
-| The root computer is gone and an admin remains | `sudo cbb takeover NAME` on the admin |
+| The root computer is gone and an admin remains | `sudo cbb takeover LOST_ROOT` on the admin, with the lost root's name or ID |
 | The root phone is gone and an admin phone remains | remove the lost root on the admin phone; the app takes the group over in the same step |
 | The root is gone and no admin remains | the group cannot admit or remove devices any more; make a new group and pair every device into it |
-| An OpenWrt router was upgraded | sysupgrade keeps `/etc/clipboardbridge`; after an attended sysupgrade (ASU, owut) run the install command again |
+| An OpenWrt router was upgraded | a plain sysupgrade keeps the whole install, keys included; after an attended sysupgrade (ASU, owut) run the install command again, and the keys are still there |
 | Docker | the state lives in the compose file's volume; keep the volume and the container comes back in its group |
 
 A removed device cannot come back with its old keys: pair it again.

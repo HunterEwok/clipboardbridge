@@ -568,6 +568,11 @@ jobs:
           for _ in $(seq 1 50); do [ -S /run/clipboardbridge-keys/keys ] && break; sleep 0.2; done
           test -S /run/clipboardbridge-keys/keys || { journalctl -u clipboardbridge-uinput --no-pager; exit 1; }
           test ! -e /etc/clipboardbridge/clipboardbridge.env
+          # A CBB_INTERFACES line set by hand survives the next install.
+          dev=$(ip route show default | awk '{print $5; exit}')
+          echo "CBB_INTERFACES=$dev" | sudo tee /etc/clipboardbridge/clipboardbridge.env >/dev/null
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/cbb" | grep -q 'TCP port 8764'
+          grep -qx "CBB_INTERFACES=$dev" /etc/clipboardbridge/clipboardbridge.env
           # The desktop agent's user unit, enabled for every user's graphical session.
           test -L /etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service
           sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge

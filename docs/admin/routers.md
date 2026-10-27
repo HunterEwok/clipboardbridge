@@ -38,7 +38,7 @@ What the installer sets up:
 | The program | `/usr/bin/cbb` |
 | The service | `/etc/init.d/clipboardbridge` (procd), as the user `clipboardbridge` without capabilities and with `no_new_privs`; restarted if it stops |
 | Its settings | `/etc/config/clipboardbridge`, kept when it exists |
-| The keys and the group's state | `/etc/clipboardbridge/state`, mode 0700; sysupgrade keeps `/etc/clipboardbridge` |
+| The keys and the group's state | `/etc/clipboardbridge/state`, mode 0700; a plain sysupgrade keeps the whole install, keys included |
 | The NTP hook | `/etc/hotplug.d/ntp/50-clipboardbridge`: the service starts once NTP has set the clock, as certificates need the time |
 | The log | the system log: `logread -e clipboardbridge` |
 
@@ -60,6 +60,7 @@ network:
 uci add_list clipboardbridge.main.zone='iot'
 uci commit clipboardbridge
 /etc/init.d/clipboardbridge reload
+/etc/init.d/firewall reload     # loads the service's new rules
 ```
 
 **The hub.** `cbb global hub` on the router (as root, without `sudo`) asks before it opens the
@@ -73,7 +74,9 @@ attended sysupgrade (ASU, owut) leaves the program out: run the install command 
 one; the keys stay.
 
 **Removing it.** `apk del clipboardbridge` for the package, or
-`sh /usr/share/clipboardbridge/uninstall.sh`. Both keep the keys in `/etc/clipboardbridge`.
+`sh /usr/share/clipboardbridge/uninstall.sh`. Both keep the keys in `/etc/clipboardbridge`;
+`uninstall.sh --purge` deletes them too. `uninstall.sh` also deletes
+`/etc/config/clipboardbridge`, so note your zones first.
 
 ## FreeBSD and OPNsense
 
@@ -92,8 +95,9 @@ over TCP and mDNS over UDP 5353, from the private address ranges only) and asks 
 adds them; `--express` adds them without asking, `--no-firewall` only prints them.
 
 - **pf**: the rules live in the anchor `clipboardbridge`, loaded from
-  `/usr/local/etc/clipboardbridge/pf.anchor`. Two marked lines at the end of `/etc/pf.conf`
-  name the anchor; the uninstaller removes exactly those lines.
+  `/usr/local/etc/clipboardbridge/pf.anchor`. Three lines at the end of `/etc/pf.conf`, a
+  marker comment and the two that load the anchor, name it; the uninstaller removes exactly
+  those lines.
 - **ipfw**: rules in set 17, numbers 10500 and up, added again by the rc.d script after each
   boot.
 - **OPNsense** writes pf's whole ruleset at each filter reload, so the installer adds a
@@ -108,17 +112,22 @@ The hub's port goes into the same anchor or rule set when `cbb global hub` opens
 Rules instead of adding them, and a pfSense update may remove Clipboard Bridge.
 
 **Removing it.** `sh /usr/local/share/clipboardbridge/uninstall.sh` removes the program, the
-service and its firewall rules.
+service and its firewall rules, and keeps the keys in `/var/db/clipboardbridge`; `--purge`
+deletes them too.
 
 ## Check it
 
-| Check | OpenWrt | FreeBSD, OPNsense |
-|---|---|---|
-| The service runs | `/etc/init.d/clipboardbridge status` | `service clipboardbridge status` |
-| The group and the devices it sees | `cbb status` | `cbb status` |
-| The interfaces it works on | `cat /var/run/clipboardbridge/interfaces` | `grep CBB_INTERFACES /usr/local/etc/clipboardbridge/clipboardbridge.env` (no line: every interface) |
-| The firewall rules | `nft list ruleset \| grep clipboardbridge` | `pfctl -a clipboardbridge -s rules`, or `ipfw set 17 show` |
-| The log | `logread -e clipboardbridge` | `grep clipboardbridge /var/log/messages` |
+| Check | OpenWrt | FreeBSD, OPNsense | Linux |
+|---|---|---|---|
+| The service runs | `/etc/init.d/clipboardbridge status` | `service clipboardbridge status` | `systemctl status clipboardbridge` |
+| The group and the devices it sees | `cbb status` | `cbb status` | `cbb status` |
+| The interfaces it works on | `cat /var/run/clipboardbridge/interfaces` | `grep CBB_INTERFACES /var/log/messages` | `journalctl -u clipboardbridge \| grep CBB_INTERFACES` |
+| The firewall rules | `nft list ruleset \| grep clipboardbridge`; empty with only `lan`, which needs none | `pfctl -a clipboardbridge -s rules`, or `ipfw set 17 show` | as [the installer](../guide/install.md#the-firewall) reports them |
+| The log | `logread -e clipboardbridge` | `grep clipboardbridge /var/log/messages` | `journalctl -u clipboardbridge` |
+
+The service logs the interfaces it keeps to at start, when `CBB_INTERFACES` is set. A
+`CBB_INTERFACES` line set by hand stays when the installer runs again or `cbb update`
+installs a new release.
 
 If the service does not start on OpenWrt, the log says why: the zones have no devices, or
 NTP has not set the clock yet. Every setting is in

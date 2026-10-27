@@ -70,26 +70,32 @@ log each time it starts. Keep that file: a new key means giving every hub the ne
 
 The units run `cbb` as a user of its own made for the service, with no privileges, no
 access to the rest of the system and a short list of system calls
-(`systemd-analyze security` rates them 1.2, "OK"). The flags go in a file the unit reads:
+(`systemd-analyze security` rates them 1.2, "OK"). Their flags go in a file the unit reads,
+`/etc/clipboardbridge/forward.env` (`CBB_FORWARD_FLAGS=...`) or `relay.env`
+(`CBB_RELAY_FLAGS=...`), owned by root with mode 0644; it holds no secret. `cbb-forward`
+needs no file; `cbb-relay` needs one with the groups to serve, written before it starts
+(see [A blind relay](#a-blind-relay)). `CBB_DEBUG=1` on a line of its own in the same file
+turns on the counts described in [what the server keeps](#what-the-server-keeps). Reading
+the journal needs `sudo` or the `systemd-journal` group.
 
-```sh
-sudo mkdir -p /etc/clipboardbridge
-echo 'CBB_RELAY_FLAGS=-group 0123456789abcdef' | sudo tee /etc/clipboardbridge/relay.env
-echo 'CBB_FORWARD_FLAGS=-vless-site www.example.com' | sudo tee /etc/clipboardbridge/forward.env
-```
-
-`cbb-relay` needs its file, with the groups to serve (see [A blind relay](#a-blind-relay));
-`cbb-forward` needs none.
+Run the servers only through their units, never by hand: by hand, `cbb` keeps its key in
+`/var/lib/clipboardbridge` instead of the unit's state directory, so the key the hubs
+were given would change when the unit takes over.
 
 ### The firewall
 
-Open the ports on the server, and in the hosting provider's firewall if it has one. With ufw:
+Open the ports on the server, and in the hosting provider's firewall if it has one: UDP and
+TCP 8764 for the forwarder or the relay (the relay's port is the one after `-listen`), and
+TCP 443 only with VLESS. With ufw:
 
 ```sh
 sudo ufw allow 8764/udp comment 'Clipboard Bridge'
 sudo ufw allow 8764/tcp comment 'Clipboard Bridge'
 sudo ufw allow 443/tcp comment 'Clipboard Bridge VLESS'    # only with VLESS
 ```
+
+With firewalld: `sudo firewall-cmd --permanent --add-port=8764/udp --add-port=8764/tcp`
+(and `--add-port=443/tcp` with VLESS), then `sudo firewall-cmd --reload`.
 
 ## A forwarder
 
@@ -122,9 +128,12 @@ sudo systemctl restart cbb-forward
 ```ini
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+PrivateUsers=no
 ```
 
-The two lines let it take port 443; the unit gives it no privileges otherwise.
+The first two lines let it take port 443; the third is needed because a capability inside
+the unit's own user namespace does not cover the host's network, so the bind would be
+refused. The unit gives it no privileges otherwise.
 
 (In Docker, add `"-vless-site", "www.example.com"` to `command:` and publish `443:443/tcp`.)
 
@@ -137,11 +146,18 @@ The two lines let it take port 443; the unit gives it no privileges otherwise.
 ## A blind relay
 
 A relay serves only the groups you list. Find your group's tag with `cbb status` on any of
-its computers, then run it on the server:
+its computers, then set it up on the server:
 
 ```sh
-cbb relay -group 0123456789abcdef        # several groups: -group TAG1,TAG2
+echo 'CBB_RELAY_FLAGS=-group 0123456789abcdef' | sudo tee /etc/clipboardbridge/relay.env   # several: -group TAG1,TAG2
+sudo install -m 644 clipboardbridge/packaging/linux/cbb-relay.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cbb-relay
+sudo journalctl -u cbb-relay | grep key          # its key, sha256:...
 ```
+
+In Docker, `docker compose -f compose.server.yaml exec forward cbb relay -show-key` prints
+the key.
 
 To serve anyone's groups, as the project's relay does, run `cbb relay -open` instead: it
 takes every group that registers, within limits per group and per network
@@ -171,8 +187,9 @@ The forwarder and the relay keep nothing about the devices:
 - **No logs about them.** They log when they start, with their key, and their own errors.
   No line names an address, a group or a device: an error from the network or from
   WireGuard is logged without the addresses and keys in it. With `CBB_DEBUG=1` they log
-  counts once a minute (hubs, sessions, devices), and WireGuard's own messages, without
-  addresses or keys either. A test checks it for both (`TestNoLogs`).
+  counts once a minute: the forwarder its hubs, sessions and handshakes waiting, the relay
+  its groups and devices, and the relay also WireGuard's own messages, without addresses or
+  keys either. A test checks it for both (`TestNoLogs`).
 - **Almost nothing on disk.** The relay keeps only its keys. The forwarder keeps its key and,
   for the hubs that register with a credential, a table of hashed tags with the version of
   each period's newest credential, which names no group and changes each month
@@ -206,6 +223,21 @@ The project's servers on `cbb.tools` run with these units, and the same is true 
 
 ## Updating
 
-Download the new release and replace `/usr/local/bin/cbb`, then
-`sudo systemctl restart cbb-forward`; or `docker compose pull && docker compose up -d`. The
-key stays, so the hubs and devices need no change.
+Download the new release and replace `/usr/local/bin/cbb`, keeping the old one, then
+`sudo systemctl restart cbb-forward`. If the release's changelog says the units changed,
+install them again from the archive and run `sudo systemctl daemon-reload` first. In Docker:
+`docker compose -f compose.server.yaml pull && docker compose -f compose.server.yaml up -d`.
+The key stays, so the hubs and devices need no change.
+
+**Rolling back**: put the old `cbb` back and restart, or in Docker pin the previous
+release's digest in `image:` and run `up -d` again.
+
+**Backing up**: the key is all a server has to keep, `forwarder.pem` or `relay.pem` (with
+the forwarder's `forward-state.json`) in `/var/lib/private/cbb-forward` or
+`/var/lib/private/cbb-relay`, or the Docker volume; and your `/etc/clipboardbridge/*.env`
+and drop-ins. To restore, put the files back in the same directory before the unit starts;
+systemd gives them to the unit's user. The forwarder's file also holds its REALITY key.
+
+**Removing it**: `sudo systemctl disable --now cbb-forward` (or `cbb-relay`), delete the unit
+and its drop-ins in `/etc/systemd/system`, and `/var/lib/private/cbb-forward` if the key
+should go too.

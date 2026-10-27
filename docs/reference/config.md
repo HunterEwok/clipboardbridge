@@ -6,15 +6,16 @@ their flags are in the [command reference](cli.md); where each system keeps its 
 state and logs is in [devices, ports and files](devices.md#files-and-logs).
 
 Most settings are made by a command or an installer flag, which writes the settings file
-for you. Edit the files by hand only where this page says so.
+for you. Edit the files by hand only where this page says so: `CBB_INTERFACES` has no
+option, so it is set by hand, and the installers and `cbb update` keep that line.
 
 ## Settings files
 
 | File | Systems | Who writes it | What it holds |
 |---|---|---|---|
-| `/etc/clipboardbridge/clipboardbridge.env` | Linux, macOS, the lite member | the installers (`--port`, `--home-cgnat`) | `CBB_PORT`, `CBB_HOME_CGNAT`, `CBB_INTERFACES`, one `NAME=value` per line; systemd passes them to the service, which also reads the file itself, as `cbb` does |
+| `/etc/clipboardbridge/clipboardbridge.env` | Linux, macOS, the lite member | the installers (`--port`, `--home-cgnat`); `CBB_INTERFACES` by hand | `CBB_PORT`, `CBB_HOME_CGNAT`, `CBB_INTERFACES`, one `NAME=value` per line; systemd passes them to the service. A full member's service and `cbb` also read the file themselves; the lite member reads only its environment |
 | `/usr/local/etc/clipboardbridge/clipboardbridge.env` | FreeBSD, OPNsense | the installer | the same as on Linux; rc.d passes them to the service |
-| the service's registry key | Windows | `install.ps1` (`-Port`, `-HomeCgnat`) | the same values as the file on Linux |
+| `HKLM\SYSTEM\CurrentControlSet\Services\clipboardbridge`, the value `Environment` (a multi-string) | Windows | `install.ps1` (`-Port`, `-HomeCgnat`); `CBB_INTERFACES` by hand, which `install.ps1` keeps | the same values as the file on Linux |
 | `/etc/config/clipboardbridge` | OpenWrt | the package, then you (UCI) | `port`, the firewall `zone` list the service works in (it becomes `CBB_INTERFACES`), `wait_ntp` (start once NTP has set the clock), `memlimit` (`GOMEMLIMIT`); apply a change with `/etc/init.d/clipboardbridge reload` |
 | `/etc/clipboardbridge/forward.env` | a server running `cbb forward` | you | `CBB_FORWARD_FLAGS`, see [running your own servers](../admin/self-hosting.md) |
 | `/etc/clipboardbridge/relay.env` | a server running `cbb relay` | you | `CBB_RELAY_FLAGS`, see [running your own servers](../admin/self-hosting.md) |

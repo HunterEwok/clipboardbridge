@@ -473,6 +473,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The installers and `cbb update` keep a `CBB_INTERFACES` line set by hand in
+  `clipboardbridge.env` (Linux, macOS, FreeBSD) or in the service's registry environment
+  (Windows); before, the next install or update dropped it, and the service then answered
+  on every interface again.
+- The forwarder's drop-in for VLESS on port 443 also sets `PrivateUsers=no`: inside the
+  unit's own user namespace the capability did not cover the host's network, so the bind
+  was refused (docs/admin/self-hosting.md).
 - A computer that comes back after its hub moved on to its key for the new period reaches
   the hub at once: it tries the hub's old key and the next one together instead of waiting
   10 seconds for the old key's handshake first, and keeps that link when the hub's new offer
