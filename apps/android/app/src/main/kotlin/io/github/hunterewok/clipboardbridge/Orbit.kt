@@ -83,7 +83,7 @@ internal fun Orbit(
         Box(
             Modifier.offset { IntOffset((center.x - hubPx / 2).roundToInt(), (center.y - hubPx / 2).roundToInt()) }
                 .size(hub).clip(CircleShape).background(palette.accent.copy(alpha = if (busy) 0.5f else 1f))
-                .clickable(enabled = !busy, role = Role.Button, onClick = sync).semantics { contentDescription = syncLabel },
+                .focusRing().clickable(enabled = !busy, role = Role.Button, onClick = sync).semantics { contentDescription = syncLabel },
             contentAlignment = Alignment.Center,
         ) {
             Text("⇅", style = MaterialTheme.typography.headlineMedium, color = palette.onAccent)
@@ -96,7 +96,7 @@ internal fun Orbit(
             val label = "${d.name}, ${stringResource(if (d.online) R.string.online else R.string.offline)}"
             Column(
                 Modifier.offset { IntOffset((p.x - nodeWPx / 2).roundToInt(), (p.y - nodeHPx / 2).roundToInt()) }
-                    .width(nodeW).clickable(role = Role.Button) { select(d.id) }.semantics(mergeDescendants = true) { contentDescription = label },
+                    .width(nodeW).focusRing().clickable(role = Role.Button) { select(d.id) }.semantics(mergeDescendants = true) { contentDescription = label },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {

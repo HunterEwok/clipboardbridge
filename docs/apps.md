@@ -412,6 +412,46 @@ focus the clipboard needs on Android 10 to 17, on a Pixel and a Samsung; which c
 each OEM's apps give; that the restricted-settings path is as described on Android 15 to 17.
 If the overlay does not get the focus, the service starts the transparent activity instead.
 
+## Android TV
+
+The Android app is also the TV's: the same APK, which a TV (Android TV, Google TV, Fire OS,
+the Android set-top boxes and projectors) finds in its launcher by `LEANBACK_LAUNCHER` and
+its banner. It needs no touch screen and no camera, and every control takes the D-pad's
+focus, with a ring in the accent colour around the focused one. The app tells a TV by
+`UiModeManager` and then differs from a phone in a few ways:
+
+- **Joining.** The start screen offers only to join a phone's group: the TV shows its QR
+  code and an admin phone scans it in Add a device, so nothing is typed on the TV. It joins
+  as a plain member, without an admin key, as a TV has no fingerprint or face to guard one;
+  its hello says `tv`.
+- **Receive only.** It starts in the receive sync mode and never sends copies of its own:
+  the accessibility service there is only the remote paste target, and the settings leave
+  out sending copies by themselves, the question before Share, and the watch.
+- **Remote paste.** An admin pastes into the field that has the focus, as on a phone, once
+  remote paste and the accessibility service are on. When no field has the focus, the
+  paste is refused with a hint to open a search or text field with the remote first.
+
+What the TV's system allows:
+
+- **Restricted settings (Android 13 and later).** A TV that installed the APK from outside a
+  store turns the accessibility service on only after App info's "Allow restricted
+  settings"; on some TVs that menu sits in the system's app settings.
+- **Android TV 14** may stop an accessibility service, for example after an update or to free
+  memory, while the setting still says on. The app checks the list of running services: its
+  settings and the refused paste then say so, and turning the service off and on again in
+  the TV's settings brings it back.
+- **Advanced Protection Mode (Android 17)** keeps accessibility services of apps that are
+  not accessibility tools off; with it on, the TV receives copies but takes no pastes.
+- **Fire TV.** Fire OS is Android and takes the signed APK of each release; Vega OS, on the
+  newer Fire TV sticks, runs no Android apps, so the app does not run there.
+- **Meta Quest.** Horizon OS takes the APK as a phone app and receives into the clipboard;
+  whether its accessibility service may paste into other apps is not yet checked on a
+  headset, so count on the clipboard only.
+
+**To check on a device before building on it:** the D-pad's order on each screen, the
+banner in the Google TV and Fire TV launchers, the accessibility service on Android TV 12 to
+14 and the restricted-settings path on a TV.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,

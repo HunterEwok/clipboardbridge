@@ -331,7 +331,7 @@ private fun QuickActions(model: AppModel, d: LiveGroup.Device, dismiss: () -> Un
                 if (d.actions.isEmpty()) Text(stringResource(R.string.quick_actions_none, d.name))
                 for (a in d.actions) {
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !sending, role = Role.Button) {
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing().clickable(enabled = !sending, role = Role.Button) {
                             if (a == "reboot" || a == "shutdown") confirming = a else run(a)
                         },
                         verticalAlignment = Alignment.CenterVertically,
@@ -381,7 +381,7 @@ private fun clipText(context: Context): String? =
 @Composable
 private fun Switch(title: String, on: Boolean, change: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = change),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing().toggleable(value = on, role = Role.Switch, onValueChange = change),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, modifier = Modifier.weight(1f))
@@ -400,7 +400,7 @@ private fun ModeChoice(d: LiveGroup.Device, dismiss: () -> Unit, choose: (String
             Column {
                 for (m in modes) {
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing().clickable(role = Role.Button) {
                             dismiss()
                             choose(m)
                         },
@@ -427,7 +427,7 @@ private fun Action(symbol: String, title: String, danger: Boolean = false, perfo
     val palette = LocalPalette.current
     val color = if (danger) palette.danger else palette.accent
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = perform).padding(horizontal = Tokens.spacingMedium),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing().clickable(role = Role.Button, onClick = perform).padding(horizontal = Tokens.spacingMedium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(symbol, color = color, modifier = Modifier.width(24.dp))

@@ -54,6 +54,7 @@ class CopyWatcher : AccessibilityService() {
     private val scope = MainScope()
     private var overlay: View? = null
     private var lastCopy = 0L
+    private val tv: Boolean by lazy { Tv.isTv(this) }
 
     /** Until when a copy is the service's own paste, not the user's. */
     private var pastingUntil = 0L
@@ -100,8 +101,13 @@ class CopyWatcher : AccessibilityService() {
         windows.any { w -> w.title?.toString()?.contains("clipboard", ignoreCase = true) == true }
     }.getOrDefault(false)
 
-    /** A copy happened: once per second at most, take the focus and send, in a sync mode that sends this phone's copies. */
+    /**
+     * A copy happened: once per second at most, take the focus and send, in
+     * a sync mode that sends this phone's copies. Not on a TV, where the
+     * service is only the paste target.
+     */
     private fun copied() {
+        if (tv) return
         if (!Member.sends((application as ClipboardBridgeApp).model.group.syncMode)) return
         val now = SystemClock.elapsedRealtime()
         if (now < pastingUntil || now - lastCopy < 1_000) return
@@ -183,7 +189,7 @@ class CopyWatcher : AccessibilityService() {
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) return InjectFailure("the phone is locked")
         if (enter && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return InjectFailure("this phone presses Enter from Android 11 on; send the text without Enter")
         val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
-            ?: return InjectFailure("no text field has the focus on this phone")
+            ?: return InjectFailure(if (tv) "no text field has the focus on this TV: open a search or text field with the remote first" else "no text field has the focus on this phone")
         val ok = if (method == "paste") paste(node, text, secret) else insert(node, text)
         if (!ok) return InjectFailure("the text field took no text", refused = false)
         if (enter && !node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) {
