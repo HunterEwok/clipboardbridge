@@ -238,8 +238,10 @@ jobs:
               grep clipboardbridge /var/log/messages | tail -n 40 || true
               exit 1
             }
-            ps -axwwo user,command | grep -q '^clipboardbridge .*cbb service' || failed "cbb service does not run as clipboardbridge"
-            if ps -axwwo user,command | grep -q '^root .*/usr/local/bin/cbb service'; then failed "cbb service runs as root"; fi
+            # By the command's name: the full command lines include this
+            # script's own shell, which names cbb service too.
+            ps -ax -o user= -o comm= | grep -Eq '^clipboardbridge +cbb$' || failed "cbb service does not run as clipboardbridge"
+            if ps -ax -o user= -o comm= | grep -Eq '^root +cbb$'; then failed "cbb service runs as root"; fi
             cbb status 2>&1 | grep -Eq 'in a group|no group' || failed "cbb status got no answer"
             kldload -n pf
             touch /etc/pf.conf
