@@ -18,6 +18,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   BlueZ) for a TV, tablet or computer near it: `pair` makes it discoverable for two minutes,
   `type` types a text there, and `on -pastes` sends remote pastes there. It uses the same
   layouts as the phone and the Nano.
+- `cbb remote` makes a computer the remote of a TV on the home network, so that it types a
+  text, or the group's remote pastes when the user sends them there, into the field open
+  on the TV. An Android TV or a Google TV pairs once with the code it shows (the Android TV
+  Remote v2 protocol of the Google TV app, its certificate pinned); a Roku is taken only
+  with `-consent`, as its External Control Protocol is plain HTTP. A TV is reached only on
+  the home network, and the errors say which TV failed and why: no text field open, the TV
+  reset, or the Roku's "Control by mobile apps" off. Not yet tried on a real TV.
 - iPad: keyboard shortcuts (Command-R sends or fetches, Command-N adds a device,
   Command-comma opens Settings, Escape closes a device's details), and CI runs the app's
   tests on an iPad simulator as well as an iPhone one. The iPad's Settings no longer speak

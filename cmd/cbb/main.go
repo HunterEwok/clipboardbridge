@@ -34,6 +34,11 @@ Commands:
                           Make this Linux computer a Bluetooth keyboard for a TV, a tablet
                           or a computer near it: pair shows it to a new one for two minutes,
                           type types TEXT or standard input there.
+  remote [add [-roku -consent] [-name NAME] ADDRESS | code CODE | cancel | remove TV
+         | pastes TV on|off | type [-tv TV] [TEXT]]
+                          Be the remote of a TV on the home network: an Android TV or a
+                          Google TV pairs with the code it shows, a Roku over plain HTTP;
+                          type types TEXT or standard input in its open text field.
   action [enable NAME [-by KINDS] [-any-key] | disable NAME | off]
                           Show this device's quick actions (lock, sleep, reboot, shutdown,
                           cancel-shutdown, restart), or turn one on or off here.
@@ -122,6 +127,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPasteReceive(rest, stdout, stderr)
 	case "keyboard":
 		return cmdKeyboard(rest, stdin, stdout, stderr)
+	case "remote":
+		return cmdRemote(rest, stdin, stdout, stderr)
 	case "action":
 		return cmdAction(rest, stdin, stdout, stderr)
 	case "status":

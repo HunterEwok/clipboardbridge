@@ -54,6 +54,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   Android kit's `Keyboard`, all checked against `testdata/interop/keyboard.json`);
   `internal/blekeyboard`: a Linux computer as a BLE keyboard through BlueZ (`cbb keyboard`,
   `internal/service/keyboard.go`; `bluetest` plays BlueZ in tests).
+- `internal/tvremote`: a member as a TV's remote (`cbb remote`, `internal/service/tvremote.go`):
+  `androidtv` (Android TV Remote v2: pairing, the remote, `wire` its framing, `atvtest` a fake TV),
+  `roku` (ECP); only on the home network (`netguard.ControlHome`).
 - `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
   on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
   rule, `session_darwin.go` and `session_windows.go` in the agent); `internal/service/actions.go`
