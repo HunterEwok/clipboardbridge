@@ -212,9 +212,22 @@ func Install(ctx context.Context, root, bin string) error {
 	cmd.Env = append(os.Environ(), "CBB_UPDATING=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %w: %s", filepath.Base(script), err, strings.TrimSpace(lastLines(string(out), 5)))
+		return fmt.Errorf("%s: %w: %s", filepath.Base(script), err, installFailure(string(out), filepath.Base(script)))
 	}
 	return nil
+}
+
+// installFailure picks what an installer that failed says: its line
+// "install.ps1: STEP failed: ...", or else its last lines, as an error's
+// details may follow that line.
+func installFailure(out, script string) string {
+	lines := strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(lines[i]); strings.HasPrefix(l, script+": ") && strings.Contains(l, " failed: ") {
+			return strings.TrimPrefix(l, script+": ")
+		}
+	}
+	return strings.TrimSpace(lastLines(out, 5))
 }
 
 func lastLines(s string, n int) string {
