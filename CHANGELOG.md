@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
+  and a serial port for the console on the chip's OTG controller, `type TEXT` with the
+  layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into
+  download mode. A text with characters the layout cannot type is refused, naming them. The
+  layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
+  the keyboard follows the board's sync.
 - The `watch` role for a watch's admin key (docs/protocol.md, section 10, rule 8), in Go,
   the lite member and both phone kits, with interop vectors: a watch freezes admin
   computers, removes ordinary devices and signs only the commands that turn things off and

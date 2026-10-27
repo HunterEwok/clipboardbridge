@@ -17,11 +17,11 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use esp_hal::peripherals::WIFI;
-use esp_println::println;
 use esp_radio::wifi::sta::StationConfig;
 use esp_radio::wifi::{AuthenticationMethodConfig, Config, ControllerConfig, Interface, WifiController};
 use static_cell::StaticCell;
 
+use crate::println;
 use crate::store::Wifi;
 
 /// How long to wait before joining again after a failure.

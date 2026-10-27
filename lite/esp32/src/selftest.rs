@@ -14,9 +14,9 @@ use cbb_core::error::{Error, Result};
 use cbb_core::identity::{new_key, signing_key};
 use cbb_core::tls::{Session, pair_client, pair_server, server_name};
 use esp_hal::time::Instant;
-use esp_println::println;
 
 use crate::clock;
+use crate::println;
 
 fn step(name: &str, start: Instant) {
     println!("cbb-esp32:   {name}: {} ms", start.elapsed().as_millis());

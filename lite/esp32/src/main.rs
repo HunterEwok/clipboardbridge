@@ -2,8 +2,9 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The lite member on the Arduino Nano ESP32. So far it keeps its settings
-//! in flash, joins the Wi-Fi network set on its console and runs a TLS 1.3
-//! self-test on the protocol core; joining a group and syncing come next.
+//! in flash, joins the Wi-Fi network set on its console, joins a group by
+//! the phone, types on its USB port as a keyboard and runs a TLS 1.3
+//! self-test on the protocol core; syncing comes next.
 
 #![no_std]
 #![no_main]
@@ -20,7 +21,6 @@ use esp_backtrace as _;
 use esp_hal::flash::Flash;
 #[cfg(feature = "board")]
 use esp_hal::rng::{Trng, TrngSource};
-use esp_println::println;
 
 use crate::console::{Board, Console};
 use crate::store::{Store, tag};
@@ -29,10 +29,13 @@ mod clock;
 mod console;
 #[cfg(feature = "board")]
 mod net;
+mod out;
 #[cfg(feature = "board")]
 mod pair;
 mod selftest;
 mod store;
+#[cfg(feature = "board")]
+mod usb;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -89,6 +92,14 @@ mod qemu {
 
         fn join(&mut self, _: &str) -> cbb_core::error::Result<String> {
             Err(cbb_core::error::Error::msg("the QEMU build has no network to join a group over"))
+        }
+
+        fn type_reports(&mut self, _: alloc::vec::Vec<[u8; 8]>, _: u64) -> cbb_core::error::Result<()> {
+            Err(cbb_core::error::Error::msg("the QEMU build has no USB keyboard"))
+        }
+
+        fn restart(&mut self, _: bool) -> ! {
+            esp_hal::system::software_reset()
         }
     }
 
@@ -163,13 +174,43 @@ impl Board for Nano {
         let stack = self.stack.ok_or_else(|| error::Error::msg("Wi-Fi did not start, so the board cannot join"))?;
         pair::start(self.spawner, stack, name)
     }
+
+    fn type_reports(&mut self, reports: alloc::vec::Vec<[u8; 8]>, gap_ms: u64) -> error::Result<()> {
+        if !usb::console_on_otg() {
+            return Err(error::Error::msg("the USB port is the console, not a keyboard: type usb keyboard first"));
+        }
+        if !usb::type_text(usb::Typing { reports, gap_ms }) {
+            return Err(error::Error::msg("the keyboard is still typing the last text; try again when it is done"));
+        }
+        Ok(())
+    }
+
+    fn restart(&mut self, download: bool) -> ! {
+        if download {
+            usb::restart_to_download()
+        }
+        esp_hal::system::software_reset()
+    }
+}
+
+/// Where the console reads: the USB serial, or the serial port beside the
+/// keyboard.
+#[cfg(feature = "board")]
+async fn read_console(
+    jtag: &mut Option<esp_hal::usb::usb_serial_jtag::UsbSerialJtagRx<'static, esp_hal::Async>>,
+    buf: &mut [u8],
+) -> usize {
+    use embedded_io_async::Read;
+    match jtag {
+        Some(rx) => rx.read(buf).await.unwrap_or(0),
+        None => usb::IN.read(buf).await,
+    }
 }
 
 #[cfg(feature = "board")]
 #[esp_hal::main]
 async fn main(spawner: embassy_executor::Spawner) -> ! {
     use embassy_futures::select::{Either, select};
-    use embedded_io_async::Read;
     use esp_hal::timer::timg::TimerGroup;
     use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 
@@ -191,15 +232,21 @@ async fn main(spawner: embassy_executor::Spawner) -> ! {
         }
     };
 
-    // The console reads the USB port; esp-println writes to it.
-    let (mut rx, _tx) = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async().split();
+    // The console reads the USB serial and esp-println writes to it, unless
+    // the USB port is the keyboard: then both use the serial port beside it.
+    if store.as_ref().is_ok_and(Store::usb_keyboard)
+        && let Err(e) = usb::start(spawner, peripherals.USB_FS, peripherals.GPIO20, peripherals.GPIO19)
+    {
+        println!("cbb-esp32: {}", e.for_user());
+    }
+    let mut jtag = (!usb::console_on_otg()).then(|| UsbSerialJtag::new(peripherals.USB_DEVICE).into_async().split().0);
     let mut board = Nano { spawner, stack };
     let mut console = Console::new();
     console.start();
     let mut buf = [0u8; 64];
     loop {
-        let n = match select(rx.read(&mut buf), pair::JOINED.wait()).await {
-            Either::First(n) => n.unwrap_or(0),
+        let n = match select(read_console(&mut jtag, &mut buf), pair::JOINED.wait()).await {
+            Either::First(n) => n,
             Either::Second(id) => {
                 let saved = console::save_identity(&mut store, &id);
                 if let Err(e) = &saved {
