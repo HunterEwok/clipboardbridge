@@ -11,13 +11,16 @@
 //	forge -state DIR -signer DIR -to DEVICE -addr HOST:PORT replay altered other-group other-target
 //	forge ... flood:N:DEVICE
 //	forge ... make:N:FILE send:FILE:SEED
+//	forge -os SYSTEM ... hold:N
 //
 // Each line of the commands is "CASE N: done", "CASE N: refused: REASON" or
 // "CASE N: no answer: ERROR". flood signs N renames of DEVICE with the
 // signer's key and sends them (G32); make signs N renames of the listed
 // devices at times out of order into FILE, and send sends FILE's records in
-// an order SEED picks (G31). The tunnel's cases are in tunnel.go, the
-// stand-in for a well-known site that VLESS borrows in site.go. It is
+// an order SEED picks (G31); hold stays connected for N seconds with a
+// hello that names SYSTEM (G35). The tunnel's cases are in tunnel.go, the
+// stand-in for a well-known site that VLESS borrows in site.go, the control
+// socket's in control.go, the TVs in tv.go. It is
 // never part of a release.
 package main
 
@@ -45,10 +48,27 @@ func main() {
 	addr := flag.String("addr", "", "the target's member port, HOST:PORT")
 	endpoint := flag.String("endpoint", "", "the tunnel's cases: the hub's UDP address, HOST:PORT, instead of its first one")
 	hubState := flag.String("hub-state", "", "the tunnel's cases: the state directory whose hub's offer to use instead of -state's")
+	system := flag.String("os", "linux", "the system the forge's hello names")
+	socket := flag.String("socket", "", "the control socket's cases: its path, if not the default")
 	flag.Parse()
 	if name, ok := strings.CutPrefix(flag.Arg(0), "site:"); ok {
 		// forge -addr :443 site:NAME serves as the well-known site NAME.
 		if err := runSite(*addr, name); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if kind, ok := strings.CutPrefix(flag.Arg(0), "tv:"); ok {
+		// forge -addr DIR tv:KIND plays a TV, writing what it saw in DIR.
+		if err := runTV(kind, *addr); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && controlCase(flag.Arg(0)) {
+		if err := runControl(*socket, flag.Args()); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
 			os.Exit(1)
 		}
@@ -61,13 +81,13 @@ func main() {
 		}
 		return
 	}
-	if err := run(*state, *signer, group.DeviceID(*to), *addr, flag.Args()); err != nil {
+	if err := run(*state, *signer, group.DeviceID(*to), *addr, *system, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "forge:", err)
 		os.Exit(1)
 	}
 }
 
-func run(state, signerDir string, to group.DeviceID, addr string, cases []string) error {
+func run(state, signerDir string, to group.DeviceID, addr, system string, cases []string) error {
 	id, err := group.Load(state)
 	if err != nil {
 		return err
@@ -81,7 +101,7 @@ func run(state, signerDir string, to group.DeviceID, addr string, cases []string
 		return fmt.Errorf("%s holds no admin key", signerDir)
 	}
 	eng := clip.New(clip.Config{Self: string(id.ID), Clock: hlc.NewClock(nil, hlc.Timestamp{}, nil)})
-	n := node.New(node.Config{Identity: id, Role: node.Full, Engine: eng, Name: "forge", OS: "linux"})
+	n := node.New(node.Config{Identity: id, Role: node.Full, Engine: eng, Name: "forge", OS: system})
 	defer n.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -184,6 +204,14 @@ func run(state, signerDir string, to group.DeviceID, addr string, cases []string
 			}
 			sendAll(rs)
 			fmt.Printf("flood: sent %d records\n", len(rs))
+		case "hold":
+			// hold:N stays connected for N seconds, as the member.
+			secs, err := strconv.Atoi(parts[len(parts)-1])
+			if err != nil {
+				return err
+			}
+			time.Sleep(time.Duration(secs) * time.Second)
+			fmt.Printf("hold: %d s\n", secs)
 		case "send":
 			if len(parts) != 3 {
 				return fmt.Errorf("send takes a file and a seed")
@@ -243,7 +271,7 @@ func run(state, signerDir string, to group.DeviceID, addr string, cases []string
 			}
 			send("other-target 1", cmd, b.ID)
 		default:
-			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" {
+			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" {
 				return fmt.Errorf("no case %q", c)
 			}
 		}

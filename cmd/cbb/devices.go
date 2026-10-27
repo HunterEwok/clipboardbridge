@@ -113,7 +113,7 @@ func seen(d control.Device, now time.Time) string {
 
 // cmdRevoke removes a device from the group.
 func cmdRevoke(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
+	if len(args) != 1 || helpFlag(args[0]) {
 		fmt.Fprintln(stderr, "cbb: usage: cbb revoke <name or device ID>; cbb status lists them")
 		return 2
 	}
@@ -149,13 +149,19 @@ func cmdRename(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// helpFlag reports whether a command's only argument asks for its usage,
+// which no device's name or ID can be taken for.
+func helpFlag(arg string) bool {
+	return arg == "-h" || arg == "-help" || arg == "--help"
+}
+
 // cmdFreeze freezes (on true) or unfreezes an admin computer.
 func cmdFreeze(args []string, on bool, stdout, stderr io.Writer) int {
 	op, cmd := control.OpFreeze, "freeze"
 	if !on {
 		op, cmd = control.OpThaw, "unfreeze"
 	}
-	if len(args) != 1 {
+	if len(args) != 1 || helpFlag(args[0]) {
 		fmt.Fprintf(stderr, "cbb: usage: cbb %s <name or device ID>; cbb status lists them\n", cmd)
 		return 2
 	}
@@ -206,7 +212,7 @@ func cmdAdmin(args []string, stdout, stderr io.Writer) int {
 // cmdTakeover takes the group over from its lost root computer, on an
 // admin.
 func cmdTakeover(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
+	if len(args) != 1 || helpFlag(args[0]) {
 		fmt.Fprintln(stderr, "cbb: usage: cbb takeover <name or device ID of the lost root>; cbb status shows it")
 		return 2
 	}

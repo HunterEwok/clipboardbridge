@@ -6,11 +6,13 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -113,10 +115,11 @@ func phoneWindow(ctx context.Context, hub *Device) (addr, port, fp, code string,
 	}
 }
 
-// phoneShortcut (X1, X2, X3, K12): an iPhone with the shortcut, played by
-// curl: the profile over plain HTTP only while the window is open, its
-// fingerprint, pairing by code over the iPhone CA, POST /sync each way, and
-// the tokens refused once revoked.
+// phoneShortcut (X1 to X4, K12, G24): an iPhone with the shortcut, played
+// by curl: the profile over plain HTTP only while the window is open, its
+// fingerprint and the CA's name constraints, pairing by code over the
+// iPhone CA, POST /sync each way, the tokens refused once revoked, and a
+// new iPhone CA once an admin is removed.
 func phoneShortcut(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	const p = "fleet/X2-shortcut/"
 	g := fleetGroup(ctx, r, f, "fleet/X2-shortcut", 2)
@@ -132,7 +135,8 @@ func phoneShortcut(ctx context.Context, r *Report, f *Fleet, timeout time.Durati
 	}) != nil {
 		return
 	}
-	var code string
+	var code, fp0 string
+	var ca []byte
 	if r.Do("fleet/X1-profile", func() error {
 		addr, port, fp, c, stop, err := phoneWindow(ctx, hub)
 		if err != nil {
@@ -160,6 +164,7 @@ func phoneShortcut(ctx context.Context, r *Report, f *Fleet, timeout time.Durati
 		if got := strings.Join(hex, " "); got != fp {
 			return fmt.Errorf("the profile's fingerprint starts %s, the terminal shows %s", got, fp)
 		}
+		ca, fp0 = der, fp
 		if _, err := Run(ctx, s.phone, "cat >/tmp/cbb-ca.pem", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))); err != nil {
 			return err
 		}
@@ -183,6 +188,27 @@ func phoneShortcut(ctx context.Context, r *Report, f *Fleet, timeout time.Durati
 	}) != nil {
 		return
 	}
+	r.Do("fleet/X4-name-constraints", func() error {
+		// The iPhone CA vouches for clipboardbridge.local alone, and for
+		// no IP address.
+		c, err := x509.ParseCertificate(ca)
+		switch {
+		case err != nil:
+			return err
+		case !c.PermittedDNSDomainsCritical || len(c.PermittedDNSDomains) != 1 || c.PermittedDNSDomains[0] != "clipboardbridge.local":
+			return fmt.Errorf("the iPhone CA permits the names %q (critical %v)", c.PermittedDNSDomains, c.PermittedDNSDomainsCritical)
+		}
+		for _, ip := range []string{"192.168.1.1", "10.0.0.1", "fd00::1", "2001:db8::1"} {
+			excluded := false
+			for _, n := range c.ExcludedIPRanges {
+				excluded = excluded || n.Contains(net.ParseIP(ip))
+			}
+			if !excluded {
+				return fmt.Errorf("the iPhone CA does not exclude %s", ip)
+			}
+		}
+		return nil
+	})
 	r.Do("fleet/X1-closed", func() error {
 		return eventually(ctx, timeout, func() error {
 			out, _ := Run(ctx, s.phone, "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://"+s.addr+":"+s.port+"/clipboardbridge.mobileconfig", "")
@@ -251,5 +277,36 @@ func phoneShortcut(ctx context.Context, r *Report, f *Fleet, timeout time.Durati
 			rep, err := s.sync(ctx, "", s.token)
 			return want(rep, err, "unpaired", "")
 		})
+	})
+	// G24: removing an admin replaces the iPhone CA, whose key admins
+	// hold: the old profile's CA no longer trusts the member, and a new
+	// window shows another fingerprint.
+	r.Do("fleet/G24-admin-removed", func() error {
+		if err := succeeds(ctx, hub, "cbb admin -allow-file-key "+other.Name, "", "is an admin now"); err != nil {
+			return err
+		}
+		if err := listsAs(ctx, g.members, other.Name, "admin", false, timeout); err != nil {
+			return err
+		}
+		if _, err := Run(ctx, hub, "cbb revoke "+other.Name, ""); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout, func() error {
+			if _, err := s.sync(ctx, "", s.token); err == nil {
+				return errors.New("the shortcut still trusts the member through the old iPhone CA")
+			}
+			return nil
+		})
+	})
+	r.Do("fleet/G24-new-fingerprint", func() error {
+		_, _, fp, _, stop, err := phoneWindow(ctx, hub)
+		if err != nil {
+			return err
+		}
+		stop()
+		if fp == fp0 {
+			return fmt.Errorf("the iPhone CA's fingerprint is still %s after an admin's removal", fp)
+		}
+		return nil
 	})
 }
