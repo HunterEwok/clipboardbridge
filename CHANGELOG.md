@@ -38,7 +38,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
   light theme, following the system or the reader's choice in the header; the download page
   puts the reader's system first, and every command has a copy button. Short CSS-only
-  motion (the hero's chalk is drawn in), off for those who ask for less motion; one small
+  motion (the hero's chalk is drawn in on load, every other board's drawing, table or
+  commands as it first comes into view), off for those who ask for less motion; one small
   script of its own, and every page works without it. A link's picture in each language; a
   print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
   hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
@@ -50,11 +51,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   pre-compressed files, a long-cached stylesheet and script, preloaded fonts, `security.txt` and a web manifest.
   The design is art deco: gold lines and glass panes on dark wool felt, like the cloth of a
   billiard table. The pictures (a computer and a phone joined through the key, and each kind
-  of group as devices around its heart) and the tables are drawn in chalk on black school
+  of group as devices around its heart, a desktop with its system unit among them; the three
+  steps: the phone downloading the app, the computer's one command, the phone's camera
+  framing the computer's QR code) and the tables are drawn in chalk on black school
   boards with a faint grid, in frames of old walnut; rough.js draws the lines once
   (`site/chalk.js`) and `site/textures.py` makes the wood and the felt. On a phone: a
   sideways menu, the languages in a sheet from the bottom, a docked download button, and the
-  servers' table as a list. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
+  servers' table as a list. The download page writes the commands for Linux, Mac and
+  Windows on one board. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
   are served by the site itself, so nginx allows `font-src 'self'`. The text under the
   centred headings spans the page's width.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,

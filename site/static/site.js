@@ -3,9 +3,10 @@
 // The site's one script of its own, small enough to run before the page is
 // drawn: it puts the reader's theme on <html> at once, so a light page
 // never flashes dark, then wires the theme button, adds a copy button to
-// each command and, on the download page, points at the reader's own
-// system. Without it the site works as
-// before: the theme follows the system and every way to download is shown.
+// each command, draws the chalk of each board as it first comes into view
+// and, on the download page, points at the reader's own system. Without it
+// the site works as before: the theme follows the system, the drawings are
+// simply there and every way to download is shown.
 "use strict";
 (function () {
   var root = document.documentElement;
@@ -72,16 +73,33 @@
       });
     }
 
+    // Each board but the first, drawing, table or commands, is written in
+    // chalk once, as it first comes into view.
+    if ("IntersectionObserver" in window) {
+      var boards = new IntersectionObserver(function (seen) {
+        seen.forEach(function (e) {
+          if (e.isIntersecting) {
+            e.target.classList.add("drawn");
+            boards.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.3 });
+      document.querySelectorAll(".frame:not(.hero-board)").forEach(function (f) {
+        boards.observe(f);
+      });
+      root.classList.add("draw");
+    }
+
     // The download page: the reader's own system first, with its own button.
     var os = system();
     var pick = os && document.querySelector('.pick [data-os~="' + os + '"]');
     if (pick) {
       pick.hidden = false;
       pick.parentNode.hidden = false;
-      var card = document.querySelector('.card[data-os~="' + os + '"]');
-      if (card) {
-        card.classList.add("mine");
-        card.parentNode.insertBefore(card, card.parentNode.firstElementChild);
+      var part = document.querySelector('.card[data-os~="' + os + '"], .os[data-os~="' + os + '"]');
+      if (part) {
+        part.classList.add("mine");
+        part.parentNode.insertBefore(part, part.parentNode.firstElementChild);
       }
     }
   });

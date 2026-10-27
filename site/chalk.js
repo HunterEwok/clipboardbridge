@@ -26,16 +26,26 @@ const draw = (list) => list.map(([kind, ...args]) => paths(shapes[kind](...args)
 function device(kind, x, y, s = 1) {
   const R = (a, b, w, h, r) => ["rect", x + a * s, y + b * s, w * s, h * s, r * s];
   const L = (a, b, c, d) => ["line", x + a * s, y + b * s, x + c * s, y + d * s];
+  const C = (a, b, d) => ["circle", x + a * s, y + b * s, d * s];
   const P = (d) => ["path", d.replace(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/g, (m, a, b) => `${x + a * s} ${y + b * s}`)];
   switch (kind) {
     case "phone": return [R(-19, -33, 38, 66, 8), L(-9, -20, 9, -20), L(-9, -12, 1, -12), L(-6, 25, 6, 25)];
     case "tablet": return [R(-27, -34, 54, 68, 7), L(-16, -22, 16, -22), L(-16, -14, 2, -14), L(-4, 26, 4, 26)];
     case "laptop": return [R(-30, -27, 60, 40, 4), L(-20, -16, 10, -16), L(-20, -7, 0, -7), P("M-40,19 L40,19 L34,27 L-34,27 Z")];
-    case "computer": return [R(-34, -31, 68, 46, 4), L(-24, -20, 8, -20), L(-24, -11, -2, -11), L(0, 15, 0, 27), L(-16, 28, 16, 28)];
+    // A desktop: a monitor on a stand, and the system unit beside it.
+    case "desktop": return [
+      R(-42, -28, 58, 40, 4), L(-33, -17, -3, -17), L(-33, -8, -15, -8), L(-13, 12, -13, 20), L(-26, 21, 0, 21),
+      R(24, -26, 19, 47, 3), C(33.5, -15, 6), L(28, -4, 39, -4), L(28, 2, 39, 2),
+    ];
     case "mac": return [R(-34, -31, 68, 48, 5), L(-34, 6, 34, 6), L(-24, -20, 6, -20), L(-24, -12, -4, -12), L(-5, 17, -8, 28), L(5, 17, 8, 28), L(-16, 29, 16, 29)];
     case "tv": return [R(-40, -27, 80, 46, 4), L(-28, -15, 6, -15), L(-28, -7, -6, -7), L(-26, 19, -31, 28), L(26, 19, 31, 28)];
   }
 }
+// The box each device fills at scale 1: left, top, right, bottom.
+const box = {
+  phone: [-19, -33, 19, 33], tablet: [-27, -34, 27, 34], laptop: [-40, -27, 40, 27],
+  desktop: [-42, -28, 43, 21], mac: [-34, -31, 34, 29], tv: [-40, -27, 40, 28],
+};
 
 // The hero, in a box of 640 by 330: a laptop and a phone joined through
 // the key by one straight yellow line; the key's traces branch above and
@@ -56,41 +66,94 @@ const hero = {
 };
 
 // A group, in a box of 420 by 310: the hub in the middle, four devices
-// around it, and the links between them.
+// around it, and the links between them. Each link points from the hub's
+// centre to the device's and stops short of both and of their labels,
+// which the page writes under each device, so no line runs into either.
 function group(hub, scale, others) {
-  const at = [[76, 64], [344, 62], [76, 244], [344, 244]];
+  const at = [[66, 60], [354, 58], [66, 246], [354, 246]];
+  const gap = 8, label = 28;
+  // Where the segment from (x1, y1) to (x2, y2) leaves the box b, grown by
+  // gap, around (x1, y1): the fraction of the way along it.
+  const leave = (x1, y1, x2, y2, b, s) => {
+    let [l, t, r, u] = b.map((v) => v * s);
+    u += label;
+    const dx = x2 - x1, dy = y2 - y1;
+    const fx = dx > 0 ? (r + gap) / dx : dx < 0 ? (l - gap) / dx : Infinity;
+    const fy = dy > 0 ? (u + gap) / dy : dy < 0 ? (t - gap) / dy : Infinity;
+    return Math.min(fx, fy);
+  };
+  // The room each link has; then every link gets the shortest one's
+  // length, in the middle of its room, so the four look alike.
+  const room = others.map((kind, i) => {
+    const [x, y] = at[i];
+    const a = leave(210, 150, x, y, box[hub], scale);
+    const b = 1 - leave(x, y, 210, 150, box[kind], 1);
+    return { x, y, a, b, len: Math.hypot(x - 210, y - 150) };
+  });
+  const len = Math.min(...room.map((r) => (r.b - r.a) * r.len));
+  const links = room.map(({ x, y, a, b, len: d }) => {
+    const m = (a + b) / 2, h = len / d / 2;
+    const p = (f) => [210 + (x - 210) * f, 150 + (y - 150) * f];
+    return ["line", ...p(m - h), ...p(m + h)];
+  });
   return {
     yellow: draw(device(hub, 210, 150, scale)),
     white: draw(others.flatMap((kind, i) => device(kind, at[i][0], at[i][1]))),
-    links: draw([["line", 168, 126, 114, 90], ["line", 252, 126, 304, 90], ["line", 168, 182, 114, 220], ["line", 252, 182, 304, 220]]),
+    links: draw(links),
   };
 }
-// The three steps of setting up, each in a box of 200 by 150: the app
-// comes to the phone; the computer runs one command; the phone scans the
-// computer's QR code.
+// The three steps of setting up, each in a box of 200 by 150. White and
+// yellow lines never cross. 1: the phone downloads the app, its progress
+// bar nearly full. 2: a desktop computer runs one command, and a check
+// says it is installed. 3: the computer shows a QR code, and the phone's
+// camera frames it.
 seed = 61;
+// A QR code at (x, y), of size n: three finder squares, a dot in each
+// when there is room for it, and a few dots.
+const qr = (x, y, n, dots = true) => {
+  const f = n * 0.36, d = n * 0.13, inner = n >= 40;
+  const finder = (a, b) => [["rect", a, b, f, f, 2], ...(inner ? [["rect", a + f * 0.32, b + f * 0.32, f * 0.36, f * 0.36, 1]] : [])];
+  return [
+    ...finder(x, y), ...finder(x + n - f, y), ...finder(x, y + n - f),
+    ...(dots ? [["rect", x + n * 0.6, y + n * 0.6, d, d, 1], ["rect", x + n - d, y + n - d, d, d, 1], ["rect", x + n * 0.6, y + n - d, d, d, 1], ["rect", x + n - d, y + n * 0.6, d, d, 1]] : []),
+  ];
+};
 const step1 = {
-  white: draw(device("phone", 100, 76, 1.5)),
-  yellow: draw([["line", 100, 52, 100, 92], ["path", "M88 81 L100 94 L112 81"], ["line", 86, 104, 114, 104]]),
+  white: draw([
+    ["rect", 68, 12, 64, 124, 11], ["line", 92, 25, 108, 25], ["line", 93, 124, 107, 124],
+    ["rect", 80, 98, 40, 10, 5],
+  ]),
+  yellow: draw([
+    ["line", 100, 38, 100, 72], ["path", "M88 61 L100 73 L112 61"], ["path", "M84 70 V82 H116 V70"],
+    ["line", 85, 103, 108, 103],
+  ]),
   links: "",
 };
 const step2 = {
-  white: draw([["rect", 40, 22, 120, 82, 6], ["line", 100, 104, 100, 120], ["line", 74, 124, 126, 124]]),
-  yellow: draw([["path", "M58 50 L70 60 L58 70"], ["line", 78, 72, 100, 72]]),
+  white: draw([
+    ["rect", 16, 22, 112, 78, 6], ["line", 72, 100, 72, 114], ["line", 50, 118, 94, 118],
+    ["rect", 144, 26, 40, 92, 5], ["circle", 164, 44, 10], ["line", 154, 64, 174, 64], ["line", 154, 74, 174, 74],
+    ["line", 52, 46, 104, 46],
+  ]),
+  yellow: draw([["path", "M30 40 L39 46 L30 52"], ["path", "M32 74 L40 82 L54 66"]]),
   links: "",
 };
 const step3 = {
   white: draw([
-    ["rect", 14, 30, 96, 70, 6], ["line", 62, 100, 62, 114], ["line", 40, 118, 84, 118],
-    ["rect", 40, 44, 14, 14, 2], ["rect", 70, 44, 14, 14, 2], ["rect", 40, 74, 14, 14, 2], ["line", 72, 78, 84, 78], ["line", 72, 86, 78, 86],
-    ...device("phone", 160, 82, 1.05),
+    ["rect", 6, 24, 92, 72, 6], ["line", 52, 96, 52, 110], ["line", 34, 114, 70, 114],
+    ["rect", 106, 30, 17, 78, 3], ["circle", 114.5, 41, 6],
+    ...qr(28, 36, 48),
+    ["rect", 140, 28, 52, 96, 10], ["line", 160, 116, 172, 116],
+    ...qr(155, 59, 22, false),
   ]),
-  yellow: draw([["path", "M140 70 L118 64"], ["path", "M140 94 L118 100"]]),
+  yellow: draw([
+    ["path", "M148 62 V52 H158"], ["path", "M174 52 H184 V62"], ["path", "M148 78 V88 H158"], ["path", "M184 78 V88 H174"],
+  ]),
   links: "",
 };
 seed = 38;
-const computer = group("computer", 1.3, ["phone", "laptop", "phone", "mac"]);
-const phones = group("phone", 1.35, ["phone", "tv", "tablet", "phone"]);
+const computer = group("desktop", 1.15, ["phone", "laptop", "phone", "mac"]);
+const phones = group("phone", 1.35, ["desktop", "tv", "tablet", "phone"]);
 
 // pathLength lets the stylesheet draw each line in, as a hand would.
 const line = (cls, d) => (d ? `<path class="${cls}" pathLength="1" d="${d}"/>` : "");
