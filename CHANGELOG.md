@@ -37,9 +37,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   dated), three steps to start with a board each, uses and questions; every page ends with a
   next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
   light theme, following the system or the reader's choice in the header; the download page
-  puts the reader's system first, and every command has a copy button. Short CSS-only motion (the hero's chalk is drawn in), off
-  for those who ask for less motion; one small script of its own, and every page works
-  without it. A link's picture in each language; a print style. Error pages (404, 5xx) in the
+  puts the reader's system first, and every command has a copy button. Short CSS-only
+  motion (the hero's chalk is drawn in), off for those who ask for less motion; one small
+  script of its own, and every page works without it. A link's picture in each language; a
+  print style. Error pages (404, 5xx) in the
   visitor's language, Open Graph, canonical and hreflang links, `sitemap.xml`, `robots.txt`
   and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
   HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
