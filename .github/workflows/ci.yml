@@ -1019,7 +1019,7 @@ jobs:
   app:
     name: iPhone app
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1050,8 +1050,18 @@ jobs:
           ipad=$(pick iPad)
           # Ad hoc signing needs no Apple account, and without a signature the
           # simulator gives the app no keychain (-34018), which its TLS tests use.
-          xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$iphone" -destination "id=$ipad" \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
+          sign=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
+          # Built once, then tested on one simulator at a time, each booted
+          # before its tests start: with both starting together the runner
+          # took up to eight minutes before the tests could connect.
+          xcodebuild build-for-testing -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$iphone" \
+            "${sign[@]}" | tail -n 50
+          for device in "$iphone" "$ipad"; do
+            xcrun simctl bootstatus "$device" -b
+            xcodebuild test-without-building -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$device" \
+              "${sign[@]}" | tail -n 100
+            xcrun simctl shutdown "$device"
+          done
 
   macapp:
     name: Mac app
