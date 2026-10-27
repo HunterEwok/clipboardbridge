@@ -22,4 +22,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "clipboardbridge-android"
 includeBuild("kit")
-include(":app", ":shared", ":wear")
+include(":app", ":shared")
+// F-Droid's recipe removes the Wear OS app, which needs Google Play services.
+if (file("wear").isDirectory) include(":wear")

@@ -111,6 +111,7 @@ gh attestation verify clipboardbridge-linux-arm64.tar.gz --repo HunterEwok/clipb
 | \`clipboardbridge-lite-linux-armv6.tar.gz\` | the lite member, ARMv6 and ARMv7 (Raspberry Pi Zero, 1, 2), static |
 | \`clipboardbridge-$version.apk\` | Android 10 and later, signed with the project's release key |
 | \`clipboardbridge-wear-$version.apk\` | Wear OS 3 and later, through the paired Android phone, signed with the same key |
+| \`clipboardbridge-fdroid-$version.apk\` | the F-Droid build: no Wear OS watch, updated by F-Droid, signed with the same key |
 | \`get.sh\` | the installer for Linux (\`--lite\` for the lite member) and macOS |
 | \`get.ps1\` | the Windows installer |
 | \`SHA256SUMS\` | SHA-256 checksums of all of the above |

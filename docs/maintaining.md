@@ -125,6 +125,10 @@ Rules for workflows:
   `CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section and updates the link
   references at the end of the file; the release notes are built from that section
   (`packaging/release-notes.sh`), which fails the release if it is missing.
+  The same pull request sets `apps/android/version.properties` to `X.Y.Z` and its
+  `versionCode` to `X*10000 + Y*100 + Z` (`tools/repocheck` asks for it), and adds the
+  F-Droid changelog `apps/android/app/fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`
+  (500 characters at most); the release fails on a tag that differs from the file.
 - Built by CI from a tag, never on a laptop: push a tag `vX.Y.Z` on main
   (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
   `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and,
@@ -311,8 +315,9 @@ is signed with a Developer ID and notarized, it updates with [Sparkle](https://s
 
 ## Android signing key
 
-The release workflow builds `clipboardbridge-X.Y.Z.apk` from the tag (version code
-`X*10000 + Y*100 + Z`) and signs it with the project's release key, which lives only in the
+The release workflow builds `clipboardbridge-X.Y.Z.apk` and `clipboardbridge-fdroid-X.Y.Z.apk`
+from the tag (version code `X*10000 + Y*100 + Z`, from `apps/android/version.properties`)
+and signs them with the project's release key, which lives only in the
 repository's Actions secrets. Android installs an update only when it is signed with the same
 key, so the key is made once and kept, with a backup, for good:
 
@@ -325,8 +330,29 @@ base64 -i clipboardbridge-release.jks | pbcopy   # macOS; Linux: base64 -w0 clip
 The secrets: `CBB_ANDROID_KEYSTORE_BASE64` (the keystore, in base64),
 `CBB_ANDROID_KEYSTORE_PASSWORD`, `CBB_ANDROID_KEY_ALIAS` (`clipboardbridge`) and
 `CBB_ANDROID_KEY_PASSWORD` (the same as the keystore's for a PKCS12 keystore). Without them
-the release has no APK. F-Droid, later, builds and signs with its own key.
+the release has no APK. F-Droid publishes our signed `clipboardbridge-fdroid-X.Y.Z.apk` once
+its own build of the tag matches it (below).
 
 To check the key without a release, run the release workflow by hand from a branch (Actions,
 "release", "Run workflow"): it builds everything, checks the APK's signature and keeps the
 files as the run's artifacts, and publishes nothing.
+
+## F-Droid
+
+The app's F-Droid build ([apps.md](apps.md#f-droid)) is published by F-Droid, from its
+recipe in [fdroiddata](https://gitlab.com/fdroid/fdroiddata); `packaging/fdroid` holds the
+recipe we submit. Once, for the first release with the fdroid flavor:
+
+- [ ] Fill in the recipe: `AllowedAPKSigningKeys`, the SHA-256 of the release key's
+  certificate (`apksigner verify --print-certs clipboardbridge-fdroid-X.Y.Z.apk`), and
+  `ndk`, the `cbb.ndk` of the tag.
+- [ ] Check that F-Droid's build reproduces ours: `fdroid build -v -l
+  io.github.hunterewok.clipboardbridge` in a clone of fdroiddata with the recipe, on
+  F-Droid's buildserver image (`fdroid build` compares with `Binaries`).
+- [ ] Open the merge request to fdroiddata (GitLab account), with the recipe as
+  `metadata/io.github.hunterewok.clipboardbridge.yml`, and answer the reviewers.
+
+After that, each release's tag is picked up by F-Droid's update check
+(`UpdateCheckData` reads `apps/android/version.properties`), usually within days. When a
+release's F-Droid build does not reproduce, F-Droid does not publish it; CI's `fdroid` job
+catches most causes before the tag.
