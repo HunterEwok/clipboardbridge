@@ -99,6 +99,11 @@ jobs:
           - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "7", runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "6", runner: ubuntu-latest, cgo: "0" } # Raspberry Pi Zero W
+          # OpenWrt routers without an FPU: softfloat (the mips job runs the tests).
+          - { goos: linux, goarch: mips, gomips: softfloat, runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: mipsle, gomips: softfloat, runner: ubuntu-latest, cgo: "0" }
+          - { goos: freebsd, goarch: amd64, runner: ubuntu-latest, cgo: "0", vet: true }
+          - { goos: freebsd, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
           - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1", vet: true }
           - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: "1" }
@@ -111,6 +116,7 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
+      GOMIPS: ${{ matrix.gomips }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,6 +165,73 @@ jobs:
         if: matrix.goos == 'darwin'
         # Without cgo the agent would start and fail; this build must link AppKit.
         run: otool -L "$RUNNER_TEMP/cbb" | grep -q AppKit.framework
+
+  mips:
+    name: test (linux/mips under qemu)
+    # Big-endian and 32-bit at once, as on many OpenWrt routers: the
+    # strictest of the release targets, for byte order and 64-bit atomics.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOARCH: mips
+      GOMIPS: softfloat
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # nothing to download; leaves the shared cache key to the check job
+      - name: qemu for mips programs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-user-static
+      - name: go test the network, the group and the service under qemu-mips
+        run: >-
+          go test -exec qemu-mips-static ./cmd/cbb ./internal/clip ./internal/control ./internal/group
+          ./internal/hlc ./internal/mdns ./internal/netguard ./internal/node ./internal/openwrt
+          ./internal/pair ./internal/service ./internal/sysinfo ./internal/tunnel ./internal/uptime
+          ./internal/vless </dev/null
+
+  freebsd:
+    name: test (freebsd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: go test in a FreeBSD 15.1 virtual machine
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          usesh: true
+          # FreeBSD's go fetches the toolchain go.mod names.
+          prepare: pkg install -y go
+          run: |
+            set -e
+            export GOTOOLCHAIN=auto GOFLAGS=-buildvcs=false
+            go version
+            go test ./... </dev/null
+            # The installer, the rc.d script and pf's anchor on the real system.
+            go build -trimpath -o /tmp/cbb ./cmd/cbb
+            sh packaging/freebsd/install.sh --no-firewall /tmp/cbb
+            service clipboardbridge status
+            cbb status 2>&1 | grep -Eq 'in a group|no group'
+            kldload -n pf
+            touch /etc/pf.conf
+            pfctl -e
+            sh /usr/local/share/clipboardbridge/firewall.sh open 8764
+            pfctl -a clipboardbridge -s rules | grep -q 'port = 8764'
+            sh /usr/local/share/clipboardbridge/firewall.sh hub-open 51820
+            pfctl -a clipboardbridge -s rules | grep -q 'port = 51820'
+            sh /usr/local/share/clipboardbridge/firewall.sh hub-close
+            sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+            if grep -q clipboardbridge /etc/pf.conf; then exit 1; fi
+            if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
+            if [ -e /usr/local/bin/cbb ] || [ -e /var/db/clipboardbridge ]; then exit 1; fi
 
   avahi:
     name: mdns with avahi
@@ -256,7 +329,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -1292,7 +1365,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, website, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
+    needs: [check, website, test, build, mips, freebsd, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

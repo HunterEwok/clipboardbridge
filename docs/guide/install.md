@@ -61,6 +61,17 @@ winget install HunterEwok.clipboardbridge
 cbb install           # in the administrator terminal; again after each winget upgrade
 ```
 
+## FreeBSD
+
+FreeBSD 15, amd64 or arm64, as root (with `sudo` or `doas`):
+
+```sh
+fetch -qo - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+It installs `cbb`, an rc.d script that runs the service through daemon(8), and adds the
+line `clipboardbridge_enable="YES"` to rc.conf. The keys live in `/var/db/clipboardbridge`.
+
 ## Docker
 
 For a NAS or a home server that is always on
@@ -75,8 +86,9 @@ docker compose -f packaging/docker/compose.home.yaml exec clipboardbridge cbb pa
 ## The firewall
 
 Clipboard Bridge needs one TCP port, 8764, and mDNS (UDP 5353), both from the home network
-only. The installer finds the firewall (ufw, firewalld, nftables or iptables on Linux, the
-Mac's application firewall, Windows Firewall), lists each rule, and asks
+only. The installer finds the firewall (ufw, firewalld, nftables or iptables on Linux, pf
+or ipfw on FreeBSD, the Mac's application firewall, Windows Firewall), lists each rule, and
+asks
 `Add these rules now? [y/N]`:
 
 - **Yes**: it adds them, keeps them current on every update and removes them when you
@@ -86,7 +98,10 @@ Mac's application firewall, Windows Firewall), lists each rule, and asks
 - `--express` (`-Express` on Windows) adds them without asking; `--no-firewall` answers No.
 
 nftables and iptables always get the commands only, since rules added at run time do not
-survive a restart there. If you turn a firewall on later, run the installer again.
+survive a restart there. On FreeBSD, pf gets the rules in an anchor of their own, which
+pf reads through three marked lines the installer adds at the end of `/etc/pf.conf` and
+removes again; ipfw gets them in rule set 17, added again at each start. If you turn a
+firewall on later, run the installer again.
 
 **Another port**, if 8764 is taken: `... | sudo sh -s -- --port 9000` (on Windows,
 `$env:CBB_PORT = "9000"` before the installer). The phone app learns the port from the QR

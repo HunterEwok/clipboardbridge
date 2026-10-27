@@ -18,7 +18,7 @@ import (
 // members would on one network: they share port 5353 and find each other
 // through multicast loopback.
 func TestSystemNetwork(t *testing.T) {
-	probe, err := listen(t.Logf)
+	probe, err := listen(t.Logf, nil)
 	if err != nil {
 		t.Skipf("cannot listen on port 5353: %v", err)
 	}

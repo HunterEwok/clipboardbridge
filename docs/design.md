@@ -217,6 +217,16 @@ apps" below).
   router where every member keeps quiet. A pairing window takes connections on any network
   while it is open. The lite member publishes itself everywhere: it runs on boards that stay
   at home.
+- **The interface list.** A router or a gateway is on the internet side and the home side
+  at once, and its internet side may even carry a private address (double NAT). So the
+  service can be limited to some interfaces by name (`CBB_INTERFACES`, which the router's
+  init script sets to the devices of its home zones): mDNS joins, publishes and browses only
+  there, those networks alone can become known, a listening join shows only their
+  addresses, and the member port takes a connection only when it came to an address of such
+  an interface from an address on that interface's own networks (a link-local one must name
+  it as its zone). The firewall should keep the internet side out as well; this holds even
+  when it is opened there by mistake. Without the list every interface counts, as on a
+  computer.
 
 ## Sync model
 

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs or updates clipboardbridge on a Linux machine or a Mac from a
-# release (Windows has get.ps1):
+# Installs or updates clipboardbridge on a Linux machine, a Mac or FreeBSD
+# from a release (Windows has get.ps1):
 #
 #   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 #
@@ -108,13 +108,26 @@ Darwin)
 		arch=amd64
 	fi
 	;;
-*) fail "this installer is for Linux and macOS; on Windows use get.ps1" ;;
+FreeBSD)
+	os=freebsd
+	[ "$lite" = no ] || fail "--lite is for Linux; FreeBSD runs the full member"
+	[ -z "$console" ] || fail "--console is for Linux"
+	[ -z "$uinput" ] || fail "--uinput is for Linux"
+	case $(uname -m) in
+	amd64) arch=amd64 ;;
+	arm64) arch=arm64 ;;
+	*) fail "no release for the architecture $(uname -m)" ;;
+	esac
+	;;
+*) fail "this installer is for Linux, macOS and FreeBSD; on Windows use get.ps1" ;;
 esac
 command -v tar >/dev/null 2>&1 || fail "tar is required"
 if command -v sha256sum >/dev/null 2>&1; then
 	sha256() { sha256sum "$1" | cut -d' ' -f1; }
 elif command -v shasum >/dev/null 2>&1; then
 	sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+elif [ "$os" = freebsd ]; then
+	sha256() { command sha256 -q "$1"; }
 else
 	fail "sha256sum or shasum is required"
 fi
@@ -124,6 +137,9 @@ elif command -v curl >/dev/null 2>&1; then
 	fetch() { curl -fsSL --proto '=https' --tlsv1.2 -o "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
 	fetch() { wget -q --https-only -O "$2" "$1"; }
+elif [ "$os" = freebsd ]; then
+	# FreeBSD's own fetch(1), which checks the server's certificate.
+	fetch() { command fetch -q -o "$2" "$1"; }
 else
 	fail "curl or wget is required"
 fi
@@ -269,6 +285,9 @@ tar -xzf "$tmp/$archive" -C "$tmp"
 if [ "$os" = darwin ]; then
 	# shellcheck disable=SC2086 # $port and $cgnat are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat "$tmp/$dir/cbb"
+elif [ "$os" = freebsd ]; then
+	# shellcheck disable=SC2086 # $port and $cgnat are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/freebsd/install.sh" $port $cgnat "$tmp/$dir/cbb"
 else
 	# shellcheck disable=SC2086 # $console, $uinput, $port and $cgnat are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat "$tmp/$dir/cbb"

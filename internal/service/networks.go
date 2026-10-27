@@ -79,8 +79,17 @@ type networksJSON struct {
 // device that is in a group already (inGroup) counts the networks it is
 // on now as known, as it is most likely at home when it is updated to a
 // version that keeps the list; otherwise it would go quiet everywhere.
-func loadNetworks(dir string, inGroup bool, logf func(string, ...any)) *networks {
-	return loadNetworksWith(dir, inGroup, logf, netid.Gateways, systemInterfaces)
+// With only, the interfaces outside it count as on no network at all, so
+// that none of them is ever learnt (Config.Interfaces).
+func loadNetworks(dir string, inGroup bool, only []string, logf func(string, ...any)) *networks {
+	ifs := systemInterfaces
+	if allow := onlyIn(only); allow != nil {
+		ifs = func() ([]netInterface, error) {
+			all, err := systemInterfaces()
+			return slices.DeleteFunc(all, func(f netInterface) bool { return !allow(f.name) }), err
+		}
+	}
+	return loadNetworksWith(dir, inGroup, logf, netid.Gateways, ifs)
 }
 
 func loadNetworksWith(dir string, inGroup bool, logf func(string, ...any), gateways func() map[int]string,

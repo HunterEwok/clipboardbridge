@@ -69,6 +69,7 @@ through tmux and `cbb copy` and `cbb paste`.
 | Linux: Ubuntu, Raspberry Pi OS and other distributions; x86-64, ARM64, ARMv7, ARMv6 | service, desktop connector, console helper, tray app |
 | macOS | service, pasteboard agent, Mac app |
 | Windows 10 (1809 or later) and 11; x86-64, ARM64 | service, clipboard agent, tray app |
+| FreeBSD 15; x86-64, ARM64 | service |
 | Android | the app (an APK in every release) |
 | iOS and iPadOS | the app, or a shortcut in the Shortcuts app |
 | Apple Watch, Wear OS | a watch app, through the phone |
@@ -81,6 +82,7 @@ through tmux and `cbb copy` and `cbb paste`.
 | Linux service, desktop clipboard (X11, Wayland), tmux, `cbb copy`/`paste` | works | yes (Raspberry Pi, Steam Deck) |
 | macOS service and pasteboard agent | works | yes |
 | Windows service, clipboard agent, installer | built, CI on windows-latest | not yet |
+| FreeBSD service and installer | built, CI in a FreeBSD 15.1 virtual machine | not yet |
 | iPhone shortcut (Action button, Back Tap) | works | yes |
 | iPhone app (the phone as the root, admin phones, devices list) | built, CI on a simulator | not yet |
 | Android app | built, CI; APK in every release | not yet |

@@ -13,6 +13,8 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+
+	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
 )
 
 // runService runs the service until a signal stops it; systemd and launchd
@@ -37,8 +39,14 @@ func defaultStateDir() string {
 	if d := os.Getenv("STATE_DIRECTORY"); d != "" { // set by systemd
 		return d
 	}
-	if runtime.GOOS == "darwin" {
+	switch {
+	case runtime.GOOS == "darwin":
 		return "/Library/Application Support/clipboardbridge/state"
+	case runtime.GOOS == "freebsd":
+		return "/var/db/clipboardbridge"
+	case openwrt.Is():
+		// /var is in RAM there; sysupgrade keeps /etc.
+		return "/etc/clipboardbridge/state"
 	}
 	return "/var/lib/clipboardbridge"
 }

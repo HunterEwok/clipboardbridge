@@ -271,8 +271,10 @@ the hub's UDP port faces the internet.
 
 One pull request each, smaller ones together:
 
-1. The service on a router: a list of interfaces for mDNS and the member port, and release
-   builds for mips and mipsle (softfloat).
+1. Done. The service on a router: a list of interfaces for mDNS and the member port
+   (`CBB_INTERFACES`), the paths of OpenWrt (the socket in `/var/run`, the state in
+   `/etc/clipboardbridge/state`, `/usr/share` for the installer's files), release builds
+   for mips and mipsle (softfloat), and a CI job that runs the tests under qemu-mips.
 2. `packaging/openwrt`: the procd script, the UCI file, install and uninstall through
    `get.sh` (it recognises OpenWrt by `/etc/openwrt_release`), the fw4 rules, the state in
    `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in an
@@ -369,9 +371,14 @@ sync away from home is on, member TLS, and the tunnel away from home.
 
 Steps:
 
-1. Release builds for freebsd-amd64 and freebsd-arm64, the control socket's check, and a CI
-   job that runs the Go tests in a FreeBSD virtual machine.
-2. The rc.d script, `get.sh`, the pf and ipfw rules with the consent prompt.
+1. Done. Release builds for freebsd-amd64 and freebsd-arm64, the paths (the socket in
+   `/var/run`, the state in `/var/db`, the settings in `/usr/local/etc`), FreeBSD's uptime
+   clock and system version, and a CI job that runs the Go tests in a FreeBSD 15.1 virtual
+   machine. The control socket needs no change: its file modes keep others out on FreeBSD
+   too.
+2. Done. The rc.d script, `get.sh` (with FreeBSD's own `fetch`), the pf anchor and the ipfw
+   rule set with the consent prompt; the CI job installs it, opens and closes the ports in pf
+   and removes it all.
 3. The desktop connector on FreeBSD.
 4. OPNsense and pfSense as the hub, after the OpenWrt steps: an OPNsense `plugins.inc.d` hook
    in our own package, from our own pkg repository on `cbb.tools` and kept in this

@@ -34,6 +34,11 @@ jobs:
           - { goos: linux, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
           - { goos: linux, goarch: arm, goarm: "7", name: armv7, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
           - { goos: linux, goarch: arm, goarm: "6", name: armv6, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          # OpenWrt routers without an FPU take softfloat.
+          - { goos: linux, goarch: mips, gomips: softfloat, name: mips, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: linux, goarch: mipsle, gomips: softfloat, name: mipsle, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: freebsd, goarch: amd64, name: amd64, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
+          - { goos: freebsd, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0", ext: tar.gz }
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
           - { goos: darwin, goarch: arm64, name: arm64, runner: macos-latest, cgo: "1", ext: tar.gz }
           - { goos: darwin, goarch: amd64, name: amd64, runner: macos-latest, cgo: "1", ext: tar.gz }
@@ -46,6 +51,7 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
+      GOMIPS: ${{ matrix.gomips }}
       ARCHIVE: clipboardbridge-${{ matrix.goos }}-${{ matrix.name }}.${{ matrix.ext }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

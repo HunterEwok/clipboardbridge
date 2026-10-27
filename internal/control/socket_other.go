@@ -5,9 +5,23 @@
 
 package control
 
+import (
+	"runtime"
+
+	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+)
+
 // DefaultSocket is where the service listens: in the runtime directory that
-// systemd makes for it.
-const DefaultSocket = "/run/clipboardbridge/control.sock"
+// systemd makes for it on Linux, and that the init script makes in
+// /var/run on FreeBSD and OpenWrt, which have no /run.
+var DefaultSocket = defaultSocket()
+
+func defaultSocket() string {
+	if runtime.GOOS == "linux" && !openwrt.Is() {
+		return "/run/clipboardbridge/control.sock"
+	}
+	return "/var/run/clipboardbridge/control.sock"
+}
 
 // Group is the group whose members may use the control socket.
 const Group = "clipboardbridge"

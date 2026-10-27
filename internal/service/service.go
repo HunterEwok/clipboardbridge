@@ -52,6 +52,10 @@ type Config struct {
 	Device group.DeviceInfo
 	Name   string // this device's name, shown to the others; the host name if empty
 	Logf   func(format string, args ...any)
+	// Interfaces limits the member port, a listening join and mDNS to
+	// these network interfaces, by name; Interfaces() (CBB_INTERFACES) if
+	// nil, and every interface if that is empty.
+	Interfaces []string
 
 	// Discover publishes this member and finds the others; mDNS if nil.
 	// Tests replace it.
@@ -122,6 +126,9 @@ type DiscoveryConfig struct {
 	// Publish tells whether to publish this device on an interface, by its
 	// name and networks; everywhere if nil.
 	Publish func(name string, prefixes []netip.Prefix) bool
+	// Only, if set, limits discovery to the interfaces it allows, by name:
+	// it neither publishes nor browses elsewhere (Config.Interfaces).
+	Only    func(name string) bool
 	OnPeers func([]mdns.Peer)
 	Logf    func(string, ...any)
 }
@@ -134,7 +141,7 @@ type Discovery interface {
 }
 
 func mdnsDiscovery(c DiscoveryConfig) (Discovery, error) {
-	return mdns.New(mdns.Config{ID: c.ID, Port: c.Port, TXT: c.TXT, BrowseOnly: c.BrowseOnly, Publish: c.Publish, OnPeers: c.OnPeers, Logf: c.Logf})
+	return mdns.New(mdns.Config{ID: c.ID, Port: c.Port, TXT: c.TXT, BrowseOnly: c.BrowseOnly, Publish: c.Publish, Interfaces: c.Only, OnPeers: c.OnPeers, Logf: c.Logf})
 }
 
 // Service is a running clipboardbridge service.
@@ -262,6 +269,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if cgnat {
 		cfg.Logf("cbb: 100.64.0.0/10 counts as the home network (CBB_HOME_CGNAT=1)")
 	}
+	if cfg.Interfaces == nil {
+		if cfg.Interfaces, err = Interfaces(); err != nil {
+			return err
+		}
+	}
+	if len(cfg.Interfaces) > 0 {
+		cfg.Logf("cbb: the member port and mDNS work only on %s (CBB_INTERFACES)", strings.Join(cfg.Interfaces, ", "))
+	}
 	if cfg.listen == nil || cfg.joinListen == nil {
 		port, err := Port()
 		if err != nil {
@@ -275,7 +290,8 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	if cfg.joinAddrs == nil {
-		cfg.joinAddrs = joinAddresses
+		only := onlyIn(cfg.Interfaces)
+		cfg.joinAddrs = func(port uint16) []string { return joinAddresses(port, only) }
 	}
 	if cfg.battery == nil {
 		cfg.battery = hasBattery
@@ -324,7 +340,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	s.clock = clock
 
-	s.nets = loadNetworks(cfg.StateDir, id != nil, cfg.Logf)
+	s.nets = loadNetworks(cfg.StateDir, id != nil, cfg.Interfaces, cfg.Logf)
 	if s.limits, err = loadLimits(cfg.StateDir); err != nil {
 		cfg.Logf("cbb: the limits of a copy: %v; using %s and %s", err, SizeText(s.limits.Home), SizeText(s.limits.Away))
 	}
@@ -439,7 +455,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		return err
 	}
 	dc := DiscoveryConfig{ID: string(id.ID), TXT: txt(id, s.priorityLocked(id), false), OnPeers: s.found, Logf: s.logf,
-		Port: uint16(ln.Addr().(*net.TCPAddr).Port), Publish: s.nets.Publish}
+		Port: uint16(ln.Addr().(*net.TCPAddr).Port), Publish: s.nets.Publish, Only: s.only()}
 	r, err := s.cfg.Discover(dc)
 	if err != nil {
 		ln.Close()
@@ -561,6 +577,10 @@ func (s *Service) accept(ctx context.Context, ln net.Listener) {
 		}
 		if !ap.Addr().Unmap().IsLoopback() && !s.takesOn(raw.LocalAddr()) {
 			raw.Close() // a network this device has not met its group on
+			return
+		}
+		if !s.arrivedOn(raw) {
+			raw.Close() // not from the interfaces the service is limited to
 			return
 		}
 		select {

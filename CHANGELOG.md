@@ -235,6 +235,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
   was away when the hub moved on still reaches it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
+- FreeBSD: release archives for amd64 and arm64, `get.sh` and an installer with an rc.d
+  script that runs the service through daemon(8), and the firewall rules with consent in a
+  pf anchor of their own or an ipfw rule set; a CI job runs the Go tests and the installer
+  in a FreeBSD 15.1 virtual machine. FreeBSD's uptime clock and system version show in the
+  hello; OPNsense and pfSense say they are routers.
+- Routers: `CBB_INTERFACES` limits mDNS, the member port and a listening join to the named
+  interfaces, so a router never answers on its internet side, even with a private address
+  there or its firewall opened by mistake. On OpenWrt the control socket is in `/var/run`,
+  the state in `/etc/clipboardbridge/state` and the device's form is a router. Release
+  archives for mips and mipsle (softfloat), whose tests a CI job runs under qemu-mips
+  (big-endian).
 
 ### Changed
 

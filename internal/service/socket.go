@@ -734,7 +734,7 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 			return nil, err
 		}
 		ap, _ := netip.ParseAddrPort(raw.RemoteAddr().String())
-		if !mdns.Published(ap.Addr()) && !ap.Addr().Unmap().IsLoopback() {
+		if !mdns.Published(ap.Addr()) && !ap.Addr().Unmap().IsLoopback() || !s.arrivedOn(raw) {
 			raw.Close()
 			continue
 		}
@@ -757,28 +757,38 @@ func (s *Service) listenForMember(ctx context.Context, c net.Conn, j *pair.Joine
 }
 
 // joinAddresses returns where a listening join can be reached: the
-// addresses mDNS would publish, IPv4 first, at most four.
-func joinAddresses(port uint16) []string {
-	ifaddrs, err := net.InterfaceAddrs()
+// addresses mDNS would publish, IPv4 first, at most four, on the
+// interfaces only allows (all if nil).
+func joinAddresses(port uint16, only func(string) bool) []string {
+	ifs, err := net.Interfaces()
 	if err != nil {
 		return nil
 	}
 	var v4, v6 []string
-	for _, a := range ifaddrs {
-		ipn, ok := a.(*net.IPNet)
-		if !ok {
+	for _, ifc := range ifs {
+		if only != nil && !only(ifc.Name) {
 			continue
 		}
-		ip, ok := netip.AddrFromSlice(ipn.IP)
-		// Link-local addresses need a zone, which a QR code cannot carry.
-		if !ok || !mdns.Published(ip) || ip.IsLinkLocalUnicast() {
+		addrs, err := ifc.Addrs()
+		if err != nil {
 			continue
 		}
-		hp := netip.AddrPortFrom(ip.Unmap(), port).String()
-		if ip.Unmap().Is4() {
-			v4 = append(v4, hp)
-		} else {
-			v6 = append(v6, hp)
+		for _, a := range addrs {
+			ipn, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip, ok := netip.AddrFromSlice(ipn.IP)
+			// Link-local addresses need a zone, which a QR code cannot carry.
+			if !ok || !mdns.Published(ip) || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			hp := netip.AddrPortFrom(ip.Unmap(), port).String()
+			if ip.Unmap().Is4() {
+				v4 = append(v4, hp)
+			} else {
+				v6 = append(v6, hp)
+			}
 		}
 	}
 	all := append(v4, v6...)
@@ -794,7 +804,7 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 	defer cancel()
 	found := make(chan []mdns.Peer, 1)
 	d, err := s.cfg.Discover(DiscoveryConfig{
-		ID: "browse-" + clip.NewID()[:16], BrowseOnly: true, Logf: s.logf,
+		ID: "browse-" + clip.NewID()[:16], BrowseOnly: true, Only: s.only(), Logf: s.logf,
 		OnPeers: func(peers []mdns.Peer) {
 			var open []mdns.Peer
 			for _, p := range peers {

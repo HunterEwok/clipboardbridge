@@ -4,7 +4,7 @@
 
 # Packs a built binary into the release archive for its platform:
 #
-#   sh packaging/archive.sh path/to/cbb linux|darwin|windows NAME OUTDIR
+#   sh packaging/archive.sh path/to/cbb linux|darwin|freebsd|windows NAME OUTDIR
 #
 # writes OUTDIR/clipboardbridge-<os>-<NAME>.tar.gz, which holds clipboardbridge/ with
 # the binary, LICENSE, THIRD_PARTY_NOTICES (the licenses of the Go modules and
@@ -18,7 +18,7 @@
 set -eu
 
 if [ $# -ne 4 ]; then
-	echo "usage: sh packaging/archive.sh BINARY linux|darwin|windows NAME OUTDIR" >&2
+	echo "usage: sh packaging/archive.sh BINARY linux|darwin|freebsd|windows NAME OUTDIR" >&2
 	exit 2
 fi
 bin=$1 os=$2 name=$3 out=$4
@@ -26,6 +26,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 case $os in
 linux) dir=linux ;;
 darwin) dir=macos ;;
+freebsd) dir=freebsd ;;
 windows) dir=windows ;;
 *)
 	echo "archive.sh: unknown OS $os" >&2

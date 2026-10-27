@@ -47,6 +47,7 @@ type transport interface {
 // shared with other mDNS responders on the host.
 type udp struct {
 	logf    func(string, ...any)
+	only    func(string) bool // the interfaces to join on; all if nil
 	c4      *ipv4.PacketConn
 	c6      *ipv6.PacketConn
 	packets chan packet
@@ -59,9 +60,10 @@ type udp struct {
 	closed  bool
 }
 
-// listen opens the sockets. Either family may be missing, for example IPv6
-// on a host without it, but not both.
-func listen(logf func(string, ...any)) (*udp, error) {
+// listen opens the sockets, which join the multicast groups on the
+// interfaces only allows (all if nil). Either family may be missing, for
+// example IPv6 on a host without it, but not both.
+func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
 		var serr error
 		err := c.Control(func(fd uintptr) { serr = reuse(fd) })
@@ -70,7 +72,7 @@ func listen(logf func(string, ...any)) (*udp, error) {
 		}
 		return serr
 	}}
-	u := &udp{logf: logf, packets: make(chan packet, 64), done: make(chan struct{}), joined4: map[int]bool{}, joined6: map[int]bool{}}
+	u := &udp{logf: logf, only: only, packets: make(chan packet, 64), done: make(chan struct{}), joined4: map[int]bool{}, joined6: map[int]bool{}}
 	var errs []error
 	if pc, err := lc.ListenPacket(context.Background(), "udp4", fmt.Sprintf("0.0.0.0:%d", Port)); err != nil {
 		errs = append(errs, err)
@@ -269,7 +271,7 @@ func (u *udp) interfaces() ([]iface, error) {
 	var out []iface
 	for _, ifi := range ifs {
 		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 ||
-			ifi.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0 {
+			ifi.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0 || u.only != nil && !u.only(ifi.Name) {
 			continue
 		}
 		f, err := describe(ifi)

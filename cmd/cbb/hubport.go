@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
+	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
 )
 
 // A hub reached at its own address takes its clients on a UDP port from the
@@ -33,9 +34,16 @@ type hubFirewall struct {
 	commands func(port int) []string // what opens it by hand
 }
 
-var hubFW = map[string]*hubFirewall{"linux": &linuxHubFW, "windows": &windowsHubFW}[runtime.GOOS]
+var hubFW = map[string]*hubFirewall{"linux": &linuxHubFW, "freebsd": &linuxHubFW, "windows": &windowsHubFW}[runtime.GOOS]
 
-const firewallScript = "/usr/local/share/clipboardbridge/firewall.sh"
+// firewallScript is the installer's firewall.sh: under /usr/local/share,
+// or /usr/share on OpenWrt, which has no /usr/local.
+var firewallScript = func() string {
+	if openwrt.Is() {
+		return "/usr/share/clipboardbridge/firewall.sh"
+	}
+	return "/usr/local/share/clipboardbridge/firewall.sh"
+}()
 
 func firewallSh(args ...string) (string, error) {
 	out, err := exec.Command("sh", append([]string{firewallScript}, args...)...).Output()
