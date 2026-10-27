@@ -1353,7 +1353,23 @@ an admin phone, never a computer; in a group a computer created an admin compute
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its
-iPhone CA.
+iPhone CA. The exception is a takeover from a root computer: the old root keeps its root key
+and its iPhone CA, and `cbb status` there names the admin that took over, since the old root
+may still be in use and undo it (rule 2) by removing that admin (`cbb revoke NAME`, a
+revocation its own key signs that names the admin CA).
+
+**The old root's records.** The takeover's revocation names the old root's member key, so
+the members refuse its connections, and its removal of the admin would reach no one. So a
+member keeps a connection with a peer whose member certificate the old root certified for
+its own device (its device record under that root names the key) while the takeover from
+that root counts, for records only: it sends its hello with no current event and nothing
+but its records digest, sends its records when the digests differ, takes `records` from
+the peer, and sends and takes nothing else (no events, credentials, commands, tunnel keys,
+hubs or iPhone CA). It closes the connection once the records it took let the peer in
+(the takeover no longer counts), or when no records came for 5 seconds; the peer connects
+again later, as a member if the takeover was undone. The old root learns of the takeover
+the same way. Only full members keep such a connection; the lite member and the phones
+refuse the old root, and take the records that undo the takeover from the others.
 
 **Upgrading a legacy group.** `cbb upgrade` on a member that holds the legacy group's keys,
 after every member runs this version:

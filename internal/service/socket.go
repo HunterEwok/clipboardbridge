@@ -349,7 +349,13 @@ func (s *Service) statusWithRemoved() *control.Status {
 	s.mu.Lock()
 	id := s.id
 	s.mu.Unlock()
-	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
+	if id == nil {
+		return st
+	}
+	switch err := s.allow(id.ID, []*x509.Certificate{id.Cert}); {
+	case errors.Is(err, group.ErrRecordsOnly):
+		st.TakenOverBy = s.takenOverBy(id)
+	case err != nil:
 		st.Removed = true
 	}
 	return st

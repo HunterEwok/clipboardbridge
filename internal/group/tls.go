@@ -27,6 +27,11 @@ type TLSOptions struct {
 	// error rejects the peer, for example a revoked device.
 	Allow func(DeviceID, []*x509.Certificate) error
 
+	// RecordsOnly lets a peer through for which Allow returns
+	// ErrRecordsOnly; the caller then exchanges records with it and
+	// nothing else.
+	RecordsOnly bool
+
 	// Now returns the current time; time.Now if nil.
 	Now func() time.Time
 }
@@ -138,7 +143,7 @@ func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID,
 		return "", err
 	}
 	if opt.Allow != nil {
-		if err := opt.Allow(peer, MemberChain(cs)); err != nil {
+		if err := opt.Allow(peer, MemberChain(cs)); err != nil && !(opt.RecordsOnly && errors.Is(err, ErrRecordsOnly)) {
 			return "", err
 		}
 	}

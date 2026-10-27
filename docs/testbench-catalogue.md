@@ -126,7 +126,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | G24 | Removing an admin of a computer's group replaces the iPhone CA; only shortcut iPhones pair again | fleet | |
 | G25 | A device that was off during a removal gets the record from the first member it meets; a removed device that was off reaches nobody | fleet | |
 | G26 | `cbb takeover` when the root computer is lost; the new root admits and makes admins; the old root comes back and is refused [L6] | real, fleet | |
-| G27 | A takeover undone: the old root is still there and removes the admin that took over; the takeover stops counting | fleet | |
+| G27 | A takeover undone: the old root is still there and removes the admin that took over, before or after it hears of the takeover (its status names that admin); the takeover stops counting | fleet | |
 | G28 | A phone's group: an admin phone takes over from a lost root phone (`root` records); no device pairs again; members that were off follow | ui, fleet | |
 | G29 | `cbb upgrade` of a group made before 0.4: a new root, the old keys deleted, `cbb status` marks those that still hold them and `cbb revoke` refuses them until they have [L9] | fleet | |
 | G30 | `cbb rename` on an admin for any device, the root and itself; every device and app shows the new name; 1 and 64 characters taken, 0 and 65 refused, Unicode names | real, fleet | |

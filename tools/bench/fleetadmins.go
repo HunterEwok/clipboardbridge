@@ -120,6 +120,42 @@ func takeoverUndone(ctx context.Context, r *Report, f *Fleet, timeout time.Durat
 		}
 		return arrives(ctx, m, text, timeout)
 	})
+	// Again with m as the admin, and the root back before it removes it:
+	// it hears of the takeover, says so, and undoes it then.
+	if r.Do(p+"second-admin", func() error {
+		if err := succeeds(ctx, root, "cbb admin -allow-file-key "+m.Name, "", "is an admin now"); err != nil {
+			return err
+		}
+		if err := listsAs(ctx, []*Device{root, m}, m.Name, "admin", false, timeout); err != nil {
+			return err
+		}
+		return cut(ctx, root, m)
+	}) != nil {
+		return
+	}
+	r.Do(p+"second-takeover", func() error {
+		if _, err := Run(ctx, m, "cbb takeover "+root.Name, ""); err != nil {
+			return err
+		}
+		return listsAs(ctx, []*Device{m}, m.Name, "root", false, timeout)
+	})
+	r.Do(p+"root-told", func() error {
+		if err := heal(ctx, root, m); err != nil {
+			return err
+		}
+		return eventually(ctx, 3*timeout, func() error {
+			return succeeds(ctx, root, "cbb status", "", m.Name+", an admin, took the group over from this computer")
+		})
+	})
+	r.Do(p+"undone-after", func() error {
+		if _, err := Run(ctx, root, "cbb revoke "+m.Name, ""); err != nil {
+			return err
+		}
+		if err := listsAs(ctx, []*Device{root}, root.Name, "root", false, 3*timeout); err != nil {
+			return err
+		}
+		return listsAs(ctx, []*Device{root}, m.Name, "", true, timeout)
+	})
 }
 
 // concurrentAdmins (G33): admins acting at once on the same devices; every

@@ -249,6 +249,8 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	fmt.Fprintf(w, "Device %s (%s, %s), group %s\n", st.Device, group.OSName(st.OS), st.Role, st.Group)
 	if st.Removed {
 		fmt.Fprintln(w, "This device was removed from the group: its members refuse it. To join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.")
+	} else if st.TakenOverBy != "" {
+		fmt.Fprintf(w, "%[1]s, an admin, took the group over from this computer, its root, while it was away. If this computer is not lost, sudo cbb revoke %[1]s undoes it; otherwise the group is %[1]s's now.\n", st.TakenOverBy)
 	} else if c := certLine(st.CertEndsMS, now); c != "" {
 		fmt.Fprintln(w, c)
 	}

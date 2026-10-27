@@ -364,6 +364,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admin to renew it; before, a member whose certificate ended while no admin was on was
   refused by the group with no word why. When the certificate has ended by this device's
   clock, it names that date too, in case the clock is wrong.
+- A root computer that an admin took the group over from while it was away could not undo
+  the takeover, as docs/design.md says it does: the others refused its connections, so its
+  removal of that admin reached no one, and it gave up its root key when it heard of the
+  takeover. Full members now exchange records, and nothing else, with such an old root; it
+  keeps its root key and iPhone CA, `cbb status` there names the admin that took over, and
+  `cbb revoke` of that admin, before or after it heard, undoes the takeover
+  (docs/protocol.md, section 10). Going back to the group's first root no longer crashes
+  the service.
 - `cbb pair` on a new computer, with two pairing windows open on the network, could try the
   code on whichever window answered first, a wrong code there that counts toward closing it,
   when the other answered a moment later. It now listens two more seconds after finding one

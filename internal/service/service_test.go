@@ -1629,6 +1629,62 @@ func TestTakeover(t *testing.T) {
 	}
 }
 
+func TestTakeoverUndone(t *testing.T) {
+	// The old root comes back after an admin took the group over: the
+	// others take its records only, it learns of the takeover, keeps its
+	// root key and removes the admin, which undoes the takeover.
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	old, _ := group.Load(pi.dir)
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "b follows the new root", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && len(id.Roots) == 1
+	})
+	restartService(t, &h, pi)
+	waitFor(t, "the old root learns of the takeover", func() bool { return pi.status(t).TakenOverBy == "a" })
+	if id, err := group.Load(pi.dir); err != nil || !id.IsRoot() || !id.ServesPhone() {
+		t.Fatalf("the old root gave up its root key or its iPhone CA: %v", err)
+	}
+	for _, s := range []*testService{a, b} {
+		for _, p := range s.status(t).Peers {
+			if p.ID == string(old.ID) {
+				t.Errorf("%s is connected to the old root as a member", s.name)
+			}
+		}
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "a"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "b is back under the old root", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && len(id.Roots) == 0
+	})
+	waitUpTo(t, 45*time.Second, "b connects to the old root again", func() bool {
+		for _, p := range b.status(t).Peers {
+			if p.ID == string(old.ID) {
+				return true
+			}
+		}
+		return false
+	})
+	if st := pi.status(t); st.TakenOverBy != "" || st.Removed {
+		t.Errorf("the old root's status after the undo: %+v", st)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "after the undo"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the undo" })
+}
+
 // startLegacy starts Linux members of one legacy group, made before roots
 // and admins: each holds the group CA key and the iPhone CA key.
 func startLegacy(t *testing.T, h *hub, names ...string) []*testService {

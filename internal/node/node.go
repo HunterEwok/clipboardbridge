@@ -310,7 +310,7 @@ func (n *Node) identity() *group.Identity { return n.id.Load() }
 func (n *Node) SetIdentity(id *group.Identity) { n.id.Store(id) }
 
 func (n *Node) tlsOptions() group.TLSOptions {
-	return group.TLSOptions{Allow: n.cfg.Allow, Now: n.cfg.Now}
+	return group.TLSOptions{Allow: n.cfg.Allow, RecordsOnly: true, Now: n.cfg.Now}
 }
 
 // ServerTLS returns the TLS configuration for accepting member connections.
@@ -371,6 +371,11 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	if len(chain) == 0 {
 		return errors.New("node: the peer's certificate was not verified")
 	}
+	if n.cfg.Allow != nil {
+		if err := n.cfg.Allow(id, chain); errors.Is(err, group.ErrRecordsOnly) {
+			return n.recordsOnly(ctx, tc, id, chain)
+		}
+	}
 	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: chain[0], peerChain: chain, out: make(chan outgoing, queueLen),
 		chunks: make(chan chunk, chunkQueue), fetches: make(map[[sha256.Size]byte]*fetching),
 		done: make(chan struct{}), finished: make(chan struct{}), since: n.cfg.Uptime()}
@@ -429,6 +434,84 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	n.cfg.Engine.Disconnected(string(id))
 	n.peersChanged()
 	return err
+}
+
+// recordsQuiet is how long a records-only connection stays open after the
+// last records came.
+const recordsQuiet = 5 * time.Second
+
+// recordsOnly runs a connection with a root that an admin took the group
+// over from (group.ErrRecordsOnly): the two exchange records and nothing
+// else, so that the old root, if it is still in use, learns of the
+// takeover and its removal of that admin reaches the group (docs/protocol.md,
+// section 10, "Handing the group over"). The connection ends once the
+// records let the peer in again, when it would connect anew as a member,
+// or when no records came for recordsQuiet. This member sends no clipboard,
+// credentials or anything else on it, and takes nothing but records.
+func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate) error {
+	stop := context.AfterFunc(ctx, func() { tc.NetConn().Close() })
+	defer stop()
+	st := n.cfg.Records
+	write := func(m *message) error {
+		f, err := frame(m)
+		if err != nil {
+			return err
+		}
+		tc.SetWriteDeadline(time.Now().Add(n.cfg.Timeout + transferTime(len(f))))
+		_, err = tc.Write(f)
+		return err
+	}
+	out := helloOut{Hello: clip.Hello{Wall: n.cfg.Now().UnixMilli()}, Name: n.cfg.Name, OS: n.cfg.OS}
+	if st != nil {
+		out.Records = st.Digest()
+	}
+	data, err := encode(out)
+	if err != nil {
+		return err
+	}
+	if err := write(&message{Type: typeHello, Role: n.cfg.Role, Hello: data}); err != nil {
+		return err
+	}
+	n.cfg.Logf("node: %s is a root the group was taken over from; exchanging records only", id)
+	for first := true; ; first = false {
+		tc.SetReadDeadline(time.Now().Add(recordsQuiet))
+		m, err := readMessage(tc, n.cfg.Timeout)
+		if err != nil {
+			if first {
+				return err
+			}
+			return nil // quiet: the records are exchanged
+		}
+		switch {
+		case first:
+			if m.Type != typeHello {
+				return fmt.Errorf("node: %s did not start with a hello", id)
+			}
+			_, extra, err := decodeHello(m.Hello)
+			if err != nil {
+				return fmt.Errorf("node: bad hello from %s: %w", id, err)
+			}
+			if st == nil {
+				return nil
+			}
+			if mine := st.Digest(); mine != "" && mine != extra.Records {
+				for _, chunk := range chunkRecords(st.All()) {
+					if err := write(&message{Type: typeRecs, Records: chunk}); err != nil {
+						return err
+					}
+				}
+			}
+		case m.Type == typeRecs && st != nil && len(m.Records) > 0:
+			if fresh := st.Add(id, m.Records); len(fresh) > 0 {
+				n.sendRecords(fresh, nil)
+				st.Settle(fresh)
+			}
+			if n.cfg.Allow(id, chain) == nil {
+				n.cfg.Logf("node: %s undid the takeover; it connects again as a member", id)
+				return nil
+			}
+		}
+	}
 }
 
 // Copied passes a change that a clipboard watcher reported to the engine
