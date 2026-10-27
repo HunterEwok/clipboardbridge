@@ -46,6 +46,17 @@ func TimeSuite(ctx context.Context, r *Report, cbb string, timeout time.Duration
 	}
 	defer f.Close(ctx)
 
+	if scenario("K1-renewal") {
+		certificates(ctx, r, f, timeout)
+	}
+	if ctx.Err() == nil && scenario("K6-clock") {
+		clocks(ctx, r, f, timeout)
+	}
+}
+
+// certificates (K1, K2, K4, K7, W39): renewal, credential periods and a
+// certificate that ends while no admin is on.
+func certificates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	// Both groups start now, so that their certificates age together: in
 	// the second the root is away through the member's renewal window.
 	renewed := fleetGroup(ctx, r, f, "time/K1-renewal", 3)
@@ -60,7 +71,6 @@ func TimeSuite(ctx context.Context, r *Report, cbb string, timeout time.Duration
 	if lapsed != nil {
 		lapse(ctx, r, f, lapsed, timeout)
 	}
-	clocks(ctx, r, f, timeout)
 }
 
 // exec1 runs a program on the controller.

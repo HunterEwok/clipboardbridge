@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// tmuxPaste (T1, T2, T6, T7, T9): remote paste into root's tmux on a fleet
+// tmuxPaste (T1, T2, T6, T7, T9, T10, T13, T14): remote paste into root's tmux on a fleet
 // member, with the helper tmux starts from clipboardbridge's tmux.conf, and
 // each refusal with its reason sent back to the admin.
 func tmuxPaste(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
@@ -188,11 +188,80 @@ func tmuxPaste(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 			return err
 		})
 	})
+	// T10: an escape sequence and bytes that are not UTF-8 never reach the
+	// keys; the rest of the text does.
+	r.Do(p+"T10-cleaned", func() error {
+		if _, err := Run(ctx, b, "tmux send-keys -t cbb C-u", ""); err != nil {
+			return err
+		}
+		msg, err := paste("", "t10a\x1b[201~\xffb-"+g.run)
+		if err == nil && msg != "" {
+			err = fmt.Errorf("refused: %s", strings.TrimSpace(msg))
+		}
+		if err != nil {
+			return err
+		}
+		if err := inPane("t10ab-" + g.run); err != nil {
+			return err
+		}
+		out, err := Run(ctx, b, "tmux capture-pane -p -J -t cbb", "")
+		if err == nil && strings.Contains(out, "201~") {
+			err = fmt.Errorf("the escape sequence reached the pane: %q", out)
+		}
+		return err
+	})
+	// T13: with the admin and the target apart, the paste and its result
+	// go through the member both reach.
+	r.Do(p+"T13-through-a-member", func() error {
+		if err := cut(ctx, admin, b); err != nil {
+			return err
+		}
+		defer heal(ctx, admin, b)
+		if _, err := Run(ctx, b, "tmux send-keys -t cbb C-u", ""); err != nil {
+			return err
+		}
+		if err := eventually(ctx, 2*timeout, func() error {
+			msg, err := paste("", text+"-routed")
+			if err == nil && msg != "" {
+				err = fmt.Errorf("refused: %s", strings.TrimSpace(msg))
+			}
+			return err
+		}); err != nil {
+			return err
+		}
+		return inPane(text + "-routed")
+	})
 	// An admin turns remote paste off there from afar.
 	r.Do(p+"off-from-afar", func() error {
 		if _, err := Run(ctx, admin, "cbb paste-receive off -on "+id, ""); err != nil {
 			return err
 		}
 		return refused("", text, "remote paste is off on this device")
+	})
+	// T14: off on every device at once; only the device's own user turns
+	// it on again.
+	r.Do(p+"T14-off-all", func() error {
+		if _, err := Run(ctx, b, "cbb paste-receive on -console", ""); err != nil {
+			return err
+		}
+		if _, err := Run(ctx, admin, "cbb paste-receive off -all", ""); err != nil {
+			return err
+		}
+		if err := refused("", text, "remote paste is off on this device"); err != nil {
+			return err
+		}
+		if err := succeeds(ctx, b, "cbb paste-receive", "", "Remote paste is off"); err != nil {
+			return err
+		}
+		if _, err := Run(ctx, b, "cbb paste-receive on -console", ""); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout, func() error {
+			msg, err := paste("", text+"-again")
+			if err == nil && msg != "" {
+				err = fmt.Errorf("refused: %s", strings.TrimSpace(msg))
+			}
+			return err
+		})
 	})
 }

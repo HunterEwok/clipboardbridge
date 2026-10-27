@@ -30,20 +30,41 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 	}
 	defer f.Close(ctx)
 
-	pairingWindow(ctx, r, f)
-	roles(ctx, r, f, timeout)
-	takeover(ctx, r, f, timeout)
-	rejoin(ctx, r, f, timeout)
-	sideBySide(ctx, r, f, timeout)
-	partition(ctx, r, f, timeout)
-	line(ctx, r, f, timeout)
-	modes(ctx, r, f, timeout)
-	junk(ctx, r, f, timeout)
-	localClients(ctx, r, f)
-	restarts(ctx, r, f, timeout)
-	tmuxPaste(ctx, r, f, timeout)
-	manyMembers(ctx, r, f, size, timeout)
+	for _, s := range []struct {
+		name string
+		run  func()
+	}{
+		{"G5-window", func() { pairingWindow(ctx, r, f) }},
+		{"G20-roles", func() { roles(ctx, r, f, timeout) }},
+		{"G26-takeover", func() { takeover(ctx, r, f, timeout) }},
+		{"G42-rejoin", func() { rejoin(ctx, r, f, timeout) }},
+		{"G43-two-groups", func() { sideBySide(ctx, r, f, timeout) }},
+		{"Y12-partition", func() { partition(ctx, r, f, timeout) }},
+		{"Y16-line", func() { line(ctx, r, f, timeout) }},
+		{"M6-own", func() { modes(ctx, r, f, timeout) }},
+		{"D15-junk", func() { junk(ctx, r, f, timeout) }},
+		{"E5-local-clients", func() { localClients(ctx, r, f) }},
+		{"E9-restarts", func() { restarts(ctx, r, f, timeout) }},
+		{"T2-tmux", func() { tmuxPaste(ctx, r, f, timeout) }},
+		{"G25-offline", func() { offline(ctx, r, f, timeout) }},
+		{"G27-takeover-undone", func() { takeoverUndone(ctx, r, f, timeout) }},
+		{"G33-admins-at-once", func() { concurrentAdmins(ctx, r, f, timeout) }},
+		{"S24-stolen-admin", func() { stolenAdmin(ctx, r, f, timeout) }},
+		{"M4-mode-kept", func() { modeKept(ctx, r, f, timeout) }},
+		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
+	} {
+		if ctx.Err() == nil && scenario(s.name) {
+			s.run()
+		}
+	}
 }
+
+// scenarios limits the fleet and time suites to the scenarios that
+// -scenario names; none given runs them all.
+var scenarios map[string]bool
+
+// scenario reports whether the scenario name runs.
+func scenario(name string) bool { return len(scenarios) == 0 || scenarios[name] }
 
 // fleetGroup starts n new members and forms a group of them, the first as
 // its root, every one in the sync mode shared (R2).
