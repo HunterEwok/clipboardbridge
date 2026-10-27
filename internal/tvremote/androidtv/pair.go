@@ -88,23 +88,7 @@ func dial(ctx context.Context, addr string, c Client, pin []byte) (*tls.Conn, er
 	if err != nil {
 		return nil, fmt.Errorf("the remote's certificate: %w", err)
 	}
-	cfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		// The TV's certificate is self-signed; VerifyPeerCertificate
-		// checks it against the pin.
-		InsecureSkipVerify: true,
-		VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
-			if len(raw) == 0 {
-				return errors.New("the TV sent no certificate")
-			}
-			if pin != nil {
-				if sum := sha256.Sum256(raw[0]); !equal(sum[:], pin) {
-					return errors.New("the TV's certificate is not the one it had at pairing: pair it again if it was reset")
-				}
-			}
-			return nil
-		},
-	}
+	cfg := tlsVerifiedByPin(cert, pin)
 	d := tls.Dialer{NetDialer: &net.Dialer{Timeout: stepTimeout, Control: netguard.ControlHome}, Config: cfg}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -127,6 +111,34 @@ func addr(host string, remote bool) string {
 		port--
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// tlsVerifiedByPin is the TLS of a connection to the TV: its certificate is
+// self-signed and has no name, so crypto/tls cannot check it, and
+// VerifyConnection checks it against the pin instead. Without a pin, at
+// pairing, any certificate is taken and pinned after: the code the TV
+// shows checks it. Its first byte is the first byte of a hash of both
+// ends' keys as the TV sees them, which Finish compares with the keys this
+// end sees, so a device in between is caught 255 times in 256, as far as
+// the protocol allows. (The name, like the pairing's
+// clientTLSVerifiedByFingerprint, tells CodeQL that InsecureSkipVerify is
+// checked here.)
+func tlsVerifiedByPin(cert tls.Certificate, pin []byte) *tls.Config {
+	return &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("the TV sent no certificate")
+			}
+			if pin != nil {
+				if sum := sha256.Sum256(cs.PeerCertificates[0].Raw); !equal(sum[:], pin) {
+					return errors.New("the TV's certificate is not the one it had at pairing: pair it again if it was reset")
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func equal(a, b []byte) bool {
