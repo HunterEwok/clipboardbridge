@@ -436,6 +436,17 @@ public actor MemberNode {
             }
         }
         ask()
+        // A peer that stops sending ends the fetch, as Go's fetchStall.
+        let stall = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if f.idle(longer: Self.fetchStall) {
+                    f.end(Failure.refused("the device sent nothing of the part for 15 seconds"))
+                    return
+                }
+            }
+        }
+        defer { stall.cancel() }
         while at < size {
             if Task.isCancelled {
                 cancel()
@@ -444,9 +455,12 @@ public actor MemberNode {
             let ch: Member.Chunk
             do {
                 ch = try await withTaskCancellationHandler { try await f.next() } onCancel: { f.end(CancellationError()) }
-            } catch is CancellationError {
+            } catch {
+                // Missing, stalled or cancelled: the ranges asked for after
+                // it may still be served, and would only cross the next
+                // fetch.
                 cancel()
-                throw CancellationError()
+                throw error
             }
             guard !ch.data.isEmpty, ch.offset + Int64(ch.data.count) <= size else {
                 cancel()
@@ -468,6 +482,8 @@ public actor MemberNode {
 
     /// The most bytes a fetch keeps asked for ahead of what it has.
     static let fetchAhead: Int64 = 4 << 20
+    /// How long a fetch waits for the next piece before it gives up.
+    static let fetchStall: TimeInterval = 15
     /// The most gets a peer may have waiting on one connection.
     static let maxGets = 64
     /// How many chunks a connection holds ready to write.
@@ -532,9 +548,11 @@ public actor MemberNode {
         private var chunks: [Member.Chunk] = []
         private var ended: Error?
         private var waiter: CheckedContinuation<Void, Never>?
+        private var last = Date()
 
         func push(_ c: Member.Chunk) {
             wake {
+                last = Date()
                 // The fetch asks for at most fetchAhead; a peer that sends
                 // much more ends it.
                 if chunks.count > Int(MemberNode.fetchAhead) / Member.chunkSize * 2 {
@@ -546,6 +564,9 @@ public actor MemberNode {
         }
 
         func end(_ e: Error) { wake { ended = ended ?? e } }
+
+        /// Whether no chunk came for longer than t.
+        func idle(longer t: TimeInterval) -> Bool { lock.withLock { Date().timeIntervalSince(last) > t } }
 
         private func wake(_ f: () -> Void) {
             let w: CheckedContinuation<Void, Never>? = lock.withLock {

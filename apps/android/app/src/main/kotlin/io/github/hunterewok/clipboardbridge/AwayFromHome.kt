@@ -55,13 +55,15 @@ class AwayState(val key: ByteArray, val psk: ByteArray = newPSK(), val hubs: Lis
                 o.endpoints.forEach { writeUTF(it) }
                 writeUTF(o.obfuscation ?: "")
                 writeUTF(o.vless ?: "")
+                writeByte(if (o.nextKey != null) 1 else 0)
+                o.nextKey?.let { write(it) }
             }
         }
         return out.toByteArray()
     }
 
     companion object {
-        private const val VERSION = 4
+        private const val VERSION = 5
 
         /** The most hubs whose offers the phone keeps, as a byte counts them. */
         const val MAX_HUBS = 255
@@ -89,7 +91,11 @@ class AwayState(val key: ByteArray, val psk: ByteArray = newPSK(), val hubs: Lis
                     val obfuscation = if (version == 1) "" else readUTF()
                     // Nor had version 2 the way over VLESS.
                     val vless = if (version <= 2) "" else readUTF()
-                    val o = Member.TunnelOffer(hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() }, vless.takeIf { it.isNotEmpty() })
+                    // Nor had version 4 the hub's next key.
+                    val next = if (version >= 5 && readBoolean()) ByteArray(32).also { readFully(it) } else null
+                    val o = Member.TunnelOffer(
+                        hubKey, psk, endpoints, obfuscation.takeIf { it.isNotEmpty() }, vless.takeIf { it.isNotEmpty() }, nextKey = next,
+                    )
                     return if (o.isValid) hub to o else null
                 }
                 if (version < 4) {
@@ -409,8 +415,8 @@ class AwayFromHome(
                     continue
                 }
                 var served: Long? = null
-                for ((i, h) in hubs.withIndex()) {
-                    served = tryHub(s, h.first, h.second, up = i > 0)
+                for (h in hubs) {
+                    served = tryHub(s, h.first, h.second, up = h.first != hubs[0].first)
                     if (served != null) break
                     if (synchronized(lock) { stopped || state !== s }) break
                 }
@@ -531,7 +537,13 @@ class AwayFromHome(
         fun rank(order: List<String>, hub: String): Int = order.indexOf(hub).let { if (it < 0) order.size else it }
 
         /** The kept offers the phone tries, of the hubs in the group's order and with endpoints, highest first. */
+        /**
+         * The hubs in their order; a hub that gave its key for the next
+         * period comes again right after, with that key: it may have moved
+         * on to it while the phone was away (section 11, "The hub's key").
+         */
         fun hubsToTry(order: List<String>, s: AwayState): List<Pair<String, Member.TunnelOffer>> =
             s.hubs.filter { (h, o) -> rank(order, h) < order.size && o.endpoints.isNotEmpty() }.sortedBy { rank(order, it.first) }
+                .flatMap { (h, o) -> listOfNotNull(h to o, o.withNextKey()?.let { h to it }) }
     }
 }

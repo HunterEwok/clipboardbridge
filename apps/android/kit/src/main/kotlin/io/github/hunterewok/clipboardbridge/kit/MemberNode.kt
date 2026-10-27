@@ -433,10 +433,23 @@ class MemberNode(
                 }
             }
             ask()
+            var last = System.nanoTime()
             while (at < size) {
-                if (f.missing) throw MissingException()
+                if (f.missing) {
+                    // The ranges asked for after the one missing may still
+                    // be served: they would only cross the next fetch.
+                    cancel()
+                    throw MissingException()
+                }
                 val m = f.chunks.poll(500, TimeUnit.MILLISECONDS)
-                    ?: if (c.ended) throw ProtocolException("the connection to the device ended") else continue
+                if (m == null) {
+                    if (c.ended) throw ProtocolException("the connection to the device ended")
+                    if (System.nanoTime() - last > FETCH_STALL_NS) {
+                        cancel()
+                        throw ProtocolException("the device sent nothing of the part for 15 seconds")
+                    }
+                    continue
+                }
                 if (m !is Member.Message.Chunk) continue // MISSING, seen above
                 if (m.data.isEmpty() || m.offset + m.data.size > size) {
                     cancel()
@@ -452,6 +465,7 @@ class MemberNode(
                     throw e
                 }
                 at += m.data.size
+                last = System.nanoTime()
                 ask()
             }
         } catch (e: InterruptedException) {
@@ -741,6 +755,9 @@ private const val MAX_GETS = 64
 
 /** The most bytes a fetch keeps asked for ahead of what it has. */
 private const val FETCH_AHEAD = 4L shl 20
+
+/** How long a fetch waits for the next piece before it gives up, as Go's fetchStall. */
+private const val FETCH_STALL_NS = 15_000_000_000L
 
 /** What a fetch's queue gets when the peer does not hold the part. */
 private val MISSING = Any()

@@ -217,13 +217,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   fresh WireGuard key at each registration, and drops a device a newer members' credential
   leaves out; a relay that serves a fixed list of groups also sees the period credential and
   the group's roots. Devices and phones that do not sign credentials yet register as before.
-  The lite member's core reads and checks the credentials with the same vectors.
+  The lite member's core and the phones' kits read and check the credentials with the same
+  vectors, and the kits sign them as a root phone will (`ServerCredentials`, `CredentialStore`).
 - The hub takes a new WireGuard key for its clients with each period of the server
   credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
   three days ahead, then it serves with it and registers again with its forwarder, so the
   forwarder cannot link the group's traffic from one month to the next by the hub's key. Go
-  members and the lite member try a hub with its next key too, so one that was away when
-  the hub moved on still reaches it.
+  members, the lite member and both phone apps try a hub with its next key too, so one that
+  was away when the hub moved on still reaches it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
@@ -245,6 +246,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A phone's fetch of an image or a file no longer waits for ever on a device that stopped
+  sending: after 15 seconds without any of the part it gives up, and on "missing" or a stall
+  it cancels what it asked for, as the Go service does.
 - The iPhone's member key and its certificate are readable while the phone is locked, once
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old

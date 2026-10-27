@@ -316,17 +316,27 @@ object Member {
          * to hub: the client forgets the sender's own offer.
          */
         val moved: Boolean = false,
+        /**
+         * The key the hub serves with in the next period of the group's
+         * server credentials, which the client tries after hubKey (section
+         * 11, "The hub's key"); null for none.
+         */
+        val nextKey: ByteArray? = null,
     ) {
-        /** Whether both keys are 32 bytes, as a tunnel needs. */
-        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8
+        /** Whether the keys are 32 bytes, as a tunnel needs. */
+        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8 && (nextKey == null || nextKey.size == 32)
 
         /** The same offer with another preshared key and hub, and moved set. */
         fun with(psk: ByteArray, hub: String?, moved: Boolean = false): TunnelOffer =
-            TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub, moved)
+            TunnelOffer(hubKey, psk, endpoints, obfuscation, vless, hub, moved, nextKey)
+
+        /** The offer with the next key as the hub's key, or null without one. */
+        fun withNextKey(): TunnelOffer? = nextKey?.let { TunnelOffer(it, psk, endpoints, obfuscation, vless, hub, moved) }
 
         override fun equals(other: Any?): Boolean =
             other is TunnelOffer && hubKey.contentEquals(other.hubKey) && psk.contentEquals(other.psk) && endpoints == other.endpoints &&
-                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub && moved == other.moved
+                obfuscation == other.obfuscation && vless == other.vless && hub == other.hub && moved == other.moved &&
+                (nextKey ?: ByteArray(0)).contentEquals(other.nextKey ?: ByteArray(0))
 
         override fun hashCode(): Int = hubKey.contentHashCode()
 
@@ -338,6 +348,7 @@ object Member {
             "vless" to vless?.let { Json.parseToJsonElement(it) },
             "hub" to Wire.str(hub),
             "moved" to if (moved) JsonPrimitive(true) else null,
+            "next_key" to nextKey?.let { Wire.bytes(it) },
         )
 
         companion object {
@@ -351,6 +362,7 @@ object Member {
                 o.optObject("vless")?.toString(),
                 o.optString("hub"),
                 o.optBool("moved") ?: false,
+                o.optBytes("next_key")?.takeIf { it.isNotEmpty() },
             )
         }
     }

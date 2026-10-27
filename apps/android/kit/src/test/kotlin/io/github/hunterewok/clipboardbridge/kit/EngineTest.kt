@@ -181,7 +181,8 @@ class EngineTest {
         // A bad offer is dropped; a good one reaches onTunnel.
         b.write(Member.encode(Member.Message.Tunnel(Member.TunnelOffer(ByteArray(31), ByteArray(32)))))
         b.write(Member.encode(Member.Message.Tunnel(null)))
-        val good = Member.TunnelOffer(ByteArray(32) { 2 }, ByteArray(32) { 3 }, listOf("192.0.2.1:8764"))
+        // With the hub's key for the next period, which reaches onTunnel too.
+        val good = Member.TunnelOffer(ByteArray(32) { 2 }, ByteArray(32) { 3 }, listOf("192.0.2.1:8764"), nextKey = ByteArray(32) { 4 })
         b.write(Member.encode(Member.Message.Tunnel(good)))
         val (from, got) = assertNotNull(offers.poll(10, TimeUnit.SECONDS))
         assertEquals(hub, from)

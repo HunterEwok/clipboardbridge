@@ -312,15 +312,27 @@ public enum Member {
         /// Whether the sender is no hub any more and hands its clients over
         /// to hub: the client forgets the sender's own offer.
         public var moved: Bool
+        /// The key the hub serves with in the next period of the group's
+        /// server credentials, which the client tries after hubKey (section
+        /// 11, "The hub's key"); nil for none.
+        public var nextKey: Data?
 
         public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil, hub: String? = nil,
-                    moved: Bool = false) {
+                    moved: Bool = false, nextKey: Data? = nil) {
             (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless, self.hub) = (hubKey, psk, endpoints, obfuscation, vless, hub)
-            self.moved = moved
+            (self.moved, self.nextKey) = (moved, nextKey)
         }
 
-        /// Whether both keys are 32 bytes, as a tunnel needs.
-        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
+        /// Whether the keys are 32 bytes, as a tunnel needs.
+        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 && (nextKey?.count ?? 32) == 32 }
+
+        /// The offer with the next key as the hub's key, or nil without one.
+        public var withNextKey: TunnelOffer? {
+            guard let nextKey else { return nil }
+            var o = self
+            (o.hubKey, o.nextKey) = (nextKey, nil)
+            return o
+        }
 
         /// The same offer with another preshared key and hub, and moved set.
         public func with(psk: Data, hub: String?, moved: Bool = false) -> TunnelOffer {
@@ -329,7 +341,7 @@ public enum Member {
             return o
         }
 
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub, moved }
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub, moved, next_key }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -340,6 +352,7 @@ public enum Member {
             vless = try c.decodeIfPresent(VLESS.self, forKey: .vless)
             hub = try c.decodeIfPresent(String.self, forKey: .hub)
             moved = try c.decodeIfPresent(Bool.self, forKey: .moved) ?? false
+            nextKey = try c.decodeIfPresent(Data.self, forKey: .next_key).flatMap { $0.isEmpty ? nil : $0 }
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -351,6 +364,7 @@ public enum Member {
             try c.encodeIfPresent(vless, forKey: .vless)
             try c.encodeIfPresent(hub, forKey: .hub)
             if moved { try c.encode(true, forKey: .moved) }
+            try c.encodeIfPresent(nextKey, forKey: .next_key)
         }
     }
 

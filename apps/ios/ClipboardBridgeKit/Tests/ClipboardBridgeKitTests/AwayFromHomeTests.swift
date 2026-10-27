@@ -37,6 +37,15 @@ final class AwayFromHomeTests: XCTestCase {
                                       id: "5f0c1e2d-3b4a-4c5d-8e6f-7a8b9c0d1e2f")
         let overVLESS = off.with(hub, offer: tunneled)
         XCTAssertEqual(AwayState.decode(try overVLESS.encoded()), overVLESS)
+        // And the hub's key for the next period, tried right after its key now.
+        var next = offer
+        next.nextKey = Data(repeating: 7, count: 32)
+        let withNext = off.with(hub, offer: next)
+        XCTAssertEqual(AwayState.decode(try withNext.encoded()), withNext)
+        let tried = AwayFromHome.hubsToTry([hub], withNext)
+        XCTAssertEqual(tried.map(\.device), [hub, hub])
+        XCTAssertEqual(tried[1].offer.hubKey, next.nextKey)
+        XCTAssertNil(tried[1].offer.nextKey)
         // A short key, a short preshared key and a bad offer are not states.
         XCTAssertNil(AwayState.decode(try AwayState(key: Data(count: 31)).encoded()))
         XCTAssertNil(AwayState.decode(try AwayState(key: key, psk: Data(count: 31)).encoded()))

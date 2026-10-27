@@ -803,7 +803,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
     /// The root's own device and its key: the newest full or phone device
     /// record the current root signed for itself.
-    private func rootMember() -> (device: String, key: Data)? {
+    func rootMember() -> (device: String, key: Data)? {
         let ev = Eval(self)
         guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return nil }
         let own = ev.entries.filter {
