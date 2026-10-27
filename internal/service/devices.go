@@ -113,6 +113,9 @@ func (s *Service) settleRecords(fresh []group.Record) {
 	if revoked || rooted {
 		s.afterRevocation()
 	}
+	if len(fresh) > 0 {
+		s.refreshCredential()
+	}
 }
 
 // adoptRootsLocked makes the identity trust the roots the records lead to

@@ -198,11 +198,30 @@ All notable changes to clipboardbridge are documented in this file. The format f
   keeps its own clipboard out, and serves it to the members that reach only it, both ways.
   Through its tunnel it serves only copies within that limit (`cbb config max-copy-away`),
   so the hub's limit caps its whole star; a larger copy stays at home and the hub logs it.
+- Formatted text in the desktop connectors (design.md, "Images and files", step 6): text
+  copied with its formatting in a browser or an office program on Wayland, X11, a Mac or
+  Windows (`text/html`, `public.html`, `HTML Format`) is pasted with it on the other
+  computers, and as plain text on the phones and the lite member. A secret's formatting is
+  never read; formatted text over 8 MiB, or with a text over 256 KiB, goes as its text alone.
+  A watch request asks for it with `html` (docs/protocol.md, section 8).
+- The hubs' credential (D-67, docs/protocol.md, section 18): a computer that is the group's
+  root signs, from its records, the member key hashes of the group's hubs, its admins and the
+  admins that may take the group over, padded to 4, 8, 16 or more entries, with a version and
+  an expiry of 90 days, and the members pass it on. A hub then registers with its forwarder
+  with that credential and a certificate that names no device, so the forwarder no longer
+  sees the group's records, device IDs, names or dates. An admin that takes the group over
+  signs a link to its new root, which the forwarder follows.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
 ### Changed
 
+- `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
+  (D-75): only `forward-state.json`, which holds, under a keyed hash of each group's tag,
+  the version of its newest credential and a hash of its root (`-state`, `none` for memory
+  only). It refuses an older credential, also after a restart, and records from a group that
+  registered with a credential; records from older hubs and from phones' groups stay in
+  memory only.
 - The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
   so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
   each MiB.

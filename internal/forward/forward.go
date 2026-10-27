@@ -16,7 +16,10 @@
 // indices the two chose. Nothing is added to the packets, so the network
 // cannot tell groups apart, and a packet goes only to its own group's hub
 // or to a client of that hub. The forwarder keeps everything in memory and
-// writes nothing about the groups or their devices, not even to its log.
+// writes nothing about the groups or their devices, not even to its log;
+// with a state file it keeps there only, under a hash of each group's tag,
+// the version of the group's newest credential and a hash of its root
+// (versions).
 package forward
 
 import (
@@ -95,7 +98,8 @@ type Forwarder struct {
 
 	mu       sync.Mutex
 	regs     map[string]*reg // by group tag
-	memory   *memory         // the groups' authority records
+	memory   *memory         // the authority records of the groups that register with them
+	versions *versions       // the newest credential of each group that registers with one
 	byID     map[uint64]*reg // by registration ID, for hellos
 	byHubEP  map[netip.AddrPort]*reg
 	pending  map[clientKey]pending
@@ -167,11 +171,12 @@ type Config struct {
 	Cert   tls.Certificate // the forwarder's own, whose key the hubs pin
 	Limits Limits          // DefaultLimits if zero
 	VLESS  *VLESSConfig    // nil without VLESS
-	// StateDir, if set, is where the forwarder keeps each group's
-	// authority records, so that a hub the group removed cannot register
-	// with older ones after a restart; "" keeps them in memory only.
-	StateDir string
-	Logf     func(format string, args ...any)
+	// StateFile, if set, is where the forwarder keeps the version of each
+	// group's newest credential, under a hash of its tag, so that a hub
+	// the group removed cannot register with an older one after a
+	// restart; "" keeps them in memory only.
+	StateFile string
+	Logf      func(format string, args ...any)
 }
 
 // VLESSConfig configures the forwarder's VLESS with REALITY, for the
@@ -279,7 +284,12 @@ func Listen(cfg Config) (*Forwarder, error) {
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
 		sources: map[netip.Addr]*bucket{}, netScans: map[netip.Prefix]*bucket{},
 		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		done: make(chan struct{}), memory: newMemory(cfg.StateDir),
+		done: make(chan struct{}), memory: newMemory(),
+	}
+	if f.versions, err = newVersions(cfg.StateFile, cfg.Cert.PrivateKey); err != nil {
+		udp.Close()
+		tcp.Close()
+		return nil, fmt.Errorf("forward: the state file: %w", err)
 	}
 	if f.limits.ScanRate <= 0 {
 		f.limits.ScanRate = DefaultLimits.ScanRate

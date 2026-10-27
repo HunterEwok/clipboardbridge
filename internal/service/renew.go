@@ -25,6 +25,7 @@ func (s *Service) renewLoop(ctx context.Context) {
 	defer t.Stop()
 	for {
 		s.renew(s.cfg.now())
+		s.refreshCredential()
 		select {
 		case <-ctx.Done():
 			return

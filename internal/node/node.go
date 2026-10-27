@@ -130,6 +130,9 @@ type Config struct {
 
 	// Records, if set, keeps the group's signed records.
 	Records RecordStore
+	// Credentials, if set, keeps the group's server credentials, which go
+	// to every peer after its hello.
+	Credentials CredentialStore
 
 	// TunnelKey, if set, is this member's WireGuard public key, which its
 	// hello offers the group's hubs, with TunnelPSK, its own preshared key.
@@ -177,6 +180,17 @@ type RecordStore interface {
 	// for the other peers, so that a device they revoke still gets them
 	// before a Recheck closes its connection.
 	Settle(fresh []group.Record)
+}
+
+// A CredentialStore keeps the group's server credentials
+// (docs/protocol.md, section 18). Its methods are called from connection
+// goroutines.
+type CredentialStore interface {
+	// All returns every credential, for a peer that sent its hello.
+	All() []group.Credential
+	// Add takes the credentials a peer sent and returns those that were
+	// new and valid, which go on to the other peers.
+	Add(from group.DeviceID, cs []group.Credential) []group.Credential
 }
 
 // Write is a text, or images or files, to put into the member's own
@@ -891,6 +905,26 @@ func (n *Node) helloed() []*conn {
 // revocation made on this member.
 func (n *Node) SendRecords(rs []group.Record) { n.sendRecords(rs, nil) }
 
+// maxCredentials bounds the credentials of one message: a hubs' credential
+// for each root of the path, and the links between them.
+const maxCredentials = 2 * group.MaxCredentialChain
+
+// SendCredentials sends server credentials made on this member to the
+// peers.
+func (n *Node) SendCredentials(cs []group.Credential) { n.sendCredentials(cs, nil) }
+
+// sendCredentials sends credentials to every connection that sent its
+// hello, except the one they came from.
+func (n *Node) sendCredentials(cs []group.Credential, from *conn) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, c := range n.conns {
+		if c != from && c.role() != "" {
+			c.enqueue(outgoing{creds: cs})
+		}
+	}
+}
+
 // sendRecords sends records to every connection that sent its hello,
 // except the one they came from.
 func (n *Node) sendRecords(rs []group.Record, from *conn) {
@@ -1011,6 +1045,7 @@ type outgoing struct {
 	cert    *x509.Certificate
 	issuer  *x509.Certificate // the admin CA that issued cert; nil for the group CA
 	records []group.Record
+	creds   []group.Credential
 	tunnel  *TunnelOffer
 	admin   *x509.Certificate // an admin CA for the peer
 	phoneCA *group.CA         // the iPhone CA with its key
@@ -1186,6 +1221,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return m, nil
 	case o.records != nil:
 		return &message{Type: typeRecs, Records: o.records}, nil
+	case o.creds != nil:
+		return &message{Type: typeCreds, Credentials: o.creds}, nil
 	case o.tunnel != nil:
 		return &message{Type: typeTun, Tunnel: o.tunnel}, nil
 	case o.admin != nil:
@@ -1365,6 +1402,11 @@ func (c *conn) reader() error {
 			c.n.apply(res, c)
 			c.n.renewPeer(c)
 			c.n.offerRecords(c, extra.Records)
+			if st := c.n.cfg.Credentials; st != nil {
+				if all := st.All(); len(all) > 0 {
+					c.enqueue(outgoing{creds: all})
+				}
+			}
 			c.n.offerTunnel(c, extra.TunnelKey, extra.TunnelPSK)
 			c.n.sharePhoneCA(c)
 			for i := range c.n.cfg.Evidence {
@@ -1432,6 +1474,12 @@ func (c *conn) reader() error {
 				if fresh := st.Add(c.id, m.Records); len(fresh) > 0 {
 					c.n.sendRecords(fresh, c)
 					st.Settle(fresh)
+				}
+			}
+		case typeCreds:
+			if st := c.n.cfg.Credentials; st != nil && len(m.Credentials) > 0 && len(m.Credentials) <= maxCredentials {
+				if fresh := st.Add(c.id, m.Credentials); len(fresh) > 0 {
+					c.n.sendCredentials(fresh, c)
 				}
 			}
 		case typeCommand:

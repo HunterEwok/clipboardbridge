@@ -14,6 +14,9 @@
 // A secret is written for this Mac only, so Universal Clipboard does not
 // carry it, and with the concealed marker, so clipboard histories skip it.
 //
+// Formatted text (public.html) is read and written next to the text, as
+// browsers copy it, but never with a secret.
+//
 // An image is read when the pasteboard holds no text: its PNG, else its
 // JPEG, else its TIFF as a PNG; one is written as itself and as a TIFF,
 // for the programs that take only that. A copy of files in the Finder is
@@ -41,4 +44,6 @@ type Item struct {
 	// Files are the paths of copied files, as Finder or Explorer copies
 	// them.
 	Files []string
+	// HTML is the formatted text next to Text, as a browser copies it.
+	HTML string
 }

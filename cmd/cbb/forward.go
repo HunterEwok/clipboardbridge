@@ -29,7 +29,8 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 	showKey := fs.Bool("show-key", false, "print the key for cbb global hub -forwarder-key and stop")
 	vlessSite := fs.String("vless-site", "", "take VLESS with REALITY too, borrowing the TLS of this well-known site, such as www.example.com")
 	vlessListen := fs.String("vless-listen", ":443", "the TCP address to listen on for VLESS")
-	records := fs.String("records", "", "the directory that keeps the groups' authority records (default: groups next to the key; \"none\" keeps them in memory only)")
+	state := fs.String("state", "", "the file that keeps, under a hash of each group's tag, the version of its newest credential (default: forward-state.json next to the key; \"none\" keeps them in memory only)")
+	records := fs.String("records", "", "where earlier versions kept a file for each group; they are deleted (default: groups next to the key)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -48,17 +49,21 @@ func cmdForward(args []string, stdout, stderr io.Writer) int {
 	}
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 	cfg := forward.Config{Listen: *listen, Cert: cert, Logf: logf}
-	switch *records {
+	switch *state {
 	case "none":
 	case "":
-		cfg.StateDir = filepath.Join(filepath.Dir(*keyFile), "groups")
+		cfg.StateFile = filepath.Join(filepath.Dir(*keyFile), "forward-state.json")
 	default:
-		cfg.StateDir = *records
+		cfg.StateFile = *state
 	}
-	if cfg.StateDir != "" {
-		if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
-			return fail(stderr, err)
-		}
+	old := *records
+	if old == "" || old == "none" {
+		old = filepath.Join(filepath.Dir(*keyFile), "groups")
+	}
+	if n, err := forward.RemoveGroupFiles(old); err != nil {
+		logf("cbb forward: deleting the group files of earlier versions: %v", err)
+	} else if n > 0 {
+		logf("cbb forward: deleted the %d group files that earlier versions kept", n)
 	}
 	if *vlessSite != "" {
 		key, err := forward.LoadRealityKey(*keyFile)
