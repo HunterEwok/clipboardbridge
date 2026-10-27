@@ -279,7 +279,8 @@ func (u *Updater) Apply(ctx context.Context, src Source, st State, r release.Rel
 			fromGroup = true
 			u.logf("Took %s (%s) from the group.", u.Archive, r.Version)
 		} else {
-			u.logf("Not from the group: %v", err)
+			// Usual for the first device of a group to take a release.
+			u.logf("No device of the group could hand it over (%v).", err)
 		}
 	}
 	if !fromGroup {
