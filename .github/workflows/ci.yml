@@ -404,7 +404,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
       - name: the OPNsense plugin hook
         run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
@@ -502,6 +502,59 @@ jobs:
           rm "$rel/stable.json"
           refused "no stable.json"
           CBB_VERIFY=skip sudo -E sh packaging/get.sh --no-firewall | grep -q "Not checked"
+      - name: cbb update installs a newer signed release, puts the old one back, and sets the timer
+        run: |
+          version() { CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/HunterEwok/clipboardbridge/internal/version.Version=v$1" -o "$2" ./cmd/cbb; }
+          mkdir -p "$RUNNER_TEMP/v060" "$RUNNER_TEMP/v061"
+          version 0.6.0 "$RUNNER_TEMP/v060/cbb"
+          version 0.6.1 "$RUNNER_TEMP/v061/cbb"
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --auto-update off "$RUNNER_TEMP/v060/cbb"
+          test "$(sudo cbb update -auto)" = off
+          # Releases are not signed yet: nothing to check them against.
+          if sudo cbb update 2>"$RUNNER_TEMP/err"; then echo "cbb update took a release without roots" >&2; exit 1; fi
+          grep -q 'pins no release keys' "$RUNNER_TEMP/err"
+          # 0.6.1, signed with throwaway keys (tools/release-sign drill).
+          rel="$RUNNER_TEMP/update"
+          sh packaging/archive.sh "$RUNNER_TEMP/v061/cbb" linux amd64 "$rel"
+          go run ./tools/release-sign drill -version 0.6.1 "$rel" "$RUNNER_TEMP/update.pem"
+          export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/update.pem"
+          cbb update -check | grep -q '0.6.1 is available'
+          sudo -E cbb update
+          cbb version | grep -q ' v0.6.1 '
+          sudo cbb status | grep -q 'Not in a group'
+          sudo -E cbb update | grep -q 'is the newest release'
+          # 0.6.2, whose service never starts: 0.6.1 goes back, and 0.6.2 is a failed version.
+          rel2="$RUNNER_TEMP/update2"
+          mkdir -p "$RUNNER_TEMP/v062"
+          cat >"$RUNNER_TEMP/v062/cbb" <<'EOF'
+          #!/bin/sh
+          case $1 in
+          version) echo "clipboardbridge v0.6.2 linux/amd64" ;;
+          service) exit 1 ;;
+          esac
+          EOF
+          chmod 0755 "$RUNNER_TEMP/v062/cbb"
+          sh packaging/archive.sh "$RUNNER_TEMP/v062/cbb" linux amd64 "$rel2"
+          go run ./tools/release-sign drill -version 0.6.2 "$rel2" "$RUNNER_TEMP/update2.pem"
+          if sudo CBB_RELEASE_DIR="$rel2" CBB_RELEASE_ROOTS="$RUNNER_TEMP/update2.pem" cbb update 2>"$RUNNER_TEMP/err"; then
+            echo "cbb update kept a release whose service does not start" >&2
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/err"
+          grep -q '0.6.1 is back' "$RUNNER_TEMP/err"
+          cbb version | grep -q ' v0.6.1 '
+          sudo cbb status | grep -q 'Not in a group'
+          sudo grep -q '"0.6.2"' /var/lib/clipboardbridge-update/update.json
+          # The timer.
+          sudo cbb update -auto on
+          systemctl is-enabled -q clipboardbridge-update.timer
+          systemctl cat clipboardbridge-update.service | grep -qx 'ExecStart=/usr/local/bin/cbb update -timer'
+          sudo cbb update -auto off
+          test ! -e /etc/systemd/system/clipboardbridge-update.timer
+          sudo cbb update -auto on
+          sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+          test ! -e /etc/systemd/system/clipboardbridge-update.timer
+          test ! -e /var/lib/clipboardbridge-update
       - name: install.sh keeps a port, and uninstall.sh removes it all
         run: |
           sudo CBB_FIREWALL=no sh packaging/linux/install.sh --port 9000 "$RUNNER_TEMP/cbb" | grep -q 'TCP port 9000'
@@ -855,6 +908,55 @@ jobs:
           net.exe localgroup clipboardbridge 2>&1 | Out-Null
           if ($LASTEXITCODE -eq 0) { throw 'uninstall.ps1 -Purge left the group' }
           $global:LASTEXITCODE = 0
+      - name: cbb update installs a newer signed release from a copy of itself, and sets the task
+        env:
+          CBB_ERROR_DETAILS: "1"
+        run: |
+          function build($v) {
+            $dir = Join-Path $env:RUNNER_TEMP "v$v\clipboardbridge"
+            New-Item -ItemType Directory -Force "$dir\packaging" | Out-Null
+            $ld = "-X github.com/HunterEwok/clipboardbridge/internal/version.Version=v$v"
+            go build -trimpath -ldflags $ld -o "$dir\cbb.exe" ./cmd/cbb
+            if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
+            go build -trimpath -ldflags "$ld -H=windowsgui" -o "$dir\cbbw.exe" ./cmd/cbb
+            if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
+            Copy-Item -Recurse packaging\windows "$dir\packaging\"
+            return $dir
+          }
+          $old = build '0.6.0'
+          $new = build '0.6.1'
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$old\packaging\windows\install.ps1" -AutoUpdate off -NoFirewall
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
+          if ((& $cbb update -auto | Out-String).Trim() -ne 'off') { throw 'install.ps1 -AutoUpdate off was not kept' }
+          $rel = Join-Path $env:RUNNER_TEMP 'update'
+          New-Item -ItemType Directory $rel | Out-Null
+          Compress-Archive -Path $new -DestinationPath "$rel\clipboardbridge-windows-amd64.zip"
+          go run ./tools/release-sign drill -version 0.6.1 $rel "$env:RUNNER_TEMP\update.pem"
+          if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
+          $env:CBB_RELEASE_DIR = $rel
+          $env:CBB_RELEASE_ROOTS = "$env:RUNNER_TEMP\update.pem"
+          $out = & $cbb update -check | Out-String
+          if ($out -notmatch '0\.6\.1 is available') { throw "cbb update -check: $out" }
+          # It runs from a copy, since install.ps1 stops every cbb in Program Files\clipboardbridge.
+          & $cbb update
+          if ($LASTEXITCODE -ne 0) { throw 'cbb update failed' }
+          $v = & $cbb version | Out-String
+          if ($v -notmatch ' v0\.6\.1 ') { throw "after the update: $v" }
+          if ((Get-Service clipboardbridge).Status -ne 'Running') { throw 'the service does not run' }
+          $out = & $cbb update | Out-String
+          if ($out -notmatch 'newest release') { throw "a second cbb update: $out" }
+          & $cbb update -auto on
+          if ($LASTEXITCODE -ne 0) { throw 'cbb update -auto on failed' }
+          $task = Get-ScheduledTask -TaskName 'clipboardbridge update'
+          if ($task.Principal.UserId -ne 'SYSTEM' -or $task.Actions[0].Execute -notmatch 'cbbw\.exe$') { throw "the task: $($task.Principal.UserId) $($task.Actions[0].Execute)" }
+          & $cbb update -auto off
+          if (Get-ScheduledTask -TaskName 'clipboardbridge update' -ErrorAction SilentlyContinue) { throw 'cbb update -auto off left the task' }
+          & $cbb update -auto on
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" -Purge
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (Get-ScheduledTask -TaskName 'clipboardbridge update' -ErrorAction SilentlyContinue) { throw 'uninstall.ps1 left the task' }
+          if (Test-Path "$env:ProgramFiles\clipboardbridge-update") { throw 'uninstall.ps1 left cbb update''s folder' }
 
   kit:
     name: phone kit (${{ matrix.os }})

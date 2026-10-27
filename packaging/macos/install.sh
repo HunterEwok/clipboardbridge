@@ -4,7 +4,7 @@
 
 # Installs clipboardbridge on a Mac:
 #
-#   sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb
+#   sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb
 #
 # It creates the hidden _clipboardbridge user and group, installs the binary to
 # /usr/local/bin, the service as a LaunchDaemon and the pasteboard agent as
@@ -21,8 +21,10 @@
 # to N, kept in /etc/clipboardbridge/clipboardbridge.env as on Linux until the
 # next --port; --port 8764 goes back. --home-cgnat on (or CBB_HOME_CGNAT=1)
 # counts 100.64.0.0/10, the carrier-grade NAT range, as the home network
-# too, kept in the same file; --home-cgnat off goes back. uninstall.sh
-# removes it all again.
+# too, kept in the same file; --home-cgnat off goes back. --auto-update
+# on|off (or CBB_AUTO_UPDATE) answers whether it updates itself once a day to
+# a signed release, which it asks otherwise and keeps (packaging/update.sh);
+# a Homebrew copy is left to brew upgrade. uninstall.sh removes it all again.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -39,13 +41,14 @@ failed() {
 trap 'failed $?' EXIT
 
 usage() {
-	echo "usage: sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "usage: sudo sh install.sh [--in-place] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb" >&2
 	exit 2
 }
 inplace=no
 port=
 cgnat=${CBB_HOME_CGNAT:-}
 firewall=${CBB_FIREWALL:-ask}
+auto=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--in-place) inplace=yes ;;
@@ -59,6 +62,13 @@ while [ $# -gt 1 ]; do
 		case $2 in
 		on) cgnat=1 ;;
 		off) cgnat=0 ;;
+		*) usage ;;
+		esac
+		shift
+		;;
+	--auto-update)
+		case $2 in
+		on | off) auto=$2 ;;
 		*) usage ;;
 		esac
 		shift
@@ -338,6 +348,10 @@ answers() { # cbb
 	return 1
 }
 answers "$run" || true
+# How this copy came, and automatic updates.
+# shellcheck source=packaging/update.sh
+. "$here/../update.sh"
+update_setup "$run" "$bin" "$auto"
 if [ -n "$user" ] && [ "$user" != root ]; then
 	restart "gui/$(id -u "$user")" "$agent" "/Library/LaunchAgents/$agent.plist"
 fi

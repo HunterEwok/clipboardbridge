@@ -11,7 +11,9 @@
 # 100.64.0.0/10 as the home network too (0 goes back), CBB_FIREWALL=express
 # adds the firewall rules clipboardbridge needs without asking and says what
 # it added, CBB_FIREWALL=no adds none and prints the commands that would
-# (without either, install.ps1 lists the rules and asks), CBB_VERSION=v1.2.3
+# (without either, install.ps1 lists the rules and asks), CBB_AUTO_UPDATE=on
+# or off answers whether it updates itself once a day to a signed release
+# (without it, install.ps1 asks), CBB_VERSION=v1.2.3
 # picks a release instead of the latest, CBB_ATTESTATION=require refuses to
 # install unless GitHub's build provenance attestation of the archive checks
 # out (it needs gh, signed in), CBB_ATTESTATION=skip does not check it,

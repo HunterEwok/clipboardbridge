@@ -35,6 +35,6 @@ sh "$root/lite/packaging/notices.sh" "$target" >"$dir/THIRD_PARTY_NOTICES"
 cp "$root/packaging/linux/install.sh" "$root/packaging/linux/uninstall.sh" "$root/packaging/linux/firewall.sh" \
 	"$root/packaging/linux/clipboardbridge.sysusers" "$root/packaging/linux/clipboardbridge-console.service" \
 	"$root/lite/packaging/clipboardbridge.service" "$dir/packaging/linux/"
-cp -R "$root/packaging/tmux" "$root/packaging/openwrt" "$dir/packaging/"
+cp -R "$root/packaging/tmux" "$root/packaging/openwrt" "$root/packaging/update.sh" "$dir/packaging/"
 tar -czf "$out/clipboardbridge-lite-linux-$name.tar.gz" -C "$work" clipboardbridge-lite
 echo "$out/clipboardbridge-lite-linux-$name.tar.gz"

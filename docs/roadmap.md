@@ -154,7 +154,7 @@ The order may change.
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**
-29. **Planned for 0.6.** Secure updates: every program updates itself, or is told to,
+29. **Planned for 0.6; the code of steps 1, 3 and 4 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own keys (D-69), downloaded from GitHub or the
     `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
     the user allows it. See "Secure updates" below.
@@ -913,13 +913,21 @@ token cannot slip in another build or an older one.
    signature, expired, wrong type, older version, wrong key, the `keys.json` chain).
 2. The release flow: the draft, `tools/release-sign`, the publishing workflow, the mirror,
    and `get.sh` and `get.ps1` checking the manifest.
-3. `cbb update` and `-check` on Linux, macOS and Windows: download, check, rename into place
-   (never copy over: macOS kills an overwritten signed binary, and Windows renames the
-   running file aside first), restart, and roll back when the new service does not become
-   healthy, keeping a list of failed versions; detection of Homebrew, winget, Docker and
-   packages; tests with a tampered file, a bad signature, an expired manifest, an older
-   version and a new binary that never becomes healthy.
-4. Automatic updates: the installers' question, the timers, `cbb update -auto`.
+3. **Built:** `cbb update` and `-check` on Linux, OpenWrt, FreeBSD, macOS and Windows
+   (`internal/update`): download, check the archive and the programs in it, install with
+   the new release's own installer (which replaces files by rename or after stopping them,
+   never over a running program, and keeps the user's answers; on Windows `cbb update`
+   runs from a copy in its own folder, since `install.ps1` stops every program in
+   Program Files\clipboardbridge), wait a minute for the service to report the new version,
+   and otherwise install the previous programs again with the same installer and keep a
+   list of failed versions; the installers record the method (`get`, `brew`, `winget`,
+   `docker`, `package`), and the others print their tool's command; on Windows the new
+   programs must have the installed ones' Authenticode signer once those are signed; tests
+   with a tampered file, a bad signature, an expired manifest, an older version, a path out
+   of the archive and a new program that never becomes healthy.
+4. **Built:** automatic updates: the installers' question (`--auto-update`, kept), the
+   timers (systemd, launchd, a scheduled task as SYSTEM, cron on OpenWrt and FreeBSD),
+   `cbb update -auto`, at most one check a day, the failed versions skipped.
 5. The tray app and `cbb status`; members passing manifests and archives to each other.
 6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
    registration with Google's developer verification.

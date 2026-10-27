@@ -7,8 +7,9 @@
 #   sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service and removes the binary, the rc.d script and its
-# rc.conf line, the settings in /usr/local/etc/clipboardbridge and the
-# firewall rules that install.sh added, and only those. The device's keys
+# rc.conf line, the update's cron file and cbb update's folder, the settings
+# in /usr/local/etc/clipboardbridge and the firewall rules that install.sh
+# added, and only those. The device's keys
 # and group, in /var/db/clipboardbridge, stay for a reinstall unless
 # --purge; the clipboardbridge user and group stay too, since files may
 # still belong to them.
@@ -50,7 +51,8 @@ if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" hub-close
 fi
 rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/etc/rc.d/clipboardbridge.sh /usr/local/bin/cbb \
-	/usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+	/usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop /usr/local/etc/cron.d/clipboardbridge-update
+rm -rf /var/db/clipboardbridge-update
 # OPNsense: without the hook, the next filter reload drops the anchor.
 if [ -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc ]; then
 	rm -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc

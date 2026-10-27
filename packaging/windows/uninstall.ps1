@@ -8,7 +8,8 @@
 #
 # It stops and deletes the service, stops the agents, and removes the
 # files in Program Files, the PATH entry, the sign-in entry, the uninstaller
-# entry and the firewall rules that install.ps1 added, and only those. The
+# entry, the update task with cbb update's folder and the firewall rules that
+# install.ps1 added, and only those. The
 # device's keys and group membership, in ProgramData\clipboardbridge, stay
 # for a reinstall unless -Purge, which also deletes the clipboardbridge
 # group. -Details (or CBB_ERROR_DETAILS=1) shows the full error of a
@@ -63,9 +64,13 @@ if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
 
 $step = 'stopping the agents'
 Get-Process -Name cbbw, cbb -ErrorAction SilentlyContinue | Where-Object {
-	$_.Path -and $_.Path.StartsWith($programDir, [StringComparison]::OrdinalIgnoreCase)
+	$_.Path -and $_.Path.StartsWith("$programDir\", [StringComparison]::OrdinalIgnoreCase)
 } | Stop-Process -Force
 Start-Sleep -Milliseconds 500
+
+$step = 'removing the update task and cbb update''s folder'
+Unregister-ScheduledTask -TaskName 'clipboardbridge update' -Confirm:$false -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $env:ProgramFiles 'clipboardbridge-update') -ErrorAction SilentlyContinue
 
 $step = 'removing the firewall rules'
 Get-NetFirewallRule -Group $name -ErrorAction SilentlyContinue | Remove-NetFirewallRule

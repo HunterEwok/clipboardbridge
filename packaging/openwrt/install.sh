@@ -5,7 +5,7 @@
 # Installs clipboardbridge, the full member or the lite one, on OpenWrt
 # 25.12 or later, as root:
 #
-#   sh install.sh [--port N] path/to/cbb
+#   sh install.sh [--port N] [--auto-update on|off] path/to/cbb
 #
 # It installs the binary to /usr/bin, the user and group clipboardbridge,
 # the procd init script, the settings in /etc/config/clipboardbridge (kept
@@ -15,7 +15,10 @@
 # /etc/clipboardbridge/state. The service works on the devices of the lan
 # zone; list other zones in /etc/config/clipboardbridge. Its firewall rules
 # come and go with the service (the init script); /etc/config/firewall is
-# not touched. uninstall.sh removes it all again.
+# not touched. --auto-update on|off (or CBB_AUTO_UPDATE) answers whether the
+# full member updates itself once a day to a signed release, from cron,
+# which it asks otherwise and keeps (packaging/update.sh). uninstall.sh
+# removes it all again.
 set -eu
 
 if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
@@ -30,14 +33,22 @@ failed() {
 trap 'failed $?' EXIT
 
 usage() {
-	echo "usage: sh install.sh [--port N] path/to/cbb" >&2
+	echo "usage: sh install.sh [--port N] [--auto-update on|off] path/to/cbb" >&2
 	exit 2
 }
 port=
+auto=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--port)
 		port=$2
+		shift
+		;;
+	--auto-update)
+		case $2 in
+		on | off) auto=$2 ;;
+		*) usage ;;
+		esac
 		shift
 		;;
 	# get.sh passes the firewall choice; the rules here are the service's own.
@@ -116,6 +127,13 @@ port=$(uci -q get clipboardbridge.main.port || echo 8764)
 mkdir -p /etc/clipboardbridge/state
 chmod 0700 /etc/clipboardbridge/state
 chown clipboardbridge:clipboardbridge /etc/clipboardbridge/state
+# How this copy came, and automatic updates; the lite member has no cbb
+# update yet.
+if ! /usr/bin/cbb version 2>/dev/null | grep -q "lite member"; then
+	# shellcheck source=packaging/update.sh
+	. "$here/../update.sh"
+	update_setup /usr/bin/cbb "$bin" "$auto"
+fi
 
 # The router is up and has set its clock long ago; the wait for NTP is for
 # the next boot.

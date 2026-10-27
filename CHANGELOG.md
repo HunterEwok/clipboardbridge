@@ -8,6 +8,22 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb update` installs the newest signed release on a computer installed with `get.sh`,
+  `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
+  `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the
+  new release's own installer, and puts the previous programs back when the service does
+  not report the new version within a minute; automatic updates then skip that version.
+  `-check` only says whether there is one, `-to VERSION` takes a release's `min_from`, and
+  a copy from Homebrew, winget, Docker or a package gets its tool's command. Updates come
+  from GitHub, else `dl.cbb.tools`, or a mirror set with `cbb update -mirror`; each check
+  sends no version, system or group data. On Windows the new programs must carry the
+  installed ones' Authenticode signer once they have one.
+- Automatic updates: the installers ask once (`--auto-update on|off`, `-AutoUpdate`,
+  `CBB_AUTO_UPDATE`), and `cbb update -auto on|off` changes it; a systemd timer, a launchd
+  job, a scheduled task as SYSTEM or cron on OpenWrt and FreeBSD checks once a day. The
+  installers record how the program was installed, and the uninstallers remove the timer
+  and cbb update's folder.
+
 - The `watch` role for a watch's admin key (docs/protocol.md, section 10, rule 8), in Go,
   the lite member and both phone kits, with interop vectors: a watch freezes admin
   computers, removes ordinary devices and signs only the commands that turn things off and

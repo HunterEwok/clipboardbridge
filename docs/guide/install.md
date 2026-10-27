@@ -155,8 +155,36 @@ All installer options are in the [command reference](../reference/cli.md#install
 
 ## Updating
 
-Run the same install command again. The device stays in its group and keeps its settings.
-With Homebrew or winget, upgrade there and run the second line again.
+`sudo cbb update` (on Windows `cbb update` in a terminal opened as administrator) installs
+the newest release on a computer installed with `get.sh`, `get.ps1` or a release archive;
+`cbb update -check` only says whether there is one. It takes only a release the project
+signed (docs/protocol.md, section 16), never an older one than this device has seen, and
+checks the archive and the programs in it against the signed list before it installs them.
+It installs with the new release's own installer, which keeps the port, the firewall
+answer and the other settings, and waits up to a minute for the service to report the new
+version; if it does not, the previous programs go back and automatic updates skip that
+version. On Windows, once releases are Authenticode-signed, the new programs must carry
+the same signer as the installed ones.
+
+The installers ask once whether to update automatically (`--auto-update on|off`, or
+`-AutoUpdate on|off` and `$env:CBB_AUTO_UPDATE` on Windows, answer it beforehand);
+`sudo cbb update -auto on|off` changes it later. On, a timer checks once a day at a time of
+its own: a systemd timer on Linux, a launchd job on a Mac, a scheduled task as SYSTEM on
+Windows, cron on OpenWrt and FreeBSD. Each check downloads the same small files from GitHub
+(or from `dl.cbb.tools` when GitHub does not answer), so GitHub learns this device's address
+and that it uses Clipboard Bridge, as with any download; it sends nothing about the group.
+`sudo cbb update -mirror https://...` takes updates from another mirror instead, which
+needs no trust, since the signatures are checked. The timer's log is `update.log` in
+`/var/lib/clipboardbridge-update` (Linux), `/etc/clipboardbridge-update` (OpenWrt),
+`/var/db/clipboardbridge-update` (FreeBSD), `/Library/Application Support/clipboardbridge-update`
+(Mac) or `C:\Program Files\clipboardbridge-update` (Windows).
+
+Running the same install command again also updates. With Homebrew or winget, upgrade
+there and run the second line again; `cbb update` says so. Docker and the OpenWrt package
+update through `docker compose pull` and `apk upgrade`.
+
+Until the project's release keys exist, releases are not signed and `cbb update` says it
+has nothing to check them against; run the install command again instead.
 
 ## Checking a download
 
