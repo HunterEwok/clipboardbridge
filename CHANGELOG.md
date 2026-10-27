@@ -233,6 +233,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A fetch of an image or a file could wait for ever when the peer dropped its ranges, as
+  after it answered that it did not hold the part yet: a fetch that gets nothing for 15
+  seconds now gives up and asks again, a fetch that ends cancels the ranges still asked
+  for, and a chunk that comes after its fetch ended no longer blocks the connection.
 - The iPhone's member key and its certificate are readable while the phone is locked, once
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old

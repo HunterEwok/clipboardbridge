@@ -171,3 +171,76 @@ func TestChunkFrames(t *testing.T) {
 type deadlineReader struct{ io.Reader }
 
 func (deadlineReader) SetReadDeadline(time.Time) error { return nil }
+
+// gatedContent holds parts whose reads wait until gate is closed.
+type gatedContent struct {
+	memContent
+	gate chan struct{}
+}
+
+type gatedReader struct {
+	io.ReaderAt
+	gate chan struct{}
+}
+
+func (r gatedReader) ReadAt(p []byte, off int64) (int, error) {
+	<-r.gate
+	return r.ReaderAt.ReadAt(p, off)
+}
+
+func (g *gatedContent) Open(sum [sha256.Size]byte) (io.ReaderAt, int64, bool) {
+	r, n, ok := g.memContent.Open(sum)
+	return gatedReader{r, g.gate}, n, ok
+}
+
+// TestFetchStall: a fetch to which the peer sends nothing gives up after
+// fetchStall and cancels its ranges, and the next fetch gets the part
+// whole; a chunk that comes after its fetch returned never blocks the
+// connection's reader.
+func TestFetchStall(t *testing.T) {
+	old := fetchStall
+	fetchStall = 300 * time.Millisecond
+	t.Cleanup(func() { fetchStall = old })
+	store := &gatedContent{gate: make(chan struct{})}
+	data := random(t, 3<<20+5)
+	p := store.put(data)
+	mac := newMember(t, Full, withContent(store), withTimers(50*time.Millisecond, 2*time.Second))
+	pi := newMember(t, Full, withContent(&memContent{}), withTimers(50*time.Millisecond, 2*time.Second))
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	waitPeers(t, pi, 1)
+
+	ctx := context.Background()
+	if _, err := fetchAll(ctx, pi, mac, p, 0); err == nil || !strings.Contains(err.Error(), "sent nothing") {
+		t.Fatalf("a fetch from a peer that sends nothing: %v", err)
+	}
+	close(store.gate)
+	if got, err := fetchAll(ctx, pi, mac, p, 0); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("the next fetch: %d bytes, %v", len(got), err)
+	}
+
+	// A fetch that returned while its chunks fill its queue.
+	pi.mu.Lock()
+	c := pi.conns[mac.id.ID]
+	pi.mu.Unlock()
+	f := &fetching{ch: make(chan chunk, 1), missing: make(chan struct{}), done: make(chan struct{})}
+	sum := sha256.Sum256([]byte("late"))
+	c.fetchMu.Lock()
+	c.fetches[sum] = f
+	c.fetchMu.Unlock()
+	c.received(chunk{sum: sum, data: []byte("a")})
+	close(f.done)
+	returned := make(chan struct{})
+	go func() {
+		c.received(chunk{sum: sum, data: []byte("b")})
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a chunk for a fetch that returned blocked the reader")
+	}
+	c.fetchMu.Lock()
+	delete(c.fetches, sum)
+	c.fetchMu.Unlock()
+}

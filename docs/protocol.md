@@ -472,6 +472,9 @@ them, by hash, and gets them in binary frames. The Go code is `internal/node/con
   in order for each part; one at an offset the fetch does not wait for is left from a fetch
   that was cancelled and is dropped. The receiver checks the whole part against its
   `sha256` before it uses it, and continues from what it has after a reconnect.
+- A fetch that ends before the part is whole, on a `missing`, its own cancel, or 15 seconds
+  without a chunk, sends the cancel (`length` 0), so the ranges it asked for after that do not
+  cross the next fetch; the member then asks again or asks another member.
 - The receiver's limit decides: by default 100 MiB a copy at home and 25 MiB from a member
   reached through the group's tunnel (`cbb config max-copy` and `max-copy-away`, 1 MiB to
   1 GiB). A copy over it is not fetched, and `cbb status` says so.
