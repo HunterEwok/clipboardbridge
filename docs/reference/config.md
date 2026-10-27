@@ -78,6 +78,7 @@ These change nothing in a normal installation. How the tests use them is in
 | `CBB_LITE` | Go tests with the lite member | The lite member's binary (`cargo build` in `lite/`). |
 | `CBB_ESP32_ON_LINUX` | `TestEmbassyJoiner` | The `esp32-on-linux` binary of `lite/embassy`, run over a TAP interface. |
 | `CBB_INTEROP_OUT` | the Swift and Kotlin kits' tests, Go's interop tests | A directory where the kits write fresh interop vectors and Go reads them; without it Go reads `testdata/interop`. |
+| `CBB_UPDATE_VECTORS` | the lite core's keyboard tests | `1` writes the keyboard layouts' vectors again (`cargo test -p clipboardbridge-core keyboard`). |
 | `CBB_WRITE_INTEROP` | the Swift kit's certificate tests | Writes the certificates that Go's `TestSwiftCertificates` checks. |
 | `CBB_SWIFT_INTEROP` | Go's interop tests | The `clipboardbridge-interop` tool, which plays the phone in Go tests over plain TCP. |
 | `CBB_SWIFT_INTEROP_TLS` | Go's interop tests, on macOS | The same tool for the tests over real TLS, with a key in the keychain. |
