@@ -130,7 +130,7 @@ The order may change.
     `cbb relay` on a VPS. See "Docker" below.
 24. **Planned for 0.6.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
     pfSense gateways as the hub). See "FreeBSD" below.
-25. **Partly: the Android TV variant of the app (docs/apps.md, "Android TV"), the Nano ESP32's USB keyboard (lite/esp32/README.md) and the Android phone and a Linux computer as a Bluetooth keyboard (docs/apps.md, "Android: the Bluetooth keyboard"; `cbb keyboard`) are done; the Nano's Bluetooth keyboard and the TVs' own remotes follow.** Devices that are hard to type into: TVs,
+25. **Partly: the Android TV variant of the app (docs/apps.md, "Android TV"), the Nano ESP32's USB and Bluetooth LE keyboards (lite/esp32/README.md) and the Android phone and a Linux computer as a Bluetooth keyboard (docs/apps.md, "Android: the Bluetooth keyboard"; `cbb keyboard`) are done; the TVs' own remotes follow.** Devices that are hard to type into: TVs,
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.
@@ -541,7 +541,7 @@ One pull request each, smaller ones together:
    Samsung and LG, Roku last; `cbb remote add` pairs a TV, and the apps add theirs.
 3. The Bluetooth keyboard on Android and Linux.
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
-   and the serial console.
+   and the serial console (done in 0.6: `ble on` on its console).
 5. The iPad build of the iPhone app (done in 0.6: CI tests it on an iPad simulator too,
    and a keyboard's shortcuts work).
 
