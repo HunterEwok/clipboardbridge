@@ -135,6 +135,11 @@ func (s *Service) adoptRootsLocked() error {
 	if empty || slices.EqualFunc(roots, s.id.Roots, (*x509.Certificate).Equal) {
 		return nil
 	}
+	if _, _, taken := s.takenOver(s.id); taken {
+		// A root computer an admin took the group over from keeps its
+		// root key, so that removing that admin undoes the takeover.
+		return nil
+	}
 	next, err := s.id.WithRoots(roots)
 	if err != nil {
 		return err
@@ -151,6 +156,11 @@ func (s *Service) adoptRootsLocked() error {
 		// no longer holds the old keys.
 		s.logf("cbb: the group was upgraded; deleted this member's copies of its old CA keys")
 		go s.nd.Reconnect()
+	}
+	if len(roots) == 0 {
+		// A takeover from the first root stopped counting.
+		s.logf("cbb: the group's root is its first one again")
+		return nil
 	}
 	s.logf("cbb: the group has a new root, %s", roots[len(roots)-1].Subject.CommonName)
 	return nil
@@ -174,9 +184,42 @@ func (s *Service) afterRevocation() {
 	}
 	s.pruneTunnel()
 	s.dropRevokedPhoneCA()
-	if id != nil && s.allow(id.ID, ownChain(id)) != nil {
-		s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
+	if id != nil {
+		switch err := s.allow(id.ID, ownChain(id)); {
+		case errors.Is(err, group.ErrRecordsOnly):
+			s.logf("cbb: %s took the group over from this computer, its root; if this computer is not lost, cbb revoke %s undoes it", s.takenOverBy(id), s.takenOverBy(id))
+		case err != nil:
+			s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
+		}
 	}
+}
+
+// takenOverBy names the admin that took the group over from this root
+// computer, "" when none did.
+func (s *Service) takenOverBy(id *group.Identity) string {
+	dev, _, ok := s.takenOver(id)
+	if !ok {
+		return ""
+	}
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	for _, d := range s.records.Devices() {
+		if d.ID == dev {
+			return d.Name
+		}
+	}
+	return string(dev)
+}
+
+// takenOver returns the device of the admin that took the group over from
+// this root computer, and that admin's CA key (group.Records.TakenOver).
+func (s *Service) takenOver(id *group.Identity) (group.DeviceID, group.KeyHash, bool) {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil || id == nil || !id.IsRoot() {
+		return "", group.KeyHash{}, false
+	}
+	return s.records.TakenOver(ownChain(id))
 }
 
 // ownChain is the chain this device presents: its member certificate and
@@ -196,7 +239,13 @@ func (s *Service) allow(_ group.DeviceID, chain []*x509.Certificate) error {
 	if s.records == nil {
 		return nil
 	}
-	return s.records.Refused(chain)
+	err := s.records.Refused(chain)
+	if err != nil {
+		if _, _, ok := s.records.TakenOver(chain); ok {
+			return group.ErrRecordsOnly
+		}
+	}
+	return err
 }
 
 // signRecord signs a record for this group with the group CA key of id, or
@@ -469,6 +518,13 @@ func (s *Service) revoke(target string) (string, error) {
 	root := s.records.RootDevice()
 	s.recMu.Unlock()
 	admin := s.adminKeyOf(group.DeviceID(d.ID))
+	// The root an admin took the group over from removes that admin,
+	// which undoes the takeover (docs/protocol.md, section 10).
+	undo, undoCA, _ := s.takenOver(id)
+	undoing := undo != "" && d.ID == string(undo)
+	if undoing {
+		admin = &undoCA
+	}
 	// An admin of a group whose root is a computer held the iPhone CA,
 	// which goes with it; a watch never held it.
 	replace := admin != nil && d.Role != group.RoleWatch && !id.Legacy() && (id.IsRoot() || s.computerRooted())
@@ -479,9 +535,9 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", errors.New("a device cannot remove itself; run cbb revoke on another member")
 	case id.Legacy() && keyHolder(d.Role, d.OS):
 		return "", fmt.Errorf("%s holds the group's keys, so removing it needs a new group; this is not supported yet", d.Name)
-	case d.ID == string(root) && d.Role == group.RolePhone:
+	case d.ID == string(root) && !undoing && d.Role == group.RolePhone:
 		return "", fmt.Errorf("%s holds the group's root; remove it on another admin phone, which takes the group over", d.Name)
-	case d.ID == string(root):
+	case d.ID == string(root) && !undoing:
 		return "", fmt.Errorf("%s holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name, d.Name)
 	case !id.Legacy() && s.holdsOldKeys(group.DeviceID(d.ID), peersOf(nd)):
 		return "", errOldKeys(d.Name)

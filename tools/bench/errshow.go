@@ -55,7 +55,7 @@ func errorShown(ctx context.Context, d *Device, ec errorCase) error {
 		}
 		if mode != "1" {
 			short = re.Output
-		} else if len(re.Output) < len(short) {
+		} else if lines(re.Output) < lines(short) {
 			return &RunError{Device: d.Name, Cmd: ec.cmd, Err: errors.New("CBB_DEBUG=1 shows less than CBB_DEBUG=0"), Output: short + "\n--- CBB_DEBUG=1:\n" + re.Output}
 		}
 	}
@@ -116,4 +116,16 @@ func withDebug(d *Device, cmd, mode string) string {
 	// On a Mac sudo runs only cbb itself (the bench's sudoers rule), and
 	// keeps no variable: there the case checks the build's own mode.
 	return "CBB_DEBUG=" + mode + " " + cmd
+}
+
+// lines counts the lines of a message that are not empty; a message's
+// length differs between runs with the names of temporary files in it.
+func lines(s string) int {
+	n := 0
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			n++
+		}
+	}
+	return n
 }

@@ -50,7 +50,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 			return noSudo(admin, err)
 		}
 		g.undo = append(g.undo, func() { globalOff(context.WithoutCancel(ctx), r, g.suite, admin) })
-		return globalShows(ctx, admin, "through the tunnel", 2*time.Minute)
+		return globalShows(ctx, admin, "the hub is", 2*time.Minute)
 	}) != nil {
 		r.Skip("away/P36", "the admin computer of P37 is not set up")
 		return
@@ -91,12 +91,12 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		if err := globalShows(ctx, admin, "this device is the hub", 2*time.Minute); err != nil {
 			return err
 		}
-		return globalShows(ctx, hub, "through the tunnel", 2*time.Minute)
+		return globalShows(ctx, hub, "the hub is", 2*time.Minute)
 	}) != nil {
 		return
 	}
 	for _, d := range joined {
-		if r.Do("away/P37/"+d.Name+"/follows", func() error { return globalShows(ctx, d, "through the tunnel", 3*time.Minute) }) == nil {
+		if r.Do("away/P37/"+d.Name+"/follows", func() error { return globalShows(ctx, d, "connected to the hub", 3*time.Minute) }) == nil {
 			awayHub := *g
 			awayHub.hub = admin
 			bothWays(ctx, r, &awayHub, "away/P37/"+d.Name+"/sync/", d, timeout)
@@ -129,7 +129,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 	}) == nil {
 		fmt.Fprintf(r.out, "     %s serves %v after the root stopped\n", admin.Name, time.Since(stopped).Round(time.Second))
 		for _, d := range joined {
-			if r.Do("away/P36/"+d.Name+"/to-"+admin.Name, func() error { return globalShows(ctx, d, "through the tunnel", 3*time.Minute) }) == nil {
+			if r.Do("away/P36/"+d.Name+"/to-"+admin.Name, func() error { return globalShows(ctx, d, "connected to the hub", 3*time.Minute) }) == nil {
 				awayHub := *g
 				awayHub.hub = admin
 				bothWays(ctx, r, &awayHub, "away/P36/"+d.Name+"/while-stopped/", d, timeout)
@@ -147,7 +147,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		fmt.Fprintf(r.out, "     %s gave way %v after the root came back\n", admin.Name, time.Since(started).Round(time.Second))
 	}
 	for _, d := range joined {
-		if r.Do("away/P36/"+d.Name+"/back", func() error { return globalShows(ctx, d, "through the tunnel", 5*time.Minute) }) == nil {
+		if r.Do("away/P36/"+d.Name+"/back", func() error { return globalShows(ctx, d, "connected to the hub", 5*time.Minute) }) == nil {
 			bothWays(ctx, r, g, "away/P36/"+d.Name+"/after/", d, timeout)
 		}
 	}

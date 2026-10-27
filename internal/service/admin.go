@@ -246,6 +246,10 @@ func (s *Service) dropRevokedPhoneCA() {
 	if id == nil || id.Legacy() || !id.ServesPhone() || !s.revoked(group.KeyHashOf(id.PhoneCA.Cert)) {
 		return
 	}
+	if _, _, taken := s.takenOver(id); taken {
+		// A root taken over keeps it, for when it undoes the takeover.
+		return
+	}
 	if p := s.pendingPhoneCA; p != nil && !s.revoked(group.KeyHashOf(p.Cert)) {
 		if err := s.takePhoneCALocked(*p); err == nil {
 			return

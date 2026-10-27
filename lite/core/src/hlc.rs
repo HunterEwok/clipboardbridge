@@ -25,6 +25,19 @@ pub const MAX_AHEAD: i64 = 7 * 24 * 3600 * 1000;
 /// not set its time yet (2026-01-01).
 const PLAUSIBLE: i64 = 1767225600000;
 
+/// Where a restarted clock starts: the mark it saved, unless the wall clock
+/// reads 2026 or later and the mark is more than MAX_AHEAD ahead of it.
+/// Such a mark comes from a clock that was set far ahead and then right:
+/// every member with a right clock refused its timestamps, so keeping it
+/// would leave the device's copies refused until real time caught up. Then
+/// it returns the zero timestamp and true.
+pub fn floor(mark: Timestamp, now: i64) -> (Timestamp, bool) {
+    if now >= PLAUSIBLE && mark.wall > now.saturating_add(MAX_AHEAD) {
+        return (Timestamp::default(), true);
+    }
+    (mark, false)
+}
+
 /// How far ahead of the clock the saved mark is set, in milliseconds.
 const MARK_STEP: i64 = 10_000;
 
@@ -229,5 +242,19 @@ mod tests {
         assert!(!c.ahead(Timestamp { wall: now + MAX_AHEAD, logical: 0 }));
         let early = Clock::new(Box::new(|| 1000), Timestamp::default(), None);
         assert!(!early.ahead(Timestamp { wall: MAX_WALL, logical: 0 }));
+    }
+
+    #[test]
+    fn floor_after_clock_ahead() {
+        let now = 1792886400000; // 2026-10-25
+        let day = 24 * 3600 * 1000;
+        let behind = Timestamp { wall: now - day, logical: 3 };
+        assert_eq!(floor(behind, now), (behind, false));
+        let six = Timestamp { wall: now + 6 * day, logical: 0 };
+        assert_eq!(floor(six, now), (six, false));
+        let year = Timestamp { wall: now + 365 * day, logical: 0 };
+        assert_eq!(floor(year, now), (Timestamp::default(), true));
+        // A board without a real-time clock keeps its mark.
+        assert_eq!(floor(year, 5), (year, false));
     }
 }

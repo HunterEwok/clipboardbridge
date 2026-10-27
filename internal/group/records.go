@@ -881,6 +881,51 @@ func (s *Records) computerHandOver(r *signedRecord) bool {
 	return true
 }
 
+// TakenOver reports whether chain is the member certificate of a root
+// computer that an admin computer took the group over from (cbb takeover):
+// its leaf is the old root's own device, certified by that root, and the
+// root record of the takeover counts. It returns the device of the admin
+// that took over and that admin's CA key, which the takeover's root record
+// was signed with. Such a peer is refused, but its connections carry
+// records (ErrRecordsOnly), so that the old root, if it is still in use,
+// can undo the takeover by removing that admin (docs/protocol.md, section
+// 10, "Handing the group over").
+func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool) {
+	if len(chain) == 0 {
+		return "", KeyHash{}, false
+	}
+	leaf := KeyHashOf(chain[0])
+	path, steps := s.steps()
+	for i, st := range steps {
+		root := path[i]
+		if st.signer == st.anchor || KeyHashOf(root) != st.anchor || chain[0].CheckSignatureFrom(root) != nil || !s.computerHandOver(st) {
+			continue
+		}
+		own, by := false, DeviceID("")
+		for _, o := range s.byID {
+			b := o.body
+			if b.Type != RecordDevice || o.signer != st.anchor || o.anchor != st.anchor {
+				continue
+			}
+			if b.Device == b.By && b.Key != nil && *b.Key == leaf {
+				own = true
+			}
+			if b.Admin != nil && *b.Admin == st.signer {
+				by = b.Device
+			}
+		}
+		if own {
+			return by, st.signer, true
+		}
+	}
+	return "", KeyHash{}, false
+}
+
+// ErrRecordsOnly is what a check of a peer returns for a root that an
+// admin took the group over from (Records.TakenOver): its connection
+// carries records and nothing else.
+var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
+
 // An evaluation is what the set says about revocations (docs/protocol.md,
 // section 10, rules 2 and 3), in strata that do not depend on each other
 // in a circle:

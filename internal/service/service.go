@@ -337,6 +337,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	if f, reset := hlc.Floor(floor, benchtime.Now()); reset {
+		cfg.Logf("cbb: the clock's saved mark (%s) is more than 7 days ahead of this device's clock; this device's clock was ahead and is right now, so it starts from it", time.UnixMilli(floor.Wall).UTC().Format(time.RFC3339))
+		floor = f
+	}
 	clock := hlc.NewClock(benchtime.Now, floor, func(m hlc.Timestamp) error {
 		err := atomicfile.Write(filepath.Join(cfg.StateDir, markFile), []byte(m.String()+"\n"), 0o600)
 		if err != nil {
@@ -450,7 +454,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	if err != nil {
 		s.logf("cbb: the sync mode: %v; using shared", err)
 	}
-	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock, Mode: mode})
+	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock, Mode: mode, Wall: s.cfg.now})
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
 	s.creds = s.loadCredentials(id, s.records)

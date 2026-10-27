@@ -30,28 +30,88 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 	}
 	defer f.Close(ctx)
 
-	pairingWindow(ctx, r, f)
-	roles(ctx, r, f, timeout)
-	takeover(ctx, r, f, timeout)
-	rejoin(ctx, r, f, timeout)
-	sideBySide(ctx, r, f, timeout)
-	partition(ctx, r, f, timeout)
-	line(ctx, r, f, timeout)
-	modes(ctx, r, f, timeout)
-	junk(ctx, r, f, timeout)
-	localClients(ctx, r, f)
-	restarts(ctx, r, f, timeout)
-	manyMembers(ctx, r, f, size, timeout)
+	for _, s := range []struct {
+		name string
+		run  func()
+	}{
+		{"G5-window", func() { pairingWindow(ctx, r, f) }},
+		{"G20-roles", func() { roles(ctx, r, f, timeout) }},
+		{"G26-takeover", func() { takeover(ctx, r, f, timeout) }},
+		{"G42-rejoin", func() { rejoin(ctx, r, f, timeout) }},
+		{"G43-two-groups", func() { sideBySide(ctx, r, f, timeout) }},
+		{"Y12-partition", func() { partition(ctx, r, f, timeout) }},
+		{"Y16-line", func() { line(ctx, r, f, timeout) }},
+		{"M6-own", func() { modes(ctx, r, f, timeout) }},
+		{"D15-junk", func() { junk(ctx, r, f, timeout) }},
+		{"E5-local-clients", func() { localClients(ctx, r, f) }},
+		{"E9-restarts", func() { restarts(ctx, r, f, timeout) }},
+		{"T2-tmux", func() { tmuxPaste(ctx, r, f, timeout) }},
+		{"G25-offline", func() { offline(ctx, r, f, timeout) }},
+		{"G27-takeover-undone", func() { takeoverUndone(ctx, r, f, timeout) }},
+		{"G33-admins-at-once", func() { concurrentAdmins(ctx, r, f, timeout) }},
+		{"S24-stolen-admin", func() { stolenAdmin(ctx, r, f, timeout) }},
+		{"M4-mode-kept", func() { modeKept(ctx, r, f, timeout) }},
+		{"G4-paths", func() { joinPaths(ctx, r, f, timeout) }},
+		{"G7-two-windows", func() { twoWindows(ctx, r, f) }},
+		{"D2-who-dials", func() { whoDials(ctx, r, f, timeout) }},
+		{"D6-networks", func() { knownNetworks(ctx, r, f, timeout) }},
+		{"D12-heartbeats", func() { heartbeats(ctx, r, f, timeout) }},
+		{"I19-no-network", func() { noNetworkAtStart(ctx, r, f, timeout) }},
+		{"U8-disk-full", func() { diskFull(ctx, r, f, timeout) }},
+		{"U13-second-instance", func() { secondInstance(ctx, r, f, timeout) }},
+		{"Q6-actions", func() { quickActions(ctx, r, f, timeout) }},
+		{"X2-shortcut", func() { phoneShortcut(ctx, r, f, timeout) }},
+		{"S17-commands", func() { forgedCommands(ctx, r, f, timeout) }},
+		{"G31-converge", func() { converge(ctx, r, f, timeout) }},
+		{"G32-limits", func() { recordLimits(ctx, r, f, timeout) }},
+		{"K14-admin-chain", func() { adminChain(ctx, r, f, timeout) }},
+		{"W4-away", func() { awayHub(ctx, r, f, timeout) }},
+		{"W18-obfuscation", func() { obfuscation(ctx, r, f, timeout) }},
+		{"W33-two-groups", func() { twoGroupsAway(ctx, r, f, timeout) }},
+		{"W36-relay", func() { relayAway(ctx, r, f, timeout) }},
+		{"W38-relay-limits", func() { relayLimits(ctx, r, f, timeout) }},
+		{"E6-hub-load", func() { hubLoad(ctx, r, f, timeout) }},
+		{"W34-vless", func() { vlessAway(ctx, r, f, timeout) }},
+		{"W15-move", func() { hubMoves(ctx, r, f, timeout) }},
+		{"E1-latency", func() { latency(ctx, r, f, timeout) }},
+		{"E2-throughput", func() { throughput(ctx, r, f, timeout) }},
+		{"E4-big", func() { bigTransfers(ctx, r, f, timeout) }},
+		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
+	} {
+		if ctx.Err() == nil && scenario(s.name) {
+			s.run()
+		}
+	}
 }
+
+// scenarios limits the fleet and time suites to the scenarios that
+// -scenario names; none given runs them all.
+var scenarios map[string]bool
+
+// scenario reports whether the scenario name runs.
+func scenario(name string) bool { return len(scenarios) == 0 || scenarios[name] }
 
 // fleetGroup starts n new members and forms a group of them, the first as
 // its root, every one in the sync mode shared (R2).
-func fleetGroup(ctx context.Context, r *Report, f *Fleet, suite string, n int) *benchGroup {
-	var ds []*Device
+func fleetGroup(ctx context.Context, r *Report, f *Fleet, suite string, n int, env ...string) *benchGroup {
+	return fleetGroupOn(ctx, r, f, f.net, suite, n, env...)
+}
+
+// fleetGroupOn is fleetGroup on the network net.
+func fleetGroupOn(ctx context.Context, r *Report, f *Fleet, net, suite string, n int, env ...string) *benchGroup {
+	ds := make([]*Device, n)
 	if r.Do(suite+"/start", func() error {
-		var err error
-		ds, err = f.AddN(ctx, n)
-		return err
+		errs := make([]error, n)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ds[i], errs[i] = f.AddOn(ctx, net, env...)
+			}()
+		}
+		wg.Wait()
+		return errors.Join(errs...)
 	}) != nil {
 		return nil
 	}
