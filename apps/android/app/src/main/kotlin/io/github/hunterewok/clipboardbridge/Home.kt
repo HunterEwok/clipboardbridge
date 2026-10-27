@@ -259,7 +259,7 @@ private fun DeviceCollection(devices: List<LiveGroup.Device>, layout: DeviceLayo
 @Composable
 private fun DeviceTile(d: LiveGroup.Device, modifier: Modifier, open: () -> Unit) {
     Column(
-        modifier.glassTile().clickable(role = Role.Button, onClick = open).padding(Tokens.spacingMedium).liveState(d),
+        modifier.glassTile().focusRing().clickable(role = Role.Button, onClick = open).padding(Tokens.spacingMedium).liveState(d),
         verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall),
     ) {
         Row(verticalAlignment = Alignment.Top) {
@@ -277,7 +277,7 @@ private fun DeviceTile(d: LiveGroup.Device, modifier: Modifier, open: () -> Unit
 private fun DeviceRow(d: LiveGroup.Device, open: () -> Unit) {
     val palette = LocalPalette.current
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 60.dp).card().clickable(role = Role.Button, onClick = open)
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).card().focusRing().clickable(role = Role.Button, onClick = open)
             .padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall).liveState(d),
         verticalAlignment = Alignment.CenterVertically,
     ) {

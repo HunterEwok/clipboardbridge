@@ -115,12 +115,17 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     )
 
     /**
-     * What this phone says about itself in its hellos: a phone or a tablet,
-     * its Android version and the app's; Android gives apps no MAC address.
+     * What this phone says about itself in its hellos: a phone, a tablet or
+     * a TV, its Android version and the app's; Android gives apps no MAC
+     * address.
      */
     private val ownDevice: Member.DeviceInfo by lazy {
         Member.DeviceInfo(
-            form = if (context.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone",
+            form = when {
+                Tv.isTv(context) -> "tv"
+                context.resources.configuration.smallestScreenWidthDp >= 600 -> "tablet"
+                else -> "phone"
+            },
             osVersion = Build.VERSION.RELEASE,
             version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull(),
         )
@@ -627,7 +632,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * listens"): makes this phone's admin key, listens, hands show the QR
      * code to put on screen, and waits up to five minutes for an admin
      * phone to scan it and admit this one. Three wrong codes end it, as
-     * does cancelling.
+     * does cancelling. A TV makes no admin key: it has no fingerprint or
+     * face to guard one, and joins as a plain member.
      */
     suspend fun join(show: (JoinCode) -> Unit) {
         if (hasGroup) return
@@ -635,7 +641,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             val member = memberSigner()
             // The admin key, behind the screen lock like the root key;
             // reading its public key asks for nothing.
-            val admin = Keys.load(Keys.ADMIN) ?: Keys.create(context, Keys.ADMIN)
+            val admin = if (Tv.isTv(context)) null else Keys.load(Keys.ADMIN) ?: Keys.create(context, Keys.ADMIN)
             val device = SyncEngine.newID()
             val cert = GroupCertificates.selfSigned(device, member)
             val listener = TLSListener(0, Pairing.ALPN, member.privateKey, listOf(cert)) { it.isNotEmpty() }
@@ -649,7 +655,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val (parts, code) = listening
         val (listener, cert, admin) = parts
         show(code)
-        val info = Pairing.Info(PhoneGroup.validName(deviceName), "android", admin.publicKeyDER)
+        val info = Pairing.Info(PhoneGroup.validName(deviceName), "android", admin?.publicKeyDER)
         val stopped = AtomicBoolean(false)
         val stop = {
             stopped.set(true)
@@ -748,9 +754,10 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         published(listOf(r))
     }
 
-    /** Gives a phone that just made or joined a group the sync mode of a new device, own, unless it has one from an earlier group. */
+    /** Gives a phone that just made or joined a group the sync mode of a new device, own (receive on a TV), unless it has one from an earlier group. */
     private fun newDeviceMode() {
-        if (!modeFile.exists()) setOwnMode("own")
+        // A TV receives the group's copies and sends none of its own (docs/roadmap.md, item 25).
+        if (!modeFile.exists()) setOwnMode(if (Tv.isTv(context)) "receive" else "own")
         // The credentials and the keys for the servers of an earlier group are of no use.
         credentialStore = null
         credentialsFile.delete()
