@@ -27,7 +27,9 @@ object WatchKey {
     class NotProtected : Exception("the watch has no secure lock screen")
 
     private const val PREFS = "watch-key"
-    private const val PENDING = "pending", ADMIN = "admin", ADMISSION = "admission"
+    private const val PENDING = "pending"
+    private const val ADMIN = "admin"
+    private const val ADMISSION = "admission"
 
     /** Whether the watch has a secure lock screen, which its key needs. */
     fun protected(context: Context): Boolean = context.getSystemService(KeyguardManager::class.java).isDeviceSecure
