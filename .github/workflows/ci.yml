@@ -571,7 +571,7 @@ jobs:
           # The desktop agent's user unit, enabled for every user's graphical session.
           test -L /etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service
           sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
-          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-console.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge \
+          for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-console.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge /var/lib/clipboardbridge-update \
             /etc/systemd/system/clipboardbridge-uinput.service /etc/modules-load.d/clipboardbridge-uinput.conf /run/clipboardbridge-keys \
             /etc/systemd/user/clipboardbridge-agent.service /etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service; do
             if [ -e "$f" ]; then
