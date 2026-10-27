@@ -117,7 +117,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 					if err != nil {
 						return err
 					}
-					if strings.Contains(out, "through the tunnel.") && !strings.Contains(out, "Problem:") {
+					if strings.Contains(out, "connected to the hub") {
 						return fmt.Errorf("cbb global on %s still says it is connected: %q", d.Name, firstLine(out))
 					}
 					return nil
@@ -129,7 +129,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			return err
 		})
 		for _, d := range joined {
-			if r.Do("away/F6/"+d.Name+"/back", func() error { return globalShows(ctx, d, "through the tunnel", 3*time.Minute) }) == nil {
+			if r.Do("away/F6/"+d.Name+"/back", func() error { return globalShows(ctx, d, "connected to the hub", 3*time.Minute) }) == nil {
 				bothWays(ctx, r, g, "away/F6/"+d.Name+"/sync/", d, timeout)
 			}
 		}
@@ -165,7 +165,7 @@ func offAway(ctx context.Context, r *Report, d *Device) {
 		case !strings.Contains(re.Output, "only through the tunnel"):
 			return fmt.Errorf("cbb global off refused without saying why: %q", firstLine(re.Output))
 		}
-		return globalShows(ctx, d, "through the tunnel", 10*time.Second)
+		return globalShows(ctx, d, "connected to the hub", 10*time.Second)
 	})
 	if r.Do(prefix+"off", func() error {
 		_, err := Run(ctx, d, adminCmd(d)+" global off", "yes\n")
@@ -214,7 +214,7 @@ func forwarderDown(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joi
 		return err
 	})
 	for _, d := range joined {
-		if r.Do("away/F7/"+d.Name+"/back", func() error { return globalShows(ctx, d, "through the tunnel", 3*time.Minute) }) == nil {
+		if r.Do("away/F7/"+d.Name+"/back", func() error { return globalShows(ctx, d, "connected to the hub", 3*time.Minute) }) == nil {
 			bothWays(ctx, r, g, "away/F7/"+d.Name+"/sync/", d, timeout)
 		}
 	}
@@ -251,7 +251,7 @@ func inviteJoin(ctx context.Context, g *benchGroup, d *Device) error {
 	file := "/tmp/cbbbench-invite-" + g.run
 	// cbb invite deletes the file when it ends, but not when the bench's
 	// SSH session is cut.
-	defer Run(context.WithoutCancel(ctx), g.hub, "sudo -n rm -f "+file, "")
+	defer Run(context.WithoutCancel(ctx), g.hub, rootPrefix(g.hub)+"rm -f "+file, "")
 	ready := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	var hubPrint string
@@ -280,7 +280,7 @@ func inviteJoin(ctx context.Context, g *benchGroup, d *Device) error {
 	case <-ctx.Done():
 		return errors.New("cbb invite wrote no invitation")
 	}
-	invitation, err := Run(ctx, g.hub, "sudo -n cat "+file, "")
+	invitation, err := Run(ctx, g.hub, rootPrefix(g.hub)+"cat "+file, "")
 	if err != nil {
 		return err
 	}

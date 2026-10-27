@@ -34,6 +34,11 @@ func buildForge(ctx context.Context, dir string) (string, error) {
 // m, with the state of m and of each signer under /tmp/NAME; m itself goes
 // off, so that only the copy connects as it.
 func forgeHost(ctx context.Context, f *Fleet, m *Device, signers ...*Device) (*Device, error) {
+	return forgeHostOn(ctx, f, f.net, m, signers...)
+}
+
+// forgeHostOn is forgeHost with the container on the network net.
+func forgeHostOn(ctx context.Context, f *Fleet, net string, m *Device, signers ...*Device) (*Device, error) {
 	dir, err := os.MkdirTemp("", "cbbfleet-forge")
 	if err != nil {
 		return nil, err
@@ -43,7 +48,7 @@ func forgeHost(ctx context.Context, f *Fleet, m *Device, signers ...*Device) (*D
 	if err != nil {
 		return nil, err
 	}
-	h, err := f.Add(ctx)
+	h, err := f.AddOn(ctx, net)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +71,26 @@ func forgeHost(ctx context.Context, f *Fleet, m *Device, signers ...*Device) (*D
 		return nil, err
 	}
 	return h, nil
+}
+
+// forgeServer starts a container on the network net that runs forge with
+// args, such as the stand-in for a well-known site.
+func forgeServer(ctx context.Context, f *Fleet, net, args string) (*Device, error) {
+	dir, err := os.MkdirTemp("", "cbbfleet-forge")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	bin, err := buildForge(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	d, err := f.addServer(ctx, net, nil, "while [ ! -x /usr/local/bin/cbbbench-forge ]; do sleep 0.2; done; exec cbbbench-forge "+args)
+	if err != nil {
+		return nil, err
+	}
+	_, err = docker(ctx, "cp", bin, d.Container+":/usr/local/bin/cbbbench-forge")
+	return d, err
 }
 
 // runForge runs forge on h as m, with signer's key, against target.

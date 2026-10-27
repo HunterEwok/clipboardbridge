@@ -16,7 +16,9 @@
 // "CASE N: no answer: ERROR". flood signs N renames of DEVICE with the
 // signer's key and sends them (G32); make signs N renames of the listed
 // devices at times out of order into FILE, and send sends FILE's records in
-// an order SEED picks (G31). It is never part of a release.
+// an order SEED picks (G31). The tunnel's cases are in tunnel.go, the
+// stand-in for a well-known site that VLESS borrows in site.go. It is
+// never part of a release.
 package main
 
 import (
@@ -41,7 +43,24 @@ func main() {
 	signer := flag.String("signer", "", "the state directory of the admin whose key signs the commands")
 	to := flag.String("to", "", "the target's device ID")
 	addr := flag.String("addr", "", "the target's member port, HOST:PORT")
+	endpoint := flag.String("endpoint", "", "the tunnel's cases: the hub's UDP address, HOST:PORT, instead of its first one")
+	hubState := flag.String("hub-state", "", "the tunnel's cases: the state directory whose hub's offer to use instead of -state's")
 	flag.Parse()
+	if name, ok := strings.CutPrefix(flag.Arg(0), "site:"); ok {
+		// forge -addr :443 site:NAME serves as the well-known site NAME.
+		if err := runSite(*addr, name); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && tunnelCase(flag.Arg(0)) {
+		if err := runTunnel(*state, *hubState, *endpoint, flag.Args()); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(*state, *signer, group.DeviceID(*to), *addr, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "forge:", err)
 		os.Exit(1)
@@ -230,6 +249,15 @@ func run(state, signerDir string, to group.DeviceID, addr string, cases []string
 		}
 	}
 	return nil
+}
+
+// loadID is the device ID of the member whose state is in dir.
+func loadID(dir string) (string, error) {
+	id, err := group.Load(dir)
+	if err != nil {
+		return "", err
+	}
+	return string(id.ID), nil
 }
 
 // find returns the device named name, by name or device ID.

@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -137,25 +138,33 @@ func Listen(cfg Config) (*Relay, error) {
 	// errors included, goes without the addresses in it.
 	logf = tunnel.Redacted(logf)
 	// The tunnel listens on the UDP port of the same number. Where any free
-	// port will do, one whose UDP twin is taken or reserved (Windows keeps
-	// ranges for Hyper-V) is given up for another.
-	_, wanted, _ := net.SplitHostPort(cfg.Listen)
+	// port will do, the UDP port is picked first, by the system, which never
+	// gives one of the ranges Windows keeps for Hyper-V; a TCP twin that is
+	// taken or reserved is given up for another.
+	host, wanted, _ := net.SplitHostPort(cfg.Listen)
 	var (
 		tcp net.Listener
 		hub *tunnel.Hub
 	)
 	for try := 0; ; try++ {
+		listen := cfg.Listen
+		if wanted == "0" {
+			port, err := freeUDPPort(host)
+			if err != nil {
+				return nil, fmt.Errorf("relay: %w", err)
+			}
+			listen = net.JoinHostPort(host, strconv.Itoa(port))
+		}
 		var err error
-		if tcp, err = net.Listen("tcp", cfg.Listen); err != nil {
-			return nil, fmt.Errorf("relay: %w", err)
+		if tcp, err = net.Listen("tcp", listen); err == nil {
+			port := tcp.Addr().(*net.TCPAddr).Port
+			hub, err = tunnel.StartHub(tunnel.HubConfig{PrivateKey: cfg.Keys.WireGuard, Addr: Addr, ListenPort: port, Logf: logf, Verbose: cfg.Verbose})
+			if err == nil {
+				break
+			}
+			tcp.Close()
 		}
-		port := tcp.Addr().(*net.TCPAddr).Port
-		hub, err = tunnel.StartHub(tunnel.HubConfig{PrivateKey: cfg.Keys.WireGuard, Addr: Addr, ListenPort: port, Logf: logf, Verbose: cfg.Verbose})
-		if err == nil {
-			break
-		}
-		tcp.Close()
-		if wanted != "0" || try == 4 {
+		if wanted != "0" || try == 19 {
 			return nil, fmt.Errorf("relay: %w", err)
 		}
 	}
@@ -167,6 +176,16 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r.tlsCfg = r.serverTLS()
 	return r, nil
+}
+
+// freeUDPPort returns a UDP port on host that is free at the moment.
+func freeUDPPort(host string) (int, error) {
+	c, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	return c.LocalAddr().(*net.UDPAddr).Port, nil
 }
 
 // Addr returns the address of the relay's port.

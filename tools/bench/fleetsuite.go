@@ -65,6 +65,13 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G31-converge", func() { converge(ctx, r, f, timeout) }},
 		{"G32-limits", func() { recordLimits(ctx, r, f, timeout) }},
 		{"K14-admin-chain", func() { adminChain(ctx, r, f, timeout) }},
+		{"W4-away", func() { awayHub(ctx, r, f, timeout) }},
+		{"W18-obfuscation", func() { obfuscation(ctx, r, f, timeout) }},
+		{"W33-two-groups", func() { twoGroupsAway(ctx, r, f, timeout) }},
+		{"W36-relay", func() { relayAway(ctx, r, f, timeout) }},
+		{"W38-relay-limits", func() { relayLimits(ctx, r, f, timeout) }},
+		{"E6-hub-load", func() { hubLoad(ctx, r, f, timeout) }},
+		{"W34-vless", func() { vlessAway(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {

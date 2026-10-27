@@ -110,6 +110,29 @@ func (f *Fleet) AddOn(ctx context.Context, net string, env ...string) (*Device, 
 // AddWith starts a new member in no group on the network net, with more
 // arguments for docker run, such as a small tmpfs for its state.
 func (f *Fleet) AddWith(ctx context.Context, net string, run []string, env ...string) (*Device, error) {
+	// sh stands in for the service manager: it starts the service again
+	// a second after it dies, as systemd's Restart= does.
+	d, err := f.container(ctx, net, run, env, "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb service; sleep 1; done")
+	if err != nil {
+		return nil, err
+	}
+	if err := eventually(ctx, 20*time.Second, func() error {
+		_, err := Run(ctx, d, "cbb status", "")
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("%s did not start: %w", d.Name, err)
+	}
+	return d, nil
+}
+
+// addServer starts a container on the network net that runs cmd instead
+// of the service, such as a forwarder or the stand-in for the internet.
+func (f *Fleet) addServer(ctx context.Context, net string, run []string, cmd string) (*Device, error) {
+	return f.container(ctx, net, run, nil, cmd)
+}
+
+// container starts a container of the fleet's image that runs cmd with sh.
+func (f *Fleet) container(ctx context.Context, net string, run, env []string, cmd string) (*Device, error) {
 	f.mu.Lock()
 	f.n++
 	n := f.n
@@ -123,19 +146,11 @@ func (f *Fleet) AddWith(ctx context.Context, net string, run []string, env ...st
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
-	// sh stands in for the service manager: it starts the service again
-	// a second after it dies, as systemd's Restart= does.
-	args = append(args, fleetImage, "sh", "-c", "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb service; sleep 1; done")
+	args = append(args, fleetImage, "sh", "-c", cmd)
 	if _, err := docker(ctx, args...); err != nil {
 		return nil, err
 	}
 	d := &Device{Name: fmt.Sprintf("m%02d", n), OS: "fleet", Clipboard: "none", Container: name, Roles: []string{"member"}, Network: net}
-	if err := eventually(ctx, 20*time.Second, func() error {
-		_, err := Run(ctx, d, "cbb status", "")
-		return err
-	}); err != nil {
-		return nil, fmt.Errorf("%s did not start: %w", d.Name, err)
-	}
 	f.mu.Lock()
 	f.members = append(f.members, d)
 	f.mu.Unlock()
