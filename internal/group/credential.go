@@ -24,6 +24,15 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
+)
+
+// PeriodLifetime is how long a period lasts, and PeriodRenew how old it may
+// get before the root starts the next: a phone's root asks for Face ID for
+// it about once a month. The bench's time-scaled build runs them faster.
+var (
+	PeriodLifetime = benchtime.D(35 * 24 * time.Hour)
+	PeriodRenew    = benchtime.D(30 * 24 * time.Hour)
 )
 
 // Server credentials are what a forwarder and a relay check in place of the
@@ -46,12 +55,6 @@ const (
 	// CredentialsFileName is the file next to the identity that keeps the
 	// group's credentials.
 	CredentialsFileName = "credentials.json"
-
-	// PeriodLifetime is how long a period lasts, and PeriodRenew how old
-	// it may get before the root starts the next: a phone's root asks for
-	// Face ID for it about once a month.
-	PeriodLifetime = 35 * 24 * time.Hour
-	PeriodRenew    = 30 * 24 * time.Hour
 
 	// MaxCredentialHubs bounds the hubs a credential lists, the first of
 	// the order; MaxCredentialMembers the members; maxCredentialList the

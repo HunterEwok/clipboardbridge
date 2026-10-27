@@ -25,20 +25,28 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 )
 
 // PhoneName is the DNS name the iPhone uses for the group.
 const PhoneName = "clipboardbridge.local"
 
 // Lifetimes of the certificates, and how long before its end a certificate
-// is renewed.
+// is renewed; the bench's time-scaled build runs them faster.
 const (
-	caYears            = 20
-	memberYears        = 2
-	memberRenewBefore  = 240 * 24 * time.Hour
-	phoneLifetime      = 397 * 24 * time.Hour // below the 825 days iOS allows
-	phoneRenewBefore   = 60 * 24 * time.Hour
-	backdate           = 24 * time.Hour // for a device whose clock is a little behind
+	caYears     = 20
+	memberYears = 2
+)
+
+var (
+	memberRenewBefore = benchtime.D(240 * 24 * time.Hour)
+	phoneLifetime     = benchtime.D(397 * 24 * time.Hour) // below the 825 days iOS allows
+	phoneRenewBefore  = benchtime.D(60 * 24 * time.Hour)
+	backdate          = benchtime.D(24 * time.Hour) // for a device whose clock is a little behind
+)
+
+const (
 	phoneCAName        = "clipboardbridge iPhone CA"
 	groupCAName        = "clipboardbridge group CA"
 	rootCAName         = "clipboardbridge group root"
@@ -144,7 +152,7 @@ func newCA(tmpl *x509.Certificate, now time.Time) (*CA, error) {
 		return nil, err
 	}
 	tmpl.NotBefore = now.Add(-backdate)
-	tmpl.NotAfter = now.AddDate(caYears, 0, 0)
+	tmpl.NotAfter = benchtime.Years(now, caYears)
 	tmpl.IsCA = true
 	tmpl.BasicConstraintsValid = true
 	tmpl.MaxPathLenZero = tmpl.MaxPathLen == 0
@@ -167,7 +175,7 @@ func (ca *CA) IssueMember(id DeviceID, pub *ecdsa.PublicKey, now time.Time) (*x5
 		Subject:     pkix.Name{CommonName: string(id)},
 		DNSNames:    []string{id.HostName()},
 		NotBefore:   ca.Cert.NotBefore,
-		NotAfter:    now.AddDate(memberYears, 0, 0),
+		NotAfter:    benchtime.Years(now, memberYears),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 	}, pub, now)
 }

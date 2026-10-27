@@ -10,14 +10,16 @@ import (
 	"errors"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // renewEvery is how often a member checks whether certificates are due for
 // renewal: its own, if it holds the CA keys, and those of the connected
 // members. The renewal periods are months long, so twice a day is plenty.
-// It is a variable for the tests.
-var renewEvery = 12 * time.Hour
+// It is a variable for the tests; the bench's time-scaled build checks
+// every few seconds.
+var renewEvery = max(benchtime.D(12*time.Hour), 5*time.Second)
 
 // renewLoop renews certificates when the group starts and every renewEvery
 // after, until ctx is done.

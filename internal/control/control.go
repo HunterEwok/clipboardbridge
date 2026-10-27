@@ -171,10 +171,14 @@ type Status struct {
 	Group  string `json:"group,omitempty"` // the group tag; empty when in no group
 	// Removed says that the group's records revoke this device: its
 	// members refuse it until it pairs again.
-	Removed bool   `json:"removed,omitempty"`
-	Role    string `json:"role"`
-	OS      string `json:"os,omitempty"`     // this device's operating system
-	Holder  bool   `json:"holder,omitempty"` // answers for clipboardbridge.local
+	Removed bool `json:"removed,omitempty"`
+	// CertEndsMS is when this device's member certificate ends, in Unix
+	// milliseconds: the members refuse it afterwards, unless an admin
+	// renews it before.
+	CertEndsMS int64  `json:"cert_ends_ms,omitempty"`
+	Role       string `json:"role"`
+	OS         string `json:"os,omitempty"`     // this device's operating system
+	Holder     bool   `json:"holder,omitempty"` // answers for clipboardbridge.local
 	// HoldSetting is the holder setting: auto, first, fallback or never.
 	HoldSetting string `json:"hold_setting,omitempty"`
 	// HoldPriority is the holder priority it publishes: 1 first, 2 as a

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
@@ -164,7 +165,7 @@ func (s *Service) hubOfferLocked(st *tunnel.State, psk []byte) *node.TunnelOffer
 // hubKeyAhead is how long before a hub serves with its key for a new
 // period of the group's server credentials its offers give its clients
 // that key.
-var hubKeyAhead = 3 * 24 * time.Hour
+var hubKeyAhead = benchtime.D(3 * 24 * time.Hour)
 
 // rotateHubKey gives the hub a new WireGuard key for its clients in each
 // period of the group's server credentials (docs/protocol.md, section 11,
