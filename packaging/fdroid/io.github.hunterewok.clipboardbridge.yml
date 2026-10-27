@@ -42,7 +42,7 @@ Builds:
       - go env -w GOTOOLCHAIN=auto
     output: build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk
     # cbb.ndk in apps/android/gradle.properties.
-    ndk: NDK
+    ndk: 30.0.16248370
     gradle:
       - fdroid
 
