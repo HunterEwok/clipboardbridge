@@ -74,16 +74,6 @@ func hubsToTry(order []group.DeviceID, self string, st *tunnel.State) []tunnel.H
 		}
 	}
 	slices.SortFunc(out, func(a, b tunnel.HubLink) int { return rankOf(order, a.Device) - rankOf(order, b.Device) })
-	// A hub that gave its key for the next period is tried with it too,
-	// right after its key now: it may have moved on to it while this
-	// member was away (docs/protocol.md, section 11, "The hub's key").
-	for i := 0; i < len(out); i++ {
-		if h := out[i]; !h.Next.IsZero() {
-			h.PublicKey, h.Next = h.Next, tunnel.Key{}
-			out = slices.Insert(out, i+1, h)
-			i++
-		}
-	}
 	return out
 }
 
@@ -197,6 +187,11 @@ func (s *Service) setUsing(run *tunRun, hub string, through bool) {
 // when one answers, it serves the member connection to the hub until it
 // ends, or until upCheck when up is true, so the hubs above are tried
 // again. It reports whether it reached the hub.
+//
+// A hub that gave its key for the next period is tried with both keys at
+// once: it may have moved on to the next one while this member was away
+// or while the connection was down (docs/protocol.md, section 11, "The
+// hub's key"), and the key it no longer serves with gets no answer at all.
 func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunnel.HubLink, up bool) bool {
 	self, err := tunnel.Addr(s.tunSelf)
 	if err != nil {
@@ -225,37 +220,43 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		defer vc.Close()
 		eps = []netip.AddrPort{vc.Addr()}
 	}
-	c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
-		HubPublicKey: h.PublicKey, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
-		Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
-	if err != nil {
-		s.tunReport(run, "the tunnel to the hub could not start", err)
-		return false
+	hubKeys := []tunnel.Key{h.PublicKey}
+	if !h.Next.IsZero() {
+		hubKeys = append(hubKeys, h.Next)
 	}
-	defer c.Close()
+	var cs []*tunnel.Client
+	defer func() {
+		for _, c := range cs {
+			c.Close()
+		}
+	}()
+	for _, k := range hubKeys {
+		c, err := tunnel.StartClient(tunnel.ClientConfig{PrivateKey: key, PresharedKey: psk, Addr: self,
+			HubPublicKey: k, HubAddr: hubAddr, Endpoint: eps[0], Obfuscation: h.Obfuscation,
+			Allowed: netguard.Allowed, Logf: s.logf, Verbose: tunnelVerbose()})
+		if err != nil {
+			s.tunReport(run, "the tunnel to the hub could not start", err)
+			return false
+		}
+		cs = append(cs, c)
+	}
 	s.tunMu.Lock()
 	if s.tunRun != run {
 		s.tunMu.Unlock()
 		return false
 	}
-	run.client = c
+	run.clients = cs
 	s.tunMu.Unlock()
 	defer func() {
 		s.tunMu.Lock()
-		if run.client == c {
-			run.client = nil
+		if slices.Equal(run.clients, cs) {
+			run.clients = nil
 		}
 		s.tunMu.Unlock()
 	}()
 	hub := group.DeviceID(h.Device)
 	for _, ep := range eps {
-		var raw net.Conn
-		err := c.SetEndpoint(ep)
-		if err == nil {
-			dctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-			raw, err = c.Dial(dctx)
-			cancel()
-		}
+		raw, won, err := dialAny(ctx, cs, ep)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false
@@ -263,6 +264,19 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 			s.tunReport(run, fmt.Sprintf("no answer through the tunnel from %s at %v: the hub is off or cannot be reached, or the forwarder on the way is down", h.Device, ep), err)
 			continue
 		}
+		// The other keys get no answer: their tunnels stop, so they do
+		// not keep sending handshakes.
+		s.tunMu.Lock()
+		for _, c := range cs {
+			if c != won {
+				c.Close()
+			}
+		}
+		cs = []*tunnel.Client{won}
+		if s.tunRun == run {
+			run.clients, run.hubKey = cs, won.HubKey()
+		}
+		s.tunMu.Unlock()
 		s.setUsing(run, h.Device, true)
 		s.tunReport(run, "", nil)
 		cctx, cancel := ctx, context.CancelFunc(func() {})
@@ -271,6 +285,9 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		}
 		err = nd.DialConn(cctx, hub, raw)
 		cancel()
+		s.tunMu.Lock()
+		run.hubKey = tunnel.Key{}
+		s.tunMu.Unlock()
 		s.setUsing(run, "", false)
 		if err != nil && ctx.Err() == nil && cctx.Err() == nil {
 			s.logf("cbb: the connection to the hub %s through the tunnel ended: %v", hub, err)
@@ -278,6 +295,62 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 		return true
 	}
 	return false
+}
+
+// dialAny points each client at ep and dials the hub through all of them
+// at once, for up to handshakeTimeout; the first connection wins, with its
+// client, and the other tries end. A client that has made its WireGuard
+// handshake by then gets another handshakeTimeout for the connection: on a
+// slow way, such as VLESS on a busy machine, the handshake can take most of
+// the time, and starting over would throw it away and meet the same wait
+// again.
+func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, *tunnel.Client, error) {
+	dctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		c    *tunnel.Client
+		conn net.Conn
+		err  error
+	}
+	results := make(chan result, len(cs))
+	for _, c := range cs {
+		go func() {
+			if err := c.SetEndpoint(ep); err != nil {
+				results <- result{c, nil, err}
+				return
+			}
+			cctx, cancel := context.WithCancel(dctx)
+			defer cancel()
+			t := time.AfterFunc(handshakeTimeout, func() {
+				if !c.Handshaked() {
+					cancel()
+					return
+				}
+				time.AfterFunc(handshakeTimeout, cancel)
+			})
+			defer t.Stop()
+			conn, err := c.Dial(cctx)
+			results <- result{c, conn, err}
+		}()
+	}
+	var won result
+	var errs []error
+	for range cs {
+		r := <-results
+		switch {
+		case r.err != nil:
+			errs = append(errs, r.err)
+		case won.conn == nil:
+			won = r
+			cancel()
+		default:
+			r.conn.Close()
+		}
+	}
+	if won.conn != nil {
+		return won.conn, won.c, nil
+	}
+	return nil, nil, errors.Join(errs...)
 }
 
 // tunReport keeps what went wrong for status, while run is the tunnel at

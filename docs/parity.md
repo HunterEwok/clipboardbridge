@@ -39,7 +39,9 @@ on every platform of the class, on the roadmap).
 | Text-console helper (tmux) | yes (`--console`) | **OS** | **OS** | for a Linux machine without a desktop; a Mac and a Windows PC always have one |
 | Removal from the system's app list | — | **OS** | yes (Settings, Apps) | Linux has no common list; the Mac app (item 22) brings it to macOS |
 | Signed program | — | planned (`.pkg`, Developer ID) | ready, needs a certificate | the release signs with Authenticode once the secrets hold a certificate (G5) |
-| Device keys in hardware | planned | planned | planned | roadmap item 13 |
+| Device keys in hardware | yes, with a TPM (`internal/tpmkey`) | planned | planned | roadmap item 13: the Secure Enclave on a Mac, the TPM on Windows |
+| Update itself, by hand and once a day | yes (`cbb update`) | yes, or Homebrew | yes (`cbb update`), or winget | [installing](guide/install.md#updating) |
+| Quick actions and remote paste as a target | yes | yes | yes | each off until the device's own user turns it on |
 | Firewall rules only with the user's consent, listed one by one; `--express` without questions | yes | yes | yes (`-Express`) | nftables and iptables get the commands only, as their rules do not survive a restart |
 | Opening the hub's UDP port in the firewall, with consent | yes (ufw, firewalld; commands for nftables, iptables) | **OS** | yes | `cbb global hub` asks, `-firewall yes` without asking; the macOS application firewall already allows a listed program on every port |
 | Finding a firewall the installer does not know, by a check from home | yes | yes | yes | `cbb status` warns when the members at home could not connect and sync only because this computer dials them back |
@@ -65,7 +67,8 @@ on every platform of the class, on the roadmap).
 | Rename a device | yes | yes | Devices, Rename on an admin phone; `cbb rename` on an admin computer; a signed device record |
 | Error details switch without developer tools | yes | yes | seven taps on the version in Settings show it; `adb` and the Xcode launch argument still work |
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
-| Remote invitations, remote paste, images and files | planned | planned | roadmap items 12, 18, 20 |
+| Remote paste, images and files | yes | yes | the iPhone takes no remote paste (**OS**: no app may type into another) |
+| Remote invitations | planned | planned | roadmap item 12; computers have them |
 | Arrange the tiles and collections (the model; the screens follow) | yes | yes | kept on each installation; the watches show their phone's |
 | Act as a Bluetooth keyboard for a TV, tablet or computer | yes | **OS** | iOS keeps the HID service to the system; some Android makers leave the profile out, which the app says |
 | Tested on a real phone | not yet | not yet | |
@@ -78,7 +81,8 @@ on every platform of the class, on the roadmap).
 | Sync the clipboard | yes | not yet | yes, through the Pi | the firmware's sync is the next step of roadmap item 15 |
 | Listen for phones and Macs | yes | not yet | through the Pi | |
 | Secrets (`copy -secret`) | yes | not yet | yes (`.cbb text -s`, `.cbb copy -s`) | |
-| Sync away from home | planned | planned | planned | |
+| Sync away from home | yes (`TestLiteMemberAway`) | planned | through the Pi | not on MIPS routers yet: the lite member for MIPS is built without the tunnel |
+| Update itself | yes (`cbb update`, Linux and OpenWrt) | planned (OTA, roadmap item 29) | through the Pi | |
 | Error details switch | yes (`-debug`, `CBB_DEBUG=1`) | not yet | yes (`.cbb -d`) | |
 
 The ESP32 and the Next are still being built, so "not yet" is progress, not a gap: each

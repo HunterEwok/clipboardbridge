@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# cbb relay on a server (docs/reference/self-hosting.md): the meeting point
+# cbb relay on a server (docs/admin/self-hosting.md): the meeting point
 # for the devices of a group that has no computer to be its hub. It holds no
 # group's keys and keeps nothing about the devices: no log names an
 # address, a group or a device, and on disk there is only its keys.
 [Unit]
 Description=Clipboard Bridge blind relay
-Documentation=https://github.com/HunterEwok/clipboardbridge/blob/main/docs/reference/self-hosting.md
+Documentation=https://github.com/HunterEwok/clipboardbridge/blob/main/docs/admin/self-hosting.md
 After=network-online.target
 Wants=network-online.target
 

@@ -16,8 +16,9 @@ Use GitHub private vulnerability reporting: open the
 
 Include, if you can:
 
-- the affected component (the service on Linux, macOS or Windows, the desktop connector,
-  the macOS or Windows clipboard agent, sync away from home, the iPhone or Android app, the
+- the affected component (the service on Linux, macOS, Windows, FreeBSD or OpenWrt, the
+  desktop connector, the clipboard agents, remote paste, quick actions, sync away from home,
+  the forwarder or the relay, `cbb update`, the iPhone, Android, watch, Mac or tray app, the
   iOS shortcut, or the lite member) and the version or commit;
 - the steps to reproduce;
 - the impact: what an attacker can read, change or run.
@@ -35,7 +36,7 @@ Please keep the details private until the advisory is published.
 
 In scope: the programs and apps in this repository, the pairing, sync and tunnel
 protocols, the installers, the release files (archives, the Android APK, the Homebrew
-formula) and the published iOS shortcut.
+formula, the OpenWrt package feed, the signed release lists) and the published iOS shortcut.
 
 Out of scope:
 
@@ -50,4 +51,6 @@ Test only on your own devices. Do not access other people's data and do not disr
 people's networks. The maintainer will not take legal action against research done in good
 faith under this policy.
 
-The security design is described in [docs/design.md](docs/design.md#security).
+The security design is described in [docs/design.md](docs/design.md#security), the threats
+and their defences in [docs/threat-model.md](docs/threat-model.md), and the cryptography in
+[docs/cryptography.md](docs/cryptography.md).

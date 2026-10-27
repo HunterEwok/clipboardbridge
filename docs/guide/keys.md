@@ -11,7 +11,7 @@ can check it, and which level of strictness to choose. The exact rules are in th
 
 | Where | Devices | What a thief gets |
 |---|---|---|
-| **In a file** | Macs and Windows PCs today, Linux computers without a TPM, the lite member | a copy of the file, which works anywhere until an admin removes the device |
+| **In a file** | Macs and Windows PCs, Linux computers without a TPM, the lite member | a copy of the file, which works anywhere until an admin removes the device |
 | **In hardware** | iPhones (Secure Enclave), Android phones (Keystore: StrongBox or the TEE), Linux computers with a TPM | nothing to copy: the key signs only on that device, and on a phone the root's and admins' keys only after your face, fingerprint or passcode |
 | **Proven hardware** | an Android phone whose key the group's root checked | the same as hardware, and the group knows it is true, not only that the device says so |
 
@@ -40,7 +40,7 @@ hardware can prove it:
   Nuvoton chips, as the Raspberry Pi TPM boards) proves it to the group's root, which then
   records the computer as **proven**; nothing is asked of the maker. Intel's and AMD's
   firmware TPMs often keep their certificate on the maker's server instead, so they stay
-  hardware. **Apple devices** (App Attest) come later in 0.6.
+  hardware. **Apple devices** (App Attest) do not prove their keys yet.
 
 ## The three levels
 
@@ -68,14 +68,13 @@ without telling any outside service which devices you have.
 
 ## If a device is lost
 
-Remove it from the group (`cbb revoke NAME`, or the device page in the app). A key in hardware
-cannot be used without the device, and the phone asks for your face, fingerprint or
-passcode before the root's or an admin's key signs anything. A key in a file can: remove
-such a device as soon as you can.
+Remove it from the group as soon as you can: see [if a device is lost or stolen](lost-device.md).
+A key in hardware cannot be used without the device; a key in a file can, until the device
+is removed.
 
 ## What is not built yet
 
-This page describes 0.6 as planned. Today:
+The levels above are the design; this version builds part of it:
 
 - Android phones prove their keys, and the root checks the proof and Google's list. The
   copy on `cbb.tools` starts once the project's signing keys exist.
@@ -83,5 +82,5 @@ This page describes 0.6 as planned. Today:
   admin only with the warning of level 3.
 - Linux computers with a TPM keep their member and admin keys in it, from the moment they
   join a group; a computer that joined earlier keeps its file until it joins again. The
-  group's root key on a computer, Macs (the Secure Enclave), Windows PCs and App Attest come
-  later in 0.6.
+  group's root key on a computer, Macs (the Secure Enclave), Windows PCs (the TPM) and App
+  Attest are not built yet: until then their keys are in a file.

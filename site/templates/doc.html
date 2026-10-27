@@ -1,0 +1,57 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}: Clipboard Bridge</title>
+<meta name="description" content="{{.Description}}">
+<link rel="canonical" href="{{.URL}}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Clipboard Bridge">
+<meta property="og:title" content="{{.Title}}">
+<meta property="og:description" content="{{.Description}}">
+<meta property="og:url" content="{{.URL}}">
+<meta property="og:image" content="https://cbb.tools/static/og/en.jpg">
+<meta name="theme-color" content="#0B1A20" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#DCD3C1" media="(prefers-color-scheme: light)">
+<script src="{{asset "theme.js"}}"></script>
+<script defer src="{{asset "site.js"}}"></script>
+<link rel="preload" href="/static/fonts/jost-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="icon" href="/static/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script data-goatcounter="https://cbb.tools/count" async src="/count.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="/en/">
+      <img class="on-dark" src="/static/icon-dark.png" alt="" width="32" height="32"><img class="on-light" src="/static/icon.png" alt="" width="32" height="32">
+      <span>Clipboard Bridge</span>
+    </a>
+    <nav aria-label="Main">
+      <a href="/en/download.html">Download</a>
+      <a href="/docs/"{{if eq .Path "/docs/"}} aria-current="page"{{end}}>Docs</a>
+      <a href="https://github.com/HunterEwok/clipboardbridge">GitHub</a>
+    </nav>
+    <button class="theme" type="button" hidden data-auto="Theme: as on this device" data-light="Theme: light" data-dark="Theme: dark">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><g class="t-auto"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z"/></g><g class="t-light"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></g><g class="t-dark"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></g></svg>
+    </button>
+  </div>
+</header>
+<main id="main" data-copy="Copy" data-copied="Copied">
+<article class="wrap page doc">
+{{.Body}}
+</article>
+</main>
+<footer class="foot">
+  <div class="wrap">
+    <p>{{if ne .Path "/docs/"}}<a href="/docs/">All documentation</a> · {{end}}<a href="{{printf "%s%s" "https://github.com/HunterEwok/clipboardbridge/blob/main/" .Source}}">This page on GitHub</a>, where changes to it are made.</p>
+    <p>Clipboard Bridge is free software under the <a href="https://github.com/HunterEwok/clipboardbridge/blob/main/LICENSE">GNU AGPL v3</a>; the protocol is under CC BY 4.0.</p>
+  </div>
+</footer>
+</body>
+</html>

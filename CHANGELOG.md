@@ -126,7 +126,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
 - Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
-  the Linux archive; docs/reference/self-hosting.md installs them and says what the server
+  the Linux archive; docs/admin/self-hosting.md installs them and says what the server
   keeps, what its hosting provider sees, and what a system VPN on a device hides.
 - BRAND.md: which builds are official and how to check them, what belongs to the project
   (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
@@ -405,6 +405,50 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The documentation is arranged by reader: the guide for users, `docs/admin/` for running
+  servers (`self-hosting.md` moved there from `docs/reference/`), the reference, and the
+  pages for engineers and maintainers, each part with its own table in `docs/README.md`.
+  New reference pages: `config.md`, every settings file and every `CBB_*` variable (moved
+  out of `cli.md`, with the ones it lacked: `CBB_TPM`, `CBB_ADMIN_SOCKET`, the installers'
+  `CBB_VERIFY` and `CBB_ATTESTATION`, the test variables); `limits.md`, every size, rate,
+  timeout and lifetime; `errors.md`, how each part shows errors and the switch that shows
+  their details; and `glossary.md`.
+  New guide pages for what 0.6 adds: images, files and formatted text; remote paste; quick
+  actions; and what to do when a device is lost or stolen.
+  `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
+  in the TPM, FreeBSD and OpenWrt.
+- `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
+  systemd units read is in `docs/reference/config.md`, that every page below `docs/` is
+  reached from `docs/README.md`, that no page calls something "planned for" a version
+  that is out already, that every subcommand of `cbb` with flags of its own and each of
+  its flags is in `docs/reference/cli.md`, and that every port the code listens on by
+  default is in the ports table of `docs/reference/devices.md`.
+- docs/design.md follows arc42: goals and constraints, context, solution strategy, building
+  blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
+  and glossary. The decisions D-1 to D-78 have a register with their status
+  (`docs/decisions.md`), and the threats a model of their own (`docs/threat-model.md`,
+  STRIDE, with the defence and the code for each). The design no longer describes the 0.2
+  group, where Linux members held the CA keys, and says what 0.5 and 0.6 built: the Mac as
+  a hub, the phones away from home, the server credentials in both phone kits, the project's
+  forwarder at `cbb.tools`.
+- The designs that are built moved from docs/roadmap.md into docs/design.md: quick
+  actions, secure updates, watches, what the servers learn, the phone hub's steps, OpenWrt,
+  Docker and FreeBSD. The roadmap keeps what comes next, its items sorted into done, partly
+  done and next, under the same numbers.
+- docs/protocol.md is normative: BCP 14 keywords (RFC 2119, RFC 8174) mark what an
+  implementation must do to interoperate and to keep the group safe, the edition and its
+  rule for changes are stated, the registries of every name in use are in section 19
+  (ALPN IDs, exporter labels, certificate names, messages, values, addresses), and the
+  security considerations in section 20. Stale notes about design.md's line numbers are
+  gone.
+- The documentation is on the website too, at `cbb.tools/docs/`: `tools/site` renders every
+  page of `docs/` and the few it links to with goldmark, keeps GitHub's anchors, sends
+  links to the code to GitHub, and lists the pages in the sitemap; the site's "Docs" link
+  leads there.
+- New pages: docs/cryptography.md (every primitive, library and key, with its size,
+  lifetime and storage), docs/testing.md (the test levels, the interop vectors, the cross
+  tests, the bench), docs/admin/upgrade-and-backup.md and docs/admin/hardening.md. The
+  command reference lists `cbb global move`.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for
@@ -435,6 +479,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
   waited minutes, because the hub dropped its guest tunnel before the answer passed.
 - A second device using an invitation that was used hears that its pairing window is
   closed, not "tls: internal error".
+- A computer that comes back after its hub moved on to its key for the new period reaches
+  the hub at once: it tries the hub's old key and the next one together instead of waiting
+  10 seconds for the old key's handshake first, and keeps that link when the hub's new offer
+  names the key it already uses, instead of starting it again at once, which the hub refused
+  as too soon after the last handshake and cost another 5 seconds. The hub starts its tunnel
+  with the new key before its state names it.
+- A computer away from home reaches its hub over a slow way, such as VLESS on a busy
+  machine: a try whose WireGuard handshake has gone through gets another 10 seconds for the
+  connection, instead of being dropped and started over with a new handshake that took as
+  long again.
+- An image or file fetched again after a fetch that gave up no longer gives up itself on a
+  slow link: the pieces the peer still sends for the first fetch now count as the peer
+  sending, so only a peer that sends nothing for 15 seconds ends a fetch.
+- The Android app's dependencies take Guava 33.7.2, which fixes GHSA-xxph-c9ww-hj94 in the
+  33.3.1 that CameraX and Media3 bring in.
 - `cbb revoke`, `takeover`, `freeze`, `unfreeze` and `holder` with `-h` print their usage
   instead of asking the service about a device named `-h`.
 - The TV remote's errors name `cbb remote add`, the command that adds a TV, instead of

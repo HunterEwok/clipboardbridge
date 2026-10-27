@@ -135,11 +135,17 @@ func TestClientsReachTheHub(t *testing.T) {
 	h := startHub(t, a.peer(), b.peer())
 	for _, d := range []testDevice{a, b} {
 		c := startClient(t, h, d)
+		if c.Handshaked() {
+			t.Fatal("a handshake before anything was sent")
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		got, err := roundTrip(ctx, c)
 		cancel()
 		if err != nil {
 			t.Fatalf("client %s: %v", d.addr, err)
+		}
+		if !c.Handshaked() {
+			t.Fatal("no handshake after a connection through the tunnel")
 		}
 		// The hub sees each client by its own tunnel address.
 		if want := d.addr.String() + " hello"; got != want {

@@ -344,8 +344,9 @@ func TestHubKeyRotation(t *testing.T) {
 		return st.Next.IsZero() && st.ServingKey().Public() == next
 	})
 	deck = restartService(t, &h, deck)
-	// The old key gets no answer for the handshake timeout first.
-	waitUpTo(t, 60*time.Second, "the deck reaches the hub with the new key", func() bool {
+	// The deck tries the old key and the new one at once, so the old one,
+	// which gets no answer, costs it no time.
+	waitFor(t, "the deck reaches the hub with the new key", func() bool {
 		st := deck.status(t)
 		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
 	})
@@ -931,12 +932,12 @@ func TestHubsToTry(t *testing.T) {
 		t.Errorf("the first hub tries %v", got)
 	}
 
-	// A hub with a key for the next period is tried with that key too,
-	// right after its key now.
+	// A hub with a key for the next period is tried once, with both keys
+	// (tryHub).
 	st.IsHub = false
 	st.Hubs[2].PublicKey, st.Hubs[2].Next = tunnel.Key{1}, tunnel.Key{2}
 	got := hubsToTry(order, "deck", st)
-	if !slices.Equal(devs(got), []string{"phone", "phone", "pi"}) || got[0].PublicKey != (tunnel.Key{1}) || got[1].PublicKey != (tunnel.Key{2}) || !got[1].Next.IsZero() {
+	if !slices.Equal(devs(got), []string{"phone", "pi"}) || got[0].PublicKey != (tunnel.Key{1}) || got[0].Next != (tunnel.Key{2}) {
 		t.Errorf("a client tries %+v", got)
 	}
 }

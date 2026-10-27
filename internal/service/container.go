@@ -12,7 +12,7 @@ import (
 // keeps its keys in a file in its volume, which whoever copies the volume
 // has, so it holds no key that admits or removes devices: it is never the
 // group's root and takes no admin key, unless the user allowed it with
-// CBB_KEYS_IN_FILE=yes after reading why not (docs/roadmap.md, "Docker",
+// CBB_KEYS_IN_FILE=yes after reading why not (docs/design.md, "Docker",
 // and the key levels).
 const (
 	containerEnv  = "CBB_CONTAINER"

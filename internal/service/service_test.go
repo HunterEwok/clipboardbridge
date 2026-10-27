@@ -203,7 +203,7 @@ func (s *testService) logf(t *testing.T, f string, a ...any) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 	if !s.stopped {
-		t.Logf(s.name+": "+f, a...)
+		t.Logf(time.Now().Format("15:04:05.000")+" "+s.name+": "+f, a...)
 	}
 }
 

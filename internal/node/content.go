@@ -328,6 +328,10 @@ func (n *Node) Fetch(ctx context.Context, peer group.DeviceID, sum [sha256.Size]
 			if ch.offset != offset {
 				// Left from a fetch of the part cancelled before: the peer
 				// serves gets in order, so the piece wanted comes later.
+				// It is still a piece of the part, so the peer is not
+				// stalled: on a slow link the leftovers alone can take
+				// longer than fetchStall.
+				stall.Reset(fetchStall)
 				continue
 			}
 			if err := sink(offset, ch.data); err != nil {
