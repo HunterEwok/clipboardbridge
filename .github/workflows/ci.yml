@@ -232,13 +232,15 @@ jobs:
             test -f /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
             # cbb opens its mDNS sockets as root, then runs as its user.
             sleep 2
-            ps -axo user,command | grep -q '^clipboardbridge .*cbb service'
-            if ps -axo user,command | grep -q '^root .*/usr/local/bin/cbb service'; then exit 1; fi
-            if ! cbb status 2>&1 | grep -Eq 'in a group|no group'; then
-              ps -axo user,pid,ppid,command | grep '[c]bb'
-              grep clipboardbridge /var/log/messages | tail -n 40
+            failed() {
+              echo "$1" >&2
+              ps -axwwo user,pid,ppid,command | grep '[c]bb' || true
+              grep clipboardbridge /var/log/messages | tail -n 40 || true
               exit 1
-            fi
+            }
+            ps -axwwo user,command | grep -q '^clipboardbridge .*cbb service' || failed "cbb service does not run as clipboardbridge"
+            if ps -axwwo user,command | grep -q '^root .*/usr/local/bin/cbb service'; then failed "cbb service runs as root"; fi
+            cbb status 2>&1 | grep -Eq 'in a group|no group' || failed "cbb status got no answer"
             kldload -n pf
             touch /etc/pf.conf
             pfctl -e
