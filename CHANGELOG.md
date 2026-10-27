@@ -56,7 +56,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
 - Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
-  the Linux archive; docs/reference/self-hosting.md installs them and says what the server
+  the Linux archive; docs/admin/self-hosting.md installs them and says what the server
   keeps, what its hosting provider sees, and what a system VPN on a device hides.
 - BRAND.md: which builds are official and how to check them, what belongs to the project
   (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
@@ -335,6 +335,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The documentation is arranged by reader: the guide for users, `docs/admin/` for running
+  servers (`self-hosting.md` moved there from `docs/reference/`), the reference, and the
+  pages for engineers and maintainers, each part with its own table in `docs/README.md`.
+  New reference pages: `config.md`, every settings file and every `CBB_*` variable (moved
+  out of `cli.md`, with the ones it lacked: `CBB_TPM`, `CBB_ADMIN_SOCKET`, the installers'
+  `CBB_VERIFY` and `CBB_ATTESTATION`, the test variables), and `glossary.md`.
+  `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
+  in the TPM, FreeBSD and OpenWrt.
+- `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
+  systemd units read is in `docs/reference/config.md`, and that every page below `docs/` is
+  reached from `docs/README.md`.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for

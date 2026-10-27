@@ -83,7 +83,7 @@ encrypted packets and holds no keys.
 sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
 ```
 
-The address and the key come from the forwarder. You can [run your own](../reference/self-hosting.md#a-forwarder)
+The address and the key come from the forwarder. You can [run your own](../admin/self-hosting.md#a-forwarder)
 on any small server. The project's forwarder at `cbb.tools` is not open to everyone yet;
 its address and key will be here when it is.
 
@@ -119,7 +119,7 @@ A phone can be the hub while its app is open (Settings, **This phone as the hub*
 devices meet at a **blind relay** on a server of your own instead of a hub: the computers with
 `cbb global relay`, the phones under **Blind relay** in Settings. The relay cannot read the
 clipboard but sees which devices talk, when and how much. See
-[running your own servers](../reference/self-hosting.md#a-blind-relay).
+[running your own servers](../admin/self-hosting.md#a-blind-relay).
 
 Coming later: a blind relay at `cbb.tools` that any group can use.
 

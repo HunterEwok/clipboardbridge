@@ -86,7 +86,7 @@ The forwarder holds no keys and cannot read anything: it only sees encrypted pac
 to your hub. Two kinds:
 
 - **Your own**: `cbb forward` on any server with a public address, a cheap virtual server
-  for example ([running your own servers](../reference/self-hosting.md)).
+  for example ([running your own servers](../admin/self-hosting.md)).
 - **The Clipboard Bridge forwarder** at `cbb.tools`, run by the project for everyone. It
   is being tested and not open to everyone yet; its address and key will be on this page
   when it opens.

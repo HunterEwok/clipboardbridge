@@ -108,8 +108,10 @@ The order of what comes next is the [roadmap](docs/roadmap.md).
   [networks that block VPNs](docs/guide/blocked-networks.md), [keys and attestation](docs/guide/keys.md),
   [the apps](docs/guide/apps.md), [without the app](docs/guide/without-app.md) and
   [troubleshooting](docs/guide/troubleshooting.md).
-- **Reference**: [commands](docs/reference/cli.md), [devices, ports and files](docs/reference/devices.md),
-  [running your own servers](docs/reference/self-hosting.md), the [lite member](lite/README.md).
+- **Running servers**: [your own forwarder or relay](docs/admin/self-hosting.md), the
+  [Docker image](packaging/docker/README.md), the [lite member](lite/README.md).
+- **Reference**: [commands](docs/reference/cli.md), [settings and environment variables](docs/reference/config.md),
+  [devices, ports and files](docs/reference/devices.md), the [glossary](docs/reference/glossary.md).
 - **For developers**: the [design](docs/design.md), the [protocol](docs/protocol.md) and the
   rest in the [documentation index](docs/README.md).
 

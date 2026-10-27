@@ -1109,7 +1109,7 @@ group are online and their addresses, which of them talk, when, and how much. Bo
 must be online at once, since it stores nothing.
 
 Anyone who needs it may use it: the project runs an open relay at `cbb.tools`, and a user may
-run their own just as easily (`cbb relay`, the [guide](reference/self-hosting.md)). A device
+run their own just as easily (`cbb relay`, the [guide](admin/self-hosting.md)). A device
 meets at a relay only after the user agrees to what it learns: `cbb global relay` shows it
 and asks, and the phone apps will say it before their switch. The relay keeps nothing about
 the devices in its logs, but a user who would rather nobody saw even that runs their own

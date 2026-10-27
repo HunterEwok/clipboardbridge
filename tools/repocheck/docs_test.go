@@ -95,3 +95,39 @@ func TestCheckCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckEnv(t *testing.T) {
+	files := map[string][]byte{
+		"internal/a.go":                 []byte(`v := os.Getenv("CBB_PORT"); w := os.Getenv("CBB_GONE"); x.atoms["CBB_SELECTION"]`),
+		"packaging/get.sh":              []byte(`attestation=${CBB_ATTESTATION:-check}; echo $CBB_SHELL`),
+		"packaging/w/get.ps1":           []byte(`if ($env:CBB_VERIFY -eq 'skip') {}`),
+		"packaging/x.service":           []byte("Environment=CBB_UNIT=\n"),
+		"internal/third_party/lib/x.go": []byte(`os.Getenv("CBB_COPIED")`),
+		"docs/reference/config.md":      []byte("`CBB_PORT` and `CBB_ATTESTATION`, `CBB_VERIFY`."),
+	}
+	got := checkEnv(files)
+	want := []string{"CBB_GONE", "CBB_SHELL", "CBB_UNIT"}
+	if len(got) != len(want) {
+		t.Fatalf("checkEnv() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], "variable "+w+" ") {
+			t.Errorf("problem %d = %q, want it to name %s", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckIndex(t *testing.T) {
+	files := map[string][]byte{
+		"docs/README.md":           []byte("[a](guide/a.md) [d](decisions/README.md#top)"),
+		"docs/guide/a.md":          []byte("[b](b.md)"),
+		"docs/guide/b.md":          nil,
+		"docs/decisions/README.md": []byte("[1](0001-x.md)"),
+		"docs/decisions/0001-x.md": nil,
+		"docs/images/x.svg":        nil,
+	}
+	got := checkIndex(files)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "docs/guide/b.md:1:") {
+		t.Fatalf("checkIndex() = %q, want only docs/guide/b.md", got)
+	}
+}

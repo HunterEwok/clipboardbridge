@@ -150,7 +150,7 @@ The order may change.
     (which devices talk, when and how much, and their addresses; never the clipboard); and
     the guide to running one's own forwarder or relay, with the plain, AmneziaWG and VLESS
     ways for networks and countries that block VPNs
-    ([running your own servers](reference/self-hosting.md)). **Built: the open relay
+    ([running your own servers](admin/self-hosting.md)). **Built: the open relay
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**

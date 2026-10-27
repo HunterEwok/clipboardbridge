@@ -100,6 +100,8 @@ func checkRepo() (problems []string, checked int, err error) {
 		problems = append(problems, checkDocs(f.name, f.data, contents)...)
 	}
 	problems = append(problems, checkCommands(contents)...)
+	problems = append(problems, checkEnv(contents)...)
+	problems = append(problems, checkIndex(contents)...)
 	return problems, len(files), nil
 }
 

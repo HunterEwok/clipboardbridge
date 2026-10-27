@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -17,7 +18,10 @@ import (
 //     repository, and its #anchor, if any, a heading of that file;
 //   - the project's old name does not come back, outside the changelog;
 //   - every command of cbb, the full and the lite member, is in docs/reference/cli.md,
-//     the lite member's in its section.
+//     the lite member's in its section;
+//   - every environment variable that the code, the installers or the units
+//     read (CBB_*) is in docs/reference/config.md;
+//   - every page below docs/ is reached from docs/README.md, the index.
 
 var (
 	mdLink    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
@@ -25,7 +29,21 @@ var (
 	oldName   = regexp.MustCompile(`(?i)\bclipbridge\b`)
 	goCommand = regexp.MustCompile(`(?m)^\s*case "([a-z]+)"`)
 	rsCommand = regexp.MustCompile(`(?m)^\s*"([a-z]+)" => cmd_`)
+	// envQuoted is a variable's name as a string in Go, Rust, Swift and
+	// Kotlin; envShell is one that a shell script, a systemd unit or
+	// PowerShell reads.
+	envQuoted = regexp.MustCompile(`"(CBB_[A-Z0-9_]+)"`)
+	envShell  = regexp.MustCompile(`(?:\$\{?|\$env:|Environment=)(CBB_[A-Z0-9_]+)`)
+	mdPageRef = regexp.MustCompile(`\]\(([^)#\s]+\.md)(?:#[^)]*)?\)`)
 )
+
+// notEnv are the CBB_ names in the code that are not environment variables.
+var notEnv = map[string]bool{
+	"CBB_SELECTION": true, // the X11 property the desktop connector reads a selection into
+}
+
+// configRef is the reference page of the environment variables.
+const configRef = "docs/reference/config.md"
 
 // checkDocs checks the rules above in one file; files maps every checked
 // path to its content.
@@ -164,6 +182,97 @@ func checkCommands(files map[string][]byte) []string {
 			if !strings.Contains(c.doc, "`cbb "+m[1]) {
 				problems = append(problems, fmt.Sprintf("docs/reference/cli.md:1: the command cbb %s (%s) is not described", m[1], c.source))
 			}
+		}
+	}
+	return problems
+}
+
+// sortedKeys returns the keys of m in order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// envFile reports how a file names environment variables: as strings in
+// code, or as a shell script, a systemd unit or PowerShell reads them; nil
+// for other files.
+func envFile(name string) *regexp.Regexp {
+	switch path.Ext(name) {
+	case ".go", ".rs", ".swift", ".kt":
+		return envQuoted
+	case ".sh", ".ps1", ".service":
+		return envShell
+	}
+	return nil
+}
+
+// envVars returns the CBB_ environment variables that the files read, each
+// with the first file that reads it.
+func envVars(files map[string][]byte) map[string]string {
+	vars := make(map[string]string)
+	for _, name := range sortedKeys(files) {
+		re := envFile(name)
+		// repocheck's own tests name variables that do not exist.
+		if re == nil || thirdPartyDir(name) != "" || strings.HasPrefix(name, "tools/repocheck/") {
+			continue
+		}
+		for _, m := range re.FindAllStringSubmatch(string(files[name]), -1) {
+			if _, ok := vars[m[1]]; !ok && !notEnv[m[1]] {
+				vars[m[1]] = name
+			}
+		}
+	}
+	return vars
+}
+
+// checkEnv reports the environment variables that docs/reference/config.md
+// does not describe.
+func checkEnv(files map[string][]byte) []string {
+	ref, ok := files[configRef]
+	if !ok {
+		return nil
+	}
+	vars := envVars(files)
+	var problems []string
+	for _, v := range sortedKeys(vars) {
+		if !strings.Contains(string(ref), "`"+v+"`") {
+			problems = append(problems, fmt.Sprintf("%s:1: the environment variable %s (%s) is not described", configRef, v, vars[v]))
+		}
+	}
+	return problems
+}
+
+// checkIndex reports the pages below docs/ that docs/README.md does not
+// reach: by a link of its own, or by a link of the index page of a
+// directory it links to, such as docs/decisions/README.md.
+func checkIndex(files map[string][]byte) []string {
+	if _, ok := files["docs/README.md"]; !ok {
+		return nil
+	}
+	reached := map[string]bool{"docs/README.md": true}
+	queue := []string{"docs/README.md"}
+	for len(queue) > 0 {
+		from := queue[0]
+		queue = queue[1:]
+		for _, m := range mdPageRef.FindAllStringSubmatch(string(files[from]), -1) {
+			to := path.Clean(path.Join(path.Dir(from), m[1]))
+			if reached[to] || !strings.HasPrefix(to, "docs/") {
+				continue
+			}
+			reached[to] = true
+			if path.Base(to) == "README.md" {
+				queue = append(queue, to)
+			}
+		}
+	}
+	var problems []string
+	for _, name := range sortedKeys(files) {
+		if strings.HasPrefix(name, "docs/") && strings.HasSuffix(name, ".md") && !reached[name] {
+			problems = append(problems, fmt.Sprintf("%s:1: not reached from docs/README.md, the index", name))
 		}
 	}
 	return problems
