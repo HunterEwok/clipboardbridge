@@ -217,6 +217,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   fresh WireGuard key at each registration, and drops a device a newer members' credential
   leaves out; a relay that serves a fixed list of groups also sees the period credential and
   the group's roots. Devices and phones that do not sign credentials yet register as before.
+- The hub takes a new WireGuard key for its clients with each period of the server
+  credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
+  three days ahead, then it serves with it and registers again with its forwarder, so the
+  forwarder cannot link the group's traffic from one month to the next by the hub's key. Go
+  members and the lite member try a hub with its next key too, so one that was away when
+  the hub moved on still reaches it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 

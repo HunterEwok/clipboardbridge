@@ -1417,7 +1417,7 @@ and then syncs at home only ("Through the tunnel" below).
   rest of this section's state; on a Linux computer with a TPM the private key is sealed by
   it (`key_tpm` in place of `key`, section 17). The lite member keeps its own `tunnel.json` there: `v` (1),
   `group` (the group tag), `key` (its private key, base64), `psk` (the preshared key it chose)
-  and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`); it reads the single
+  and `hubs`, each hub's offer (`device`, `key`, `psk`, `endpoints`, `next`); it reads the single
   `to_hub` of earlier versions into `hubs`. Every computer and the lite member keep
   their keys in files, so `cbb global on` asks for the user's consent there (`consent` in the
   request).
@@ -1441,6 +1441,7 @@ and then syncs at home only ("Through the tunnel" below).
 | `vless` | object or absent | the way to the hub's forwarder over VLESS ("VLESS" below); with it, the only way to the hub |
 | `hub` | string or absent | in an offer one hub passes on for another: that hub's device ID ("Several hubs", "Moving the hub" below) |
 | `moved` | bool or absent | `true` when the sender is no hub any more and hands its clients over to `hub` |
+| `next_key` | bytes or absent | the key the hub serves with in the next period, 32 bytes ("The hub's key" below) |
 
 - The hub keeps one preshared key per device: the one the device's hello offers, so every
   hub of the group uses the same. From a member without `tunnel_psk` it keeps the one it
@@ -1543,6 +1544,31 @@ later (D-65 in [design.md](design.md)).
 - A phone that is the hub shares its clients, takes the others' and passes their offers on,
   but does not yet stop serving for a hub above it, nor become another hub's client; as
   phones come first in the order, the computers' hubs give way to it.
+
+### The hub's key
+
+A hub serves its clients with a WireGuard key of its own for each period of the group's
+server credentials (section 18), apart from the key its hello offers, so that a server on the
+way, such as the forwarder, cannot link the group's traffic from one period to the next by
+the hub's key. Implemented in Go (`tunnel.State.Rotate`, `internal/service/tunnel.go`).
+
+- When a hub sees a period it has no key for, it makes the next key and gives its public key
+  as `next_key` in its offers from then on, to every connected client at once and to the
+  others when they connect. Three days later it serves with that key in place of the old
+  one: it starts its tunnel again and registers again with its forwarder (section 13). Until
+  the first period, and in a group without server credentials, it serves with the key its
+  hello offers.
+- `tunnel.json` keeps the key the hub serves with (`serving`, or `serving_tpm` when the TPM
+  seals it, and `serving_for`, the period's tag) and the next one (`next`, `next_tpm`,
+  `next_for`, and `next_at_ms`, when the hub moves on to it); a client keeps a hub's
+  `next_key` as `next` in its offer.
+- A client tries a hub with its key first and then with `next` when the offer has one, so a
+  client that was away while the hub moved on still reaches it; the offer it gets then
+  replaces the one it kept. A client that was away for the whole three days and never got
+  `next` reaches the hub again at home.
+- A hub refuses a client or another hub's offer with any of its own keys. The lite member
+  tries `next_key` as Go does (`lite/src/tunnel.rs`, `hubs_to_try`); the phone kits do not
+  yet: after the hub moves on, a phone reaches it again at home.
 
 ### Obfuscation
 

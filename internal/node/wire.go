@@ -228,6 +228,10 @@ type TunnelOffer struct {
 	// Moved, in an offer passed on, tells that the sender is no hub any
 	// more: the receiver forgets the sender's own offer.
 	Moved bool `json:"moved,omitempty"`
+	// NextKey is the key the hub serves with in the next period of the
+	// group's server credentials, which the receiver tries after HubKey
+	// (section 11, "The hub's key"); absent for none.
+	NextKey []byte `json:"next_key,omitempty"`
 }
 
 // helloBody is the content of a hello, with its current event left to

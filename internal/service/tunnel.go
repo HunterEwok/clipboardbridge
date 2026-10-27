@@ -131,8 +131,12 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 // preshared key psk (none in a hub command's result); nil while the offers
 // wait for the forwarder's VLESS settings.
 func (s *Service) hubOfferLocked(st *tunnel.State, psk []byte) *node.TunnelOffer {
-	hub := st.Key.Public()
+	hub := st.ServingKey().Public()
 	o := &node.TunnelOffer{HubKey: hub[:], PSK: psk}
+	if !st.Next.IsZero() {
+		next := st.Next.Public()
+		o.NextKey = next[:]
+	}
 	for _, ep := range st.HubEndpoints() {
 		o.Endpoints = append(o.Endpoints, ep.String())
 	}
@@ -155,6 +159,83 @@ func (s *Service) hubOfferLocked(st *tunnel.State, psk []byte) *node.TunnelOffer
 		}
 	}
 	return o
+}
+
+// hubKeyAhead is how long before a hub serves with its key for a new
+// period of the group's server credentials its offers give its clients
+// that key.
+var hubKeyAhead = 3 * 24 * time.Hour
+
+// rotateHubKey gives the hub a new WireGuard key for its clients in each
+// period of the group's server credentials (docs/protocol.md, section 11,
+// "The hub's key"): when a period starts, the next key, which its offers
+// carry from then on, and hubKeyAhead later that key in place of the old
+// one, with which the hub starts again and registers again on its
+// forwarder.
+func (s *Service) rotateHubKey() {
+	var period string
+	s.recMu.Lock()
+	if s.creds != nil && s.records != nil {
+		if _, p, ok := s.creds.Period(s.currentRootLocked()); ok {
+			period = p.Tag
+		}
+	}
+	s.recMu.Unlock()
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	st := s.tunnel
+	if st == nil || !st.IsHub {
+		return
+	}
+	changed, switched, err := st.Rotate(period, s.cfg.now(), hubKeyAhead)
+	if err != nil {
+		s.logf("cbb: making the hub's key for the new period: %v", err)
+	}
+	if !changed {
+		return
+	}
+	if err := st.Save(s.cfg.StateDir); err != nil {
+		s.logf("cbb: saving the tunnel state: %v", err)
+		return
+	}
+	if switched && s.tunServing {
+		s.logf("cbb: the hub serves with its key for the new period from now on")
+		s.stopTunnelLocked()
+		s.runTunnelLocked()
+	}
+	s.sendOffersLocked()
+	s.shareLocked()
+}
+
+// sendOffersLocked sends the hub's offer again to its clients that are
+// connected, after it changed.
+func (s *Service) sendOffersLocked() {
+	st := s.tunnel
+	psks := map[group.DeviceID][]byte{}
+	for _, m := range st.Members {
+		psks[group.DeviceID(m.Device)] = m.PresharedKey[:]
+	}
+	o := s.hubOfferLocked(st, nil)
+	if o == nil {
+		return
+	}
+	go func() {
+		s.mu.Lock()
+		nd := s.nd
+		s.mu.Unlock()
+		if nd == nil {
+			return
+		}
+		nd.SendTunnel(func(dev group.DeviceID) *node.TunnelOffer {
+			psk, ok := psks[dev]
+			if !ok {
+				return nil
+			}
+			c := *o
+			c.PSK = psk
+			return &c
+		})
+	}()
 }
 
 // tunnelOffered keeps an offer for this member's key: the sender's own,
@@ -231,6 +312,13 @@ func hubLink(hub group.DeviceID, o node.TunnelOffer) (tunnel.HubLink, error) {
 	}
 	copy(h.PublicKey[:], o.HubKey)
 	copy(h.PresharedKey[:], o.PSK)
+	switch len(o.NextKey) {
+	case 0:
+	case len(h.Next):
+		copy(h.Next[:], o.NextKey)
+	default:
+		return h, errors.New("the next key is not 32 bytes")
+	}
 	for _, e := range o.Endpoints {
 		ep, err := netip.ParseAddrPort(e)
 		if err != nil {
@@ -360,7 +448,7 @@ func (s *Service) runTunnelLocked() {
 		if port == 0 {
 			port = tunnel.Port
 		}
-		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.Key, Addr: self, ListenPort: port, Peers: s.hubPeerListLocked(),
+		h, err := tunnel.StartHub(tunnel.HubConfig{PrivateKey: st.ServingKey(), Addr: self, ListenPort: port, Peers: s.hubPeerListLocked(),
 			Obfuscation: st.Obfuscation, Logf: s.logf, Verbose: tunnelVerbose()})
 		if err != nil {
 			cancel()

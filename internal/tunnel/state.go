@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
@@ -92,10 +93,31 @@ type State struct {
 	// (docs/design.md, "Turning it on, step by step").
 	KeysInFile bool
 
-	// sealed is Key sealed by the TPM, as the state file keeps it, and
-	// sealedKey the key it holds, so that a new key is sealed again.
-	sealed    *tpmkey.Blob
-	sealedKey Key
+	// Serving, on a hub, is the WireGuard key it serves its clients with,
+	// a new one for each period of the group's server credentials
+	// (docs/protocol.md, section 11, "The hub's key"), so that a server on
+	// the way cannot link the group's traffic from one period to the
+	// next; zero while it serves with Key. ServingFor is the tag of its
+	// period.
+	Serving    Key
+	ServingFor string
+
+	// Next, on a hub, is the key it serves with from NextAt on, which its
+	// offers give its clients ahead of time; zero for none. NextFor is the
+	// tag of its period.
+	Next    Key
+	NextFor string
+	NextAt  time.Time
+
+	// The keys sealed by the TPM, as the state file keeps them.
+	sealed, sealedServing, sealedNext sealing
+}
+
+// sealing is a key sealed by the TPM and the key it holds, so that a new
+// key is sealed again.
+type sealing struct {
+	blob *tpmkey.Blob
+	key  Key
 }
 
 // A Sealer keeps secrets in the device's TPM (docs/protocol.md, section
@@ -178,6 +200,9 @@ type HubLink struct {
 	Endpoints    []netip.AddrPort
 	Obfuscation  *Obfuscation // nil for plain WireGuard
 	VLESS        *VLESS       // if set, the only way to the hub
+	// Next is the key the hub serves with in its next period, which the
+	// client tries after PublicKey; zero for none.
+	Next Key
 }
 
 // Member is a client as its hub keeps it: its WireGuard key, its own
@@ -210,6 +235,15 @@ type stateFile struct {
 	Relay      *forwarderFile   `json:"relay,omitempty"`
 	// Obfuscation is the hub's AmneziaWG settings.
 	Obfuscation *Obfuscation `json:"obfuscation,omitempty"`
+	// The hub's key for its clients, and the next one (State.Serving and
+	// State.Next).
+	Serving    *Key         `json:"serving,omitempty"`
+	ServingTPM *tpmkey.Blob `json:"serving_tpm,omitempty"`
+	ServingFor string       `json:"serving_for,omitempty"`
+	Next       *Key         `json:"next,omitempty"`
+	NextTPM    *tpmkey.Blob `json:"next_tpm,omitempty"`
+	NextFor    string       `json:"next_for,omitempty"`
+	NextAt     int64        `json:"next_at_ms,omitempty"`
 }
 
 type forwarderFile struct {
@@ -226,6 +260,7 @@ type hubFile struct {
 	Endpoints    []netip.AddrPort `json:"endpoints,omitempty"`
 	Obfuscation  *Obfuscation     `json:"obfuscation,omitempty"`
 	VLESS        *VLESS           `json:"vless,omitempty"`
+	Next         Key              `json:"next,omitzero"`
 }
 
 type memberFile struct {
@@ -270,15 +305,25 @@ func LoadState(dir string) (*State, error) {
 		return nil, fmt.Errorf("%s: unknown version %d", StateFile, f.Version)
 	}
 	s := &State{Group: f.Group, IsHub: f.IsHub, Endpoints: f.Endpoints, ListenPort: f.ListenPort, KeysInFile: f.KeysInFile,
-		Obfuscation: f.Obfuscation}
-	switch {
-	case f.KeyTPM != nil:
-		if s.Key, err = unsealKey(f.KeyTPM); err != nil {
-			return nil, fmt.Errorf("%s: %w", StateFile, err)
+		Obfuscation: f.Obfuscation, ServingFor: f.ServingFor, NextFor: f.NextFor}
+	if f.NextAt != 0 {
+		s.NextAt = time.UnixMilli(f.NextAt)
+	}
+	for _, k := range []struct {
+		key    *Key
+		sealed *sealing
+		file   *Key
+		blob   *tpmkey.Blob
+	}{{&s.Key, &s.sealed, f.Key, f.KeyTPM}, {&s.Serving, &s.sealedServing, f.Serving, f.ServingTPM}, {&s.Next, &s.sealedNext, f.Next, f.NextTPM}} {
+		switch {
+		case k.blob != nil:
+			if *k.key, err = unsealKey(k.blob); err != nil {
+				return nil, fmt.Errorf("%s: %w", StateFile, err)
+			}
+			*k.sealed = sealing{k.blob, *k.key}
+		case k.file != nil:
+			*k.key = *k.file
 		}
-		s.sealed, s.sealedKey = f.KeyTPM, s.Key
-	case f.Key != nil:
-		s.Key = *f.Key
 	}
 	if f.ToHub != nil {
 		f.Hubs = append([]hubFile{*f.ToHub}, f.Hubs...)
@@ -313,7 +358,7 @@ func LoadState(dir string) (*State, error) {
 		if err := s.seal(); err != nil {
 			return nil, err
 		}
-		if s.sealed != nil {
+		if s.sealed.blob != nil {
 			if err := s.Save(dir); err != nil {
 				return nil, err
 			}
@@ -327,10 +372,22 @@ func (s *State) Save(dir string) error {
 	if err := s.seal(); err != nil {
 		return err
 	}
-	f := stateFile{Version: 1, KeyTPM: s.sealed, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
+	f := stateFile{Version: 1, KeyTPM: s.sealed.blob, Group: s.Group, IsHub: s.IsHub, Endpoints: s.Endpoints, ListenPort: s.ListenPort, KeysInFile: s.KeysInFile,
 		Obfuscation: s.Obfuscation}
-	if s.sealed == nil {
+	if s.sealed.blob == nil {
 		f.Key = &s.Key
+	}
+	if !s.Serving.IsZero() {
+		f.ServingFor, f.ServingTPM = s.ServingFor, s.sealedServing.blob
+		if f.ServingTPM == nil {
+			f.Serving = &s.Serving
+		}
+	}
+	if !s.Next.IsZero() {
+		f.NextFor, f.NextTPM, f.NextAt = s.NextFor, s.sealedNext.blob, s.NextAt.UnixMilli()
+		if f.NextTPM == nil {
+			f.Next = &s.Next
+		}
 	}
 	if !s.PSK.IsZero() {
 		f.PSK = &s.PSK
@@ -354,22 +411,73 @@ func (s *State) Save(dir string) error {
 	return atomicfile.Write(filepath.Join(dir, StateFile), append(data, '\n'), 0o600)
 }
 
-// seal seals the key with KeySealer once, and again when it changed. A
+// seal seals the keys with KeySealer once, and again when they changed. A
 // key that was in the file moves to the TPM when the device has one.
 func (s *State) seal() error {
-	if s.sealed != nil && s.sealedKey == s.Key {
+	for _, k := range []struct {
+		key Key
+		c   *sealing
+	}{{s.Key, &s.sealed}, {s.Serving, &s.sealedServing}, {s.Next, &s.sealedNext}} {
+		if err := k.c.seal(k.key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *sealing) seal(k Key) error {
+	if c.blob != nil && c.key == k {
 		return nil
 	}
-	s.sealed = nil
-	if KeySealer == nil || s.Key.IsZero() {
+	c.blob = nil
+	if KeySealer == nil || k.IsZero() {
 		return nil
 	}
-	b, err := KeySealer.Seal(s.Key[:])
+	b, err := KeySealer.Seal(k[:])
 	if err != nil {
 		return fmt.Errorf("tunnel: sealing the key: %w", err)
 	}
-	s.sealed, s.sealedKey = b, s.Key
+	*c = sealing{b, k}
 	return nil
+}
+
+// ServingKey returns the WireGuard key the hub serves its clients with.
+func (s *State) ServingKey() Key {
+	if !s.Serving.IsZero() {
+		return s.Serving
+	}
+	return s.Key
+}
+
+// ownKey reports whether pub is one of this device's public keys.
+func (s *State) ownKey(pub Key) bool {
+	return pub == s.Key.Public() || !s.Serving.IsZero() && pub == s.Serving.Public() || !s.Next.IsZero() && pub == s.Next.Public()
+}
+
+// Rotate brings the hub's key for its clients up to the period tagged
+// period (docs/protocol.md, section 11, "The hub's key"): a period it has
+// no key for yet gets the next key, which the hub serves with from
+// now+ahead on, and once that time came the next key is the one it serves
+// with. changed tells whether the state must be saved and the offers sent
+// again, and switched whether the hub must start again with the new key.
+func (s *State) Rotate(period string, now time.Time, ahead time.Duration) (changed, switched bool, err error) {
+	if !s.IsHub {
+		return false, false, nil
+	}
+	if !s.Next.IsZero() && !now.Before(s.NextAt) {
+		s.Serving, s.ServingFor = s.Next, s.NextFor
+		s.Next, s.NextFor, s.NextAt = Key{}, "", time.Time{}
+		changed, switched = true, true
+	}
+	if period == "" || period == s.ServingFor || period == s.NextFor {
+		return changed, switched, nil
+	}
+	k, err := NewPrivateKey()
+	if err != nil {
+		return changed, switched, fmt.Errorf("tunnel: making the key: %w", err)
+	}
+	s.Next, s.NextFor, s.NextAt = k, period, now.Add(ahead)
+	return true, switched, nil
 }
 
 func unsealKey(b *tpmkey.Blob) (Key, error) {
@@ -438,7 +546,7 @@ func (s *State) check() error {
 		if err := h.check(); err != nil {
 			return err
 		}
-		if h.PublicKey == s.Key.Public() {
+		if s.ownKey(h.PublicKey) || !h.Next.IsZero() && s.ownKey(h.Next) {
 			return errors.New("a hub has this device's key")
 		}
 		if hubs[h.Device] {
@@ -523,7 +631,7 @@ func (s *State) peers() ([]Peer, error) {
 		return nil, err
 	}
 	for _, p := range peers {
-		if p.PublicKey == s.Key.Public() {
+		if s.ownKey(p.PublicKey) {
 			return nil, errors.New("tunnel: a client has the hub's key")
 		}
 	}
@@ -542,7 +650,7 @@ func (s *State) Admit(device string, pub, psk Key, chain [][]byte) (c Member, ch
 	if len(chain) == 0 {
 		return Member{}, false, errors.New("tunnel: a client without a certificate")
 	}
-	if pub.IsZero() || pub == s.Key.Public() {
+	if pub.IsZero() || s.ownKey(pub) {
 		return Member{}, false, errors.New("tunnel: a client offered no key or the hub's own")
 	}
 	i := slices.IndexFunc(s.Members, func(c Member) bool { return c.Device == device })
@@ -592,7 +700,7 @@ func (s *State) Take(device string, pub, psk Key) (changed bool, err error) {
 	switch {
 	case pub.IsZero() || psk.IsZero():
 		return false, errors.New("tunnel: a client without a key")
-	case pub == s.Key.Public():
+	case s.ownKey(pub):
 		return false, fmt.Errorf("tunnel: %s has the hub's own key", device)
 	}
 	i := -1
@@ -638,7 +746,7 @@ func (s *State) SetHub(h HubLink) (changed bool, err error) {
 	if err := h.check(); err != nil {
 		return false, fmt.Errorf("tunnel: %w", err)
 	}
-	if h.PublicKey == s.Key.Public() {
+	if s.ownKey(h.PublicKey) || !h.Next.IsZero() && s.ownKey(h.Next) {
 		return false, errors.New("tunnel: the hub offered this device's own key")
 	}
 	h.Endpoints = slices.Clone(h.Endpoints)
@@ -650,7 +758,7 @@ func (s *State) SetHub(h HubLink) (changed bool, err error) {
 		s.Hubs = append(s.Hubs, h)
 		return true, nil
 	}
-	if o := s.Hubs[i]; o.PublicKey == h.PublicKey && o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) &&
+	if o := s.Hubs[i]; o.PublicKey == h.PublicKey && o.Next == h.Next && o.PresharedKey == h.PresharedKey && slices.Equal(o.Endpoints, h.Endpoints) &&
 		o.Obfuscation.Equal(h.Obfuscation) && o.VLESS.Equal(h.VLESS) {
 		return false, nil
 	}

@@ -989,10 +989,10 @@ user can run `cbb forward` on a server of their own.
   connections last, but for the credentials' versions above. The clients' addresses cannot be hidden from it, since they are where its
   answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
   complexity that the project does not take on.
-- **Optional, off by default:** the hub can change its WireGuard key on a schedule, for
-  example weekly, handing the new key to its clients inside the tunnel, so that the forwarder
-  cannot link a group's traffic from one period to the next. The project's own forwarder does
-  not rely on it.
+- The hub changes its WireGuard key for its clients with each period of the server
+  credentials, about monthly, handing the next key to its clients inside the tunnel three
+  days ahead, so that the forwarder cannot link a group's traffic from one period to the
+  next by the hub's key ([protocol.md](protocol.md), section 11, "The hub's key").
 - The forwarder is `cbb` in a mode that holds no keys. A hub never runs on a rented server:
   that would put the decrypted clipboard on someone else's hardware.
 

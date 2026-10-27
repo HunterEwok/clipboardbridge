@@ -100,10 +100,12 @@ func (s *Service) addCredentials(from group.DeviceID, cs []group.Credential) []g
 // its server key for the period; on the root, the hubs' and the members'
 // credentials when they list other keys than the records and the server
 // credentials say; and on an admin that the hubs' credential lists, the
-// members' credential.
+// members' credential. On a hub it then brings the hub's WireGuard key up
+// to the period.
 func (s *Service) refreshCredential() {
 	s.credMu.Lock()
 	defer s.credMu.Unlock()
+	defer s.rotateHubKey()
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()

@@ -83,6 +83,10 @@ pub struct Hub {
     pub psk: Vec<u8>,
     #[serde(default)]
     pub endpoints: Vec<SocketAddr>,
+    /// The key the hub serves with in its next period, which this member
+    /// tries after `key`; empty for none.
+    #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
+    pub next: Vec<u8>,
 }
 
 impl State {
@@ -126,11 +130,19 @@ impl State {
     }
 
     /// The offers this member tries, in the group's order of hubs `order`:
-    /// those of hubs in the order, with an address.
+    /// those of hubs in the order, with an address, each hub that gave its
+    /// key for the next period once more with that key, right after.
     pub fn hubs_to_try(&self, order: &[String]) -> Vec<Hub> {
-        let mut out: Vec<Hub> =
-            self.hubs.iter().filter(|h| order.contains(&h.device) && !h.endpoints.is_empty()).cloned().collect();
-        out.sort_by_key(|h| order.iter().position(|d| *d == h.device));
+        let mut hubs: Vec<&Hub> =
+            self.hubs.iter().filter(|h| order.contains(&h.device) && !h.endpoints.is_empty()).collect();
+        hubs.sort_by_key(|h| order.iter().position(|d| *d == h.device));
+        let mut out = Vec::new();
+        for h in hubs {
+            out.push(h.clone());
+            if !h.next.is_empty() {
+                out.push(Hub { key: h.next.clone(), next: Vec::new(), ..h.clone() });
+            }
+        }
         out
     }
 
@@ -179,7 +191,7 @@ pub fn hub_from_offer(from: &DeviceId, o: &TunnelOffer) -> Result<Hub> {
             "the group's hub hides its tunnel (AmneziaWG or VLESS), which the lite member cannot speak yet; it syncs at home only",
         ));
     }
-    if o.hub_key.len() != 32 || o.psk.len() != 32 {
+    if o.hub_key.len() != 32 || o.psk.len() != 32 || !o.next_key.is_empty() && o.next_key.len() != 32 {
         return Err(Error::msg("the hub's offer does not have 32-byte keys"));
     }
     if o.endpoints.len() > MAX_ENDPOINTS {
@@ -191,7 +203,13 @@ pub fn hub_from_offer(from: &DeviceId, o: &TunnelOffer) -> Result<Hub> {
         .map(|e| e.parse::<SocketAddr>().context(format!("the hub's offer has a bad address {e:?}")))
         .collect::<Result<Vec<_>>>()?;
     addr(from.as_str()).ok_or_else(|| Error::msg(format!("{from} is not a device ID")))?;
-    Ok(Hub { device: from.to_string(), key: o.hub_key.clone(), psk: o.psk.clone(), endpoints })
+    Ok(Hub {
+        device: from.to_string(),
+        key: o.hub_key.clone(),
+        psk: o.psk.clone(),
+        endpoints,
+        next: o.next_key.clone(),
+    })
 }
 
 /// The tunnel address of a device: fd00:cbb::/32 followed by the first 96
@@ -670,6 +688,18 @@ mod tests {
         assert!(hub_from_offer(&id, &o).unwrap_err().message().contains("AmneziaWG"));
         let short = r#"{"hub_key":"AQE=","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="}"#;
         assert!(hub_from_offer(&id, &serde_json::from_str(short).unwrap()).is_err());
+
+        // The key for the next period is tried right after the key now.
+        let next = r#"{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","endpoints":["192.0.2.1:8764"],"next_key":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="}"#;
+        let hub = hub_from_offer(&id, &serde_json::from_str(next).unwrap()).unwrap();
+        assert_eq!(hub.next, vec![3; 32]);
+        let mut st = State::new("abc").unwrap();
+        st.hubs.push(hub);
+        let tried = st.hubs_to_try(&[id.to_string()]);
+        assert_eq!(tried.iter().map(|h| h.key[0]).collect::<Vec<_>>(), vec![1, 3]);
+        assert!(tried[1].next.is_empty());
+        let bad = r#"{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","next_key":"AQE="}"#;
+        assert!(hub_from_offer(&id, &serde_json::from_str(bad).unwrap()).is_err());
     }
 
     #[test]
