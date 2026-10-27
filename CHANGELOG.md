@@ -225,8 +225,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   The lite member's core and the phones' kits read and check the credentials with the same
   vectors. Both phone apps keep them, pass them on, and sign their server keys; a root phone
   signs a new period while the user's last Face ID or fingerprint lasts, and the lists with a
-  period key in the Secure Enclave or the Keystore. The phones still register with a relay
-  by their member certificate.
+  period key in the Secure Enclave or the Keystore. Once the members' credential lists a
+  phone's server key, the phone registers with a relay by the credentials too, under its
+  pseudonym (cbbtun's `Relay.SetCredentials`).
 - The hub takes a new WireGuard key for its clients with each period of the server
   credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
   three days ahead, then it serves with it and registers again with its forwarder, so the
