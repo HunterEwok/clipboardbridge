@@ -348,8 +348,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
   in the TPM, FreeBSD and OpenWrt.
 - `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
-  systemd units read is in `docs/reference/config.md`, and that every page below `docs/` is
-  reached from `docs/README.md`.
+  systemd units read is in `docs/reference/config.md`, that every page below `docs/` is
+  reached from `docs/README.md`, and that no page calls something "planned for" a version
+  that is out already.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for

@@ -87,7 +87,7 @@ The order may change.
     it pasted or typed where that member's focus is, with nothing pressed on the target;
     every admin may do it on every member whose user turned it on, Enter and root consoles
     separately (D-54, D-59), the iPhone only sends. See "Remote paste"
-    in [design.md](design.md#remote-paste-planned-for-06). One pull request each:
+    in [design.md](design.md#remote-paste). One pull request each:
     1. the signed `paste` command, its result and its forwarding, in Go and both phone
        kits with interop vectors; `cbb paste --on DEVICE`;
     2. Linux targets: X11, Wayland (virtual keyboard, uinput), tmux and the console helper
@@ -95,16 +95,16 @@ The order may change.
     3. Windows and macOS targets;
     4. sending from the iPhone and Android apps, and the Android target;
     5. the lite member's target, then the Nano ESP32's keyboard.
-19. **Planned for 0.5.** Sync modes: each device keeps its own clipboard by default and is
+19. **Done in 0.5.** Sync modes: each device keeps its own clipboard by default and is
     switched to shared, receive only or send only by itself or by any admin (D-55). See
-    "Sync modes" in [design.md](design.md#sync-modes-planned-for-05). **Built: on the
+    "Sync modes" in [design.md](design.md#sync-modes). **Built: on the
     computers (`cbb mode`), the lite member and both phones, with the admin's signed `mode`
     command (`cbb mode -on`, an admin phone's device page) that every member takes.**
 20. **Planned for 0.6.** Images, files and folders, with formatted text last and optional
     (D-56 to D-58): the event carries a manifest with SHA-256 hashes, the bytes are fetched
     in chunks at lower priority than events, and each device has its own limit (100 MiB at
     home, 25 MiB away from home, at most 1 GiB). See "Images and files" in
-    [design.md](design.md#images-and-files-planned-for-06). One pull request each:
+    [design.md](design.md#images-and-files). One pull request each:
     1. the `media` event, the content cache, `get` and `chunk`, the limits, interop vectors;
        `cbb copy FILE` and `cbb paste -o DIR`;
     2. images in the desktop connectors (Wayland, X11, Mac, Windows);
@@ -141,7 +141,7 @@ The order may change.
     on the watch or in `cbb` runs an action on a member, such as reboot or lock the screen,
     from a few presets and the user's own, always defined on the member itself. See "Quick
     actions" below.
-28. **Planned for 0.5.** A blind relay for every group that needs a hub and has none, or
+28. **Partly done in 0.5; the project's relay is next.** A blind relay for every group that needs a hub and has none, or
     does not want to run one: the project's relay at `cbb.tools`, and one of the user's own
     that is easy to set up. See "Blind relay" in [design.md](design.md#blind-relay) (D-68).
     It needs: groups that register with the project's relay by themselves, with limits per
@@ -158,7 +158,7 @@ The order may change.
     from a release signed with the project's own keys (D-69), downloaded from GitHub or the
     `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
     the user allows it. See "Secure updates" below.
-30. **Planned for 0.5; steps 1 to 7 are built.** The phone as the hub while its app is open: a
+30. **Done in 0.5.** The phone as the hub while its app is open: a
     group made on a phone with no computer (phones, TVs, lite members) syncs at home and from
     afar while the app is open, through the project's forwarder; once a computer that is
     always on joins, the app suggests moving the hub there, and the user may keep it on the
@@ -729,8 +729,8 @@ watches, the Mac and the tray app.
 
 ## The phone as the hub
 
-Planned for 0.5; steps 1 to 7 are done. The design, and the other cases of a group without a
-working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open-planned-for-05) (D-64).
+Done in 0.5. The design, and the other cases of a group without a
+working hub, are in [design.md](design.md#the-phone-as-the-hub-while-its-app-is-open) (D-64).
 
 Everyone has a phone; not everyone has a computer. A group made on a phone gets a hub at once,
 the phone itself, which works while its app is open; a computer that is always on is the

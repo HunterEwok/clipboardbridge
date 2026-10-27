@@ -8,6 +8,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -21,7 +22,9 @@ import (
 //     the lite member's in its section;
 //   - every environment variable that the code, the installers or the units
 //     read (CBB_*) is in docs/reference/config.md;
-//   - every page below docs/ is reached from docs/README.md, the index.
+//   - every page below docs/ is reached from docs/README.md, the index;
+//   - no page outside the changelog calls something "planned for" a version
+//     that is released already (the newest version in CHANGELOG.md).
 
 var (
 	mdLink    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
@@ -32,9 +35,11 @@ var (
 	// envQuoted is a variable's name as a string in Go, Rust, Swift and
 	// Kotlin; envShell is one that a shell script, a systemd unit or
 	// PowerShell reads.
-	envQuoted = regexp.MustCompile(`"(CBB_[A-Z0-9_]+)"`)
-	envShell  = regexp.MustCompile(`(?:\$\{?|\$env:|Environment=)(CBB_[A-Z0-9_]+)`)
-	mdPageRef = regexp.MustCompile(`\]\(([^)#\s]+\.md)(?:#[^)]*)?\)`)
+	envQuoted  = regexp.MustCompile(`"(CBB_[A-Z0-9_]+)"`)
+	envShell   = regexp.MustCompile(`(?:\$\{?|\$env:|Environment=)(CBB_[A-Z0-9_]+)`)
+	mdPageRef  = regexp.MustCompile(`\]\(([^)#\s]+\.md)(?:#[^)]*)?\)`)
+	plannedFor = regexp.MustCompile(`(?i)\bplanned for (\d+)\.(\d+)\b`)
+	released   = regexp.MustCompile(`(?m)^## \[(\d+)\.(\d+)\.\d+\]`)
 )
 
 // notEnv are the CBB_ names in the code that are not environment variables.
@@ -273,6 +278,44 @@ func checkIndex(files map[string][]byte) []string {
 	for _, name := range sortedKeys(files) {
 		if strings.HasPrefix(name, "docs/") && strings.HasSuffix(name, ".md") && !reached[name] {
 			problems = append(problems, fmt.Sprintf("%s:1: not reached from docs/README.md, the index", name))
+		}
+	}
+	return problems
+}
+
+// newestRelease returns the major and minor version of the newest release
+// in CHANGELOG.md, or false when it names none.
+func newestRelease(files map[string][]byte) (major, minor int, ok bool) {
+	m := released.FindSubmatch(files["CHANGELOG.md"])
+	if m == nil {
+		return 0, 0, false
+	}
+	major, _ = strconv.Atoi(string(m[1]))
+	minor, _ = strconv.Atoi(string(m[2]))
+	return major, minor, true
+}
+
+// checkPlanned reports the Markdown lines that call something planned for a
+// version that is out already: it is built, moved to a later version, or
+// dropped, and the line should say which.
+func checkPlanned(files map[string][]byte) []string {
+	major, minor, ok := newestRelease(files)
+	if !ok {
+		return nil
+	}
+	var problems []string
+	for _, name := range sortedKeys(files) {
+		if !strings.HasSuffix(name, ".md") || name == "CHANGELOG.md" {
+			continue
+		}
+		for i, line := range strings.Split(string(files[name]), "\n") {
+			for _, m := range plannedFor.FindAllStringSubmatch(line, -1) {
+				ma, _ := strconv.Atoi(m[1])
+				mi, _ := strconv.Atoi(m[2])
+				if ma < major || ma == major && mi <= minor {
+					problems = append(problems, fmt.Sprintf("%s:%d: %q, but %d.%d is released; say whether it is built, moved or dropped", name, i+1, m[0], ma, mi))
+				}
+			}
 		}
 	}
 	return problems

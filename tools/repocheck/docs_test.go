@@ -131,3 +131,14 @@ func TestCheckIndex(t *testing.T) {
 		t.Fatalf("checkIndex() = %q, want only docs/guide/b.md", got)
 	}
 }
+
+func TestCheckPlanned(t *testing.T) {
+	files := map[string][]byte{
+		"CHANGELOG.md":    []byte("## [Unreleased]\n\nplanned for 0.4\n\n## [0.5.0] - 2026-10-26\n"),
+		"docs/roadmap.md": []byte("1. **Planned for 0.5.** x\n2. planned for 0.6\n3. planned for 0.10\n4. Planned for 0.4.\n"),
+	}
+	got := checkPlanned(files)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "docs/roadmap.md:1:") || !strings.HasPrefix(got[1], "docs/roadmap.md:4:") {
+		t.Fatalf("checkPlanned() = %q, want lines 1 and 4 of docs/roadmap.md", got)
+	}
+}

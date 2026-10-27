@@ -517,7 +517,7 @@ Not built yet (roadmap item 10); the design:
 
 Every limit, timeout and lifetime is listed in [limits and lifetimes](reference/limits.md).
 
-## Images and files (planned for 0.6)
+## Images and files
 
 Images, files and folders travel wherever the platform lets a program read and write them,
 with the same protection as text; formatted text (HTML next to the plain text) comes last
@@ -771,7 +771,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   dials today and becomes able to be the hub once it gets a listening mode, the next piece
   of work. Phones and lite members are clients: a phone is not always on
   and cannot accept connections in the background, and a lite member has no room for it. A
-  group with no computer has its phone as the hub while the app is open (planned for 0.5,
+  group with no computer has its phone as the hub while the app is open (built in 0.5,
   below).
 - Why sync over the internet needs a computer of the user's: the hub must be on and
   reachable all the time, it must be at home so that the devices hand it their keys there
@@ -807,7 +807,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   tunnel cannot be built, nothing is sent, and the app or `cbb status` says why, with the
   real cause in debug builds.
 
-### The phone as the hub while its app is open (planned for 0.5)
+### The phone as the hub while its app is open
 
 Everyone in a group has a phone; not everyone has a computer. A group made on a phone with
 TVs, set-top boxes, other phones or lite members and no computer has nothing to be its hub,
@@ -1607,7 +1607,7 @@ signed after the theft at the earliest, or can be signed again after an unfreeze
 **Rejected.** A time limit after which a freeze lapses (a thief would wait it out), and votes
 among admins (a home group has one or two admins, so a vote decides nothing).
 
-## Sync modes (planned for 0.5)
+## Sync modes
 
 Today every copy on any member goes to the clipboard of every other member within a second,
 so a copy on one computer replaces what was just copied on another. Each device gets a
@@ -1642,7 +1642,7 @@ so a copy on one computer replaces what was just copied on another. Each device 
   the iPhone, which has no copy watching, writes a group copy from the last 45 seconds to the
   pasteboard while the app is open in a mode that receives. The buttons work in every mode.
 
-## Remote paste (planned for 0.6)
+## Remote paste
 
 An admin device sends a text to one chosen member and has it pasted where that member's
 focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for

@@ -77,4 +77,4 @@ The answer on the sender says which one it was.
   user turns it on again.
 
 The limits are in [limits and lifetimes](../reference/limits.md#remote-paste-and-quick-actions);
-how it works inside is in the [design](../design.md#remote-paste-planned-for-06).
+how it works inside is in the [design](../design.md#remote-paste).
