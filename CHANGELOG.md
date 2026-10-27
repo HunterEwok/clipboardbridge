@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The model of the device tiles' own order and collections, for the apps' Arrange mode
+  that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the
+  Swift kit, checked against shared vectors in `testdata/arrangement`. It is kept on each
+  installation and never sent to the group.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,
