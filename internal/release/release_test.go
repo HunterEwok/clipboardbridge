@@ -361,3 +361,27 @@ func TestSignRefusesBadBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckPinned(t *testing.T) {
+	root, rk, other := newSigner(t), newSigner(t), newSigner(t)
+	roots := [][]byte{root.spki}
+	now := time.UnixMilli(nowMS)
+	keys := sign(t, keysBody(2, nowMS-1000, 90*24*time.Hour, rk), root)
+	rel := sign(t, releaseBody("0.5.2", "stable"), rk)
+	r, seen, err := CheckPinned(keys, rel, roots, now, Seen{KeysSeq: 2, ChannelSeq: 9, Version: "0.5.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Version != "0.5.2" || seen != (Seen{KeysSeq: 2, ChannelSeq: 9, Version: "0.5.2"}) {
+		t.Errorf("%s, seen %+v", r.Version, seen)
+	}
+	if _, _, err := CheckPinned(keys, rel, roots, now, Seen{Version: "0.6.0"}); !errors.Is(err, ErrRollback) {
+		t.Errorf("below the highest seen: %v", err)
+	}
+	if _, _, err := CheckPinned(keys, sign(t, releaseBody("0.5.2", "stable"), other), roots, now, Seen{}); !errors.Is(err, ErrSignature) {
+		t.Errorf("signed by another key: %v", err)
+	}
+	if _, _, err := CheckPinned(keys, rel, roots, now, Seen{KeysSeq: 3}); !errors.Is(err, ErrRollback) {
+		t.Errorf("an older keys.json: %v", err)
+	}
+}

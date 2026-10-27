@@ -895,6 +895,20 @@ impl Service {
                 let (text, kind, _) = got.ok_or_else(|| Error::msg("the clipboard is empty"))?;
                 Ok(control::reply(Header { kind: kind_name(kind).into(), ..Default::default() }, text.into_bytes()))
             }
+            // The version the service runs, in a group or not: cbb update's
+            // check that the new one started.
+            "version" => Ok(control::reply(
+                Header {
+                    status: Some(Status {
+                        role: "lite".into(),
+                        os: "linux".into(),
+                        version: VERSION.into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                Vec::new(),
+            )),
             "status" => {
                 let node = self.node()?;
                 let id = node.identity();

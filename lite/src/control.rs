@@ -265,6 +265,7 @@ pub fn is_admin(op: &str) -> bool {
         "copy"
             | "paste"
             | "status"
+            | "version"
             | "devices"
             | "watch"
             | "copied"

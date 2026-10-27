@@ -8,6 +8,37 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb update` installs the newest signed release on a computer installed with `get.sh`,
+  `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
+  `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the
+  new release's own installer, and puts the previous programs back when the service does
+  not report the new version within a minute; automatic updates then skip that version.
+  `-check` only says whether there is one, `-to VERSION` takes a release's `min_from`, and
+  a copy from Homebrew, winget, Docker or a package gets its tool's command. Updates come
+  from GitHub, else `dl.cbb.tools`, or a mirror set with `cbb update -mirror`; each check
+  sends no version, system or group data. On Windows the new programs must carry the
+  installed ones' Authenticode signer once they have one.
+- Automatic updates: the installers ask once (`--auto-update on|off`, `-AutoUpdate`,
+  `CBB_AUTO_UPDATE`), and `cbb update -auto on|off` changes it; a systemd timer, a launchd
+  job, a scheduled task as SYSTEM or cron on OpenWrt and FreeBSD checks once a day. The
+  installers record how the program was installed, and the uninstallers remove the timer
+  and cbb update's folder.
+- The group passes the newest signed release around (docs/protocol.md, section 16, "In the
+  group"): `cbb update` hands the files it checked to the service, members send them to
+  peers whose hello names an older one, and each member checks them as a download is
+  checked. `cbb status` says when a newer release is out and lists each device's version,
+  marking the older ones; the tray app offers "Update to X", which runs `cbb update` as the
+  administrator. The archives pass through the group too: a member keeps the archive it
+  installed and serves it, and `cbb update` takes it from the group before downloading.
+- The lite member's `cbb update` on Linux and OpenWrt, as the full member's: the signed
+  files checked with `lite/core`, the download through the system's curl, wget or
+  uclient-fetch, the archive's installer, the rollback, `-check`, `-auto on|off` and
+  `-mirror`; its installer now asks about automatic updates too.
+- The Android app updates itself when it was installed from a release's APK (docs/apps.md,
+  "Updates"): Settings checks for a newer release and installs it through the system's
+  installer after checking the signed release files, the APK's hash and its signing
+  certificate; "Update automatically" does this once a day. A copy from a store is left to
+  the store.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
   layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into

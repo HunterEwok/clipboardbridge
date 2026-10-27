@@ -239,6 +239,9 @@ func certLine(endsMS int64, now time.Time) string {
 // writeStatus prints this device, its group and the group's devices.
 func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now time.Time) {
 	fmt.Fprintf(w, "%s\n", st.Version)
+	if st.Update != "" {
+		fmt.Fprintf(w, "Clipboard Bridge %s is available. To install it: %s\n", st.Update, updateCommand())
+	}
 	if np := noPasteboard(); np != "" {
 		fmt.Fprintln(w, np)
 	}
@@ -267,7 +270,7 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 		fmt.Fprintln(w, "No members connected.")
 	}
 	writeUnreached(w, st, devs)
-	writeDevices(w, devs, st.Peers, now)
+	writeDevices(w, devs, st.Peers, st.Release, now)
 }
 
 // writeUnreached says when members at home could not connect to this
@@ -643,9 +646,18 @@ func cmdService(args []string, stderr io.Writer) int {
 			return fail(stderr, err)
 		}
 	}
+	// For tests, the release roots in CBB_RELEASE_ROOTS, as cbb update
+	// takes them.
+	var roots [][]byte
+	if file := os.Getenv("CBB_RELEASE_ROOTS"); file != "" {
+		var err error
+		if roots, err = readRoots(file); err != nil {
+			return fail(stderr, err)
+		}
+	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
 		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
-			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf,
+			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf, ReleaseRoots: roots,
 			Container: service.InContainer(), KeysInFile: service.KeysInFileAllowed()})
 	})
 }

@@ -210,6 +210,12 @@ object Releases {
         return r to Seen(k.seq, cSeq, version, seen.statusSeq)
     }
 
+    /**
+     * The version a channel file names, read before it is checked, to know
+     * which release.json to fetch; [check] then checks both.
+     */
+    fun named(channel: File): String? = Wire.parse(channel.body)?.optString("release")?.takeIf { parseVersion(it) != null }
+
     private fun fail(file: String, e: Refused): Nothing = throw Refused("$file: ${e.message}")
 
     private fun verifyKeys(keys: File, roots: List<ByteArray>, nowMS: Long, seen: Seen): Keys = try {

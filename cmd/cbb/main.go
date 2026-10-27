@@ -64,6 +64,10 @@ Commands:
   pair -phone             Pair an iPhone or iPad with the shortcut.
   pair -invite file       Join from afar with an invitation from cbb invite.
   invite [-for 1h]        Invite a device from afar: run on the group's hub.
+  update [-check | -to VERSION]
+                          Install the newest signed release, as root or administrator;
+                          -check only says whether there is one.
+  update -auto [on|off]   Show, or turn on or off, updating once a day by itself.
   version                 Print the version and the platform.
   help                    Print this help.
 
@@ -156,6 +160,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdAgent(rest, stderr)
 	case "paste-helper":
 		return cmdPasteHelper(rest, stderr)
+	case "update":
+		return cmdUpdate(rest, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

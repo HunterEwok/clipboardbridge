@@ -46,6 +46,7 @@ console=
 uinput=
 port=
 cgnat=
+auto=
 firewall=${CBB_FIREWALL:-ask}
 lite=no
 while [ $# -gt 0 ]; do
@@ -68,11 +69,21 @@ while [ $# -gt 0 ]; do
 		cgnat="--home-cgnat $2"
 		shift
 		;;
+	--auto-update)
+		case ${2:-} in
+		on | off) auto="--auto-update $2" ;;
+		*)
+			echo "get.sh: --auto-update needs on or off" >&2
+			exit 2
+			;;
+		esac
+		shift
+		;;
 	--express) firewall=express ;;
 	--no-firewall) firewall=no ;;
 	--lite) lite=yes ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --lite, --console, --uinput, --port N, --home-cgnat on|off, --express, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --console, --uinput, --port N, --home-cgnat on|off, --auto-update on|off, --express, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -307,16 +318,16 @@ fi
 tar -xzf "$tmp/$archive" -C "$tmp"
 
 if [ "$os" = darwin ]; then
-	# shellcheck disable=SC2086 # $port and $cgnat are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port, $cgnat and $auto are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/macos/install.sh" $port $cgnat $auto "$tmp/$dir/cbb"
 elif [ "$os" = freebsd ]; then
-	# shellcheck disable=SC2086 # $port and $cgnat are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/freebsd/install.sh" $port $cgnat "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port, $cgnat and $auto are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/freebsd/install.sh" $port $cgnat $auto "$tmp/$dir/cbb"
 elif [ "$os" = openwrt ]; then
-	# shellcheck disable=SC2086 # $port is words or none
-	sh "$tmp/$dir/packaging/openwrt/install.sh" $port "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $port and $auto are words or none
+	sh "$tmp/$dir/packaging/openwrt/install.sh" $port $auto "$tmp/$dir/cbb"
 else
-	# shellcheck disable=SC2086 # $console, $uinput, $port and $cgnat are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $console, $uinput, $port, $cgnat and $auto are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat $auto "$tmp/$dir/cbb"
 fi
 
