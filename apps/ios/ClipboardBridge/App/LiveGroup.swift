@@ -181,6 +181,8 @@ final class LiveGroup: GroupController {
 
     var hasGroup: Bool { state != nil }
 
+    var groupTag: String? { state?.tag }
+
     /// Whether this phone may add and remove devices: it made the group, or
     /// the phone that did made it an admin. A phone without a group makes
     /// one when it adds a computer.

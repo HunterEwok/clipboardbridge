@@ -159,3 +159,30 @@ dialog p { white-space: pre-wrap; }
 #swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 #swatches button { width: 28px; height: 28px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
 #swatches button[aria-checked="true"] { border-color: var(--text); }
+
+/* The user's order and collections (docs/apps.md, "Collections and the order of the tiles"). */
+.cell { position: relative; display: flex; }
+.cell > .tile, .cell > .row { flex: 1; min-width: 0; }
+.list > .cell + .cell, .list > .cell + .row, .list > .row + .cell { border-top: 1px solid var(--line); }
+.cell.arranging > .tile, .cell.arranging > .row { cursor: grab; outline: 1.5px dashed var(--text-dim); outline-offset: -3px; }
+.cell.over > .tile, .cell.over > .row { outline: 2px dashed var(--accent); }
+.cell.dragging { opacity: .4; }
+.cell .more { position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; padding: 0; border-radius: 50%; }
+.row.inside { padding-left: 40px; }
+.row.section { font-weight: 600; }
+.minis { display: grid; grid-template-columns: repeat(2, 20px); gap: 4px; }
+.glyph-gap { width: 20px; height: 20px; }
+.attention { color: var(--danger); font-weight: 700; }
+.arrange-bar { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; margin-bottom: var(--spacing-medium); }
+.arrange-bar .dim { flex: 1; }
+.arrange-bar button { min-height: 36px; }
+.collection-head { display: flex; align-items: center; gap: 12px; margin-bottom: var(--spacing-medium); }
+.collection-head h2 { flex: 1; margin: 0; }
+.collection-head .glass { min-height: 36px; }
+.search { display: flex; align-items: center; gap: 8px; margin-bottom: var(--spacing-medium); }
+.search .field { flex: 1; }
+.chip { border-radius: 999px; padding: 4px 12px; font-size: 12px; }
+.chip[aria-pressed="true"] { background: var(--soft); color: var(--accent); }
+button.icon[aria-pressed="true"] { background: var(--soft); color: var(--accent); }
+.menu-items { display: flex; flex-direction: column; gap: 8px; }
+.menu-items button { min-height: 40px; text-align: left; }

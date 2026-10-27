@@ -98,4 +98,38 @@ final class ClipboardBridgeMacTests: XCTestCase {
         XCTAssertEqual(split, [.text(Array(String(repeating: "x", count: 19).utf16)), .text(Array("\u{1F600}".utf16))])
         XCTAssertTrue(Injector.strokes(for: "").isEmpty)
     }
+
+    /// The window's arrangement: the group's order until the user changes
+    /// it, kept for the group's tag, pruned once the list is whole, and a
+    /// change that does not fit says so.
+    @MainActor
+    func testArrangement() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "cbb-mac-arrange-test"))
+        defaults.removePersistentDomain(forName: "cbb-mac-arrange-test")
+        let model = MacModel(defaults: defaults)
+        // CBB's Control, not Carbon's.
+        func device(_ id: String, me: Bool = false) -> CBB.Control.Device {
+            var d = Control.Device(id: id, name: id, role: "full")
+            d.isSelf = me
+            return d
+        }
+        let status = Control.Status(device: "me", group: "g1", role: "full", version: "dev")
+        model.show(status: status, devices: [device("me", me: true), device("a"), device("b"), device("c")])
+        XCTAssertEqual(model.arranged.map(\.id), ["d:a", "d:b", "d:c"])
+        XCTAssertNil(defaults.data(forKey: MacModel.arrangementKey))
+        XCTAssertTrue(model.arrange(.new(name: "Office", devices: ["b", "c"])))
+        XCTAssertEqual(model.arranged.map(\.id), ["d:a", "c:c1"])
+        XCTAssertEqual(model.collection(holding: "c")?.name, "Office")
+        XCTAssertFalse(model.arrange(.rename(collection: "c1", name: String(repeating: "x", count: 65))))
+        XCTAssertNotNil(model.message)
+        // b leaves the group: the stored arrangement drops it.
+        model.show(status: status, devices: [device("me", me: true), device("a"), device("c")])
+        XCTAssertEqual(model.collection("c1")?.0.devices, ["c"])
+        let stored = Arrangement.decode(defaults.data(forKey: MacModel.arrangementKey), group: "g1")
+        XCTAssertEqual(stored.items.count, 2)
+        // Another group starts afresh.
+        model.show(status: Control.Status(device: "me", group: "g2", role: "full", version: "dev"), devices: [device("me", me: true), device("a")])
+        XCTAssertEqual(model.arranged.map(\.id), ["d:a"])
+        defaults.removePersistentDomain(forName: "cbb-mac-arrange-test")
+    }
 }

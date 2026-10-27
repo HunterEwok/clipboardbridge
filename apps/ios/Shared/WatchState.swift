@@ -17,6 +17,26 @@ struct WatchState: Codable, Equatable {
         var can: [String]?
         /// The quick actions it has on, while it is connected.
         var actions: [String]?
+        /// The name of the phone's collection it is in; nil in none, and
+        /// from a phone before 0.6.
+        var collection: String?
+    }
+
+    /// The devices as the watch lists them: those in no collection, then
+    /// each of the phone's collections in its order (docs/apps.md,
+    /// "Collections and the order of the tiles"). The phone sends a
+    /// collection's devices one after another.
+    var sections: [(name: String?, devices: [Device])] {
+        var out: [(name: String?, devices: [Device])] = [(nil, devices.filter { $0.collection == nil })]
+        for d in devices {
+            guard let c = d.collection else { continue }
+            if out.count > 1, out[out.count - 1].name == c {
+                out[out.count - 1].devices.append(d)
+            } else {
+                out.append((c, [d]))
+            }
+        }
+        return out
     }
 
     /// Where sync away from home stands, as the phone's Settings say it.

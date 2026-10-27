@@ -13,6 +13,9 @@ private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge", cate
 @MainActor
 protocol GroupController: AnyObject {
     var hasGroup: Bool { get }
+    /// The group's tag, which the arrangement of the tiles is kept for;
+    /// nil without a group.
+    var groupTag: String? { get }
     /// Whether this phone may add and remove devices.
     var isAdmin: Bool { get }
     var computers: [AppModel.Computer] { get }
@@ -84,6 +87,8 @@ protocol GroupController: AnyObject {
 }
 
 extension GroupController {
+    /// A stand-in tag for the tests' and previews' groups.
+    var groupTag: String? { hasGroup ? "group" : nil }
     func unfreeze(_ id: String) async throws {}
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission { throw PhoneGroup.Failure.notRoot }
     func watchActions(for id: String) -> [String] { [] }
@@ -163,7 +168,13 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var phase: Phase
     @Published private(set) var computers: [Computer] = []
-    @Published private(set) var devices: [Computer] = []
+    @Published private(set) var devices: [Computer] = [] {
+        didSet { loadArrangement() }
+    }
+    /// The user's order of the tiles and their collections (docs/apps.md,
+    /// "Collections and the order of the tiles"), kept on this phone only;
+    /// nil without a group.
+    @Published private(set) var arrangement: Arrangement?
     /// One line about the last action, in plain words.
     @Published var message: String?
     @Published private(set) var busy = false
@@ -275,6 +286,7 @@ final class AppModel: ObservableObject {
         computers = group.computers
         devices = group.devices
         isAdmin = group.isAdmin
+        loadArrangement()
     }
 
     /// Reads what the camera saw, or what the user typed: the text of the QR
@@ -733,6 +745,115 @@ final class AppModel: ObservableObject {
         devices = group.devices
     }
 
+    /// A tile below this phone's: a device, or a collection with its
+    /// devices as the group lists them.
+    enum Arranged: Identifiable, Equatable {
+        case device(Computer)
+        case collection(Arrangement.Collection, [Computer])
+
+        var id: String {
+            switch self {
+            case .device(let d): "d:" + d.id
+            case .collection(let c, _): "c:" + c.id
+            }
+        }
+
+        var ref: Arrangement.Ref {
+            switch self {
+            case .device(let d): .device(d.id)
+            case .collection(let c, _): .collection(c.id)
+            }
+        }
+    }
+
+    static let arrangementKey = "deviceArrangement"
+
+    /// This phone's own ID, which the arrangement leaves out.
+    private var selfID: String? { devices.first(where: \.isSelf)?.id }
+
+    /// The devices and collections below this phone, in the user's order:
+    /// the group's order until the user changes it.
+    var arranged: [Arranged] {
+        let others = devices.filter { !$0.isSelf }
+        guard let a = arrangement else { return others.map { .device($0) } }
+        let byID = Dictionary(others.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return a.view(devices: devices.map(\.id), self: selfID).compactMap { item in
+            switch item {
+            case .device(let id): byID[id].map { .device($0) }
+            case .collection(let c): .collection(c, c.devices.compactMap { byID[$0] })
+            }
+        }
+    }
+
+    /// The collection with the ID, as Home shows it.
+    func collection(_ id: String) -> (Arrangement.Collection, [Computer])? {
+        for case let .collection(c, ds) in arranged where c.id == id { return (c, ds) }
+        return nil
+    }
+
+    /// The collections that a device can go into: every one but its own.
+    func collections(apartFrom device: String) -> [Arrangement.Collection] {
+        arranged.compactMap {
+            guard case let .collection(c, _) = $0, !c.devices.contains(device) else { return nil }
+            return c
+        }
+    }
+
+    /// The collection a device is in, if any.
+    func collection(holding device: String) -> Arrangement.Collection? {
+        for case let .collection(c, _) in arranged where c.devices.contains(device) { return c }
+        return nil
+    }
+
+    /// Reads the group's arrangement once its tag is known, and drops the
+    /// devices that left once the list is whole: the group loaded, this
+    /// phone in it. Until the user changes something nothing is stored.
+    private func loadArrangement() {
+        guard let tag = group.groupTag else {
+            if arrangement != nil { arrangement = nil }
+            return
+        }
+        var a = Arrangement.decode(defaults.data(forKey: Self.arrangementKey), group: tag)
+        if let current = arrangement, current.group == tag { a = current }
+        if selfID != nil, defaults.data(forKey: Self.arrangementKey) != nil {
+            let before = a
+            a.prune(devices: devices.map(\.id))
+            if a != before { defaults.set(a.encoded(), forKey: Self.arrangementKey) }
+        }
+        if a != arrangement { arrangement = a }
+    }
+
+    /// Makes a change to the arrangement and keeps it; one that does not
+    /// fit leaves it as it was and says so.
+    @discardableResult
+    func arrange(_ op: Arrangement.Op) -> Bool {
+        guard var a = arrangement else { return false }
+        do {
+            try a.apply(op, devices: devices.map(\.id), self: selfID)
+        } catch {
+            message = Self.describe(error)
+            return false
+        }
+        defaults.set(a.encoded(), forKey: Self.arrangementKey)
+        arrangement = a
+        return true
+    }
+
+    /// Makes a collection of the devices and returns its ID; nil when it
+    /// does not fit (a name too long, too many collections).
+    func newCollection(_ name: String, devices ids: [String]) -> String? {
+        let before = Set(collectionIDs)
+        guard arrange(.new(name: name, devices: ids)) else { return nil }
+        return collectionIDs.first { !before.contains($0) }
+    }
+
+    private var collectionIDs: [String] {
+        (arrangement?.items ?? []).compactMap { item -> String? in
+            guard case let .collection(c) = item else { return nil }
+            return c.id
+        }
+    }
+
     /// Whether a message names the error underneath, to find out what
     /// failed: on in debug builds, off in release ones, and either way the
     /// ShowErrorDetails default when it is set (in Xcode, the launch
@@ -794,6 +915,9 @@ final class AppModel: ObservableObject {
         }
         if error is LiveGroup.ClipboardUnreadable {
             return String(localized: "Could not read the clipboard, so it was left as it is. Allow pasting for Clipboard Bridge, or copy the text again.", bundle: .app)
+        }
+        if error is Arrangement.Refused {
+            return String(localized: "The tiles stay as they were: that change does not fit.", bundle: .app)
         }
         if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
             return String(localized: "The phone that made the group cannot be removed yet.", bundle: .app)

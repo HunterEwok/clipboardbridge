@@ -354,4 +354,34 @@
     <string name="watch_not_protected">The watch needs a screen lock. Set one on the watch, keep it on your wrist, then try again.</string>
     <string name="watch_body">With a key of its own, the watch can freeze an admin computer, remove a device that is no admin, and turn remote paste, quick actions and sync away from home off. It needs a screen lock, and its on-wrist detection should be on.</string>
     <string name="watch_replace">To give a new watch the key, remove this one from the devices first.</string>
+    <!-- The arrangement of the tiles and their collections. -->
+    <string name="arrange">Arrange</string>
+    <string name="arrange_devices">Arrange devices</string>
+    <string name="arrange_done">Done</string>
+    <string name="arrange_done_long">Done arranging</string>
+    <string name="arrange_reset">Back to the group\'s order</string>
+    <string name="arrange_menu">Arrange menu: %1$s</string>
+    <string name="arrange_bar">Drag to arrange. Drop a device on a collection to put it in.</string>
+    <string name="collection_new">New collection…</string>
+    <string name="collection_new_title">New collection</string>
+    <string name="collection_into">Move to collection</string>
+    <string name="collection_out">Take out of collection</string>
+    <string name="collection_rename">Rename collection…</string>
+    <string name="collection_rename_title">Rename collection</string>
+    <string name="collection_ungroup">Ungroup</string>
+    <string name="collection_name">Collection name</string>
+    <string name="save">Save</string>
+    <string name="move_start">Move to start</string>
+    <string name="move_end">Move to end</string>
+    <string name="move_earlier">Move earlier</string>
+    <string name="move_later">Move later</string>
+    <string name="collection_drag_here">Drag devices here</string>
+    <string name="collection_empty">Drag devices here, or add them with Move to collection in a device\'s menu.</string>
+    <string name="collection_state">collection, %1$d of %2$d online</string>
+    <string name="collection_state_attention">collection, %1$d of %2$d online, needs attention</string>
+    <string name="needs_attention">Needs attention</string>
+    <string name="filter_online">Online</string>
+    <string name="search_devices">Search devices</string>
+    <string name="no_devices_match">No devices match.</string>
+    <string name="error_arrangement">The tiles stay as they were: that change does not fit.</string>
 </resources>

@@ -12,7 +12,7 @@ class WatchStateTest {
     fun roundTrip() {
         val s = WatchState(
             hasGroup = true,
-            devices = listOf(WatchState.Device("a1", "deck", "desktop", true), WatchState.Device("b2", "pi \"4\" ü", "board", false)),
+            devices = listOf(WatchState.Device("a1", "deck", "desktop", true), WatchState.Device("b2", "pi \"4\" ü", "board", false, collection = "Office")),
             away = WatchState.Away.CONNECTED,
             events = listOf("deck joined the group.", "pi was removed from the group."),
             color = "ocean",
@@ -20,6 +20,18 @@ class WatchStateTest {
         )
         assertEquals(s, WatchState.decode(s.encode()))
         assertEquals(WatchState(), WatchState.decode(WatchState().encode()))
+    }
+
+    /** The devices in no collection first, then each collection in the phone's order. */
+    @Test
+    fun sections() {
+        fun d(id: String, c: String? = null) = WatchState.Device(id, id, "desktop", true, collection = c)
+        val s = WatchState(devices = listOf(d("a"), d("b", "Office"), d("c", "Office"), d("e"), d("f", "Home")))
+        assertEquals(
+            listOf(null to listOf(d("a"), d("e")), "Office" to listOf(d("b", "Office"), d("c", "Office")), "Home" to listOf(d("f", "Home"))),
+            s.sections,
+        )
+        assertEquals(listOf(null to emptyList<WatchState.Device>()), WatchState().sections)
     }
 
     @Test

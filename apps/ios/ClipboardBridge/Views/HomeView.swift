@@ -25,17 +25,33 @@ struct HomeView: View {
     @State private var settings = false
     /// The device whose details stand beside the devices on a big screen.
     @State private var selected: AppModel.Computer.ID?
+    @StateObject private var arrange = ArrangeState()
+    @State private var query = ""
+    @State private var filter: DeviceFilter?
 
     private var wide: Bool { sizeClass == .regular }
+    /// With more devices than fit a screen, Home offers a search and filters.
+    private var many: Bool { model.devices.count > 12 }
+    private var searching: Bool { many && (!query.isEmpty || filter != nil) }
+
+    /// The devices the search and the filter leave, flat.
+    private var found: [AppModel.Computer] {
+        model.devices.filter { d in
+            (query.isEmpty || d.name.localizedCaseInsensitiveContains(query) || (d.system?.localizedCaseInsensitiveContains(query) ?? false))
+                && (filter != .online || d.online) && (filter != .attention || d.needsAttention)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if wide { wideBody } else { compactBody }
             }
+            .modifier(DeviceSearch(on: many, query: $query))
             .background(AppBackground())
             .navigationTitle(Text("Clipboard Bridge"))
             .navigationDestination(for: AppModel.Computer.ID.self) { DeviceDetailView(id: $0) }
+            .navigationDestination(for: CollectionRoute.self) { CollectionPage(id: $0.id) }
             .navigationDestination(isPresented: $settings) { SettingsView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { menu }
@@ -62,6 +78,9 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $adding) { AddDeviceView() }
+            .modifier(ArrangePrompts())
+            // Arrange mode is off while a search or a filter is on.
+            .onChange(of: searching) { _, on in if on { arrange.on = false } }
             .task {
                 // The live dots: which devices are connected now.
                 while !Task.isCancelled {
@@ -70,6 +89,7 @@ struct HomeView: View {
                 }
             }
         }
+        .environmentObject(arrange)
     }
 
     /// The phone's page.
@@ -91,7 +111,7 @@ struct HomeView: View {
                 if let message = model.message {
                     Text(message).foregroundStyle(palette.textDim)
                 }
-                DeviceCollection(devices: model.devices, layout: layout == .orbit ? .tiles : layout)
+                devicesView(layout: layout == .orbit ? .tiles : layout, select: nil)
                 hint
             }
             .padding(Tokens.spacingLarge)
@@ -107,12 +127,15 @@ struct HomeView: View {
                 if let message = model.message {
                     Text(message).foregroundStyle(palette.textDim)
                 }
-                if wideLayout == .orbit {
+                if wideLayout == .orbit && !arrange.on && !searching {
+                    if many { DeviceFilters(filter: $filter) }
                     OrbitView(devices: model.devices, selected: selected, busy: model.busy,
                               select: { selected = $0 }, sync: { Task { await model.sync() } })
                 } else {
                     ScrollView {
-                        DeviceCollection(devices: model.devices, layout: wideLayout, select: { selected = $0 })
+                        VStack(alignment: .leading, spacing: Tokens.spacingMedium) {
+                            devicesView(layout: wideLayout == .orbit ? .tiles : wideLayout, select: { selected = $0 })
+                        }
                     }
                 }
                 hint
@@ -128,6 +151,22 @@ struct HomeView: View {
         }
         .animation(.smooth, value: selected)
         .sensoryFeedback(.success, trigger: model.message)
+    }
+
+    /// The devices: in the user's order with the collections, or flat while
+    /// a search or a filter is on.
+    @ViewBuilder private func devicesView(layout: DeviceLayout, select: ((AppModel.Computer.ID) -> Void)?) -> some View {
+        if arrange.on { ArrangeBar() }
+        if many { DeviceFilters(filter: $filter) }
+        if searching {
+            if found.isEmpty {
+                Text("No devices match.").foregroundStyle(palette.textDim)
+            } else {
+                DeviceCollection(devices: found, layout: layout, select: select)
+            }
+        } else {
+            ArrangedDevices(layout: layout, select: select)
+        }
     }
 
     /// How many devices are online, of how many.
@@ -158,6 +197,17 @@ struct HomeView: View {
                 Text("View")
             }
             .pickerStyle(.inline)
+            if model.arrangement != nil {
+                Button { arrange.on.toggle() } label: {
+                    Label { arrange.on ? Text("Done arranging") : Text("Arrange devices") } icon: { Image(systemName: "square.grid.3x3.square") }
+                }
+                .disabled(searching)
+                if model.arrangement?.items.isEmpty == false {
+                    Button { model.arrange(.reset) } label: {
+                        Label { Text("Back to the group's order") } icon: { Image(systemName: "arrow.counterclockwise") }
+                    }
+                }
+            }
             Button { settings = true } label: {
                 Label { Text("Settings") } icon: { Image(systemName: "gearshape") }
             }
@@ -190,16 +240,18 @@ struct DeviceCollection: View {
             Text("No computers connected.").foregroundStyle(palette.textDim)
         } else if layout == .list {
             VStack(spacing: Tokens.spacingSmall) {
-                ForEach(devices) { d in open(d) { DeviceRow(device: d) } }
+                ForEach(devices) { d in Self.open(d, select: select) { DeviceRow(device: d) } }
             }
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Tokens.spacingMedium)], spacing: Tokens.spacingMedium) {
-                ForEach(devices) { d in open(d) { DeviceTile(device: d) } }
+                ForEach(devices) { d in Self.open(d, select: select) { DeviceTile(device: d) } }
             }
         }
     }
 
-    @ViewBuilder private func open<Content: View>(_ d: AppModel.Computer, @ViewBuilder label: () -> Content) -> some View {
+    /// The device's tile or row as a way to its details.
+    @ViewBuilder static func open<Content: View>(_ d: AppModel.Computer, select: ((AppModel.Computer.ID) -> Void)?,
+                                                 @ViewBuilder label: () -> Content) -> some View {
         if let select {
             Button { select(d.id) } label: { label() }.buttonStyle(.plain)
         } else {
@@ -279,5 +331,51 @@ struct DeviceSubtitle: View {
         .font(.caption)
         .foregroundStyle(palette.textDim)
         .lineLimit(1)
+    }
+}
+
+/// The filters of a long list of devices.
+enum DeviceFilter {
+    case online, attention
+}
+
+/// Home's search, offered once there are many devices.
+struct DeviceSearch: ViewModifier {
+    let on: Bool
+    @Binding var query: String
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if on {
+            content.searchable(text: $query, prompt: Text("Search devices"))
+        } else {
+            content
+        }
+    }
+}
+
+/// The two filter chips: Online and Needs attention; a second tap turns
+/// one off.
+struct DeviceFilters: View {
+    @Binding var filter: DeviceFilter?
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        HStack(spacing: Tokens.spacingSmall) {
+            chip(.online) { Text("Online") }
+            chip(.attention) { Text("Needs attention") }
+        }
+    }
+
+    private func chip(_ f: DeviceFilter, @ViewBuilder label: () -> Text) -> some View {
+        Button { filter = filter == f ? nil : f } label: {
+            label()
+                .font(.footnote)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(filter == f ? palette.soft : palette.line, in: Capsule())
+                .foregroundStyle(filter == f ? palette.accent : palette.text)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(filter == f ? .isSelected : [])
     }
 }

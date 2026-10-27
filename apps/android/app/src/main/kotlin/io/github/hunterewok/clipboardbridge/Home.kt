@@ -10,8 +10,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,11 +24,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +48,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -50,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import io.github.hunterewok.clipboardbridge.kit.Arrangement as Tiles
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -65,7 +71,7 @@ enum class DeviceLayout(val key: String, val symbol: String, @StringRes val titl
     }
 }
 
-private enum class HomePage { MAIN, DEVICE, SETTINGS, ADD }
+private enum class HomePage { MAIN, DEVICE, SETTINGS, ADD, COLLECTION }
 
 /**
  * The one page: the big button, the result in one line, and every device
@@ -77,6 +83,9 @@ private enum class HomePage { MAIN, DEVICE, SETTINGS, ADD }
 internal fun HomeScreen(model: AppModel) {
     var page by rememberSaveable { mutableStateOf(HomePage.MAIN) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    // The collection whose page is open, which a device's details go back to.
+    var collection by rememberSaveable { mutableStateOf<String?>(null) }
+    val arrange = remember { ArrangeState() }
     LaunchedEffect(Unit) {
         // The live dots: which devices are connected now.
         while (true) {
@@ -87,35 +96,65 @@ internal fun HomeScreen(model: AppModel) {
     LaunchedEffect(Unit) { model.group.renewOwnCertificate() }
     BackgroundSync()
     val wide = LocalConfiguration.current.screenWidthDp >= 720
-    when (page) {
-        HomePage.DEVICE -> {
-            val id = selected
-            BackHandler { page = HomePage.MAIN }
-            if (id == null || wide) {
-                // A big screen shows the details beside the devices.
-                LaunchedEffect(Unit) { page = HomePage.MAIN }
-            } else {
-                DeviceDetail(model, id, back = { page = HomePage.MAIN })
-            }
-        }
-        HomePage.SETTINGS -> SettingsScreen(model) { page = HomePage.MAIN }
-        HomePage.ADD -> AddDeviceScreen(model) { page = HomePage.MAIN }
-        HomePage.MAIN ->
-            if (wide) {
-                WideHome(model, selected, select = { selected = it }, open = { page = it })
-            } else {
-                HomeMain(model, open = { page = it }) {
-                    selected = it
-                    page = HomePage.DEVICE
+    val main = { page = if (collection != null) HomePage.COLLECTION else HomePage.MAIN }
+    CompositionLocalProvider(LocalArrange provides arrange) {
+        when (page) {
+            HomePage.DEVICE -> {
+                val id = selected
+                BackHandler { main() }
+                if (id == null || wide) {
+                    // A big screen shows the details beside the devices.
+                    LaunchedEffect(Unit) { main() }
+                } else {
+                    DeviceDetail(model, id, back = main)
                 }
             }
+            HomePage.SETTINGS -> SettingsScreen(model) { page = HomePage.MAIN }
+            HomePage.ADD -> AddDeviceScreen(model) { page = HomePage.MAIN }
+            HomePage.COLLECTION -> {
+                val id = collection
+                val leave = {
+                    arrange.on = false
+                    collection = null
+                    page = HomePage.MAIN
+                }
+                BackHandler { leave() }
+                if (id == null) {
+                    LaunchedEffect(Unit) { leave() }
+                } else if (wide) {
+                    Beside(model, selected, { selected = it }) { CollectionPage(model, id, leave) { selected = it } }
+                } else {
+                    CollectionPage(model, id, leave) {
+                        selected = it
+                        page = HomePage.DEVICE
+                    }
+                }
+            }
+            HomePage.MAIN -> {
+                val openCollection = { id: String ->
+                    arrange.on = false
+                    collection = id
+                    page = HomePage.COLLECTION
+                }
+                if (wide) {
+                    WideHome(model, selected, select = { selected = it }, open = { page = it }, openCollection)
+                } else {
+                    HomeMain(model, open = { page = it }, openCollection) {
+                        selected = it
+                        page = HomePage.DEVICE
+                    }
+                }
+            }
+        }
+        ArrangePrompt(model)
     }
 }
 
 /** The phone's page. */
 @Composable
-private fun HomeMain(model: AppModel, open: (HomePage) -> Unit, select: (String) -> Unit) {
+private fun HomeMain(model: AppModel, open: (HomePage) -> Unit, openCollection: (String) -> Unit, select: (String) -> Unit) {
     var layout by remember { mutableStateOf(model.settings.layout.takeIf { it != DeviceLayout.ORBIT } ?: DeviceLayout.TILES) }
+    val search = rememberDeviceSearch(model)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Tokens.spacingLarge), verticalArrangement = Arrangement.spacedBy(Tokens.spacingLarge)) {
         TopBar(model, layout, listOf(DeviceLayout.TILES, DeviceLayout.LIST), open) {
             layout = it
@@ -124,25 +163,28 @@ private fun HomeMain(model: AppModel, open: (HomePage) -> Unit, select: (String)
         Summary(model)
         SyncButton(model)
         model.message?.let { NoteText(it, dim = true) }
-        DeviceCollection(model.devices, layout, select)
+        Devices(model, search, layout, select, openCollection)
         Hint(model)
     }
 }
 
 /** The big screen's page: the devices, and the chosen one's details beside them. */
 @Composable
-private fun WideHome(model: AppModel, selected: String?, select: (String?) -> Unit, open: (HomePage) -> Unit) {
+private fun WideHome(model: AppModel, selected: String?, select: (String?) -> Unit, open: (HomePage) -> Unit, openCollection: (String) -> Unit) {
     var layout by remember { mutableStateOf(model.settings.wideLayout) }
     val scope = rememberCoroutineScope()
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxHeight().padding(Tokens.spacingLarge), verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
+    val search = rememberDeviceSearch(model)
+    val arrange = LocalArrange.current
+    Beside(model, selected, select) {
+        Column(Modifier.fillMaxSize().padding(Tokens.spacingLarge), verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
             TopBar(model, layout, DeviceLayout.entries.sortedBy { it != DeviceLayout.ORBIT }, open) {
                 layout = it
                 model.settings.wideLayout = it
             }
             Summary(model)
             model.message?.let { NoteText(it, dim = true) }
-            if (layout == DeviceLayout.ORBIT) {
+            // The orbit keeps the group's order; Arrange mode and a search show tiles.
+            if (layout == DeviceLayout.ORBIT && !arrange.on && !search.active) {
                 Orbit(
                     model.devices,
                     selected,
@@ -154,15 +196,98 @@ private fun WideHome(model: AppModel, selected: String?, select: (String?) -> Un
             } else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
                     SyncButton(model)
-                    DeviceCollection(model.devices, layout) { select(it) }
+                    Devices(model, search, if (layout == DeviceLayout.ORBIT) DeviceLayout.TILES else layout, { select(it) }, openCollection)
                 }
             }
             Hint(model)
         }
+    }
+}
+
+/** A big screen's page, and the chosen device's details beside it. */
+@Composable
+private fun Beside(model: AppModel, selected: String?, select: (String?) -> Unit, content: @Composable () -> Unit) {
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxHeight()) { content() }
         if (selected != null) {
             VerticalDivider(color = LocalPalette.current.line)
             Column(Modifier.width(400.dp).fillMaxHeight()) {
                 DeviceDetail(model, selected, close = { select(null) }, back = { select(null) })
+            }
+        }
+    }
+}
+
+/** Home's search and filters, offered once there are more devices than fit a screen. */
+@Stable
+private class DeviceSearch {
+    var query by mutableStateOf("")
+    var filter by mutableStateOf<DeviceFilter?>(null)
+
+    /** Whether Home offers them: more than 12 devices. */
+    var offered = false
+    val active: Boolean get() = offered && (query.isNotBlank() || filter != null)
+
+    /** The devices the search and the filter leave, flat. */
+    fun found(devices: List<LiveGroup.Device>): List<LiveGroup.Device> {
+        val q = query.trim()
+        return devices.filter { d ->
+            (q.isEmpty() || d.name.contains(q, ignoreCase = true) || d.system?.contains(q, ignoreCase = true) == true) &&
+                (filter != DeviceFilter.ONLINE || d.online) && (filter != DeviceFilter.ATTENTION || d.needsAttention)
+        }
+    }
+}
+
+private enum class DeviceFilter { ONLINE, ATTENTION }
+
+@Composable
+private fun rememberDeviceSearch(model: AppModel): DeviceSearch {
+    val search = remember { DeviceSearch() }
+    search.offered = model.devices.size > 12
+    // Arrange mode is off while a search or a filter is on.
+    val arrange = LocalArrange.current
+    LaunchedEffect(search.active) { if (search.active) arrange.on = false }
+    return search
+}
+
+/**
+ * The devices: in the user's order with the collections, or flat while a
+ * search or a filter is on.
+ */
+@Composable
+private fun Devices(model: AppModel, search: DeviceSearch, layout: DeviceLayout, select: (String) -> Unit, openCollection: (String) -> Unit) {
+    if (LocalArrange.current.on) ArrangeBar()
+    if (search.offered) SearchBar(search)
+    if (search.active) {
+        val found = search.found(model.devices)
+        if (found.isEmpty()) {
+            Text(stringResource(R.string.no_devices_match), color = LocalPalette.current.textDim)
+        } else {
+            DeviceCollection(found, layout, select)
+        }
+    } else {
+        ArrangedDevices(model, layout, select, openCollection)
+    }
+}
+
+/** The search field and the two filters: Online and Needs attention; a second tap turns one off. */
+@Composable
+private fun SearchBar(search: DeviceSearch) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+        OutlinedTextField(
+            value = search.query,
+            onValueChange = { search.query = it },
+            singleLine = true,
+            label = { Text(stringResource(R.string.search_devices)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            for ((f, text) in listOf(DeviceFilter.ONLINE to R.string.filter_online, DeviceFilter.ATTENTION to R.string.needs_attention)) {
+                FilterChip(
+                    selected = search.filter == f,
+                    onClick = { search.filter = if (search.filter == f) null else f },
+                    label = { Text(stringResource(text)) },
+                )
             }
         }
     }
@@ -182,9 +307,35 @@ private fun TopBar(model: AppModel, layout: DeviceLayout, layouts: List<DeviceLa
         // The view: each tap shows the next one.
         val next = layouts[(layouts.indexOf(layout) + 1) % layouts.size]
         IconText(layout.symbol, stringResource(R.string.view_now, stringResource(layout.title))) { choose(next) }
+        if (model.arrangement != null) {
+            Spacer(Modifier.width(Tokens.spacingSmall))
+            ArrangeButton(model)
+        }
         if (model.isAdmin) {
             Spacer(Modifier.width(Tokens.spacingSmall))
             IconText("+", stringResource(R.string.add_device)) { open(HomePage.ADD) }
+        }
+    }
+}
+
+/** Arrange devices or Done, and Back to the group's order once the user changed it. */
+@Composable
+private fun ArrangeButton(model: AppModel) {
+    val arrange = LocalArrange.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconText("⇅", stringResource(R.string.arrange_devices)) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(if (arrange.on) R.string.arrange_done_long else R.string.arrange_devices)) }, onClick = {
+                open = false
+                arrange.on = !arrange.on
+            })
+            if (model.arrangement?.items?.isNotEmpty() == true) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.arrange_reset)) }, onClick = {
+                    open = false
+                    model.arrange(Tiles.Op.Reset)
+                })
+            }
         }
     }
 }
@@ -238,7 +389,7 @@ private fun DeviceCollection(devices: List<LiveGroup.Device>, layout: DeviceLayo
     }
     if (layout == DeviceLayout.LIST) {
         Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
-            for (d in devices) DeviceRow(d) { select(d.id) }
+            for (d in devices) DeviceRow(d, open = { select(d.id) })
         }
         return
     }
@@ -247,7 +398,7 @@ private fun DeviceCollection(devices: List<LiveGroup.Device>, layout: DeviceLayo
         Column(verticalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
             for (row in devices.chunked(columns)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Tokens.spacingMedium)) {
-                    for (d in row) DeviceTile(d, Modifier.weight(1f)) { select(d.id) }
+                    for (d in row) DeviceTile(d, Modifier.weight(1f), open = { select(d.id) })
                     repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
@@ -257,9 +408,9 @@ private fun DeviceCollection(devices: List<LiveGroup.Device>, layout: DeviceLayo
 
 /** A device as a tile: its icon and live dot, its name, its system and where it stands. */
 @Composable
-private fun DeviceTile(d: LiveGroup.Device, modifier: Modifier, open: () -> Unit) {
+internal fun DeviceTile(d: LiveGroup.Device, modifier: Modifier, open: (() -> Unit)?, menu: (() -> Unit)? = null) {
     Column(
-        modifier.glassTile().focusRing().clickable(role = Role.Button, onClick = open).padding(Tokens.spacingMedium).liveState(d),
+        modifier.glassTile().focusRing().tap(open, menu).padding(Tokens.spacingMedium).liveState(d),
         verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall),
     ) {
         Row(verticalAlignment = Alignment.Top) {
@@ -274,10 +425,10 @@ private fun DeviceTile(d: LiveGroup.Device, modifier: Modifier, open: () -> Unit
 
 /** A device as a row of the list. */
 @Composable
-private fun DeviceRow(d: LiveGroup.Device, open: () -> Unit) {
+internal fun DeviceRow(d: LiveGroup.Device, modifier: Modifier = Modifier, open: (() -> Unit)?, menu: (() -> Unit)? = null) {
     val palette = LocalPalette.current
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 60.dp).card().focusRing().clickable(role = Role.Button, onClick = open)
+        modifier.fillMaxWidth().heightIn(min = 60.dp).card().focusRing().tap(open, menu)
             .padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall).liveState(d),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -287,7 +438,7 @@ private fun DeviceRow(d: LiveGroup.Device, open: () -> Unit) {
             DeviceSubtitle(d)
         }
         OnlineDot(d.online)
-        Text("›", color = palette.textDim, modifier = Modifier.padding(start = Tokens.spacingSmall))
+        if (open != null) Text("›", color = palette.textDim, modifier = Modifier.padding(start = Tokens.spacingSmall))
     }
 }
 
