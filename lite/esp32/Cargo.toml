@@ -25,7 +25,7 @@ esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe006
 esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3"] }
 esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["esp32s3", "unstable"] }
 esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["esp32s3", "critical-section"] }
-esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["esp-alloc", "esp32s3", "wifi"], optional = true }
+esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", default-features = false, features = ["ble", "coex", "esp-alloc", "esp32s3", "unstable", "wifi"], optional = true }
 esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1", features = ["embassy", "esp-radio", "esp32s3"], optional = true }
 embassy-executor = { version = "0.10", optional = true }
 embassy-futures = { version = "0.1", optional = true }
@@ -37,6 +37,7 @@ embedded-io-async = { version = "0.7", optional = true }
 getrandom = { version = "0.4", default-features = false }
 rustls = { version = "0.23.46", default-features = false }
 static_cell = { version = "2.1", optional = true }
+trouble-host = { version = "0.7", default-features = false, features = ["central", "default-packet-pool", "derive", "gatt", "peripheral", "security"], optional = true }
 
 [patch.crates-io]
 xtensa-lx-rt = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d5387dac82e4fbe937e95e496e1" }
@@ -61,6 +62,7 @@ board = [
   "dep:embassy-usb",
   "dep:embedded-io-async",
   "dep:static_cell",
+  "dep:trouble-host",
 ]
 qemu = ["esp-println/uart"]
 

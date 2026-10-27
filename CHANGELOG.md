@@ -28,6 +28,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   BlueZ) for a TV, tablet or computer near it: `pair` makes it discoverable for two minutes,
   `type` types a text there, and `on -pastes` sends remote pastes there. It uses the same
   layouts as the phone and the Nano.
+- `cbb remote` makes a computer the remote of a TV on the home network, so that it types a
+  text, or the group's remote pastes when the user sends them there, into the field open
+  on the TV. An Android TV or a Google TV pairs once with the code it shows (the Android TV
+  Remote v2 protocol of the Google TV app, its certificate pinned); a Roku is taken only
+  with `-consent`, as its External Control Protocol is plain HTTP. A TV is reached only on
+  the home network, and the errors say which TV failed and why: no text field open, the TV
+  reset, or the Roku's "Control by mobile apps" off. Not yet tried on a real TV.
 - iPad: keyboard shortcuts (Command-R sends or fetches, Command-N adds a device,
   Command-comma opens Settings, Escape closes a device's details), and CI runs the app's
   tests on an iPad simulator as well as an iPhone one. The iPad's Settings no longer speak
@@ -75,6 +82,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   download mode. A text with characters the layout cannot type is refused, naming them. The
   layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
   the keyboard follows the board's sync.
+- The Nano ESP32 as a Bluetooth LE keyboard (`ble on` on its console): HID over GATT with
+  trouble-host beside Wi-Fi, for TVs, tablets, phones and computers that take BLE
+  keyboards. `ble pair` makes it discoverable for two minutes; it keeps up to four paired
+  hosts in flash under an address made from its Bluetooth MAC, types only on a paired host
+  over an encrypted link, and `ble forget` forgets them. `type` goes to a connected
+  Bluetooth host first, else the USB keyboard.
 - The Android app on a TV (Android TV, Google TV, Fire OS; docs/apps.md, "Android TV"):
   a launcher banner, every control on the D-pad with a visible focus ring, and no touch
   screen or camera needed. A TV joins a phone's group by the QR code it shows, as a member
