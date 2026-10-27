@@ -282,6 +282,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
   setting.
+- `cbb status` away from home could show a peer at the relay by its pseudonym instead of
+  its device, when the credential that names it came after the relay reported it online:
+  the names are now mapped each time the status is asked for.
 
 ## [0.5.0] - 2026-10-26
 

@@ -278,12 +278,23 @@ func TestHubKeyRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	piID := pi.status(t).Device
+	// The pi replaces its state every renewEvery. On Windows a file cannot
+	// be opened for the moment it is being replaced ("used by another
+	// process"), so a read tries again for up to two seconds, as the
+	// writer does (atomicfile).
 	load := func(s *testService) *tunnel.State {
-		st, err := tunnel.LoadState(s.dir)
-		if err != nil {
-			t.Fatal(err)
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			st, err := tunnel.LoadState(s.dir)
+			if err == nil {
+				return st
+			}
+			if time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		return st
 	}
 	var old, next tunnel.Key
 	waitFor(t, "the deck keeps the hub's key for the next period", func() bool {
@@ -511,7 +522,10 @@ func TestAwayThroughRelay(t *testing.T) {
 		}
 	}
 	piID, deckID := pi.status(t).Device, deck.status(t).Device
-	waitFor(t, "both meet at the relay", func() bool {
+	// Two registrations, each with a tunnel of its own in the process: about
+	// a second, but five under the race detector on a Mac, and longer still on
+	// CI's Mac runners.
+	waitUpTo(t, 60*time.Second, "both meet at the relay", func() bool {
 		a, b := pi.status(t).Away, deck.status(t).Away
 		return a != nil && a.Relay != nil && a.Relay.Connected && len(a.Relay.Online) == 1 && a.Relay.Online[0] == deckID &&
 			b != nil && b.Relay != nil && b.Relay.Connected && len(b.Relay.Online) == 1 && b.Relay.Online[0] == piID

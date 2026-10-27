@@ -92,15 +92,10 @@ func (s *Service) joinRelayLocked(ctx context.Context, run *tunRun, link tunnel.
 			return nd.Serve(ctx, tls.Server(c, cfg))
 		},
 		Report: func(r relay.Report) {
-			// Status names the devices, not their pseudonyms.
-			online := make([]string, 0, len(r.Online))
-			for _, name := range r.Online {
-				if id, ok := s.relayPeer(name); ok {
-					name = string(id)
-				}
-				online = append(online, name)
-			}
-			r.Online = online
+			// The names stay as the relay gives them: status maps the
+			// pseudonyms to devices each time (relayNames), since the
+			// credential that names a peer can come after the relay reports
+			// it online.
 			s.tunMu.Lock()
 			defer s.tunMu.Unlock()
 			if s.tunRun != run {
@@ -152,4 +147,17 @@ func relayProblem(err error) string {
 		return "the relay's tunnel does not answer; its UDP port may be blocked"
 	}
 	return "the connection to the relay failed"
+}
+
+// relayNames puts the devices in place of the pseudonyms in the relay's
+// online list of a, those whose server credential this device has.
+func (s *Service) relayNames(a *control.Away) {
+	if a == nil || a.Relay == nil {
+		return
+	}
+	for i, name := range a.Relay.Online {
+		if id, ok := s.relayPeer(name); ok {
+			a.Relay.Online[i] = string(id)
+		}
+	}
 }
