@@ -499,9 +499,10 @@ func noSudo(d *Device, err error) error {
 
 // All runs every suite of the harness in turn: check, then each of the
 // others after a quick reset (R1 without the install), the fleet on the
-// controller's containers, and a last quick reset, so the devices end in no
-// group. One report holds them all.
-func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool, cbb string, fleetSize int) {
+// controller's containers, the time suite on its time-scaled build, and a
+// last quick reset, so the devices end in no group. One report holds them
+// all.
+func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool, cbb, cbbTime string, fleetSize int) {
 	Check(ctx, r, devices)
 	if r.Failed() > 0 {
 		r.Skip("all", "check failed; the other suites need a healthy bench")
@@ -522,6 +523,14 @@ func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, time
 				r.Skip("fleet", "give -cbb FILE, a static Linux cbb of the build for the controller, to run the fleet")
 			} else {
 				FleetSuite(ctx, r, cbb, fleetSize, timeout)
+			}
+			continue
+		}
+		if s == "time" {
+			if cbbTime == "" {
+				r.Skip("time", "give -cbb-time FILE, the same cbb built with -tags benchtime, to run the time suite")
+			} else {
+				TimeSuite(ctx, r, cbbTime, timeout)
 			}
 			continue
 		}

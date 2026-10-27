@@ -51,21 +51,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 	buildDir := fs.String("build", "", "reset: the directory with the release archives (and SHA256SUMS) to install")
 	quick := fs.Bool("quick", false, "reset: keep each device's install and only remove its state")
 	cbb := fs.String("cbb", "", "fleet, all: a static Linux cbb of the build under test for this computer's CPU, which the fleet's containers run")
+	cbbTime := fs.String("cbb-time", "", "time, all: the same cbb built with -tags benchtime, whose long times run 100000 times faster")
 	fleetSize := fs.Int("fleet-size", 16, "fleet: the members of the many-members case (E3)")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|all|coverage")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|time|all|coverage")
 		return 2
 	}
-	if fs.Arg(0) == "fleet" {
+	if fs.Arg(0) == "fleet" || fs.Arg(0) == "time" {
 		// The fleet runs on this computer alone and needs no inventory.
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		r := NewReport("fleet", stdout, debugMode())
-		FleetSuite(ctx, r, *cbb, *fleetSize, *timeout)
+		r := NewReport(fs.Arg(0), stdout, debugMode())
+		if fs.Arg(0) == "time" {
+			TimeSuite(ctx, r, *cbbTime, *timeout)
+		} else {
+			FleetSuite(ctx, r, *cbb, *fleetSize, *timeout)
+		}
 		return finish(r, *reportDir, stderr)
 	}
 	if fs.Arg(0) == "coverage" {
@@ -103,7 +108,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "faults":
 		Faults(ctx, r, devices, *timeout)
 	case "all":
-		All(ctx, r, inv, devices, *timeout, *stopForwarder, *cbb, *fleetSize)
+		All(ctx, r, inv, devices, *timeout, *stopForwarder, *cbb, *cbbTime, *fleetSize)
 	case "reset":
 		var b *Build
 		if *buildDir != "" {
