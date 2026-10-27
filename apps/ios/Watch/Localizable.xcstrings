@@ -111,6 +111,16 @@
         }
       }
     },
+    "This watch is an admin of the group." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эти часы админ группы."
+          }
+        }
+      }
+    },
     "Through your hub.": {
       "localizations": {
         "ru": {

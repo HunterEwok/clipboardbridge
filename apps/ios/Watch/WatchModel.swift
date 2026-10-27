@@ -3,11 +3,13 @@
 import Foundation
 import os
 import WatchConnectivity
+import WatchKit
 
 private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge.watch", category: "watch")
 
 /// The group as the phone last told it, and the away switch, which asks
-/// the phone.
+/// the phone; the watch's admin key, which the root phone certifies when
+/// asked (WatchKey).
 @MainActor
 final class WatchModel: NSObject, ObservableObject {
     @Published private(set) var state = WatchState()
@@ -16,6 +18,8 @@ final class WatchModel: NSObject, ObservableObject {
     @Published private(set) var switching = false
     /// What the last switch said, when it failed.
     @Published private(set) var note: String?
+    /// The admin CA the root gave this watch, if it did.
+    @Published private(set) var admission = WatchKey.admission
 
     override init() {
         super.init()
@@ -48,6 +52,35 @@ final class WatchModel: NSObject, ObservableObject {
         })
     }
 
+    /// Answers the root phone: a new key to certify, or the admin CA it
+    /// certified.
+    fileprivate func answer(_ message: [String: Any]) -> [String: Any] {
+        if message[WatchState.certifyKey] != nil {
+            do {
+                let r = try WatchKey.request(name: WKInterfaceDevice.current().name)
+                return [WatchState.requestKey: try JSONEncoder().encode(r)]
+            } catch let e as WatchKey.Failure where e == .notProtected {
+                return [WatchState.refusedKey: WatchState.notProtected]
+            } catch let e as WatchKey.Failure where e == .noSecureEnclave {
+                return [WatchState.refusedKey: WatchState.noSecureEnclave]
+            } catch {
+                log.error("no admin key made: \(String(reflecting: error), privacy: .public)")
+                return [WatchState.refusedKey: String(reflecting: error)]
+            }
+        }
+        if let d = message[WatchState.admittedKey] as? Data {
+            do {
+                try WatchKey.admit(try JSONDecoder().decode(WatchState.Admission.self, from: d))
+                admission = WatchKey.admission
+                return [WatchState.admittedKey: true]
+            } catch {
+                log.error("admission not kept: \(String(reflecting: error), privacy: .public)")
+                return [WatchState.refusedKey: String(reflecting: error)]
+            }
+        }
+        return [:]
+    }
+
     private func take(_ context: [String: Any]) {
         if let s = WatchState(context) { state = s }
     }
@@ -67,6 +100,11 @@ extension WatchModel: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext context: [String: Any]) {
         nonisolated(unsafe) let c = context
         Task { @MainActor in self.take(c) }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        nonisolated(unsafe) let m = message, reply = replyHandler
+        Task { @MainActor in reply(self.answer(m)) }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {

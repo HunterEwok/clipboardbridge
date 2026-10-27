@@ -8,7 +8,9 @@ private let log = Logger(subsystem: "io.github.hunterewok.clipboardbridge", cate
 
 /// The phone's side of the Apple Watch app: it hands the watch the group as
 /// the app sees it, and turns sync away from home on or off when the watch
-/// asks (docs/apps.md, Apple Watch).
+/// asks (docs/apps.md, Apple Watch); on the root phone it asks the watch for
+/// its admin key and hands it the admin CA (docs/protocol.md, section 10,
+/// rule 8).
 @MainActor
 final class WatchLink: NSObject {
     static let shared = WatchLink()
@@ -34,6 +36,50 @@ final class WatchLink: NSObject {
             last = state
         } catch {
             log.error("watch not updated: \(String(reflecting: error), privacy: .public)")
+        }
+    }
+
+    enum Failure: Error {
+        /// No paired watch with the app open.
+        case notReachable
+        /// The watch has no passcode, or its wrist detection is off.
+        case notProtected
+        case noSecureEnclave
+        case refused(String)
+    }
+
+    /// Whether a paired watch has the app.
+    var watchApp: Bool {
+        guard let session, session.activationState == .activated else { return false }
+        return session.isPaired && session.isWatchAppInstalled
+    }
+
+    /// Asks the watch, whose app must be open, to make a new admin key.
+    func keyRequest() async throws -> WatchState.KeyRequest {
+        let reply = try await send([WatchState.certifyKey: true])
+        if let d = reply[WatchState.requestKey] as? Data { return try JSONDecoder().decode(WatchState.KeyRequest.self, from: d) }
+        switch reply[WatchState.refusedKey] as? String {
+        case WatchState.notProtected: throw Failure.notProtected
+        case WatchState.noSecureEnclave: throw Failure.noSecureEnclave
+        case let why: throw Failure.refused(why ?? "")
+        }
+    }
+
+    /// Hands the watch the admin CA the root issued for its key.
+    func admit(_ a: WatchState.Admission) async throws {
+        let reply = try await send([WatchState.admittedKey: try JSONEncoder().encode(a)])
+        guard reply[WatchState.admittedKey] as? Bool == true else { throw Failure.refused(reply[WatchState.refusedKey] as? String ?? "") }
+    }
+
+    private func send(_ message: [String: Any]) async throws -> [String: Any] {
+        start()
+        guard let session, session.isReachable else { throw Failure.notReachable }
+        nonisolated(unsafe) let m = message
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<[String: Any], Error>) in
+            session.sendMessage(m, replyHandler: { reply in
+                nonisolated(unsafe) let r = reply
+                c.resume(returning: r)
+            }, errorHandler: { c.resume(throwing: $0) })
         }
     }
 

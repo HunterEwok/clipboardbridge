@@ -224,7 +224,8 @@ class PhoneGroup internal constructor(
         var keep: List<ByteArray>? = null
         val admin = d.adminKey
         if (admin != null) {
-            keys.add(admin)
+            // A watch's record names its admin CA as its key already.
+            if (keys.none { it.contentEquals(admin) }) keys.add(admin)
             // Its own removals stop counting with it, so this record names them again.
             for (k in records.revokedBy(admin)) if (keys.none { it.contentEquals(k) }) keys.add(k)
             keep = records.admitted(admin).filterNot { k -> keys.any { it.contentEquals(k) } }
@@ -352,6 +353,35 @@ class PhoneGroup internal constructor(
         )
         computerAdmins[device] = ca
         return ca to r
+    }
+
+    /**
+     * Makes a watch an admin (section 10, rule 8): the root issues an admin
+     * CA for the key the watch made in its Keystore or Secure Enclave
+     * (adminKey, a SubjectPublicKeyInfo) and signs the watch's device
+     * record, whose key and admin both name that CA, since a watch has no
+     * member key. device is the ID the watch picked, os "wearos" or
+     * "watchos". It returns the admin CA, for the watch, and the record to
+     * send. Only the root does it; the watch checked its lock screen before
+     * it made the key.
+     */
+    fun addWatch(
+        device: String,
+        name: String,
+        os: String,
+        adminKey: ByteArray,
+        rootSigner: CertificateSigner,
+        now: Instant,
+    ): Pair<ByteArray, Member.Record> {
+        if (!isRoot) throw Failure("only the root makes admins")
+        if (device.length != 32 || device.any { it !in "0123456789abcdef" } || os !in setOf("wearos", "watchos") || devices.any { it.id == device }) {
+            throw Failure(NOT_A_WATCH)
+        }
+        val n = name.trim()
+        if (n.isEmpty() || validName(n) != n) throw Failure(INVALID_NAME)
+        val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
+        val key = Records.keyHashOfCert(ca)
+        return ca to record(device, n, "watch", key, rootSigner, now, key, os, Records.HARDWARE)
     }
 
     /**
@@ -516,6 +546,7 @@ class PhoneGroup internal constructor(
 
         /** The message of the Failure for a name that the records do not accept. */
         const val INVALID_NAME = "a device name has 1 to 64 bytes and no control characters"
+        const val NOT_A_WATCH = "the watch's request names a device ID or system that is not a new watch's"
 
         /** A name that the records accept: 1 to 64 bytes without control characters, or "Android". */
         fun validName(s: String): String {

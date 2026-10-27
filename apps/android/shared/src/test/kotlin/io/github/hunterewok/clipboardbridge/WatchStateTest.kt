@@ -23,6 +23,17 @@ class WatchStateTest {
     }
 
     @Test
+    fun certifying() {
+        val r = WatchState.KeyRequest("ab".repeat(16), "Pixel Watch", byteArrayOf(1, 2, 3))
+        assertEquals(r, WatchState.KeyRequest.decode(r.encode()))
+        val no = WatchState.KeyRequest(refused = WatchState.NOT_PROTECTED)
+        assertEquals(no, WatchState.KeyRequest.decode(no.encode()))
+        val a = WatchState.Admission("ab".repeat(16), byteArrayOf(9, 8), "0123456789abcdef")
+        assertEquals(a, WatchState.Admission.decode(a.encode()))
+        assertNull(WatchState.Admission.decode("{}".toByteArray()))
+    }
+
+    @Test
     fun rejectsOther() {
         assertNull(WatchState.decode("not json".toByteArray()))
         assertNull(WatchState.decode(null))

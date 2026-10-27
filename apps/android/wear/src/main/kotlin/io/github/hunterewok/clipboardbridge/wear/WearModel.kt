@@ -42,9 +42,14 @@ class WearModel(private val context: Context, private val scope: CoroutineScope)
     var note by mutableStateOf<Note?>(null)
         private set
 
+    /** Whether the root phone certified this watch's admin key (WatchKey). */
+    var admin by mutableStateOf(false)
+        private set
+
     private val data = Wearable.getDataClient(context)
 
     fun start() {
+        admin = WatchKey.admission(context) != null
         data.addListener(this)
         scope.launch {
             try {

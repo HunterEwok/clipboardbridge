@@ -240,6 +240,43 @@ class PhoneGroupTest {
         assertFailsWith<PhoneGroup.Failure> { g.rename(SyncEngine.newID(), "x", root, t0) }
     }
 
+    /** The root makes a watch an admin (section 10, rule 8): it may freeze but admits nobody, and removing it takes it out. */
+    @Test
+    fun addWatch() {
+        val root = SoftwareSigner()
+        val g = PhoneGroup.create(root, SoftwareSigner().publicKeyDER, t0)
+        val watchKey = SoftwareSigner()
+        val watch = SyncEngine.newID()
+        for ((id, os) in listOf("abc" to "wearos", watch.uppercase() to "wearos", watch to "android", g.device to "wearos")) {
+            assertFailsWith<PhoneGroup.Failure>("$id $os") { g.addWatch(id, "Watch", os, watchKey.publicKeyDER, root, t0) }
+        }
+        val (ca, r) = g.addWatch(watch, " My watch ", "wearos", watchKey.publicKeyDER, root, t0.plusSeconds(1))
+        assertContentEquals(watchKey.publicKeyDER, CertificateInfo(ca).publicKey)
+        assertTrue(r in g.records.records)
+        val d = assertNotNull(g.devices.firstOrNull { it.id == watch })
+        val key = Records.keyHashOfCert(ca)
+        assertEquals("My watch", d.name)
+        assertEquals("watch", d.role)
+        assertEquals("wearos", d.os)
+        assertEquals(Records.HARDWARE, d.store)
+        assertContentEquals(key, d.key)
+        assertContentEquals(key, d.adminKey)
+        assertTrue(d.admin)
+        assertTrue(g.records.isWatch(key))
+        assertFalse(g.records.mayHost(watch))
+
+        // A device record the watch signs admits nobody.
+        val deck = SyncEngine.newID()
+        val deckCert = GroupCertificates.member(deck, SoftwareSigner().publicKeyDER, ca, watchKey, t0)
+        g.add(listOf(Records.device(deck, "deck", "linux", Records.keyHashOfCert(deckCert), g.tag, watch, t0.plusSeconds(1), watchKey, adminCA = ca)))
+        assertTrue(g.devices.none { it.id == deck })
+        assertNotNull(g.records.refused(listOf(deckCert, ca)))
+
+        g.revoke(watch, root, t0.plusSeconds(2))
+        assertTrue(g.devices.none { it.id == watch })
+        assertTrue(g.records.isRevoked(key))
+    }
+
     @Test
     fun makeAdmin() {
         val root = SoftwareSigner()

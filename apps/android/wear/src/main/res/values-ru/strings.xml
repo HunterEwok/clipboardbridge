@@ -16,4 +16,5 @@
     <string name="stale">По последним данным с телефона.</string>
     <string name="no_phone">Телефон не подключён. Поднесите его ближе и попробуйте снова.</string>
     <string name="no_answer">Телефон не ответил. Попробуйте снова.</string>
+    <string name="watch_admin">Эти часы админ группы.</string>
 </resources>

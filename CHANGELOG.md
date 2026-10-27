@@ -13,7 +13,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   computers, removes ordinary devices and signs only the commands that turn things off and
   quick actions; it never admits devices, removes an admin, takes the group over or acts as
   a hub. Any admin can freeze a watch; removing one takes the root or an admin phone.
-  Certifying a watch from the root phone follows.
+  The root phone makes its Apple Watch or Wear OS watch an admin in Settings: the watch
+  makes the key in its Secure Enclave or Keystore, only with a passcode (and wrist detection
+  on the Apple Watch), and the key works only while the watch is unlocked.
 - The `away-off` command turns sync away from home off on a member (`cbb global off -on
   DEVICE` on an admin computer); turning it on stays each device's own decision.
 - Quick actions take `watch` in `-by`, for actions a watch may run.

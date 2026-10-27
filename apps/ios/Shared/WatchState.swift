@@ -32,6 +32,32 @@ struct WatchState: Codable, Equatable {
     /// The message that turns the phone's sync away from home on or off.
     static let awayKey = "away"
 
+    /// The root phone's ask that the watch make its admin key (docs/protocol.md,
+    /// section 10, rule 8); the watch answers with requestKey, a KeyRequest,
+    /// or refusedKey, why it made none.
+    static let certifyKey = "certify", requestKey = "request", refusedKey = "refused"
+    /// The root's answer once it certified the key: an Admission.
+    static let admittedKey = "admitted"
+    /// Why a watch makes no key: no passcode or no wrist detection, or no
+    /// Secure Enclave.
+    static let notProtected = "not-protected", noSecureEnclave = "no-secure-enclave"
+
+    /// The key a watch made for the root to certify.
+    struct KeyRequest: Codable, Equatable {
+        /// The device ID the watch picked for itself.
+        var device: String
+        var name: String
+        /// Its SubjectPublicKeyInfo, DER.
+        var key: Data
+    }
+
+    /// What the root gave the watch: its admin CA, in the group with that tag.
+    struct Admission: Codable, Equatable {
+        var device: String
+        var adminCA: Data
+        var group: String
+    }
+
     var data: [String: Any] {
         (try? JSONEncoder().encode(self)).map { [Self.key: $0] } ?? [:]
     }

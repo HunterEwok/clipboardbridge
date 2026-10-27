@@ -630,6 +630,22 @@ final class LiveGroup: GroupController {
         try await makeAdmin(id, allowFileKey: true)
     }
 
+    /// Makes the watch's key an admin key with the role watch (docs/protocol.md,
+    /// section 10, rule 8): the root key, after Face ID, issues its admin CA
+    /// and signs its device record, which every member gets.
+    func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission {
+        guard state?.isRoot == true else { throw PhoneGroup.Failure.notRoot }
+        let root = try await caSigner(reason: String(localized: "Make the watch an admin", bundle: .app))
+        guard var g = state else { throw PhoneGroup.Failure.notRoot }
+        let (ca, r) = try g.addWatch(device: request.device, name: request.name, os: "watchos", adminKey: request.key,
+                                     rootSigner: root, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
+        return WatchState.Admission(device: request.device, adminCA: ca, group: g.tag)
+    }
+
     /// Makes a computer an admin; one whose keys sit in a file only with
     /// allowFileKey, else PhoneGroup.Failure.fileKey.
     private func makeAdmin(_ id: String, allowFileKey: Bool) async throws {

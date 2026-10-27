@@ -61,6 +61,9 @@ struct WatchHome: View {
                 Text("Latest")
             }
         }
+        if model.admission != nil {
+            Text("This watch is an admin of the group.").font(.caption2).foregroundStyle(palette.textDim)
+        }
         if !model.reachable {
             Text("As the iPhone last said.").font(.caption2).foregroundStyle(palette.textDim)
         }

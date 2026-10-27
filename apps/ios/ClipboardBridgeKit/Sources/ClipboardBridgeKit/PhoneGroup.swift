@@ -154,6 +154,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// warning (docs/protocol.md, section 17).
     public enum Failure: Error, Equatable {
         case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey
+        /// A watch's request names a device ID or system that is not a new watch's.
+        case notAWatch
     }
 
     /// Adds records from other members, then follows the roots they lead
@@ -301,7 +303,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         // a member nobody sees.
         var keys = d.keys, keep: [Data]?
         if let admin = d.adminKey {
-            keys.append(admin)
+            // A watch's record names its admin CA as its key already.
+            if !keys.contains(admin) { keys.append(admin) }
             // Its own removals stop counting with it, so this record names them again.
             for k in records.revokedBy(admin) where !keys.contains(k) { keys.append(k) }
             keep = records.admitted(by: admin).filter { !keys.contains($0) }
@@ -359,6 +362,28 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
                            store: store, kind: proven ? d.kind : nil, proof: proven ? d.proof : nil, caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
+        return (ca, r)
+    }
+
+    /// Makes a watch an admin (section 10, rule 8): the root issues an
+    /// admin CA for the key the watch made in its Secure Enclave or
+    /// Keystore (adminKey, a SubjectPublicKeyInfo) and signs the watch's
+    /// device record, whose key and admin both name that CA, since a watch
+    /// has no member key. device is the ID the watch picked, os "watchos"
+    /// or "wearos". It returns the admin CA, for the watch, and the record
+    /// to send. Only the root does it; the watch checked its passcode and
+    /// wrist detection before it made the key.
+    public mutating func addWatch(device: String, name: String, os: String, adminKey: Data, rootSigner: CertificateSigner,
+                                  now: Date) throws -> (adminCA: Data, record: Member.Record) {
+        guard isRoot else { throw Failure.notRoot }
+        guard device.count == 32, device.allSatisfy({ $0.isHexDigit && !$0.isUppercase }), os == "watchos" || os == "wearos",
+              !devices.contains(where: { $0.id == device }) else { throw Failure.notAWatch }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
+        let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
+        let key = try Records.keyHash(cert: ca)
+        let r = try record(device: device, name: name, role: "watch", os: os, key: key, admin: key, store: Records.hardware,
+                           caSigner: rootSigner, now: now)
         return (ca, r)
     }
 

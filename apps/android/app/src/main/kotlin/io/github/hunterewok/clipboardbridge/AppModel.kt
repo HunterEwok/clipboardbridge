@@ -91,6 +91,10 @@ class AppModel(private val app: Context) {
     var awayNote by mutableStateOf<Note?>(null)
         private set
 
+    /** What the last try to make the watch an admin said. */
+    var watchNote by mutableStateOf<Note?>(null)
+        private set
+
     /**
      * The phone as the group's hub as Settings and Home show it: null on a
      * phone that cannot be the hub. home tells whether the phone is on one
@@ -625,6 +629,28 @@ class AppModel(private val app: Context) {
             Note(R.string.error_command_refused, e.reason, error = true)
         } catch (e: MemberNode.ProtocolException) {
             describe(e, R.string.error_no_answer)
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
+    /**
+     * Makes the connected Wear OS watch an admin with a key of its own, for
+     * the emergency actions (docs/protocol.md, section 10, rule 8): the
+     * watch makes the key, and the root signs after the user confirms.
+     */
+    suspend fun addWatch() {
+        watchNote = try {
+            val request = WatchLink.keyRequest(app)
+            WatchLink.admit(app, group.addWatch(request))
+            Note(R.string.watch_made_admin)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: WatchLink.NotReachable) {
+            Note(R.string.watch_not_reachable, error = true)
+        } catch (e: WatchLink.NotProtected) {
+            Note(R.string.watch_not_protected, error = true)
         } catch (e: Exception) {
             describe(e)
         }

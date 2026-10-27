@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -429,6 +430,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
+        if (model.phase == AppModel.Phase.HOME && model.devices.any { it.isSelf && it.isRoot }) WatchSection(model)
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
@@ -608,6 +610,35 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
             away.error?.let { NoteText(it) }
             model.awayNote?.let { NoteText(it) }
             Text(stringResource(R.string.away_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
+        }
+    }
+}
+
+/** The root phone makes its Wear OS watch an admin, for the emergency actions (docs/protocol.md, section 10, rule 8). */
+@Composable
+private fun WatchSection(model: AppModel) {
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    val watches = model.devices.filter { it.role == "watch" }
+    Section(stringResource(R.string.watch_title)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            watches.forEach { Text(it.name, fontWeight = FontWeight.SemiBold) }
+            if (watches.isEmpty()) {
+                Button(onClick = {
+                    busy = true
+                    scope.launch {
+                        model.addWatch()
+                        busy = false
+                    }
+                }, enabled = !busy) { Text(stringResource(R.string.watch_make_admin)) }
+            }
+            model.watchNote?.let { NoteText(it) }
+            Text(
+                stringResource(if (watches.isEmpty()) R.string.watch_body else R.string.watch_replace),
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.textDim,
+            )
         }
     }
 }

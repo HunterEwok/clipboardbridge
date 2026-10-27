@@ -1054,6 +1054,22 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Makes the watch's key an admin key with the role watch (docs/protocol.md,
+     * section 10, rule 8): the root key, after the fingerprint, the face or
+     * the screen lock, issues its admin CA and signs its device record, which
+     * every member gets. Returns what the watch keeps.
+     */
+    suspend fun addWatch(request: WatchState.KeyRequest): WatchState.Admission {
+        if (synchronized(lock) { state?.isRoot } != true) throw PhoneGroup.Failure("only the root makes admins")
+        val root = caSigner(R.string.reason_add_watch)
+        val g = copyOfState() ?: throw Failure(Failure.Kind.NOT_ADMIN)
+        val (ca, r) = withContext(Dispatchers.IO) { g.addWatch(request.device, request.name, "wearos", request.key, root, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        published(listOf(r))
+        return WatchState.Admission(request.device, ca, g.tag)
+    }
+
+    /**
      * Removes the phone that holds the group's root, when it is lost: this
      * admin phone makes a new root key and takes the group over
      * (docs/protocol.md, section 10, "Handing the group over"). From then

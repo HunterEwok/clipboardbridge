@@ -17,4 +17,5 @@
     <string name="stale">As the phone last said.</string>
     <string name="no_phone">The phone is not connected. Bring it closer, then try again.</string>
     <string name="no_answer">The phone did not answer. Try again.</string>
+    <string name="watch_admin">This watch is an admin of the group.</string>
 </resources>

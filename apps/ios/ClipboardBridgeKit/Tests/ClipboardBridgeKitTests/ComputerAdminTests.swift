@@ -114,6 +114,50 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertNil(g.computerAdminCA(for: adminKey.publicKeyDER))
     }
 
+    /// The root makes a watch an admin (section 10, rule 8): its record
+    /// names the admin CA as key and admin, it may freeze but admits
+    /// nobody, and removing it takes it out of the list.
+    func testAddWatch() throws {
+        let t = try group()
+        var g = t.g
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        for (id, os) in [("ABC", "watchos"), (watch.uppercased(), "watchos"), (watch, "ios"), (g.device, "watchos")] {
+            XCTAssertThrowsError(try g.addWatch(device: id, name: "Watch", os: os, adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)) {
+                XCTAssertEqual($0 as? PhoneGroup.Failure, .notAWatch, "\(id) \(os)")
+            }
+        }
+        var notRoot = g
+        notRoot.isRoot = false
+        XCTAssertThrowsError(try notRoot.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER,
+                                                  rootSigner: t.root, now: t1)) { XCTAssertEqual($0 as? PhoneGroup.Failure, .notRoot) }
+        let (ca, r) = try g.addWatch(device: watch, name: " My watch ", os: "watchos", adminKey: watchKey.publicKeyDER, rootSigner: t.root, now: t1)
+        XCTAssertEqual(try CertificateInfo(der: ca).publicKey, watchKey.publicKeyDER)
+        XCTAssertTrue(g.records.records.contains(r))
+        let d = try XCTUnwrap(g.devices.first { $0.id == watch })
+        let key = try Records.keyHash(cert: ca)
+        XCTAssertEqual(d.name, "My watch")
+        XCTAssertEqual(d.role, "watch")
+        XCTAssertEqual(d.os, "watchos")
+        XCTAssertEqual(d.store, Records.hardware)
+        XCTAssertEqual(d.key, key)
+        XCTAssertEqual(d.adminKey, key)
+        XCTAssertTrue(d.admin)
+        XCTAssertTrue(g.records.isWatch(key))
+        XCTAssertFalse(g.records.mayHost(watch))
+
+        // A device record the watch signs admits nobody.
+        let deck = SyncEngine.newID()
+        let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: ca, caSigner: watchKey, now: t0)
+        g.add([try Records.device(deck, name: "deck", role: "linux", key: Records.keyHash(cert: deckCert), group: g.tag, by: watch, now: t1,
+                                  signer: watchKey, adminCA: ca)])
+        XCTAssertFalse(g.devices.contains { $0.id == deck })
+        XCTAssertNotNil(g.records.refused(chain: [deckCert, ca]))
+
+        _ = try g.revoke(device: watch, caSigner: t.root, now: t1.addingTimeInterval(1))
+        XCTAssertFalse(g.devices.contains { $0.id == watch })
+        XCTAssertTrue(g.records.revoked.contains(key))
+    }
+
     /// Reads the next message from the phone, at most ten tries, until one
     /// is what want accepts.
     func next(from t: Pipe, _ want: (Member.Message) -> Bool) async throws -> Member.Message? {
