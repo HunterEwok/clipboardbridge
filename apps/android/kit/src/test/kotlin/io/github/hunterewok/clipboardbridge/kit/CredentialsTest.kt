@@ -135,7 +135,7 @@ class CredentialsTest {
         val store = CredentialStore(g.groupCA)
         val keys = Keys()
         var asked = 0
-        val root = { asked++; rootKey as CertificateSigner }
+        val root = { asked++; rootKey }
         val now = t0.toEpochMilli()
         val signed = CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now, root)
         assertEquals(listOf("period", "server", "hubs", "members"), signed.map { it.open().type })
@@ -150,6 +150,9 @@ class CredentialsTest {
         assertEquals("period", later.first().open().type)
         assertEquals(2, asked)
         assertEquals(2, keys.keys.size)
+        // A root whose key cannot sign now keeps the period, and still signs the lists.
+        val waiting = CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now + 2 * ServerCredentials.PERIOD_RENEW_MS) { null }
+        assertTrue(waiting.none { it.open().type == "period" })
         // Without the root key, and with a server key of its own, it signs only that.
         val other = CredentialStore(g.groupCA)
         other.add(rootKey.publicKeyDER, { true }, store.all)

@@ -413,7 +413,8 @@ interface PeriodKeys {
  *
  * root is the current root's certificate; rootSigner, given only on the
  * phone that holds that root, is asked for its key when a period must be
- * signed, which costs Face ID or the fingerprint, so about once a month.
+ * signed, about once a month, and returns null while the key cannot sign
+ * without asking the user: the period then waits for the next refresh.
  */
 object CredentialRefresh {
     fun refresh(
@@ -424,7 +425,7 @@ object CredentialRefresh {
         member: CertificateSigner,
         keys: PeriodKeys,
         nowMS: Long,
-        rootSigner: (() -> CertificateSigner)? = null,
+        rootSigner: (() -> CertificateSigner?)? = null,
     ): List<ServerCredentials.Credential> {
         val rootKey = CertificateInfo(root).publicKey
         val isMember = { k: ByteArray -> isMember(records, k) }
@@ -433,15 +434,12 @@ object CredentialRefresh {
             signed += store.add(rootKey, isMember, listOf(c)).first
         }
 
-        if (rootSigner != null && store.periodStale(rootKey, isMember, nowMS)) {
+        val rs = if (rootSigner != null && store.periodStale(rootKey, isMember, nowMS)) rootSigner() else null
+        if (rs != null) {
             val tag = ServerCredentials.newPeriodTag()
             val pk = keys.get(PeriodKeys.PERIOD_KEY, tag)
             val prev = store.period(rootKey)?.second?.version ?: 0
-            add(
-                ServerCredentials.signPeriod(
-                    GroupCertificates.tag(groupCA), tag, pk.publicKeyDER, ServerCredentials.nextVersion(prev, nowMS), nowMS, rootSigner(),
-                ),
-            )
+            add(ServerCredentials.signPeriod(GroupCertificates.tag(groupCA), tag, pk.publicKeyDER, ServerCredentials.nextVersion(prev, nowMS), nowMS, rs))
         }
         val p = store.period(rootKey)?.second ?: return signed
         keys.keep(p.tag)

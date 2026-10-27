@@ -137,7 +137,7 @@ final class CredentialsTests: XCTestCase {
         var store = CredentialStore(groupCA: g.groupCA)
         let keys = Keys()
         var asked = 0
-        let root = { () -> CertificateSigner in asked += 1; return rootKey }
+        let root = { () -> CertificateSigner? in asked += 1; return rootKey }
         let now = Int64(t0.timeIntervalSince1970 * 1000)
         let signed = try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
                                                    keys: keys, nowMS: now, rootSigner: root)
@@ -156,6 +156,10 @@ final class CredentialsTests: XCTestCase {
         XCTAssertEqual(try later.first?.open().type, "period")
         XCTAssertEqual(asked, 2)
         XCTAssertEqual(keys.keys.count, 2)
+        // A root whose key cannot sign now keeps the period, and still signs the lists.
+        let waiting = try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
+                                                    keys: keys, nowMS: now + 2 * ServerCredentials.periodRenewMS, rootSigner: { nil })
+        XCTAssertFalse(try waiting.contains { try $0.open().type == "period" })
         // Without the root key, and with a server key of its own, it signs only that.
         var other = CredentialStore(groupCA: g.groupCA)
         other.add(root: rootKey.publicKeyDER, isMember: { _ in true }, store.all)

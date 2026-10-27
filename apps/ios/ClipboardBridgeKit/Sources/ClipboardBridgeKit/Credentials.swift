@@ -443,22 +443,23 @@ public enum CredentialRefresh {
     /// credentials say; on an admin that the hubs' credential lists, the
     /// members' credential. root is the current root's certificate;
     /// rootSigner, given only on the phone that holds that root, is asked
-    /// for its key when a period must be signed, which costs Face ID, so
-    /// about once a month.
+    /// for its key when a period must be signed, about once a month, and
+    /// returns nil while the key cannot sign without asking the user: the
+    /// period then waits for the next refresh.
     public static func refresh(_ store: inout CredentialStore, records: RecordSet, groupCA: Data, root: Data, member: CertificateSigner,
-                               keys: PeriodKeys, nowMS: Int64, rootSigner: (() throws -> CertificateSigner)? = nil) throws -> [ServerCredentials.Credential] {
+                               keys: PeriodKeys, nowMS: Int64, rootSigner: (() throws -> CertificateSigner?)? = nil) throws -> [ServerCredentials.Credential] {
         let rootKey = try CertificateInfo(der: root).publicKey
         let devices = records.devices
         let isMember = { (k: Data) in devices.contains { !$0.frozen && $0.keys.contains(k) } }
         var signed: [ServerCredentials.Credential] = []
         func add(_ c: ServerCredentials.Credential) { signed += store.add(root: rootKey, isMember: isMember, [c]).fresh }
 
-        if let rootSigner, store.periodStale(root: rootKey, isMember: isMember, nowMS: nowMS) {
+        if let rootSigner, store.periodStale(root: rootKey, isMember: isMember, nowMS: nowMS), let rs = try rootSigner() {
             let tag = ServerCredentials.newPeriodTag()
             let pk = try keys.get(PeriodKeyKind.periodKey, tag: tag)
             let prev = store.period(root: rootKey)?.1.version ?? 0
             add(try ServerCredentials.signPeriod(groupTag: GroupCertificates.tag(groupCA: groupCA), tag: tag, periodKey: pk.publicKeyDER,
-                                                 version: ServerCredentials.nextVersion(prev, nowMS: nowMS), nowMS: nowMS, root: rootSigner()))
+                                                 version: ServerCredentials.nextVersion(prev, nowMS: nowMS), nowMS: nowMS, root: rs))
         }
         guard let p = store.period(root: rootKey)?.1 else { return signed }
         keys.keep(p.tag)
