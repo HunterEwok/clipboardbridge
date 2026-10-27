@@ -252,6 +252,61 @@ func (s *Service) fetchFrom(ctx context.Context, nd *node.Node, peer group.Devic
 	return s.content.commit(f, sum, p.Size)
 }
 
+// relayed takes an event this member passes on without writing it
+// (node.Config.OnRelay). A hub that serves fetches a media event within
+// its limit away from home, so that the members that reach only it can
+// fetch it from its cache; a text, or a copy over the limit, lets the
+// last copy's parts expire.
+func (s *Service) relayed(w node.Write) {
+	if !s.servingHub() {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Only the group's current copy: an older event is passed on too.
+	if e := s.eng; e == nil {
+		return
+	} else if cur, ok := e.Current(); !ok || cur.ID != w.ID {
+		return
+	}
+	if w.Kind != clip.Media || w.Media == nil {
+		s.setMedia(nil, "", nil)
+		return
+	}
+	s.mediaMu.Lock()
+	limit := s.limits.Away
+	s.mediaMu.Unlock()
+	ctx := s.groupCtx
+	if w.Media.Size > limit {
+		s.logf("cbb: not passing a copy of %s on to the members away from home: it is over this hub's limit of %s away from home", SizeText(w.Media.Size), SizeText(limit))
+		ctx = nil
+	}
+	s.setMedia(w.Media, w.Origin, ctx)
+}
+
+// serves reports whether the member serves the part sum on a connection
+// whose own address is local (node.Config.Serves): through the group's
+// tunnel only the parts of copies within its limit away from home, so a
+// hub's limit caps its whole star.
+func (s *Service) serves(local netip.Addr, sum [sha256.Size]byte) bool {
+	away := s.awayAddr()
+	if !away.IsValid() || local != away || s.content == nil {
+		return true
+	}
+	s.mediaMu.Lock()
+	limit := s.limits.Away
+	s.mediaMu.Unlock()
+	size, ok := s.content.copySize(sum)
+	return ok && size <= limit
+}
+
+// servingHub reports whether this device serves now as the group's hub.
+func (s *Service) servingHub() bool {
+	s.tunMu.Lock()
+	defer s.tunMu.Unlock()
+	return s.tunnel != nil && s.tunnel.IsHub && s.tunServing
+}
+
 // awayAddr is this device's address in the group's tunnel: a peer reached
 // on it is away from home. Invalid while sync away from home is off.
 func (s *Service) awayAddr() (a netip.Addr) {

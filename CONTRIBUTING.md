@@ -7,11 +7,16 @@ Clipboard Bridge is developed by one maintainer. Thank you for your interest.
 - **Bugs:** open an issue with the bug report form.
 - **Ideas and questions:** open an issue with the feature request form.
 - **Security problems:** do not open an issue; follow [SECURITY.md](SECURITY.md).
+- **A commercial license:** open an issue with the commercial license form.
+
+Forks and packages: see [BRAND.md](BRAND.md) for the icon, the name and official builds.
 
 ## Code contributions
 
 Pull requests are not accepted at this time. This keeps the copyright of the whole project
-with the maintainer, so the licensing stays simple and no contributor agreement is needed.
+with the maintainer, so the licensing stays simple and no contributor agreement is needed;
+it is also what lets the maintainer offer a commercial license (see the
+[README](README.md#license)).
 If you have found a fix, please describe the problem and the idea of the fix in an issue.
 
 Pull requests from forks are closed without review.

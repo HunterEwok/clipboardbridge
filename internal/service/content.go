@@ -49,6 +49,7 @@ type contentStore struct {
 	whole   map[[sha256.Size]byte]int64     // the parts held whole, by hash: their sizes
 	current map[[sha256.Size]byte]bool      // the parts of the current copy, kept
 	old     map[[sha256.Size]byte]time.Time // the parts of replaced copies: when they were replaced
+	copies  map[[sha256.Size]byte]int64     // the size of the last copy each part was in
 }
 
 // openContent empties the cache in dir and returns it.
@@ -59,7 +60,7 @@ func openContent(dir string, now func() time.Time) (*contentStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	return &contentStore{dir: dir, now: now, whole: map[[sha256.Size]byte]int64{}, current: map[[sha256.Size]byte]bool{}, old: map[[sha256.Size]byte]time.Time{}}, nil
+	return &contentStore{dir: dir, now: now, whole: map[[sha256.Size]byte]int64{}, current: map[[sha256.Size]byte]bool{}, old: map[[sha256.Size]byte]time.Time{}, copies: map[[sha256.Size]byte]int64{}}, nil
 }
 
 func (c *contentStore) path(sum [sha256.Size]byte) string {
@@ -111,6 +112,7 @@ func (c *contentStore) setCurrent(m *clip.Manifest, limit int64) {
 		for _, p := range m.Parts {
 			if !p.Dir {
 				next[[sha256.Size]byte(p.SHA256)] = true
+				c.copies[[sha256.Size]byte(p.SHA256)] = m.Size
 			}
 		}
 	}
@@ -124,6 +126,15 @@ func (c *contentStore) setCurrent(m *clip.Manifest, limit int64) {
 	}
 	c.current = next
 	c.sweepLocked(now, limit)
+}
+
+// copySize returns the size of the last copy the part sum was in, or
+// false when it is in none the cache knows.
+func (c *contentStore) copySize(sum [sha256.Size]byte) (int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	size, ok := c.copies[sum]
+	return size, ok
 }
 
 // sweep deletes the parts replaced longer ago than contentKeep.
@@ -162,6 +173,7 @@ func (c *contentStore) sweepLocked(now time.Time, limit int64) {
 func (c *contentStore) removeLocked(sum [sha256.Size]byte) {
 	delete(c.old, sum)
 	delete(c.whole, sum)
+	delete(c.copies, sum)
 	os.Remove(c.path(sum))
 	os.Remove(c.path(sum) + ".part")
 }

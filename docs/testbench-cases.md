@@ -246,7 +246,7 @@ without purge and nothing at all with it. Fail: anything left.
 **L11. Layout B (a phone's group).** Runs: planned (the emulator cannot be reached from the LAN;
 section 3). See P10.
 
-## 3. Features and platforms (section 7, P1 to P38)
+## 3. Features and platforms (section 7, P1 to P39)
 
 **P1. Password managers.** Runs: manual.
 1. On the Mac copy a password from a manager that sets the concealed type; on Windows from one
@@ -257,10 +257,17 @@ Pass: it travels as a secret (C6 rules) or not at all, as designed. Fail: it arr
 text, or stays after 60 s.
 
 **P2. Rich text, images, files.** Runs: manual.
-1. Copy formatted text from a browser and from an office app; copy an image; copy a file.
-Pass: the plain text of the first two arrives; the image and the file are ignored with no error
-in the log (until images and files sync, roadmap item 20). Fail: an error, a crash, or markup
-instead of text.
+1. Copy formatted text from a browser and from an office app.
+2. Copy a screenshot, then a photo of about 5 MB, on each desktop member in turn; paste each on
+   the others.
+3. Copy a folder with a few files and an empty file in a file manager; paste it on the others in
+   theirs; on `lite` run `cbb paste -o DIR`.
+4. On one member `cbb config max-copy 1MiB`, then copy a 3 MB file elsewhere.
+Pass: the plain text of step 1 arrives; images and files arrive whole (R5, within 10 s on one
+network for a 5 MB photo), with the same names and no exec bit, and carry the quarantine mark
+on a Mac and the Mark of the Web on Windows; `lite` keeps the copy's text and saves the files
+with `paste -o`; step 4's member says once that the copy is over its limit of 1 MiB and
+fetches nothing. Fail: an error, a crash, markup instead of text, or a file that differs.
 
 **P3. History and echo.** Runs: manual.
 1. With Windows Win+V history and a GNOME clipboard manager on, copy on the Linux desktop.
@@ -568,6 +575,18 @@ Devices: `relay`, the controller.
 Pass: the 17th registration from one address is refused with a clear message, and the 16
 others work; the busy group is slowed and no other group is; the counts drop to zero groups
 once their last devices leave; the relay writes nothing to disk (as S8).
+
+**P39. Images and files away from home.** Runs: manual (`away` once `tools/bench` copies files).
+Devices: `desktop` (the hub, in mode `own`), `mac` (at home), `remote` (away, connected through
+`desktop`).
+1. Copy a 5 MB photo and a folder of a few files on `mac`; paste them on `remote`.
+2. Copy a 2 MB file on `remote`; paste it on `mac`.
+3. On `desktop` `cbb config max-copy-away 1MiB`; copy a 3 MB file on `mac`, then a 500 KB one.
+4. Capture `remote`'s uplink during steps 1 and 2 (R7).
+Pass: steps 1 and 2 arrive whole through the hub, though its mode keeps its own clipboard out;
+in step 3 the hub's log says the 3 MB copy stays at home, `remote` gets only its text and
+then the 500 KB copy; the capture shows only WireGuard. Fail: a copy lost or changed, the hub's clipboard
+written in mode `own`, or a copy over the hub's limit through its tunnel.
 
 ## 4. Failure cases (section 8)
 

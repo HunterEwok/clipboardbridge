@@ -8,6 +8,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- BRAND.md: which builds are official and how to check them, what belongs to the project
+  (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
+  build with changes should not do; it names the other projects called Clipboard Bridge.
+- A commercial license is available without the AGPL's obligations; ask with the new
+  **Commercial license** issue form.
+- The text of docs/protocol.md is under CC BY 4.0, so anyone may write a compatible
+  implementation under any license.
+
 - Signed releases: `keys.json`, `release.json` and `stable.json` describe each release and
   are signed by release keys that two offline root keys certify (docs/protocol.md, section
   16). `tools/release-sign` makes and signs them with a key in a file, on a YubiKey or in
@@ -185,11 +193,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
   and in the app's folder in Files on the iPhone. Share sends images and files: up to 100 MiB
   on Android, 50 MB from the iPhone's share extension, which stays until a computer fetched
   them.
+- Images and files away from home (design.md, "Images and files", step 5): the hub that
+  serves fetches each copy of the group within its limit away from home, also in a mode that
+  keeps its own clipboard out, and serves it to the members that reach only it, both ways.
+  Through its tunnel it serves only copies within that limit (`cbb config max-copy-away`),
+  so the hub's limit caps its whole star; a larger copy stays at home and the hub logs it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
 
 ### Changed
 
+- The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
+  so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
+  each MiB.
 - A computer whose keys sit in a file becomes an admin only when the user allows it: `cbb
   admin -allow-file-key NAME`, and the phones' "Make it an admin" dialog warns what that
   means. `cbb new` warns that the root key is a file.

@@ -73,12 +73,23 @@ type Config struct {
 	// the hello then says it serves content, and Fetch works with peers
 	// that do.
 	Content Content
+	// Serves, if set, says whether this member serves the part sum on a
+	// connection whose own address is local: a hub serves through its
+	// tunnel only the copies within its limit away from home. The others
+	// get a missing.
+	Serves func(local netip.Addr, sum [sha256.Size]byte) bool
 
 	// OnWrite puts a text into this member's own clipboard. Writes carry
 	// growing sequence numbers; a write with a smaller one than the last
 	// applied must be dropped. It is called from connection goroutines and
 	// must not block for long.
 	OnWrite func(Write)
+
+	// OnRelay, if set, is called with a media event or a text this member
+	// passes on to its peers without writing it to its own clipboard, as
+	// a hub in a mode that keeps its clipboard to itself does; the hub
+	// fetches the content to serve it to the members that reach only it.
+	OnRelay func(Write)
 
 	// OnPeers, if set, is called whenever the set of connected members, as
 	// Peers reports it, may have changed. Calls may come from several
@@ -932,6 +943,8 @@ func (n *Node) apply(res clip.Result, from *conn) {
 	n.forward(*res.Forward, from)
 	if res.Write {
 		n.cfg.OnWrite(write(res.Forward, res.Seq))
+	} else if n.cfg.OnRelay != nil {
+		n.cfg.OnRelay(write(res.Forward, res.Seq))
 	}
 }
 

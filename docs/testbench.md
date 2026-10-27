@@ -165,7 +165,7 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | ID | Case | Expected |
 |---|---|---|
 | P1 | Password managers: a copy marked secret by the app (macOS concealed type, Windows "exclude from history and cloud", the Wayland password hint) | travels as a secret (C6 rules) or not at all, as designed; never as plain text |
-| P2 | Rich text from a browser and an office app; an image or a file copied | the plain text arrives; non-text content is ignored without an error |
+| P2 | Rich text from a browser and an office app; images, a folder of files, a copy over a member's limit | the plain text arrives; images and files arrive whole with their names, marked as downloads on Mac and Windows; a copy over the limit is refused once with a clear message |
 | P3 | Clipboard history (Windows Win+V, the GNOME clipboard) and copy echo | a received text is not sent back; no ping-pong between two members |
 | P4 | The Mac as a full member: the lite member and the emulator reach the Mac with no other computer on; the Mac and a Linux member connect whichever has the lower device ID, also with the Mac's application firewall on | sync works; one connection between each pair |
 | P5 | The lite member's options: `-peer`, `-no-mdns`, `-no-listen`, `watch` | each works as `docs/reference/cli.md` says |
@@ -202,6 +202,7 @@ Every other way Clipboard Bridge works, so no path ships untested:
 | P36 | Several hubs: the root and an admin computer each with a hub set up, an away device; the root's hub stopped and started again | the admin serves while the root is gone and gives way when it is back; the away device follows both ways with no invitation and loses no copy |
 | P37 | Moving the hub with `cbb global move`: to the lite member and to the container (refused), to an admin computer | the new hub serves with the old one's forwarder; the old one becomes its client; the away device follows without coming home |
 | P38 | The open relay's limits: registrations from one address, a busy group, groups leaving | over a limit refused with a clear message; one busy group does not slow the others; a group is forgotten when its last device leaves |
+| P39 | Images and files away from home through a hub in mode `own`, and the hub's limit away from home | copies go both ways through the hub; one over the hub's limit stays at home with a log line; only WireGuard on the uplink |
 
 Known limits of this bench: it has no Intel Mac (`darwin/amd64`), no x86-64 Windows
 (`windows/amd64`) and no ARMv7 Linux; those builds are covered only by CI. Builds without a device of their own run on the bench only where a host has one (the ARM64

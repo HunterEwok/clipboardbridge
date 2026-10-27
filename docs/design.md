@@ -543,16 +543,22 @@ application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
 - Events, hellos, pings and records go first; chunks go only while the event queue is empty
   and do not count against the 256-message queue limit, so text keeps flowing during a large
   transfer.
-- Content is addressed by its hash, so any member that has it serves it, and a member asked
-  for a part it lacks fetches it and passes the chunks on as they arrive. Away from home that
-  is the hub serving its clients, which never talk to each other.
+- Content is addressed by its hash, so any member that holds it whole serves it. Away from
+  home the hub serves its clients, which never talk to each other: the hub that serves
+  fetches each copy of the group within its limit away from home, whatever its own mode,
+  and serves it from its cache once it is whole; a client asked too early hears `missing`
+  and asks again 2 seconds later. Through its tunnel the hub serves only copies within its
+  limit away from home, so that limit caps its whole star; a copy over it stays at home, and
+  the hub logs that. (Passing chunks on as they arrive, before the hub holds the whole part,
+  may come later.)
 - A receiver fetches in the background once the event is the group's current live event and
   fits its limit, and writes its clipboard only when every part has arrived and matches its
   hash, so a paste never gives half a file; a newer copy stops the fetch. Progress shows in
   `cbb status` and the apps' notification.
 - Images and files follow the device's sync mode ("Sync modes", D-55) like text: a device
   fetches only in a mode that takes the group's copies into its clipboard, and offers its
-  own only in a mode that sends them.
+  own only in a mode that sends them. The hub that serves is the one exception: it fetches
+  to pass copies on, but writes its clipboard only as its mode says.
 - Android fetches images by itself, as it takes texts; files wait for the button, which
   saves them in Downloads. The iPhone fetches on its button, and an image by itself while the
   app runs; its button saves files in the app's folder in Files. Both phones serve their own
@@ -598,7 +604,7 @@ multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
 ### Order of work
 
-Steps 1 to 3 are built (docs/protocol.md, section 4, "Media" and "Content", and the
+Steps 1 to 5 are built (docs/protocol.md, section 4, "Media" and "Content", and the
 watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
 over the control socket and saves them in the user's cache (`~/.cache/clipboardbridge/received`,
 `~/Library/Caches` on a Mac, `%LocalAppData%` on Windows), a folder for each copy readable
@@ -1750,7 +1756,7 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 
 | ID   | Decision                                                                                   |
 |------|--------------------------------------------------------------------------------------------|
-| D-1  | License: AGPL-3.0-only. Code contributions are not accepted, so no contributor agreement is needed. |
+| D-1  | License: AGPL-3.0-only. Code contributions are not accepted, so no contributor agreement is needed, and the one author can also offer a commercial license without the AGPL's obligations (README, "License"). |
 | D-2  | Language: Go, for reliable ARMv6 builds, TLS and networking in the standard library, and development speed. |
 | D-3  | A group of equal members instead of a central server; any member may be off.              |
 | D-4  | Encryption with the project's own TLS and pairing instead of an overlay VPN, which on iOS would conflict with other VPN apps. |
@@ -1825,3 +1831,6 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-73 | The iPhone is not the hub in the background as a Network Extension: App Review allows VPN apps only from organizations, iOS runs one VPN at a time, Apple advises against a listener in a packet tunnel, and the extension has 50 MiB. The phone stays the hub only while its app is open (D-64). |
 | D-74 | Prompt notifications on the iPhone may come through Apple's push, sent by a stateless sender at `cbb.tools` with the content encrypted to the phone's key and opened only on the phone; Apple learns that a push was sent and when, `cbb.tools` the push token, the hub's address and the time, and the user agrees to that before it is used. |
 | D-75 | Servers learn as little as can be kept from them: the forwarder keeps on disk only a hash of each group's tag with the version of its newest credential (D-67), the relay holds pseudonyms rather than device IDs, the credentials' lists are padded, and each device talks to the servers with its own key renewed every 30 days and signed by the root, so a server cannot link a device across renewals. No transparency report or warrant canary: the defence is that the servers hold almost nothing. |
+| D-76 | Official builds are told apart by the release signatures and the provenance attestation, not by the name: "Clipboard Bridge" is used by other, unrelated projects, so the project claims no exclusive right to it. BRAND.md asks builds with changes not to use the icon, `cbb.tools` as their default or an official look, and to take their own name and app identifiers. |
+| D-77 | The text of docs/protocol.md is under CC BY 4.0, so compatible implementations may use any license; the code stays under AGPL-3.0-only. |
+| D-78 | No additional permission for app stores for now: one can be added at any time but not taken back from released versions; whoever needs a store asks for a commercial license. |

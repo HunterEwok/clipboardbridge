@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -148,6 +149,8 @@ func (c *conn) get(g Get) {
 		return
 	}
 	copy(sum[:], g.SHA256)
+	// Asked before the lock: it takes the service's.
+	serves := g.Length == 0 || content != nil && c.serves(sum)
 	s := &c.serving
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,7 +170,7 @@ func (c *conn) get(g Get) {
 		}
 		return
 	}
-	if content == nil {
+	if content == nil || !serves {
 		c.enqueue(outgoing{missing: &g})
 		return
 	}
@@ -189,6 +192,16 @@ func (c *conn) get(g Get) {
 		s.running = true
 		go c.serve()
 	}
+}
+
+// serves reports whether this member serves the part sum on this
+// connection (Config.Serves).
+func (c *conn) serves(sum [sha256.Size]byte) bool {
+	if c.n.cfg.Serves == nil {
+		return true
+	}
+	local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
+	return c.n.cfg.Serves(local.Addr().Unmap(), sum)
 }
 
 // serve reads the ranges the peer asked for, in order, and hands their
