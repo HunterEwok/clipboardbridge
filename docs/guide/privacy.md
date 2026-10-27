@@ -30,7 +30,7 @@ Two things are exceptions, and both are your choice:
 | A blind relay | which devices of a group are online now and talk to each other, when and how much; it keeps none of it | run your own, or use a hub |
 | The company that hosts a forwarder or relay | the addresses that talk to it, when and how much | a system VPN on the device |
 | GitHub, or `dl.cbb.tools` when GitHub does not answer | your address and that you use Clipboard Bridge, at each update check and download; nothing about the group | `sudo cbb update -auto off`, or a mirror of your own (`-mirror`) |
-| `cbb.tools` | the root's address, once a day, when it fetches the signed copy of Google's list of revoked Android keys | none needed: it is the same file for everyone |
+| `cbb.tools` | the root's address, once a day, when it fetches the signed copy of Google's list of revoked Android keys (once that copy starts, with the project's signing keys) | none needed: it is the same file for everyone |
 | Apple, Intel or AMD | that a device of that kind asked them to vouch for its key, from your address | only at the **strict** key level; the default asks no one ([keys](keys.md#the-three-levels)) |
 | The App Store, Google Play, F-Droid, Homebrew, winget | that you installed the app, as for any app | install the signed file from the release instead |
 

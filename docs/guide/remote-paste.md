@@ -26,7 +26,9 @@ the console and when typed.
 
 On GNOME and KDE the first paste opens the system's dialog for remote control on the screen;
 allow it once and it is remembered. To skip the dialog, install the uinput helper:
-`install.sh --uinput` (or `get.sh --uinput`) adds a virtual keyboard that presses only
+install again with `--uinput`
+(`curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh -s -- --uinput`),
+which adds a virtual keyboard that presses only
 Shift+Insert and Enter for the user on the screen.
 
 Without a desktop, tmux and the text console need their helpers. Every installation adds

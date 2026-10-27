@@ -18,7 +18,7 @@ without a desktop gets copy and paste inside tmux with `--console`
 (`... | sudo sh -s -- --console`).
 
 Remote paste on GNOME and KDE asks once, in a dialog on the computer, before an admin's
-first paste may press the keys. To skip the dialog, add `--uinput`: a small helper then
+first paste may press the keys. To skip the dialog, add `--uinput` (`... | sudo sh -s -- --uinput`): a small helper then
 presses the paste keys (Shift+Insert and Enter) for whoever uses the screen, never on a
 login or lock screen.
 
@@ -70,19 +70,16 @@ more, or eMMC; 256 MB of RAM), as root over SSH:
 uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
 ```
 
-It installs `cbb` with a procd service that runs as its own user without capabilities. The
-service works only on the devices of the `lan` zone: mDNS and the member port never answer
-on `wan`. Another zone, such as an IoT network, goes into `/etc/config/clipboardbridge`
-(`list zone 'iot'`, then `/etc/init.d/clipboardbridge reload`); the service then opens the
-member port and mDNS from that zone while it runs, without changing
-`/etc/config/firewall`. After a boot it starts once NTP has set the clock. The keys live in
-`/etc/clipboardbridge`, which sysupgrade keeps; an attended sysupgrade (ASU, owut) leaves
-the program out, so run the command again after one.
+It installs `cbb` as a service that works only on the `lan` zone and never answers on
+`wan`. The keys live in `/etc/clipboardbridge`, which sysupgrade keeps; after an attended
+sysupgrade (ASU, owut), run the command again. Another zone, such as an IoT network, the
+firewall and the checks are in [routers and FreeBSD](../admin/routers.md#openwrt).
 
 Or from our package feed, which `apk upgrade` then keeps current. The feed's architecture
 follows the router's CPU (`grep DISTRIB_ARCH /etc/openwrt_release`): `arm64` for
 `aarch64_*`, `armv7` for `arm_cortex-a*` with `neon` or `vfp` in the name, `mipsle` for
-`mipsel_*`, `mips` for `mips_*`, `amd64` for `x86_64`:
+`mipsel_*`, `mips` for `mips_*`, `amd64` for `x86_64`. Put yours in place of `arm64` in
+the second line:
 
 ```sh
 uclient-fetch -qO /etc/apk/keys/clipboardbridge.pem https://cbb.tools/openwrt/clipboardbridge.pem
@@ -110,7 +107,8 @@ both need UDP port 5353, and the service answers mDNS on each home interface its
 pfSense is not supported: the installer runs there too, but it prints the firewall rules
 for Firewall > Rules instead of adding them, and an update of pfSense may remove Clipboard
 Bridge.
-On a desktop (X11, or Wayland with the data control protocol, as in KDE, sway and
+
+On a FreeBSD desktop (X11, or Wayland with the data control protocol, as in KDE, sway and
 Hyprland), the session starts `cbb agent` from XDG autostart and the clipboard joins the
 group; log in again after the install. Remote paste types through XTEST on X11 and the
 virtual keyboard on wlroots desktops; GNOME takes no remote paste on FreeBSD, since without
@@ -123,8 +121,9 @@ For a NAS or a home server that is always on
 It joins as an ordinary member: make the group on the phone or a computer you hold.
 
 ```sh
-docker compose -f packaging/docker/compose.home.yaml up -d
-docker compose -f packaging/docker/compose.home.yaml exec clipboardbridge cbb pair
+curl -fsSLO https://raw.githubusercontent.com/HunterEwok/clipboardbridge/main/packaging/docker/compose.home.yaml
+docker compose -f compose.home.yaml up -d
+docker compose -f compose.home.yaml exec clipboardbridge cbb pair
 ```
 
 ## The firewall
@@ -155,17 +154,15 @@ All installer options are in the [command reference](../reference/cli.md#install
 
 ## Updating
 
+Until the project's release keys exist, releases are not signed and `cbb update` says it
+has nothing to check them against; run the install command again instead.
+
 `sudo cbb update` (on Windows `cbb update` in a terminal opened as administrator) installs
 the newest release on a computer or a lite member installed with `get.sh`, `get.ps1` or a
-release archive;
-`cbb update -check` only says whether there is one. It takes only a release the project
-signed (docs/protocol.md, section 16), never an older one than this device has seen, and
-checks the archive and the programs in it against the signed list before it installs them.
-It installs with the new release's own installer, which keeps the port, the firewall
-answer and the other settings, and waits up to a minute for the service to report the new
-version; if it does not, the previous programs go back and automatic updates skip that
-version. On Windows, once releases are Authenticode-signed, the new programs must carry
-the same signer as the installed ones.
+release archive; `cbb update -check` only says whether there is one. Your settings stay.
+It installs only a release the project signed, and never an older one. If the new version
+does not start within a minute, the previous one comes back by itself. How it checks the
+signatures is in the [protocol](../protocol.md), section 16.
 
 The installers ask once whether to update automatically (`--auto-update on|off`, or
 `-AutoUpdate on|off` and `$env:CBB_AUTO_UPDATE` on Windows, answer it beforehand);
@@ -188,9 +185,6 @@ Each device still checks the signatures itself and downloads its own archive.
 Running the same install command again also updates. With Homebrew or winget, upgrade
 there and run the second line again; `cbb update` says so. Docker and the OpenWrt package
 update through `docker compose pull` and `apk upgrade`.
-
-Until the project's release keys exist, releases are not signed and `cbb update` says it
-has nothing to check them against; run the install command again instead.
 
 ## Checking a download
 

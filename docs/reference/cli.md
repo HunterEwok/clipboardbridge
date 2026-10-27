@@ -84,7 +84,9 @@ member (`/var/lib/clipboardbridge`, `clipboardbridge.service`) and the commands 
 commands of a full member, such as `pair` or `invite`, answer that this is the lite member.
 Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridge`, or
 `CBB_STATE`), `-socket PATH` (default `/run/clipboardbridge/control.sock`, or `CBB_SOCKET`),
-`-debug` (the details of errors). Install and use are in [lite/README.md](../../lite/README.md).
+`-debug` (the details of errors). The commands that change its state, such as `join`, run
+as the service's user: `sudo -u clipboardbridge cbb join`. Install and use are in
+[lite/README.md](../../lite/README.md).
 
 | Command | What it does |
 |---|---|

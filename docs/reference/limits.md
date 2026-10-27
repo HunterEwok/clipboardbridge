@@ -14,6 +14,7 @@ them is in the [protocol](../protocol.md).
 | Images and files through the group's tunnel | 25 MiB per copy | `cbb config max-copy-away SIZE`, at most `max-copy`; the hub's limit caps every device that reaches only it |
 | Images and files at all | 1 GiB, at most 10,000 parts and 8 clipboard types per copy | no |
 | A file name, a path | 255 bytes, 4,096 bytes | no |
+| What the phones' share sheet sends | 100 MiB on Android, 50 MB from the iPhone | no |
 | The plain text that goes with images or files | 256 KiB | no |
 | HTML from a desktop clipboard | 8 MiB | no |
 | A secret (marked by a password manager, or `cbb copy -secret`) | current for 60 s after the copy, kept only in memory; its text is recognised for 12 h after, so that it stays secret when offered again | no |

@@ -60,8 +60,9 @@ cbb keyboard                       # shows whether it is connected
 echo 'the text' | sudo cbb keyboard type
 ```
 
-`-rate N` sets the speed, 5 to 60 characters a second. `-pastes` sends the group's remote
-pastes to the device instead of this computer's screen. `sudo cbb keyboard off` stops it.
+`on` also takes `-rate N`, the speed, 5 to 60 characters a second, and `-pastes`, which
+sends the group's remote pastes to the device instead of this computer's screen:
+`sudo cbb keyboard on -layout us -rate 10 -pastes`. `sudo cbb keyboard off` stops it.
 The computer's own Bluetooth keyboards and mice keep working.
 
 ## The Nano ESP32 as a USB or Bluetooth keyboard
@@ -87,7 +88,7 @@ installed on the TV, and the TV never joins the group.
 An Android TV or a Google TV pairs once:
 
 ```sh
-sudo cbb remote add living-room-tv.lan   # the TV shows a six-digit code
+sudo cbb remote add -name living-room-tv living-room-tv.lan   # the TV shows a six-digit code
 sudo cbb remote code 123456              # within two minutes
 ```
 

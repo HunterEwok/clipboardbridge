@@ -79,7 +79,7 @@ The levels above are the design; this version builds part of it:
 - Android phones prove their keys, and the root checks the proof and Google's list. The
   copy on `cbb.tools` starts once the project's signing keys exist.
 - The levels are not a setting yet. Groups work as at level 2, and a computer becomes an
-  admin only with the warning of level 3.
+  admin only with the warning of level 3, unless it is a Linux computer with a TPM.
 - Linux computers with a TPM keep their member and admin keys in it, from the moment they
   join a group; a computer that joined earlier keeps its file until it joins again. The
   group's root key on a computer, Macs (the Secure Enclave), Windows PCs (the TPM) and App
