@@ -1019,7 +1019,7 @@ jobs:
   app:
     name: iPhone app
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1051,18 +1051,49 @@ jobs:
           # Ad hoc signing needs no Apple account, and without a signature the
           # simulator gives the app no keychain (-34018), which its TLS tests use.
           sign=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
-          # Built once, then tested on one simulator at a time, each booted
-          # before its tests start: with both starting together the runner
-          # took up to eight minutes before the tests could connect.
+          # The simulator at times fails to launch the app for its tests
+          # ("Failed to launch app", or the app held at dyld's start, or XCTest
+          # never loaded in it), and xcodebuild then waits 8 to 17 minutes
+          # before it gives up. A run that starts takes under three minutes, so
+          # one still going after six is stopped and tried again on a freshly
+          # booted simulator. A run that ends by itself, failed tests included,
+          # counts as it is.
+          test_on() {
+            for attempt in 1 2 3; do
+              xcrun simctl boot "$1" 2>/dev/null || true
+              xcrun simctl bootstatus "$1" -b
+              # A first launch, so the launch service has settled.
+              xcrun simctl launch "$1" com.apple.Preferences >/dev/null
+              xcrun simctl terminate "$1" com.apple.Preferences || true
+              xcodebuild test-without-building -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$1" \
+                "${sign[@]}" >test.log 2>&1 &
+              pid=$!
+              for _ in $(seq 360); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 1
+              done
+              if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid"
+                wait "$pid" || true
+                tail -n 30 test.log
+                echo "::warning::the tests on $1 did not finish in 6 minutes (attempt $attempt); booting the simulator again"
+                xcrun simctl shutdown "$1" || true
+                continue
+              fi
+              status=0
+              wait "$pid" || status=$?
+              tail -n 100 test.log
+              xcrun simctl shutdown "$1" || true
+              return "$status"
+            done
+            echo "::error::the tests on $1 did not finish in three attempts"
+            return 1
+          }
+          # Built once, then tested on one simulator at a time.
           xcodebuild build-for-testing -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$iphone" \
             "${sign[@]}" | tail -n 50
-          for device in "$iphone" "$ipad"; do
-            xcrun simctl bootstatus "$device" -b
-            xcodebuild test-without-building -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$device" \
-              "${sign[@]}" | tail -n 100
-            xcrun simctl shutdown "$device"
-          done
-
+          test_on "$iphone"
+          test_on "$ipad"
   macapp:
     name: Mac app
     runs-on: macos-latest
