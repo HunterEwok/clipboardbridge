@@ -22,6 +22,8 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Multicast for mDNS asks for no Wi-Fi: a TV may have only Ethernet. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <!-- The home screens, which may open the launcher entry without a question. -->
     <queries>
