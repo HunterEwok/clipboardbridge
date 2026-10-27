@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
+  seconds, and it hears of the group's events then, without being opened. Push
+  notifications follow with the Apple developer account.
 - Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
   the Linux archive; docs/reference/self-hosting.md installs them and says what the server
   keeps, what its hosting provider sees, and what a system VPN on a device hides.
