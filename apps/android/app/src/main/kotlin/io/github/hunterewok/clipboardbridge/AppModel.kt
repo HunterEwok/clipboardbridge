@@ -163,6 +163,15 @@ class AppModel(private val app: Context) {
     var inviteNote by mutableStateOf<Note?>(null)
         private set
 
+    /** The update of an APK installed from a release (ApkUpdate), and its state for Settings. */
+    val apkUpdate = ApkUpdate(app)
+    var apkState by mutableStateOf(apkUpdate.state)
+        private set
+
+    init {
+        apkUpdate.onChange = { apkState = apkUpdate.state }
+    }
+
     private var invitation: LiveGroup.Invitation? = null
     private var answer: CompletableDeferred<Boolean>? = null
     private val main = Handler(Looper.getMainLooper())

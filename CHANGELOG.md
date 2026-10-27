@@ -33,6 +33,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   files checked with `lite/core`, the download through the system's curl, wget or
   uclient-fetch, the archive's installer, the rollback, `-check`, `-auto on|off` and
   `-mirror`; its installer now asks about automatic updates too.
+- The Android app updates itself when it was installed from a release's APK (docs/apps.md,
+  "Updates"): Settings checks for a newer release and installs it through the system's
+  installer after checking the signed release files, the APK's hash and its signing
+  certificate; "Update automatically" does this once a day. A copy from a store is left to
+  the store.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
   layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into

@@ -936,8 +936,12 @@ token cannot slip in another build or an older one.
    one, and the tray app shows "Update to X", which runs `cbb update` through UAC or
    pkexec. Still to come: the archives passing through the group, for devices without
    internet access.
-6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
-   registration with Google's developer verification.
+6. **Built:** the Android app's own update for the sideloaded APK (`ApkUpdate.kt`,
+   docs/apps.md, "Updates"): the signed files checked with the Kotlin kit, the APK's hash
+   and signing certificate, `PackageInstaller` with `USER_ACTION_NOT_REQUIRED`, Settings'
+   "Check for updates" and "Update automatically", nothing for a copy from a store. Not
+   yet run on a device; installs from 2027 need the owner's registration with Google's
+   developer verification.
 7. **Built for Linux and OpenWrt:** the lite member's `cbb update` (`lite/src/update.rs`),
    checked with `lite/core`'s verifier, downloading with the system's curl, wget or
    uclient-fetch, installing and rolling back as step 3 does, with the same timers. Then
