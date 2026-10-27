@@ -354,6 +354,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A device that registers with its relay again, after the group's credentials changed, no
+  longer stays off the relay for up to 25 seconds: a dial or an answer it was waiting on
+  ends with the old registration instead of at its timeout, and the device says in its log
+  that it registers again.
 - `cbb status` says when this device's certificate has ended, or ends within 30 days with no
   admin to renew it; before, a member whose certificate ended while no admin was on was
   refused by the group with no word why.
