@@ -263,7 +263,7 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			}
 			send("other-target 1", cmd, b.ID)
 		default:
-			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" {
+			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" {
 				return fmt.Errorf("no case %q", c)
 			}
 		}

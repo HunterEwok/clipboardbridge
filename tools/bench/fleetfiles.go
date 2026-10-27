@@ -316,11 +316,11 @@ func freshness(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		if err := heal(ctx, a, b, c); err != nil {
 			return err
 		}
-		// Back in sync: c lists a as connected again; the old text
+		// Back in sync: c lists a as online again; the old text
 		// stays off its clipboard meanwhile and after.
 		if err := eventually(ctx, time.Minute, func() error {
 			row, err := statusRow(ctx, c, a.Name)
-			if err == nil && !strings.Contains(row, "connected") {
+			if err == nil && !strings.Contains(row, "online") {
 				err = fmt.Errorf("%s lists %s as %q", c.Name, a.Name, row)
 			}
 			return err
@@ -352,10 +352,6 @@ func freshness(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		return arrives(ctx, c, text, 40*time.Second)
 	})
 	r.Do("fleet/Y33-secret-in-a-hello", func() error {
-		mine, err := Paste(ctx, c)
-		if err != nil {
-			return err
-		}
 		if err := f.stop(ctx, c); err != nil {
 			return err
 		}
@@ -372,9 +368,11 @@ func freshness(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		// The window after the start is open, but the hello carries only
 		// the secret's mark.
 		time.Sleep(35 * time.Second)
+		// Its clipboard, empty after the container's restart, gets no
+		// text from it.
 		got, err := Paste(ctx, c)
-		if err == nil && strings.TrimSpace(got) != strings.TrimSpace(mine) {
-			err = fmt.Errorf("%s has %s after a hello with a secret, not its own text", c.Name, describe(got))
+		if err == nil && strings.Contains(got, secret) {
+			err = fmt.Errorf("%s wrote a secret that a hello named", c.Name)
 		}
 		return err
 	})
