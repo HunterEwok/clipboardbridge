@@ -295,7 +295,7 @@ relay over SSH.
 
 - by hand on the controller (`go run ./tools/bench check`, `-build DIR reset` or `-quick
   reset` before each suite (section 13, "A test cycle"), `smoke`, `full`, `faults`, `away`,
-  `relay`, later `security` and `soak`; `all` runs check and then each suite after a quick
+  `relay`, `fleet`, later `security` and `soak`; `all` runs check and then each suite after a quick
   reset, and ends with the coverage table (`coverage.txt` beside the report); `coverage`
   prints that table alone and needs no devices; `-report DIR` writes `report.xml` and
   `report.txt`, `-only a,b` limits the run to some devices);
@@ -322,6 +322,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 | away | P11 (the away devices join by invitation through the hub and its forwarder, sync both ways, `cbb global off` and `on`), F6 (the hub's service stopped), P37 (the hub moved to an admin computer) and P36 (the root and the admin as several hubs); F7 (the forwarder stopped) only with `-stop-forwarder`, since other groups use it | ~15 min | before each release, after each change to the tunnel |
 | relay | P12: the members meet at the blind relay, sync, and a wrong key is refused | ~5 min | before each release, after each change to the relay |
 | faults | E7 (30% loss, 300 ms delay and reordering at the hub), E8 (a member's port blocked for a minute), E11 and U6 (a hung service), U5 (a stopped service: every command's message, in both modes), U7 (a damaged `identity.json`); each change has a timer on the device that takes it back | ~15 min | before each release |
+| fleet | full members in containers on the controller (`-cbb FILE`, a static Linux `cbb` of the build under test; `-fleet-size N`, 16 by default): the pairing window (G5, G6, G9), admins and their limits, freezing, removal and names (G20 to G23, G30, M5), a takeover and the new root admitting a computer (G26), leaving and joining again (G42), two groups side by side (G43, S13), a network split and a line of members (Y12, Y16), the modes (M3, M6), junk on the member port (D15, S14), many local clients (E5), restarts (E9) and many members (E3); every container and its network are removed after the run | ~20 min | before each release, after each change to groups or sync |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
 

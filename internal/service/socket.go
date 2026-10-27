@@ -44,8 +44,16 @@ func reply(c net.Conn, h control.Header, payload []byte) error {
 	return control.Write(c, &control.Message{Header: h, Payload: payload})
 }
 
+// fail answers a request with err. The cause of a pair.CauseError goes in
+// the detail, which cbb shows only in debug mode.
 func fail(c net.Conn, err error) {
-	reply(c, control.Header{Error: err.Error(), Done: true}, nil)
+	h := control.Header{Error: err.Error(), Done: true}
+	var ce *pair.CauseError
+	if errors.As(err, &ce) {
+		h.Detail = ce.Err.Error()
+		h.Error = strings.TrimSuffix(h.Error, ": "+h.Detail)
+	}
+	reply(c, h, nil)
 }
 
 // errNoGroup is the error for a request that needs a group.
