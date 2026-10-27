@@ -442,3 +442,29 @@ func TestCertLine(t *testing.T) {
 		t.Errorf("no certificate: %q", l)
 	}
 }
+
+func TestPasteReceiveFlags(t *testing.T) {
+	got := fakeService(t, control.Message{Header: control.Header{Done: true, Status: &control.Status{Paste: &control.Paste{On: true}}}})
+	var stdout, stderr bytes.Buffer
+	// The usage's order, on before its flags, and the flags first.
+	for _, args := range [][]string{{"on", "-console", "-enter"}, {"-console", "-enter", "on"}} {
+		if code := run(append([]string{"paste-receive"}, args...), strings.NewReader(""), &stdout, &stderr); code != 0 {
+			t.Fatalf("paste-receive %v: %d, %s", args, code, stderr.String())
+		}
+		if m := request(t, got); m.Op != control.OpReceive || m.Name != "on" || !m.Console || !m.Enter {
+			t.Errorf("paste-receive %v sent %+v", args, m.Header)
+		}
+	}
+	if code := run([]string{"paste-receive", "off", "-on", "deck"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("paste-receive off -on deck: %d, %s", code, stderr.String())
+	}
+	if m := request(t, got); m.Name != "off" || m.Device != "deck" {
+		t.Errorf("paste-receive off -on deck sent %+v", m.Header)
+	}
+	for _, args := range [][]string{{"on", "off"}, {"-console"}, {"on", "-console", "x"}} {
+		stderr.Reset()
+		if code := run(append([]string{"paste-receive"}, args...), strings.NewReader(""), &stdout, &stderr); code != 2 {
+			t.Errorf("paste-receive %v: %d, want the usage", args, code)
+		}
+	}
+}

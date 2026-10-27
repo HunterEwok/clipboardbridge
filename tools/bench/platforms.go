@@ -24,9 +24,9 @@ func serviceCmd(d *Device, action string) string {
 }
 
 // rootPrefix runs a command as root on the device: sudo, or nothing for
-// the router's root.
+// the router's root and a fleet member, which run as root.
 func rootPrefix(d *Device) string {
-	if d.OS == "openwrt" {
+	if d.OS == "openwrt" || d.OS == "fleet" {
 		return ""
 	}
 	return "sudo -n "

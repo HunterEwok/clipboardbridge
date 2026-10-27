@@ -388,7 +388,13 @@ func (s *Service) statusWithRemoved() *control.Status {
 	s.mu.Lock()
 	id := s.id
 	s.mu.Unlock()
-	if id != nil && s.allow(id.ID, []*x509.Certificate{id.Cert}) != nil {
+	if id == nil {
+		return st
+	}
+	switch err := s.allow(id.ID, []*x509.Certificate{id.Cert}); {
+	case errors.Is(err, group.ErrRecordsOnly):
+		st.TakenOverBy = s.takenOverBy(id)
+	case err != nil:
 		st.Removed = true
 	}
 	return st
@@ -844,10 +850,16 @@ func joinAddresses(port uint16, only func(string) bool) []string {
 	return all[:min(len(all), 4)]
 }
 
+// pairingSettle is how long a joiner listens for other pairing windows
+// after it found one.
+const pairingSettle = 2 * time.Second
+
 // findPairing returns the addresses of the one member that announces an
 // open pairing window, best first, browsing for up to browse. When
 // more than one announces a window, it refuses: the user gives the address
-// that pair showed.
+// that pair showed. Once one window is found it listens a little longer
+// (pairingSettle) for others, which answer the same query a moment later,
+// so that a code is never tried on another group's window.
 func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, browse)
 	defer cancel()
@@ -862,10 +874,12 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 				}
 			}
 			if len(open) > 0 {
+				// Only the newest set counts.
 				select {
-				case found <- open:
+				case <-found:
 				default:
 				}
+				found <- open
 			}
 		},
 	})
@@ -875,6 +889,17 @@ func (s *Service) findPairing(ctx context.Context, browse time.Duration) ([]stri
 	go d.Run(ctx)
 	select {
 	case open := <-found:
+		settle := time.NewTimer(pairingSettle)
+		defer settle.Stop()
+		for waiting := true; waiting; {
+			select {
+			case open = <-found:
+			case <-settle.C:
+				waiting = false
+			case <-ctx.Done():
+				waiting = false
+			}
+		}
 		if len(open) > 1 {
 			var ids []string
 			for _, p := range open {

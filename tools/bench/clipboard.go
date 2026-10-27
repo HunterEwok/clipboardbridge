@@ -76,7 +76,12 @@ func Copy(ctx context.Context, d *Device, text string) error {
 func Paste(ctx context.Context, d *Device) (string, error) {
 	switch d.Clipboard {
 	case "none":
-		return Run(ctx, d, cbbCmd(d)+" paste", "")
+		out, err := Run(ctx, d, cbbCmd(d)+" paste", "")
+		var re *RunError
+		if errors.As(err, &re) && strings.Contains(re.Output, "the clipboard is empty") {
+			return "", nil
+		}
+		return out, err
 	case "wayland":
 		// wl-paste waits for a focused window on a compositor without
 		// data-control (GNOME): give up on it soon, the case retries.

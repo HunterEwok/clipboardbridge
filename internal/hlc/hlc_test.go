@@ -67,6 +67,32 @@ func TestFloor(t *testing.T) {
 	}
 }
 
+func TestFloorAfterClockAhead(t *testing.T) {
+	now := time.UnixMilli(1_800_000_000_000)
+	day := 24 * time.Hour
+	for _, tt := range []struct {
+		name  string
+		mark  Timestamp
+		now   time.Time
+		reset bool
+	}{
+		{"behind", Timestamp{Wall: now.Add(-day).UnixMilli(), Logical: 3}, now, false},
+		{"6 days ahead", Timestamp{Wall: now.Add(6 * day).UnixMilli()}, now, false},
+		{"a year ahead", Timestamp{Wall: now.Add(365 * day).UnixMilli()}, now, true},
+		// A board without a real-time clock keeps its mark.
+		{"clock in 1970", Timestamp{Wall: now.UnixMilli()}, time.UnixMilli(5), false},
+	} {
+		got, reset := Floor(tt.mark, tt.now)
+		want := tt.mark
+		if tt.reset {
+			want = Timestamp{}
+		}
+		if reset != tt.reset || got != want {
+			t.Errorf("%s: Floor = %v, %v; want %v, %v", tt.name, got, reset, want, tt.reset)
+		}
+	}
+}
+
 func TestMarkIsSavedAhead(t *testing.T) {
 	ft := &fakeTime{ms: 1_000_000}
 	var saved []Timestamp

@@ -516,7 +516,11 @@ its time yet, refuses nothing.
   `w == r.wall`, `last = r` then `logical + 1`; else `last = (w, 0)`.
 - Persistence: before the clock reaches the last saved mark, the service saves a new mark
   10 000 ms ahead (file `hlc.mark` in the state directory, text form) and uses it as the
-  floor after a restart, so it never issues a timestamp below one it issued before.
+  floor after a restart, so it never issues a timestamp below one it issued before. A
+  saved mark more than MaxAhead ahead of a wall clock that reads 2026 or later is dropped
+  at the restart, and the clock starts from the wall clock: the device's clock was ahead and
+  has been set right, every member with a right clock refused those timestamps, and keeping
+  the mark would leave its copies refused until real time caught up (Go and the lite member).
 
 ### Ordering and the current event (wire)
 
@@ -1353,7 +1357,23 @@ an admin phone, never a computer; in a group a computer created an admin compute
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its
-iPhone CA.
+iPhone CA. The exception is a takeover from a root computer: the old root keeps its root key
+and its iPhone CA, and `cbb status` there names the admin that took over, since the old root
+may still be in use and undo it (rule 2) by removing that admin (`cbb revoke NAME`, a
+revocation its own key signs that names the admin CA).
+
+**The old root's records.** The takeover's revocation names the old root's member key, so
+the members refuse its connections, and its removal of the admin would reach no one. So a
+member keeps a connection with a peer whose member certificate the old root certified for
+its own device (its device record under that root names the key) while the takeover from
+that root counts, for records only: it sends its hello with no current event and nothing
+but its records digest, sends its records when the digests differ, takes `records` from
+the peer, and sends and takes nothing else (no events, credentials, commands, tunnel keys,
+hubs or iPhone CA). It closes the connection once the records it took let the peer in
+(the takeover no longer counts), or when no records came for 5 seconds; the peer connects
+again later, as a member if the takeover was undone. The old root learns of the takeover
+the same way. Only full members keep such a connection; the lite member and the phones
+refuse the old root, and take the records that undo the takeover from the others.
 
 **Upgrading a legacy group.** `cbb upgrade` on a member that holds the legacy group's keys,
 after every member runs this version:
