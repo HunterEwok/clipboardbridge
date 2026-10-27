@@ -106,10 +106,14 @@ fun WearHome(model: WearModel) {
                             )
                         }
                     }
-                    item { ListHeader { Text(stringResource(R.string.devices), color = palette.textDim) } }
-                    items(s.devices.size) { i ->
-                        val d = s.devices[i]
-                        DeviceRow(d, palette, if (model.admin && d.can.isNotEmpty()) ({ open = d.id }) else null)
+                    // The devices in no collection, then each of the phone's collections.
+                    for ((name, ds) in s.sections) {
+                        if (name != null && ds.isEmpty()) continue
+                        item { ListHeader { Text(name ?: stringResource(R.string.devices), color = palette.textDim) } }
+                        items(ds.size) { i ->
+                            val d = ds[i]
+                            DeviceRow(d, palette, if (model.admin && d.can.isNotEmpty()) ({ open = d.id }) else null)
+                        }
                     }
                     if (s.events.isNotEmpty()) {
                         item { ListHeader { Text(stringResource(R.string.latest), color = palette.textDim) } }

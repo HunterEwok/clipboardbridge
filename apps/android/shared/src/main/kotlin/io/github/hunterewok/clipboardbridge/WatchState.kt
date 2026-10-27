@@ -24,7 +24,11 @@ data class WatchState(
     /** Whether the phone shows the error under its messages (its Settings); the watch does as it does. */
     val details: Boolean = false,
 ) {
-    /** can: what this watch may do to it (the kit's PhoneGroup.WatchAction keys); actions: the quick actions it has on, while connected. */
+    /**
+     * can: what this watch may do to it (the kit's PhoneGroup.WatchAction
+     * keys); actions: the quick actions it has on, while connected;
+     * collection: the name of the phone's collection it is in, if any.
+     */
     data class Device(
         val id: String,
         val name: String,
@@ -32,7 +36,25 @@ data class WatchState(
         val online: Boolean,
         val can: List<String> = emptyList(),
         val actions: List<String> = emptyList(),
+        val collection: String? = null,
     )
+
+    /**
+     * The devices as the watch lists them: those in no collection, then
+     * each of the phone's collections in its order (docs/apps.md,
+     * "Collections and the order of the tiles"). The phone sends a
+     * collection's devices one after another.
+     */
+    val sections: List<Pair<String?, List<Device>>>
+        get() {
+            val out = mutableListOf<Pair<String?, List<Device>>>(null to devices.filter { it.collection == null })
+            for (d in devices) {
+                val c = d.collection ?: continue
+                val last = out.last()
+                if (out.size > 1 && last.first == c) out[out.size - 1] = c to last.second + d else out += c to listOf(d)
+            }
+            return out
+        }
 
     /** The watch's ask that the phone build the body of an emergency action (docs/protocol.md, section 10, rule 8). */
     data class Ask(val action: String, val device: String, val name: String?, val watch: String) {
@@ -169,6 +191,7 @@ data class WatchState(
                 devices.map {
                     JSONObject().put("id", it.id).put("name", it.name).put("form", it.form).put("online", it.online)
                         .put("can", JSONArray(it.can)).put("actions", JSONArray(it.actions))
+                        .put("collection", it.collection ?: JSONObject.NULL)
                 },
             ),
         )
@@ -225,6 +248,7 @@ data class WatchState(
                         Device(
                             d.getString("id"), d.getString("name"), d.optString("form", "other"), d.optBoolean("online"),
                             strings(d.optJSONArray("can")), strings(d.optJSONArray("actions")),
+                            if (d.isNull("collection")) null else d.getString("collection"),
                         )
                     },
                     away = if (o.isNull("away")) null else Away.of(o.optString("away")),

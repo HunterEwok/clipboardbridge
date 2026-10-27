@@ -368,6 +368,19 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(WatchState([:]))
     }
 
+    /// The watch lists the devices in no collection first, then each
+    /// collection in the phone's order.
+    func testWatchSections() {
+        func d(_ id: String, _ c: String? = nil) -> WatchState.Device {
+            .init(id: id, name: id, symbol: "desktopcomputer", online: true, collection: c)
+        }
+        var s = WatchState()
+        s.devices = [d("a"), d("b", "Office"), d("c", "Office"), d("e"), d("f", "Home")]
+        XCTAssertEqual(s.sections.map(\.name), [nil, "Office", "Home"])
+        XCTAssertEqual(s.sections.map { $0.devices.map(\.id) }, [["a", "e"], ["b", "c"], ["f"]])
+        XCTAssertEqual(WatchState(s.data), s)
+    }
+
     /// A phone stays upright, a foldable's inner screen turns but not upside
     /// down, an iPad turns every way, split view and Stage Manager included.
     func testOrientations() {

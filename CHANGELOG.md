@@ -29,6 +29,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The Mac app arranges the devices as well, with the Swift kit's model: Arrange devices
   in the toolbar, drag and drop, the same changes in each tile's right-click menu and
   VoiceOver's actions, and Option with the arrow keys for the focused tile.
+- The Apple Watch and the Wear OS watch list their phone's devices in its order: those
+  in no collection, then a section for each collection.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,

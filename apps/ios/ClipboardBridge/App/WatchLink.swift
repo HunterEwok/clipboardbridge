@@ -92,9 +92,16 @@ final class WatchLink: NSObject {
     static func state(_ model: AppModel) -> WatchState {
         var s = WatchState()
         s.hasGroup = model.phase == .home
-        s.devices = model.devices.filter { !$0.isSelf }.map {
-            WatchState.Device(id: $0.id, name: $0.name, symbol: $0.kind.symbol, online: $0.online,
-                              can: model.group.watchActions(for: $0.id), actions: $0.actions)
+        // In the user's order, a collection's devices one after another.
+        let arranged: [(AppModel.Computer, String?)] = model.arranged.flatMap { item -> [(AppModel.Computer, String?)] in
+            switch item {
+            case .device(let d): [(d, nil)]
+            case .collection(let c, let ds): ds.map { ($0, c.name) }
+            }
+        }
+        s.devices = arranged.map { d, c in
+            WatchState.Device(id: d.id, name: d.name, symbol: d.kind.symbol, online: d.online,
+                              can: model.group.watchActions(for: d.id), actions: d.actions, collection: c)
         }
         s.away = model.away.map { a in
             guard a.on else { return .off }
