@@ -29,6 +29,7 @@ mod service;
 mod tls;
 #[cfg(feature = "tunnel")]
 mod tunnel;
+mod update;
 mod uptime;
 mod wire;
 
@@ -86,6 +87,15 @@ Commands:
                        clipboardbridge-console unit the one for the console.
   next paste|copy|join The same for the ZX Spectrum Next's .cbb dot command,
                        in frames its Z80 reads (lite/README.md).
+  update [-check]      Install the newest signed release, with sudo; -check
+                       only says whether there is one. The previous version
+                       goes back when the new one does not start.
+  update -auto [on|off]
+                       Show, or turn on or off, updating once a day by
+                       itself (a systemd timer, or cron on OpenWrt).
+  update -mirror [URL|default]
+                       Show or set where updates come from: GitHub, then
+                       dl.cbb.tools, or another https:// mirror.
   version              Print the version and that this is the lite member.
   help                 Print this help.
 
@@ -157,6 +167,7 @@ fn main() {
                 "paste-receive" => cmd_paste_receive(&g, rest),
                 "action" => cmd_action(&g, rest),
                 "paste-helper" => pastehelper::run(&g.socket, rest),
+                "update" => cmd_update(&g, rest),
                 "version" | "-version" | "--version" => {
                     println!(
                         "cbb {} ({}/{}), the lite member",
@@ -876,6 +887,258 @@ fn cmd_watch(g: &Global, args: &[String]) -> Result<()> {
         out.flush().ok();
     }
     Err(Error::msg("the service stopped"))
+}
+
+/// cbb update: checks for and installs the newest signed release
+/// (update.rs), and sets automatic updates and the mirror.
+fn cmd_update(g: &Global, args: &[String]) -> Result<()> {
+    const USAGE: &str = "usage: cbb update [-check] | -auto [on|off] | -mirror [URL|default]";
+    let (mut check, mut timer) = (false, false);
+    let (mut auto, mut mirror, mut method): (Option<String>, Option<String>, Option<String>) = (None, None, None);
+    let mut i = 0;
+    while i < args.len() {
+        let value = |i: &mut usize| -> String {
+            match args.get(*i + 1) {
+                Some(v) if !v.starts_with('-') => {
+                    *i += 1;
+                    v.clone()
+                }
+                _ => String::new(),
+            }
+        };
+        match flag(&args[i]) {
+            Some("check") => check = true,
+            Some("timer") => timer = true,
+            Some("auto") => auto = Some(value(&mut i)),
+            Some("mirror") => mirror = Some(value(&mut i)),
+            Some("installed-by") => method = Some(value(&mut i)),
+            _ => return Err(Error::msg(USAGE)),
+        }
+        i += 1;
+    }
+    let modes = [check || timer, auto.is_some(), mirror.is_some(), method.is_some()].iter().filter(|b| **b).count();
+    if modes > 1 || (check && timer) {
+        return Err(Error::msg(USAGE));
+    }
+    let root = is_root();
+    let need_root = || Err(Error::msg("run it with sudo"));
+    let (dir, work) = update::paths();
+    let mut st = if root { update::load_state(&dir)? } else { update::State::default() };
+    let exe = std::env::current_exe().context("cannot find this program")?;
+    if let Some(m) = method {
+        if !["get", "brew", "winget", "docker", "package"].contains(&m.as_str()) {
+            return Err(Error::msg("-installed-by takes get, brew, winget, docker or package"));
+        }
+        if !root {
+            return need_root();
+        }
+        st.method = m;
+        return update::save_state(&dir, &st);
+    }
+    let method = if st.method.is_empty() { "get" } else { st.method.as_str() }.to_string();
+    if let Some(a) = auto {
+        if !root {
+            return need_root();
+        }
+        let on = match a.as_str() {
+            "" => {
+                println!(
+                    "{}",
+                    match st.auto {
+                        None => "unset",
+                        Some(true) => "on",
+                        Some(false) => "off",
+                    }
+                );
+                return Ok(());
+            }
+            "on" => true,
+            "off" => false,
+            _ => return Err(Error::msg("-auto takes on or off")),
+        };
+        if on && method != "get" {
+            return Err(Error::msg(format!(
+                "this copy came from {method}, which updates it: {}",
+                method_command(&method)
+            )));
+        }
+        update::set_timer(on, &exe)?;
+        st.auto = Some(on);
+        update::save_state(&dir, &st)?;
+        println!(
+            "{}",
+            if on {
+                "Automatic updates are on: once a day this device checks for a signed release and installs it."
+            } else {
+                "Automatic updates are off; cbb update installs a release by hand."
+            }
+        );
+        return Ok(());
+    }
+    if let Some(m) = mirror {
+        if !root {
+            return need_root();
+        }
+        match m.as_str() {
+            "" if st.mirror.is_empty() => {
+                println!("Updates come from GitHub, or {} when GitHub does not answer.", update::MIRROR)
+            }
+            "" => println!("Updates come from {}.", st.mirror),
+            "default" => {
+                st.mirror.clear();
+                update::save_state(&dir, &st)?;
+            }
+            url => {
+                update::Source::mirror(url)?;
+                st.mirror = url.trim_end_matches('/').into();
+                update::save_state(&dir, &st)?;
+            }
+        }
+        return Ok(());
+    }
+    if !check && !root {
+        return need_root();
+    }
+
+    // The timer logs to update.log, each line stamped.
+    let log_file = if timer {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("update.log");
+        if std::fs::metadata(&path).map(|m| m.len() > 1 << 20).unwrap_or(false) {
+            let _ = std::fs::rename(&path, dir.join("update.log.old"));
+        }
+        std::fs::OpenOptions::new().create(true).append(true).open(&path).ok().map(std::cell::RefCell::new)
+    } else {
+        None
+    };
+    let log = |line: &str| {
+        if let Some(f) = &log_file {
+            let _ = writeln!(f.borrow_mut(), "{} {line}", stamp(update::now_ms()));
+        }
+        println!("{line}");
+    };
+    if timer && !update::due(&st, update::now_ms()) {
+        return Ok(());
+    }
+    let res = (|| -> Result<()> {
+        let (roots, sources) = match std::env::var_os("CBB_RELEASE_DIR") {
+            Some(d) => {
+                let roots = match std::env::var_os("CBB_RELEASE_ROOTS") {
+                    Some(f) => update::read_roots(std::path::Path::new(&f))?,
+                    None => update::ROOTS.iter().map(|r| r.to_vec()).collect(),
+                };
+                (roots, vec![update::Source::Dir(PathBuf::from(d))])
+            }
+            None => (update::ROOTS.iter().map(|r| r.to_vec()).collect(), update::Source::defaults(&st.mirror)?),
+        };
+        let archive = update::archive_name()
+            .ok_or_else(|| Error::msg(format!("there is no lite member's release for {}", std::env::consts::ARCH)))?;
+        let status = || -> Result<String> {
+            let m = request(
+                g,
+                &control::Message::new(control::Header { op: "version".into(), ..Default::default() }, Vec::new()),
+            )?;
+            Ok(m.header.status.map(|s| s.version).unwrap_or_default())
+        };
+        let healthy = |v: &str, within: Duration| update::wait_healthy(&status, v, within);
+        let work =
+            if root { work.clone() } else { std::env::temp_dir().join(format!("cbb-update-{}", std::process::id())) };
+        let _ = std::fs::create_dir_all(&work);
+        let u = update::Updater {
+            work: work.clone(),
+            roots,
+            sources,
+            installed: service::VERSION.into(),
+            archive,
+            program: exe.clone(),
+            now_ms: update::now_ms(),
+            install: &update::install,
+            healthy: &healthy,
+            log: &log,
+        };
+        let found = u.check(&st);
+        if !root {
+            let _ = std::fs::remove_dir_all(&work);
+        }
+        let found = match found {
+            Err(e) if timer && e.message().starts_with("this build pins no release keys") => return Ok(()),
+            r => r.map_err(|e| update::prefixed(e, "checking for an update"))?,
+        };
+        let r = &found.release;
+        if root {
+            st.seen = found.seen.clone();
+            st.checked_ms = update::now_ms();
+            st.available = if found.newer && !found.failed { r.version.clone() } else { String::new() };
+            update::save_state(&dir, &st)?;
+        }
+        let v = service::VERSION;
+        match () {
+            _ if !found.newer => {
+                log(&format!("Clipboard Bridge {} is the newest release; this device runs {v}.", r.version))
+            }
+            _ if method != "get" => {
+                if !timer {
+                    log(&format!(
+                        "Clipboard Bridge {} is available; this device runs {v}. It came from {method}, which updates it: {}",
+                        r.version,
+                        method_command(&method)
+                    ));
+                }
+            }
+            _ if check => log(&format!(
+                "Clipboard Bridge {} is available; this device runs {v}. To install it: sudo cbb update",
+                r.version
+            )),
+            _ if v == "dev" => {
+                return Err(Error::msg(format!(
+                    "this is a development build; cbb update installs {} only over a release",
+                    r.version
+                )));
+            }
+            _ if found.failed && timer => {
+                log(&format!("Skipping {}, which did not start here before; cbb update tries it again.", r.version))
+            }
+            _ => {
+                if found.failed {
+                    log(&format!("{} did not start here before; trying it again.", r.version));
+                }
+                let res = u.apply(found.source, &mut st, r);
+                update::save_state(&dir, &st)?;
+                return res;
+            }
+        }
+        Ok(())
+    })();
+    if let (Err(e), true) = (&res, timer) {
+        log(&format!("cbb update: {}", e.for_user()));
+    }
+    res
+}
+
+/// The command that updates a copy from method.
+fn method_command(method: &str) -> &'static str {
+    match method {
+        "package" => "apk update && apk upgrade",
+        "docker" => "docker compose pull && docker compose up -d",
+        _ => "its own update command",
+    }
+}
+
+/// A time in UTC as 2006-01-02T15:04:05Z, for the update log.
+fn stamp(ms: i64) -> String {
+    let secs = ms.div_euclid(1000);
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem / 60 % 60, rem % 60)
 }
 
 #[cfg(test)]

@@ -441,6 +441,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
         if (model.phase == AppModel.Phase.HOME && model.devices.any { it.isSelf && it.isRoot }) WatchSection(model)
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
+        UpdateSection(model)
         Section(stringResource(R.string.about)) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }
             // Seven taps on the version show the error details switch, as
@@ -484,6 +485,58 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge")))
                 }.padding(Tokens.spacingMedium),
             )
+        }
+    }
+}
+
+/**
+ * The app's own update when it came from a release (ApkUpdate): what the
+ * last check found, the button for the next step, and the switch for
+ * automatic updates. A copy from a store, or a build without release
+ * keys, shows nothing.
+ */
+@Composable
+private fun UpdateSection(model: AppModel) {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    val state = model.apkState
+    if (state is ApkUpdate.State.Store || state is ApkUpdate.State.NoKeys) return
+    var auto by remember { mutableStateOf(model.apkUpdate.automatic) }
+    Section(stringResource(R.string.update)) {
+        Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+            val line = when (state) {
+                is ApkUpdate.State.Checking -> stringResource(R.string.update_checking)
+                is ApkUpdate.State.UpToDate -> stringResource(R.string.update_up_to_date, state.version)
+                is ApkUpdate.State.Available -> stringResource(R.string.update_available, state.version)
+                is ApkUpdate.State.Installing -> stringResource(R.string.update_installing, state.version)
+                is ApkUpdate.State.TooOld -> stringResource(R.string.update_too_old, state.version, state.minFrom)
+                is ApkUpdate.State.Failed -> stringResource(R.string.update_failed)
+                else -> null
+            }
+            line?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = if (state is ApkUpdate.State.Failed) palette.danger else palette.text) }
+            if (state is ApkUpdate.State.Failed && model.settings.showsErrorDetails) {
+                Text(state.error.toString(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = palette.textDim)
+            }
+            when (state) {
+                is ApkUpdate.State.Available -> TextButton(onClick = { model.apkUpdate.install() }) { Text(stringResource(R.string.update_install, state.version)) }
+                is ApkUpdate.State.TooOld -> TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge/releases")))
+                }) { Text(stringResource(R.string.update_releases)) }
+                is ApkUpdate.State.Checking, is ApkUpdate.State.Installing -> {}
+                else -> TextButton(onClick = { model.apkUpdate.start(install = false) }) { Text(stringResource(R.string.update_check)) }
+            }
+            HorizontalDivider(color = palette.grid)
+            Row(
+                Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch) {
+                    auto = !auto
+                    model.apkUpdate.automatic = auto
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.update_auto), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Switch(checked = auto, onCheckedChange = null)
+            }
+            Text(stringResource(R.string.update_auto_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
         }
     }
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
+	signed "github.com/HunterEwok/clipboardbridge/internal/release"
 	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
@@ -1172,5 +1173,96 @@ func TestCommandsPassThroughAMember(t *testing.T) {
 	case who := <-got:
 		t.Errorf("%s carried out a command again", who)
 	default:
+	}
+}
+
+// releaseStore is a ReleaseStore that takes a release whose channel seq is
+// higher, without checking signatures, and reports what it took.
+type releaseStore struct {
+	mu    sync.Mutex
+	cur   *ReleaseSet
+	seq   uint64
+	added chan uint64
+}
+
+func newReleaseStore() *releaseStore { return &releaseStore{added: make(chan uint64, 16)} }
+
+func releaseSet(t *testing.T, seq uint64) *ReleaseSet {
+	t.Helper()
+	body, err := json.Marshal(signed.Channel{V: 1, Type: "channel", Channel: "stable", Seq: seq})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &ReleaseSet{Keys: signed.File{Body: []byte("{}")}, Channel: signed.File{Body: body}, Release: signed.File{Body: []byte("{}")}}
+}
+
+func (r *releaseStore) Current() (*ReleaseSet, uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cur, r.seq
+}
+
+func (r *releaseStore) Add(_ group.DeviceID, s ReleaseSet) bool {
+	var c signed.Channel
+	if json.Unmarshal(s.Channel.Body, &c) != nil {
+		return false
+	}
+	r.mu.Lock()
+	newer := c.Seq > r.seq
+	if newer {
+		r.cur, r.seq = &s, c.Seq
+	}
+	r.mu.Unlock()
+	if newer {
+		r.added <- c.Seq
+	}
+	return newer
+}
+
+func withReleases(r *releaseStore) option {
+	return func(_ *clip.Config, nc *Config) { nc.Releases = r }
+}
+
+// TestReleaseSpreads links a, b and c in a chain: the release a holds
+// reaches c through b after the hellos, and a newer one a takes later
+// follows the same way; b never takes an older one back.
+func TestReleaseSpreads(t *testing.T) {
+	stores := []*releaseStore{newReleaseStore(), newReleaseStore(), newReleaseStore()}
+	var ms []*member
+	for _, st := range stores {
+		ms = append(ms, newMember(t, Full, withReleases(st)))
+	}
+	a, b, c := ms[0], ms[1], ms[2]
+	stores[0].Add("", *releaseSet(t, 3))
+	<-stores[0].added
+
+	link(t, b, c)
+	link(t, a, b)
+	for i, st := range stores[1:] {
+		select {
+		case seq := <-st.added:
+			if seq != 3 {
+				t.Fatalf("store %d took seq %d, want 3", i+1, seq)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("store %d got no release", i+1)
+		}
+	}
+
+	stores[0].Add("", *releaseSet(t, 4))
+	<-stores[0].added
+	a.SendRelease(releaseSet(t, 4))
+	for i, st := range stores[1:] {
+		select {
+		case seq := <-st.added:
+			if seq != 4 {
+				t.Fatalf("store %d took seq %d, want 4", i+1, seq)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("store %d got no newer release", i+1)
+		}
+	}
+	if stores[1].Add("", *releaseSet(t, 2)) {
+		t.Error("b took an older release")
 	}
 }

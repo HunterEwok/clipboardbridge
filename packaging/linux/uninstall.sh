@@ -8,7 +8,8 @@
 #
 # It stops the service and the desktop agents and removes the binary, the
 # unit, the agent's user unit and autostart entry, the tmux and console
-# configuration, the settings in /etc/clipboardbridge and the firewall rules
+# configuration, the update timer and cbb update's folder, the settings in
+# /etc/clipboardbridge and the firewall rules
 # that install.sh added, and only those. The device's keys and
 # group, in /var/lib/clipboardbridge, stay for a reinstall unless --purge; the
 # clipboardbridge user and group stay too, since files may still belong to them.
@@ -47,6 +48,7 @@ if command -v systemctl >/dev/null 2>&1; then
 	systemctl disable --now clipboardbridge-console.service >/dev/null 2>&1 || true
 	systemctl disable --now clipboardbridge-uinput.service >/dev/null 2>&1 || true
 	systemctl disable --now clipboardbridge.service >/dev/null 2>&1 || true
+	systemctl disable --now clipboardbridge-update.timer >/dev/null 2>&1 || true
 fi
 # The desktop agent runs in each user's session, from the user unit or the
 # autostart entry; it stops here too, or it would keep the clipboard until
@@ -72,6 +74,7 @@ rm -f /etc/systemd/system/clipboardbridge.service.d/away.conf /etc/systemd/syste
 rmdir /etc/systemd/system/clipboardbridge.service.d 2>/dev/null || true
 rm -f /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-console.service \
 	/etc/systemd/system/clipboardbridge-uinput.service /etc/modules-load.d/clipboardbridge-uinput.conf \
+	/etc/systemd/system/clipboardbridge-update.service /etc/systemd/system/clipboardbridge-update.timer \
 	/etc/xdg/autostart/clipboardbridge-desktop.desktop \
 	/etc/systemd/user/clipboardbridge-agent.service \
 	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb
@@ -84,7 +87,9 @@ if [ -f /etc/tmux.conf ]; then
 	cat /etc/tmux.conf.clipboardbridge >/etc/tmux.conf
 	rm -f /etc/tmux.conf.clipboardbridge
 fi
-rm -rf "$share" /etc/clipboardbridge
+# cbb update's folder: the answer about automatic updates, what it has
+# seen and the previous programs.
+rm -rf "$share" /etc/clipboardbridge /var/lib/clipboardbridge-update
 if [ "$purge" = yes ]; then
 	rm -rf /var/lib/clipboardbridge
 	echo "Clipboard Bridge is removed, with this device's keys; it left its group."

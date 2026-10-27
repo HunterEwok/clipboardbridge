@@ -31,6 +31,7 @@ class ReleasesTest {
             got.getOrNull()?.let { (r, next) ->
                 assertEquals(c.str("version"), r.version, name)
                 assertEquals(r.version, next.version, name)
+                assertEquals(r.version, Releases.named(file("channel")), name)
                 assertTrue(r.direct("0.5.3") && !r.direct("0.3.9"), name)
             }
         }

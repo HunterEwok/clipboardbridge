@@ -151,7 +151,10 @@ function render() {
   renderAway(inGroup ? s.status.away : undefined, inGroup);
   for (const b of document.querySelectorAll("[data-layout]")) b.setAttribute("aria-checked", String(b.dataset.layout === s.settings.layout));
   $("bar").hidden = !inGroup;
-  $("send").disabled = $("fetch").disabled = s.busy;
+  $("send").disabled = $("fetch").disabled = $("update").disabled = s.busy;
+  // The newest release the group passed around, when this computer runs an older one.
+  $("update").hidden = !s.status?.update;
+  $("update").textContent = s.status?.update ? t("Update to %s", s.status.update) : "";
   $("message").textContent = s.message ?? "";
 
   // The details first: the orbits fit the room they leave.
@@ -380,6 +383,7 @@ document.addEventListener("click", async (e) => {
     case "close": selected = null; return render();
     case "send": case "orbit-send": return act("Send");
     case "fetch": return act("Fetch");
+    case "update": return act("Update");
     case "add": return $("add-dialog").showModal();
     case "settings": renderSettings(); return $("settings-dialog").showModal();
   }

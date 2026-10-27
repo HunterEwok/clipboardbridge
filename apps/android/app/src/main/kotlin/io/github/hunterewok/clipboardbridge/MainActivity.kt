@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // The phone is the group's hub while the app is open (D-64).
         model.group.setForeground(true)
+        model.apkUpdate.runIfDue()
     }
 
     override fun onStop() {

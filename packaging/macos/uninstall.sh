@@ -9,7 +9,8 @@
 # It stops the service and the pasteboard agent of every user and removes
 # their plists, the service's entry in the application firewall, the binary
 # in /usr/local/bin (but not Homebrew's link there: brew uninstall removes
-# that), the settings in /etc/clipboardbridge and the logs. The device's keys and group, in
+# that), the update timer and cbb update's folder, the settings in
+# /etc/clipboardbridge and the logs. The device's keys and group, in
 # /Library/Application Support/clipboardbridge/state, stay for a reinstall
 # unless --purge; the hidden _clipboardbridge user and group stay too, since
 # files may still belong to them.
@@ -45,6 +46,7 @@ fi
 daemon=io.github.hunterewok.clipboardbridge
 agent=io.github.hunterewok.clipboardbridge.agent
 launchctl bootout "system/$daemon" 2>/dev/null || true
+launchctl bootout "system/$daemon.update" 2>/dev/null || true
 # The agent runs in each signed-in user's session.
 for uid in $(ps -axo uid=,comm= | awk '$2 ~ /(^|\/)cbb$/ { print $1 }' | sort -u); do
 	launchctl bootout "gui/$uid/$agent" 2>/dev/null || true
@@ -52,7 +54,8 @@ done
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	launchctl bootout "gui/$(id -u "$SUDO_USER")/$agent" 2>/dev/null || true
 fi
-rm -f "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchAgents/$agent.plist"
+rm -f "/Library/LaunchDaemons/$daemon.plist" "/Library/LaunchDaemons/$daemon.update.plist" "/Library/LaunchAgents/$agent.plist"
+rm -rf "/Library/Application Support/clipboardbridge-update"
 if [ -f /usr/local/bin/cbb ] && [ ! -L /usr/local/bin/cbb ]; then
 	rm -f /usr/local/bin/cbb
 fi

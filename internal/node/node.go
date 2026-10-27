@@ -133,6 +133,9 @@ type Config struct {
 	// Credentials, if set, keeps the group's server credentials, which go
 	// to every peer after its hello.
 	Credentials CredentialStore
+	// Releases, if set, keeps the newest signed release, which goes to
+	// every peer whose hello names an older one.
+	Releases ReleaseStore
 
 	// TunnelKey, if set, is this member's WireGuard public key, which its
 	// hello offers the group's hubs, with TunnelPSK, its own preshared key.
@@ -191,6 +194,18 @@ type CredentialStore interface {
 	// Add takes the credentials a peer sent and returns those that were
 	// new and valid, which go on to the other peers.
 	Add(from group.DeviceID, cs []group.Credential) []group.Credential
+}
+
+// A ReleaseStore keeps the newest signed release the group passes around
+// (docs/protocol.md, section 16, "In the group"). Its methods are called
+// from connection goroutines.
+type ReleaseStore interface {
+	// Current returns the release it holds and the seq of its channel
+	// file; nil and 0 for none.
+	Current() (*ReleaseSet, uint64)
+	// Add takes a release a peer sent and reports whether it checks out
+	// and is newer than the one held, and so goes on to the other peers.
+	Add(from group.DeviceID, r ReleaseSet) bool
 }
 
 // Write is a text, or images or files, to put into the member's own
@@ -1008,6 +1023,27 @@ func (n *Node) sendCredentials(cs []group.Credential, from *conn) {
 	}
 }
 
+// SendRelease sends a signed release this member took, from cbb update, to
+// the peers.
+func (n *Node) SendRelease(r *ReleaseSet) { n.sendRelease(r, nil) }
+
+// sendRelease sends a release to every connection that sent its hello,
+// except the one it came from.
+func (n *Node) sendRelease(r *ReleaseSet, from *conn) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, c := range n.conns {
+		if c != from && takesRelease(c.role()) {
+			c.enqueue(outgoing{release: r})
+		}
+	}
+}
+
+// takesRelease reports whether a peer of the role gets the group's
+// release: the computers and the lite members; the phones' apps update
+// from their stores.
+func takesRelease(r Role) bool { return r == Full || r == Lite }
+
 // sendRecords sends records to every connection that sent its hello,
 // except the one they came from.
 func (n *Node) sendRecords(rs []group.Record, from *conn) {
@@ -1129,6 +1165,7 @@ type outgoing struct {
 	issuer  *x509.Certificate // the admin CA that issued cert; nil for the group CA
 	records []group.Record
 	creds   []group.Credential
+	release *ReleaseSet
 	tunnel  *TunnelOffer
 	admin   *x509.Certificate // an admin CA for the peer
 	phoneCA *group.CA         // the iPhone CA with its key
@@ -1288,6 +1325,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
+		if st := c.n.cfg.Releases; st != nil {
+			_, out.ReleaseSeq = st.Current()
+		}
 		if k := c.n.tunnelKey.Load(); k != nil {
 			out.TunnelKey, out.TunnelPSK = k[0], k[1]
 		}
@@ -1306,6 +1346,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 		return &message{Type: typeRecs, Records: o.records}, nil
 	case o.creds != nil:
 		return &message{Type: typeCreds, Credentials: o.creds}, nil
+	case o.release != nil:
+		return &message{Type: typeRelease, Release: o.release}, nil
 	case o.tunnel != nil:
 		return &message{Type: typeTun, Tunnel: o.tunnel}, nil
 	case o.admin != nil:
@@ -1490,6 +1532,11 @@ func (c *conn) reader() error {
 					c.enqueue(outgoing{creds: all})
 				}
 			}
+			if st := c.n.cfg.Releases; st != nil {
+				if r, seq := st.Current(); r != nil && seq > extra.ReleaseSeq && takesRelease(c.role()) {
+					c.enqueue(outgoing{release: r})
+				}
+			}
 			c.n.offerTunnel(c, extra.TunnelKey, extra.TunnelPSK)
 			c.n.sharePhoneCA(c)
 			for i := range c.n.cfg.Evidence {
@@ -1564,6 +1611,10 @@ func (c *conn) reader() error {
 				if fresh := st.Add(c.id, m.Credentials); len(fresh) > 0 {
 					c.n.sendCredentials(fresh, c)
 				}
+			}
+		case typeRelease:
+			if st := c.n.cfg.Releases; st != nil && m.Release != nil && st.Add(c.id, *m.Release) {
+				c.n.sendRelease(m.Release, c)
 			}
 		case typeCommand:
 			if m.Command != nil {
