@@ -396,11 +396,16 @@ Steps:
    the processes with ps, since FreeBSD has no logind, and refuses keys on GNOME, whose lock
    screen nothing else tells. The RemoteDesktop portal, the ei protocol and uinput stay on
    Linux. The CI job runs the X11 tests under Xvfb in the virtual machine.
-4. OPNsense and pfSense as the hub, after the OpenWrt steps: an OPNsense `plugins.inc.d` hook
-   in our own package, from our own pkg repository on `cbb.tools` and kept in this
-   repository under the AGPL; printed rules only, unsupported, on pfSense; the port in the
-   ports tree after one release in the field. First check whether OPNsense's mdns-repeater,
-   which binds port 5353 without `SO_REUSEPORT`, leaves room for the service's socket.
+4. OPNsense and pfSense as the hub. Done: the OPNsense `plugins.inc.d` hook, kept here under
+   the AGPL, which the installer adds and which names the service's pf anchor in
+   OPNsense's ruleset and lists the service; printed rules only, unsupported, on pfSense,
+   with an rc.d `clipboardbridge.sh` since pfSense starts only those. The check of port
+   5353: FreeBSD lets a socket share a port with another user's only when root opened it,
+   so the service opens its mDNS sockets as root and then runs as its user, which shares
+   the port with avahi; mdns-repeater sets no `SO_REUSEPORT`, so it and the service still
+   exclude each other, and the guide says to turn it off. Still to come: our own pkg
+   repository on `cbb.tools`, and the port in the ports tree after one release in the
+   field.
 
 ## Devices that are hard to type into
 

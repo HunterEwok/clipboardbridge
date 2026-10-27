@@ -49,7 +49,13 @@ if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close
 	sh "$share/firewall.sh" hub-close
 fi
-rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/bin/cbb /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/etc/rc.d/clipboardbridge.sh /usr/local/bin/cbb \
+	/usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+# OPNsense: without the hook, the next filter reload drops the anchor.
+if [ -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc ]; then
+	rm -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
+	configctl filter reload >/dev/null 2>&1 || true
+fi
 rm -rf "$share" /usr/local/etc/clipboardbridge /var/run/clipboardbridge
 if [ "$purge" = yes ]; then
 	rm -rf /var/db/clipboardbridge

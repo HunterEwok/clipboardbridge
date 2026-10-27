@@ -25,6 +25,11 @@
 # numbers 10500 and up, which close deletes as a whole; ipfw forgets them on
 # a reboot, so the rc.d script runs reload. What open did is kept in
 # /usr/local/etc/clipboardbridge/firewall, the hub's port in firewall.hub.
+#
+# OPNsense writes pf's whole ruleset at each filter reload, so pf.conf is
+# not used there: the plugin hook clipboardbridge.inc names the anchor in
+# OPNsense's ruleset, and the rules go into the anchor as above. pfSense
+# gets the rules printed, to add in Firewall > Rules: it is unsupported.
 set -eu
 export LC_ALL=C
 
@@ -43,10 +48,22 @@ usage() {
 	exit 2
 }
 
-# kind prints the firewall that filters incoming packets here: pf, ipfw or
-# none. With both, pf.
+# appliance prints opnsense or pfsense on those firewalls, else nothing.
+appliance() {
+	if [ -f /usr/local/opnsense/version/core ]; then
+		echo opnsense
+	elif grep -qi pfsense /etc/platform 2>/dev/null; then
+		echo pfsense
+	fi
+}
+
+# kind prints the firewall that filters incoming packets here: opnsense or
+# pfsense on those, else pf, ipfw or none. With both, pf.
 kind() {
-	if kldstat -q -m pf 2>/dev/null && pfctl -s info 2>/dev/null | grep -q '^Status: Enabled'; then
+	a=$(appliance)
+	if [ -n "$a" ]; then
+		echo "$a"
+	elif kldstat -q -m pf 2>/dev/null && pfctl -s info 2>/dev/null | grep -q '^Status: Enabled'; then
 		echo pf
 	elif kldstat -q -m ipfw 2>/dev/null && [ "$(sysctl -n net.inet.ip.fw.enable 2>/dev/null)" = 1 ]; then
 		echo ipfw
@@ -100,8 +117,13 @@ pf_lines() {
 	echo "load anchor \"clipboardbridge\" from \"$anchorfile\""
 }
 
-# pf_hook adds the lines that make pf read the anchor, once.
+# pf_hook adds the lines that make pf read the anchor, once; on OPNsense
+# a filter reload runs the plugin hook, which names it.
 pf_hook() {
+	if [ "$(appliance)" = opnsense ]; then
+		pfctl -s rules 2>/dev/null | grep -q 'anchor "clipboardbridge"' || configctl filter reload >/dev/null
+		return
+	fi
 	if ! grep -qxF "$mark" "$pfconf" 2>/dev/null; then
 		pf_lines >>"$pfconf"
 		pfctl -f "$pfconf"
@@ -109,6 +131,7 @@ pf_hook() {
 }
 
 pf_unhook() {
+	[ "$(appliance)" != opnsense ] || return 0
 	[ -f "$pfconf" ] && grep -qxF "$mark" "$pfconf" || return 0
 	tmp=$(mktemp)
 	pf_lines >"$tmp.lines"
@@ -153,7 +176,7 @@ apply() {
 	k=$(head -n 1 "$state" 2>/dev/null | cut -d' ' -f1)
 	[ -n "$k" ] || k=$(head -n 1 "$hubstate" 2>/dev/null | cut -d' ' -f1)
 	case $k in
-	pf)
+	pf | opnsense)
 		anchor "$(home_port)" "$(hub_port)"
 		;;
 	ipfw)
@@ -168,7 +191,7 @@ close() {
 	k=$(head -n 1 "$state" 2>/dev/null | cut -d' ' -f1)
 	rm -f "$state"
 	case $k in
-	pf | ipfw)
+	pf | ipfw | opnsense)
 		apply_closed "$k"
 		echo "$k: removed the Clipboard Bridge rules."
 		;;
@@ -182,7 +205,7 @@ apply_closed() {
 		return
 	fi
 	case $1 in
-	pf)
+	pf | opnsense)
 		pfctl -a clipboardbridge -F rules 2>/dev/null || true
 		rm -f "$anchorfile"
 		pf_unhook
@@ -195,12 +218,12 @@ open() {
 	close >/dev/null
 	k=$(kind)
 	case $k in
-	pf | ipfw) ;;
+	pf | ipfw | opnsense) ;;
 	*) return 1 ;;
 	esac
 	install -d -m 0755 $etc
 	echo "$k $1" >"$state"
-	[ "$k" = pf ] && pf_hook
+	[ "$k" = ipfw ] || pf_hook
 	apply
 }
 
@@ -208,12 +231,12 @@ hub_open() {
 	hub_close >/dev/null
 	k=$(kind)
 	case $k in
-	pf | ipfw) ;;
+	pf | ipfw | opnsense) ;;
 	*) return 1 ;;
 	esac
 	install -d -m 0755 $etc
 	echo "$k $1" >"$hubstate"
-	[ "$k" = pf ] && pf_hook
+	[ "$k" = ipfw ] || pf_hook
 	apply
 }
 
@@ -231,6 +254,11 @@ hub_close() {
 
 commands() {
 	case $(kind) in
+	opnsense | pfsense)
+		echo "  In Firewall > Rules, on each interface of the home network (LAN and the others):"
+		echo "    Pass, protocol TCP, source $(nets | paste -sd, - | sed 's/,/, /g'), destination This Firewall, port $1"
+		echo "    Pass, protocol UDP, the same sources, destination This Firewall, port 5353"
+		;;
 	pf)
 		echo "  Add to /etc/pf.conf, before the rules that block, and run pfctl -f /etc/pf.conf:"
 		echo "    table <cbb_home> { $(nets | paste -sd' ' -) }"
@@ -251,6 +279,7 @@ commands() {
 
 hub_commands() {
 	case $(kind) in
+	opnsense | pfsense) echo "  In Firewall > Rules on WAN: Pass, protocol UDP, source any, destination WAN address, port $1" ;;
 	pf) echo "  pass in quick proto udp to port $1   (in /etc/pf.conf, then pfctl -f /etc/pf.conf)" ;;
 	ipfw) echo "  ipfw add allow udp from any to me $1 in" ;;
 	esac
@@ -290,6 +319,12 @@ setup() {
 	fi
 	echo "Firewall: $k (active). Clipboard Bridge requires these rules:"
 	rules "$port"
+	if [ "$k" = pfsense ]; then
+		close
+		echo "Clipboard Bridge does not change pfSense's rules, and runs there unsupported. Add them by hand:"
+		commands "$port"
+		return
+	fi
 	install -d -m 0755 $etc
 	kept=$(cat "$answer" 2>/dev/null || true)
 	how=
@@ -300,7 +335,9 @@ setup() {
 		case $kept in
 		yes | no) yes=$kept how=" (as answered before)" ;;
 		*)
-			if [ "$k" = pf ]; then
+			if [ "$k" = opnsense ]; then
+				echo "With Yes, Clipboard Bridge keeps these rules in its own pf anchor, which its plugin hook adds to OPNsense's ruleset; uninstalling removes both."
+			elif [ "$k" = pf ]; then
 				echo "With Yes, Clipboard Bridge keeps these rules in its own pf anchor and adds the lines that load it at the end of $pfconf; uninstalling removes both."
 			else
 				echo "With Yes, Clipboard Bridge adds these rules to ipfw's set $set17 at every start, and removes them on uninstall."

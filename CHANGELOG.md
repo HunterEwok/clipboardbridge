@@ -280,6 +280,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   paste through XTEST or the virtual keyboard, from `cbb agent`, which XDG autostart starts
   at login. The lock check reads the processes with ps there and knows KDE's lock screen;
   GNOME's takes no keys without logind.
+- FreeBSD: the service opens its mDNS sockets as root and then runs as its user
+  (`cbb service -user`), so it shares port 5353 with avahi; when another program still
+  holds the port, the error names it.
+- OPNsense: the installer adds a plugin hook that names the service's pf anchor in
+  OPNsense's ruleset and lists the service under System > Diagnostics > Services. pfSense,
+  unsupported: the installer prints the rules to add and starts the service through
+  `clipboardbridge.sh`.
 
 ### Changed
 

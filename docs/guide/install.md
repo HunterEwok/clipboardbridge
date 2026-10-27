@@ -102,6 +102,14 @@ fetch -qo - https://github.com/HunterEwok/clipboardbridge/releases/latest/downlo
 
 It installs `cbb`, an rc.d script that runs the service through daemon(8), and adds the
 line `clipboardbridge_enable="YES"` to rc.conf. The keys live in `/var/db/clipboardbridge`.
+
+On OPNsense the same installer also adds a plugin hook: the service shows under System >
+Diagnostics > Services, and its firewall rules (in pf's anchor `clipboardbridge`) follow
+every filter reload. Turn off the mDNS repeater (Services > mDNS Repeater) while it runs:
+both need UDP port 5353, and the service answers mDNS on each home interface itself.
+pfSense is not supported: the installer runs there too, but it prints the firewall rules
+for Firewall > Rules instead of adding them, and an update of pfSense may remove Clipboard
+Bridge.
 On a desktop (X11, or Wayland with the data control protocol, as in KDE, sway and
 Hyprland), the session starts `cbb agent` from XDG autostart and the clipboard joins the
 group; log in again after the install. Remote paste types through XTEST on X11 and the

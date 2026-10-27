@@ -13,8 +13,12 @@
 # /var/db/clipboardbridge, the settings in /usr/local/etc/clipboardbridge;
 # desktop sessions start the clipboard agent from XDG autostart.
 # --port, --home-cgnat, --express and --no-firewall work as in the Linux
-# installer; the firewall is pf or ipfw (firewall.sh). uninstall.sh removes
-# it all again.
+# installer; the firewall is pf or ipfw (firewall.sh). On OPNsense it also
+# installs the plugin hook clipboardbridge.inc, which names the service's pf
+# anchor in OPNsense's ruleset and shows the service in its pages; on
+# pfSense, unsupported, it prints the rules and adds clipboardbridge.sh,
+# since pfSense starts only rc.d scripts named so. uninstall.sh removes it
+# all again.
 set -eu
 
 if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
@@ -143,12 +147,28 @@ else
 	chmod 0644 "$env"
 fi
 
+appliance=
+if [ -f /usr/local/opnsense/version/core ]; then
+	appliance=opnsense
+	install -d -m 0755 /usr/local/etc/inc/plugins.inc.d
+	install -m 0644 "$here/clipboardbridge.inc" /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
+elif grep -qi pfsense /etc/platform 2>/dev/null; then
+	appliance=pfsense
+	cat >/usr/local/etc/rc.d/clipboardbridge.sh <<'EOF'
+#!/bin/sh
+# Written by clipboardbridge's install.sh: pfSense starts only rc.d scripts named *.sh.
+exec /usr/sbin/service clipboardbridge "one${1:-start}"
+EOF
+	chmod 0555 /usr/local/etc/rc.d/clipboardbridge.sh
+fi
 install -m 0644 "$here/firewall.sh" /usr/local/share/clipboardbridge/firewall.sh
 install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
 # Desktop sessions (KDE, GNOME, Xfce and others that read XDG autostart)
-# start the clipboard agent, cbb agent, at login.
-install -d -m 0755 /usr/local/etc/xdg/autostart
-install -m 0644 "$here/clipboardbridge-desktop.desktop" /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+# start the clipboard agent, cbb agent, at login; a firewall has none.
+if [ -z "$appliance" ]; then
+	install -d -m 0755 /usr/local/etc/xdg/autostart
+	install -m 0644 "$here/clipboardbridge-desktop.desktop" /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+fi
 sh /usr/local/share/clipboardbridge/firewall.sh setup "$firewall" "$port"
 if [ "$port" != 8764 ]; then
 	echo "Clipboard Bridge uses TCP port $port instead of 8764. The iPhone shortcut works only"
@@ -171,4 +191,8 @@ answers() { # cbb
 }
 answers /usr/local/bin/cbb || true
 echo "Clipboard Bridge is running on TCP port $port. To remove it: sh /usr/local/share/clipboardbridge/uninstall.sh"
+case $appliance in
+opnsense) echo "OPNsense: it shows under System > Diagnostics > Services, and its rules follow every filter reload." ;;
+pfsense) echo "pfSense is not supported: an update of pfSense may remove Clipboard Bridge; run this installer again after one." ;;
+esac
 echo "Next: run cbb pair as root and scan its QR code with the Clipboard Bridge app on your phone; without the app, see docs/guide/without-app.md."
