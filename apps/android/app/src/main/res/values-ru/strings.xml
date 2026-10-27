@@ -22,6 +22,9 @@
     <string name="join_title">Войти в группу</string>
     <string name="join_hint">На другом телефоне нажмите + и отсканируйте этот код. Не закрывайте этот экран.</string>
     <string name="join_qr_label">QR-код для входа в группу</string>
+    <string name="join_tv">Войти в группу телефона</string>
+    <string name="join_tv_hint">Телевизор входит в группу вашего телефона: он показывает QR-код, а телефон его сканирует.</string>
+    <string name="join_hint_tv">На телефоне откройте CBB, нажмите + и отсканируйте этот код. Не закрывайте этот экран.</string>
     <string name="send_or_fetch">Отправить или получить</string>
     <string name="sent">Отправлено на компьютеры.</string>
     <string name="fetched">Получено с компьютеров.</string>
@@ -294,6 +297,8 @@
     <string name="remote_paste_enter">Разрешить вставке нажимать Enter</string>
     <string name="remote_paste_body">Тогда админ группы сможет вставить текст в поле ввода с фокусом на этом телефоне: из своего приложения или командой cbb paste. Телефон покажет, кто вставил, и сохранит журнал последних вставок без самого текста. На экране блокировки вставка не работает.</string>
     <string name="remote_paste_needs_service">Вставка идёт через службу «Отправлять скопированное само», а она выключена. Включите её в настройках специальных возможностей.</string>
+    <string name="remote_paste_needs_service_tv">Вставка идёт через службу специальных возможностей Clipboard Bridge, а она выключена. Включите её в настройках телевизора, в разделе «Специальные возможности».</string>
+    <string name="remote_paste_service_stopped">Служба специальных возможностей включена в настройках, но система её остановила. Выключите её там и включите снова.</string>
     <string name="channel_pastes">Удалённые вставки</string>
     <string name="pasted_from">Вставлено с устройства %1$s</string>
     <string name="reason_add_watch">Сделать часы админом</string>

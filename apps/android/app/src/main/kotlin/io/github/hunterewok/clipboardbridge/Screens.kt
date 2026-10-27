@@ -166,6 +166,14 @@ private fun StartScreen(model: AppModel) {
             color = palette.accent,
         )
         Text(stringResource(R.string.tagline), textAlign = TextAlign.Center, color = palette.textDim)
+        if (model.isTv) {
+            // A TV has no camera to scan a code: it shows its own, for the phone.
+            Spacer(Modifier.heightIn(min = Tokens.spacingLarge))
+            AccentButton(stringResource(R.string.join_tv), onClick = { model.startJoining() }, modifier = Modifier.widthIn(max = 480.dp))
+            Text(stringResource(R.string.join_tv_hint), textAlign = TextAlign.Center, color = palette.textDim)
+            model.message?.let { NoteText(it) }
+            return@Column
+        }
         if (model.welcome) WelcomeCard(model)
         Spacer(Modifier.heightIn(min = Tokens.spacingLarge))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
@@ -254,7 +262,7 @@ private fun JoinScreen(model: AppModel) {
                     .clip(RoundedCornerShape(Tokens.radiusCard)).background(Color.White).padding(Tokens.spacingMedium)
                     .semantics { contentDescription = label },
             )
-            Text(stringResource(R.string.join_hint), textAlign = TextAlign.Center, color = palette.textDim)
+            Text(stringResource(if (model.isTv) R.string.join_hint_tv else R.string.join_hint), textAlign = TextAlign.Center, color = palette.textDim)
         } else if (model.message == null) {
             CircularProgressIndicator(color = palette.accent)
         }
@@ -424,9 +432,10 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
                 }
             }
         }
-        if (model.phase == AppModel.Phase.HOME) AutoSend()
-        if (model.phase == AppModel.Phase.HOME) ShareAsk(model)
-        if (model.phase == AppModel.Phase.HOME) RemotePasteSection(model.group.pastes)
+        // A TV sends no copies of its own: the service there is only the paste target.
+        if (model.phase == AppModel.Phase.HOME && !model.isTv) AutoSend()
+        if (model.phase == AppModel.Phase.HOME && !model.isTv) ShareAsk(model)
+        if (model.phase == AppModel.Phase.HOME) RemotePasteSection(model.group.pastes, model.isTv)
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
@@ -440,7 +449,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
             var shown by remember { mutableStateOf(model.settings.errorDetailsSwitch) }
             var details by remember { mutableStateOf(model.settings.showsErrorDetails) }
             Row(
-                Modifier.fillMaxWidth().clickable {
+                Modifier.fillMaxWidth().focusRing().clickable {
                     taps++
                     if (taps >= 7 && !shown) {
                         shown = true
@@ -455,7 +464,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
                 HorizontalDivider(color = palette.grid)
                 Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
                     Row(
-                        Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                        Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch) {
                             details = !details
                             model.settings.showsErrorDetails = details
                         },
@@ -471,7 +480,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
             Text(
                 stringResource(R.string.source),
                 color = palette.accent,
-                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) {
+                modifier = Modifier.fillMaxWidth().focusRing().clickable(role = Role.Button) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/HunterEwok/clipboardbridge")))
                 }.padding(Tokens.spacingMedium),
             )
@@ -542,14 +551,17 @@ private fun AutoSend() {
  * for Enter, and the accessibility service it needs.
  */
 @Composable
-private fun RemotePasteSection(pastes: PasteReceiver) {
+private fun RemotePasteSection(pastes: PasteReceiver, tv: Boolean) {
     val palette = LocalPalette.current
     val context = LocalContext.current
     var set by remember { mutableStateOf(pastes.settings) }
     var service by remember { mutableStateOf(CopyWatcher.isOn(context)) }
+    // On in the settings, but not running: the system stopped it, as Android TV 14 does.
+    var stopped by remember { mutableStateOf(service && CopyWatcher.running == null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         set = pastes.settings
         service = CopyWatcher.isOn(context)
+        stopped = service && CopyWatcher.running == null
     }
     fun change(new: RemotePaste.Settings) {
         runCatching { pastes.settings = new }.onFailure { Log.e("clipboardbridge", "saving the remote paste switches", it) }
@@ -557,19 +569,24 @@ private fun RemotePasteSection(pastes: PasteReceiver) {
     }
     Section(stringResource(R.string.remote_paste)) {
         Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
-            Row(Modifier.fillMaxWidth().clickable(role = Role.Switch) { change(RemotePaste.Settings(on = !set.on)) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch) { change(RemotePaste.Settings(on = !set.on)) }, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.remote_paste_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                 Switch(checked = set.on, onCheckedChange = null)
             }
             if (set.on) {
-                Row(Modifier.fillMaxWidth().clickable(role = Role.Switch) { change(set.copy(enter = !set.enter)) }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch) { change(set.copy(enter = !set.enter)) }, verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.remote_paste_enter), modifier = Modifier.weight(1f))
                     Switch(checked = set.enter, onCheckedChange = null)
                 }
             }
             Text(stringResource(R.string.remote_paste_body), style = MaterialTheme.typography.bodyMedium, color = palette.textDim)
-            if (set.on && !service) {
-                Text(stringResource(R.string.remote_paste_needs_service), style = MaterialTheme.typography.bodyMedium, color = palette.danger)
+            if (set.on && (!service || stopped)) {
+                val why = when {
+                    stopped -> R.string.remote_paste_service_stopped
+                    tv -> R.string.remote_paste_needs_service_tv
+                    else -> R.string.remote_paste_needs_service
+                }
+                Text(stringResource(why), style = MaterialTheme.typography.bodyMedium, color = palette.danger)
                 TextButton(onClick = {
                     context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }) { Text(stringResource(R.string.open_accessibility), color = palette.accent) }
@@ -587,7 +604,7 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
     Section(stringResource(R.string.away_title)) {
         Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
             Row(
-                Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) {
+                Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch, enabled = !busy) {
                     busy = true
                     scope.launch {
                         model.setAway(!away.on)
@@ -729,7 +746,7 @@ private fun HubSection(model: AppModel, hub: AppModel.Hub) {
     Section(stringResource(R.string.hub_title)) {
         Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
             Row(
-                Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHub(!hub.on) } },
+                Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch, enabled = !busy) { act { model.setHub(!hub.on) } },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.hub_switch), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
@@ -776,7 +793,7 @@ private fun HubSection(model: AppModel, hub: AppModel.Hub) {
                 val changed = address != (hub.forwarder?.endpoint ?: "") || pin != (hub.forwarder?.pin ?: "")
                 AccentButton(stringResource(R.string.hub_forwarder_save), enabled = changed && !busy, onClick = { act { model.setForwarder(address, pin) } })
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Switch, enabled = !busy) { act { model.setHubInBackground(!hub.background) } },
+                    Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch, enabled = !busy) { act { model.setHubInBackground(!hub.background) } },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(stringResource(R.string.hub_background), modifier = Modifier.weight(1f))
@@ -880,7 +897,7 @@ internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit)
 @Composable
 private fun Choice(title: String, selected: Boolean, select: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(role = Role.RadioButton, onClick = select).padding(horizontal = Tokens.spacingMedium, vertical = 4.dp),
+        Modifier.fillMaxWidth().focusRing().clickable(role = Role.RadioButton, onClick = select).padding(horizontal = Tokens.spacingMedium, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, modifier = Modifier.weight(1f))
@@ -908,7 +925,7 @@ internal fun IconText(symbol: String, label: String, small: Boolean = false, onC
     val palette = LocalPalette.current
     Box(
         Modifier.size(if (small) 32.dp else 44.dp).clip(CircleShape).background(if (small) Color.Transparent else palette.surface)
-            .clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label },
+            .focusRing(CircleShape).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Text(symbol, color = if (small) palette.textDim else palette.text, style = MaterialTheme.typography.titleMedium)
@@ -943,7 +960,7 @@ private fun ColorSwatches(selection: String, choose: (String) -> Unit) {
                         SolidColor(swatch.accent)
                     }
                     Column(
-                        Modifier.weight(1f).clickable(role = Role.RadioButton) { choose(name) }
+                        Modifier.weight(1f).focusRing().clickable(role = Role.RadioButton) { choose(name) }
                             .semantics(mergeDescendants = true) { selected = chosen },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -973,7 +990,7 @@ private fun Notifications(notifier: Notifier) {
             if (i > 0) HorizontalDivider(color = palette.line)
             var on by remember { mutableStateOf(notifier.on(kind)) }
             Row(
-                Modifier.fillMaxWidth().clickable(role = Role.Switch) {
+                Modifier.fillMaxWidth().focusRing().clickable(role = Role.Switch) {
                     on = !on
                     notifier.set(kind, on)
                 }.padding(horizontal = Tokens.spacingMedium, vertical = Tokens.spacingSmall),

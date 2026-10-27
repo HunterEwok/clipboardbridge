@@ -31,6 +31,7 @@ object WatchLink {
 
     /** Sends the state when it changed; on the main thread. */
     fun update(context: Context, model: AppModel) {
+        if (Tv.isTv(context)) return // a TV has no watch
         val state = state(model)
         if (state == last) return
         last = state
