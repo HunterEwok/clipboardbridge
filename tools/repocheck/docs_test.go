@@ -210,3 +210,14 @@ func TestCheckStyle(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckOpsHeader(t *testing.T) {
+	files := map[string][]byte{
+		"internal/control/control.go": []byte("type Header struct {\n\tOp string `json:\"op\"`\n\tLen int `json:\"len,omitempty\"` // the length\n\tRelayKey string `json:\"relay_key,omitempty\"`\n}\n\ntype Other struct {\n\tX int `json:\"x\"`\n}\n"),
+		"docs/protocol.md":            []byte("# P\n\n## 8. Local control socket\n\n| `op` | string |\n| `relay`, `relay_key` | strings |\n\n## 9. After\n\n`len`\n"),
+	}
+	got := checkOps(files)
+	if len(got) != 1 || !strings.Contains(got[0], "header field len ") {
+		t.Fatalf("checkOps() = %q, want one problem naming len", got)
+	}
+}

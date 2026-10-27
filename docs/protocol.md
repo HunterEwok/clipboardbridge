@@ -7,7 +7,7 @@ You may implement the protocol in your own code under any license. The code of t
 repository stays under the GNU AGPL v3.0 only ([LICENSE](../LICENSE)).
 
 This document specifies protocol version 1 of Clipboard Bridge as the code in this
-repository implements it, so that another implementation can interoperate with it. Five
+repository implements it, so that another implementation can interoperate with it. Four
 implementations follow it today: Go (`cbb`, the computers and the servers), Rust (the lite
 member, `lite/core`), Swift (`ClipboardBridgeKit`) and Kotlin (`apps/android/kit`), with
 shared test vectors in `testdata/interop`. [design.md](design.md) explains why the protocol
@@ -170,7 +170,7 @@ TXT strings (each at most 255 bytes):
 | `v` | `1` | protocol version |
 | `g` | group tag | members of another group, or of a replaced CA, are ignored |
 | `p` | `1` | present only while a computer pairing window is open |
-| `r` | `lite` or `phone` | `lite` on a lite member, which the full members do not dial (section 4); `phone` on a phone that is the group's hub while its app is open, which no member dials: it dials them |
+| `r` | `lite` or `phone` | `lite` on a lite member, which the full members do not dial (section 4); `phone` on a phone that is the group's hub while its app is open, which the full and lite members do not dial, since it dials them; the other phones dial it |
 | `h` | `1` or `2` | the holder priority, present only on a full member that may hold `clipboardbridge.local`: `1` first, `2` only as a fallback |
 
 The Go code publishes them in the order `v=1`, `g=<tag>`, `h=<priority>` (if any), `p=1`; a
@@ -301,6 +301,11 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   NOT negotiate an earlier version. ALPN `clipboardbridge/1` on both sides. Both sides
   present their member certificate (leaf only), with the admin CA's certificate after it
   when an admin issued it (section 10).
+- Every implementation MUST support the key exchange group `x25519`, the cipher suite
+  `TLS_AES_128_GCM_SHA256` and the signature scheme `ecdsa_secp256r1_sha256`, since the
+  certificates' keys are P-256; it MAY offer more. The lite member offers only these, with
+  `TLS_CHACHA20_POLY1305_SHA256` beside the suite. The same holds for every TLS connection of
+  this document (sections 6, 13 and 14).
 - Server: MUST require and verify a client certificate from the group's CAs; session tickets
   off, so a connection never resumes without the peer's certificate.
 - Client: verifies the server against the group CA with server name `cb-<peer ID>.local`,
@@ -347,6 +352,10 @@ Message object:
 | `credentials` | array | credentials | the group's server credentials the sender keeps (section 18) |
 | `release` | object | release | the newest signed release the sender holds: `keys`, `channel` and `release`, each a file of section 16 as published (section 16, "In the group") |
 | `get` | object | get, missing | a range of a part of images or files: Get ("Content", below) |
+| `tunnel` | object | tunnel | from the group's hub: its offer for the tunnel key the receiver's hello carried (section 11) |
+| `hubs` | object | hubs | what a hub shares with the group's other hubs (section 11, "Several hubs") |
+| `command` | object | command | a record envelope: a command an admin signed for the receiver (section 15) |
+| `result` | object | result | the answer to a command (section 15) |
 
 ```json
 {"t":"hello","role":"full","hello":{"os":"linux","wall_ms":1761024000000,"current":{"id":"9f0c...","origin":"3b1e...","time":"1761023990000.0","age_ms":10000,"kind":"text","text":"hello"}}}
@@ -360,8 +369,9 @@ Message object:
 
 1. After the TLS handshake each side MUST send its hello first, without waiting for the other's.
 2. Then events follow, in any number, interleaved with pings, records messages, `admin`,
-   `phone_ca`, `tunnel`, `hubs`, `credentials` (section 18), `command` and `result` messages
-   and at most one `cert`.
+   `phone_ca`, `tunnel`, `hubs`, `credentials` (section 18), `command` and `result`
+   messages, `evidence` (section 17), `release` (section 16), `get`, `missing` and `chunk`
+   frames ("Content", below), and at most one `cert`.
 3. A side that has written nothing for 5 s MUST send `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) SHOULD send what is queued and then `bye`, within
@@ -385,7 +395,9 @@ Rules for the receiver:
 - A peer whose outgoing queue (256 messages) is full is disconnected; it gets the current
   event again in the next hello. An implementation MUST bound its queues.
 
-Roles: a `phone` member dials every member, publishes nothing and is never dialed. A `lite`
+Roles: a `phone` member dials every member, publishes nothing and is never dialed, except
+while it is the group's hub: it then publishes `r=phone` (section 3) and other phones dial
+it. A `lite`
 member publishes itself with `r=lite`, dials the full members and accepts phones and lite
 members with a lower device ID (above, "Who dials whom"); it never holds
 `clipboardbridge.local`. A `full` member is any computer with the service, a Mac included:
@@ -459,15 +471,15 @@ Manifest:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `size` | integer | the parts' sizes together, at most 1 GiB (1 073 741 824 bytes) |
+| `size` | integer | the parts' sizes together, at most 1 GiB (1 073 741 824 bytes); it MUST equal the sum of the parts' `size` |
 | `parts` | array | 1 to 10 000 Parts |
 
 Part:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `type` | string or absent | clipboard data: `image/png`, `image/jpeg` or `text/html`, each at most once, at most 8 parts |
-| `path` | string or absent | a copy of files: the file's or folder's path, names joined by `/`, each path once |
+| `type` | string or absent | clipboard data: `image/png`, `image/jpeg` or `text/html`, each at most once, so three parts at most today; an unknown type is refused, and the limit for types added later is 8 |
+| `path` | string or absent | a copy of files: the file's or folder's path, names joined by `/`, each path once, compared byte for byte (case matters) |
 | `dir` | bool or absent | with `path`: `true` for a folder, which has no `size` or `sha256` |
 | `size` | integer or absent | the part's bytes; absent means 0 |
 | `sha256` | string | the SHA-256 of the part's bytes, 32 bytes in base64; absent only for a folder |
@@ -685,7 +697,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 |-------|-------|
 | Roles | joiner = initiator, member = responder |
 | PRS (password) | the six ASCII digits of the code, or a remote invitation's secret (its raw bytes) |
-| CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 19 + 32 + 32 = 83 bytes |
+| CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 23 + 1 + 32 + 32 = 88 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
 | ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
@@ -695,7 +707,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 The AD bytes are used exactly as they travel in the `ad` field. The member MUST check ADa: `os`
 is `linux`, `windows` or `macos`, or `none` with `role` `lite` (an admin phone also takes
 `ios` and `android`); `name` is 1 to 64 bytes of
-printable UTF-8; `admin_key`, when present, comes with `ios` and is a P-256 key; `role`,
+printable UTF-8; `admin_key`, when present, comes with `ios` or `android` and is a P-256 key; `role`,
 when present, is `lite`. A lite member (a Linux device without CA keys) gets
 no CA keys and is recorded with role `lite`. Go members
 take no `ios` joiner: only admin phones admit phones.
@@ -747,7 +759,7 @@ peer cannot put words in front of the user.
 | `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
-| `admin_ca` | bytes, DER | only to a phone (`ios`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
+| `admin_ca` | bytes, DER | only to a phone (`ios` or `android`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
 
 The joiner MUST check: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
 admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
@@ -1010,6 +1022,14 @@ Header fields (all omitted when empty):
 | `devices` | array | reserved |
 | `part` | object | `copy-media`'s `part` messages and `paste-media`'s answers: `{type?, path?, dir?, size?}`, a part of images or files without its hash; `release-file` and `release-get`: the archive's `size` |
 | `value` | string | `config`: the setting's new value; `remote add`: the TV's kind, `androidtv` (the default) or `roku`; `remote pastes`: `on` or `off` |
+| `detail` | string | with `error`: the underlying error, which the client shows with error details on (`CBB_DEBUG=1`) |
+| `new_token` | bool | `pair-phone`: revoke every shortcut's token first |
+| `forwarder`, `forwarder_key` | strings | `away hub`: the forwarder's address and its key, `sha256:...` |
+| `relay`, `relay_key` | strings | `away relay`: the relay's address and its key; needs `consent` |
+| `obfuscate` | bool | `away hub`: speak AmneziaWG instead of plain WireGuard (section 11) |
+| `vless` | bool | `away hub`: the clients reach the forwarder only over VLESS (section 11) |
+| `invite` | string | the text of a remote invitation: made by `invite`, used by `join` (section 12) |
+| `joining` | object | `invite`: a device to confirm before it is admitted, `{id, name, os, fingerprint}` |
 
 A connection carries one request: the service reads the first message and dispatches on
 `op`; an unknown `op` fails. Every answer has `op` `reply`. A failure is
@@ -1037,7 +1057,7 @@ A connection carries one request: the service reads the first message and dispat
 | `keyboard` | `{name?, keyboard?}` + payload for `type`: `name` `on`, `off`, `pair`, `type` or none | `{status, done}`: `on` saves the Bluetooth keyboard's settings and registers it with BlueZ (Linux only), `off` takes it off, `pair` makes it discoverable for two minutes, `type` types the payload on the connected device and answers once it is typed, none only answers the status. Only on the admin socket |
 | `remote` | `{name?, address?, value?, new_name?, consent?, code?, device?}` + payload for `type`: `name` `add`, `code`, `cancel`, `remove`, `pastes`, `type` or none | `{status, done}`: `add` pairs with the TV at `address` (an Android TV or a Google TV shows a code; a Roku, `value` `roku`, needs `consent`, as its control is plain HTTP), `code` finishes that pairing within two minutes, `cancel` ends it, `remove` forgets the TV `device`, `pastes` sends the group's remote pastes to it or not, `type` types the payload into the field open on the TV, none only answers the status; `status.tvs` = `[{name?, kind, host, pastes?, pairing?}]`. An address outside the home network fails. Only on the admin socket |
 | `rename` | `{name, new_name}`: `name` the device, by name or device ID | `{name, done}` with the old name: an admin signs a `device` record like the device's newest one with the new name (section 10). Only on the admin socket |
-| `holder` | `{name}`: `auto`, `first`, `fallback` or `never` | `{status, done}`: the holder setting of `clipboardbridge.local` saved (state file `holder`), its priority published and the holder elected again (section 7, "The holder of `clipboardbridge.local`"). Only on the admin socket |
+| `holder` | `{name}`: `auto`, `first`, `fallback` or `never` | `{status, done}`: the holder setting of `clipboardbridge.local` saved (state file `holder`), its priority published and the holder elected again (section 3, "The holder of `clipboardbridge.local`"). Only on the admin socket |
 | `network` | none | `{status, done}`: the networks this device is on now become known ones, where it publishes itself and takes connections (`cbb network`). Only on the admin socket |
 | `answer` | `{consent?}` | none: during a request that asks the user, such as a listening `join` waiting for a phone or an `invite` asking whether to admit a device, the client's answer; `consent` is yes |
 | `action-set` | `{actions: [action]}`, exactly one | `{status, done}`: this device's user turns the quick action on or off and says who may run it (section 15); an action of the user's own carries its `command`. Only on the admin socket |
@@ -1133,7 +1153,8 @@ iPhone CA as well (section 10, "Admins").
 - **The app is a member.** It holds a member certificate of its own group with role
   `phone` and speaks the member protocol of section 4. It dials and never listens for
   members (a phone cannot accept connections in the background), so members MUST NOT dial a
-  `phone` member; it publishes no mDNS records. It listens only for pairing, while another
+  `phone` member; it publishes no mDNS records, except while it is the group's hub, when
+  other phones dial it. It listens only for pairing, while another
   phone joins it (section 6, "The joiner listens"), and while it is the group's hub
   (section 3, `r=phone`).
 - **Join QR code and pairing direction.** `cbb pair` listens and shows its addresses and
@@ -1272,11 +1293,23 @@ ID; informative). Types:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token, `watch` for a watch with an admin key of its own (rule 8); records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello, and `watchos` or `wearos` for a watch; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID; for a watch, which has no member key, of its admin key, as in `admin`), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
+| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token, `watch` for a watch with an admin key of its own (rule 8); records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello, and `watchos` or `wearos` for a watch; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID; for a watch, which has no member key, of its admin key, as in `admin`), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before), `kind` and `proof` (with `store` `proven`, or after a checked proof that shows less: the kind of hardware, `android-tee`, `android-strongbox` or `tpm`, and the hex SHA-256 of the proof's leaf certificate; section 17) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
 | `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
 | `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root: a takeover in a group with a root, or `cbb upgrade` in a legacy group |
 | `freeze` | `keys` (the SHA-256 of admin CAs' SubjectPublicKeyInfos), `records` (array of record IDs: the records of those admins that stay) | stops admin computers until the root or an admin phone decides (rule 4) |
 | `thaw` | `records` (array of the IDs of `freeze` records) | ends those freezes (rule 4) |
+
+Encodings: the `bytes` fields of the envelope and of the body are standard base64 with
+padding (RFC 4648, section 4), as everywhere in JSON in this document. A key hash (`key`,
+`admin`, each of `keys` and `keep`) and a record ID (each of `records`) is 32 bytes, so 44
+characters of base64.
+
+A receiver MUST drop an envelope whose `body` is longer than 8 KiB before it checks
+anything else, and a body that is not valid: `v` other than 1, an unknown `type`, or a type
+without its fields: a `device` record without a valid device ID, a valid `name`, a known
+`role` and a `key`, or with an unknown `os`; a `revoke` record without `keys`; a `root`
+record without `root`; a `freeze` record without `keys`; a `thaw` record without
+`records`.
 
 The record ID is SHA-256 over the envelope's `body`. A member keeps every valid record it
 has seen, in a file next to its identity, at most 4096 records, plus up to 1024 more signed
@@ -1459,8 +1492,9 @@ identity (mode 0600) and the path in the identity file's `roots`.
 
 ### Exchange in the member protocol
 
-- The hello object (section 4) carries `records`: SHA-256 over the sorted record IDs the
-  sender holds, standard base64; absent when it holds none.
+- The hello object (section 4) carries `records`, the digest of the records the sender
+  holds: SHA-256 over their record IDs, each the raw 32 bytes, sorted bytewise and
+  concatenated; standard base64; absent when it holds none.
 - A side that holds records and whose digest differs from the peer's sends, after the peer's
   hello, `{"t":"records","records":[envelope, ...]}` with every record it holds, split into
   messages of about 1 MiB each. A receiver adds the valid ones, saves them, and sends the
@@ -1488,7 +1522,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `op` | Request | Answers |
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, os, form, os_version, version, mac, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected; `form`, `os_version`, `version` and `mac` are what its hello says (section 4, "Device"), for this device and the connected ones only |
-| `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "off", device}`, `{name: "hub", addrs, port, forwarder, forwarder_key}` or `{name: "relay", relay, relay_key}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer whose keys are not in a TPM); `off` deletes `tunnel.json`, and with `device`, on an admin, sends that device an `away-off` command (section 15); `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14). Members connect again afterwards, so their hellos carry the change (section 11) |
+| `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "off", device}`, `{name: "hub", addrs, port, forwarder, forwarder_key, obfuscate?, vless?}`, `{name: "move", device, forwarder?, forwarder_key?, addrs?}` or `{name: "relay", relay, relay_key, consent}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer whose keys are not in a TPM); `off` deletes `tunnel.json`, and with `device`, on an admin, sends that device an `away-off` command (section 15); `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14), and needs `consent`, since the relay learns which devices talk; `move`, on the hub, an admin, makes the member `device` the hub in its place with a signed `hub` command (section 15), reached at `addrs` and through `forwarder`, or through this hub's forwarder when none are given; `obfuscate` and `vless` with `hub` are the settings of section 11. Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
 | `upgrade` | none | `{done}` or an error. Only on a member that holds the keys of a legacy group: gives the group a root, this member ("Upgrading a legacy group") |
@@ -1683,7 +1717,14 @@ with AmneziaWG's own names; every client sets them on its end before the hub as 
 | `h1`, `h2`, `h3`, `h4` | strings | `"min-max"`: the range each of those messages' type field is drawn from, in the same order; above 4, not overlapping |
 | `header_protection_key` | base64 | 32 bytes: the key of the header protection, which encrypts the rest of each message's header with the first 12 bytes of its padding as the ChaCha20 nonce |
 
-- A receiver MUST refuse settings outside these bounds and not start the tunnel.
+- A receiver MUST refuse settings outside these bounds and not start the tunnel, and also
+  when `header_protection_key` is all zero, or when two of the padded handshake messages
+  would have the same size: the initiation is 148 + `s1` bytes, the response 92 + `s2` and
+  the cookie reply 64 + `s3`, and the three MUST differ.
+- The header protection, the padding and the type ranges are AmneziaWG's, as the
+  amneziawg-go version in `go.mod` implements them (`device/send.go`, `device/receive.go`;
+  a copy with three changes unrelated to the wire is in `internal/third_party/amneziawg-go`).
+  An implementation MUST follow that version byte for byte.
 - The hub makes the settings once, at random (docs/design.md, "Blocked networks"), and
   keeps them while it stays obfuscated. Switching obfuscation on or off changes them; each
   client gets the new ones the next time it meets the hub at home.
@@ -1767,7 +1808,7 @@ in it as in the rest of this document):
 | `ep` | array of strings | the hub's addresses away from home, `ip:port`, 1 to 8 |
 | `k` | bytes | the guest's one-time WireGuard private key, 32 bytes |
 | `psk` | bytes | the guest's preshared key, 32 bytes |
-| `s` | bytes | the pairing secret, 16 random bytes (128 bits) |
+| `s` | bytes | the pairing secret, at least 16 random bytes (128 bits) |
 | `exp` | number | when it expires, Unix seconds |
 | `o` | object or absent | the hub's obfuscation settings, as in its offer (section 11, "Obfuscation") |
 
@@ -1857,6 +1898,12 @@ credential and a hash of its period key ("What it keeps").
 
 ### Registration
 
+Framing: inside TLS, each message of this section is one JSON object followed by a line
+feed, as Go's `json.Encoder` writes it, with no length prefix, unlike the member protocol
+(section 4). A receiver MUST take the objects in order, whatever JSON whitespace lies
+between them. Go forwarders and hubs read at most 1 MiB in all from the other side and
+close the connection beyond that; a sender MUST stay below it.
+
 1. The hub connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-forward/1` and no
    server name. It MUST accept only the pinned key. A hub whose period's hubs' credential lists
    its server key (section 18) presents only a certificate of that key, self-signed, with
@@ -1899,7 +1946,7 @@ credential and a hash of its period key ("What it keeps").
      current root signed) or an admin that is not frozen (the latest counting `device`
      record of that device names the key and an admin CA). Go hubs (`internal/forward`) and
      the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
-   - `records` are the group's authority records: the path records (section 5), every record
+   - `records` are the group's authority records: the path records (section 6, the Welcome; section 10, rule 7), every record
      that is not a `device` record, and of the `device` records a root signed with its own key
      those of a root's own device and every record of each device a root made an admin, so
      that a demotion counts. The records of the other devices, with their names, are not
@@ -1915,7 +1962,8 @@ credential and a hash of its period key ("What it keeps").
      a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS
      user ID as `vless` (section 11, "VLESS").
 4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
-   and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
+   (an unsigned integer up to 2^64 - 1 as a JSON number: a decoder MUST keep all 64 bits,
+   which a double does not) and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
    and closes: the proof is wrong, the credentials do not verify, have expired, do not list
    the hub, are older than the forwarder saw or come from another period key than the one it
    saw first for the tag, no root or admin signed the registration, the records remove or
@@ -2047,6 +2095,9 @@ runs end to end between the two devices.
 
 ### Registration
 
+Framing: as for the forwarder (section 13, "Registration"): one JSON object and a line feed
+per message, no length prefix, at most 1 MiB in all from the other side.
+
 1. The device connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-relay/1` and no
    server name. It MUST accept only the pinned key. A device whose period's members' credential
    lists its server key (section 18) presents only the certificate of that key, as a hub to
@@ -2165,7 +2216,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
-| `id` | string | 128 random bits in lowercase hex |
+| `id` | string | 128 random bits as 32 hex characters; a sender MUST write lowercase, and the Go receiver also takes uppercase; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |
@@ -2400,7 +2451,7 @@ far.
   `CBB_TPM_SIMULATOR=host:port` points the service at a software TPM (swtpm), for tests.
 - A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
   root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
-  of hardware (`android-tee`, `android-strongbox`), and `proof`, the hex SHA-256 of the
+  of hardware (`android-tee`, `android-strongbox`, or `tpm` for a TPM's proof), and `proof`, the hex SHA-256 of the
   attestation's leaf certificate. The signer writes what the device's hello said when it
   made the record, and a record that renames a device, or that makes it an admin, keeps its
   `store`, `kind` and `proof`. A record without `store`, made before 0.6, or
@@ -2419,8 +2470,8 @@ far.
   making a group or an admin with keys in a file asks first too.
 - **The attestation challenge.** An Android key is made with the attestation challenge
   `SHA-256("cbb attest v1" || field(group tag) || field(member key) || salt)`, where
-  `field` is a two-byte big-endian length followed by the bytes, the group tag is empty
-  while the phone is in no group, the member key is the SubjectPublicKeyInfo of the
+  `field` is a two-byte big-endian length followed by the bytes, the group tag is its
+  16 lowercase hex characters as ASCII, empty while the phone is in no group, the member key is the SubjectPublicKeyInfo of the
   device's member key (empty for the member key itself), and `salt` is 16 random bytes kept
   with the key. The key itself is bound by the attestation's leaf certificate, and whoever
   presents the key proves holding it in member TLS, so the proof needs no live nonce: it is
@@ -2674,6 +2725,11 @@ does not know unless its section says it refuses it.
 | `clipboardbridge reality short id` | HMAC input: the forwarder's REALITY short ID | 13 |
 | `clipboardbridge relay key` | TLS exporter label: a device's proof of its WireGuard key | 14 |
 | `cbb attest v1` | the attestation challenge's prefix | 17 |
+
+Only the pairing label carries the `EXPERIMENTAL-` prefix that RFC 5705, section 4, asks of
+labels not registered with IANA; the forwarder's and the relay's labels do not, which is a
+known deviation. Since an exporter label is part of the protocol, they stay as they are
+within version 1, and a new ALPN version would rename them.
 
 ### Certificate names
 

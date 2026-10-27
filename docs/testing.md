@@ -12,7 +12,7 @@ real devices, and which level answers which question. The commands are in
 | Level | What it shows | Where | Runs |
 |---|---|---|---|
 | Unit tests | one package or type does what its comment says | `*_test.go`, `cargo test`, `swift test`, `./gradlew -p kit test` | every push, in CI |
-| Interop vectors | the five implementations read and write the same bytes | `testdata/interop` | every push, in CI |
+| Interop vectors | the four implementations (Go, Rust, Swift, Kotlin) read and write the same bytes | `testdata/interop` | every push, in CI |
 | Cross tests | two implementations talk over a real connection | Go tests that start the Swift or Kotlin `clipboardbridge-interop`, or the lite member | every push, in CI |
 | Service tests | several members, with their real services, in one process or as programs | `internal/service`, `cmd/cbb` | every push, in CI |
 | System tests | the built program on a real system: containers, sockets, a desktop, an installer | the `e2e`, `mdns with avahi`, `desktop clipboards`, `packaging`, `windows installer`, `OpenWrt`, `freebsd` jobs | every push, in CI |

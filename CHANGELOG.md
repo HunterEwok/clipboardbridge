@@ -427,7 +427,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
   its flags is in `docs/reference/cli.md`, and that every port the code listens on by
   default is in the ports table of `docs/reference/devices.md`. The pages for users and
   administrators may not tell the reader something is easy ("simply", "easily") or call
-  the product `clipboardbridge` outside code, links and quotes.
+  the product `clipboardbridge` outside code, links and quotes, and every field of the
+  control socket's header must be in section 8 of `docs/protocol.md`.
+- A fresh read of docs/protocol.md against the code fixed the length of CPace's channel
+  identifier (88 bytes, not 83), and added what an implementation needs and could not find:
+  the forwarder's and relay's framing (JSON lines, at most 1 MiB), the TLS parameters every
+  implementation must support (X25519, TLS_AES_128_GCM_SHA256, ECDSA P-256), the records'
+  8 KiB limit, encodings and validity, the exact digest of the record IDs, the device
+  record's `kind` and `proof`, the attestation challenge's group tag, AmneziaWG's sizes and
+  where its header protection is defined, the registration ID's 64 bits, the missing message
+  and control header fields, and the hub exception for phones. docs/cryptography.md says
+  which keys do leave a device, the member certificates' real lifetime on phones (2 years;
+  397 days is the `clipboardbridge.local` certificate's, in limits.md too) and the
+  invitation secret; the threat model says which WireGuard keys a hub admits.
 - docs/design.md follows arc42: goals and constraints, context, solution strategy, building
   blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
   and glossary. The decisions D-1 to D-78 have a register with their status

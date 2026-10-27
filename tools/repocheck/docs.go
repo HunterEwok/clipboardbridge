@@ -32,7 +32,8 @@ import (
 //     that is released already (the newest version in CHANGELOG.md);
 //   - every operation of the control socket (internal/control's Op
 //     constants) is named in section 8 of docs/protocol.md or has a row of
-//     its own in a table of the protocol, as section 10's do;
+//     its own in a table of the protocol, as section 10's do, and every
+//     field of its header (internal/control's Header) is named in section 8;
 //   - the pages for users and administrators (docs/guide, docs/admin and the
 //     READMEs) do not tell the reader something is easy ("simply", "easy",
 //     "easily", "obviously", "of course"), and call the product Clipboard
@@ -471,6 +472,11 @@ func checkOps(files map[string][]byte) []string {
 		section = section[:end]
 	}
 	var problems []string
+	for _, f := range headerFields(string(code)) {
+		if !strings.Contains(section, "`"+f+"`") {
+			problems = append(problems, fmt.Sprintf("%s:1: the control header field %s (%s) is not described in section 8", ref, f, src))
+		}
+	}
 	for _, m := range controlOp.FindAllSubmatch(code, -1) {
 		op := string(m[1])
 		if !strings.Contains(section, "`"+op+"`") && !strings.Contains(string(doc), "\n| `"+op+"` |") {
@@ -524,4 +530,29 @@ func checkStyle(files map[string][]byte) []string {
 		}
 	}
 	return problems
+}
+
+// jsonTag is a field's name in its JSON struct tag, headerStruct the start
+// of internal/control's Header.
+var (
+	jsonTag      = regexp.MustCompile("`json:\"([a-z_]+)[,\"]")
+	headerStruct = regexp.MustCompile(`(?m)^type Header struct \{`)
+)
+
+// headerFields returns the JSON names of the fields of internal/control's
+// Header, the header of every message on the control socket.
+func headerFields(code string) []string {
+	loc := headerStruct.FindStringIndex(code)
+	if loc == nil {
+		return nil
+	}
+	body := code[loc[0]:]
+	if end := strings.Index(body, "\n}"); end >= 0 {
+		body = body[:end]
+	}
+	var fields []string
+	for _, m := range jsonTag.FindAllStringSubmatch(body, -1) {
+		fields = append(fields, m[1])
+	}
+	return fields
 }
