@@ -49,8 +49,9 @@ ls /etc/rc.d | grep -q clipboardbridge
 ash -n /etc/init.d/clipboardbridge
 ash -n /usr/share/clipboardbridge/firewall.sh
 '
+# set -x names the check that failed in CI's log.
 installed="
-set -e
+set -ex
 $installed_files
 test \"\$(uci get clipboardbridge.main.port)\" = 9000
 "
@@ -152,7 +153,7 @@ vm)
 	run 'CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --port 9000'
 	run "$installed"
 	run '
-		set -e
+		set -ex
 		ubus call service list "{\"name\":\"clipboardbridge\"}" | grep -q "\"running\": true"
 		for i in $(seq 30); do cbb status 2>&1 | grep -q "in a group" && break; sleep 1; done
 		cbb status 2>&1 | grep -q "in a group"
@@ -193,7 +194,7 @@ vm)
 	run 'CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --lite --port 9000'
 	run "$installed"
 	run '
-		set -e
+		set -ex
 		cbb version | grep -q "lite member"
 		ubus call service list "{\"name\":\"clipboardbridge\"}" | grep -q "\"running\": true"
 		for i in $(seq 30); do logread -e cbb | grep -q "work only on br-lan" && break; sleep 1; done
