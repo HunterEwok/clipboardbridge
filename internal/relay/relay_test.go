@@ -75,7 +75,10 @@ func startRelay(t *testing.T, groups ...*group.CA) (*Relay, Link) {
 // startWith runs a relay with cfg on a port of its own.
 func startWith(t *testing.T, cfg Config) (*Relay, Link) {
 	t.Helper()
-	cfg.Listen, cfg.Logf = "127.0.0.1:0", t.Logf
+	cfg.Listen = "127.0.0.1:0"
+	if cfg.Logf == nil {
+		cfg.Logf = t.Logf
+	}
 	if cfg.Keys.Cert.Leaf == nil {
 		keys, err := NewKeys()
 		if err != nil {

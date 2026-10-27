@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
+  the Linux archive; docs/reference/self-hosting.md installs them and says what the server
+  keeps, what its hosting provider sees, and what a system VPN on a device hides.
 - BRAND.md: which builds are official and how to check them, what belongs to the project
   (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
   build with changes should not do; it names the other projects called Clipboard Bridge.
@@ -244,6 +247,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the version of its newest credential and a hash of its period key (`-state`, `none` for
   memory only). It refuses an older credential or another period key, also after a restart;
   records from older hubs and from phones' groups stay in memory only.
+- `cbb forward` and `cbb relay` log no address and no WireGuard key: an error from the network
+  or from WireGuard, and with `CBB_DEBUG=1` WireGuard's own messages, are logged without
+  them.
 - The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
   so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
   each MiB.
