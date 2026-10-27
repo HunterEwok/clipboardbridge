@@ -413,6 +413,9 @@ func TestLiteRemotePaste(t *testing.T) {
 		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
 		return err == nil && len(m.Status.Peers) == 1
 	})
+	// pi sends to the lite member, so it must see the connection too: under
+	// qemu it can come a moment after the lite member's side.
+	waitFor(t, "pi has the lite member", func() bool { return len(pi.status(t).Peers) == 1 })
 	paste := func(text string, h control.Header) error {
 		h.Op, h.Device = control.OpPasteOn, "lite"
 		_, err := pi.do(t, h, text)
@@ -517,6 +520,9 @@ func TestLiteQuickActions(t *testing.T) {
 		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
 		return err == nil && len(m.Status.Peers) == 1
 	})
+	// pi sends to the lite member, so it must see the connection too: under
+	// qemu it can come a moment after the lite member's side.
+	waitFor(t, "pi has the lite member", func() bool { return len(pi.status(t).Peers) == 1 })
 	run := func(name string) error {
 		time.Sleep(time.Second) // one action a second from one sender
 		_, err := pi.do(t, control.Header{Op: control.OpActionOn, Device: "lite", Name: name}, "")
@@ -583,9 +589,15 @@ func TestLiteQuickActions(t *testing.T) {
 		m, err := lite.do(t, control.Header{Op: control.OpStatus}, "")
 		return err == nil && len(m.Status.Peers) == 1
 	})
-	if _, err := pi.do(t, control.Header{Op: control.OpActionOff, Device: "lite"}, ""); err != nil {
-		t.Fatal(err)
-	}
+	// pi may still hold the connection from before the restart a moment,
+	// so the first try can find no lite member to send to.
+	waitFor(t, "pi turned the quick actions off", func() bool {
+		_, err := pi.do(t, control.Header{Op: control.OpActionOff, Device: "lite"}, "")
+		if err != nil {
+			t.Logf("actions-off: %v", err)
+		}
+		return err == nil
+	})
 	if set, err := actions.Load(dir); err != nil || len(set.On()) != 0 {
 		t.Errorf("after actions-off: %+v, %v", set, err)
 	}
