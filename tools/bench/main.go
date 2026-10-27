@@ -53,6 +53,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cbb := fs.String("cbb", "", "fleet, all: a static Linux cbb of the build under test for this computer's CPU, which the fleet's containers run")
 	cbbTime := fs.String("cbb-time", "", "time, all: the same cbb built with -tags benchtime, whose long times run 100000 times faster")
 	fleetSize := fs.Int("fleet-size", 16, "fleet: the members of the many-members case (E3)")
+	scenarioList := fs.String("scenario", "", "fleet, time: comma-separated scenarios to run instead of all, such as T2-tmux or K6-clock")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
 	if fs.Parse(args) != nil {
 		return 2
@@ -60,6 +61,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|time|all|coverage")
 		return 2
+	}
+	for _, n := range splitList(*scenarioList) {
+		if scenarios == nil {
+			scenarios = map[string]bool{}
+		}
+		scenarios[n] = true
 	}
 	if fs.Arg(0) == "fleet" || fs.Arg(0) == "time" {
 		// The fleet runs on this computer alone and needs no inventory.

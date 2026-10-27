@@ -6,7 +6,8 @@
 // `-tags benchtime`, never for a release, every long time of the product
 // that goes through D runs Scale times faster, so expiry, renewal and every
 // rule that waits for time play out in minutes, and CBB_TEST_CLOCK moves
-// the member's wall clock. In every other build D returns its argument and
+// the member's wall clock (CBB_TEST_SCALE sets the scale, 1 to move only
+// the clock). In every other build D returns its argument and
 // Now is time.Now.
 package benchtime
 
@@ -35,7 +36,7 @@ func Years(t time.Time, years int) time.Time {
 func Now() time.Time { return time.Now().Add(offset) }
 
 // Enabled reports whether this is the time-scaled build.
-func Enabled() bool { return Scale != 1 }
+func Enabled() bool { return enabled }
 
 // parseClock reads CBB_TEST_CLOCK: a Go duration to add to the wall clock,
 // such as "3h" or "-1h30m", or an RFC 3339 time the clock reads at start,
