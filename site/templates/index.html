@@ -19,8 +19,12 @@
 {{define "sprites"}}<svg class="sprites" aria-hidden="true" focusable="false">
 <defs>
 <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 6 2 12l6 6M16 6l6 6-6 6M14 4l-4 16"/></symbol>
-<symbol id="i-noaccount" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6M3 3l18 18"/></symbol>
-<symbol id="i-noeye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></symbol>
+<!-- A crossed-out icon: a gap is cut around the stroke, so it reads as
+     drawn over the picture rather than through it. A person is not crossed
+     out: an x beside it says no account. -->
+<mask id="m-cross" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="M3.5 3.5l17 17" stroke="#000" stroke-width="3.4" stroke-linecap="round"/></mask>
+<symbol id="i-noaccount" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.6"/><path d="M2.5 20.5c.9-3.8 3.3-5.7 6.5-5.7s5.6 1.9 6.5 5.7M17 9.5l5 5M22 9.5l-5 5"/></symbol>
+<symbol id="i-noeye" viewBox="0 0 24 24"><g mask="url(#m-cross)"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></g><path d="M3.5 3.5l17 17"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
 </defs></svg>
 {{end}}
@@ -35,7 +39,7 @@
     <!-- A school board in a walnut frame, the picture drawn on it in chalk:
          the computer and the phone joined through the key. -->
     <div class="frame hero-board">{{template "rails"}}<div class="surface">
-      <svg viewBox="0 0 640 330" aria-hidden="true"><g class="chalk">{{template "chalk-hero"}}</g>{{template "words" (list (list 95 228 (t "Computer") false) (list 455 292 "TLS 1.3" true) (list 576 228 (t "Phone") false))}}</svg>
+      <svg viewBox="0 0 640 330" aria-hidden="true"><g class="chalk">{{template "chalk-hero"}}</g><path class="pulse p1" pathLength="1" d="M164 110 H268"/><path class="pulse p2" pathLength="1" d="M372 110 H538"/>{{template "words" (list (list 95 228 (t "Computer") false) (list 455 292 "TLS 1.3" true) (list 576 228 (t "Phone") false))}}</svg>
     </div></div>
     <p class="platforms" dir="ltr">Android · iPhone · Windows · Mac · Linux</p>
     <p class="actions">
@@ -84,6 +88,7 @@
   <p>{{t "Each of these does part of the job well. Clipboard Bridge is the one that does all of it."}}</p>
   <div class="frame board-table">{{template "rails"}}<div class="surface">
   <table class="chalk-table compare apps">
+    <colgroup><col class="name"><col span="5"></colgroup>
     <thead><tr><td></td><th scope="col">{{t "iPhone, Android, Windows, Mac and Linux"}}</th><th scope="col">{{t "No cloud, no account"}}</th><th scope="col">{{t "Away from home"}}</th><th scope="col">{{t "Open source"}}</th><th scope="col">{{t "Free"}}</th></tr></thead>
     <tbody>
     <tr class="us"><th scope="row">Clipboard Bridge</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
@@ -114,11 +119,11 @@
 
 <section class="wrap reveal" id="groups">
   <h2>{{t "Two ways to build your group"}}</h2>
-  <p>{{t "Your devices form a group. Only devices you let in belong to it, and they talk only to each other. A group can have a computer at its heart, or only phones: both are fully supported. We will be honest, though: with a computer everything is simpler."}}</p>
+  <p>{{t "Your devices form a group. Only devices you let in belong to it, and they talk only to each other. A group can have a computer at its heart, or only phones: both are fully supported."}}</p>
   <div class="cards two groups">
     <article class="card">
-      <header><p class="badge">{{t "Simplest"}}</p><h3>{{t "With a computer"}}</h3></header>
-      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-computer"}}</g>{{template "words" (list (list 210 226 (t "Computer") true) (list 76 122 (t "Phone") false) (list 344 116 (t "Laptop") false) (list 76 302 (t "Phone") false) (list 344 302 (t "Mac") false))}}</svg></div></div>
+      <header><p class="badge">{{t "Recommended"}}</p><h3>{{t "With a computer"}}</h3></header>
+      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-computer"}}</g>{{template "words" (list (list 210 202 (t "Computer") true) (list 66 118 (t "Phone") false) (list 354 112 (t "Laptop") false) (list 66 304 (t "Phone") false) (list 354 304 (t "Mac") false))}}</svg></div></div>
       <ul>
         <li>{{t "A Linux or Windows computer that is often on, such as a desktop, a Raspberry Pi or a home server, keeps the group going."}}</li>
         <li>{{t "Away from home, your phone and laptop sync through it at any time: it is the group's hub."}}</li>
@@ -128,7 +133,7 @@
     </article>
     <article class="card">
       <header><h3>{{t "Phones only"}}</h3></header>
-      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-phones"}}</g>{{template "words" (list (list 210 230 (t "Phone") true) (list 76 122 (t "Phone") false) (list 344 116 (t "TV") false) (list 76 302 (t "Tablet") false) (list 344 302 (t "Phone") false))}}</svg></div></div>
+      <div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 420 310" aria-hidden="true"><g class="chalk">{{template "chalk-phones"}}</g>{{template "words" (list (list 210 230 (t "Phone") true) (list 66 110 (t "Computer") false) (list 354 112 (t "TV") false) (list 66 304 (t "Tablet") false) (list 354 304 (t "Phone") false))}}</svg></div></div>
       <ul>
         <li>{{t "No computer needed: the phone makes the group, keeps its key in its security chip and adds the other devices by QR code."}}</li>
         <li>{{t "At home every device syncs directly with the others."}}</li>
@@ -137,7 +142,7 @@
       </ul>
     </article>
   </div>
-  <p class="note">{{t "Why a computer is simpler: it is on far more often than a phone app is open, so sync away from home just works, and the iPhone gives an app little time in the background. When a computer that is always on joins a group of phones, the app offers to make it the hub."}}</p>
+  <p class="note">{{t "Why we recommend a computer: it is on far more often than a phone app is open, so sync away from home just works, and the iPhone gives an app little time in the background. When a computer that is always on joins a group of phones, the app offers to make it the hub."}}</p>
 </section>
 
 <section class="wrap reveal">
