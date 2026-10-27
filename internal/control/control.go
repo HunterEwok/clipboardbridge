@@ -75,6 +75,7 @@ const (
 	OpRelease     = "release"       // client → service: the payload a Release in JSON, a signed release cbb update fetched, for the group
 	OpReleaseFile = "release-file"  // client → service: an archive of the held release that cbb update installed, Value its SHA-256 and Part its size, its bytes in data messages
 	OpReleaseGet  = "release-get"   // client → service: the archive of the held release whose SHA-256 is Value, from this device or its peers; a reply with Part, its bytes, then Done
+	OpKeyboard    = "keyboard"      // client → service: Name "on" (Keyboard the settings), "off", "pair", "type" (the payload) or "" (status): this computer as a Bluetooth keyboard
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
@@ -126,6 +127,9 @@ type Header struct {
 	Actions []Action `json:"actions,omitempty"`
 	Act     bool     `json:"act,omitempty"`
 	Command []string `json:"command,omitempty"`
+
+	// Keyboard, in keyboard on, are the Bluetooth keyboard's settings.
+	Keyboard *Keyboard `json:"keyboard,omitempty"`
 
 	Code         string   `json:"code,omitempty"`        // pairing code
 	Fingerprint  string   `json:"fingerprint,omitempty"` // of the iPhone CA, for the user to compare; of the joiner's certificate, for its QR code
@@ -218,6 +222,9 @@ type Status struct {
 	Away  *Away    `json:"away,omitempty"` // sync away from home; nil while it is off
 	// Paste is remote paste on this device; nil when in no group.
 	Paste *Paste `json:"paste,omitempty"`
+	// Keyboard is this computer as a Bluetooth keyboard; nil where there
+	// is none (not Linux) and it was never turned on.
+	Keyboard *Keyboard `json:"keyboard,omitempty"`
 	// Actions are this device's quick actions, the presets first, as its
 	// user set them; empty when in no group.
 	Actions []Action `json:"actions,omitempty"`
@@ -265,6 +272,21 @@ type Paste struct {
 	Enter   bool     `json:"enter,omitempty"`
 	Console bool     `json:"console,omitempty"`
 	Targets []string `json:"targets,omitempty"`
+}
+
+// Keyboard describes this computer as a Bluetooth keyboard (cbb keyboard):
+// its user's settings, and how it stands.
+type Keyboard struct {
+	On     bool   `json:"on,omitempty"`
+	Layout string `json:"layout,omitempty"` // the host's layout: us or ru
+	Rate   int    `json:"rate,omitempty"`   // characters a second
+	Pastes bool   `json:"pastes,omitempty"` // remote pastes go to the host
+	// Connected is whether a host takes its keys now; VisibleUntilMS when
+	// it stops being discoverable, 0 when it is not.
+	Connected      bool  `json:"connected,omitempty"`
+	VisibleUntilMS int64 `json:"visible_until_ms,omitempty"`
+	// Problem is why it is not running, when it is on.
+	Problem string `json:"problem,omitempty"`
 }
 
 // Away describes sync away from home on this device.

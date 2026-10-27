@@ -53,6 +53,8 @@ class AppModel(private val app: Context) {
         // In the background too: the service keeps the connections that bring the records.
         // Off the node's thread, which may hold its own lock while it hands records over.
         g.onRecords = { Thread({ notifier.observe(g.devices) }, "events").start() }
+        // The Bluetooth keyboard, when its user turned it on.
+        g.keyboard.apply()
     }
 
     var phase by mutableStateOf(if (group.hasGroup) Phase.HOME else Phase.START)

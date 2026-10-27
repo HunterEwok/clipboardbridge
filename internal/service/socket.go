@@ -172,6 +172,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
+	case control.OpKeyboard:
+		if err := s.keyboard(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpReceive:
 		if err := s.setReceive(ctx, m); err != nil {
 			fail(c, err)
@@ -362,6 +368,7 @@ func (s *Service) status() *control.Status {
 	st.Away = s.awayStatus()
 	s.relayNames(st.Away)
 	st.Paste = s.pasteStatusLocked()
+	st.Keyboard = s.keyboardStatus()
 	st.Actions = s.actionStatus()
 	st.Media = s.mediaStatus()
 	return st

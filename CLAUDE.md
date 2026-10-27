@@ -50,6 +50,10 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   (`cbb paste-helper uinput`, the opt-in keys helper the desktop connector asks for Shift+Insert), `internal/tmuxpaste` (`cbb paste-helper tmux`),
   `internal/consolepaste` (`cbb paste-helper console`, TIOCSTI); `internal/lockcheck` tells
   them a locked session.
+- `internal/keyboard`: the Bluetooth keyboards' layouts (the same as `cbb_core::keyboard` and the
+  Android kit's `Keyboard`, all checked against `testdata/interop/keyboard.json`);
+  `internal/blekeyboard`: a Linux computer as a BLE keyboard through BlueZ (`cbb keyboard`,
+  `internal/service/keyboard.go`; `bluetest` plays BlueZ in tests).
 - `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
   on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
   rule, `session_darwin.go` and `session_windows.go` in the agent); `internal/service/actions.go`
@@ -112,7 +116,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   UAC, `frontend/` plain HTML/JS with `tokens.js` from `tools/tokens` and `l10n/ru.json`);
   CI's `tray app` jobs.
 - `apps/android/kit`: the phone's protocol core in Kotlin, the Android twin of the Swift kit;
-  `apps/android/app`: the Compose app (`WatchLink` tells the Wear OS watch), in two flavors: `full` (GitHub, the watch, its own update) and `fdroid` (no Play services; `src/fdroid`, `packaging/fdroid`, reproducible, CI's `fdroid` job);
+  `apps/android/app`: the Compose app (`WatchLink` tells the Wear OS watch, `BluetoothKeyboard` types
+  on a paired device with the kit's `Keyboard` tables), in two flavors: `full` (GitHub, the watch, its own update) and `fdroid` (no Play services; `src/fdroid`, `packaging/fdroid`, reproducible, CI's `fdroid` job);
   `apps/android/wear`: the Wear OS app, through the phone over the Wearable Data Layer;
   `apps/android/shared`: what the two share (`Tokens.kt`, the glyphs, `WatchState`).
 - `apps/ios/ClipboardBridge`: the SwiftUI app (`AppModel`, `LiveGroup`, views, theme from
