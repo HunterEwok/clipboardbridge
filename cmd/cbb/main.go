@@ -30,6 +30,10 @@ Commands:
   paste-receive [on [-enter] [-console] | off]
                           Show, or turn on or off, remote paste on this device;
                           off -on DEVICE or off -all on an admin turns it off elsewhere.
+  keyboard [on [-layout us|ru] [-rate N] [-pastes] | off | pair | type [TEXT]]
+                          Make this Linux computer a Bluetooth keyboard for a TV, a tablet
+                          or a computer near it: pair shows it to a new one for two minutes,
+                          type types TEXT or standard input there.
   action [enable NAME [-by KINDS] [-any-key] | disable NAME | off]
                           Show this device's quick actions (lock, sleep, reboot, shutdown,
                           cancel-shutdown, restart), or turn one on or off here.
@@ -116,6 +120,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdPaste(rest, stdin, stdout, stderr)
 	case "paste-receive":
 		return cmdPasteReceive(rest, stdout, stderr)
+	case "keyboard":
+		return cmdKeyboard(rest, stdin, stdout, stderr)
 	case "action":
 		return cmdAction(rest, stdin, stdout, stderr)
 	case "status":

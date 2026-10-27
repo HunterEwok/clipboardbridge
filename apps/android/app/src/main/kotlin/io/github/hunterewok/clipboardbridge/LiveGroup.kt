@@ -178,8 +178,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      */
     private val modeFile = File(file.parentFile, "mode")
 
+    /** This phone as a Bluetooth keyboard for a TV, a tablet or a computer near it. */
+    val keyboard = BluetoothKeyboard(context, file.parentFile!!)
+
     /** This phone as a remote paste target: its switches, limits and log. */
-    val pastes = PasteReceiver(context, file.parentFile!!)
+    val pastes = PasteReceiver(context, file.parentFile!!, keyboard)
 
     /** The sync mode: own, shared, receive or send. */
     val syncMode: String
