@@ -542,7 +542,8 @@ One pull request each, smaller ones together:
 3. The Bluetooth keyboard on Android and Linux.
 4. The Nano ESP32's Bluetooth LE keyboard, after its USB keyboard (item 15), the layouts,
    and the serial console.
-5. The iPad build of the iPhone app.
+5. The iPad build of the iPhone app (done in 0.6: CI tests it on an iPad simulator too,
+   and a keyboard's shortcuts work).
 
 The TV variant is part of the one APK of the phone app. For Apple TV a spike with pyatv on a
 real Apple TV with tvOS 26 comes before the Companion protocol in Go; if text input does not

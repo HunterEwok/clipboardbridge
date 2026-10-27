@@ -122,6 +122,8 @@ struct DeviceDetailView: View {
                     Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(palette.text).glassCircle()
                 }
                 .accessibilityLabel(Text("Close"))
+                // Escape on an iPad's keyboard closes the pane.
+                .keyboardShortcut(.cancelAction)
             }
         }
     }

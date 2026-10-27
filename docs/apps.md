@@ -153,7 +153,10 @@ the group", not a status code), never a dialog that must be dismissed.
   admin, or makes its own group, and its root key lives in its Secure Enclave. Its Home
   shows the devices on **orbits** around it, or as tiles or a list (the "…" menu switches
   them). Its centre is the sync button, the toolbar holds the sync button too, and a device
-  opens its details in a pane beside the devices, which a cross closes.
+  opens its details in a pane beside the devices, which a cross closes. With a keyboard,
+  Command-R sends or fetches, Command-N adds a device, Command-comma opens Settings from
+  the "…" menu, and Escape closes the details. An iPad pairs with no Apple Watch, so its
+  Settings leave the watch out.
 - **A foldable iPhone** (the iPhone duo): the outer screen is the phone's page. The inner
   screen is a big screen like the iPad's: the orbits, the details beside them, and in
   landscape the system moves the toolbar (sync, "+", the menu) to the strip at the right

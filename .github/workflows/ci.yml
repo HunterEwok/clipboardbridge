@@ -1039,14 +1039,18 @@ jobs:
         working-directory: apps/ios
         run: |
           set -o pipefail
-          # The first available iPhone simulator.
-          udid=$(xcrun simctl list devices available -j | python3 -c '
+          # The first available iPhone and iPad simulators: the app is universal.
+          pick() {
+            xcrun simctl list devices available -j | python3 -c '
           import json, sys
           devices = json.load(sys.stdin)["devices"]
-          print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")))')
+          print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith(sys.argv[1])))' "$1"
+          }
+          iphone=$(pick iPhone)
+          ipad=$(pick iPad)
           # Ad hoc signing needs no Apple account, and without a signature the
           # simulator gives the app no keychain (-34018), which its TLS tests use.
-          xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$udid" \
+          xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$iphone" -destination "id=$ipad" \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= | tail -n 200
 
   macapp:

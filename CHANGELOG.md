@@ -18,6 +18,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   BlueZ) for a TV, tablet or computer near it: `pair` makes it discoverable for two minutes,
   `type` types a text there, and `on -pastes` sends remote pastes there. It uses the same
   layouts as the phone and the Nano.
+- iPad: keyboard shortcuts (Command-R sends or fetches, Command-N adds a device,
+  Command-comma opens Settings, Escape closes a device's details), and CI runs the app's
+  tests on an iPad simulator as well as an iPhone one. The iPad's Settings no longer speak
+  of a paired Apple Watch.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the
