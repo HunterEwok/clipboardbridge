@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
@@ -46,6 +47,11 @@ const (
 	// maxGets bounds the gets a peer may have waiting on one connection.
 	maxGets = 64
 )
+
+// fetchStall is how long a fetch waits for the next piece before it gives
+// up, so that the caller asks again rather than waiting on gets the peer
+// dropped. It is a variable for the tests.
+var fetchStall = 15 * time.Second
 
 // Content is the store of the images and files a member holds whole,
 // which it serves to its peers.
@@ -132,10 +138,12 @@ type served struct {
 }
 
 // fetching is a fetch in progress on a connection: the chunks of its part
-// go to ch, a missing closes missing.
+// go to ch, a missing closes missing, and done is closed once the fetch
+// returned, so that a chunk still on its way never blocks the reader.
 type fetching struct {
 	ch      chan chunk
 	missing chan struct{}
+	done    chan struct{}
 	once    sync.Once
 }
 
@@ -282,7 +290,7 @@ func (n *Node) Fetch(ctx context.Context, peer group.DeviceID, sum [sha256.Size]
 	if !media {
 		return fmt.Errorf("node: %s serves no content", peer)
 	}
-	f := &fetching{ch: make(chan chunk, chunkQueue), missing: make(chan struct{})}
+	f := &fetching{ch: make(chan chunk, chunkQueue), missing: make(chan struct{}), done: make(chan struct{})}
 	c.fetchMu.Lock()
 	if c.fetches[sum] != nil {
 		c.fetchMu.Unlock()
@@ -294,6 +302,7 @@ func (n *Node) Fetch(ctx context.Context, peer group.DeviceID, sum [sha256.Size]
 		c.fetchMu.Lock()
 		delete(c.fetches, sum)
 		c.fetchMu.Unlock()
+		close(f.done)
 	}()
 	asked := offset // the end of the ranges asked for
 	ask := func() {
@@ -307,6 +316,8 @@ func (n *Node) Fetch(ctx context.Context, peer group.DeviceID, sum [sha256.Size]
 		return nil
 	}
 	ask()
+	stall := time.NewTimer(fetchStall)
+	defer stall.Stop()
 	for offset < size {
 		select {
 		case ch := <-f.ch:
@@ -325,8 +336,16 @@ func (n *Node) Fetch(ctx context.Context, peer group.DeviceID, sum [sha256.Size]
 			}
 			offset += int64(len(ch.data))
 			ask()
+			stall.Reset(fetchStall)
 		case <-f.missing:
+			// The ranges asked for after the one missing may still be
+			// served, as when the peer got the part meanwhile: they would
+			// only cross the next fetch.
+			c.enqueue(outgoing{get: &Get{SHA256: sum[:]}})
 			return ErrMissing
+		case <-stall.C:
+			c.enqueue(outgoing{get: &Get{SHA256: sum[:]}})
+			return fmt.Errorf("node: %s sent nothing of the part for %s", peer, fetchStall)
 		case <-c.done:
 			return fmt.Errorf("node: the connection to %s ended", peer)
 		case <-ctx.Done():
@@ -348,6 +367,7 @@ func (c *conn) received(ch chunk) {
 	}
 	select {
 	case f.ch <- ch:
+	case <-f.done:
 	case <-c.done:
 	}
 }

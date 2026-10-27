@@ -11,10 +11,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,42 +26,49 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 )
 
-// A server credential is what a forwarder checks in place of the group's
-// records (docs/protocol.md, section 18; D-67, D-75): the key hashes of the
-// group's hubs, admins and heirs, with a version and an expiry, signed by
-// the group's root. It names no device, no name, no system and no date of
-// signing, and its lists are padded, so the server learns only roughly how
-// many devices there are.
+// Server credentials are what a forwarder and a relay check in place of the
+// group's records (docs/protocol.md, section 18; D-67, D-75). The group
+// lives in periods of about 30 days. For each, its root signs, inside the
+// group, a period credential: a fresh tag for the servers and a fresh
+// period key. Each device signs with its member key the server key it
+// uses with the servers in that period. The servers see only what the
+// period key signs: the hubs' credential and the members' credential,
+// lists of padded server key hashes under the period's tag. So a server
+// sees no root, no device ID, no name, no system and no date of signing,
+// and cannot link a group or a device from one period to the next.
 const (
-	CredentialHubs = "hubs" // the hubs' credential, signed by a root
-	CredentialLink = "link" // a new root, signed by an heir of the one before
+	CredentialPeriod  = "period"  // the period's tag and key, signed by the root; inside the group only
+	CredentialServer  = "server"  // a device's server key for a period, signed by its member key; inside the group only
+	CredentialHubs    = "hubs"    // the hubs and admins, signed by the period key
+	CredentialMembers = "members" // the members, signed by the period key or an admin the hubs' credential lists
 
 	credentialVersion = 1
 	// CredentialsFileName is the file next to the identity that keeps the
 	// group's credentials.
 	CredentialsFileName = "credentials.json"
 
-	// CredentialLifetime is how long a hubs' credential lasts, and
-	// CredentialRenew how much of it must remain before its root signs a
-	// new one: a phone's root asks for Face ID for it about once a month.
-	CredentialLifetime = 90 * 24 * time.Hour
-	CredentialRenew    = 60 * 24 * time.Hour
+	// PeriodLifetime is how long a period lasts, and PeriodRenew how old
+	// it may get before the root starts the next: a phone's root asks for
+	// Face ID for it about once a month.
+	PeriodLifetime = 35 * 24 * time.Hour
+	PeriodRenew    = 30 * 24 * time.Hour
 
 	// MaxCredentialHubs bounds the hubs a credential lists, the first of
-	// the order; maxCredentialList bounds its other lists.
-	MaxCredentialHubs = 16
-	maxCredentialList = 64
-	maxCredentialBody = 16 << 10
-	// MaxCredentialChain bounds a chain: a credential of each root on the
-	// path and the links between them.
-	MaxCredentialChain = 2*maxRoots + 1
-	maxRoots           = 8
+	// the order; MaxCredentialMembers the members; maxCredentialList the
+	// admins.
+	MaxCredentialHubs    = 16
+	MaxCredentialMembers = 256
+	maxCredentialList    = 64
+	maxCredentialBody    = 16 << 10
+	// MaxCredentials bounds the credentials a member keeps and sends: the
+	// period, the hubs' and the members' credentials and one server
+	// credential for each member.
+	MaxCredentials = MaxCredentialMembers + 3
 )
 
 // A Credential is a signed credential body: the body's exact bytes, an
 // ECDSA P-256 signature over them, and the signer's public key
-// (SubjectPublicKeyInfo), which the server matches with a root or a hash
-// the credential before it lists.
+// (SubjectPublicKeyInfo).
 type Credential struct {
 	Body []byte `json:"body"`
 	Sig  []byte `json:"sig"`
@@ -68,19 +77,25 @@ type Credential struct {
 
 // A CredentialBody is what a credential says.
 type CredentialBody struct {
-	V     int    `json:"v"`
-	Type  string `json:"type"`
-	Group string `json:"group"`
+	V    int    `json:"v"`
+	Type string `json:"type"`
+	// Group is the group's own tag (Tag of the group CA) in a period or a
+	// server credential, and the period's tag in a hubs' or a members'
+	// credential, the only tag the servers see.
+	Group     string `json:"group"`
+	Version   uint64 `json:"version"`
+	ExpiresMS int64  `json:"expires_ms"`
 
-	// hubs
-	Version   uint64    `json:"version,omitempty"`
-	ExpiresMS int64     `json:"expires_ms,omitempty"`
-	Hubs      []KeyHash `json:"hubs,omitempty"`   // the hubs' member keys, in their order
-	Admins    []KeyHash `json:"admins,omitempty"` // the admins' admin CAs
-	Heirs     []KeyHash `json:"heirs,omitempty"`  // the admin CAs that may hand the group over
+	// Tag is a period's tag for the servers, or the period a server
+	// credential is for.
+	Tag string `json:"tag,omitempty"`
+	// Key is the period key of a period, or the device's server key of a
+	// server credential (SubjectPublicKeyInfo).
+	Key []byte `json:"key,omitempty"`
 
-	// link
-	Root []byte `json:"root,omitempty"` // the new root CA, DER
+	Hubs    []KeyHash `json:"hubs,omitempty"`    // hubs: the hubs' server keys, in their order
+	Admins  []KeyHash `json:"admins,omitempty"`  // hubs: the admins' server keys
+	Members []KeyHash `json:"members,omitempty"` // members: the members' server keys
 }
 
 // ID returns the credential's ID: SHA-256 over its body.
@@ -89,42 +104,44 @@ func (c Credential) ID() [sha256.Size]byte { return sha256.Sum256(c.Body) }
 // Signer returns the hash of the key that signed the credential.
 func (c Credential) Signer() KeyHash { return sha256.Sum256(c.Key) }
 
-// Expires returns when a hubs' credential stops counting.
+// Expires returns when the credential stops counting.
 func (b *CredentialBody) Expires() time.Time { return time.UnixMilli(b.ExpiresMS) }
 
-// CredentialLists are the real entries of a hubs' credential, before
-// padding: what the group's records say.
-type CredentialLists struct {
-	Hubs, Admins, Heirs []KeyHash
-}
+// KeyHash returns the hash of the key a period or a server credential
+// carries.
+func (b *CredentialBody) KeyHash() KeyHash { return sha256.Sum256(b.Key) }
 
-// Equal reports whether two sets of lists name the same keys, the hubs in
-// the same order.
-func (l CredentialLists) Equal(o CredentialLists) bool {
-	sorted := func(ks []KeyHash) []KeyHash {
-		out := slices.Clone(ks)
-		slices.SortFunc(out, func(a, b KeyHash) int { return bytes.Compare(a[:], b[:]) })
-		return out
+// Pseudonym returns the name of a server key at the relay: its hash in
+// hex.
+func Pseudonym(k KeyHash) string { return hex.EncodeToString(k[:]) }
+
+// ParsePseudonym returns the key hash a pseudonym names.
+func ParsePseudonym(s string) (KeyHash, bool) {
+	var k KeyHash
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != len(k) || s != hex.EncodeToString(b) {
+		return KeyHash{}, false
 	}
-	return slices.Equal(l.Hubs, o.Hubs) && slices.Equal(sorted(l.Admins), sorted(o.Admins)) && slices.Equal(sorted(l.Heirs), sorted(o.Heirs))
+	copy(k[:], b)
+	return k, true
 }
 
-// CredentialLists returns what the group's hubs' credential must list: the
-// member keys of the hubs in their order (HubOrder), at most
-// MaxCredentialHubs; the admin CAs of the admins that are neither revoked
-// nor frozen; and of those the heirs, the admin CAs that may hand the
-// group to a new root (docs/protocol.md, section 10, rule 2): an admin
-// phone's, or a computer's when the root is a computer too.
+// CredentialLists are the real entries of the hubs' and the members'
+// credentials, before padding, as member keys: what the group's records
+// say. The credentials list the server keys of these members.
+type CredentialLists struct {
+	Hubs, Admins, Members []KeyHash
+}
+
+// CredentialLists returns what the group's credentials must list, by
+// member key: the hubs in their order (HubOrder), at most
+// MaxCredentialHubs; the admins that are neither revoked nor frozen, other
+// than the root's own device, which holds the period key; and every device
+// that is not frozen, at most MaxCredentialMembers.
 func (s *Records) CredentialLists() CredentialLists {
 	var l CredentialLists
 	root, rootKey := s.RootMember()
 	devs := s.Devices()
-	computerRoot := false
-	for _, d := range devs {
-		if d.ID == root {
-			computerRoot = d.Role == RoleFull
-		}
-	}
 	for _, id := range s.HubOrder() {
 		if len(l.Hubs) == MaxCredentialHubs {
 			break
@@ -139,25 +156,40 @@ func (s *Records) CredentialLists() CredentialLists {
 			}
 		}
 	}
-	ev := s.eval()
 	for _, d := range devs {
-		if !d.Admin || d.AdminKey == nil || d.ID == root {
+		if d.Frozen {
 			continue
 		}
-		k := *d.AdminKey
-		if len(l.Admins) < maxCredentialList && !slices.Contains(l.Admins, k) {
-			l.Admins = append(l.Admins, k)
+		if d.Admin && d.ID != root && len(l.Admins) < maxCredentialList {
+			l.Admins = append(l.Admins, d.Key)
 		}
-		heir := d.Role == RolePhone && ev.phoneAdmin[k] || d.Role != RolePhone && computerRoot
-		if heir && len(l.Heirs) < maxCredentialList && !slices.Contains(l.Heirs, k) {
-			l.Heirs = append(l.Heirs, k)
+		if len(l.Members) < MaxCredentialMembers {
+			l.Members = append(l.Members, d.Key)
 		}
 	}
 	return l
 }
 
+// MemberOf returns the device whose counting device records name the
+// member key k, if it is not revoked or frozen.
+func (s *Records) MemberOf(k KeyHash) (DeviceID, bool) {
+	for _, d := range s.Devices() {
+		if !d.Frozen && slices.Contains(d.Keys, k) {
+			return d.ID, true
+		}
+	}
+	return "", false
+}
+
+// IsMember reports whether k is the member key of a device in the group
+// that is not frozen (MemberOf).
+func (s *Records) IsMember(k KeyHash) bool {
+	_, ok := s.MemberOf(k)
+	return ok
+}
+
 // padTo returns the size a list of n entries is padded to: the next of 4,
-// 8, 16, 32 and 64.
+// 8, 16, 32, 64, 128 and 256.
 func padTo(n int) int {
 	size := 4
 	for size < n {
@@ -180,27 +212,62 @@ func pad(ks []KeyHash) ([]KeyHash, error) {
 	return out, nil
 }
 
-// SignHubs signs the group's hubs' credential with its root's key: the
-// lists padded, with version and an expiry CredentialLifetime from now.
-func SignHubs(tag string, l CredentialLists, version uint64, now time.Time, root crypto.Signer) (Credential, error) {
-	b := CredentialBody{Type: CredentialHubs, Group: tag, Version: version, ExpiresMS: now.Add(CredentialLifetime).UnixMilli()}
-	var err error
-	if b.Hubs, err = pad(l.Hubs); err != nil {
-		return Credential{}, err
+// NewPeriodTag returns a fresh tag for the servers: 8 random bytes in hex,
+// as Tag's.
+func NewPeriodTag() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
 	}
-	if b.Admins, err = pad(l.Admins); err != nil {
-		return Credential{}, err
-	}
-	if b.Heirs, err = pad(l.Heirs); err != nil {
-		return Credential{}, err
-	}
-	return SignCredential(b, root)
+	return hex.EncodeToString(b[:]), nil
 }
 
-// SignLink signs, with an heir's admin key, the link that hands the group
-// to the new root.
-func SignLink(tag string, root *x509.Certificate, heir crypto.Signer) (Credential, error) {
-	return SignCredential(CredentialBody{Type: CredentialLink, Group: tag, Root: root.Raw}, heir)
+// SignPeriod signs, with the root's key, the period of the group of
+// groupTag with the servers' tag and the period key, lasting
+// PeriodLifetime from now.
+func SignPeriod(groupTag, tag string, key crypto.PublicKey, version uint64, now time.Time, root crypto.Signer) (Credential, error) {
+	spki, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		return Credential{}, err
+	}
+	return SignCredential(CredentialBody{Type: CredentialPeriod, Group: groupTag, Version: version,
+		ExpiresMS: now.Add(PeriodLifetime).UnixMilli(), Tag: tag, Key: spki}, root)
+}
+
+// SignServer signs, with a device's member key, the server key it uses in
+// the period p.
+func SignServer(p *CredentialBody, key crypto.PublicKey, version uint64, member crypto.Signer) (Credential, error) {
+	spki, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		return Credential{}, err
+	}
+	return SignCredential(CredentialBody{Type: CredentialServer, Group: p.Group, Version: version,
+		ExpiresMS: p.ExpiresMS, Tag: p.Tag, Key: spki}, member)
+}
+
+// SignHubs signs the period's hubs' credential with the period key: the
+// hubs' and the admins' server keys, padded.
+func SignHubs(p *CredentialBody, hubs, admins []KeyHash, version uint64, key crypto.Signer) (Credential, error) {
+	b := CredentialBody{Type: CredentialHubs, Group: p.Tag, Version: version, ExpiresMS: p.ExpiresMS}
+	var err error
+	if b.Hubs, err = pad(hubs); err != nil {
+		return Credential{}, err
+	}
+	if b.Admins, err = pad(admins); err != nil {
+		return Credential{}, err
+	}
+	return SignCredential(b, key)
+}
+
+// SignMembers signs the period's members' credential with the period key
+// or an admin's server key: the members' server keys, padded.
+func SignMembers(p *CredentialBody, members []KeyHash, version uint64, key crypto.Signer) (Credential, error) {
+	b := CredentialBody{Type: CredentialMembers, Group: p.Tag, Version: version, ExpiresMS: p.ExpiresMS}
+	var err error
+	if b.Members, err = pad(members); err != nil {
+		return Credential{}, err
+	}
+	return SignCredential(b, key)
 }
 
 // SignCredential signs a credential body with key.
@@ -232,24 +299,36 @@ func (b *CredentialBody) check() error {
 	if b.V != credentialVersion {
 		return fmt.Errorf("group: unknown credential version %d", b.V)
 	}
+	if b.Version == 0 || b.ExpiresMS <= 0 {
+		return errors.New("group: a credential without a version or an expiry")
+	}
+	if !ValidTag(b.Group) {
+		return errors.New("group: a credential's group is not a tag")
+	}
 	switch b.Type {
-	case CredentialHubs:
-		switch {
-		case b.Version == 0:
-			return errors.New("group: a hubs' credential has no version")
-		case b.ExpiresMS <= 0:
-			return errors.New("group: a hubs' credential has no expiry")
-		case len(b.Hubs) > MaxCredentialHubs || len(b.Admins) > maxCredentialList || len(b.Heirs) > maxCredentialList:
-			return errors.New("group: a hubs' credential lists too many keys")
-		case len(b.Root) != 0:
-			return errors.New("group: a hubs' credential names a root")
+	case CredentialPeriod, CredentialServer:
+		if !ValidTag(b.Tag) {
+			return errors.New("group: a credential's period tag is not a tag")
 		}
-	case CredentialLink:
-		if _, err := linkRoot(b.Root); err != nil {
+		if _, err := p256Key(b.Key); err != nil {
 			return err
 		}
-		if b.Version != 0 || b.ExpiresMS != 0 || len(b.Hubs)+len(b.Admins)+len(b.Heirs) != 0 {
-			return errors.New("group: a link carries more than its root")
+		if len(b.Hubs)+len(b.Admins)+len(b.Members) != 0 {
+			return errors.New("group: a period or server credential lists keys")
+		}
+	case CredentialHubs:
+		switch {
+		case len(b.Hubs) > MaxCredentialHubs || len(b.Admins) > maxCredentialList:
+			return errors.New("group: a hubs' credential lists too many keys")
+		case b.Tag != "" || len(b.Key) != 0 || len(b.Members) != 0:
+			return errors.New("group: a hubs' credential carries more than its lists")
+		}
+	case CredentialMembers:
+		switch {
+		case len(b.Members) > MaxCredentialMembers:
+			return errors.New("group: a members' credential lists too many keys")
+		case b.Tag != "" || len(b.Key) != 0 || len(b.Hubs)+len(b.Admins) != 0:
+			return errors.New("group: a members' credential carries more than its list")
 		}
 	default:
 		return fmt.Errorf("group: unknown credential type %q", b.Type)
@@ -257,18 +336,30 @@ func (b *CredentialBody) check() error {
 	return nil
 }
 
-// linkRoot parses the root a link hands the group to: a self-signed CA
-// with path length 1 and a P-256 key, as a root record's (section 10,
-// rule 7).
-func linkRoot(der []byte) (*x509.Certificate, error) {
-	c, err := x509.ParseCertificate(der)
+// ValidTag reports whether s is a tag: 16 lower-case hex characters.
+func ValidTag(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// p256Key parses a P-256 public key from its SubjectPublicKeyInfo.
+func p256Key(spki []byte) (*ecdsa.PublicKey, error) {
+	pub, err := x509.ParsePKIXPublicKey(spki)
 	if err != nil {
-		return nil, errors.New("group: a link's root does not parse")
+		return nil, errors.New("group: the credential's key does not parse")
 	}
-	if err := checkRoot(c); err != nil {
-		return nil, err
+	ec, ok := pub.(*ecdsa.PublicKey)
+	if !ok || ec.Curve != elliptic.P256() {
+		return nil, errors.New("group: the credential's key is not a P-256 key")
 	}
-	return c, nil
+	return ec, nil
 }
 
 // Open checks the credential's signature and returns its body. It checks
@@ -277,13 +368,9 @@ func (c Credential) Open() (*CredentialBody, error) {
 	if len(c.Body) > maxCredentialBody {
 		return nil, errors.New("group: the credential is too large")
 	}
-	pub, err := x509.ParsePKIXPublicKey(c.Key)
+	ec, err := p256Key(c.Key)
 	if err != nil {
-		return nil, errors.New("group: the credential's key does not parse")
-	}
-	ec, ok := pub.(*ecdsa.PublicKey)
-	if !ok || ec.Curve != elliptic.P256() {
-		return nil, errors.New("group: the credential's key is not a P-256 key")
+		return nil, err
 	}
 	sum := sha256.Sum256(c.Body)
 	if !ecdsa.VerifyASN1(ec, sum[:], c.Sig) {
@@ -299,269 +386,361 @@ func (c Credential) Open() (*CredentialBody, error) {
 	return &b, nil
 }
 
-// A CheckedChain is a chain of credentials that a server checked: the
-// group's roots from the group CA, the last of them the current one, and
-// each root's hubs' credential.
-type CheckedChain struct {
-	Roots []*x509.Certificate
-	Hubs  []*CredentialBody // Hubs[i] is the credential Roots[i] signed
+// Presented is what a server checked of the credentials a hub or a member
+// presented (CheckPresented).
+type Presented struct {
+	Tag     string          // the period's tag
+	Signer  KeyHash         // the period key, which signed the hubs' credential
+	Hubs    *CredentialBody // the hubs' credential
+	Members *CredentialBody // the members' credential, nil if none came
+	// Period is the period credential, nil if none came: a device sends
+	// it only to a relay that serves a fixed list of groups, whose roots
+	// it then shows; PeriodRoot is the key that signed it.
+	Period     *CredentialBody
+	PeriodRoot []byte
 }
 
-// Last returns the current root's hubs' credential.
-func (c *CheckedChain) Last() *CredentialBody { return c.Hubs[len(c.Hubs)-1] }
-
-// CheckChain checks a chain of credentials as a server does
-// (docs/protocol.md, section 18): from the group CA, each root's hubs'
-// credential that root signed, then a link that an heir that credential
-// lists signed, to the next root, and so on, ending with the current
-// root's hubs' credential. The versions grow along the chain. It checks
-// neither the expiry nor which versions the server saw.
-func CheckChain(groupCA *x509.Certificate, chain []Credential) (*CheckedChain, error) {
-	if len(chain) == 0 || len(chain) > MaxCredentialChain || len(chain)%2 == 0 {
-		return nil, errors.New("group: the credentials do not make a chain")
+// CheckPresented checks the credentials a device presents a server
+// (docs/protocol.md, section 18): one hubs' credential, which the period
+// key signed, and with it at most one members' credential of the same
+// period, which the period key or an admin that the hubs' credential lists
+// signed, and at most one period credential, whose tag and key are those
+// of the hubs' credential. None may have expired at now. It does not check
+// that the period key is the group's: a server takes the first it sees for
+// a tag and from then on only that one.
+func CheckPresented(cs []Credential, now time.Time) (*Presented, error) {
+	wrong := errors.New("group: the credentials are not a hubs' credential with at most a members' and a period credential")
+	if len(cs) == 0 || len(cs) > 3 {
+		return nil, wrong
 	}
-	tag := Tag(groupCA)
-	out := &CheckedChain{Roots: []*x509.Certificate{groupCA}}
-	for i, c := range chain {
+	var p Presented
+	var hubsSigner []byte
+	var members, period *Credential
+	for i, c := range cs {
 		b, err := c.Open()
 		if err != nil {
 			return nil, err
 		}
-		if b.Group != tag {
-			return nil, errors.New("group: a credential of another group")
+		if !now.Before(b.Expires()) {
+			return nil, fmt.Errorf("group: the %s credential expired", b.Type)
 		}
-		root := out.Roots[len(out.Roots)-1]
-		if i%2 == 0 {
-			if b.Type != CredentialHubs || !bytes.Equal(c.Key, root.RawSubjectPublicKeyInfo) {
-				return nil, errors.New("group: a hubs' credential that its root did not sign")
-			}
-			if n := len(out.Hubs); n > 0 && b.Version <= out.Hubs[n-1].Version {
-				return nil, errors.New("group: a new root's credential is no newer than the old root's")
-			}
-			out.Hubs = append(out.Hubs, b)
-			continue
+		switch {
+		case b.Type == CredentialHubs && p.Hubs == nil:
+			p.Hubs, p.Tag, p.Signer, hubsSigner = b, b.Group, c.Signer(), c.Key
+		case b.Type == CredentialMembers && members == nil:
+			p.Members, members = b, &cs[i]
+		case b.Type == CredentialPeriod && period == nil:
+			p.Period, period = b, &cs[i]
+		default:
+			return nil, wrong
 		}
-		if b.Type != CredentialLink || !slices.Contains(out.Hubs[len(out.Hubs)-1].Heirs, c.Signer()) {
-			return nil, errors.New("group: a link that no heir of its root signed")
-		}
-		next, err := linkRoot(b.Root)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range out.Roots {
-			if bytes.Equal(r.RawSubjectPublicKeyInfo, next.RawSubjectPublicKeyInfo) {
-				return nil, errors.New("group: a link back to an earlier root")
-			}
-		}
-		out.Roots = append(out.Roots, next)
 	}
-	return out, nil
+	if p.Hubs == nil {
+		return nil, errors.New("group: no hubs' credential")
+	}
+	if members != nil {
+		if p.Members.Group != p.Tag {
+			return nil, errors.New("group: a members' credential of another period")
+		}
+		if !bytes.Equal(members.Key, hubsSigner) && !slices.Contains(p.Hubs.Admins, members.Signer()) {
+			return nil, errors.New("group: a members' credential that neither the period key nor a listed admin signed")
+		}
+	}
+	if period != nil {
+		if p.Period.Tag != p.Tag || !bytes.Equal(p.Period.Key, hubsSigner) {
+			return nil, errors.New("group: a period credential of another period")
+		}
+		p.PeriodRoot = period.Key
+	}
+	return &p, nil
 }
 
 // Credentials keeps a member's credentials (docs/protocol.md, section 18):
-// for each root on the group's path, the newest hubs' credential it
-// signed, and the links between them. It is safe for concurrent use.
+// the newest period that the group's current root signed, and for it each
+// member's newest server credential and the newest hubs' and members'
+// credentials. It is safe for concurrent use.
 type Credentials struct {
 	mu      sync.Mutex
 	groupCA *x509.Certificate
-	hubs    map[KeyHash]Credential // by the root that signed it
-	links   map[KeyHash]Credential // by the root it leaves
+	period  *Credential
+	servers map[KeyHash]Credential // by the member key that signed it
+	hubs    *Credential
+	members *Credential
 }
 
 // NewCredentials returns an empty set for the group of groupCA.
 func NewCredentials(groupCA *x509.Certificate) *Credentials {
-	return &Credentials{groupCA: groupCA, hubs: map[KeyHash]Credential{}, links: map[KeyHash]Credential{}}
+	return &Credentials{groupCA: groupCA, servers: map[KeyHash]Credential{}}
 }
 
-// Add takes the credentials that are valid for the group and newer than
-// what it keeps, against the group's roots (the group CA first), and
-// returns those it took. A hubs' credential counts when a root on the path
-// signed it; a link when an heir of the credential it keeps for the root
-// it leaves signed it, and its root is the next root on the path.
-func (s *Credentials) Add(roots []*x509.Certificate, cs []Credential) (fresh []Credential, errs []error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	tag := Tag(s.groupCA)
-	rootIndex := func(spki []byte) int {
-		return slices.IndexFunc(roots, func(r *x509.Certificate) bool { return bytes.Equal(r.RawSubjectPublicKeyInfo, spki) })
-	}
-	// Hubs' credentials first: a link counts against its root's.
-	order := slices.Clone(cs)
-	isLink := func(c Credential) int {
-		if credType(c) == CredentialLink {
-			return 1
-		}
-		return 0
-	}
-	slices.SortStableFunc(order, func(a, b Credential) int { return isLink(a) - isLink(b) })
-	for _, c := range order {
-		b, err := c.Open()
-		switch {
-		case err != nil:
-			errs = append(errs, err)
-			continue
-		case b.Group != tag:
-			errs = append(errs, errors.New("group: a credential of another group"))
-			continue
-		}
-		switch b.Type {
-		case CredentialHubs:
-			i := rootIndex(c.Key)
-			if i < 0 {
-				errs = append(errs, errors.New("group: a hubs' credential that no root of the group signed"))
-				continue
-			}
-			k := KeyHashOf(roots[i])
-			if old, ok := s.hubs[k]; ok {
-				if ob, err := old.Open(); err == nil && ob.Version >= b.Version {
-					continue
-				}
-			}
-			s.hubs[k] = c
-			fresh = append(fresh, c)
-		case CredentialLink:
-			next, _ := linkRoot(b.Root)
-			i := rootIndex(next.RawSubjectPublicKeyInfo)
-			if i < 1 {
-				errs = append(errs, errors.New("group: a link to no root of the group"))
-				continue
-			}
-			from := KeyHashOf(roots[i-1])
-			if _, ok := s.links[from]; ok {
-				continue
-			}
-			hc, ok := s.hubs[from]
-			if !ok {
-				errs = append(errs, errors.New("group: a link from a root whose credential is unknown"))
-				continue
-			}
-			hb, err := hc.Open()
-			if err != nil || !slices.Contains(hb.Heirs, c.Signer()) {
-				errs = append(errs, errors.New("group: a link that no heir of its root signed"))
-				continue
-			}
-			s.links[from] = c
-			fresh = append(fresh, c)
-		}
-	}
-	return fresh, errs
-}
-
-func credType(c Credential) string {
+// rank orders credentials for Add: each counts against the ones before.
+func rank(c Credential) int {
 	var b struct {
 		Type string `json:"type"`
 	}
 	json.Unmarshal(c.Body, &b)
-	return b.Type
+	return slices.Index([]string{CredentialPeriod, CredentialServer, CredentialHubs, CredentialMembers}, b.Type)
 }
 
-// All returns every credential it keeps.
+// Add takes the credentials that are valid for the group and newer than
+// what it keeps, and returns those it took. root is the group's current
+// root; member tells whether a key is a member key of a device in the
+// group (Records.IsMember). A period counts when root signed it; a server
+// credential when a member signed it for the period kept; a hubs'
+// credential when the period key signed it; a members' credential when
+// the period key or an admin of the hubs' credential kept signed it. A
+// newer period drops the credentials of the one before.
+func (s *Credentials) Add(root *x509.Certificate, member func(KeyHash) bool, cs []Credential) (fresh []Credential, errs []error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tag := Tag(s.groupCA)
+	order := slices.Clone(cs)
+	slices.SortStableFunc(order, func(a, b Credential) int { return rank(a) - rank(b) })
+	newer := func(old *Credential, b *CredentialBody) bool {
+		if old == nil {
+			return true
+		}
+		ob, err := old.Open()
+		return err != nil || b.Version > ob.Version
+	}
+	for _, c := range order {
+		b, err := c.Open()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		p := s.periodLocked(root)
+		switch b.Type {
+		case CredentialPeriod:
+			switch {
+			case b.Group != tag:
+				errs = append(errs, errors.New("group: a period of another group"))
+				continue
+			case !bytes.Equal(c.Key, root.RawSubjectPublicKeyInfo):
+				errs = append(errs, errors.New("group: a period that the group's root did not sign"))
+				continue
+			}
+			var cur *Credential
+			if p != nil {
+				cur = s.period
+			}
+			if !newer(cur, b) {
+				continue
+			}
+			if p == nil || p.Tag != b.Tag {
+				clear(s.servers)
+				s.hubs, s.members = nil, nil
+			}
+			s.period = &c
+		case CredentialServer:
+			switch {
+			case p == nil || b.Group != tag || b.Tag != p.Tag:
+				continue // of a period it does not keep
+			case !member(c.Signer()):
+				errs = append(errs, errors.New("group: a server credential that no member signed"))
+				continue
+			}
+			old, ok := s.servers[c.Signer()]
+			if ok && !newer(&old, b) {
+				continue
+			}
+			if !ok && len(s.servers) >= MaxCredentialMembers {
+				errs = append(errs, errors.New("group: too many server credentials"))
+				continue
+			}
+			s.servers[c.Signer()] = c
+		case CredentialHubs:
+			switch {
+			case p == nil || b.Group != p.Tag:
+				continue
+			case !bytes.Equal(c.Key, p.Key):
+				errs = append(errs, errors.New("group: a hubs' credential that the period key did not sign"))
+				continue
+			case !newer(s.hubs, b):
+				continue
+			}
+			s.hubs = &c
+		case CredentialMembers:
+			switch {
+			case p == nil || b.Group != p.Tag:
+				continue
+			case !bytes.Equal(c.Key, p.Key) && !s.listedAdminLocked(c.Signer()):
+				errs = append(errs, errors.New("group: a members' credential that neither the period key nor a listed admin signed"))
+				continue
+			case !newer(s.members, b):
+				continue
+			}
+			s.members = &c
+		}
+		fresh = append(fresh, c)
+	}
+	return fresh, errs
+}
+
+// periodLocked returns the period kept, if root signed it.
+func (s *Credentials) periodLocked(root *x509.Certificate) *CredentialBody {
+	if s.period == nil || !bytes.Equal(s.period.Key, root.RawSubjectPublicKeyInfo) {
+		return nil
+	}
+	b, err := s.period.Open()
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+func (s *Credentials) listedAdminLocked(k KeyHash) bool {
+	if s.hubs == nil {
+		return false
+	}
+	b, err := s.hubs.Open()
+	return err == nil && slices.Contains(b.Admins, k)
+}
+
+// All returns every credential it keeps, the period first.
 func (s *Credentials) All() []Credential {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []Credential
-	for _, m := range []map[KeyHash]Credential{s.hubs, s.links} {
-		for _, c := range m {
-			out = append(out, c)
+	for _, c := range []*Credential{s.period, s.hubs, s.members} {
+		if c != nil {
+			out = append(out, *c)
 		}
 	}
+	for _, c := range s.servers {
+		out = append(out, c)
+	}
 	slices.SortFunc(out, func(a, b Credential) int {
+		if d := rank(a) - rank(b); d != 0 {
+			return d
+		}
 		x, y := a.ID(), b.ID()
 		return bytes.Compare(x[:], y[:])
 	})
 	return out
 }
 
-// Current returns the current root's hubs' credential and its body, or
-// false when it keeps none.
-func (s *Credentials) Current(roots []*x509.Certificate) (Credential, *CredentialBody, bool) {
+// Period returns the period kept and its body, if the group's current root
+// root signed it.
+func (s *Credentials) Period(root *x509.Certificate) (Credential, *CredentialBody, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, ok := s.hubs[KeyHashOf(roots[len(roots)-1])]
+	b := s.periodLocked(root)
+	if b == nil {
+		return Credential{}, nil, false
+	}
+	return *s.period, b, true
+}
+
+// Server returns the hash of the server key that the member key member
+// signed for the period kept.
+func (s *Credentials) Server(member KeyHash) (KeyHash, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.servers[member]
 	if !ok {
+		return KeyHash{}, false
+	}
+	b, err := c.Open()
+	if err != nil {
+		return KeyHash{}, false
+	}
+	return b.KeyHash(), true
+}
+
+// MemberOfServer returns the member key that signed the server key k for
+// the period kept: whom a pseudonym at the relay names.
+func (s *Credentials) MemberOfServer(k KeyHash) (KeyHash, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for m, c := range s.servers {
+		if b, err := c.Open(); err == nil && b.KeyHash() == k {
+			return m, true
+		}
+	}
+	return KeyHash{}, false
+}
+
+// ServerKeys returns the server keys of the member keys ms, in their
+// order, leaving out those that sent none for the period kept.
+func (s *Credentials) ServerKeys(ms []KeyHash) []KeyHash {
+	var out []KeyHash
+	for _, m := range ms {
+		if k, ok := s.Server(m); ok {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// Hubs returns the hubs' credential kept for the period, and its body.
+func (s *Credentials) Hubs() (Credential, *CredentialBody, bool) {
+	return s.typed(func() *Credential { return s.hubs })
+}
+
+// Members returns the members' credential kept for the period, and its
+// body.
+func (s *Credentials) Members() (Credential, *CredentialBody, bool) {
+	return s.typed(func() *Credential { return s.members })
+}
+
+func (s *Credentials) typed(f func() *Credential) (Credential, *CredentialBody, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := f()
+	if c == nil {
 		return Credential{}, nil, false
 	}
 	b, err := c.Open()
 	if err != nil {
 		return Credential{}, nil, false
 	}
-	return c, b, true
+	return *c, b, true
 }
 
-// Chain returns the chain a hub presents its forwarder, from the group CA
-// to the current root of roots (the group CA first), or nil when a
-// credential or a link on the way is missing.
-func (s *Credentials) Chain(roots []*x509.Certificate) []Credential {
+// PeriodStale reports whether the root must start a new period: there is
+// none from this root, it is PeriodRenew old, or a member that sent a
+// server credential for it is no longer in the group (member false),
+// since a removed device knows the period's tag.
+func (s *Credentials) PeriodStale(root *x509.Certificate, member func(KeyHash) bool, now time.Time) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []Credential
-	for i, r := range roots {
-		k := KeyHashOf(r)
-		c, ok := s.hubs[k]
-		if !ok {
-			return nil
-		}
-		out = append(out, c)
-		if i < len(roots)-1 {
-			l, ok := s.links[k]
-			if !ok {
-				return nil
-			}
-			out = append(out, l)
-		}
+	p := s.periodLocked(root)
+	senders := slices.Collect(maps.Keys(s.servers))
+	s.mu.Unlock()
+	if p == nil || p.Expires().Sub(now) < PeriodLifetime-PeriodRenew {
+		return true
 	}
-	return out
+	// member is asked without the lock: it may take the records' lock,
+	// which Add's callers hold before this one.
+	return slices.ContainsFunc(senders, func(m KeyHash) bool { return !member(m) })
 }
 
-// Stale reports whether the current root's hubs' credential needs a new
-// version: there is none, it lists other keys than the records say (its
-// real entries come first, so a key the records still name must be among
-// them and no other key the records know may follow), or less than
-// CredentialRenew of it remains.
-func Stale(b *CredentialBody, want CredentialLists, known func(KeyHash) bool, now time.Time) bool {
-	if b == nil || b.Expires().Sub(now) < CredentialRenew {
+// ListStale reports whether a credential's list got needs a new version
+// for the server keys want: a key it wants is missing, the first ones are
+// not want in its order when ordered, or it names a server key it keeps
+// that it no longer wants. Padding never matches a kept key.
+func (s *Credentials) ListStale(got, want []KeyHash, ordered bool) bool {
+	if len(got) != padTo(len(want)) || ordered && !slices.Equal(got[:len(want)], want) {
 		return true
 	}
-	lists := func(got, want []KeyHash, ordered bool) bool {
-		if len(got) != padTo(len(want)) {
-			return false
-		}
-		if ordered && !slices.Equal(got[:len(want)], want) {
-			return false
-		}
-		for _, k := range want {
-			if !slices.Contains(got, k) {
-				return false
-			}
-		}
-		for _, k := range got {
-			if !slices.Contains(want, k) && known(k) {
-				return false
-			}
-		}
-		return true
-	}
-	return !lists(b.Hubs, want.Hubs, true) || !lists(b.Admins, want.Admins, false) || !lists(b.Heirs, want.Heirs, false)
-}
-
-// KnownKey reports whether the records name the key k anywhere: a device's
-// key, an admin CA, a root, or a revoked key. Padding never matches one.
-func (s *Records) KnownKey(k KeyHash) bool {
-	if s.eval().revoked[k] || s.onPath()[k] {
-		return true
-	}
-	for _, r := range s.byID {
-		b := r.body
-		if b.Key != nil && *b.Key == k || b.Admin != nil && *b.Admin == k || r.signer == k {
+	for _, k := range want {
+		if !slices.Contains(got, k) {
 			return true
+		}
+	}
+	for _, k := range got {
+		if !slices.Contains(want, k) {
+			if _, ok := s.MemberOfServer(k); ok {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// NextVersion returns the version of a hubs' credential after prev: one
-// above it, or the time in seconds when that is more, so a root that lost
-// its state still signs a newer version.
+// NextVersion returns the version of a credential after prev: one above
+// it, or the time in seconds when that is more, so a signer that lost its
+// state still signs a newer version.
 func NextVersion(prev uint64, now time.Time) uint64 {
 	return max(prev+1, uint64(max(now.Unix(), 0)))
 }
@@ -575,11 +754,11 @@ func (s *Credentials) Save(dir string) error {
 	return atomicfile.Write(filepath.Join(dir, CredentialsFileName), append(data, '\n'), 0o600)
 }
 
-// LoadCredentials reads dir/credentials.json for the group of groupCA with
-// the roots of its path; a missing file is an empty set, and credentials
-// that are not valid for the group are left out.
-func LoadCredentials(dir string, roots []*x509.Certificate) (*Credentials, error) {
-	s := NewCredentials(roots[0])
+// LoadCredentials reads dir/credentials.json for the group of groupCA,
+// whose current root is root; a missing file is an empty set, and
+// credentials that are not valid for the group are left out.
+func LoadCredentials(dir string, groupCA, root *x509.Certificate, member func(KeyHash) bool) (*Credentials, error) {
+	s := NewCredentials(groupCA)
 	data, err := os.ReadFile(filepath.Join(dir, CredentialsFileName))
 	if errors.Is(err, fs.ErrNotExist) {
 		return s, nil
@@ -591,22 +770,8 @@ func LoadCredentials(dir string, roots []*x509.Certificate) (*Credentials, error
 	if err := json.Unmarshal(data, &all); err != nil {
 		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, CredentialsFileName), err)
 	}
-	s.Add(roots, all)
+	s.Add(root, member, all)
 	return s, nil
-}
-
-// MaxVersion returns the highest version of the hubs' credentials it
-// keeps, from any root; 0 when it keeps none.
-func (s *Credentials) MaxVersion() uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var v uint64
-	for _, c := range s.hubs {
-		if b, err := c.Open(); err == nil {
-			v = max(v, b.Version)
-		}
-	}
-	return v
 }
 
 // GroupCA returns the group CA of the set.

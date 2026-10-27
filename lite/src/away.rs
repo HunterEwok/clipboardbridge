@@ -252,7 +252,7 @@ impl Away {
                 continue;
             }
             let mut reached = false;
-            for (i, (hub, id)) in hubs.iter().zip(&ids).enumerate() {
+            for (hub, id) in hubs.iter().zip(&ids) {
                 let link = match Link::start(&st, hub, &self.me, self.log.clone()) {
                     Ok(l) => l,
                     Err(e) => {
@@ -262,7 +262,7 @@ impl Away {
                 };
                 links += 1;
                 *self.using.lock().unwrap() = Some((hub.device.clone(), links));
-                if i > 0 {
+                if hub.device != hubs[0].device {
                     // A hub below the first: the ones above are tried again
                     // after a while.
                     let (away, node, id, n) = (self.clone(), node.clone(), id.clone(), links);

@@ -1549,21 +1549,22 @@ func TestTakeover(t *testing.T) {
 			return err == nil && len(id.Roots) == 1
 		})
 	}
-	// The servers' view follows: the old root's hubs' credential, which
-	// named a an heir, a's link to its root, and the new root's credential,
-	// which lists a as a hub.
+	// The servers' view follows: the new root starts a period of its own,
+	// whose hubs' credential lists a's server key.
 	aKey := group.KeyHashOf(id.Cert)
-	waitFor(t, "b keeps the credentials across the handover", func() bool {
+	waitFor(t, "b keeps the new root's period", func() bool {
 		bid, err := group.Load(b.dir)
+		if err != nil || len(bid.Roots) != 1 {
+			return false
+		}
+		creds, err := group.LoadCredentials(b.dir, bid.GroupCA.Cert, bid.Roots[0], func(group.KeyHash) bool { return true })
 		if err != nil {
 			return false
 		}
-		creds, err := group.LoadCredentials(b.dir, bid.Trusted())
-		if err != nil {
-			return false
-		}
-		ch, err := group.CheckChain(bid.GroupCA.Cert, creds.Chain(bid.Trusted()))
-		return err == nil && len(ch.Roots) == 2 && slices.Contains(ch.Last().Hubs, aKey)
+		_, _, ok := creds.Period(bid.Roots[0])
+		sk, known := creds.Server(aKey)
+		_, hb, listed := creds.Hubs()
+		return ok && known && listed && slices.Contains(hb.Hubs, sk)
 	})
 	waitFor(t, "a lists itself as the root and the pi no more", func() bool {
 		root := false

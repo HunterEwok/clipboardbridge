@@ -41,6 +41,10 @@ var Addr = netip.MustParseAddr("fd00:cbb::1")
 type (
 	challenge struct {
 		E []byte `json:"e"` // the relay's ephemeral X25519 key
+		// Roots asks a device that registers with credentials for the
+		// period credential and the group's roots: a relay that serves a
+		// fixed list of groups knows them by their roots.
+		Roots bool `json:"roots,omitempty"`
 	}
 	claim struct {
 		Key   []byte `json:"key"`   // the member's WireGuard public key
@@ -49,6 +53,12 @@ type (
 		// (group.Records.AuthorityRecords): the relay keeps them for the
 		// group and refuses, and drops, the devices they remove.
 		Records []group.Record `json:"records,omitempty"`
+		// Credentials are the period's hubs' and members' credentials, and
+		// the period credential when the relay asks for the roots
+		// (docs/protocol.md, section 18), in place of the records; Roots
+		// are then the group's roots, the group CA first.
+		Credentials []group.Credential `json:"credentials,omitempty"`
+		Roots       [][]byte           `json:"roots,omitempty"`
 	}
 	welcome struct {
 		Error string `json:"error,omitempty"` // why the relay refused it
@@ -60,15 +70,18 @@ type (
 
 // The messages inside the tunnel, at the relay's member port: each
 // connection starts with one request line; the relay answers with notes.
+// A device's name is its device ID when it registered with its member
+// certificate, or its pseudonym, the hash of its server key in hex, when
+// it registered with the group's credentials.
 type (
 	request struct {
 		Watch  bool   `json:"watch,omitempty"`  // keep this connection for the notes
-		Dial   string `json:"dial,omitempty"`   // join this connection to that device's
+		Dial   string `json:"dial,omitempty"`   // join this connection to that of the device of this name
 		Answer string `json:"answer,omitempty"` // the ticket of a call this connection answers
 	}
 	note struct {
-		Online *[]string `json:"online,omitempty"` // the other devices of the group on the relay now
-		Call   string    `json:"call,omitempty"`   // a device that dials this one
+		Online *[]string `json:"online,omitempty"` // the other devices of the group on the relay now, by name
+		Call   string    `json:"call,omitempty"`   // the name of a device that dials this one
 		Ticket string    `json:"ticket,omitempty"` // to answer that call with
 		OK     bool      `json:"ok,omitempty"`     // joined: the member protocol follows
 		Error  string    `json:"error,omitempty"`

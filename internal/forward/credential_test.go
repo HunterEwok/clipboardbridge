@@ -20,13 +20,12 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
-// TestCredentialRegistration checks a hub that registers with its group's
-// hubs' credential (docs/protocol.md, section 18): its certificate names no
-// device, the forwarder takes only a hub the credential lists, refuses an
-// expired or older credential, also after a restart, and a group that
-// registered with a credential never with records again; a link from an
-// heir hands the group to a new root, after which the old root's
-// credentials and the other heirs' links count for nothing.
+// TestCredentialRegistration checks a hub that registers with its period's
+// hubs' credential (docs/protocol.md, section 18): its certificate names
+// neither a device nor a group; the forwarder takes only a hub the
+// credential lists, refuses an expired or older credential, and, once it
+// saw a period key for a tag, any other key for it, also after a restart;
+// and its state names neither the period's tag nor its key.
 func TestCredentialRegistration(t *testing.T) {
 	now := time.Now()
 	state := filepath.Join(t.TempDir(), "state.json")
@@ -39,16 +38,21 @@ func TestCredentialRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tag := group.Tag(root.Cert)
-	hubKey, _ := group.NewKey()
-	hub, err := group.HubCertificate(hubKey, root.Cert)
+	periodKey, _ := group.NewKey()
+	tag, _ := group.NewPeriodTag()
+	pc, err := group.SignPeriod(group.Tag(root.Cert), tag, &periodKey.PublicKey, 1, now, root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(hub.Leaf.Raw), "cb-") || hub.Leaf.Subject.CommonName != group.HubCertificateName {
+	period, _ := pc.Open()
+	hubKey, _ := group.NewKey()
+	hub, err := group.ServerCertificate(hubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(hub.Leaf.Raw), "cb-") || hub.Leaf.Subject.CommonName != group.ServerCertificateName {
 		t.Fatalf("the hub's certificate names a device: %v", hub.Leaf.Subject)
 	}
-	heirKey, _ := group.NewKey()
 	rogueKey, _ := group.NewKey()
 	keyHash := func(k *ecdsa.PrivateKey) group.KeyHash {
 		t.Helper()
@@ -58,13 +62,9 @@ func TestCredentialRegistration(t *testing.T) {
 		}
 		return sha256.Sum256(spki)
 	}
-	lists := group.CredentialLists{
-		Hubs:  []group.KeyHash{keyHash(hubKey)},
-		Heirs: []group.KeyHash{keyHash(heirKey), keyHash(rogueKey)},
-	}
-	sign := func(ca *group.CA, v uint64, at time.Time) group.Credential {
+	sign := func(p *group.CredentialBody, key *ecdsa.PrivateKey, v uint64) group.Credential {
 		t.Helper()
-		c, err := group.SignHubs(tag, lists, v, at, ca.Key)
+		c, err := group.SignHubs(p, []group.KeyHash{keyHash(hubKey)}, nil, v, key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,66 +75,54 @@ func TestCredentialRegistration(t *testing.T) {
 		t.Helper()
 		return rawRegister(t, f, pin, cert, wg.PublicKey().Bytes(), wg, auth)
 	}
+	creds := func(cs ...group.Credential) hubAuth { return hubAuth{creds: cs} }
 
-	if a := register(f, pin, hub, hubAuth{creds: []group.Credential{sign(root, 10, now)}}); a.Error != "" || a.ID == 0 {
+	if a := register(f, pin, hub, creds(sign(period, periodKey, 10))); a.Error != "" || a.ID == 0 {
 		t.Fatalf("the hub with its credential: %+v", a)
 	}
-	other, _ := group.HubCertificate(rogueKey, root.Cert)
-	if a := register(f, pin, other, hubAuth{creds: []group.Credential{sign(root, 10, now)}}); !strings.Contains(a.Error, "does not list") {
+	other, _ := group.ServerCertificate(rogueKey)
+	if a := register(f, pin, other, creds(sign(period, periodKey, 10))); !strings.Contains(a.Error, "does not list") {
 		t.Errorf("a key the credential does not list: %+v", a)
 	}
-	if a := register(f, pin, hub, hubAuth{creds: []group.Credential{sign(root, 11, now.Add(-group.CredentialLifetime-time.Hour))}}); !strings.Contains(a.Error, "expired") {
+	old := *period
+	old.ExpiresMS = now.Add(-time.Hour).UnixMilli()
+	if a := register(f, pin, hub, creds(sign(&old, periodKey, 11))); !strings.Contains(a.Error, "expired") {
 		t.Errorf("an expired credential: %+v", a)
 	}
-	if a := register(f, pin, hub, hubAuth{creds: []group.Credential{sign(root, 9, now)}}); !strings.Contains(a.Error, "older") {
+	if a := register(f, pin, hub, creds(sign(period, periodKey, 9))); !strings.Contains(a.Error, "older") {
 		t.Errorf("an older credential: %+v", a)
 	}
-	forged, _ := group.NewRootCA(now)
-	if a := register(f, pin, hub, hubAuth{creds: []group.Credential{sign(forged, 12, now)}}); !strings.Contains(a.Error, "do not verify") {
-		t.Errorf("a credential another root signed: %+v", a)
+	if a := register(f, pin, hub, creds(sign(period, rogueKey, 12))); !strings.Contains(a.Error, "first") {
+		t.Errorf("a credential another key signed for the tag: %+v", a)
 	}
-	leaf, _ := root.IssueMember(group.NewDeviceID(), &hubKey.PublicKey, now)
-	memberOf := tls.Certificate{Certificate: [][]byte{leaf.Raw, root.Cert.Raw}, PrivateKey: hubKey, Leaf: leaf}
-	if a := register(f, pin, memberOf, hubAuth{key: root.Key}); !strings.Contains(a.Error, "credential") {
-		t.Errorf("the group with records after a credential: %+v", a)
+	if a := register(f, pin, hub, creds(sign(period, periodKey, 12), pc)); !strings.Contains(a.Error, "no hubs' credential") {
+		t.Errorf("a period sent to the forwarder: %+v", a)
+	}
+	withCA := tls.Certificate{Certificate: [][]byte{hub.Certificate[0], root.Cert.Raw}, PrivateKey: hubKey, Leaf: hub.Leaf}
+	if a := register(f, pin, withCA, creds(sign(period, periodKey, 13))); a.Error == "" {
+		t.Errorf("a server certificate with a group CA: %+v", a)
 	}
 
-	// After a restart on the same state the older credential stays refused.
+	// After a restart on the same state the older credential and the other
+	// key stay refused.
 	g, gpin := startForwarderWith(t, Config{Cert: fcert, StateFile: state})
-	if a := register(g, gpin, hub, hubAuth{creds: []group.Credential{sign(root, 9, now)}}); !strings.Contains(a.Error, "older") {
+	if a := register(g, gpin, hub, creds(sign(period, periodKey, 9))); !strings.Contains(a.Error, "older") {
 		t.Errorf("an older credential after a restart: %+v", a)
 	}
-
-	// An heir hands the group to a new root.
-	next, _ := group.NewRootCA(now)
-	link, err := group.SignLink(tag, next.Cert, heirKey)
-	if err != nil {
-		t.Fatal(err)
+	if a := register(g, gpin, hub, creds(sign(period, rogueKey, 20))); !strings.Contains(a.Error, "first") {
+		t.Errorf("another key after a restart: %+v", a)
 	}
-	old := sign(root, 10, now)
-	if a := register(g, gpin, hub, hubAuth{creds: []group.Credential{old, link, sign(next, 20, now)}}); a.Error != "" {
-		t.Fatalf("the new root's credential: %+v", a)
-	}
-	if a := register(g, gpin, hub, hubAuth{creds: []group.Credential{sign(root, 15, now)}}); !strings.Contains(a.Error, "older") {
-		t.Errorf("the old root's credential after the handover: %+v", a)
-	}
-	rival, _ := group.NewRootCA(now)
-	rivalLink, _ := group.SignLink(tag, rival.Cert, rogueKey)
-	if a := register(g, gpin, hub, hubAuth{creds: []group.Credential{old, rivalLink, sign(rival, 1000, now)}}); !strings.Contains(a.Error, "replaced") {
-		t.Errorf("another heir's handover after the first: %+v", a)
-	}
-	strangerKey, _ := group.NewKey()
-	strangerLink, _ := group.SignLink(tag, rival.Cert, strangerKey)
-	if a := register(f, pin, hub, hubAuth{creds: []group.Credential{sign(root, 30, now), strangerLink, sign(rival, 31, now)}}); !strings.Contains(a.Error, "do not verify") {
-		t.Errorf("a link that no heir signed: %+v", a)
+	if a := register(g, gpin, hub, creds(sign(period, periodKey, 20))); a.Error != "" {
+		t.Errorf("a newer credential after a restart: %+v", a)
 	}
 
-	// The state names neither the group nor its roots.
+	// The state names neither the period's tag nor its key, nor the group.
 	b, err := os.ReadFile(state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []string{tag, hex.EncodeToString(root.Cert.RawSubjectPublicKeyInfo[:16]), group.Tag(next.Cert)} {
+	pk := keyHash(periodKey)
+	for _, c := range []string{tag, hex.EncodeToString(pk[:]), group.Tag(root.Cert)} {
 		if strings.Contains(string(b), c) {
 			t.Errorf("the state file holds %q: %s", c, b)
 		}

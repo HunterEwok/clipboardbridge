@@ -46,6 +46,14 @@ class AwayFromHomeTest {
         // So is the way over VLESS.
         val tunneled = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, null, """{"endpoint":"203.0.113.9:443"}""")
         assertEquals(tunneled, AwayState.decode(AwayState(key).withOffer(hub, tunneled).encode())!!.offer(hub))
+        // And the hub's key for the next period, which the phone tries right after its key now.
+        val next = Member.TunnelOffer(offer.hubKey, offer.psk, offer.endpoints, nextKey = ByteArray(32) { 7 })
+        val withNext = AwayState(key).withOffer(hub, next)
+        assertEquals(next, AwayState.decode(withNext.encode())!!.offer(hub))
+        val tried = AwayFromHome.hubsToTry(listOf(hub), withNext)
+        assertEquals(listOf(hub, hub), tried.map { it.first })
+        assertArrayEquals(ByteArray(32) { 7 }, tried[1].second.hubKey)
+        assertNull(tried[1].second.nextKey)
 
         // Another version, a cut file, a longer one and a bad offer are not states.
         val b = both.encode()

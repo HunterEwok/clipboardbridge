@@ -312,15 +312,27 @@ public enum Member {
         /// Whether the sender is no hub any more and hands its clients over
         /// to hub: the client forgets the sender's own offer.
         public var moved: Bool
+        /// The key the hub serves with in the next period of the group's
+        /// server credentials, which the client tries after hubKey (section
+        /// 11, "The hub's key"); nil for none.
+        public var nextKey: Data?
 
         public init(hubKey: Data, psk: Data, endpoints: [String] = [], obfuscation: Obfuscation? = nil, vless: VLESS? = nil, hub: String? = nil,
-                    moved: Bool = false) {
+                    moved: Bool = false, nextKey: Data? = nil) {
             (self.hubKey, self.psk, self.endpoints, self.obfuscation, self.vless, self.hub) = (hubKey, psk, endpoints, obfuscation, vless, hub)
-            self.moved = moved
+            (self.moved, self.nextKey) = (moved, nextKey)
         }
 
-        /// Whether both keys are 32 bytes, as a tunnel needs.
-        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 }
+        /// Whether the keys are 32 bytes, as a tunnel needs.
+        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 && (nextKey?.count ?? 32) == 32 }
+
+        /// The offer with the next key as the hub's key, or nil without one.
+        public var withNextKey: TunnelOffer? {
+            guard let nextKey else { return nil }
+            var o = self
+            (o.hubKey, o.nextKey) = (nextKey, nil)
+            return o
+        }
 
         /// The same offer with another preshared key and hub, and moved set.
         public func with(psk: Data, hub: String?, moved: Bool = false) -> TunnelOffer {
@@ -329,7 +341,7 @@ public enum Member {
             return o
         }
 
-        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub, moved }
+        enum CodingKeys: String, CodingKey { case hub_key, psk, endpoints, obfuscation, vless, hub, moved, next_key }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -340,6 +352,7 @@ public enum Member {
             vless = try c.decodeIfPresent(VLESS.self, forKey: .vless)
             hub = try c.decodeIfPresent(String.self, forKey: .hub)
             moved = try c.decodeIfPresent(Bool.self, forKey: .moved) ?? false
+            nextKey = try c.decodeIfPresent(Data.self, forKey: .next_key).flatMap { $0.isEmpty ? nil : $0 }
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -351,6 +364,7 @@ public enum Member {
             try c.encodeIfPresent(vless, forKey: .vless)
             try c.encodeIfPresent(hub, forKey: .hub)
             if moved { try c.encode(true, forKey: .moved) }
+            try c.encodeIfPresent(nextKey, forKey: .next_key)
         }
     }
 
@@ -514,6 +528,9 @@ public enum Member {
         /// admin CA that issued it when an admin phone did.
         case cert(Data, issuer: Data? = nil)
         case records([Record])
+        /// The group's server credentials the sender keeps, or new ones it
+        /// passes on (section 18).
+        case credentials([ServerCredentials.Credential])
         /// From the root: the receiver's admin CA, DER, for the admin key
         /// its hello offered.
         case admin(Data)
@@ -627,6 +644,7 @@ public enum Member {
         case "bye": return .bye
         case "cert": return .cert(w.cert ?? Data(), issuer: w.issuer)
         case "records": return .records(w.records ?? [])
+        case "credentials": return .credentials(w.credentials ?? [])
         case "admin": return .admin(w.admin_ca ?? Data())
         case "tunnel": return .tunnel(w.tunnel?.value)
         case "hubs": return w.hubs?.value.map { .hubs($0) } ?? .unknown(w.t)
@@ -670,6 +688,7 @@ public enum Member {
         var cert: Data?
         var issuer: Data?
         var records: [Record]?
+        var credentials: [ServerCredentials.Credential]?
         var admin_ca: Data?
         var tunnel: Lenient<TunnelOffer>?
         var hubs: Lenient<HubShare>?
@@ -683,7 +702,7 @@ public enum Member {
         let m: Message
         init(_ m: Message) { self.m = m }
 
-        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, admin_ca, tunnel, hubs, command, result, evidence, get }
+        enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, credentials, admin_ca, tunnel, hubs, command, result, evidence, get }
         enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, media }
 
         func encode(to encoder: Encoder) throws {
@@ -718,6 +737,9 @@ public enum Member {
             case let .records(rs):
                 try c.encode("records", forKey: .t)
                 try c.encode(rs, forKey: .records)
+            case let .credentials(cs):
+                try c.encode("credentials", forKey: .t)
+                try c.encode(cs, forKey: .credentials)
             case let .admin(ca):
                 try c.encode("admin", forKey: .t)
                 try c.encode(ca, forKey: .admin_ca)

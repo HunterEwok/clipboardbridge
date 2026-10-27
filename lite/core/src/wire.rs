@@ -182,6 +182,10 @@ pub struct TunnelOffer {
     /// In an offer passed on, that the sender is no hub any more.
     #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub moved: bool,
+    /// The key the hub serves with in the next period, which the member
+    /// tries after `hub_key` (section 11, "The hub's key"); empty for none.
+    #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
+    pub next_key: Vec<u8>,
 }
 
 /// The roles a peer may claim.

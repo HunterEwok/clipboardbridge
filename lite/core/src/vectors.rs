@@ -461,3 +461,62 @@ fn go_release() {
         assert!(release::parse_version(bad).is_none(), "{bad}");
     }
 }
+
+/// The server credentials (docs/protocol.md, section 18), as Go's
+/// TestGoCredentialVectors writes them: what the records say the
+/// credentials list, the signatures and types, and which sets a server
+/// takes.
+#[test]
+fn go_credentials() {
+    use crate::credential::{self, Credential, HUBS, MEMBERS, PERIOD, SERVER};
+    let v = vectors("go-credentials.json");
+    let ca = cert(&v["group_ca"]);
+    let mut s = Records::new(&ca);
+    let (_, errs) = s.add_all(&records(&v["records"]));
+    assert!(errs.is_empty(), "{errs:?}");
+    let hashes = |k: &str| -> Vec<KeyHash> {
+        v["lists"][k].as_array().unwrap().iter().map(|h| bytes(h).try_into().unwrap()).collect()
+    };
+    let l = credential::lists(&s);
+    assert_eq!(l.hubs, hashes("Hubs"));
+    assert_eq!(l.admins, hashes("Admins"));
+    assert_eq!(l.members, hashes("Members"));
+
+    let cred = |v: &Value| -> Credential { serde_json::from_value(v.clone()).unwrap() };
+    let tag = certs::tag(&ca);
+    let period = cred(&v["period"]);
+    let p = period.open().unwrap();
+    assert_eq!((p.kind.as_str(), p.group.as_str()), (PERIOD, tag.as_str()));
+    // The group's root signed the period.
+    assert_eq!(period.key, ca.spki);
+    for c in v["servers"].as_array().unwrap() {
+        let c = cred(c);
+        let b = c.open().unwrap();
+        assert_eq!((b.kind.as_str(), b.group.as_str(), b.tag.as_str()), (SERVER, tag.as_str(), p.tag.as_str()));
+        assert!(s.devices().iter().any(|d| d.keys.contains(&c.signer())), "a server key that no member signed");
+    }
+    let (hubs, members) = (cred(&v["hubs"]), cred(&v["members"]));
+    let hb = hubs.open().unwrap();
+    assert_eq!((hb.kind.as_str(), hb.group.as_str()), (HUBS, p.tag.as_str()));
+    assert_eq!(hubs.key, p.key);
+    assert_eq!(credential::pseudonym(&hb.hubs[0]), v["pseudonym"].as_str().unwrap());
+    // Padded to 4, 8, 16 or more.
+    assert!(hb.hubs.len() >= l.hubs.len() && hb.hubs.len().is_power_of_two() && hb.hubs.len() >= 4);
+    assert_eq!(members.open().unwrap().kind, MEMBERS);
+
+    let now = v["now_ms"].as_i64().unwrap();
+    let got = credential::check_presented(&[hubs.clone(), members.clone(), period.clone()], now).unwrap();
+    assert_eq!(got.tag, p.tag);
+    assert!(got.members.is_some() && got.period.is_some());
+    assert!(credential::check_presented(std::slice::from_ref(&hubs), p.expires_ms).is_err(), "expired");
+    for b in v["bad"].as_array().unwrap() {
+        let set: Vec<Credential> = b["set"].as_array().unwrap().iter().map(cred).collect();
+        assert!(credential::check_presented(&set, now).is_err(), "{}: taken", b["name"]);
+    }
+    // A body changed after signing does not verify.
+    let mut forged = hubs.clone();
+    forged.body[10] ^= 1;
+    assert!(forged.open().is_err());
+    // Encoding again gives the same JSON as Go's.
+    assert_eq!(serde_json::to_value(&hubs).unwrap(), v["hubs"]);
+}

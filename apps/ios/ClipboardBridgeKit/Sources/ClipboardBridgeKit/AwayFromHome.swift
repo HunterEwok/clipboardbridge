@@ -295,8 +295,8 @@ public actor AwayFromHome {
                 continue
             }
             var served: Duration?
-            for (i, h) in hubs.enumerated() {
-                served = await tryHub(s, h, up: i > 0)
+            for h in hubs {
+                served = await tryHub(s, h, up: h.device != hubs[0].device)
                 if served != nil || Task.isCancelled || state != s { break }
             }
             if Task.isCancelled { break }
@@ -398,8 +398,11 @@ public actor AwayFromHome {
     static func rank(_ order: [String], _ hub: String) -> Int { order.firstIndex(of: hub) ?? order.count }
 
     /// The kept offers the phone tries, of the hubs in the group's order and
-    /// with endpoints, highest first.
+    /// with endpoints, highest first; a hub that gave its key for the next
+    /// period comes again right after, with that key: it may have moved on
+    /// to it while the phone was away (section 11, "The hub's key").
     static func hubsToTry(_ order: [String], _ s: AwayState) -> [AwayState.Hub] {
         s.hubs.filter { rank(order, $0.device) < order.count && !$0.offer.endpoints.isEmpty }.sorted { rank(order, $0.device) < rank(order, $1.device) }
+            .flatMap { h in [h] + (h.offer.withNextKey.map { [AwayState.Hub(device: h.device, offer: $0)] } ?? []) }
     }
 }

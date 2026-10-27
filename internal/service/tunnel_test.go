@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -251,6 +252,75 @@ func TestAwayFromHome(t *testing.T) {
 	waitFor(t, "the deck is alone", func() bool { return len(deck.status(t).Peers) == 0 })
 }
 
+// TestHubKeyRotation checks that the hub takes a new WireGuard key for
+// each period of the server credentials: its offers give the next key
+// ahead of time, and a client that was away while the hub moved on to it
+// reaches the hub with it.
+func TestHubKeyRotation(t *testing.T) {
+	t.Setenv("CBB_DEBUG", "1")
+	every, ahead := renewEvery, hubKeyAhead
+	renewEvery, hubKeyAhead = 200*time.Millisecond, 24*time.Hour
+	t.Cleanup(func() { renewEvery, hubKeyAhead = every, ahead })
+	var skew atomic.Int64
+	var h hub
+	pi := startWith(t, &h, "pi", group.OSLinux, func(c *Config) {
+		c.now = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
+	})
+	deck := startService(t, &h, "deck")
+	pairWith(t, pi, deck)
+	for _, s := range []*testService{pi, deck} {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "on", Consent: true}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	port := freeUDP(t)
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: port, Addrs: []string{fmt.Sprintf("127.0.0.1:%d", port)}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	piID := pi.status(t).Device
+	load := func(s *testService) *tunnel.State {
+		st, err := tunnel.LoadState(s.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	var old, next tunnel.Key
+	waitFor(t, "the deck keeps the hub's key for the next period", func() bool {
+		st := load(pi)
+		if st.Next.IsZero() {
+			return false
+		}
+		old, next = st.ServingKey().Public(), st.Next.Public()
+		l := load(deck).Hub(piID)
+		return l != nil && l.PublicKey == old && l.Next == next
+	})
+
+	// The deck is away and off while the hub moves on to the new key.
+	deckID := deck.status(t).Device
+	deck.stop()
+	h.hide(deckID)
+	skew.Store(int64(25 * time.Hour))
+	waitFor(t, "the hub serves with the new key", func() bool {
+		st := load(pi)
+		return st.Next.IsZero() && st.ServingKey().Public() == next
+	})
+	deck = restartService(t, &h, deck)
+	// The old key gets no answer for the handshake timeout first.
+	waitUpTo(t, 60*time.Second, "the deck reaches the hub with the new key", func() bool {
+		st := deck.status(t)
+		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
+	})
+	waitFor(t, "the deck keeps the new key", func() bool {
+		l := load(deck).Hub(piID)
+		return l != nil && l.PublicKey == next && l.Next.IsZero()
+	})
+	if _, err := deck.do(t, control.Header{Op: control.OpCopy}, "after the new period"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pi has it", func() bool { return pi.paste(t) == "after the new period" })
+}
+
 // TestAwayObfuscated makes the pi an obfuscated hub: the deck gets its
 // AmneziaWG settings with the offer at home and syncs with it away, and
 // setting the hub again keeps the settings.
@@ -363,8 +433,8 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 		a := pi.status(t).Away
 		return a != nil && a.Forwarder != nil && a.Forwarder.Registered && a.Forwarder.Seen != ""
 	})
-	// The pi, the group's root, registered with the hubs' credential it
-	// signed, which the deck keeps too.
+	// The pi, the group's root, registered with the period's hubs'
+	// credential it signed, which the deck keeps too.
 	var kept map[string]json.RawMessage
 	if b, err := os.ReadFile(state); err != nil || json.Unmarshal(b, &kept) != nil || len(kept) != 1 {
 		t.Errorf("the forwarder's state after a registration with a credential: %v, %d entries", err, len(kept))
@@ -818,5 +888,14 @@ func TestHubsToTry(t *testing.T) {
 	}
 	if got := devs(hubsToTry(order, "phone", st)); len(got) != 0 {
 		t.Errorf("the first hub tries %v", got)
+	}
+
+	// A hub with a key for the next period is tried with that key too,
+	// right after its key now.
+	st.IsHub = false
+	st.Hubs[2].PublicKey, st.Hubs[2].Next = tunnel.Key{1}, tunnel.Key{2}
+	got := hubsToTry(order, "deck", st)
+	if !slices.Equal(devs(got), []string{"phone", "phone", "pi"}) || got[0].PublicKey != (tunnel.Key{1}) || got[1].PublicKey != (tunnel.Key{2}) || !got[1].Next.IsZero() {
+		t.Errorf("a client tries %+v", got)
 	}
 }

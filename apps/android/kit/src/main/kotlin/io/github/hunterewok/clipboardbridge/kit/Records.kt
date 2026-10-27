@@ -847,7 +847,7 @@ class RecordSet {
         }
 
     /** The root's own device and its key: the newest full or phone device record the current root signed for itself. */
-    private fun rootMember(): Pair<String, Key>? {
+    internal fun rootMember(): Pair<String, Key>? {
         val ev = Eval(this)
         val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
         val own = ev.entries.filter {

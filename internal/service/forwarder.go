@@ -29,7 +29,7 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 	s.tunFwd = &control.Forwarder{Endpoint: fw.Endpoint.String()}
 	cfg := forward.HubConfig{
 		Link:        forward.Link{Endpoint: fw.Endpoint, Pin: fw.Pin},
-		Key:         st.Key,
+		Key:         st.ServingKey(),
 		Obfuscation: st.Obfuscation,
 		VLESSID:     fw.VLESSID,
 		Cert: func() tls.Certificate {
