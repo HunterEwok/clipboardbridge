@@ -12,8 +12,8 @@ the tunnel's keys.
 
 ## 1. Choose the hub
 
-The hub is a Linux computer or a Windows PC that is an admin of the group (a Mac cannot be
-the hub yet). The best one is always on: a home server, a NAS ([Docker](install.md#docker)),
+The hub is a computer that is an admin of the group: Linux, Windows, a Mac, FreeBSD or a
+router with OpenWrt or OPNsense. The best one is always on: a home server, a NAS ([Docker](install.md#docker)),
 a Raspberry Pi. A computer you switch on only when you need it works too; while the hub is
 off, nothing syncs away from home, and everything at home still syncs.
 

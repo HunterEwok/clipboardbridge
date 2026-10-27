@@ -9,8 +9,8 @@ TestFlight.
 
 ## 1. Make the group on a computer
 
-[Install](install.md) Clipboard Bridge on a computer that is often on; a Linux machine if
-you want the iPhone shortcut, since only Linux computers serve it. Then:
+[Install](install.md) Clipboard Bridge on a computer that is often on: Linux, Windows, a
+Mac or FreeBSD. It holds the group and serves the iPhone shortcut. Then:
 
 ```sh
 sudo cbb new

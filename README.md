@@ -98,6 +98,7 @@ through tmux and `cbb copy` and `cbb paste`.
 | Remote paste and quick actions | built | not yet |
 | Keys in the TPM on Linux, proven Android keys | built; CI against a software TPM | not yet |
 | Releases signed with the project's own keys | built; waits for the project's root keys | |
+| `cbb update`, automatic updates, the Android APK updating itself | built; takes only signed releases, so it waits for the root keys too | not yet |
 | The project's forwarder and relay at `cbb.tools`, open to everyone | being tested | |
 | Console paste on a key press | planned | |
 | Homebrew (`hunterewok/tap`) | a formula with each release | |

@@ -519,7 +519,7 @@ another key refused with its message.
   `testdata/interop/` (`go test ./internal/group ./internal/pair ./internal/phone ./internal/node -update`
   regenerates them), and CI runs it against the Go code: pairing over plain TCP on Linux,
   pairing and a member connection over real TLS on macOS.
-- The app finds the Linux members by browsing `_clipboardbridge._tcp` (ClipboardBridgeKit's
+- The app finds the full members by browsing `_clipboardbridge._tcp` (ClipboardBridgeKit's
   `BonjourBrowser` on iOS) and keeps one connection to each member of its group
   (`MemberDialer`). iOS asks once for local network access: the Info.plist lists
   `_clipboardbridge._tcp` under `NSBonjourServices` and explains the use in
