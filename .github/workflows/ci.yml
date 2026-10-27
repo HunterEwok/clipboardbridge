@@ -219,7 +219,11 @@ jobs:
             go build -trimpath -o /tmp/cbb ./cmd/cbb
             sh packaging/freebsd/install.sh --no-firewall /tmp/cbb
             service clipboardbridge status
-            cbb status 2>&1 | grep -Eq 'in a group|no group'
+            if ! cbb status 2>&1 | grep -Eq 'in a group|no group'; then
+              ps -axo user,pid,ppid,command | grep '[c]bb'
+              grep clipboardbridge /var/log/messages | tail -n 40
+              exit 1
+            fi
             kldload -n pf
             touch /etc/pf.conf
             pfctl -e
