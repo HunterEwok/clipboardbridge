@@ -73,6 +73,7 @@ internal fun KeyboardSection(keyboard: BluetoothKeyboard, details: Boolean) {
         hosts = keyboard.pairedHosts()
         keyboard.apply()
     }
+    val clipboardEmpty = stringResource(R.string.keyboard_clipboard_empty)
     Section(stringResource(R.string.keyboard)) {
         Column(Modifier.padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
             Row(
@@ -154,7 +155,7 @@ internal fun KeyboardSection(keyboard: BluetoothKeyboard, details: Boolean) {
                 enabled = state is BluetoothKeyboard.State.Connected,
                 onClick = {
                     val text = Clipboard.read(context)
-                    typed = if (text.isNullOrEmpty()) BluetoothKeyboard.Failure(context.getString(R.string.keyboard_clipboard_empty)) else keyboard.type(text.replace("\r\n", "\n"))
+                    typed = if (text.isNullOrEmpty()) BluetoothKeyboard.Failure(clipboardEmpty) else keyboard.type(text.replace("\r\n", "\n"))
                     typedOK = typed == null
                 },
             ) { Text(stringResource(R.string.keyboard_type_clipboard), color = palette.accent) }

@@ -325,14 +325,14 @@
     <string name="keyboard_allow">Allow Bluetooth</string>
     <string name="keyboard_bluetooth_off">Bluetooth is off.</string>
     <string name="keyboard_turn_on_bluetooth">Turn on Bluetooth</string>
-    <string name="keyboard_refused">The system did not let this phone be a keyboard. Another app may be the phone's keyboard now: turn it off there.</string>
+    <string name="keyboard_refused">The system did not let this phone be a keyboard. Another app may be the phone\'s keyboard now: turn it off there.</string>
     <string name="keyboard_pick_host">Pick the device to type into.</string>
     <string name="keyboard_connecting">Connecting… The device must be on and near.</string>
     <string name="keyboard_connected">Connected to %1$s.</string>
     <string name="keyboard_host">Type into</string>
     <string name="keyboard_no_hosts">No paired devices yet. Make this phone visible, then add it on the device, in its Bluetooth settings.</string>
     <string name="keyboard_discoverable">Make this phone visible</string>
-    <string name="keyboard_layout">The device's keyboard layout</string>
+    <string name="keyboard_layout">The device\'s keyboard layout</string>
     <string name="keyboard_layout_us">English (US)</string>
     <string name="keyboard_layout_ru">Russian</string>
     <string name="keyboard_rate">Speed</string>
@@ -342,7 +342,7 @@
     <string name="keyboard_type_clipboard">Type the clipboard</string>
     <string name="keyboard_typing">Typing.</string>
     <string name="keyboard_type_failed">The text was not typed.</string>
-    <string name="keyboard_untypeable">The device's layout has no key for: %1$s. Pick its layout above.</string>
+    <string name="keyboard_untypeable">The device\'s layout has no key for: %1$s. Pick its layout above.</string>
     <string name="keyboard_clipboard_empty">the clipboard holds no text</string>
     <string name="channel_pastes">Remote pastes</string>
     <string name="pasted_from">Pasted from %1$s</string>
