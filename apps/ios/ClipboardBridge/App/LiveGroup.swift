@@ -82,6 +82,10 @@ final class LiveGroup: GroupController {
     private var dialer: MemberDialer?
     private var relay: Relay?
     private var recordBox: RecordBox?
+    /// The group's server credentials (docs/protocol.md, section 18) and
+    /// this phone's keys for the servers.
+    private var credentialBox: CredentialBox?
+    private let periodKeys = PhoneKeys()
     private var renewer: Renewer?
     private var admins: AdminBox?
     private var away: AwayFromHome?
@@ -305,7 +309,7 @@ final class LiveGroup: GroupController {
                     tls.close()
                 }
                 try g.save(to: file)
-                if made { try modeBox.newDevice() }
+                if made { try modeBox.newDevice(); forgetCredentials() }
                 state = g
                 try startSync()
                 groupChanged()
@@ -485,6 +489,7 @@ final class LiveGroup: GroupController {
             throw Failure.timedOut
         }
         try modeBox.newDevice()
+        forgetCredentials()
         state = PhoneGroup.joined(joined)
         try startSync()
     }
@@ -669,10 +674,37 @@ final class LiveGroup: GroupController {
         }
     }
 
+    // MARK: Server credentials
+
+    /// credentials.json beside the group's file.
+    private var credentialsURL: URL { file.deletingLastPathComponent().appendingPathComponent("credentials.json") }
+
+    /// Drops the credentials and the keys for the servers of an earlier
+    /// group, when the phone makes or joins one.
+    private func forgetCredentials() {
+        try? FileManager.default.removeItem(at: credentialsURL)
+        periodKeys.clear()
+    }
+
+    /// Brings the group's server credentials up to date as far as this
+    /// phone can (docs/protocol.md, section 18) and sends what it signed to
+    /// the computers: its server key for the period; on the root, the
+    /// period when one is due, while the user's last Face ID lasts, and the
+    /// hubs' and members' credentials; on a listed admin, the members'.
+    private func refreshCredentials() {
+        guard let box = credentialBox, let node, let member = try? memberSigner() else { return }
+        let renewer = renewer
+        let root: (() -> CertificateSigner?)? = state?.isRoot == true ? { renewer?.signer() } : nil
+        let signed = box.refresh(member: member, keys: periodKeys, rootSigner: root)
+        if !signed.isEmpty { Task { await node.sendCredentials(signed) } }
+    }
+
     /// Passes a changed group to the parts that run with it.
     private func groupChanged() {
         guard let g = state else { return }
         recordBox?.replace(g.records)
+        credentialBox?.group = g
+        refreshCredentials()
         admins?.group = g
         relay?.allowed = Self.allowed(g)
         relay?.addresses = g.addresses
@@ -697,6 +729,8 @@ final class LiveGroup: GroupController {
         try? g.save(to: file)
         state = g
         relay?.allowed = Self.allowed(g)
+        credentialBox?.group = g
+        refreshCredentials()
         hubRecords(g)
         if g.roots != roots { Task { await restartSync() } }
     }
@@ -709,6 +743,8 @@ final class LiveGroup: GroupController {
         let id = try identity(g, memberSigner())
         let box = RecordBox(groupCA: g.groupCA, set: g.records)
         box.onAdd = { [weak self] set in Task { @MainActor in self?.adopt(set) } }
+        let credentials = CredentialBox(url: credentialsURL, group: g)
+        credentials.onAdd = { [weak self] in Task { @MainActor in self?.refreshCredentials() } }
         // An admin phone renews the computers' certificates when they
         // connect and are due (docs/protocol.md, section 2).
         let renewer = Renewer(group: g, secureEnclave: Self.secureEnclave)
@@ -778,7 +814,7 @@ final class LiveGroup: GroupController {
                               onEvidence: { [weak self] peer, chain, e in
                                   Task { @MainActor in await self?.evidenceReceived(from: peer, chain: chain, e) }
                               },
-                              content: content)
+                              content: content, credentials: credentials)
         nodeRef.value = node
         let relay = Relay(group: g.tag)
         relay.allowed = Self.allowed(g)
@@ -827,8 +863,9 @@ final class LiveGroup: GroupController {
         browser.start()
         (self.node, self.browser, self.dialer, self.relay, self.recordBox, self.renewer, self.admins, self.away) =
             (node, browser, dialer, relay, box, renewer, admins, away)
-        (self.hub, self.blindRelay, memberIdentity) = (hub, blindRelay, id)
+        (self.hub, self.blindRelay, memberIdentity, credentialBox) = (hub, blindRelay, id, credentials)
         refreshHub()
+        refreshCredentials()
     }
 
     /// Stops syncing and starts again, with a renewed certificate.
@@ -842,6 +879,7 @@ final class LiveGroup: GroupController {
         browser?.stop()
         await node?.closeAll()
         (node, browser, dialer, relay, recordBox, renewer, admins, away) = (nil, nil, nil, nil, nil, nil, nil, nil)
+        credentialBox = nil
         try? startSync()
     }
 
