@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
+//go:build linux
+
 // Package bluetest plays bluetoothd for the Bluetooth keyboard's tests: a
 // private bus with one adapter whose managers read what the keyboard
 // registers, as BlueZ does, and a host that subscribes to its keys.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 
+//go:build linux
+
 // Package blekeyboard makes a Linux computer a Bluetooth LE keyboard
 // (docs/roadmap.md, item 25, way 3): BlueZ publishes the HID service of
 // HID over GATT (HOGP) that this package exports on the system bus, and

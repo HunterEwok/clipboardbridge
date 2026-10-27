@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HunterEwok/clipboardbridge/internal/blekeyboard"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -31,7 +30,7 @@ const (
 	targetDesktop = "desktop"
 	targetTmux    = "tmux"
 	targetConsole = "console"
-	// targetKeyboard is the Bluetooth keyboard's host (keyboard.go), which
+	// targetKeyboard is the Bluetooth keyboard's host (keyboard_linux.go), which
 	// no watcher offers.
 	targetKeyboard = "bluetooth-keyboard"
 )
@@ -351,7 +350,7 @@ func (s *Service) pasteStatusLocked() *control.Paste {
 			p.Targets = append(p.Targets, w.inject)
 		}
 	}
-	if k, err := blekeyboard.Load(s.cfg.StateDir); err == nil && k.On && k.Pastes {
+	if s.keyboardPastes() {
 		p.Targets = append(p.Targets, targetKeyboard)
 	}
 	slices.Sort(p.Targets)
