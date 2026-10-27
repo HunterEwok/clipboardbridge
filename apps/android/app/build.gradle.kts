@@ -143,4 +143,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 
     testImplementation("junit:junit:4.13.2")
+
+    constraints {
+        // A library pulls in Guava 33.3.1, which has GHSA-xxph-c9ww-hj94.
+        implementation("com.google.guava:guava:33.7.2-android")
+    }
 }
