@@ -71,6 +71,12 @@ rootfs)
 		sh /usr/share/clipboardbridge/uninstall.sh --purge
 		$removed
 		echo 'rootfs: installed and removed'
+		CBB_RELEASE_DIR=/rel sh /rel/get.sh --lite --port 9000
+		$installed
+		cbb version | grep -q 'lite member'
+		sh /usr/share/clipboardbridge/uninstall.sh --purge
+		$removed
+		echo 'rootfs: the lite member installed and removed'
 	"
 	;;
 feed)
@@ -178,6 +184,22 @@ vm)
 	'
 	run "$removed"
 	echo "vm: installed, checked and removed"
+
+	# The lite member, from the same init script.
+	run 'CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --lite --port 9000'
+	run "$installed"
+	run '
+		set -e
+		cbb version | grep -q "lite member"
+		ubus call service list "{\"name\":\"clipboardbridge\"}" | grep -q "\"running\": true"
+		for i in $(seq 30); do logread -e cbb | grep -q "work only on br-lan" && break; sleep 1; done
+		logread -e cbb | grep -q "work only on br-lan"
+		grep -qx br-lan /var/run/clipboardbridge/interfaces
+		cbb status 2>&1 | grep -q "no group"
+		sh /usr/share/clipboardbridge/uninstall.sh --purge
+	'
+	run "$removed"
+	echo "vm: the lite member installed, checked and removed"
 	;;
 *)
 	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm|feed RELEASE_DIR" >&2

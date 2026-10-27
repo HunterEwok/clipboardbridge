@@ -106,7 +106,9 @@ Linux)
 	esac
 	if [ -f /etc/openwrt_release ]; then
 		os=openwrt
-		[ "$lite" = no ] || fail "the lite member does not install on OpenWrt yet; install the full member"
+		case $lite-$arch in
+		yes-mips*) fail "the lite member has no build for MIPS yet; install the full member" ;;
+		esac
 		[ -z "$console" ] || fail "--console is not for a router"
 		[ -z "$uinput" ] || fail "--uinput is not for a router"
 		[ -z "$cgnat" ] || fail "--home-cgnat is not for a router"

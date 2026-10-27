@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs clipboardbridge on OpenWrt 25.12 or later, as root:
+# Installs clipboardbridge, the full member or the lite one, on OpenWrt
+# 25.12 or later, as root:
 #
 #   sh install.sh [--port N] path/to/cbb
 #
@@ -144,4 +145,8 @@ answers() { # cbb
 answers /usr/bin/cbb || true
 echo "Clipboard Bridge is running on TCP port $port, on the lan zone. To remove it: sh /usr/share/clipboardbridge/uninstall.sh"
 echo "Packages from outside OpenWrt's feeds are left out by attended sysupgrade (ASU, owut): install it again after one."
-echo "Next: run cbb pair and scan its QR code with the Clipboard Bridge app on your phone."
+if /usr/bin/cbb version 2>/dev/null | grep -q "lite member"; then
+	echo "Next: run su -s /bin/sh clipboardbridge -c 'cbb join -name router' and scan its QR code with the Clipboard Bridge app on your phone."
+else
+	echo "Next: run cbb pair and scan its QR code with the Clipboard Bridge app on your phone."
+fi

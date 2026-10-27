@@ -282,13 +282,17 @@ One pull request each, smaller ones together:
    in `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in
    OpenWrt's root file system and on OpenWrt booted in QEMU. Still to check on the BPI-R4:
    that fw4 loads changed service data by itself (`firewall.sh` reloads it anyway).
-3. The router as the hub: `cbb global hub` opens its UDP port on `wan` and `cbb global off`
-   closes it; the bench gets the router as a device under test with cases for it in
-   [testbench.md](testbench.md).
-4. A signed apk feed on `cbb.tools`, built by the release job.
-5. The lite member on OpenWrt: its procd script and installer path, builds for aarch64 and
-   armv7; mips and mipsle with nightly Rust once GotaTun works without 64-bit atomics (asked
-   upstream in mullvad/gotatun#209), or a mips build without the tunnel until then.
+3. Done. The router as the hub: `cbb global hub` opens its UDP port on `wan` through the
+   service's own rules and `cbb global off` closes it; the bench takes the router (and a
+   FreeBSD computer) as a device under test ([testbench.md](testbench.md)). Still to run
+   on the BPI-R4.
+4. Done. A signed apk feed for `cbb.tools`, built by the release job once the feed's key is
+   in the secrets ([maintaining.md](maintaining.md#the-openwrt-feed)); CI installs from a
+   feed signed with a test key.
+5. The lite member on OpenWrt. Done: the procd script runs `cbb run` for it, `get.sh
+   --lite` installs it on aarch64, armv7 and x86-64, and it takes `CBB_INTERFACES`. Still
+   to come: mips and mipsle with nightly Rust once GotaTun works without 64-bit atomics
+   (mullvad/gotatun#209), or a mips build without the tunnel until then.
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
 

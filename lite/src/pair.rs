@@ -122,7 +122,7 @@ pub fn qr_addresses(port: u16) -> Vec<String> {
     let mut v4 = Vec::new();
     let mut v6 = Vec::new();
     for iface in if_addrs::get_if_addrs().unwrap_or_default() {
-        if iface.is_loopback() {
+        if iface.is_loopback() || !crate::interfaces::allowed(&iface.name) {
             continue;
         }
         match iface.ip() {
@@ -174,7 +174,7 @@ pub fn listen(
             }
             Err(e) => return Err(Error::with("cannot accept a connection", e)),
         };
-        if !home_address(from.ip()) {
+        if !home_address(from.ip()) || !crate::interfaces::arrived(&sock) {
             continue;
         }
         let _ = sock.set_nonblocking(false);

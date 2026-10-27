@@ -240,7 +240,7 @@ jobs:
   openwrt:
     name: OpenWrt
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -249,18 +249,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: the release archive, as get.sh takes it
+      - name: the release archives, the full member's and the lite one's, as get.sh takes them
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
           rel="$RUNNER_TEMP/release"
           sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
+          rustup toolchain install stable --profile minimal --target x86_64-unknown-linux-musl
+          (cd lite && cargo +stable build --locked --release --target x86_64-unknown-linux-musl)
+          sh lite/packaging/archive.sh lite/target/x86_64-unknown-linux-musl/release/cbb x86_64-unknown-linux-musl amd64 "$rel"
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
           cp packaging/get.sh "$rel/"
-      - name: get.sh installs it in OpenWrt's root file system, and uninstall.sh removes it
+      - name: get.sh installs both in OpenWrt's root file system, and uninstall.sh removes them
         run: sh tools/e2e/openwrt.sh rootfs "$RUNNER_TEMP/release"
       - name: the apk feed, signed with a test key, installs and removes it
         run: sh tools/e2e/openwrt.sh feed "$RUNNER_TEMP/release"
-      - name: on OpenWrt booted in QEMU, the service, the hub's rule in fw4 and the wait for NTP
+      - name: on OpenWrt booted in QEMU, the service, the hub's rule in fw4, the wait for NTP and the lite member
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q qemu-system-x86 sshpass

@@ -254,6 +254,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `/etc/config/firewall` is never changed; `cbb global hub` opens the hub's port on `wan`
   this way. sysupgrade keeps the keys and the program. A CI job installs it on OpenWrt
   booted in QEMU.
+- OpenWrt package feed: each release can carry `openwrt-feed.tar.gz`, apk packages per Go
+  architecture with an index signed by the project's feed key, for
+  `cbb.tools/openwrt/<arch>/packages.adb`, so that `apk upgrade` keeps the program current.
+- The lite member on OpenWrt (ARM64, ARMv7, x86-64): `get.sh --lite` installs it with the
+  same procd service, which runs `cbb run`. The lite member takes `CBB_INTERFACES` too, for
+  mDNS, the member port and the QR code's addresses, and its defaults on OpenWrt are
+  `/etc/clipboardbridge/state` and `/var/run/clipboardbridge/control.sock`.
+- The test bench takes OpenWrt routers and FreeBSD computers as devices under test.
 
 ### Changed
 

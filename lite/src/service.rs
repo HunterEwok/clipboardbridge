@@ -161,6 +161,10 @@ pub fn run(cfg: Config) -> Result<()> {
         commands: Mutex::new(HashMap::new()),
         log: log.clone(),
     });
+    let only = crate::interfaces::only();
+    if !only.is_empty() {
+        log(&format!("cbb: the member port and mDNS work only on {} (CBB_INTERFACES)", only.join(", ")));
+    }
     let admin_socket = control::admin_socket(&cfg.socket);
     for (ln, admin) in [(listen(&cfg.socket, false)?, false), (listen(&admin_socket, true)?, true)] {
         let svc = svc.clone();
