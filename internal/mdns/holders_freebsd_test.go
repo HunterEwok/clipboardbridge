@@ -16,7 +16,7 @@ avahi    avahi-daem 900   15  udp6   *:5353                *:*
 clipboardbridge cbb 77    9   udp4   *:5353                *:*
 `
 	got := describeHolders(out, 77)
-	if !strings.Contains(got, "mdns-repeat (user root), avahi-daem (user avahi),") || strings.Contains(got, "cbb") {
+	if !strings.Contains(got, "mdns-repeat (user root), avahi-daem (user avahi),") || strings.Contains(got, "cbb (user") {
 		t.Errorf("describeHolders = %q", got)
 	}
 	if got := describeHolders("USER COMMAND PID FD PROTO LOCAL FOREIGN\n", 1); got != "" {

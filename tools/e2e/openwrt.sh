@@ -166,14 +166,22 @@ vm)
 		kill $!
 		echo "vm: the service runs on br-lan, and a join waits on port 9000"
 
-		# The port of the hub: service data, which fw4 loads.
+		# The port of the hub: service data, which fw4 loads. fw4 names such
+		# a rule by its source (ubus:clipboardbridge[instance1] rule N) in
+		# its comment, not by the name in the data.
 		sh /usr/share/clipboardbridge/firewall.sh hub-open 51820
 		test "$(sh /usr/share/clipboardbridge/firewall.sh hub-port)" = 51820
-		for i in $(seq 20); do nft list ruleset | grep -q "clipboardbridge hub" && break; sleep 1; done
-		nft list ruleset | grep "clipboardbridge hub" | grep -q "udp dport 51820"
+		hubrule() { nft list ruleset | grep "ubus:clipboardbridge" | grep -q "dport 51820"; }
+		for i in $(seq 20); do hubrule && break; sleep 1; done
+		if ! hubrule; then
+			echo "no hub rule in nftables; the service data and what fw4 makes of it:" >&2
+			ubus call service get_data "{\"type\":\"firewall\"}" >&2 || true
+			fw4 print 2>&1 | grep -i -B2 -A2 clipboardbridge >&2 || true
+			exit 1
+		fi
 		sh /usr/share/clipboardbridge/firewall.sh hub-close
-		for i in $(seq 20); do nft list ruleset | grep -q "clipboardbridge hub" || break; sleep 1; done
-		if nft list ruleset | grep -q "clipboardbridge hub"; then echo "the hub rule stayed" >&2; exit 1; fi
+		for i in $(seq 20); do hubrule || break; sleep 1; done
+		if hubrule; then echo "the hub rule stayed" >&2; exit 1; fi
 		if grep -q clipboardbridge /etc/config/firewall; then echo "/etc/config/firewall was changed" >&2; exit 1; fi
 		echo "vm: the hub rule came and went with the service data"
 
