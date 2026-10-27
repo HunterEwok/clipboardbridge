@@ -40,11 +40,12 @@ if cmp -s "$one/$apk" "$two/$apk"; then
 	echo "the two F-Droid APKs are the same"
 	exit 0
 fi
-echo "the two F-Droid APKs differ; what is in them:" >&2
-mkdir "$work/one" "$work/two"
-unzip -q "$one/$apk" -d "$work/one"
-unzip -q "$two/$apk" -d "$work/two"
-if diff -r "$work/one" "$work/two" >&2; then
+echo "the two F-Droid APKs differ; their entries (size, CRC-32, name):" >&2
+# The entries' lists, not the files unzipped: R8's resource names differ only in case
+# (res/9n.9.png and res/9N.9.png), which a Mac's disk keeps as one file.
+unzip -lv "$one/$apk" | awk '{ print $1, $7, $8 }' >"$work/one"
+unzip -lv "$two/$apk" | awk '{ print $1, $7, $8 }' >"$work/two"
+if diff "$work/one" "$work/two" >&2; then
 	echo "(the same files: the archives differ in their order, times or alignment)" >&2
 fi
 exit 1

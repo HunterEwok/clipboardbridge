@@ -502,7 +502,9 @@ its updates to either. That needs the build to be reproducible:
 - the version in the source, `apps/android/version.properties`, which the release pull
   request moves on with `CHANGELOG.md` (`tools/repocheck` checks the two agree);
 - the tunnel's library built with one NDK, `cbb.ndk` in `apps/android/gradle.properties`,
-  and the Go of go.mod's `toolchain` line, with `-trimpath` and no VCS stamp;
+  and the Go of go.mod's `toolchain` line, with `-trimpath`, no VCS stamp and from one
+  path, `/tmp/cbbtun-bind`, a link to the checkout (gomobile's go.mod names the module's
+  directory, which goes into the library's build info);
 - no dependency block (`dependenciesInfo`) and no commit details (`vcsInfo`) in the APK.
 
 CI's `fdroid` job builds the fdroid APK twice, the second time from a copy without `.git` in
