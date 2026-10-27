@@ -31,6 +31,17 @@ them is in the [protocol](../protocol.md).
 | A signed command (paste, action, mode) | valid 30 s after it was signed; its time may be at most 60 s ahead of the receiver's clock |
 | An action of your own | must end within 15 s; at most 32 of them, names of up to 32 characters |
 
+## Keyboards and TVs
+
+| What | Limit |
+|---|---|
+| A text typed by a Bluetooth or USB keyboard | 4,096 characters |
+| Typing speed | 5 to 60 characters a second, 20 by default (the Android app: 10, 20 or 40) |
+| Making a keyboard discoverable (`pair`) | 2 minutes |
+| The code an Android TV shows (`cbb remote code`) | taken within 2 minutes |
+| TVs of one computer | 16 |
+| Hosts the Nano ESP32's Bluetooth keyboard remembers | 4; a fifth pushes out the oldest |
+
 ## Pairing and invitations
 
 | What | Limit |

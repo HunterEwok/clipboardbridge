@@ -412,7 +412,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   timeout and lifetime; `errors.md`, how each part shows errors and the switch that shows
   their details; and `glossary.md`.
   New guide pages for what 0.6 adds: images, files and formatted text; remote paste; quick
-  actions; and what to do when a device is lost or stolen.
+  actions; what to do when a device is lost or stolen; keyboards and TVs (the Android app,
+  `cbb keyboard`, the Nano ESP32 and `cbb remote`, side by side); and privacy, one table of
+  everyone outside the group who sees something, from the home network to the update
+  check, and how to avoid it. `docs/admin/routers.md` is for OpenWrt, OPNsense and FreeBSD:
+  what the installers set up, the networks the service answers on, the firewall and how to
+  check it. `limits.md` has the keyboards' and TVs' limits.
   `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
   in the TPM, FreeBSD and OpenWrt.
 - `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
@@ -420,7 +425,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   reached from `docs/README.md`, that no page calls something "planned for" a version
   that is out already, that every subcommand of `cbb` with flags of its own and each of
   its flags is in `docs/reference/cli.md`, and that every port the code listens on by
-  default is in the ports table of `docs/reference/devices.md`.
+  default is in the ports table of `docs/reference/devices.md`. The pages for users and
+  administrators may not tell the reader something is easy ("simply", "easily") or call
+  the product `clipboardbridge` outside code, links and quotes.
 - docs/design.md follows arc42: goals and constraints, context, solution strategy, building
   blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
   and glossary. The decisions D-1 to D-78 have a register with their status

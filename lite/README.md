@@ -202,7 +202,7 @@ sudo cbb paste-receive off
 
 An admin phone's "Paste on it…", or `cbb paste --on` on an admin computer, puts a text where
 this device's keyboard focus is, as on a full Linux member: into the tmux pane in use, through
-the helper that clipboardbridge's `tmux.conf` starts in each tmux server, or, with
+the helper that Clipboard Bridge's `tmux.conf` starts in each tmux server, or, with
 `-console`, into the active text console, through the `clipboardbridge-console` unit that
 `--console` installs. The device's own user turns it on, never an admin; a text with a line
 break needs `-enter`, since tmux and the console would run it; a locked tmux client or console,

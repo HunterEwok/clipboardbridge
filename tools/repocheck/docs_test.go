@@ -193,3 +193,20 @@ func TestCheckOps(t *testing.T) {
 		t.Fatalf("checkOps() = %q, want one problem naming new", got)
 	}
 }
+
+func TestCheckStyle(t *testing.T) {
+	files := map[string][]byte{
+		"docs/guide/a.md": []byte("Simply run it.\n`cbb simply` and [setup](easy.md) and \"clipboardbridge\"\n```\neasy clipboardbridge\n```\nInstall clipboardbridge.\nSee https://example.com/easy and /usr/share/clipboardbridge.\nIn `a\nclipboardbridge b` too.\n"),
+		"docs/design.md":  []byte("It cannot simply go inside it.\n"),
+	}
+	got := checkStyle(files)
+	want := []string{"docs/guide/a.md:1: \"Simply\"", "docs/guide/a.md:6: the product", "docs/guide/a.md:7: the product"}
+	if len(got) != len(want) {
+		t.Fatalf("checkStyle() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(got[i], w) {
+			t.Errorf("problem %d = %q, want it to start with %q", i, got[i], w)
+		}
+	}
+}

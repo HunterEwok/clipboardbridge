@@ -138,5 +138,7 @@ yourself.
 | Forwarder | no | no: it sees the addresses encrypted packets come from and go to your hub | yours, or the project's at `cbb.tools` |
 | Blind relay | no | yes | yours (one at `cbb.tools` is planned) |
 
-Nothing else is involved: no accounts, no cloud, no telemetry. With sync away from home on,
-a computer may reach only the home network and the group's own hub, forwarder and relay.
+Nothing else is involved: no accounts, no cloud, no telemetry. Everyone else who can see
+something, from your Wi-Fi to the update check, is listed in [privacy](privacy.md). With
+sync away from home on, a computer may reach only the home network and the group's own hub,
+forwarder and relay.
