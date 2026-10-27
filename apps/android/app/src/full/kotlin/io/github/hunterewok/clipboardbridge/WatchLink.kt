@@ -22,10 +22,14 @@ import kotlinx.coroutines.withTimeout
  * turns sync away from home on or off when the watch asks (docs/apps.md,
  * Wear OS); on the root phone it asks the watch for its admin key and hands
  * it the admin CA (docs/protocol.md, section 10, rule 8). Without Google
- * Play services there is no watch to tell.
+ * Play services there is no watch to tell. This is the full build's; the
+ * F-Droid build's (src/fdroid) has no watch.
  */
 object WatchLink {
     private const val TAG = "clipboardbridge"
+
+    /** Whether this build can reach a watch at all: Settings offers one only then. */
+    const val available = true
     private var last: WatchState? = null
     private var failed = false
 

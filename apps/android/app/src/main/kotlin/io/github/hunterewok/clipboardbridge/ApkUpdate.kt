@@ -28,7 +28,9 @@ import java.security.MessageDigest
  * checked against release.json and against this app's signing
  * certificate, then installed by the system's PackageInstaller, without a
  * question once this app installed the one before. A copy from a store is
- * updated by its store. It does nothing while no root keys are pinned
+ * updated by its store, and so is the F-Droid build wherever it came from:
+ * it has no installer permission and leaves its updates to F-Droid
+ * (docs/apps.md, "F-Droid"). It does nothing while no root keys are pinned
  * ([Releases.roots]).
  */
 class ApkUpdate(private val context: Context, private val roots: List<ByteArray> = Releases.roots) {
@@ -74,6 +76,7 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
     private val installed: String get() = versionName(context) ?: ""
 
     private fun initial(): State {
+        if (!BuildConfig.SELF_UPDATE) return State.Store(FDROID)
         installer(context)?.takeIf { it in STORES }?.let { return State.Store(it) }
         if (roots.isEmpty()) return State.NoKeys
         prefs.getString(FAILED, null)?.let { return State.Failed(Exception(it)) }
@@ -257,10 +260,13 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         private const val KEYS_SEQ = "keysSeq"
         private const val CHANNEL_SEQ = "channelSeq"
 
+        /** F-Droid's client, which updates the F-Droid build. */
+        const val FDROID = "org.fdroid.fdroid"
+
         /** The stores that update what they installed: Google Play, F-Droid, Amazon, Samsung, Huawei, Aurora. */
         val STORES = setOf(
             "com.android.vending",
-            "org.fdroid.fdroid",
+            FDROID,
             "org.fdroid.basic",
             "com.amazon.venezia",
             "com.sec.android.app.samsungapps",
