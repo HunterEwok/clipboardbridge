@@ -3,7 +3,7 @@
 
 What comes next, the designs that are agreed but not built yet, and the questions to study
 before anything is planned. How Clipboard Bridge works today is in [design.md](design.md),
-with the reasons in its decision log; what works on real devices is the
+the decisions in [decisions.md](decisions.md); what works on real devices is the
 [status table](../README.md#status).
 
 ## Order of work

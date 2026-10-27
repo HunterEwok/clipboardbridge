@@ -55,7 +55,9 @@ for security reviewers.
 
 | Document | What is in it |
 |---|---|
-| [Design](design.md) | how it works and why, the security model, the decision log |
+| [Design](design.md) | how it works and why, after the arc42 template: goals, context, building blocks, run time, deployment, concepts, quality, risks |
+| [Decisions](decisions.md) | every architecture decision, D-1 to D-78, with its status |
+| [Threat model](threat-model.md) | the assets, adversaries, trust boundaries, and each threat with its defence and code |
 | [Protocol](protocol.md) | the wire format, for anyone writing another implementation |
 | [Platform parity](parity.md) | what each computer, phone and lite device can do, the gaps and the plan to close them |
 | [App specification](apps.md) | what the apps do and how they look |

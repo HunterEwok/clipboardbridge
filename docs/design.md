@@ -1,12 +1,36 @@
 # Design
 
-Status: agreed design; the code follows it stage by stage. This document describes how
-Clipboard Bridge works and why; what comes next, the plans not built yet and the research are
-in [roadmap.md](roadmap.md), and the wire format is in [protocol.md](protocol.md). Decisions
-are listed in the [decision log](#decision-log) at the end; questions that still need an
-experiment are under [open questions](#open-questions).
+For engineers: how Clipboard Bridge works and why, as built. The document follows the
+[arc42](https://arc42.org/overview) template, so each kind of question has a fixed place:
+the goals and constraints first, then the context, the building blocks, how they work at run
+time and where they run, then the concepts that cut across them, the decisions, the quality
+requirements and the risks. The wire format is in [protocol.md](protocol.md), what comes
+next in [roadmap.md](roadmap.md), the decisions in [decisions.md](decisions.md), and the
+threats with their defences in [threat-model.md](threat-model.md).
 
-## Goals
+## 1. Introduction and goals
+
+Clipboard Bridge gives one person's devices one clipboard, without a cloud. This part says
+what it must do and what it deliberately does not.
+
+### Quality goals
+
+In order of priority, when two of them conflict:
+
+1. **Security.** Only the group's own devices read a copy. Every connection is mutually
+   authenticated TLS 1.3 under the group's certificates; joining needs the user at both
+   devices; a lost device is removed in one step.
+2. **Privacy.** No accounts, no telemetry, no server that reads the clipboard. The servers a
+   group may use away from home (a forwarder, a blind relay) learn as little as the
+   protocol allows (see "Sync away from home").
+3. **Reliability.** Any device may be off at any time; the others keep syncing, and a device
+   that comes back converges on the group's newest copy.
+4. **Ease.** A copy arrives on the others within seconds (the bench's rule is 10 s), with
+   each system's usual copy and paste; adding a device takes a QR code or a six-digit code.
+5. **Portability.** The same protocol from a Raspberry Pi Zero W, a router or an ESP32 to a
+   workstation, a phone and a watch.
+
+### Goals
 
 - One clipboard for the user's phones (iPhone and Android), Macs, Windows PCs and any number
   of Linux machines on one home network, and away from home through the group's own
@@ -16,7 +40,7 @@ experiment are under [open questions](#open-questions).
   depending on a particular distribution or desktop.
 - Encrypted and paired; no cloud, no accounts, no telemetry.
 
-## Non-goals
+### Non-goals
 
 - Sync through anyone else's servers or services. Away from home, devices reach the group
   only through its own tunnel (see "Sync away from home").
@@ -24,7 +48,37 @@ experiment are under [open questions](#open-questions).
 - Sync between Apple devices. Universal Clipboard already does it.
 - Clipboard history.
 
-## Devices and roles
+## 2. Constraints
+
+What the design cannot choose:
+
+- **iOS** lets an app read and write the clipboard only in the foreground, and keeps no
+  network connection of an app in the background, so the iPhone syncs while its app runs, at
+  one gesture, and is a hub only while it is open.
+- **Android** gives the clipboard in the background only to the input method or an
+  accessibility service, so the app uses its accessibility service to send by itself.
+- **macOS** lets only an app with the Accessibility permission press keys, and asks the user
+  before a program reaches the local network; the service therefore runs as a LaunchDaemon,
+  and remote paste goes through the Mac app.
+- **Windows** drops keys sent to a window that runs as administrator, and to the secure
+  desktop.
+- **No third-party servers.** Nothing may depend on a service the project does not run or
+  the user cannot run (D-3, D-4).
+- **Licence.** The code is AGPL-3.0-only with one author (D-1); copied code keeps its own
+  licence under `internal/third_party` and `lite/core/src/third_party`.
+- **Small devices.** The lite member's protocol core is `no_std` Rust with no I/O, so that it
+  fits an ESP32.
+- **Signing.** Apple's and Microsoft's code signing need accounts the project is still
+  getting; development and CI never wait for them (ad hoc signing).
+
+## 3. Context and scope
+
+A group is the user's own devices, which talk to each other directly at home and through
+the group's tunnel away from home. Outside the group there are only the user, the systems'
+clipboards and keyboards, and, when the user chooses them, a forwarder or a blind relay. The
+pictures of each arrangement are in [how it works](guide/how-it-works.md).
+
+### Devices and roles
 
 | Device                  | Component                         | How it takes part                                              |
 |-------------------------|-----------------------------------|----------------------------------------------------------------|
@@ -41,7 +95,7 @@ so is a phone with the app. There is no central server, and any member may be sw
 at any time. In a group made by a phone app, the phones are its admins (see "The phone
 apps" below).
 
-## Identifiers and ports
+### Identifiers and ports
 
 - **Device ID**: 128 random bits as 32 lowercase hex characters. It fits in a DNS label and
   compares the same way everywhere.
@@ -59,7 +113,264 @@ apps" below).
   A computer that joins by QR code listens there too, since it is in no group yet. One port
   is one rule in a firewall, and changing it is one setting.
 
-## Group and pairing
+## 4. Solution strategy
+
+The few ideas the rest follows from:
+
+- **Equal members, no server** (D-3). Every device holds the whole state and passes it on;
+  last writer wins under a hybrid logical clock (D-14, D-19), so the group converges without
+  a coordinator.
+- **The group is a certificate authority** (D-9, D-10). A root key, on a phone's secure
+  hardware or a computer, signs admin CAs and device certificates; every connection is
+  mutual TLS 1.3 under them, and signed records add, rename and remove devices.
+- **Pairing by a short code or a QR code** with CPace inside TLS (D-9), so a guess costs one
+  online attempt and nothing can be ground offline.
+- **One port at home, one tunnel away** (D-5, D-11, D-38). At home the members find each
+  other by mDNS on one TCP port; away from home they reach a hub through the group's own
+  WireGuard star, optionally through a forwarder or a blind relay that hold no keys.
+- **One protocol, four implementations**: Go (the service), Rust (the lite member), Swift
+  and Kotlin (the phone kits), held together by shared interop vectors in
+  `testdata/interop`.
+- **Keys in hardware where the device has it** (D-44, D-47), and a group level that says
+  which keys may be the root, an admin or a hub.
+
+## 5. Building blocks
+
+The parts of each implementation and what each does. The directory of each part is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#development).
+
+### Linux components
+
+Clipboard Bridge for Linux is one program that runs as up to three processes with different rights
+and lifetimes. The installer enables what the device needs.
+
+#### 1. Service
+
+- A system service that runs from boot as its own system user `clipboardbridge`, with or without
+  a desktop.
+- Network, group, discovery, the shared address, sync and the current text. It keeps the
+  identity and the clock mark in its state directory (`/var/lib/clipboardbridge`) and listens on
+  a member port chosen at start. Of two Linux members, the one with the lower device ID
+  dials the other, so they make one connection; a member keeps dialing a member it finds,
+  waiting up to 30 seconds between attempts, at the addresses and port that discovery last
+  saw. It notices that the machine slept when the clock that counts sleep moves further than
+  the one that does not, and then rejoins. At most 32 connections to the member port may be
+  in their TLS handshake or a pairing attempt at once; errors such as running out of file
+  descriptors only pause the accept loops. On stop it sends the mDNS goodbyes first, then
+  the member goodbyes.
+- Local control socket `/run/clipboardbridge/control.sock`, mode 0660, group `clipboardbridge`: the
+  kernel admits only root and members of that group. It is made in a private directory and
+  moved into place, so it is never reachable with a wider mode. The installer adds the desktop or tmux
+  user to the group. That group is for the clipboard only: everything that changes the group
+  goes to the admin socket `admin.sock` next to it, mode 0600 (on Windows a directory that
+  only the system and administrators enter), so only root reaches it (D-62). A program that
+  runs as a user of the group, a browser exploit for example, cannot admit a device of its
+  own, remove one, or turn on sync away from home. Each message is a JSON header on one line followed by the raw text.
+  Commands send one request and read the answers; a desktop connector keeps its connection
+  open to receive writes and report copies. Its watch request carries what the clipboard
+  holds; a write that no connector got, such as the group's text at boot, goes to the next
+  one that connects, if it is still the member's own text.
+- Command line: `cbb copy` (standard input to the group), `cbb paste` (the
+  member's own clipboard text to standard output), `cbb new`, `cbb pair`,
+  `revoke`, `status` (which lists the group's devices too). `cbb new` creates a group; `cbb pair` joins one on a device in no group and admits a device on the root or an admin.
+  `cbb pair` finds the member with an open pairing window by its TXT record, or uses
+  the address that `pair` prints, for networks where multicast does not pass. It talks to
+  one member only, tries that member's addresses (IPv4 first, link-local last) until one
+  answers, and stops after the first attempt in which the other side could check the code,
+  so a device that only pretends to pair gets one guess at most. When more than one device
+  announces a window, it asks for the address. Hanging up cancels it, and it gives up after
+  two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
+  for the window.
+- tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
+  pastes the member's own clipboard text into any program inside tmux. The binding runs
+  `cbb paste -terminal`, so that a text from another device cannot drive the terminal or the
+  shell: no control characters (an escape could end bracketed paste and run the rest), only
+  the first line, no final line feed, and never a secret. A login snippet starts tmux on the
+  text console.
+
+#### 2. Desktop connector
+
+- A user process started with any graphical session: a systemd user unit bound to
+  `graphical-session.target` where the desktop starts it (GNOME, KDE Plasma), which the
+  installer restarts in each running session after an update; XDG autostart elsewhere, which
+  nearly every desktop supports (the entry is hidden where the unit runs, and a lock in the
+  user's runtime directory keeps it to one agent a session). It links the desktop clipboard to the
+  service over the control socket. When the display connection drops, it reconnects with a
+  backoff, and exits only when the session is gone.
+- Clipboard access, chosen automatically, in pure Go:
+
+  | Desktop                                                                  | Access                                                    |
+  |--------------------------------------------------------------------------|-----------------------------------------------------------|
+  | Wayland with `ext-data-control-v1` or `wlr-data-control` (KDE, sway, Hyprland, labwc, Wayfire, COSMIC) | the data-control protocol |
+  | X11 (XFCE, LXQt, MATE, Openbox, …)                                       | X11 selections, change events from XFixes                 |
+  | GNOME and other Wayland desktops without data-control                    | X11 selections through XWayland (expected to work on GNOME, see the open questions; best effort elsewhere) |
+
+- Only the regular clipboard is watched; mouse selections are not sent to the group. A
+  received text goes into both the clipboard and the primary selection, so Ctrl+V works in
+  applications, and Shift+Insert and the middle mouse button work in terminals.
+- **Auto-paste** (optional): after the connector writes an event sent from a phone (via
+  `phone`), it presses Shift+Insert through a virtual keyboard (uinput). Never for
+  Universal Clipboard items or other events, and not on the lock screen.
+
+#### 3. Console helper (planned)
+
+Not built yet (roadmap item 10); the design:
+
+- Optional, root with only `CAP_SYS_ADMIN`, because only that may inject input into a
+  console. It runs with `clipboardbridge` as a supplementary group and connects to the control
+  socket as a client; it listens on nothing.
+- On a double press of Right Ctrl (configurable; a modifier alone types nothing, so
+  programs do not notice) it injects the member's own clipboard text into the active virtual
+  console with TIOCSTI on `/dev/tty0`. This works at the login prompt, in `sudo` and in any
+  console program, with any characters, independent of the console keyboard layout.
+- Only a single line is injected by default; multi-line text needs a second double press.
+  Control characters, escape sequences and invalid UTF-8 are removed. This stops a local
+  user from planting commands that would run in a root console.
+
+### macOS
+
+- **Service**: the same service as on Linux, as a LaunchDaemon under a hidden service account.
+  macOS grants local network access to daemons without a prompt. It listens on UDP 5353
+  for mDNS (D-32), and dials and takes connections like the other full members, from the
+  home network only. It may hold `clipboardbridge.local`, a laptop only as a fallback
+  (D-53); it does not admit devices yet (step 4 of "Full members, admins and the operating
+  system"). `install.sh` lists the
+  service in the application firewall (`socketfilterfw --add` and `--unblockapp`), and
+  `uninstall.sh` takes it away; `CBB_FIREWALL=no` leaves the firewall alone.
+- **Pasteboard agent**: a LaunchAgent in the user's session, linked to the service over a
+  local socket. It checks the pasteboard change counter every 0.5 seconds on the main thread
+  and reads the text only after a change.
+- Skips items marked by password managers: `org.nspasteboard.ConcealedType`,
+  `org.nspasteboard.TransientType`, `org.nspasteboard.AutoGeneratedType` and the older
+  markers listed on nspasteboard.org.
+- Items that arrive through Universal Clipboard are relayed to Linux, marked
+  `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
+  Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
+  only, so clipboard histories skip them and they do not travel over Universal Clipboard.
+- Finds the members with Clipboard Bridge's own mDNS code, publishing itself as a full member,
+  and trusts only the group CA, in its own configuration; the system keychain is not changed.
+- Installing needs administrator rights once. Later: a menu bar item with pause, status and
+  devices.
+
+### Windows
+
+- **Service**: the same service as on Linux, as a Windows service (`cbb.exe service`) under
+  the virtual account `NT SERVICE\clipboardbridge`, with only `SeChangeNotifyPrivilege`, and
+  restarted by the service manager when it fails. It listens like a Linux member and speaks
+  with the `linux` role, since roles describe what a member does on the network. Its data is
+  in `ProgramData\clipboardbridge` (`state`, `logs`, `run`), owned by administrators with an
+  access list for the system, administrators and the service only; the port is `CBB_PORT` in
+  the service's environment.
+- **Control socket**: an AF_UNIX socket, `ProgramData\clipboardbridge\run\control.sock`.
+  Windows lets a client connect only with write access to the socket file, which inherits the
+  protected access list the service gives `run` before it listens: the system,
+  administrators, the service, the local `clipboardbridge` group, and each member of the group
+  by its own SID as the service finds them at start, so a user just added connects without
+  signing in again.
+- **Clipboard agent**: `cbbw.exe agent`, the same program linked without a console window,
+  started at every sign-in from the `Run` key of the machine, once per session (a named
+  mutex). It polls the clipboard sequence number every 0.5 seconds, like the Mac, and opens
+  the clipboard only after a change, from one thread with a message-only window. It reads
+  `CF_UNICODETEXT`; text ends at the first NUL, and CR LF becomes LF (and back when it
+  writes).
+- **Secrets**: an item with `ExcludeClipboardContentFromMonitorProcessing` or
+  `Clipboard Viewer Ignore`, or with `CanIncludeInClipboardHistory` set to 0, is a secret.
+  Received secrets are written with all of these and `CanUploadToCloudClipboard` set to 0, so
+  the clipboard history, the cloud clipboard and other monitors skip them.
+- **mDNS**: the service shares UDP 5353 with the DNS Client service through `SO_REUSEADDR`.
+  Windows gives no packet information through `golang.org/x/net`, so a packet's interface is
+  the one whose network holds its source address, or the zone of a link-local source, and a
+  multicast goes out on the interface set on the socket.
+- **Installer**: `install.ps1` (or `get.ps1`, which checks a release against
+  `SHA256SUMS`) needs an administrator once. It allows TCP 8764 and UDP 5353 for `cbb.exe`
+  from the local subnet in Windows Firewall, in rules of the group `clipboardbridge` that
+  it and `uninstall.ps1` remove, and registers the uninstaller in Settings, Apps.
+- Logs: `ProgramData\clipboardbridge\logs\service.log` and
+  `LocalAppData\clipboardbridge\agent.log`, each moved to `.1` at 1 MiB.
+
+### The phone apps
+
+The shortcut can neither hold a key, sign, run CPace nor accept connections, so in a group
+that a computer created the group CA lives on the Linux members and the phone only
+authorizes with its token. The phone apps can do all four, and in a group that an app
+creates the phone is the root of the group (D-33 to D-36; the wire side is section 9 of
+[protocol.md](protocol.md)):
+
+- The app creates the group CA in the Secure Enclave (iPhone) or StrongBox/Keystore
+  (Android): a P-256 key that cannot be exported. Only the admin phones issue member
+  certificates; a computer holds CA keys only when the root phone makes it an admin, so a
+  stolen computer cannot add devices.
+- The first computer joins the phone, not the other way round: `cbb pair` shows a QR code
+  with its addresses, its certificate fingerprint and a fresh code, and listens; the app
+  scans it, dials the computer, checks the fingerprint and runs CPace with that code, with
+  the phone in the admitting role, then issues its certificate. No profile for the user to
+  check: the app trusts its own group's CA.
+- Every computer is then a member without CA keys; Linux members still publish, hold
+  `clipboardbridge.local` and serve the shortcut for phones without the app. A lite member
+  (Rust) takes part the same way.
+- Certificate renewal (every two years) and revocation need an admin phone. Losing one is
+  covered by a second admin phone, which is an equal admin with a key of its own; see
+  "Admin phones, the devices list and revocation" below.
+- The app syncs while it is open and through its "Sync clipboard" action (Back Tap or the
+  Action button on the iPhone); on Android a foreground service receives by itself, and an
+  accessibility service or one tap sends ([apps.md](apps.md)). Background sync stays
+  impossible on iOS.
+- The mode with the CA on the Linux members and the phone's token as the authority stays for
+  users without the app, and `cbb pair` / `join -code` for groups without a phone.
+
+### The iPhone button
+
+The button is for an iPhone without the app; a phone with the app, iPhone or Android, is a
+member and sends from the app instead (see "The phone apps" below). One
+shortcut, published as an iCloud link with an import question for the token. It reads
+the iPhone clipboard and sends `POST https://clipboardbridge.local:8764/sync` with the JSON body
+`{"v": 1, "text": "…"}` (optionally `"secret": true`, which makes a secret event) and the
+header `Authorization: Bearer <token>`. The member that holds the name decides the direction:
+
+1. A computer in the group copied something less than 45 seconds ago → the member returns
+   that text, and the shortcut puts it on the iPhone clipboard. The user most likely pressed
+   Ctrl+C or ⌘C a moment ago and picked up the phone. Text that came from the iPhone itself,
+   directly or through Universal Clipboard, does not count as a computer's copy.
+2. Otherwise, if the iPhone text is new, that is, neither the group's text nor the text of
+   the member's own clipboard → it becomes a group event, and it also goes to the member's
+   own clipboard (with auto-paste, if it is on).
+3. Otherwise, if the member's own clipboard holds another text → the member returns it. The
+   member's own clipboard, not the group state, follows the rules above, so a member that
+   returned with an old copy never sends that copy to the iPhone.
+4. Otherwise there is nothing to transfer.
+
+The answer is always HTTP 200 with JSON, because the shortcut cannot read status codes:
+`{"v": 1, "direction": "to_iphone" | "from_iphone" | "none" | "error", "copy": "…",
+"expires_in": 0, "message": "…"}`. The shortcut writes `copy` with **Local Only** when
+`direction` is `to_iphone` (with an expiry for a secret) and shows `message` as a
+notification. Errors, such as a revoked token, come back as `direction: "error"` with a
+human message; a secret never appears in `message`.
+
+### Build
+
+- Go, with `CGO_ENABLED=0` everywhere except for the Mac's pasteboard agent (the Windows
+  clipboard needs no cgo), which uses cgo
+  with a small Objective-C file. From then on CI builds the macOS targets on macOS runners
+  with cgo.
+- Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`,
+  `darwin/amd64`, `windows/amd64` and `windows/arm64` (`cbb.exe`, and `cbbw.exe` linked with
+  `-H windowsgui` for the agent).
+- The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. Clipboard Bridge
+  does not depend on distribution specifics. The systemd units use directives from systemd
+  248 and later and are checked with `systemd-analyze verify`.
+- Third-party code: `golang.org/x/net`, `golang.org/x/sys`, `golang.org/x/crypto` and
+  `golang.org/x/time` (BSD-3-Clause), `jezek/xgb` (BSD-3-Clause), `rsc.io/qr`
+  (BSD-3-Clause), `amnezia-vpn/amneziawg-go` (MIT, a fork of wireguard-go) with gVisor's netstack (Apache-2.0)
+  and `google/btree` (Apache-2.0) for the tunnel, and the CPace implementation copied from
+  `rsc.io/cmd/mote` v0.1.3 (BSD-3-Clause) into `internal/third_party/cpace`. The lite
+  member uses RustCrypto and rustls (MIT or Apache-2.0).
+
+## 6. Runtime view
+
+How the parts work together: joining, finding each other, syncing, the content of a copy,
+sync away from home, the admins, and remote paste.
+
+### Group and pairing
 
 - **The shortcut only syncs.** With the shortcut (no app), `cbb new` on the first Linux
   machine creates the group and `cbb pair -phone` pairs the phone; every further computer
@@ -155,7 +466,7 @@ apps" below).
   profile still trusts the revoked member, so the button must not be used. The records and
   the list are described in "Admin phones, the devices list and revocation" below.
 
-## Discovery and the shared address
+### Discovery and the shared address
 
 - Linux members advertise `<device ID>._clipboardbridge._tcp.local` with SRV, TXT (the protocol
   version `v=1`; the group tag `g=`, a short fingerprint of the group CA, so the members of
@@ -233,7 +544,7 @@ apps" below).
   when it is opened there by mistake. Without the list every interface counts, as on a
   computer.
 
-## Sync model
+### Sync model
 
 - A clipboard change on a member becomes an **event**: a random ID, the origin device, a
   hybrid timestamp, the age, the text, its kind (normal or secret) and how it arrived (a copy
@@ -312,219 +623,49 @@ apps" below).
 - **No echo.** A member does not report a text it wrote into its clipboard as a new copy,
   even when the clipboard reports it up to 10 seconds late.
 
-## The iPhone button
+### Sync modes
 
-The button is for an iPhone without the app; a phone with the app, iPhone or Android, is a
-member and sends from the app instead (see "The phone apps" below). One
-shortcut, published as an iCloud link with an import question for the token. It reads
-the iPhone clipboard and sends `POST https://clipboardbridge.local:8764/sync` with the JSON body
-`{"v": 1, "text": "…"}` (optionally `"secret": true`, which makes a secret event) and the
-header `Authorization: Bearer <token>`. The member that holds the name decides the direction:
+Today every copy on any member goes to the clipboard of every other member within a second,
+so a copy on one computer replaces what was just copied on another. Each device gets a
+**sync mode** instead, and a new device starts in its own:
 
-1. A computer in the group copied something less than 45 seconds ago → the member returns
-   that text, and the shortcut puts it on the iPhone clipboard. The user most likely pressed
-   Ctrl+C or ⌘C a moment ago and picked up the phone. Text that came from the iPhone itself,
-   directly or through Universal Clipboard, does not count as a computer's copy.
-2. Otherwise, if the iPhone text is new, that is, neither the group's text nor the text of
-   the member's own clipboard → it becomes a group event, and it also goes to the member's
-   own clipboard (with auto-paste, if it is on).
-3. Otherwise, if the member's own clipboard holds another text → the member returns it. The
-   member's own clipboard, not the group state, follows the rules above, so a member that
-   returned with an old copy never sends that copy to the iPhone.
-4. Otherwise there is nothing to transfer.
+| Mode | Its copies go to the group | The group's copies reach its clipboard |
+|---|---|---|
+| **Own** (the default) | no | no; the group's text is still at hand on request (`cbb paste`, the app's button) |
+| **Shared** | yes | yes (what every member does today) |
+| **Receive only** | no | yes; for a Pi or a kiosk that only shows what comes |
+| **Send only** | yes | no; for a work computer whose clipboard nobody else should change |
 
-The answer is always HTTP 200 with JSON, because the shortcut cannot read status codes:
-`{"v": 1, "direction": "to_iphone" | "from_iphone" | "none" | "error", "copy": "…",
-"expires_in": 0, "message": "…"}`. The shortcut writes `copy` with **Local Only** when
-`direction` is `to_iphone` (with an expiry for a secret) and shows `message` as a
-notification. Errors, such as a revoked token, come back as `direction: "error"` with a
-human message; a secret never appears in `message`.
+- The mode decides only what moves between the clipboard and the group. The member stays
+  connected in every mode, so an admin can change its mode from afar, revocations reach it
+  at once, and remote paste works on it. Sync away from home is turned on apart from the
+  mode (D-45).
+- A device changes its own mode (`cbb mode`, the apps' settings). An admin changes the mode
+  of any member with a `mode` command, signed and checked like a `paste` command (see
+  "Remote paste"); the member keeps the mode across restarts and reports it in its hello,
+  so the devices list shows it.
+- Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
+  in every mode.
+- Built: the mode on every member. A computer keeps it in the file `mode` in the service's
+  state directory (`cbb mode`), as does the lite member (`sudo cbb mode`); the phones keep it
+  in the app's storage and set it on their own page. A device that makes or joins a group
+  starts in own; one that joined before 0.5 has no mode and shares. Every member reports its
+  mode in its hello, so the devices list shows it, and takes an admin's signed `mode` command
+  (`cbb mode -on DEVICE`, an admin phone's device page, docs/protocol.md section 15), sent
+  directly to a connected member. On a phone the mode decides what its own automatic paths
+  do: Android's foreground service writes the group's copies to the clipboard only in a mode
+  that receives, and its accessibility service sends copies by itself only in one that sends;
+  the iPhone, which has no copy watching, writes a group copy from the last 45 seconds to the
+  pasteboard while the app is open in a mode that receives. The buttons work in every mode.
 
-## Linux components
-
-Clipboard Bridge for Linux is one program that runs as up to three processes with different rights
-and lifetimes. The installer enables what the device needs.
-
-### 1. Service
-
-- A system service that runs from boot as its own system user `clipboardbridge`, with or without
-  a desktop.
-- Network, group, discovery, the shared address, sync and the current text. It keeps the
-  identity and the clock mark in its state directory (`/var/lib/clipboardbridge`) and listens on
-  a member port chosen at start. Of two Linux members, the one with the lower device ID
-  dials the other, so they make one connection; a member keeps dialing a member it finds,
-  waiting up to 30 seconds between attempts, at the addresses and port that discovery last
-  saw. It notices that the machine slept when the clock that counts sleep moves further than
-  the one that does not, and then rejoins. At most 32 connections to the member port may be
-  in their TLS handshake or a pairing attempt at once; errors such as running out of file
-  descriptors only pause the accept loops. On stop it sends the mDNS goodbyes first, then
-  the member goodbyes.
-- Local control socket `/run/clipboardbridge/control.sock`, mode 0660, group `clipboardbridge`: the
-  kernel admits only root and members of that group. It is made in a private directory and
-  moved into place, so it is never reachable with a wider mode. The installer adds the desktop or tmux
-  user to the group. That group is for the clipboard only: everything that changes the group
-  goes to the admin socket `admin.sock` next to it, mode 0600 (on Windows a directory that
-  only the system and administrators enter), so only root reaches it (D-62). A program that
-  runs as a user of the group, a browser exploit for example, cannot admit a device of its
-  own, remove one, or turn on sync away from home. Each message is a JSON header on one line followed by the raw text.
-  Commands send one request and read the answers; a desktop connector keeps its connection
-  open to receive writes and report copies. Its watch request carries what the clipboard
-  holds; a write that no connector got, such as the group's text at boot, goes to the next
-  one that connects, if it is still the member's own text.
-- Command line: `cbb copy` (standard input to the group), `cbb paste` (the
-  member's own clipboard text to standard output), `cbb new`, `cbb pair`,
-  `revoke`, `status` (which lists the group's devices too). `cbb new` creates a group; `cbb pair` joins one on a device in no group and admits a device on the root or an admin.
-  `cbb pair` finds the member with an open pairing window by its TXT record, or uses
-  the address that `pair` prints, for networks where multicast does not pass. It talks to
-  one member only, tries that member's addresses (IPv4 first, link-local last) until one
-  answers, and stops after the first attempt in which the other side could check the code,
-  so a device that only pretends to pair gets one guess at most. When more than one device
-  announces a window, it asks for the address. Hanging up cancels it, and it gives up after
-  two minutes, or, while it shows its QR code for the phone, after the five minutes it waits
-  for the window.
-- tmux: copying in tmux copy mode goes to the group (`copy-command`), and a key binding
-  pastes the member's own clipboard text into any program inside tmux. The binding runs
-  `cbb paste -terminal`, so that a text from another device cannot drive the terminal or the
-  shell: no control characters (an escape could end bracketed paste and run the rest), only
-  the first line, no final line feed, and never a secret. A login snippet starts tmux on the
-  text console.
-
-### 2. Desktop connector
-
-- A user process started with any graphical session: a systemd user unit bound to
-  `graphical-session.target` where the desktop starts it (GNOME, KDE Plasma), which the
-  installer restarts in each running session after an update; XDG autostart elsewhere, which
-  nearly every desktop supports (the entry is hidden where the unit runs, and a lock in the
-  user's runtime directory keeps it to one agent a session). It links the desktop clipboard to the
-  service over the control socket. When the display connection drops, it reconnects with a
-  backoff, and exits only when the session is gone.
-- Clipboard access, chosen automatically, in pure Go:
-
-  | Desktop                                                                  | Access                                                    |
-  |--------------------------------------------------------------------------|-----------------------------------------------------------|
-  | Wayland with `ext-data-control-v1` or `wlr-data-control` (KDE, sway, Hyprland, labwc, Wayfire, COSMIC) | the data-control protocol |
-  | X11 (XFCE, LXQt, MATE, Openbox, …)                                       | X11 selections, change events from XFixes                 |
-  | GNOME and other Wayland desktops without data-control                    | X11 selections through XWayland (expected to work on GNOME, see the open questions; best effort elsewhere) |
-
-- Only the regular clipboard is watched; mouse selections are not sent to the group. A
-  received text goes into both the clipboard and the primary selection, so Ctrl+V works in
-  applications, and Shift+Insert and the middle mouse button work in terminals.
-- **Auto-paste** (optional): after the connector writes an event sent from a phone (via
-  `phone`), it presses Shift+Insert through a virtual keyboard (uinput). Never for
-  Universal Clipboard items or other events, and not on the lock screen.
-
-### 3. Console helper (planned)
-
-Not built yet (roadmap item 10); the design:
-
-- Optional, root with only `CAP_SYS_ADMIN`, because only that may inject input into a
-  console. It runs with `clipboardbridge` as a supplementary group and connects to the control
-  socket as a client; it listens on nothing.
-- On a double press of Right Ctrl (configurable; a modifier alone types nothing, so
-  programs do not notice) it injects the member's own clipboard text into the active virtual
-  console with TIOCSTI on `/dev/tty0`. This works at the login prompt, in `sudo` and in any
-  console program, with any characters, independent of the console keyboard layout.
-- Only a single line is injected by default; multi-line text needs a second double press.
-  Control characters, escape sequences and invalid UTF-8 are removed. This stops a local
-  user from planting commands that would run in a root console.
-
-## macOS
-
-- **Service**: the same service as on Linux, as a LaunchDaemon under a hidden service account.
-  macOS grants local network access to daemons without a prompt. It listens on UDP 5353
-  for mDNS (D-32), and dials and takes connections like the other full members, from the
-  home network only. It may hold `clipboardbridge.local`, a laptop only as a fallback
-  (D-53); it does not admit devices yet (step 4 of "Full members, admins and the operating
-  system"). `install.sh` lists the
-  service in the application firewall (`socketfilterfw --add` and `--unblockapp`), and
-  `uninstall.sh` takes it away; `CBB_FIREWALL=no` leaves the firewall alone.
-- **Pasteboard agent**: a LaunchAgent in the user's session, linked to the service over a
-  local socket. It checks the pasteboard change counter every 0.5 seconds on the main thread
-  and reads the text only after a change.
-- Skips items marked by password managers: `org.nspasteboard.ConcealedType`,
-  `org.nspasteboard.TransientType`, `org.nspasteboard.AutoGeneratedType` and the older
-  markers listed on nspasteboard.org.
-- Items that arrive through Universal Clipboard are relayed to Linux, marked
-  `universal-clipboard`; they do not count as a computer's copy for the iPhone button.
-  Received secrets are written with `org.nspasteboard.ConcealedType` and for the current host
-  only, so clipboard histories skip them and they do not travel over Universal Clipboard.
-- Finds the members with Clipboard Bridge's own mDNS code, publishing itself as a full member,
-  and trusts only the group CA, in its own configuration; the system keychain is not changed.
-- Installing needs administrator rights once. Later: a menu bar item with pause, status and
-  devices.
-
-## Windows
-
-- **Service**: the same service as on Linux, as a Windows service (`cbb.exe service`) under
-  the virtual account `NT SERVICE\clipboardbridge`, with only `SeChangeNotifyPrivilege`, and
-  restarted by the service manager when it fails. It listens like a Linux member and speaks
-  with the `linux` role, since roles describe what a member does on the network. Its data is
-  in `ProgramData\clipboardbridge` (`state`, `logs`, `run`), owned by administrators with an
-  access list for the system, administrators and the service only; the port is `CBB_PORT` in
-  the service's environment.
-- **Control socket**: an AF_UNIX socket, `ProgramData\clipboardbridge\run\control.sock`.
-  Windows lets a client connect only with write access to the socket file, which inherits the
-  protected access list the service gives `run` before it listens: the system,
-  administrators, the service, the local `clipboardbridge` group, and each member of the group
-  by its own SID as the service finds them at start, so a user just added connects without
-  signing in again.
-- **Clipboard agent**: `cbbw.exe agent`, the same program linked without a console window,
-  started at every sign-in from the `Run` key of the machine, once per session (a named
-  mutex). It polls the clipboard sequence number every 0.5 seconds, like the Mac, and opens
-  the clipboard only after a change, from one thread with a message-only window. It reads
-  `CF_UNICODETEXT`; text ends at the first NUL, and CR LF becomes LF (and back when it
-  writes).
-- **Secrets**: an item with `ExcludeClipboardContentFromMonitorProcessing` or
-  `Clipboard Viewer Ignore`, or with `CanIncludeInClipboardHistory` set to 0, is a secret.
-  Received secrets are written with all of these and `CanUploadToCloudClipboard` set to 0, so
-  the clipboard history, the cloud clipboard and other monitors skip them.
-- **mDNS**: the service shares UDP 5353 with the DNS Client service through `SO_REUSEADDR`.
-  Windows gives no packet information through `golang.org/x/net`, so a packet's interface is
-  the one whose network holds its source address, or the zone of a link-local source, and a
-  multicast goes out on the interface set on the socket.
-- **Installer**: `install.ps1` (or `get.ps1`, which checks a release against
-  `SHA256SUMS`) needs an administrator once. It allows TCP 8764 and UDP 5353 for `cbb.exe`
-  from the local subnet in Windows Firewall, in rules of the group `clipboardbridge` that
-  it and `uninstall.ps1` remove, and registers the uninstaller in Settings, Apps.
-- Logs: `ProgramData\clipboardbridge\logs\service.log` and
-  `LocalAppData\clipboardbridge\agent.log`, each moved to `.1` at 1 MiB.
-
-## Passwords
-
-- Automatic sync skips items marked as secret: the macOS and Windows formats above, and on
-  Linux the presence of the `x-kde-passwordManagerHint` type, whatever its value.
-- Received secrets are written with the same marks Clipboard Bridge reads: the
-  `x-kde-passwordManagerHint` type on Linux and the macOS types above, so clipboard managers
-  skip them.
-- Some desktops and clipboard managers keep a copy of the last clipboard text and offer it
-  again without the mark. The engine remembers secret texts, including the marked items it
-  skipped, and such an offer makes no event (see the sync model).
-- Explicit actions may carry a secret: "send even if secret" on the Mac and the console
-  paste; the shortcut may mark a text as secret. Secret events are kept only in memory and
-  expire 60 seconds after the copy, judged by the event's age. When a secret that a connector
-  wrote expires, the connector gives up the clipboard, so the desktop does not keep it.
-- Secrets stay out of swap where the system allows it: on Linux the service's unit sets
-  `MemorySwapMax=0`, and macOS encrypts its swap. Windows does not encrypt its page file by
-  default, so there a secret in the service's memory may reach it (not solved yet). The desktop's
-  own clipboard, which holds a received secret until it expires, is outside the service.
-- Only root and members of the `clipboardbridge` group receive secrets through the control socket.
-
-## Limits
-
-- Text: UTF-8, up to 1 MiB per item.
-- Images and files: up to 100 MiB per copy at home and 25 MiB away from home by default,
-  set on each device up to 1 GiB (see "Images and files").
-
-Every limit, timeout and lifetime is listed in [limits and lifetimes](reference/limits.md).
-
-## Images and files
+### Images and files
 
 Images, files and folders travel wherever the platform lets a program read and write them,
 with the same protection as text; formatted text (HTML next to the plain text) comes last
 and is optional (D-56). Today's event carries its whole text and sits in every hello and
 queue, so large content cannot simply go inside it.
 
-### Where
+#### Where
 
 | Device | Images | Files and folders | HTML |
 |---|---|---|---|
@@ -546,7 +687,7 @@ Images travel as PNG (screenshots) or JPEG (photos, which would grow about five 
 PNG); the sender converts HEIC and TIFF, and a receiver converts JPEG to PNG when an
 application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
 
-### Manifest and chunks
+#### Manifest and chunks
 
 - A `media` event carries a **manifest** instead of the bytes: for each part its type (or
   name and path inside a copied folder), size and SHA-256, the total size and an optional
@@ -581,7 +722,7 @@ application asks for PNG. A copied folder keeps its tree, up to 10 000 entries.
   app runs; its button saves files in the app's folder in Files. Both phones serve their own
   copies to the computers, at most 100 MiB a copy.
 
-### Storage
+#### Storage
 
 The service keeps fetched content as files in a cache in its state directory, readable only
 by the service, so a Pi Zero never holds a large copy in memory; files the clipboard points
@@ -594,7 +735,7 @@ names, at most 255 bytes); links inside folders are neither followed nor created
 made executable; on Mac and Windows received files carry the system's mark of a download
 (quarantine, Mark of the Web).
 
-### Size limit
+#### Size limit
 
 | Setting | Default | Range |
 |---|---|---|
@@ -608,7 +749,7 @@ copy from Mac is over this device's limit of 100 MB"). The hub's away limit caps
 star. The limit protects the memory and disks of small devices, mobile data, the hub and the
 forwarder's 2 MiB a second per group; beyond 1 GiB Clipboard Bridge is the wrong tool.
 
-### Security
+#### Security
 
 The rules of "Sync away from home" hold unchanged (D-58): at home chunks travel inside the
 member connection's mutual TLS 1.3, away from home only inside the group's WireGuard tunnel
@@ -619,7 +760,7 @@ member serving from its cache cannot change it. What stays visible: the network 
 client and the hub sees that roughly so many megabytes went; chunk frames are padded to a
 multiple of 16 KiB, and cover traffic cannot hide a large transfer.
 
-### Order of work
+#### Order of work
 
 Steps 1 to 6 are built (docs/protocol.md, section 4, "Media" and "Content", and the
 watcher protocol in section 8); the rest follows. The desktop agent fetches a copy's files
@@ -642,44 +783,7 @@ through the FileTransfer portal; files a Flatpak app copies are under the docume
    connectors get the text; formatted text over 8 MiB, or whose text is over 256 KiB, goes
    as its text alone.
 
-## Security
-
-| Threat                                                         | Measure                                                                    |
-|----------------------------------------------------------------|----------------------------------------------------------------------------|
-| Someone on the home network reads the traffic                  | TLS 1.3 everywhere                                                         |
-| Someone guesses or intercepts the pairing code of a computer   | CPace inside TLS: one online guess per attempt, at most three per pairing window, no offline attack; the joining device spends the code on one attempt, and never takes it from the command line |
-| Someone attacks the pairing of an iPhone                       | the same attempt limits; the profile comes over a separate plain-HTTP port, so no certificate warning is ever accepted for the pairing page; the user compares the iPhone CA fingerprint with the one in the terminal (never with the plain-HTTP page) before trusting it; the code and the token travel only over a connection that the trusted CA authenticates, so a relay sees neither |
-| A device impersonates a member (for example, a host that answers `clipboardbridge.local` on another network) | mutual TLS with the group CA; members dial discovered addresses and check the peer's certificate; the iPhone accepts only a certificate from the iPhone CA, so an impostor gets neither the token nor the text |
-| A device is lost or stolen                                     | `cbb revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin. With the apps: "Remove" on another admin phone; a lost root phone hands the root to the remaining admin without pairing anything again |
-| A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipboardbridge.local` and names below it, and excludes IP addresses and other name forms. The Mac never changes its system trust |
-| A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
-| A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipboardbridge` group; single-line injection by default with control characters removed |
-| Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
-| Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. Planned: keys in hardware where the computer has it, file keys shown as such, and regular renewal ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
-| Someone on the internet reads or traces the traffic (planned)  | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
-| An admin orders a paste on a member (planned, 0.6)            | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
-| A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
-
-## Build
-
-- Go, with `CGO_ENABLED=0` everywhere except for the Mac's pasteboard agent (the Windows
-  clipboard needs no cgo), which uses cgo
-  with a small Objective-C file. From then on CI builds the macOS targets on macOS runners
-  with cgo.
-- Targets: `linux/amd64`, `linux/arm64`, `linux/arm` with ARMv7 and ARMv6, `darwin/arm64`,
-  `darwin/amd64`, `windows/amd64` and `windows/arm64` (`cbb.exe`, and `cbbw.exe` linked with
-  `-H windowsgui` for the agent).
-- The Raspberry Pi Zero W (ARMv6) cannot run Ubuntu; it runs Raspberry Pi OS. Clipboard Bridge
-  does not depend on distribution specifics. The systemd units use directives from systemd
-  248 and later and are checked with `systemd-analyze verify`.
-- Third-party code: `golang.org/x/net`, `golang.org/x/sys`, `golang.org/x/crypto` and
-  `golang.org/x/time` (BSD-3-Clause), `jezek/xgb` (BSD-3-Clause), `rsc.io/qr`
-  (BSD-3-Clause), `amnezia-vpn/amneziawg-go` (MIT, a fork of wireguard-go) with gVisor's netstack (Apache-2.0)
-  and `google/btree` (Apache-2.0) for the tunnel, and the CPace implementation copied from
-  `rsc.io/cmd/mote` v0.1.3 (BSD-3-Clause) into `internal/third_party/cpace`. The lite
-  member uses RustCrypto and rustls (MIT or Apache-2.0).
-
-## Sync away from home
+### Sync away from home
 
 Away from home, and between subnets that mDNS does not reach (for example a Pi on
 192.168.20.x and the rest of the group on 192.168.0.x), members reach each other through the
@@ -692,7 +796,7 @@ invite` on the hub); a hub that clients cannot reach directly registers with a f
 (`cbb forward`, routing by `mac1`). The phones and the rest of the order of work below are
 not built yet.
 
-### Turning it on, step by step
+#### Turning it on, step by step
 
 Every widening of what the group exposes is the user's own choice, made in turn:
 
@@ -738,7 +842,7 @@ Every widening of what the group exposes is the user's own choice, made in turn:
 Each step can be turned off again, which forgets its keys. The documentation and the apps
 explain each step where it is turned on, in the same words.
 
-### Rules
+#### Rules
 
 These take precedence over convenience:
 
@@ -761,7 +865,7 @@ hub (or the forwarder) sees that encrypted packets go to that address, when, and
 many. VLESS with REALITY makes them look like an ordinary HTTPS connection to a well-known
 site. Where a network admits only listed addresses (allow-lists), no protocol helps.
 
-### The hub
+#### The hub
 
 - One member of the group, a computer of the user's at home, is the hub. It need not stay
   on: while it is off, nothing syncs away from home, and the devices at home still sync
@@ -807,7 +911,7 @@ site. Where a network admits only listed addresses (allow-lists), no protocol he
   tunnel cannot be built, nothing is sent, and the app or `cbb status` says why, with the
   real cause in debug builds.
 
-### The phone as the hub while its app is open
+#### The phone as the hub while its app is open
 
 Everyone in a group has a phone; not everyone has a computer. A group made on a phone with
 TVs, set-top boxes, other phones or lite members and no computer has nothing to be its hub,
@@ -877,7 +981,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   as every hub does; the root phone is the group's most trusted device, so that adds no
   exposure.
 
-#### Groups without a working hub
+##### Groups without a working hub
 
 | Situation | Today | Planned |
 |---|---|---|
@@ -907,7 +1011,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   goes (docs/protocol.md, section 11, "Several hubs"). Still to do: the phone hub giving way
   to a hub above it, and the signed table of main hubs (D-65).
 
-### Reaching the hub
+#### Reaching the hub
 
 - A client tries the hub's addresses in order: its public IPv6 address directly, then a
   public IPv4 address (a forwarded port), then the project's forwarder. A client needs only
@@ -925,7 +1029,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
   persistent keepalive of 25 s keeps NAT mappings open), to spare phone batteries; the exact
   interval is to be measured.
 
-### The forwarder
+#### The forwarder
 
 For homes behind carrier-grade NAT, and for clients without IPv6, the project runs a
 forwarder on its own server for all users. It holds no keys and only passes encrypted
@@ -1013,7 +1117,7 @@ user can run `cbb forward` on a server of their own.
 - The forwarder is `cbb` in a mode that holds no keys. A hub never runs on a rented server:
   that would put the decrypted clipboard on someone else's hardware.
 
-### Keys and pairing
+#### Keys and pairing
 
 - Each device creates its own WireGuard key pair when sync away from home is turned on
   there, not before; the private key never leaves it and never appears in a QR code.
@@ -1034,7 +1138,7 @@ user can run `cbb forward` on a server of their own.
   its key, and from then on syncs from anywhere. Keys and preshared keys can be renewed
   later through the tunnel, since the member TLS runs inside it.
 
-### Joining from another network
+#### Joining from another network
 
 Three ways admit a device that is not on the home network. The first two work today for
 the pairing itself; the third is planned.
@@ -1093,14 +1197,14 @@ the pairing itself; the third is planned.
     until it is used, so the user passes it only through a channel they trust; the app says
     so when it shows it.
 
-### Groups that sync at home only
+#### Groups that sync at home only
 
 At home no hub is needed: the members sync directly over the home network, with the phone as
 the root and any computers and lite members. Some member has to accept connections: a Linux
 member, a Windows PC, a Mac or a lite member; only phones never do. So any group with a
 computer or a lite member besides its phones syncs at home.
 
-### Blind relay
+#### Blind relay
 
 For a group with no computer that could be the hub, a blind relay can stand in as the
 meeting point (D-68). It holds none of the group's keys, ends the clients' WireGuard tunnels,
@@ -1148,7 +1252,7 @@ relay, or a hub.
   roots, since it knows its groups by them; an open relay never does.
 - The wire format is in docs/protocol.md, section 14.
 
-### Blocked networks
+#### Blocked networks
 
 1. **AmneziaWG**, a fork of wireguard-go that randomises message headers, adds junk and
    imitation packets before the handshake and pads messages. Same keys and code; the user
@@ -1201,7 +1305,7 @@ relay, or a hub.
 
 sing-box is not used (GPL).
 
-### Members
+#### Members
 
 | Member                         | Tunnel                                                                                        | Role                     |
 |--------------------------------|-----------------------------------------------------------------------------------------------|--------------------------|
@@ -1228,7 +1332,7 @@ sing-box is not used (GPL).
 - No push notifications: they go through Apple's and Google's servers. A phone gets the
   current text when the app opens, as at home.
 
-### Traffic analysis
+#### Traffic analysis
 
 Frames over the tunnel are padded to a few fixed sizes, so that the length of a text does not
 show; the wire format goes into `docs/protocol.md` with the code.
@@ -1237,7 +1341,7 @@ Cover traffic is an option, off by default: a client and the hub send padded emp
 timer, so that neither the network nor the forwarder sees when a text is copied. It costs
 traffic and, on a phone, battery, so the user turns it on per device.
 
-### Direct links between clients (later)
+#### Direct links between clients (later)
 
 Through the forwarder the star is mandatory. Two clients of one group that can reach each
 other directly, for example both with IPv6, may later get a direct link: a WireGuard tunnel
@@ -1246,7 +1350,7 @@ It needs each client to accept connections from the internet (phones on mobile n
 mostly cannot) and the hub to hand out the addresses, so it comes after the star works and
 only adds to it.
 
-### Rejected
+#### Rejected
 
 - Overlay networks (Tailscale, Headscale, ZeroTier): third-party services.
 - A public relay that routes by the TLS server name: the name shows on the network, and it is
@@ -1257,14 +1361,14 @@ only adds to it.
   account.
 - Push notifications and events stored for members that are off: someone else's server.
 
-### Cost
+#### Cost
 
 - With a public address at home: nothing; the hub is a member the user already has.
 - The forwarder: a small virtual server serves thousands of groups, since clipboard texts are
   small; traffic is the texts and the keepalives.
 - On the devices: one UDP socket and an in-process network stack, a few megabytes of memory.
 
-### Order of work
+#### Order of work
 
 1. WireGuard in `cbb` (done) and the key exchange (done).
 2. A listening mode for Macs, so that a Mac can be the hub and phone-and-Mac groups connect
@@ -1293,44 +1397,7 @@ only adds to it.
    WireGuard only, so a group whose hub hides its tunnel keeps it at home); the ESP32 when
    WireGuard on it is mature.
 
-## Device keys in hardware
-
-Today a computer keeps its member key, its WireGuard key and any CA keys in files readable
-only by the service. The plan to keep them in the TPM or the Secure Enclave, to show where
-each device keeps its keys and to renew them on a schedule is in
-[roadmap.md](roadmap.md#device-keys-in-hardware) (D-44, D-47).
-
-## The phone apps
-
-The shortcut can neither hold a key, sign, run CPace nor accept connections, so in a group
-that a computer created the group CA lives on the Linux members and the phone only
-authorizes with its token. The phone apps can do all four, and in a group that an app
-creates the phone is the root of the group (D-33 to D-36; the wire side is section 9 of
-[protocol.md](protocol.md)):
-
-- The app creates the group CA in the Secure Enclave (iPhone) or StrongBox/Keystore
-  (Android): a P-256 key that cannot be exported. Only the admin phones issue member
-  certificates; a computer holds CA keys only when the root phone makes it an admin, so a
-  stolen computer cannot add devices.
-- The first computer joins the phone, not the other way round: `cbb pair` shows a QR code
-  with its addresses, its certificate fingerprint and a fresh code, and listens; the app
-  scans it, dials the computer, checks the fingerprint and runs CPace with that code, with
-  the phone in the admitting role, then issues its certificate. No profile for the user to
-  check: the app trusts its own group's CA.
-- Every computer is then a member without CA keys; Linux members still publish, hold
-  `clipboardbridge.local` and serve the shortcut for phones without the app. A lite member
-  (Rust) takes part the same way.
-- Certificate renewal (every two years) and revocation need an admin phone. Losing one is
-  covered by a second admin phone, which is an equal admin with a key of its own; see
-  "Admin phones, the devices list and revocation" below.
-- The app syncs while it is open and through its "Sync clipboard" action (Back Tap or the
-  Action button on the iPhone); on Android a foreground service receives by itself, and an
-  accessibility service or one tap sends ([apps.md](apps.md)). Background sync stays
-  impossible on iOS.
-- The mode with the CA on the Linux members and the phone's token as the authority stays for
-  users without the app, and `cbb pair` / `join -code` for groups without a phone.
-
-## Admin phones, the devices list and revocation
+### Admin phones, the devices list and revocation
 
 A user may have several phones, for example an iPhone and an Android phone. All of them join
 the one group, and any of them can be an **admin**: it admits devices, renews certificates
@@ -1424,7 +1491,7 @@ in the member protocol, refusing revoked keys, the devices list and `cbb revoke`
 in groups a computer created, and members that verify certificates through an admin CA. Then
 the apps: the root and admin CAs, the Devices screen, making an admin, and the root record.
 
-## Full members, admins and the operating system
+### Full members, admins and the operating system
 
 Decided on 2026-10-24 (D-50 to D-53) and built in the steps at the end of this section. It
 replaces what "Group and pairing", "Discovery and the shared address", "macOS" and
@@ -1551,7 +1618,7 @@ then simpler, with one kind of trust, and every key in it can be revoked by a re
 5. Taking over from a lost root computer (`cbb takeover`).
 6. `cbb upgrade` for groups made before.
 
-## Who may remove an admin
+### Who may remove an admin
 
 Decided on 2026-10-24 (D-60). An admin computer keeps its admin key in a file, so it is the
 admin a thief gets most easily: with the laptop, or with a copy of the file. The root and
@@ -1607,42 +1674,7 @@ signed after the theft at the earliest, or can be signed again after an unfreeze
 **Rejected.** A time limit after which a freeze lapses (a thief would wait it out), and votes
 among admins (a home group has one or two admins, so a vote decides nothing).
 
-## Sync modes
-
-Today every copy on any member goes to the clipboard of every other member within a second,
-so a copy on one computer replaces what was just copied on another. Each device gets a
-**sync mode** instead, and a new device starts in its own:
-
-| Mode | Its copies go to the group | The group's copies reach its clipboard |
-|---|---|---|
-| **Own** (the default) | no | no; the group's text is still at hand on request (`cbb paste`, the app's button) |
-| **Shared** | yes | yes (what every member does today) |
-| **Receive only** | no | yes; for a Pi or a kiosk that only shows what comes |
-| **Send only** | yes | no; for a work computer whose clipboard nobody else should change |
-
-- The mode decides only what moves between the clipboard and the group. The member stays
-  connected in every mode, so an admin can change its mode from afar, revocations reach it
-  at once, and remote paste works on it. Sync away from home is turned on apart from the
-  mode (D-45).
-- A device changes its own mode (`cbb mode`, the apps' settings). An admin changes the mode
-  of any member with a `mode` command, signed and checked like a `paste` command (see
-  "Remote paste"); the member keeps the mode across restarts and reports it in its hello,
-  so the devices list shows it.
-- Deliberate actions (`cbb copy`, sending from a phone, a paste ordered by an admin) work
-  in every mode.
-- Built: the mode on every member. A computer keeps it in the file `mode` in the service's
-  state directory (`cbb mode`), as does the lite member (`sudo cbb mode`); the phones keep it
-  in the app's storage and set it on their own page. A device that makes or joins a group
-  starts in own; one that joined before 0.5 has no mode and shares. Every member reports its
-  mode in its hello, so the devices list shows it, and takes an admin's signed `mode` command
-  (`cbb mode -on DEVICE`, an admin phone's device page, docs/protocol.md section 15), sent
-  directly to a connected member. On a phone the mode decides what its own automatic paths
-  do: Android's foreground service writes the group's copies to the clipboard only in a mode
-  that receives, and its accessibility service sends copies by itself only in one that sends;
-  the iPhone, which has no copy watching, writes a group copy from the last 45 seconds to the
-  pasteboard while the app is open in a mode that receives. The buttons work in every mode.
-
-## Remote paste
+### Remote paste
 
 An admin device sends a text to one chosen member and has it pasted where that member's
 focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for
@@ -1651,7 +1683,7 @@ the Nano ESP32's USB keyboard, for a computer that runs no Clipboard Bridge at a
 running commands on a headless Pi, SSH stays the better tool; remote paste reaches what SSH
 does not, the screen's own session.
 
-### Who may paste where
+#### Who may paste where
 
 A device in a group trusts its admins: they already admit it, renew its certificate and
 remove it. Still, typing into a device is more than syncing a clipboard, so **remote paste
@@ -1680,7 +1712,7 @@ input, and the sender is told so.
   Any admin can also turn remote paste off on every member at once (`cbb paste-receive off
   --all`).
 
-### How the text gets in
+#### How the text gets in
 
 Two methods: **paste** (write the text to the target's clipboard, then press the paste
 keys) and **type** (send each character as a key). Paste comes first: it does not depend
@@ -1715,7 +1747,7 @@ Senders: the iPhone and Android apps (a "Paste on…" action with the devices li
 computers (`cbb paste --on DEVICE`, from standard input or the clipboard; later the Mac
 menu bar item and a tray item on Linux and Windows).
 
-### The command
+#### The command
 
 A `paste` command is signed like a record (protocol section 10) and never stored. Its
 body carries `v`, `type` (`paste`), `group`, `by`, `to` (the target's device ID), `id` (128
@@ -1737,7 +1769,7 @@ random bits), `time_ms`, `expires_ms` (at most 30 seconds later), `mode` (`paste
 The signature, not the connection, says who sent it, so a member that forwards a command,
 such as the hub, cannot forge or change it.
 
-### Safeguards that need no consent
+#### Safeguards that need no consent
 
 - Control characters other than newline and tab, escape sequences and invalid UTF-8 are
   removed. At most 4 KiB when typing and 1 MiB when pasting.
@@ -1757,7 +1789,111 @@ remote paste off, or the root or an admin phone removes it; removal reaches ever
 records, and from then on its commands fail the signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
 narrow this to a thief who also has the computer running.
 
-## Open questions
+## 7. Deployment view
+
+Where each part runs and how it is installed:
+
+| Device | Processes | Installed by |
+|---|---|---|
+| Linux, FreeBSD | the service as a system service (systemd, rc.d) under its own user; the agent (desktop connector) in each desktop session; optional helpers for uinput, tmux and the text console | `get.sh` and `install.sh`, Docker |
+| OpenWrt, OPNsense | the service under procd or rc.d, limited to the home zones | `get.sh`, the package feed, the OPNsense plugin hook |
+| macOS | the service as a LaunchDaemon, the pasteboard agent as a LaunchAgent, the Mac app | `get.sh`, Homebrew |
+| Windows | the service as a Windows service, the agent at sign-in, the tray app | `get.ps1`, `install.ps1`, winget |
+| Android, iPhone, watches, TVs | the app, with its kit and the tunnel library in its process | the APK in each release; TestFlight later |
+| Small Linux devices, ESP32 | the lite member as a system service; the firmware | `get.sh --lite`; flashing |
+| A server | `cbb forward` or `cbb relay` as a hardened systemd unit, or the Docker image | [running your own servers](admin/self-hosting.md) |
+
+The ports, files and logs of each are in [devices, ports and files](reference/devices.md).
+
+## 8. Crosscutting concepts
+
+Concepts every part applies: security, where keys live, secrets from password managers,
+and the limits.
+
+### Security
+
+The full threat model, with the adversaries, the trust boundaries and the code behind each
+defence, is in [threat-model.md](threat-model.md). In short:
+
+| Threat                                                         | Measure                                                                    |
+|----------------------------------------------------------------|----------------------------------------------------------------------------|
+| Someone on the home network reads the traffic                  | TLS 1.3 everywhere                                                         |
+| Someone guesses or intercepts the pairing code of a computer   | CPace inside TLS: one online guess per attempt, at most three per pairing window, no offline attack; the joining device spends the code on one attempt, and never takes it from the command line |
+| Someone attacks the pairing of an iPhone                       | the same attempt limits; the profile comes over a separate plain-HTTP port, so no certificate warning is ever accepted for the pairing page; the user compares the iPhone CA fingerprint with the one in the terminal (never with the plain-HTTP page) before trusting it; the code and the token travel only over a connection that the trusted CA authenticates, so a relay sees neither |
+| A device impersonates a member (for example, a host that answers `clipboardbridge.local` on another network) | mutual TLS with the group CA; members dial discovered addresses and check the peer's certificate; the iPhone accepts only a certificate from the iPhone CA, so an impostor gets neither the token nor the text |
+| A device is lost or stolen                                     | `cbb revoke`; for a Linux member also a new group CA, a new iPhone CA and new tokens, the old profile deleted on every iPhone, and the members that were off paired again before they rejoin. With the apps: "Remove" on another admin phone; a lost root phone hands the root to the remaining admin without pairing anything again |
+| A member is compromised                                        | it can read the group clipboard, by design. It cannot read the iPhone's other HTTPS traffic: the iPhone CA is restricted by name constraints to `clipboardbridge.local` and names below it, and excludes IP addresses and other name forms. The Mac never changes its system trust |
+| A bug in the network code                                      | memory-safe language; the service runs as an unprivileged user in a systemd sandbox (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, no capabilities, restricted address families and system calls) |
+| A local user abuses the console helper                         | the helper listens on nothing; the control socket admits only root and the `clipboardbridge` group; single-line injection by default with control characters removed |
+| Requests from outside the home network                         | the service accepts connections only from private, unique-local and link-local addresses, checked in the program and by systemd; away from home only through the group's WireGuard tunnel, whose port drops every packet without a key from the group's records |
+| Someone copies a computer's keys                               | the identity and tunnel files are readable only by the service; whoever copies them can act as that device until it is removed, so removing it makes every member and the hub refuse it at once. A Linux computer with a TPM keeps its member, admin and tunnel keys there; every device shows where its keys are; the Secure Enclave on Macs and the TPM on Windows are not built yet ([roadmap.md](roadmap.md#device-keys-in-hardware)) |
+| Someone on the internet reads or traces the traffic           | the member TLS inside the group's own WireGuard tunnel, a preshared key per client, padded frames; clients talk only to the hub; the project's forwarder holds no keys and passes each packet only to its own group's hub |
+| An admin orders a paste on a member                           | off until the target's user turns it on, Enter and root consoles separately; any admin turns it off everywhere; only admins send; the command is signed and expires in 30 seconds, and the target checks the signature, the revocations and a replay cache; control characters removed; a notification and a log on the target; a rate limit; a phone signs only behind Face ID or the fingerprint; a stolen admin computer is frozen by any other admin and removed by the root or an admin phone (see "Who may remove an admin") |
+| A compromised dependency or build                              | few dependencies, `govulncheck`, actions pinned to commit SHAs, release builds in CI with checksums and build provenance |
+
+### Device keys in hardware
+
+Today a computer keeps its member key, its WireGuard key and any CA keys in files readable
+only by the service. The plan to keep them in the TPM or the Secure Enclave, to show where
+each device keeps its keys and to renew them on a schedule is in
+[roadmap.md](roadmap.md#device-keys-in-hardware) (D-44, D-47).
+
+### Passwords
+
+- Automatic sync skips items marked as secret: the macOS and Windows formats above, and on
+  Linux the presence of the `x-kde-passwordManagerHint` type, whatever its value.
+- Received secrets are written with the same marks Clipboard Bridge reads: the
+  `x-kde-passwordManagerHint` type on Linux and the macOS types above, so clipboard managers
+  skip them.
+- Some desktops and clipboard managers keep a copy of the last clipboard text and offer it
+  again without the mark. The engine remembers secret texts, including the marked items it
+  skipped, and such an offer makes no event (see the sync model).
+- Explicit actions may carry a secret: "send even if secret" on the Mac and the console
+  paste; the shortcut may mark a text as secret. Secret events are kept only in memory and
+  expire 60 seconds after the copy, judged by the event's age. When a secret that a connector
+  wrote expires, the connector gives up the clipboard, so the desktop does not keep it.
+- Secrets stay out of swap where the system allows it: on Linux the service's unit sets
+  `MemorySwapMax=0`, and macOS encrypts its swap. Windows does not encrypt its page file by
+  default, so there a secret in the service's memory may reach it (not solved yet). The desktop's
+  own clipboard, which holds a received secret until it expires, is outside the service.
+- Only root and members of the `clipboardbridge` group receive secrets through the control socket.
+
+### Limits
+
+- Text: UTF-8, up to 1 MiB per item.
+- Images and files: up to 100 MiB per copy at home and 25 MiB away from home by default,
+  set on each device up to 1 GiB (see "Images and files").
+
+Every limit, timeout and lifetime is listed in [limits and lifetimes](reference/limits.md).
+
+## 9. Architecture decisions
+
+Every decision has a number and a row in [decisions.md](decisions.md), with its status;
+the sections above cite them as (D-N).
+
+## 10. Quality requirements
+
+How the quality goals are checked:
+
+| Goal | Scenario | How it is checked |
+|---|---|---|
+| Security | a device outside the group, or a removed one, tries to read or send a copy | Go, Rust, Swift and Kotlin tests of the TLS peer checks and the records; the bench's security cases, which block a release |
+| Security | a pairing code is guessed | the pairing tests: three failed attempts close the window |
+| Privacy | a forwarder or relay is run by someone else | tests that the servers keep no group files and write no logs of groups (`nolog` tests) |
+| Reliability | a member, the hub or a server goes down | the bench's `faults` suite; the e2e tests of rejoining |
+| Ease | a copy on one device | the bench: it arrives on every other within 10 s |
+| Portability | the same group from every implementation | the interop vectors and the cross tests in CI; the ESP32 builds and its self-test in QEMU |
+
+The test levels and the CI jobs are in [CONTRIBUTING.md](../CONTRIBUTING.md#development);
+the cases on real devices in the [test bench](testbench.md).
+
+## 11. Risks and technical debt
+
+What is not proven yet: the questions below need real devices, and the lists of what has
+not run on a real device are in the [README](../README.md#status) and
+[platform parity](parity.md).
+
+### Open questions
 
 These need experiments on real devices; CI cannot answer them. Each says what is known and
 which case of the test bench ([testbench.md](testbench.md)) answers it.
@@ -1792,85 +1928,6 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
   Screen), how fast does it notice a handover of the name, and does it reach a Mac that
   holds the name?
 
-## Decision log
+## 12. Glossary
 
-| ID   | Decision                                                                                   |
-|------|--------------------------------------------------------------------------------------------|
-| D-1  | License: AGPL-3.0-only. Code contributions are not accepted, so no contributor agreement is needed, and the one author can also offer a commercial license without the AGPL's obligations (README, "License"). |
-| D-2  | Language: Go, for reliable ARMv6 builds, TLS and networking in the standard library, and development speed. |
-| D-3  | A group of equal members instead of a central server; any member may be off.              |
-| D-4  | Encryption with the project's own TLS and pairing instead of an overlay VPN, which on iOS would conflict with other VPN apps. |
-| D-5  | At home, members find each other on one network; away from home they reach the hub through the group's own tunnel (D-38). |
-| D-6  | Mac and Linux sync automatically; the iPhone uses one button that picks the direction.     |
-| D-7  | Console without a desktop: tmux for copy and paste, a root helper for console paste outside tmux. |
-| D-8  | The repository is in English only, apart from the apps' translations (String Catalogs, Android `values-<language>`). |
-| D-9  | Pairing a computer: code entry with CPace inside TLS 1.3 instead of comparing digits, which a man in the middle can grind. |
-| D-10 | The iPhone trusts a separate CA restricted by name constraints; the token is shown only after that trust is in place. |
-| D-11 | One advertised port serves members, pairing and the iPhone, told apart by the first bytes. |
-| D-12 | Own mDNS responder on Linux: no Go library publishes a separate name with its own lifetime, answers per interface and sends goodbyes. |
-| D-13 | (Replaced by D-53.) Only Linux members hold `clipboardbridge.local`; Macs never hold it (since D-46 they listen too). |
-| D-14 | The hybrid clock never refuses a timestamp and warns about skew measured per connection; events carry their age for the 45-second rule and secret expiry, and local durations count sleep. |
-| D-15 | macOS runs the service as a LaunchDaemon plus a pasteboard LaunchAgent, which avoids the Local Network prompt; installing needs administrator rights. |
-| D-16 | Desktop clipboard in pure Go: Wayland data-control (both protocol variants) and X11 through `jezek/xgb`; no `wl-clipboard`. |
-| D-17 | Console paste injects a single line by default, with control characters removed.         |
-| D-18 | Secrets reach only root and the `clipboardbridge` group; the control socket enforces it through file permissions. |
-| D-19 | The group state is last-writer-wins; the protection of copies made during a disconnect applies only to writing the local clipboard (live window 60 s, rejoin window 30 s). The first version kept that rule in the group state, and a review showed that the group could then split for good. |
-| D-20 | The rejoin window opens only on a local sign that the member itself was away (start, wake), not when it merely lost its peers. A network that drops without a sleep is not noticed yet. |
-| D-21 | Each member keeps its own clipboard text apart from the group state; `cbb paste`, tmux, the console helper and the iPhone button use it. |
-| D-22 | A secret travels in a hello as a mark without its text, so the group converges on secrets too. |
-| D-23 | (Replaced by D-51.) Revoking a Linux member replaces both CAs, because it holds their keys; members that were off still trust the old CA until they pair again, and iPhones delete the old profile. |
-| D-24 | Local durations use a clock that counts sleep and ignores wall-clock steps (package `uptime`). |
-| D-25 | The hybrid clock saves a mark 10 seconds ahead before passing the last one, so it never goes back after a crash. |
-| D-26 | iPhone pairing: the profile over a separate plain-HTTP port and the fingerprint check first, then the code on a page that the trusted CA authenticates. |
-| D-27 | The engine remembers secrets for 12 hours; a watcher offering one again without its mark makes no event, a deliberate action makes it a secret again. |
-| D-28 | Two ways in: watchers report changes (no event when nothing really changed), deliberate actions always send and also write the member's own clipboard. |
-| D-29 | Certificates are checked with the local clock, but never earlier than the group CA's start: a clock that is behind does not break the group, an expired certificate is still rejected. |
-| D-30 | Pairing runs inside TLS with self-signed certificates on the new device's side and channel binding (an exporter and both certificates) instead of a separate encryption layer: CPace authenticates the TLS session, and everything after it travels in that session. |
-| D-31 | The mDNS responder does not probe its names: device IDs are random, `clipboardbridge.local` is never renamed, and the group's election decides who holds it; two holders for a moment are harmless, since any Linux member can serve the iPhone. |
-| D-32 | The Mac browses with Clipboard Bridge's own mDNS code instead of the Bonjour API: it shares port 5353 with mDNSResponder, and the service needs no cgo. The cost is a socket of its own on UDP 5353, which the macOS firewall may treat differently (see Open questions). D-12 still holds for Linux. |
-| D-33 | Several equal admin phones: a root CA with path length 1 certifies an admin CA per phone, each key in its own Secure Enclave or StrongBox, instead of one CA key copied between phones or backed up to a cloud. Only the root makes admins; a remaining admin becomes the root with a signed root record. |
-| D-34 | The devices list and revocations are signed records in a set that only grows and spreads through the member protocol; what it says depends on the set alone, so the group converges. Two admins that revoke each other both lose admin rights. |
-| D-35 | Revoking an admin keeps the devices it admitted, listed in the record, so losing a phone never means pairing the computers again. |
-| D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
-| D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |
-| D-38 | Away from home: a star of WireGuard tunnels to a hub, a member at home, with WireGuard in user space inside `cbb` and the apps and the member TLS inside; no third-party services; a feature that cannot keep the data fully protected is not built. |
-| D-39 | (On-disk part replaced by D-75, built in 0.6: the hubs register with a credential, D-67.) Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart; if that fails, by a port the group computes from its secret and the hour, never by a fixed port or a request naming the group), with limits per group. On disk it keeps only each group's roots, removals and freezes (so a removed device cannot register as its hub again), never a device's name. The hub registers with its member certificate; changing the hub's WireGuard key on a schedule and cover traffic are options, off by default. |
-| D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
-| D-41 | (Push refined by D-74.) Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
-| D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |
-| D-43 | A device away from the group joins by SSH, by the user's own VPN, or by a remote invitation: a QR code or a file, never typed, with a one-time guest WireGuard key that reaches only the pairing and a 128-bit secret, and admitted only after the admin confirms the device. The six-digit code never faces the open internet. |
-| D-44 | Computers keep their keys in the TPM or the Secure Enclave where they have one, and otherwise in a file sealed as far as the system allows, shown as such in `cbb status`; keys are renewed on a schedule. |
-| D-45 | A group starts on the home network only; sync away from home is turned on by the user, at the hub and on each device, and a device whose keys sit in a file needs a separate consent that explains the risk and the measures against it. |
-| D-46 | (Replaced by D-50.) Macs listen on the member port and publish themselves with `r=mac`, so phones, other Macs and lite members reach them without a Linux member; a Mac still dials the Linux and lite members, which never dial it, so its firewall cannot cut it off from them. |
-| D-47 | (Refined by D-70.) Key attestation (TPM, Android) is built as an option, off by default and not used in the project's own setup; it is checked only offline, so no maker's or Apple's server is involved. |
-| D-48 | The ZX Spectrum Next joins through its own Raspberry Pi, which runs the lite member; no device outside the Next takes part, and a Next without a Pi is future research on its own hardware only. |
-| D-49 | No gateway or plain tier: a device too weak for the member protocol joins through hardware of its own or not at all; on Arduino only ESP32 boards (the Nano ESP32 first) are supported, as full lite members. |
-| D-50 | A device's operating system (`os`) is stated apart from its role, so a Windows PC is shown as Windows; the roles are `full` (every computer with the service, the Mac included), `lite`, `phone` and `iphone`, and the `linux` and `mac` roles are dropped. |
-| D-51 | In a group a computer creates, only the creating computer (the root) and the members it makes admins hold CA keys, through the admin CAs of D-33 under a root with path length 1; any device but the root is removed by a record without a new group, and a lost root is taken over by an admin. |
-| D-52 | Groups made before D-51 are upgraded in place with a `root` record signed by the old group CA key and a revocation of that key; a leftover copy of the old key can break such a group but never take it over. |
-| D-53 | `clipboardbridge.local` is held only by a member with the iPhone CA key, machines that do not sleep first and laptops as a fallback, guessed from a battery and set by a setting. |
-| D-54 | Every admin may paste a text on any member that turned remote paste on (D-59), the target pressing nothing per paste, since a member already trusts its admins; the command is signed by the admin and checked by the target, and the iPhone is a sender only, because iOS allows no input into other apps. |
-| D-55 | Each device has a sync mode, own (the default), shared, receive only or send only, which decides only what moves between its clipboard and the group; it stays connected in every mode, changes its own mode, and any admin changes the mode of any member with a signed command. |
-| D-56 | Images, files and folders sync wherever the platform allows, with formatted text (HTML) last and optional; lite members, the iPhone shortcut, secrets and remote paste stay text only. |
-| D-57 | Large content travels outside the event: the event carries a manifest with SHA-256 hashes, the bytes are fetched in chunks at lower priority than events from any member that has them, and the clipboard is written only when everything has arrived and matches; each device sets its own limit (100 MiB at home, 25 MiB away from home by default, at most 1 GiB), and the receiver's limit decides. |
-| D-58 | Images and files have the protection of text: member TLS at home, and away from home only the group's tunnel with member TLS inside it; no further layer is needed, since only group members ever hold the plaintext. |
-| D-59 | Remote paste is opt-in on each device, turned on by its own user; Enter and root consoles are off by default and turned on separately; any admin turns remote paste off on any member with a signed command, and the root or an admin phone removes a stolen admin with one action (refines D-54). |
-| D-60 | Only the root and the admin phones remove an admin; any admin, a computer included, freezes another admin computer, which then counts for nothing until the root or an admin phone unfreezes or removes it; nobody freezes the root or an admin phone. Freezing stops a stolen admin at once from any admin device, while the irreversible removal stays with the keys hardest to steal. |
-| D-61 | With sync away from home on, a computer's service reaches beyond the home network only its group's own servers (hub, forwarder, relay, from the group's settings), in the program on every system and in the system's limit on Linux and Windows, which `cbb global` with root or an administrator keeps in step; a hub reached at its own address answers authenticated clients anywhere, which on Linux only the program can confine to its UDP port. |
-| D-62 | The control socket takes only the clipboard and the status; what changes the group (pairing, removing, renaming, admins, takeover, freeze, sync away from home, the holder setting) takes the admin socket, which only root or an administrator reaches, so membership in the `clipboardbridge` group no longer gives a program the group's keys to use. |
-| D-63 | A full member publishes itself by mDNS and takes connections on the member port only on networks where it met its group (by the interface's networks and its gateway's link-layer address); elsewhere it only browses, so a laptop in a café is not tracked by its host label and group tag. |
-| D-64 | A group made on a phone has the phone as its hub while the app is open: at home it accepts member connections, from afar it registers with the forwarder over an outgoing connection, and its clients retry often; the app suggests once moving the hub to a computer that is always on, the old hub passing its clients' keys to the new one, and the user may keep the phone as the hub. Everyone has a phone, not everyone a computer, so the phone does what it can until a better device takes over. |
-| D-65 | A group may have several hubs in an order the user sets; clients keep every hub's offer and use the first that answers, the hubs share the clients' keys, and a lower hub yields to a higher one, so there is one star at a time. Every capable device with sync away from home on is a hub, in a table signed by the root or an admin that all devices share: the user's main hubs first, then devices with keys in hardware, then devices with keys in files where the key level allows them (D-66); the first one online serves. |
-| D-66 | Who may be the root, an admin or a hub follows the group's key level, which the user picks: proven hardware only (attestation, asking Apple, Google's public lists and some TPM makers, which the guide names; the one exception to D-47, by the user's choice), hardware by the device's own word (the default, so no device is disclosed to anyone outside the group), or files too, each time after a warning. |
-| D-67 | A forwarder and a relay see credentials made for them, not the group's records: the hubs' and the members' key hashes with a version and an expiry, signed by the root or a listed admin, so no device ID, name, system or date leaves the group. |
-| D-68 | A blind relay is for everyone who needs it, not only for those who run their own: the project runs an open one at `cbb.tools`, within limits per group and per network, and a device meets there only after the user agrees to what it learns (who talks to whom, when, how much, and from where). |
-| D-69 | Releases are signed with the project's own keys, never in CI: two offline root keys (on two hardware keys) certify a release key in the Secure Enclave of the owner's Mac, all P-256 in the records' envelope; each release has a signed manifest of its files and a signed channel pointer with an expiry; a program accepts only a version above the highest it has seen; CI builds a draft that is published only after the owner signs; GitHub Releases is the source and `dl.cbb.tools` a mirror, and members pass the signed manifest and archives to each other. |
-| D-70 | Attestation checked without asking anyone (Android chains, a TPM whose maker's certificate is on the chip) marks a key "proven" at the default level too, since nothing leaves the group. The strict level (D-66) also accepts App Attest for Apple devices, noted as weaker because it proves the app and not the key, accepts only Android chains issued through Remote Key Provisioning, and only there asks Intel or AMD for a TPM's certificate. Google's list of revoked attestation keys is fetched by `cbb.tools` once a day and served signed, so no device asks Google. Relocked custom systems such as GrapheneOS count as hardware. |
-| D-71 | Quick actions and remote paste are turned on only on the device itself, never by a command from the network; the device may ask its user at the first request, and grants a right (a polkit rule, a sudoers line) only then, after a prompt that lists it. Turning either off remotely always works. Reboot and shut down are allowed by default only to admins whose key is in hardware, a choice the device's user can change per action. |
-| D-72 | Collections, the user's own sets of devices and their order in the apps, belong to each app installation and never become a group record: arranging needs no admin signature, and no name of a collection reaches a server. |
-| D-73 | The iPhone is not the hub in the background as a Network Extension: App Review allows VPN apps only from organizations, iOS runs one VPN at a time, Apple advises against a listener in a packet tunnel, and the extension has 50 MiB. The phone stays the hub only while its app is open (D-64). |
-| D-74 | Prompt notifications on the iPhone may come through Apple's push, sent by a stateless sender at `cbb.tools` with the content encrypted to the phone's key and opened only on the phone; Apple learns that a push was sent and when, `cbb.tools` the push token, the hub's address and the time, and the user agrees to that before it is used. |
-| D-75 | Servers learn as little as can be kept from them: the forwarder keeps on disk only a hash of each group's tag with the version of its newest credential (D-67), the relay holds pseudonyms rather than device IDs, the credentials' lists are padded, and each device talks to the servers with its own key renewed every 30 days and signed by the root, so a server cannot link a device across renewals. No transparency report or warrant canary: the defence is that the servers hold almost nothing. |
-| D-76 | Official builds are told apart by the release signatures and the provenance attestation, not by the name: "Clipboard Bridge" is used by other, unrelated projects, so the project claims no exclusive right to it. BRAND.md asks builds with changes not to use the icon, `cbb.tools` as their default or an official look, and to take their own name and app identifiers. |
-| D-77 | The text of docs/protocol.md is under CC BY 4.0, so compatible implementations may use any license; the code stays under AGPL-3.0-only. |
-| D-78 | No additional permission for app stores for now: one can be added at any time but not taken back from released versions; whoever needs a store asks for a commercial license. |
+The terms are in the [glossary](reference/glossary.md).
