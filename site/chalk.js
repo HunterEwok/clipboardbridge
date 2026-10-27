@@ -99,8 +99,10 @@ function group(hub, scale, others) {
   return {
     yellow: draw(device(hub, 210, 150, scale)),
     white: draw(others.flatMap((kind, i) => device(kind, at[i][0], at[i][1]))),
-    links: draw(links),
+    links: "",
     segs: links.map(([, x1, y1, x2, y2]) => [x1, y1, x2, y2]),
+    // Each link on its own, so the stylesheet can go over them in turn.
+    parts: links.map((l, i) => ["y link r" + i, draw([l])]),
   };
 }
 // The three steps of setting up, each in a box of 200 by 150. White and
@@ -124,20 +126,18 @@ const step1 = {
     ["rect", 68, 12, 64, 124, 11], ["line", 92, 25, 108, 25], ["line", 93, 124, 107, 124],
     ["rect", 80, 98, 40, 10, 5],
   ]),
-  yellow: draw([
-    ["line", 100, 38, 100, 72], ["path", "M88 61 L100 73 L112 61"], ["path", "M84 70 V82 H116 V70"],
-    ["line", 85, 103, 108, 103],
-  ]),
+  yellow: draw([["path", "M84 70 V82 H116 V70"]]),
   links: "",
+  parts: [["g arrow", [["y", draw([["line", 100, 38, 100, 72], ["path", "M88 61 L100 73 L112 61"]])]]], ["y bar", draw([["line", 85, 103, 108, 103]])]],
 };
 const step2 = {
   white: draw([
     ["rect", 16, 22, 112, 78, 6], ["line", 72, 100, 72, 114], ["line", 50, 118, 94, 118],
     ["rect", 144, 26, 40, 92, 5], ["circle", 164, 44, 10], ["line", 154, 64, 174, 64], ["line", 154, 74, 174, 74],
-    ["line", 52, 46, 104, 46],
   ]),
-  yellow: draw([["path", "M30 40 L39 46 L30 52"], ["path", "M32 74 L40 82 L54 66"]]),
+  yellow: draw([["path", "M30 40 L39 46 L30 52"]]),
   links: "",
+  parts: [["w cmd", draw([["line", 52, 46, 104, 46]])], ["w cursor", draw([["line", 110, 52, 120, 52]])], ["y check", draw([["path", "M32 74 L40 82 L54 66"]])]],
 };
 const step3 = {
   white: draw([
@@ -147,10 +147,12 @@ const step3 = {
     ["rect", 140, 28, 52, 96, 10], ["line", 160, 116, 172, 116],
     ...qr(155, 59, 22, false),
   ]),
-  yellow: draw([
-    ["path", "M148 62 V52 H158"], ["path", "M174 52 H184 V62"], ["path", "M148 78 V88 H158"], ["path", "M184 78 V88 H174"],
-  ]),
+  yellow: "",
   links: "",
+  parts: [
+    ["g brackets", [["y", draw([["path", "M148 62 V52 H158"], ["path", "M174 52 H184 V62"], ["path", "M148 78 V88 H158"], ["path", "M184 78 V88 H174"]])]]],
+    ["y check", draw([["path", "M159 100 L164 105 L174 95"]])],
+  ],
 };
 seed = 38;
 const computer = group("desktop", 1.15, ["phone", "laptop", "phone", "mac"]);
@@ -158,7 +160,10 @@ const phones = group("phone", 1.35, ["desktop", "tv", "tablet", "phone"]);
 
 // pathLength lets the stylesheet draw each line in, as a hand would.
 const line = (cls, d) => (d ? `<path class="${cls}" pathLength="1" d="${d}"/>` : "");
-const lines = (d) => line("y link", d.links) + line("w", d.white) + line("y", d.yellow);
+// The parts the stylesheet moves come on their own: a path, or a group
+// ("g name") of them.
+const part = ([cls, d]) => (cls.startsWith("g ") ? `<g class="${cls.slice(2)}">${d.map(part).join("")}</g>` : line(cls, d));
+const lines = (d) => line("y link", d.links) + line("w", d.white) + line("y", d.yellow) + (d.parts || []).map(part).join("");
 const out = `<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!-- Written by chalk.js: the lines of the chalk drawings, without their
      labels, which the pages add in their own language. -->

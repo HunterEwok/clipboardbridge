@@ -64,6 +64,7 @@
   --chalk-rule: rgba(242, 240, 234, .45);
   --chalk-strong: rgba(242, 240, 234, .85);
   --chalk-faint: rgba(242, 240, 234, .6);
+  --pulse: #FFF2C8;
   color-scheme: dark;
 }
 
@@ -98,6 +99,7 @@
     --chalk-rule: rgba(58, 53, 48, .4);
     --chalk-strong: rgba(58, 53, 48, .75);
     --chalk-faint: rgba(58, 53, 48, .5);
+    --pulse: #C8621E;
     color-scheme: light;
   }
 }
@@ -129,6 +131,7 @@
   --chalk-rule: rgba(58, 53, 48, .4);
   --chalk-strong: rgba(58, 53, 48, .75);
   --chalk-faint: rgba(58, 53, 48, .5);
+  --pulse: #C8621E;
   color-scheme: light;
 }
 
@@ -529,10 +532,54 @@ nav a[aria-current] { color: var(--accent); }
   .draw .install-board.drawn .os > :nth-child(n + 5) { animation-delay: .6s; }
   .draw .install-board.drawn .os + .os > * { animation-delay: .75s; }
   .draw .install-board.drawn .os + .os > :nth-child(n + 3) { animation-delay: .9s; }
+  /* Living chalk: a little later, a board keeps moving now and then, as
+     if its chalk came alive (site.js marks it alive once it is drawn).
+     The main board: a spark runs along the wire to the phone and back. */
+  .pulse { fill: none; stroke: var(--pulse); stroke-width: 7; stroke-linecap: round; stroke-dasharray: .07 3; stroke-dashoffset: .07; filter: drop-shadow(0 0 4px var(--pulse)); }
+  .alive .pulse.p1 { animation: pulse-1 14s linear infinite; }
+  .alive .pulse.p2 { animation: pulse-2 14s linear infinite; }
+  /* Step 1: the arrow bobs, and the download bar fills. */
+  .draw .frame.drawn.alive .arrow { transform-box: fill-box; animation: bob 7s steps(1) infinite; }
+  .draw .frame.drawn.alive .chalk .bar { animation: fill 7s linear infinite; }
+  /* Step 2: the command is written, the cursor blinks, a check follows. */
+  .draw .frame.drawn.alive .chalk .cmd { animation: type 9s linear infinite; }
+  .draw .frame.drawn.alive .chalk .cursor { animation: blink 9s steps(1) infinite; }
+  .draw .frame.drawn.alive .chalk .check { animation: tick 9s linear infinite; }
+  /* Step 3: the camera's brackets close on the code, then a check. */
+  .draw .frame.drawn.alive .brackets { transform-box: view-box; transform-origin: 166px 70px; animation: focus 8s steps(5) infinite; }
+  .draw .frame.drawn.alive .chalk .brackets ~ .check { animation: tick3 8s linear infinite; }
+  /* The groups: the links are gone over again, one after another. */
+  .draw .frame.drawn.alive .chalk .link.r0 { animation: redraw 12s linear infinite; }
+  .draw .frame.drawn.alive .chalk .link.r1 { animation: redraw 12s linear 3s infinite; }
+  .draw .frame.drawn.alive .chalk .link.r2 { animation: redraw 12s linear 6s infinite; }
+  .draw .frame.drawn.alive .chalk .link.r3 { animation: redraw 12s linear 9s infinite; }
+  /* The tables: now and then our row is underlined, and its checks are
+     gone over again, one after another. */
+  .alive .compare tr.us th { position: relative; }
+  .alive .compare tr.us th::after { content: ""; position: absolute; inset-inline-start: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--chalk-yellow); width: 0; animation: under 10s steps(8) infinite; }
+  .alive .compare tr.us .mark.yes { stroke-dasharray: 30; animation: retick 10s linear infinite; }
+  .alive .compare tr.us td:nth-child(3) .mark { animation-delay: .4s; }
+  .alive .compare tr.us td:nth-child(4) .mark { animation-delay: .8s; }
+  .alive .compare tr.us td:nth-child(5) .mark { animation-delay: 1.2s; }
+  .alive .compare tr.us td:nth-child(6) .mark { animation-delay: 1.6s; }
+  /* The commands: a chalk cursor after each, blinking now and then. */
+  .alive.install-board pre code::after { content: "_"; color: var(--chalk-yellow); font-weight: 600; margin-inline-start: .2em; animation: blink 6s steps(1) infinite; }
   @supports (animation-timeline: view()) {
     .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 35%; }
   }
 }
+@keyframes pulse-1 { 0% { stroke-dashoffset: .07; } 6%, 58% { stroke-dashoffset: -1; } 64%, 100% { stroke-dashoffset: .07; } }
+@keyframes pulse-2 { 0%, 6% { stroke-dashoffset: .07; } 14%, 50% { stroke-dashoffset: -1; } 58%, 100% { stroke-dashoffset: .07; } }
+@keyframes bob { 0% { transform: none; } 6% { transform: translateY(2px); } 12% { transform: translateY(4px); } 18% { transform: translateY(2px); } 24% { transform: none; } 30% { transform: translateY(2px); } 36% { transform: translateY(4px); } 42% { transform: translateY(2px); } 48%, 100% { transform: none; } }
+@keyframes fill { 0% { stroke-dashoffset: 1; opacity: 1; } 60% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; opacity: 1; } 96% { opacity: 0; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+@keyframes type { 0%, 4% { stroke-dashoffset: 1; opacity: 1; } 30% { stroke-dashoffset: 0; } 90% { stroke-dashoffset: 0; opacity: 1; } 97% { opacity: 0; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+@keyframes tick { 0%, 40% { stroke-dashoffset: 1; opacity: 1; } 48% { stroke-dashoffset: 0; } 90% { stroke-dashoffset: 0; opacity: 1; } 97% { opacity: 0; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+@keyframes blink { 0%, 55% { opacity: 1; } 60% { opacity: 0; } 66% { opacity: 1; } 72% { opacity: 0; } 78%, 100% { opacity: 1; } }
+@keyframes focus { 0% { transform: scale(1.4); opacity: .3; } 30%, 88% { transform: none; opacity: 1; } 100% { transform: scale(1.4); opacity: .3; } }
+@keyframes tick3 { 0%, 34% { stroke-dashoffset: 1; opacity: 1; } 44% { stroke-dashoffset: 0; } 86% { stroke-dashoffset: 0; opacity: 1; } 94% { opacity: 0; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+@keyframes redraw { 0% { stroke-dashoffset: 0; } 3% { stroke-dashoffset: -1; } 4% { stroke-dashoffset: 1; } 12%, 100% { stroke-dashoffset: 0; } }
+@keyframes under { 0%, 10% { width: 0; opacity: 1; } 30%, 80% { width: calc(100% - 40px); opacity: 1; } 92%, 100% { width: calc(100% - 40px); opacity: 0; } }
+@keyframes retick { 0%, 34% { stroke-dashoffset: 0; } 35% { stroke-dashoffset: 30; } 42%, 100% { stroke-dashoffset: 0; } }
 @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes chalk-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }

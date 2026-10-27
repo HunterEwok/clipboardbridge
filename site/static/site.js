@@ -4,7 +4,8 @@
 // drawn: it puts the reader's theme on <html> at once, so a light page
 // never flashes dark, then wires the theme button, adds a copy button to
 // each command, draws the chalk of each board as it first comes into view
-// and, on the download page, points at the reader's own system. Without it
+// and then lets it move a little now and then, and, on the download page,
+// points at the reader's own system. Without it
 // the site works as before: the theme follows the system, the drawings are
 // simply there and every way to download is shown.
 "use strict";
@@ -75,12 +76,14 @@
 
     // Each board but the first, drawing, table or commands, is written in
     // chalk once, as it first comes into view.
+    var lively = window.matchMedia && window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
     if ("IntersectionObserver" in window) {
       var boards = new IntersectionObserver(function (seen) {
         seen.forEach(function (e) {
           if (e.isIntersecting) {
             e.target.classList.add("drawn");
             boards.unobserve(e.target);
+            if (lively) setTimeout(function (f) { f.classList.add("alive"); }, 2200, e.target);
           }
         });
       }, { threshold: 0.3 });
@@ -88,6 +91,35 @@
         boards.observe(f);
       });
       root.classList.add("draw");
+    }
+
+    // Then the chalk comes alive a little: each drawn board moves now and
+    // then (the stylesheet says how), and the chalk's grain shifts a few
+    // times a second while a board is on the screen, as in a hand-drawn
+    // film. Not for those who ask for less motion.
+    if (lively) {
+      var hero = document.querySelector(".hero-board");
+      if (hero) setTimeout(function () { hero.classList.add("alive"); }, 3200);
+      var grain = document.querySelectorAll("#chalk feTurbulence, #chalk-words feTurbulence");
+      var warp = document.querySelector("#chalk feDisplacementMap");
+      var seen = 0, step = 0, shown = [];
+      if ("IntersectionObserver" in window) {
+        var watch = new IntersectionObserver(function (es) {
+          es.forEach(function (e) {
+            var i = shown.indexOf(e.target);
+            if (e.isIntersecting && i < 0) shown.push(e.target);
+            if (!e.isIntersecting && i >= 0) shown.splice(i, 1);
+          });
+          seen = shown.length;
+        });
+        document.querySelectorAll(".frame").forEach(function (f) { watch.observe(f); });
+      }
+      setInterval(function () {
+        if (!seen || document.hidden) return;
+        step = (step + 1) % 3;
+        grain.forEach(function (t, i) { t.setAttribute("seed", [3, 7, 11][step] + i * 18); });
+        if (warp) warp.setAttribute("scale", [1.4, 1.9, 1.6][step]);
+      }, 220);
     }
 
     // The download page: the reader's own system first, with its own button.
