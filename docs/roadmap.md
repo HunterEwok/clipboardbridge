@@ -192,6 +192,19 @@ The order may change.
     WireGuard library, needs 64-bit atomics that 32-bit MIPS lacks; such a router syncs only
     at home. The aim is the full tunnel there too: GotaTun without 64-bit atomics, or
     another WireGuard for that build (see "OpenWrt routers", step 5).
+38. **Planned after 0.6.** The Android app and Google: the project has a Google Play
+    Console account (2026-10-27).
+    - Before 2027, when Android installs sideloaded apps only from registered developers:
+      register the package `io.github.hunterewok.clipboardbridge` there with the
+      certificate of the release key that signs the APKs of the releases
+      (docs/maintaining.md, "Android signing key"), so that those APKs and their own
+      updates (docs/apps.md, "Updates") keep installing.
+    - Whether the app goes to Google Play, and with which key: with Play App Signing, Play
+      signs its copy with a key of its own, so the copy from Play and the APK of a release
+      cannot update each other; the app already leaves a copy from a store to the store.
+      Uploading with the release key itself keeps one key for both. The decision is the
+      owner's, with the Wear OS app (which must share its key with the phone's) and the
+      F-Droid build, planned at the end of 0.6 or in 0.7.
 
 ## OpenWrt routers
 
