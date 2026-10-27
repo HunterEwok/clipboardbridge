@@ -59,6 +59,8 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"I19-no-network", func() { noNetworkAtStart(ctx, r, f, timeout) }},
 		{"U8-disk-full", func() { diskFull(ctx, r, f, timeout) }},
 		{"U13-second-instance", func() { secondInstance(ctx, r, f, timeout) }},
+		{"Q6-actions", func() { quickActions(ctx, r, f, timeout) }},
+		{"X2-shortcut", func() { phoneShortcut(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
