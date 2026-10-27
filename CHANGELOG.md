@@ -81,7 +81,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   commands as it first comes into view; then a little living chalk: a spark runs along the
   main board's wire and back, the steps' arrow, command and camera move, the groups' links and
   our row in the tables are gone over again, a cursor blinks after each command, and the
-  chalk's grain shifts as in a hand-drawn film), off for those who ask for less motion; one small
+  chalk's grain shifts as in a hand-drawn film; each movement eases in and out), off for those who ask for less motion; one small
   script of its own, and every page works without it. A link's picture in each language; a
   print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
   hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
@@ -282,6 +282,45 @@ All notable changes to clipboardbridge are documented in this file. The format f
   was away when the hub moved on still reaches it.
 - The test bench resets a Windows device itself: `uninstall.ps1 -Purge`, a check that it left
   nothing, and `install.ps1` from the build's zip, so a Windows VM needs no snapshot.
+- FreeBSD: release archives for amd64 and arm64, `get.sh` and an installer with an rc.d
+  script that runs the service through daemon(8), and the firewall rules with consent in a
+  pf anchor of their own or an ipfw rule set; a CI job runs the Go tests and the installer
+  in a FreeBSD 15.1 virtual machine. FreeBSD's uptime clock and system version show in the
+  hello; OPNsense and pfSense say they are routers.
+- Routers: `CBB_INTERFACES` limits mDNS, the member port and a listening join to the named
+  interfaces, so a router never answers on its internet side, even with a private address
+  there or its firewall opened by mistake. On OpenWrt the control socket is in `/var/run`,
+  the state in `/etc/clipboardbridge/state` and the device's form is a router. Release
+  archives for mips and mipsle (softfloat), whose tests a CI job runs under qemu-mips
+  (big-endian).
+- OpenWrt 25.12 and later: `get.sh` installs the full member on a router (`uclient-fetch`,
+  mips or mipsle by the package architecture) with a procd service that runs as its own
+  user without capabilities, only on the devices of the zones in
+  `/etc/config/clipboardbridge` (`lan` by default), and starts once NTP has set the clock.
+  Its firewall rules are its own procd data, which fw4 loads while it runs, so
+  `/etc/config/firewall` is never changed; `cbb global hub` opens the hub's port on `wan`
+  this way. sysupgrade keeps the keys and the program. A CI job installs it on OpenWrt
+  booted in QEMU.
+- OpenWrt package feed: each release can carry `openwrt-feed.tar.gz`, apk packages per Go
+  architecture with an index signed by the project's feed key, for
+  `cbb.tools/openwrt/<arch>/packages.adb`, so that `apk upgrade` keeps the program current.
+- The lite member on OpenWrt (ARM64, ARMv7, x86-64, and MIPS and MIPSel without sync away
+  from home, since its WireGuard library needs 64-bit atomics): `get.sh --lite` installs it with the
+  same procd service, which runs `cbb run`. The lite member takes `CBB_INTERFACES` too, for
+  mDNS, the member port and the QR code's addresses, and its defaults on OpenWrt are
+  `/etc/clipboardbridge/state` and `/var/run/clipboardbridge/control.sock`.
+- The test bench takes OpenWrt routers and FreeBSD computers as devices under test.
+- The desktop connector on FreeBSD: the clipboard of X11 and Wayland desktops, and remote
+  paste through XTEST or the virtual keyboard, from `cbb agent`, which XDG autostart starts
+  at login. The lock check reads the processes with ps there and knows KDE's lock screen;
+  GNOME's takes no keys without logind.
+- FreeBSD: the service opens its mDNS sockets as root and then runs as its user
+  (`cbb service -user`), so it shares port 5353 with avahi; when another program still
+  holds the port, the error names it.
+- OPNsense: the installer adds a plugin hook that names the service's pf anchor in
+  OPNsense's ruleset and lists the service under System > Diagnostics > Services. pfSense,
+  unsupported: the installer prints the rules to add and starts the service through
+  `clipboardbridge.sh`.
 
 ### Changed
 

@@ -39,12 +39,16 @@ usage() {
 }
 
 # kind prints the firewall that filters incoming connections here: ufw,
-# firewalld, nftables or iptables, or none.
+# firewalld, fw4 (OpenWrt's, whose own installer is packaging/openwrt),
+# nftables or iptables, or none. fw4 comes before nftables: it flushes rules
+# added to its tables at run time.
 kind() {
 	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
 		echo ufw
 	elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
 		echo firewalld
+	elif [ -x /sbin/fw4 ]; then
+		echo fw4
 	elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'hook input.*policy drop'; then
 		echo nftables
 	elif command -v iptables >/dev/null 2>&1 && iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP'; then
@@ -124,6 +128,12 @@ commands() {
 			done
 			echo "  sudo nft insert rule $where $match $net udp dport 5353 accept"
 		done
+		;;
+	fw4)
+		for p in "$@"; do
+			echo "  uci add firewall rule; uci set firewall.@rule[-1].name='clipboardbridge'; uci set firewall.@rule[-1].src=lan; uci set firewall.@rule[-1].proto=tcp; uci set firewall.@rule[-1].dest_port=$p; uci set firewall.@rule[-1].target=ACCEPT"
+		done
+		echo "  uci commit firewall && /etc/init.d/firewall reload"
 		;;
 	iptables)
 		for net in $(nets); do
@@ -344,7 +354,7 @@ setup() {
 	echo "Firewall: $k (active). Clipboard Bridge requires these rules:"
 	rules "$@"
 	case $k in
-	nftables | iptables)
+	nftables | iptables | fw4)
 		close
 		echo "clipboardbridge does not manage $k rules: rules added at run time do not survive a restart."
 		manual "$k" "$@"

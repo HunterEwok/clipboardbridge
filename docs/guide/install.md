@@ -61,6 +61,61 @@ winget install HunterEwok.clipboardbridge
 cbb install           # in the administrator terminal; again after each winget upgrade
 ```
 
+## OpenWrt
+
+A router with OpenWrt 25.12 or later and room for a 25 MB program (128 MB of flash or
+more, or eMMC; 256 MB of RAM), as root over SSH:
+
+```sh
+uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+It installs `cbb` with a procd service that runs as its own user without capabilities. The
+service works only on the devices of the `lan` zone: mDNS and the member port never answer
+on `wan`. Another zone, such as an IoT network, goes into `/etc/config/clipboardbridge`
+(`list zone 'iot'`, then `/etc/init.d/clipboardbridge reload`); the service then opens the
+member port and mDNS from that zone while it runs, without changing
+`/etc/config/firewall`. After a boot it starts once NTP has set the clock. The keys live in
+`/etc/clipboardbridge`, which sysupgrade keeps; an attended sysupgrade (ASU, owut) leaves
+the program out, so run the command again after one.
+
+Or from our package feed, which `apk upgrade` then keeps current. The feed's architecture
+follows the router's CPU (`grep DISTRIB_ARCH /etc/openwrt_release`): `arm64` for
+`aarch64_*`, `armv7` for `arm_cortex-a*` with `neon` or `vfp` in the name, `mipsle` for
+`mipsel_*`, `mips` for `mips_*`, `amd64` for `x86_64`:
+
+```sh
+uclient-fetch -qO /etc/apk/keys/clipboardbridge.pem https://cbb.tools/openwrt/clipboardbridge.pem
+echo https://cbb.tools/openwrt/arm64/packages.adb >>/etc/apk/repositories.d/customfeeds.list
+apk update && apk add clipboardbridge
+```
+
+`apk del clipboardbridge` removes it and keeps the keys in `/etc/clipboardbridge`.
+
+## FreeBSD
+
+FreeBSD 15, amd64 or arm64, as root (with `sudo` or `doas`):
+
+```sh
+fetch -qo - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+It installs `cbb`, an rc.d script that runs the service through daemon(8), and adds the
+line `clipboardbridge_enable="YES"` to rc.conf. The keys live in `/var/db/clipboardbridge`.
+
+On OPNsense the same installer also adds a plugin hook: the service shows under System >
+Diagnostics > Services, and its firewall rules (in pf's anchor `clipboardbridge`) follow
+every filter reload. Turn off the mDNS repeater (Services > mDNS Repeater) while it runs:
+both need UDP port 5353, and the service answers mDNS on each home interface itself.
+pfSense is not supported: the installer runs there too, but it prints the firewall rules
+for Firewall > Rules instead of adding them, and an update of pfSense may remove Clipboard
+Bridge.
+On a desktop (X11, or Wayland with the data control protocol, as in KDE, sway and
+Hyprland), the session starts `cbb agent` from XDG autostart and the clipboard joins the
+group; log in again after the install. Remote paste types through XTEST on X11 and the
+virtual keyboard on wlroots desktops; GNOME takes no remote paste on FreeBSD, since without
+logind nothing tells whether its screen is locked.
+
 ## Docker
 
 For a NAS or a home server that is always on
@@ -75,8 +130,9 @@ docker compose -f packaging/docker/compose.home.yaml exec clipboardbridge cbb pa
 ## The firewall
 
 Clipboard Bridge needs one TCP port, 8764, and mDNS (UDP 5353), both from the home network
-only. The installer finds the firewall (ufw, firewalld, nftables or iptables on Linux, the
-Mac's application firewall, Windows Firewall), lists each rule, and asks
+only. The installer finds the firewall (ufw, firewalld, nftables or iptables on Linux, pf
+or ipfw on FreeBSD, the Mac's application firewall, Windows Firewall), lists each rule, and
+asks
 `Add these rules now? [y/N]`:
 
 - **Yes**: it adds them, keeps them current on every update and removes them when you
@@ -86,7 +142,10 @@ Mac's application firewall, Windows Firewall), lists each rule, and asks
 - `--express` (`-Express` on Windows) adds them without asking; `--no-firewall` answers No.
 
 nftables and iptables always get the commands only, since rules added at run time do not
-survive a restart there. If you turn a firewall on later, run the installer again.
+survive a restart there. On FreeBSD, pf gets the rules in an anchor of their own, which
+pf reads through three marked lines the installer adds at the end of `/etc/pf.conf` and
+removes again; ipfw gets them in rule set 17, added again at each start. If you turn a
+firewall on later, run the installer again.
 
 **Another port**, if 8764 is taken: `... | sudo sh -s -- --port 9000` (on Windows,
 `$env:CBB_PORT = "9000"` before the installer). The phone app learns the port from the QR

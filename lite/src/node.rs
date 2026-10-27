@@ -35,6 +35,7 @@ use crate::wire::{self, Message};
 
 /// How long a device that discovery finds counts as at home without a
 /// connection to it (docs/protocol.md, section 11).
+#[cfg_attr(not(feature = "tunnel"), allow(dead_code))] // used by sync away from home
 const NEAR_GRACE: Duration = Duration::from_secs(30);
 
 const PING_EVERY: Duration = Duration::from_secs(5);
@@ -197,6 +198,7 @@ impl Node {
     /// Reports whether discovery found the device on the home network within
     /// NEAR_GRACE. Anyone on a network can announce a device's name and the
     /// group's tag, so past that only a connection to it counts.
+    #[cfg_attr(not(feature = "tunnel"), allow(dead_code))] // used by sync away from home
     pub fn at_home(&self, id: &DeviceId) -> bool {
         self.home.lock().unwrap().get(id).is_some_and(|at| uptime::now().saturating_sub(*at) < NEAR_GRACE)
     }
@@ -234,11 +236,13 @@ impl Node {
 
     /// The group's order of hubs (docs/protocol.md, section 11, "Several
     /// hubs").
+    #[cfg_attr(not(feature = "tunnel"), allow(dead_code))] // used by sync away from home
     pub fn hub_order(&self) -> Vec<String> {
         self.records.lock().unwrap().hub_order()
     }
 
     /// Ends the connection to the member id, if there is one, with bye.
+    #[cfg_attr(not(feature = "tunnel"), allow(dead_code))] // used by sync away from home
     pub fn disconnect(&self, id: &DeviceId) {
         if let Some(c) = self.conns.lock().unwrap().get(id) {
             c.close(true);

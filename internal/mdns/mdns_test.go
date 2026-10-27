@@ -1089,3 +1089,33 @@ func TestPublishOnlyWhereAllowed(t *testing.T) {
 	}()
 	waitPeers(t, ra.peers, func(p []Peer) bool { return len(p) == 0 })
 }
+
+func TestOnlyListedInterfaces(t *testing.T) {
+	// A router limited to br-lan is found on its home network, and neither
+	// publishes nor browses on its internet side, even with a private
+	// address there (double NAT).
+	var lan, wan fakeLink
+	router := newHost()
+	router.attach(&lan, "br-lan", "192.168.0.1")
+	router.attach(&wan, "wan", "192.168.1.2")
+	home, outside := lan.host("192.168.0.10"), wan.host("192.168.1.1")
+	clock := newClock()
+	rr := start(t, router, idA, 4001, clock, func(c *Config) {
+		c.Interfaces = func(name string) bool { return name == "br-lan" }
+	})
+	rh := start(t, home, idB, 4002, clock)
+	ro := start(t, outside, "cccccccccccccccccccccccccccccccc", 4003, clock)
+	waitPeers(t, rh.peers, func(p []Peer) bool { return len(p) == 1 && p[0].ID == idA })
+	waitPeers(t, rr.peers, func(p []Peer) bool { return len(p) == 1 && p[0].ID == idB })
+	settle(clock)
+	select {
+	case p := <-ro.peers:
+		if len(p) > 0 {
+			t.Errorf("the router was found on its internet side: %+v", p)
+		}
+	case <-time.After(1500 * time.Millisecond):
+	}
+	if m := ask(t, outside, Port, q("cb-"+idA+".local.", dnsmessage.TypeALL)); m != nil && len(m.Answers) > 0 {
+		t.Errorf("the router answered on its internet side: %+v", m.Answers)
+	}
+}

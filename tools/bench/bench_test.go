@@ -277,6 +277,13 @@ func TestReset(t *testing.T) {
 		{"darwin", "arm64", "clipboardbridge-darwin-arm64.tar.gz"},
 		{"windows", "ARM64", "clipboardbridge-windows-arm64.zip"},
 		{"windows", "AMD64", "clipboardbridge-windows-amd64.zip"},
+		{"openwrt", "aarch64_cortex-a53", "clipboardbridge-linux-arm64.tar.gz"},
+		{"openwrt", "arm_cortex-a7_neon-vfpv4", "clipboardbridge-linux-armv7.tar.gz"},
+		{"openwrt", "arm_arm1176jzf-s_vfp", "clipboardbridge-linux-armv6.tar.gz"},
+		{"openwrt", "mipsel_24kc", "clipboardbridge-linux-mipsle.tar.gz"},
+		{"openwrt", "mips_24kc", "clipboardbridge-linux-mips.tar.gz"},
+		{"openwrt", "x86_64", "clipboardbridge-linux-amd64.tar.gz"},
+		{"freebsd", "amd64", "clipboardbridge-freebsd-amd64.tar.gz"},
 	} {
 		if got, err := archiveFor(&Device{OS: c.os}, c.machine); err != nil || got != c.want {
 			t.Errorf("archiveFor(%s, %s) = %q, %v", c.os, c.machine, got, err)
@@ -284,6 +291,12 @@ func TestReset(t *testing.T) {
 	}
 	if _, err := archiveFor(&Device{OS: "linux"}, "mips"); err == nil {
 		t.Error("archiveFor took an unknown CPU")
+	}
+	if _, err := archiveFor(&Device{OS: "openwrt"}, "riscv64_generic"); err == nil {
+		t.Error("archiveFor took an unknown OpenWrt architecture")
+	}
+	if _, err := archiveFor(&Device{OS: "freebsd"}, "armv7"); err == nil {
+		t.Error("archiveFor took a CPU FreeBSD has no build for")
 	}
 
 	dir := t.TempDir()

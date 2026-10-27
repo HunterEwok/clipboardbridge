@@ -80,6 +80,10 @@ go run ./tools/icon -check     # the app icon
 go test -race ./...
 go build -o /dev/null ./cmd/cbb
 GOOS=linux GOARCH=arm GOARM=6 go build -o /dev/null ./cmd/cbb   # Raspberry Pi Zero W
+GOOS=freebsd go vet ./...                                         # FreeBSD (the freebsd job runs the tests)
+# Big-endian, 32-bit MIPS, as on many routers (the mips job; qemu-user-static, with binfmt
+# for the tests that start the test binary again):
+GOARCH=mips GOMIPS=softfloat go test -exec qemu-mips-static ./internal/service ./internal/mdns ./cmd/cbb
 ```
 
 ### The other parts

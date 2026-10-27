@@ -4,13 +4,13 @@
 
 # Packs a built binary into the release archive for its platform:
 #
-#   sh packaging/archive.sh path/to/cbb linux|darwin|windows NAME OUTDIR
+#   sh packaging/archive.sh path/to/cbb linux|darwin|freebsd|windows NAME OUTDIR
 #
 # writes OUTDIR/clipboardbridge-<os>-<NAME>.tar.gz, which holds clipboardbridge/ with
 # the binary, LICENSE, THIRD_PARTY_NOTICES (the licenses of the Go modules and
 # the copied code and Go itself that the binary is built from; it needs the
 # go command) and
-# packaging/ (the platform's installer and tmux). For
+# packaging/ (the platform's installer and tmux; OpenWrt's beside Linux's). For
 # Windows the binary is cbb.exe, with the windowless cbbw.exe beside it for
 # the agent, and the archive is clipboardbridge-windows-<NAME>.zip, which
 # Windows opens without other tools. The release workflow and CI both use
@@ -18,7 +18,7 @@
 set -eu
 
 if [ $# -ne 4 ]; then
-	echo "usage: sh packaging/archive.sh BINARY linux|darwin|windows NAME OUTDIR" >&2
+	echo "usage: sh packaging/archive.sh BINARY linux|darwin|freebsd|windows NAME OUTDIR" >&2
 	exit 2
 fi
 bin=$1 os=$2 name=$3 out=$4
@@ -26,6 +26,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 case $os in
 linux) dir=linux ;;
 darwin) dir=macos ;;
+freebsd) dir=freebsd ;;
 windows) dir=windows ;;
 *)
 	echo "archive.sh: unknown OS $os" >&2
@@ -78,6 +79,10 @@ if [ "$os" = windows ]; then
 fi
 cp "$bin" "$work/clipboardbridge/cbb"
 cp -R "$root/packaging/$dir" "$root/packaging/tmux" "$work/clipboardbridge/packaging/"
+# OpenWrt runs the Linux binary, with its own installer.
+if [ "$os" = linux ]; then
+	cp -R "$root/packaging/openwrt" "$work/clipboardbridge/packaging/"
+fi
 # No AppleDouble files from macOS tar.
 COPYFILE_DISABLE=1 tar -czf "$out/clipboardbridge-$os-$name.tar.gz" -C "$work" clipboardbridge
 echo "$out/clipboardbridge-$os-$name.tar.gz"

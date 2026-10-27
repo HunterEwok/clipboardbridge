@@ -96,10 +96,20 @@ func fileSum(path string) (string, error) {
 func archiveFor(d *Device, machine string) (string, error) {
 	machine = strings.ToLower(machine)
 	arch := map[string]string{"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64", "armv7l": "armv7", "armv6l": "armv6"}[machine]
-	if arch == "" {
+	if arch == "" && d.OS != "openwrt" {
 		return "", fmt.Errorf("%s: no build for the CPU %q", d.Name, machine)
 	}
 	switch d.OS {
+	case "openwrt":
+		if arch = openwrtArch(machine); arch == "" {
+			return "", fmt.Errorf("%s: no build for OpenWrt's architecture %q", d.Name, machine)
+		}
+		return "clipboardbridge-linux-" + arch + ".tar.gz", nil
+	case "freebsd":
+		if arch != "amd64" && arch != "arm64" {
+			return "", fmt.Errorf("%s: no FreeBSD build for the CPU %q", d.Name, machine)
+		}
+		return "clipboardbridge-freebsd-" + arch + ".tar.gz", nil
 	case "linux", "docker":
 		return "clipboardbridge-linux-" + arch + ".tar.gz", nil
 	case "linux-lite":
@@ -234,10 +244,52 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		}
 		_, err = RunFor(ctx, d, "sh "+d.Setup+" up "+dir+"/cbb", "", 5*time.Minute)
 		return err
+	case "openwrt", "freebsd":
+		return resetRouterOrBSD(ctx, r, d, b, quick)
 	case "windows":
 		return resetWindows(ctx, r, d, b, quick)
 	}
 	return Skipped("the bench does not reset os " + d.OS + " yet; reset it by hand (docs/testbench-cases.md, R1)")
+}
+
+// resetRouterOrBSD is R1 on OpenWrt and FreeBSD: uninstall.sh --purge, a
+// check that it left nothing, and the platform's installer. A quick reset
+// stops the service, empties its state and starts it again.
+func resetRouterOrBSD(ctx context.Context, r *Report, d *Device, b *Build, quick bool) error {
+	state, err := stateDir(ctx, d)
+	if err != nil {
+		return err
+	}
+	if quick {
+		cmd := serviceCmd(d, "stop") + " && " + rootPrefix(d) + "rm -rf " + state + "/*"
+		if d.OS == "openwrt" {
+			cmd += " /etc/clipboardbridge/firewall.hub"
+		}
+		_, err := Run(ctx, d, cmd+" && "+serviceCmd(d, "start"), "")
+		return noSudo(d, err)
+	}
+	if d.Firewall != "yes" && d.Firewall != "no" && d.OS == "freebsd" {
+		return fmt.Errorf("%s: set firewall = \"yes\" (the installer opens the member port) or \"no\" (it leaves the firewall alone) in the inventory", d.Name)
+	}
+	dir, err := stage(ctx, d, b)
+	if err != nil {
+		return err
+	}
+	u := uninstallScript(d)
+	if _, err := RunFor(ctx, d, "[ ! -f "+u+" ] || "+rootPrefix(d)+"sh "+u+" --purge", "", 2*time.Minute); err != nil {
+		return noSudo(d, err)
+	}
+	r.Do("reset/"+d.Name+"/L10-clean", func() error { return uninstalled(ctx, d) })
+	install := "sh " + dir + "/packaging/openwrt/install.sh " + dir + "/cbb"
+	if d.OS == "freebsd" {
+		opt := "--express"
+		if d.Firewall == "no" {
+			opt = "--no-firewall"
+		}
+		install = "sudo -n sh " + dir + "/packaging/freebsd/install.sh " + opt + " " + dir + "/cbb"
+	}
+	_, err = RunFor(ctx, d, install, "", 2*time.Minute)
+	return err
 }
 
 // resetWindows is R1 on Windows: uninstall.ps1 -Purge, a check that it left
@@ -311,11 +363,7 @@ $left -join ', '`, "")
 // there from an earlier reset, and returns the directory that holds cbb
 // and packaging/ (on a Mac, archive.tar.gz for the helper).
 func stage(ctx context.Context, d *Device, b *Build) (string, error) {
-	machine := "uname -m"
-	if d.OS == "windows" {
-		machine = "$env:PROCESSOR_ARCHITECTURE"
-	}
-	out, err := Run(ctx, d, machine, "")
+	out, err := Run(ctx, d, machineCmd(d), "")
 	if err != nil {
 		return "", err
 	}
@@ -330,7 +378,8 @@ func stage(ctx context.Context, d *Device, b *Build) (string, error) {
 	if d.OS == "windows" {
 		return stageWindows(ctx, d, b, name, sum)
 	}
-	dir := stateBase + "/" + sum[:16]
+	base := stageBase(d)
+	dir := base + "/" + sum[:16]
 	unpack := "tar -xzf - -C " + dir
 	if d.OS == "darwin" {
 		unpack = "cat > " + dir + "/archive.tar.gz"
@@ -341,7 +390,7 @@ func stage(ctx context.Context, d *Device, b *Build) (string, error) {
 			return "", err
 		}
 		// Keep the newest three builds on the device.
-		cmd := "mkdir -p " + dir + " && " + unpack + " && touch " + dir + "/ok && cd " + stateBase + " && ls -1t | tail -n +4 | xargs rm -rf"
+		cmd := "mkdir -p " + dir + " && " + unpack + " && touch " + dir + "/ok && cd " + base + " && ls -1t | tail -n +4 | xargs rm -rf"
 		if _, err := RunFor(ctx, d, cmd, string(data), 10*time.Minute); err != nil {
 			return "", err
 		}
@@ -397,7 +446,16 @@ Get-ChildItem "` + winStateBase + `" -Directory | Sort-Object LastWriteTime -Des
 
 // uninstalled (L10) checks that uninstall.sh --purge left nothing behind.
 func uninstalled(ctx context.Context, d *Device) error {
-	out, err := Run(ctx, d, "ls -d /var/lib/clipboardbridge /etc/clipboardbridge /usr/local/bin/cbb /usr/local/share/clipboardbridge /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge.service.d /etc/xdg/autostart/clipboardbridge-desktop.desktop 2>/dev/null; sudo -n ufw status 2>/dev/null | grep -i clipboardbridge; true", "")
+	check := "ls -d " + strings.Join(installedPaths(d), " ") + " 2>/dev/null; "
+	switch d.OS {
+	case "linux", "linux-lite":
+		check += "sudo -n ufw status 2>/dev/null | grep -i clipboardbridge; "
+	case "openwrt":
+		check += "ls /etc/rc.d | grep clipboardbridge; grep -l clipboardbridge /etc/config/firewall; "
+	case "freebsd":
+		check += "grep clipboardbridge /etc/rc.conf /etc/pf.conf 2>/dev/null; "
+	}
+	out, err := Run(ctx, d, check+"true", "")
 	if err != nil {
 		return err
 	}

@@ -48,7 +48,7 @@ func lighthouse(dir, bin, reports string, runs int) error {
 		return err
 	}
 	defer ln.Close()
-	go http.Serve(ln, http.FileServer(http.Dir(dir)))
+	go http.Serve(ln, gzipStatic(dir))
 	base := "http://" + ln.Addr().String()
 
 	var failed []string
@@ -114,6 +114,38 @@ func readScores(path string) (map[string]float64, error) {
 		}
 	}
 	return scores, nil
+}
+
+// gzipStatic serves dir as nginx's gzip_static does on cbb.tools: a file
+// whose build wrote a .gz beside it goes out gzipped to a browser that
+// takes gzip, so Lighthouse measures the bytes readers get.
+func gzipStatic(dir string) http.Handler {
+	files := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path
+		if strings.HasSuffix(name, "/") {
+			name += "index.html"
+		}
+		p := filepath.Join(dir, filepath.FromSlash(filepath.Clean("/"+name)))
+		gz, err := os.Open(p + ".gz")
+		if err != nil || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			if err == nil {
+				gz.Close()
+			}
+			files.ServeHTTP(w, r)
+			return
+		}
+		defer gz.Close()
+		st, err := gz.Stat()
+		if err != nil {
+			files.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		// ServeContent takes the type from the name, the original's.
+		http.ServeContent(w, r, filepath.Base(p), st.ModTime(), gz)
+	})
 }
 
 // median returns the middle value, or the mean of the two middle ones.

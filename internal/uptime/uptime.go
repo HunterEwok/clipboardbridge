@@ -13,6 +13,7 @@ package uptime
 import "time"
 
 // Now returns the time since an arbitrary point, counting sleep: Linux's
-// CLOCK_BOOTTIME and macOS's CLOCK_MONOTONIC. Elsewhere it falls back to Go's
-// monotonic clock, which does not count sleep.
+// CLOCK_BOOTTIME and macOS's CLOCK_MONOTONIC; FreeBSD's CLOCK_UPTIME at
+// least never jumps. Elsewhere it falls back to Go's monotonic clock, which
+// does not count sleep.
 func Now() time.Duration { return now() }

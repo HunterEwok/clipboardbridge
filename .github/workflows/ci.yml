@@ -99,6 +99,11 @@ jobs:
           - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "7", runner: ubuntu-latest, cgo: "0" }
           - { goos: linux, goarch: arm, goarm: "6", runner: ubuntu-latest, cgo: "0" } # Raspberry Pi Zero W
+          # OpenWrt routers without an FPU: softfloat (the mips job runs the tests).
+          - { goos: linux, goarch: mips, gomips: softfloat, runner: ubuntu-latest, cgo: "0" }
+          - { goos: linux, goarch: mipsle, gomips: softfloat, runner: ubuntu-latest, cgo: "0" }
+          - { goos: freebsd, goarch: amd64, runner: ubuntu-latest, cgo: "0", vet: true }
+          - { goos: freebsd, goarch: arm64, runner: ubuntu-latest, cgo: "0" }
           # The Mac's pasteboard agent needs cgo, so the macOS targets are built on macOS.
           - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: "1", vet: true }
           - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: "1" }
@@ -111,6 +116,7 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
+      GOMIPS: ${{ matrix.gomips }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,6 +165,148 @@ jobs:
         if: matrix.goos == 'darwin'
         # Without cgo the agent would start and fail; this build must link AppKit.
         run: otool -L "$RUNNER_TEMP/cbb" | grep -q AppKit.framework
+
+  mips:
+    name: test (linux/mips under qemu)
+    # Big-endian and 32-bit at once, as on many OpenWrt routers: the
+    # strictest of the release targets, for byte order and 64-bit atomics.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOARCH: mips
+      GOMIPS: softfloat
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # nothing to download; leaves the shared cache key to the check job
+      - name: qemu for mips programs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-user-static
+      - name: go test the network, the group and the service under qemu-mips
+        run: >-
+          go test -exec qemu-mips-static ./cmd/cbb ./internal/clip ./internal/control ./internal/group
+          ./internal/hlc ./internal/mdns ./internal/netguard ./internal/node ./internal/openwrt
+          ./internal/pair ./internal/service ./internal/sysinfo ./internal/tunnel ./internal/uptime
+          ./internal/vless </dev/null
+
+  freebsd:
+    name: test (freebsd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: go test in a FreeBSD 15.1 virtual machine
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          usesh: true
+          # FreeBSD's go fetches the toolchain go.mod names; Xvfb, xclip
+          # and xterm are for the desktop connector's X11 tests.
+          prepare: pkg install -y go xorg-vfbserver xclip xterm
+          run: |
+            set -e
+            export GOTOOLCHAIN=auto GOFLAGS=-buildvcs=false
+            go version
+            go test ./... </dev/null
+            # The desktop connector against X11 under Xvfb, as on Linux.
+            go test -c -o /tmp/desktop.test ./internal/desktop
+            Xvfb :5 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
+            for _ in $(seq 1 100); do [ -e /tmp/.X11-unix/X5 ] && break; sleep 0.1; done
+            DISPLAY=:5 CBB_TEST_X11=1 /tmp/desktop.test -test.v
+            # Port 5353 beside a responder of another user, as avahi runs:
+            # FreeBSD shares it only with a socket root opened.
+            go test -c -o /tmp/mdns.test ./internal/mdns
+            CBB_TEST_MDNS_USERS=1 /tmp/mdns.test -test.run 'TestOtherUsers$' -test.v
+            # The installer, the rc.d script and pf's anchor on the real system.
+            go build -trimpath -o /tmp/cbb ./cmd/cbb
+            sh packaging/freebsd/install.sh --no-firewall /tmp/cbb
+            service clipboardbridge status
+            test -f /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+            # cbb opens its mDNS sockets as root, then runs as its user.
+            sleep 2
+            failed() {
+              echo "$1" >&2
+              ps -axwwo user,pid,ppid,command | grep '[c]bb' || true
+              grep clipboardbridge /var/log/messages | tail -n 40 || true
+              exit 1
+            }
+            # By the command's name: the full command lines include this
+            # script's own shell, which names cbb service too.
+            ps -ax -o user= -o comm= | grep -Eq '^clipboardbridge +cbb$' || failed "cbb service does not run as clipboardbridge"
+            if ps -ax -o user= -o comm= | grep -Eq '^root +cbb$'; then failed "cbb service runs as root"; fi
+            cbb status 2>&1 | grep -Eq 'in a group|no group' || failed "cbb status got no answer"
+            kldload -n pf
+            touch /etc/pf.conf
+            pfctl -e
+            sh /usr/local/share/clipboardbridge/firewall.sh open 8764
+            pfctl -a clipboardbridge -s rules | grep -q 'port = 8764'
+            sh /usr/local/share/clipboardbridge/firewall.sh hub-open 51820
+            pfctl -a clipboardbridge -s rules | grep -q 'port = 51820'
+            sh /usr/local/share/clipboardbridge/firewall.sh hub-close
+            sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+            if grep -q clipboardbridge /etc/pf.conf; then exit 1; fi
+            if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
+            if [ -e /usr/local/bin/cbb ] || [ -e /var/db/clipboardbridge ]; then exit 1; fi
+            if [ -e /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop ]; then exit 1; fi
+            # OPNsense, played by its version file and a configctl that loads a
+            # ruleset naming the anchor, as the plugin hook makes OPNsense's.
+            mkdir -p /usr/local/opnsense/version
+            touch /usr/local/opnsense/version/core
+            printf '#!/bin/sh\nprintf "anchor \\"clipboardbridge\\"\\npass all\\n" | pfctl -f -\n' >/usr/local/sbin/configctl
+            chmod 0755 /usr/local/sbin/configctl
+            cp /etc/pf.conf /tmp/pf.conf.before
+            sh packaging/freebsd/install.sh --express /tmp/cbb
+            test -f /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
+            test ! -e /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
+            test "$(sh /usr/local/share/clipboardbridge/firewall.sh kind)" = opnsense
+            pfctl -s rules | grep -q 'anchor "clipboardbridge"'
+            pfctl -a clipboardbridge -s rules | grep -q 'port = 8764'
+            cmp /etc/pf.conf /tmp/pf.conf.before
+            sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+            test ! -e /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
+            if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
+            cmp /etc/pf.conf /tmp/pf.conf.before
+
+  openwrt:
+    name: OpenWrt
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the release archives, the full member's and the lite one's, as get.sh takes them
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          rel="$RUNNER_TEMP/release"
+          sh packaging/archive.sh "$RUNNER_TEMP/cbb" linux amd64 "$rel"
+          rustup toolchain install stable --profile minimal --target x86_64-unknown-linux-musl
+          (cd lite && cargo +stable build --locked --release --target x86_64-unknown-linux-musl)
+          sh lite/packaging/archive.sh lite/target/x86_64-unknown-linux-musl/release/cbb x86_64-unknown-linux-musl amd64 "$rel"
+          (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          cp packaging/get.sh "$rel/"
+      - name: get.sh installs both in OpenWrt's root file system, and uninstall.sh removes them
+        run: sh tools/e2e/openwrt.sh rootfs "$RUNNER_TEMP/release"
+      - name: the apk feed, signed with a test key, installs and removes it
+        run: sh tools/e2e/openwrt.sh feed "$RUNNER_TEMP/release"
+      - name: on OpenWrt booted in QEMU, the service, the hub's rule in fw4, the wait for NTP and the lite member
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 sshpass
+          sudo chmod 666 /dev/kvm
+          sh tools/e2e/openwrt.sh vm "$RUNNER_TEMP/release"
 
   avahi:
     name: mdns with avahi
@@ -256,7 +404,9 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+      - name: the OPNsense plugin hook
+        run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb
@@ -921,6 +1071,39 @@ jobs:
           ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug \
             :shared:testDebugUnitTest :shared:lintDebug :wear:assembleDebug :wear:assembleRelease :wear:lintDebug
 
+  litemips:
+    name: lite member for MIPS (no tunnel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nightly Rust with the standard library's source, zig, and qemu
+        run: |
+          rustup toolchain install nightly-2026-10-26 --profile minimal --component rust-src
+          python3 -m venv "$RUNNER_TEMP/zig"
+          "$RUNNER_TEMP/zig/bin/pip" install -q ziglang==0.15.2 cargo-zigbuild==0.24.0
+          echo "$RUNNER_TEMP/zig/bin" >>"$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y -q qemu-user-static
+      - name: build for mips and mipsel
+        run: |
+          sh lite/packaging/mips.sh mips
+          sh lite/packaging/mips.sh mipsel
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the MIPS builds under qemu with Go members, all but sync away from home
+        run: |
+          for a in mips mipsel; do
+            printf '#!/bin/sh\nexec qemu-%s-static %s "$@"\n' "$a" "$PWD/lite/target/$a-unknown-linux-musl/release/cbb" >"$RUNNER_TEMP/cbb-$a"
+            chmod +x "$RUNNER_TEMP/cbb-$a"
+            "$RUNNER_TEMP/cbb-$a" version | grep -q 'linux/mips'
+            CBB_LITE="$RUNNER_TEMP/cbb-$a" go test ./internal/service -run 'TestLite' -skip 'TestLiteMemberAway' -v
+          done
+
   lite:
     name: lite member (Rust)
     runs-on: ubuntu-latest
@@ -1296,7 +1479,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, website, test, build, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, esp32, zxnext, advisories, docker]
+    needs: [check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

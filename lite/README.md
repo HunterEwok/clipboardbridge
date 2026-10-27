@@ -148,6 +148,23 @@ Without mDNS on the network, name the full members in a drop-in
 `ExecStart=/usr/local/bin/cbb run -peer 192.168.0.10:8764 -peer ...`. `run -no-listen`
 turns the member port off (the device then only dials the computers).
 
+### OpenWrt
+
+On a router with OpenWrt 25.12 or later (ARM64, ARMv7, x86-64, MIPS or MIPSel; on MIPS the lite
+member syncs only at home for now, without sync away from home), as root:
+
+```sh
+uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --lite
+su -s /bin/sh clipboardbridge -c 'cbb join -name router'
+```
+
+It installs OpenWrt's procd service, the same as a full member's
+([installing](../docs/guide/install.md#openwrt)), which runs `cbb run` as the user
+`clipboardbridge`. The keys live in `/etc/clipboardbridge/state`, the control socket is
+`/var/run/clipboardbridge/control.sock`. The member port, mDNS and the QR code's addresses
+use only the devices of the `lan` zone, which the service gets as `CBB_INTERFACES`; the same
+variable limits the lite member on any Linux.
+
 ### Sync away from home
 
 ```sh

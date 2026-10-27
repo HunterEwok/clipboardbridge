@@ -586,8 +586,8 @@ func readLine(r io.Reader) (string, error) {
 
 // cmdAgent links the desktop's clipboard to the service: the Mac's
 // pasteboard, where launchd starts it in the user's session; the Windows
-// clipboard, started at sign-in; a Linux desktop's clipboard, started with
-// the desktop session.
+// clipboard, started at sign-in; a Linux or FreeBSD desktop's clipboard,
+// started with the desktop session.
 func cmdAgent(args []string, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "cbb: agent takes no arguments")
@@ -595,7 +595,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" || runtime.GOOS == "freebsd" {
 		logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 		return runDesktop(ctx, logf, stderr)
 	}
@@ -628,12 +628,18 @@ func cmdService(args []string, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	stateDir := fs.String("state", defaultStateDir(), "the directory for the identity and the clock mark")
 	socket := fs.String("socket", control.SocketPath(), "the control socket")
+	runUser := fs.String("user", "", "started as root, run as this user after opening the mDNS sockets (FreeBSD's rc script)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "cbb: service takes only flags")
 		return 2
+	}
+	if *runUser != "" {
+		if err := runAs(*runUser, func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }); err != nil {
+			return fail(stderr, err)
+		}
 	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
 		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
