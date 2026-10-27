@@ -18,7 +18,7 @@ the same full member without a desktop.
 | Images and files | yes, on a desktop | yes | yes | yes, while the app runs | no: it passes them on and takes their text |
 | Hold the group (root) | yes, [without the app](../guide/without-app.md) | yes | yes | yes | no |
 | Be an admin | yes | yes | yes | yes | no |
-| Be the hub | yes | not yet | while the app is open | while the app is open | no |
+| Be the hub | yes | yes | while the app is open | while the app is open | no |
 | Sync away from home | yes | yes | yes, also in the background | while the app is open | yes, plain WireGuard only; not on MIPS routers |
 | AmneziaWG and VLESS | yes | yes | yes | yes | no |
 | Join from afar by an invitation | yes | yes | not yet | not yet | no |

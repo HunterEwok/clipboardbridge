@@ -351,6 +351,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   systemd units read is in `docs/reference/config.md`, that every page below `docs/` is
   reached from `docs/README.md`, and that no page calls something "planned for" a version
   that is out already.
+- docs/design.md follows arc42: goals and constraints, context, solution strategy, building
+  blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
+  and glossary. The decisions D-1 to D-78 have a register with their status
+  (`docs/decisions.md`), and the threats a model of their own (`docs/threat-model.md`,
+  STRIDE, with the defence and the code for each). The design no longer describes the 0.2
+  group, where Linux members held the CA keys, and says what 0.5 and 0.6 built: the Mac as
+  a hub, the phones away from home, the server credentials in both phone kits, the project's
+  forwarder at `cbb.tools`.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for
