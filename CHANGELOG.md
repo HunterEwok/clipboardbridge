@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The model of the device tiles' own order and collections, for the apps' Arrange mode
+  that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the
+  Swift kit, checked against shared vectors in `testdata/arrangement`. It is kept on each
+  installation and never sent to the group.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the

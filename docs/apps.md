@@ -452,6 +452,63 @@ What the TV's system allows:
 banner in the Google TV and Fire TV launchers, the accessibility service on Android TV 12 to
 14 and the restricted-settings path on a TV.
 
+## Collections and the order of the tiles
+
+The user can put the device tiles in their own order and gather devices into
+**collections** (roadmap phase 9b). The word is not "folder",
+which means a copied folder of files, nor "group", the sync group. The arrangement is a
+view setting like tiles, list or orbit:
+
+- **Kept on this installation only**, beside the app's other settings: `deviceArrangement`
+  in UserDefaults on the iPhone, the iPad and the Mac, `device_arrangement` in the
+  Android app's settings, `arrangement` in the tray app's `desktop.json`. It is never sent
+  to the group, the hub, the forwarder or the relay. The watches show their phone's.
+- **One level.** A device is in at most one collection, and a collection holds devices
+  only, as folders on a phone's home screen.
+- **This device** ("this phone", "this computer") always comes first and does not move.
+- **Display only in 0.6**: the order, the collections, a collection tile's summary, the
+  watch's sections and the remote paste device picker. Actions on a whole collection may
+  come later; a remote paste to several devices never.
+
+The model is the same in the three places that hold it: `apps/desktop/arrange.go` (the
+tray app), the Kotlin kit's `Arrangement.kt` (Android) and the Swift kit's
+`Arrangement.swift` (iPhone, iPad, Mac). All three pass
+`testdata/arrangement/vectors.json`. It is stored as JSON:
+
+```json
+{"v": 1, "group": "<group tag>", "items": [
+  {"device": "3f2a…"},
+  {"collection": {"id": "c1", "name": "Office", "devices": ["9b01…", "77de…"]}},
+  {"device": "a0c4…"}]}
+```
+
+The rules:
+
+1. **View.** The stored items are shown in order. Device IDs that are not in the devices
+   list are skipped, and so is a collection none of whose devices is listed (one made
+   empty a moment ago stays). Listed devices that appear nowhere follow at the end of the
+   top level, in the app's order, so a new device shows up last and outside every
+   collection.
+2. **Prune.** IDs that are not listed are dropped only when the list is whole (the group
+   loaded and this device in it), so the empty list of a start or a reconnection loses
+   nothing. A collection that loses its last device that way goes away.
+3. **Another group** (another tag) or another version starts afresh.
+4. **Limits.** At most 32 collections; a name is trimmed and has 1 to 64 bytes. Names need
+   not be unique.
+5. **Changes**, each checked whole and refused whole: *move* an item before another or to
+   the end of its level (a device before a device in a collection joins it; a collection
+   never goes into another); *into* a collection, at its end; *out* of one, right after
+   it; *new* collection where its first device was, or at the end with no devices;
+   *rename*; *ungroup*, which puts the devices where the collection was; and *reset*,
+   which brings back the app's order and keeps the collections, each where its first
+   device now comes. A collection that a move or *out* empties goes away. New
+   collections take the smallest free ID `cN`.
+6. **The default.** Until the user changes something nothing is stored, and the order is
+   the app's as before.
+
+The apps reach every change in an Arrange mode, with a menu path, VoiceOver and TalkBack
+actions and the keyboard for each drag; their screens come in the next steps.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,
