@@ -54,33 +54,11 @@ sudo install -m 755 clipboardbridge/cbb /usr/local/bin/cbb
 (`-arm64` for an ARM server. Check the archive against the release's `SHA256SUMS` as in
 [Installing](../guide/install.md#checking-a-download).)
 
-Then write `/etc/systemd/system/cbb-forward.service`:
-
-```ini
-[Unit]
-Description=Clipboard Bridge forwarder
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=/usr/local/bin/cbb forward
-DynamicUser=yes
-StateDirectory=cbb-forward
-Restart=on-failure
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-PrivateTmp=yes
-# Only for VLESS on port 443 (see below):
-#AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-[Install]
-WantedBy=multi-user.target
-```
-
-and start it:
+The archive carries the servers' systemd units, `cbb-forward.service` and
+`cbb-relay.service`. Install the one you want and start it:
 
 ```sh
+sudo install -m 644 clipboardbridge/packaging/linux/cbb-forward.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cbb-forward
 journalctl -u cbb-forward | grep key          # its key, sha256:...
@@ -90,9 +68,18 @@ The key file is made on the first start, in the service's own state directory
 (`/var/lib/private/cbb-forward/forwarder.pem`), and the forwarder prints its key in its
 log each time it starts. Keep that file: a new key means giving every hub the new one.
 
-For a relay, name the file `cbb-relay.service`, with
-`ExecStart=/usr/local/bin/cbb relay -group TAG` and `StateDirectory=cbb-relay`; its log
-shows its key the same way.
+The units run `cbb` as a user of its own made for the service, with no privileges, no
+access to the rest of the system and a short list of system calls
+(`systemd-analyze security` rates them 1.2, "OK"). The flags go in a file the unit reads:
+
+```sh
+sudo mkdir -p /etc/clipboardbridge
+echo 'CBB_RELAY_FLAGS=-group 0123456789abcdef' | sudo tee /etc/clipboardbridge/relay.env
+echo 'CBB_FORWARD_FLAGS=-vless-site www.example.com' | sudo tee /etc/clipboardbridge/forward.env
+```
+
+`cbb-relay` needs its file, with the groups to serve (see [A blind relay](#a-blind-relay));
+`cbb-forward` needs none.
 
 ### The firewall
 
@@ -117,8 +104,8 @@ A name works in place of the address (`vpn.example.org:8764`); the hub looks it 
 each hub registers by itself with its group's certificate, and every group is kept apart
 from the others.
 
-The forwarder writes nothing about the groups but their roots, removals and freezes (in `groups` next to its key, so that a device a group removed cannot register as its hub again), and nothing to its log. With `CBB_DEBUG=1` in
-its environment it logs counts once a minute (hubs, sessions), never who they are.
+The forwarder writes nothing to its log about the hubs or their clients, and keeps on disk
+only its key and a table of hashed tags (see [What the server keeps](#what-the-server-keeps)).
 
 ### VLESS on the forwarder
 
@@ -126,10 +113,18 @@ For networks that block VPNs ([Networks that block VPNs](../guide/blocked-networ
 the forwarder also takes VLESS with REALITY on TCP 443, borrowing the TLS of a well-known
 site:
 
+```sh
+echo 'CBB_FORWARD_FLAGS=-vless-site www.example.com' | sudo tee /etc/clipboardbridge/forward.env
+sudo systemctl edit cbb-forward      # add the two lines below under [Service]
+sudo systemctl restart cbb-forward
+```
+
 ```ini
-ExecStart=/usr/local/bin/cbb forward -vless-site www.example.com
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 ```
+
+The two lines let it take port 443; the unit gives it no privileges otherwise.
 
 (In Docker, add `"-vless-site", "www.example.com"` to `command:` and publish `443:443/tcp`.)
 
@@ -168,6 +163,46 @@ online at once, since the relay stores nothing. It speaks plain WireGuard only.
 Planned ([roadmap](../roadmap.md), item 28): the project's relay at `cbb.tools` for groups
 that do not want to run their own, and AmneziaWG and VLESS on the relay, as on the
 forwarder.
+
+## What the server keeps
+
+The forwarder and the relay keep nothing about the devices:
+
+- **No logs about them.** They log when they start, with their key, and their own errors.
+  No line names an address, a group or a device: an error from the network or from
+  WireGuard is logged without the addresses and keys in it. With `CBB_DEBUG=1` they log
+  counts once a minute (hubs, sessions, devices), and WireGuard's own messages, without
+  addresses or keys either. A test checks it for both (`TestNoLogs`).
+- **Almost nothing on disk.** The relay keeps only its keys. The forwarder keeps its key and,
+  for the hubs that register with a credential, a table of hashed tags with the version of
+  each period's newest credential, which names no group and changes each month
+  ([protocol](../protocol.md), section 13, "What it keeps").
+- **In memory, while it lasts.** To pass packets they must know the addresses of the
+  devices online now, and the relay which devices of a group are online. That goes when the
+  device does, or when the server restarts.
+
+## What the hosting provider sees, and what a VPN hides
+
+The program cannot hide what passes the server's network. Whoever runs the server's
+machine, the hosting provider included, can see:
+
+- the addresses of the hubs and devices that talk to the server, when, and how much;
+- what the server itself sees, if it reads the server's memory: for a forwarder, section 13
+  of the [protocol](../protocol.md), "What the forwarder learns"; for a relay, the list
+  `cbb global relay` shows.
+
+It never sees the texts, files or images: they pass encrypted end to end between the
+devices of the group, in TLS inside WireGuard. Your own firewall and system logs on the
+server are yours to set: ufw logs blocked packets by default (`sudo ufw logging off` stops
+it), and the server's journal keeps the service's few lines.
+
+A system VPN on a device, from a VPN provider, hides the device's address from the server
+and from its hosting provider: they see the VPN's address instead. The VPN provider then sees
+that the device talks to the server, when and how much, but not what. On the phones the
+app's tunnel goes inside the app, so a system VPN on the phone carries it as it carries the
+phone's other traffic; on a computer, the same holds for its system VPN.
+
+The project's servers on `cbb.tools` run with these units, and the same is true of them.
 
 ## Updating
 

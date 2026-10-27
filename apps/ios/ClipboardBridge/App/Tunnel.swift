@@ -123,6 +123,10 @@ final class GoRelay: RelayLink, @unchecked Sendable {
 
     func setRecords(_ records: String) throws { try relay.setRecords(records) }
 
+    func setCredentials(serverKey: Data, sign: @escaping @Sendable (Data) throws -> Data, creds: String, roots: String, names: String) throws {
+        try relay.setCredentials(serverKey, signer: DigestSigner(sign), creds: creds, roots: roots, names: names)
+    }
+
     func close() { relay.close() }
 }
 

@@ -21,6 +21,13 @@ struct ClipboardBridgeApp: App {
                 .environmentObject(model)
         }
         // The phone is the group's hub while the app is open (D-64).
-        .onChange(of: scenePhase, initial: true) { _, phase in model.group.setForeground(phase == .active) }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            model.group.setForeground(phase == .active)
+            if phase == .background { BackgroundRefresh.schedule() }
+        }
+        .backgroundTask(.appRefresh(BackgroundRefresh.id)) {
+            BackgroundRefresh.schedule()
+            await AppModel.shared.refreshInBackground()
+        }
     }
 }
