@@ -4,9 +4,10 @@
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
 security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
-sites. It has two scripts, both served by the same server: its own `static/site.js`, which
-keeps the reader's light or dark theme and, on the download page, puts the reader's system
-first, and the visit counter, GoatCounter (the other `<script>` elements are schema.org data
+sites. Its scripts are all served by the same server: its own `static/theme.js`, a few lines
+that put the reader's light or dark theme on the page before it is drawn, and
+`static/site.js`, deferred, which runs the theme button, the copy buttons and the chalk and,
+on the download page, puts the reader's system first; and the visit counter, GoatCounter (the other `<script>` elements are schema.org data
 for search engines). Without scripts every page works: the theme follows the system and
 every way to download is shown. It also has error pages (`404`, `50x`) in every language, which nginx shows.
 
@@ -60,7 +61,8 @@ go run ./tools/site serve -preview            # http://127.0.0.1:8780
 `go test ./tools/site` builds the site and checks every page: one `h1`, canonical links,
 `noindex` only on the error pages, valid schema.org data, the sitemap, and that every link
 within the site leads to a file the build wrote. CI's `website` job also validates the HTML
-and runs Lighthouse three times on each of a few pages (`go run ./tools/site lighthouse`);
+and runs Lighthouse three times on each of a few pages (`go run ./tools/site lighthouse`),
+served gzipped as nginx serves them;
 it fails when a page's median is below 0.9 for performance and SEO and 0.95 for
 accessibility. To run it here (`CHROME_PATH` if Chrome is not found by itself):
 

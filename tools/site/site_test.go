@@ -355,3 +355,47 @@ func TestMedian(t *testing.T) {
 		t.Errorf("reportName = %q", got)
 	}
 }
+
+// TestGzipStatic: Lighthouse gets the .gz that build wrote, as readers do
+// from nginx, and the plain file when it takes no gzip or none was written.
+func TestGzipStatic(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	page := []byte("<!doctype html><title>x</title>")
+	gz, err := gzipped(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"en/index.html": page, "en/index.html.gz": gz, "plain.txt": []byte("plain")} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := httptest.NewServer(gzipStatic(dir))
+	defer srv.Close()
+	get := func(path string, gzip bool) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("GET", srv.URL+path, nil)
+		if gzip {
+			req.Header.Set("Accept-Encoding", "gzip")
+		}
+		// A transport that asks for gzip only when told to, and leaves it so.
+		resp, err := (&http.Transport{DisableCompression: true}).RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	if r := get("/en/", true); r.Header.Get("Content-Encoding") != "gzip" || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || r.ContentLength != int64(len(gz)) {
+		t.Errorf("/en/ with gzip: %v %v %d", r.Header.Get("Content-Encoding"), r.Header.Get("Content-Type"), r.ContentLength)
+	}
+	if r := get("/en/", false); r.Header.Get("Content-Encoding") != "" || r.ContentLength != int64(len(page)) {
+		t.Errorf("/en/ without gzip: %v %d", r.Header.Get("Content-Encoding"), r.ContentLength)
+	}
+	if r := get("/plain.txt", true); r.Header.Get("Content-Encoding") != "" || r.StatusCode != 200 {
+		t.Errorf("/plain.txt: %v %d", r.Header.Get("Content-Encoding"), r.StatusCode)
+	}
+}

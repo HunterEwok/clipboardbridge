@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
-// The site's one script of its own, small enough to run before the page is
-// drawn: it puts the reader's theme on <html> at once, so a light page
-// never flashes dark, then wires the theme button, adds a copy button to
-// each command, draws the chalk of each board as it first comes into view
-// and then lets it move a little now and then, and, on the download page,
-// points at the reader's own system. Without it
-// the site works as before: the theme follows the system, the drawings are
-// simply there and every way to download is shown.
+// The site's script, deferred: theme.js has put the reader's theme on
+// <html> before the page was drawn. This wires the theme button, adds a
+// copy button to each command, draws the chalk of each board as it first
+// comes into view and then lets it move a little now and then, and, on the
+// download page, points at the reader's own system. Without it the site
+// works as before: the theme follows the system, the drawings are simply
+// there and every way to download is shown.
 "use strict";
 (function () {
   var root = document.documentElement;
@@ -19,7 +18,6 @@
     if (choice === "light" || choice === "dark") root.setAttribute("data-theme", choice);
     else root.removeAttribute("data-theme");
   }
-  apply(stored());
 
   // The reader's system, from the browser: "android", "iphone", "windows",
   // "mac", "linux", or "" when it cannot tell.
