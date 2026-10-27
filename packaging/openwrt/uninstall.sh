@@ -7,8 +7,9 @@
 #   sh /usr/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service, whose firewall rules go with it, and removes the
-# binary, the init script, the NTP hook, the capability file, the keep list
-# and the settings in /etc/config/clipboardbridge. The device's keys and
+# binary, the init script, the NTP hook, the capability file, the keep list,
+# the settings in /etc/config/clipboardbridge, the update's cron line and
+# cbb update's folder. The device's keys and
 # group, in /etc/clipboardbridge, stay for a reinstall unless --purge; the
 # clipboardbridge user and group stay too.
 set -eu
@@ -46,7 +47,12 @@ rm -f /etc/clipboardbridge/firewall.hub
 /etc/init.d/firewall reload >/dev/null 2>&1 || true
 rm -f /etc/init.d/clipboardbridge /etc/hotplug.d/ntp/50-clipboardbridge /lib/upgrade/keep.d/clipboardbridge \
 	/etc/capabilities/clipboardbridge.json /etc/config/clipboardbridge /usr/bin/cbb /var/state/clipboardbridge.time
-rm -rf /usr/share/clipboardbridge /var/run/clipboardbridge
+rm -rf /usr/share/clipboardbridge /var/run/clipboardbridge /etc/clipboardbridge-update /tmp/clipboardbridge-update
+if grep -q '# clipboardbridge-update$' /etc/crontabs/root 2>/dev/null; then
+	grep -v '# clipboardbridge-update$' /etc/crontabs/root >/etc/crontabs/root.new || true
+	mv -f /etc/crontabs/root.new /etc/crontabs/root
+	/etc/init.d/cron restart >/dev/null 2>&1 || true
+fi
 if [ "$purge" = yes ]; then
 	rm -rf /etc/clipboardbridge
 	echo "Clipboard Bridge is removed, with this device's keys; it left its group."

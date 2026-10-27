@@ -184,6 +184,10 @@ func (d *Desk) MakeAdmin(id string) {
 func (d *Desk) Freeze(id string)   { d.admin([]string{"freeze", id}, false, "Frozen.") }
 func (d *Desk) Unfreeze(id string) { d.admin([]string{"unfreeze", id}, false, "Unfrozen.") }
 
+// Update installs the newest signed release the group passed around, as
+// cbb update does as the administrator.
+func (d *Desk) Update() { d.admin([]string{"update"}, false, "Clipboard Bridge is updated.") }
+
 // SetAway turns sync away from home on or off; on answers yes to the
 // warning the window showed, which cbb asks for.
 func (d *Desk) SetAway(on bool) {
@@ -335,6 +339,10 @@ func (d *Desk) updateTray() {
 	inGroup := s.Problem == "" && s.Status != nil && s.Status.Group != ""
 	menu.Add(d.T("Send the clipboard")).SetEnabled(inGroup && !s.Busy).OnClick(func(*application.Context) { go d.Send() })
 	menu.Add(d.T("Fetch")).SetEnabled(inGroup && !s.Busy).OnClick(func(*application.Context) { go d.Fetch() })
+	if s.Problem == "" && s.Status != nil && s.Status.Update != "" {
+		menu.AddSeparator()
+		menu.Add(fmt.Sprintf(d.T("Update to %s"), s.Status.Update)).SetEnabled(!s.Busy).OnClick(func(*application.Context) { go d.Update() })
+	}
 	menu.AddSeparator()
 	menu.Add(d.T("Open Clipboard Bridge")).OnClick(func(*application.Context) { d.Open() })
 	menu.Add(d.T("Quit")).OnClick(func(*application.Context) { d.app.Quit() })

@@ -531,6 +531,33 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	return r, next, nil
 }
 
+// CheckPinned verifies the release.json of a version asked for by name, as
+// an update to the lowest version another release may come from: keys.json
+// under the roots and release.json under its release keys, without a
+// channel file, and that the version is not below the highest one seen.
+func CheckPinned(keys, rel File, roots [][]byte, now time.Time, seen Seen) (Release, Seen, error) {
+	k, err := VerifyKeys(keys, roots, now, seen)
+	if err != nil {
+		return Release{}, seen, fmt.Errorf("keys.json: %w", err)
+	}
+	if err := rel.verify(k.spkis(UseRelease)); err != nil {
+		return Release{}, seen, fmt.Errorf("release.json: %w", err)
+	}
+	r, err := decodeRelease(rel.Body)
+	if err != nil {
+		return Release{}, seen, fmt.Errorf("release.json: %w", err)
+	}
+	if seen.Version != "" && Compare(r.Version, seen.Version) < 0 {
+		return Release{}, seen, fmt.Errorf("release.json: %w", ErrRollback)
+	}
+	next := seen
+	next.KeysSeq = k.Seq
+	if seen.Version == "" || Compare(r.Version, seen.Version) > 0 {
+		next.Version = r.Version
+	}
+	return r, next, nil
+}
+
 // Compare compares two versions of the form X.Y.Z or X.Y.Z-rc.N, as -1,
 // 0 or 1; a release candidate comes before its release. A string that is
 // not a version sorts below every version.

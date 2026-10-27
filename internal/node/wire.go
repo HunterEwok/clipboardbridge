@@ -14,6 +14,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	signed "github.com/HunterEwok/clipboardbridge/internal/release"
 )
 
 // The member protocol runs over a TLS connection made with the group's
@@ -34,7 +35,9 @@ import (
 // be a hub, with its offer and its clients' keys. A device whose keys an
 // attestation proves sends an evidence message with it after the hello.
 // A member that keeps the group's server credentials sends them in a
-// credentials message after the hello, and passes new ones on.
+// credentials message after the hello, and passes new ones on. A member
+// that holds a signed release newer than the one a peer's hello names sends
+// it in a release message, and passes newer ones on.
 const (
 	typeHello   = "hello"
 	typeEvent   = "event"
@@ -50,6 +53,7 @@ const (
 	typeHubs    = "hubs"
 	typeEvid    = "evidence"
 	typeCreds   = "credentials"
+	typeRelease = "release"
 	typeGet     = "get"
 	typeMissing = "missing"
 	typeChunk   = "chunk" // a binary frame, never JSON
@@ -99,6 +103,9 @@ type message struct {
 	// Credentials, in a credentials message, are the group's server
 	// credentials (docs/protocol.md, section 18).
 	Credentials []group.Credential `json:"credentials,omitempty"`
+	// Release, in a release message, is the newest signed release the
+	// sender holds (docs/protocol.md, section 16, "In the group").
+	Release *ReleaseSet `json:"release,omitempty"`
 	// AdminCA, in an admin message from the group's root, is the
 	// receiver's admin CA for the admin key its hello offered, DER.
 	AdminCA []byte `json:"admin_ca,omitempty"`
@@ -268,6 +275,9 @@ type helloBody struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that the sender serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// ReleaseSeq is the seq of the channel file of the signed release
+	// the sender holds; 0 for none.
+	ReleaseSeq uint64 `json:"release_seq,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -306,6 +316,18 @@ type helloOut struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that this member serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// ReleaseSeq is the seq of the channel file of the signed release
+	// this member holds, so that a peer sends only a newer one.
+	ReleaseSeq uint64 `json:"release_seq,omitempty"`
+}
+
+// ReleaseSet is a signed release as members pass it to each other: the
+// files a device fetches to look for an update (docs/protocol.md, section
+// 16), each still in its signed envelope.
+type ReleaseSet struct {
+	Keys    signed.File `json:"keys"`
+	Channel signed.File `json:"channel"`
+	Release signed.File `json:"release"`
 }
 
 // recordsChunk bounds the records of one message, well below maxFrame.

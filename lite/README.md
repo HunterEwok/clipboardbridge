@@ -143,6 +143,14 @@ cbb status                     # this device, the group and its devices
 cbb watch                      # one line per text the group sends here
 ```
 
+`sudo cbb update` installs the newest signed release as a full member's does
+([updating](../docs/guide/install.md#updating)): it checks `keys.json`, `stable.json` and
+`release.json`, downloads this device's archive with curl, wget or uclient-fetch, checks it
+and the program in it, runs its installer, and puts the previous program back when the
+service does not report the new version within a minute. `cbb update -check` only says
+whether there is one; `sudo cbb update -auto on|off` checks once a day (a systemd timer, or
+cron on OpenWrt), as the installer asks once (`--auto-update on|off`).
+
 Without mDNS on the network, name the full members in a drop-in
 (`sudo systemctl edit clipboardbridge`): `ExecStart=` and then
 `ExecStart=/usr/local/bin/cbb run -peer 192.168.0.10:8764 -peer ...`. `run -no-listen`

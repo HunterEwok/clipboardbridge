@@ -289,6 +289,10 @@ func (s *Service) relayed(w node.Write) {
 // tunnel only the parts of copies within its limit away from home, so a
 // hub's limit caps its whole star.
 func (s *Service) serves(local netip.Addr, sum [sha256.Size]byte) bool {
+	// The archives of a signed release go to members away from home too.
+	if _, ok := s.heldAsset(sum); ok {
+		return true
+	}
 	away := s.awayAddr()
 	if !away.IsValid() || local != away || s.content == nil {
 		return true
@@ -572,11 +576,11 @@ func (s *Service) groupContext() context.Context {
 	return s.groupCtx
 }
 
-// nodeContent is the cache as the node serves it; none while the cache
-// could not be made.
+// nodeContent is what the node serves: the cache, unless it could not be
+// made, and the archives of the held release.
 func (s *Service) nodeContent() node.Content {
 	if s.content == nil {
-		return nil
+		return releaseContent{s}
 	}
-	return s.content
+	return contents{s.content, releaseContent{s}}
 }

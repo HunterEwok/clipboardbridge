@@ -154,7 +154,7 @@ The order may change.
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**
-29. **Planned for 0.6.** Secure updates: every program updates itself, or is told to,
+29. **Planned for 0.6; the code of steps 1, 3, 4, most of 5 and the lite member's part of 7 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own keys (D-69), downloaded from GitHub or the
     `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
     the user allows it. See "Secure updates" below.
@@ -885,7 +885,7 @@ token cannot slip in another build or an older one.
   runs `cbb update` through UAC or pkexec, like its other admin actions.
 - **The Mac app:** Sparkle with its EdDSA signature, once the app is signed and notarized
   (waits for the Apple developer account), with the same manifest feeding the appcast.
-- **The lite member on Linux:** `cbb update` the same way, for its own archive.
+- **The lite member on Linux:** `cbb update` the same way, for its own archive (built).
 - **The Nano ESP32:** OTA into the second app partition, checked against the manifest and
   the release key in the firmware, with a fallback to the old partition if the new one does
   not boot. Later, with the firmware's sync (item 15).
@@ -900,7 +900,8 @@ token cannot slip in another build or an older one.
 ### In the group
 
 - Each device's hello already carries its version. `cbb status` and the apps mark devices that
-  run an older version than the newest one any member has seen.
+  run an older version than the newest signed release the group passed around (built for
+  `cbb status`; the phone apps to come).
 - Later: an admin asks a member to update with a signed command, like `mode` (protocol
   section 15). The member still installs only a signed release and only if its own user
   allowed automatic updates.
@@ -913,18 +914,40 @@ token cannot slip in another build or an older one.
    signature, expired, wrong type, older version, wrong key, the `keys.json` chain).
 2. The release flow: the draft, `tools/release-sign`, the publishing workflow, the mirror,
    and `get.sh` and `get.ps1` checking the manifest.
-3. `cbb update` and `-check` on Linux, macOS and Windows: download, check, rename into place
-   (never copy over: macOS kills an overwritten signed binary, and Windows renames the
-   running file aside first), restart, and roll back when the new service does not become
-   healthy, keeping a list of failed versions; detection of Homebrew, winget, Docker and
-   packages; tests with a tampered file, a bad signature, an expired manifest, an older
-   version and a new binary that never becomes healthy.
-4. Automatic updates: the installers' question, the timers, `cbb update -auto`.
-5. The tray app and `cbb status`; members passing manifests and archives to each other.
-6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
-   registration with Google's developer verification.
-7. The lite member; then the Nano ESP32: a new partition table and a bootloader with
-   rollback (one reflash over USB), and OTA from a member.
+3. **Built:** `cbb update` and `-check` on Linux, OpenWrt, FreeBSD, macOS and Windows
+   (`internal/update`): download, check the archive and the programs in it, install with
+   the new release's own installer (which replaces files by rename or after stopping them,
+   never over a running program, and keeps the user's answers; on Windows `cbb update`
+   runs from a copy in its own folder, since `install.ps1` stops every program in
+   Program Files\clipboardbridge), wait a minute for the service to report the new version,
+   and otherwise install the previous programs again with the same installer and keep a
+   list of failed versions; the installers record the method (`get`, `brew`, `winget`,
+   `docker`, `package`), and the others print their tool's command; on Windows the new
+   programs must have the installed ones' Authenticode signer once those are signed; tests
+   with a tampered file, a bad signature, an expired manifest, an older version, a path out
+   of the archive and a new program that never becomes healthy.
+4. **Built:** automatic updates: the installers' question (`--auto-update`, kept), the
+   timers (systemd, launchd, a scheduled task as SYSTEM, cron on OpenWrt and FreeBSD),
+   `cbb update -auto`, at most one check a day, the failed versions skipped.
+5. **Built:** members pass the newest signed release to each other
+   (protocol section 16, "In the group": `release_seq` in the hello, the `release`
+   message, checked as a download is), `cbb update` hands what it fetched to the service,
+   `cbb status` says when a newer release is out and marks the devices that run an older
+   one, and the tray app shows "Update to X", which runs `cbb update` through UAC or
+   pkexec. The archives pass through the group too: the service keeps the archive
+   `cbb update` installed and serves it by its hash, and `cbb update` on another member
+   takes it from the group before it downloads.
+6. **Built:** the Android app's own update for the sideloaded APK (`ApkUpdate.kt`,
+   docs/apps.md, "Updates"): the signed files checked with the Kotlin kit, the APK's hash
+   and signing certificate, `PackageInstaller` with `USER_ACTION_NOT_REQUIRED`, Settings'
+   "Check for updates" and "Update automatically", nothing for a copy from a store. Not
+   yet run on a device; installs from 2027 need the owner's registration with Google's
+   developer verification.
+7. **Built for Linux and OpenWrt:** the lite member's `cbb update` (`lite/src/update.rs`),
+   checked with `lite/core`'s verifier, downloading with the system's curl, wget or
+   uclient-fetch, installing and rolling back as step 3 does, with the same timers. The
+   Nano ESP32 follows with its sync (item 15): a partition table with two app slots and a
+   bootloader with rollback, and OTA from a member, checked against the manifest.
 8. Sparkle in the Mac app, after the Apple account, with its own Ed25519 key and the appcast
    made by `tools/release-sign`.
 9. On the bench: an update from the previous release on every device (L9), a refused

@@ -294,7 +294,7 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17), `credentials` (section 18), `get` or `missing` ("Content", below) |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17), `credentials` (section 18), `release` (section 16), `get` or `missing` ("Content", below) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -306,6 +306,7 @@ Message object:
 | `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
 | `evidence` | object | evidence | an attestation of one of the sender's keys (section 17, "Evidence") |
 | `credentials` | array | credentials | the group's server credentials the sender keeps (section 18) |
+| `release` | object | release | the newest signed release the sender holds: `keys`, `channel` and `release`, each a file of section 16 as published (section 16, "In the group") |
 | `get` | object | get, missing | a range of a part of images or files: Get ("Content", below) |
 
 ```json
@@ -371,6 +372,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
 | `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
+| `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
 
 ### Device
@@ -2251,6 +2253,39 @@ that nobody can give it older files later. A file it downloads must have the siz
 SHA-256 that `release.json` lists. A device below `min_from` updates to `min_from` first.
 A release key that is lost or stolen is dropped from the next `keys.json`; a device that has
 taken it no longer accepts anything that key signs.
+
+### In the group
+
+Members pass the newest signed release they hold to each other, so that a device learns of a
+release when any device of its group has checked, and one without internet access learns of
+it too (D-69). The signatures make the peers untrusted: a member checks what a peer sends as
+it checks what it downloads.
+
+- A member's hello carries `release_seq`, the channel `seq` of the release it holds. After a
+  peer's hello, a member that holds a release with a higher `seq` sends it, when the peer is
+  a `full` or `lite` member (phones update from their stores), a `release` message: `{"t":"release","release":{"keys":...,"channel":...,"release":...}}`.
+- A member takes a `release` when its three files pass the check above for the `stable`
+  channel, with the highest `keys` and channel `seq` of the release it holds, and its channel
+  `seq` is higher. It keeps the files (`release.json` in the service's state directory) and
+  sends them on to its other peers; it drops one that fails, and logs why. A held release
+  whose channel file has expired is not sent.
+- `cbb update` hands the files it fetched and checked to the service on this computer
+  (control operation `release`), which takes them the same way and sends them to its peers.
+- `cbb status` and the tray app say when the newest release is above this computer's
+  version, and the devices list marks the devices that run an older one. Taking a release
+  only informs: a device installs one only through its own update (`cbb update`, its timer,
+  the app store), which checks the files again.
+- The archives pass through the group as images and files do ("Content", section 4): a
+  member serves, by its SHA-256, a file of the release it holds once it holds it whole, and
+  `get` asks for it like a part. `cbb update` hands the archive it installed to the service
+  (control operation `release-file`), which keeps it (`release-files/` in its state
+  directory, named by the SHA-256) only when the held `release.json` lists it with that size
+  and hash. Before downloading, `cbb update` asks its service (`release-get`), which fetches
+  the archive from its peers that send `media`, and downloads it from the server only when
+  no peer has it; it checks the archive against `release.json` either way. A member deletes
+  the archives of a release once it holds a newer one, and serves them through the group's
+  tunnel too.
+- A member that does not know `release` ignores it, as it ignores every message of a type it does not know.
 
 ## 17. Key stores
 
