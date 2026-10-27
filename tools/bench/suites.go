@@ -146,7 +146,7 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 			hub = d
 		}
 	}
-	if hub == nil || hub.OS != "linux" {
+	if hub == nil || (hub.OS != "linux" && hub.OS != "fleet") {
 		r.Do(suite+"/setup", func() error {
 			return errors.New(suite + " needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
 		})
@@ -498,9 +498,10 @@ func noSudo(d *Device, err error) error {
 }
 
 // All runs every suite of the harness in turn: check, then each of the
-// others after a quick reset (R1 without the install), and a last quick
-// reset, so the devices end in no group. One report holds them all.
-func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool) {
+// others after a quick reset (R1 without the install), the fleet on the
+// controller's containers, and a last quick reset, so the devices end in no
+// group. One report holds them all.
+func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool, cbb string, fleetSize int) {
 	Check(ctx, r, devices)
 	if r.Failed() > 0 {
 		r.Skip("all", "check failed; the other suites need a healthy bench")
@@ -514,6 +515,15 @@ func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, time
 	for _, s := range suites[1:] {
 		if ctx.Err() != nil {
 			return
+		}
+		if s == "fleet" {
+			// The fleet is the controller's own containers: no reset.
+			if cbb == "" {
+				r.Skip("fleet", "give -cbb FILE, a static Linux cbb of the build for the controller, to run the fleet")
+			} else {
+				FleetSuite(ctx, r, cbb, fleetSize, timeout)
+			}
+			continue
 		}
 		reset("before-" + s)
 		switch s {

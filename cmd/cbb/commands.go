@@ -326,7 +326,9 @@ func cmdPair(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if len(rest) == 1 {
 			address = rest[0]
 		}
-		fmt.Fprint(stdout, "Pairing code: ")
+		if f, ok := stdin.(*os.File); ok && isTerminal(f) {
+			fmt.Fprint(stdout, "Pairing code: ")
+		}
 		line, err := readLine(stdin)
 		if err != nil {
 			return fail(stderr, err)
