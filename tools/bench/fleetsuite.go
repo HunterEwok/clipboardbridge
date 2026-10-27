@@ -76,6 +76,11 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"E1-latency", func() { latency(ctx, r, f, timeout) }},
 		{"E2-throughput", func() { throughput(ctx, r, f, timeout) }},
 		{"E4-big", func() { bigTransfers(ctx, r, f, timeout) }},
+		{"O2-files", func() { files(ctx, r, f, timeout) }},
+		{"U2-cli", func() { commandLine(ctx, r, f) }},
+		{"Y20-fresh", func() { freshness(ctx, r, f, timeout) }},
+		{"W21-removed", func() { removedAway(ctx, r, f, timeout) }},
+		{"G35-system", func() { otherSystem(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
@@ -244,12 +249,22 @@ func roles(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		return
 	}
 	root, admin, m1, m2, m3 := g.members[0], g.members[1], g.members[2], g.members[3], g.members[4]
-	fails(ctx, r, p+"file-key-refused", root, errorCase{cmd: "cbb admin " + admin.Name, want: []string{"-allow-file-key"}})
+	fails(ctx, r, "fleet/G34-file-key-refused", root, errorCase{cmd: "cbb admin " + admin.Name, want: []string{"-allow-file-key"}})
 	r.Do(p+"admin", func() error {
 		if err := succeeds(ctx, root, "cbb admin -allow-file-key "+admin.Name, "", "is an admin now"); err != nil {
 			return err
 		}
 		return listsAs(ctx, g.members, admin.Name, "admin", false, timeout)
+	})
+	r.Do("fleet/K9-keys-shown", func() error {
+		// The containers have no TPM: every key is in a file, and every
+		// devices list says so.
+		for _, d := range []*Device{root, admin, m1} {
+			if err := listsAs(ctx, []*Device{m2}, d.Name, "in a file", false, timeout); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	fails(ctx, r, p+"G21-admin-makes-no-admin", admin, errorCase{cmd: "cbb admin -allow-file-key " + m1.Name, want: []string{"only the group's root"}})
 	fails(ctx, r, p+"G21-admin-keeps-root", admin, errorCase{cmd: "cbb revoke " + root.Name, want: []string{"holds the group's root", "takeover"}})
