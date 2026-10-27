@@ -296,10 +296,10 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | T14 | `paste-receive off` from afar (one device, every device) takes effect at once; only the device's user turns it on again | fleet | |
 | T15 | The uinput helper serves only the active seat0 session's user, never a login screen, and presses only Shift, Insert and Enter | helper | |
 | T16 | "Paste on it…" in the phone apps: typed or from the clipboard, with Enter, as a secret, after Face ID or the fingerprint; through a member when the phone is not connected | ui | |
-| T17 | Android TV as a target: the TV variant's accessibility target; `cbb remote add` and Android TV Remote v2 (pairing code on the TV, the IME's text) | ui, person | phase 9, TV |
-| T18 | Bluetooth keyboards: the Android phone's HID device, the Nano's BLE keyboard (bonds in flash, erased by a reset), Linux over BlueZ; a phone whose maker left HID out is named | helper, ui | phase 9, Nano |
-| T19 | Other TVs: Apple TV (Companion, or a Bluetooth keyboard), Samsung and LG remotes, Roku (off by default, plain HTTP) | person | phase 9, TV, Apple TV |
-| T20 | The Nano's keyboard layouts, one per target, and its USB console's "reboot to flash" | helper | phase 9, Nano |
+| T17 | Android TV as a target: the TV variant's accessibility target; `cbb remote add` and Android TV Remote v2 (pairing code on the TV, the IME's text) | ui, person | TV |
+| T18 | Bluetooth keyboards: the Android phone's HID device, the Nano's BLE keyboard (bonds in flash, erased by a reset), Linux over BlueZ; a phone whose maker left HID out is named | helper, ui | Nano |
+| T19 | Other TVs: Apple TV (Companion, or a Bluetooth keyboard), Samsung and LG remotes, Roku (off by default, plain HTTP) | person | TV, Apple TV |
+| T20 | The Nano's keyboard layouts, one per target, and its USB console's "reboot to flash" | helper | Nano |
 
 ## 9. Quick actions (Q)
 
@@ -404,7 +404,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | H10 | FreeBSD and OPNsense: rc.d, the pf anchor and ipfw, the desktop connector under Xvfb, the mdns-repeater conflict; pfSense's printed rules | fleet | phase 8 |
 | H11 | The lite member on the Nano ESP32: joins by the phone, syncs at home, settings in flash, reset; the QEMU self-test | helper, fleet | Nano |
 | H12 | The ZX Spectrum Next's dot command over the UART | person | ZX Next |
-| H13 | Android TV: the leanback launcher, the D-pad, joining by the QR code on the TV | ui | phase 9 |
+| H13 | Android TV: the leanback launcher, the D-pad, joining by the QR code on the TV | ui | TV |
 | H14 | The Steam Deck's Game Mode and gamescope [P17] | person | |
 | H15 | The iPad build and big screens: the layout of each screen in both orientations and split view | ui | iPad |
 

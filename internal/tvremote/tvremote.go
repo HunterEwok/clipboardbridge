@@ -88,7 +88,7 @@ func (s State) Find(name string) (int, error) {
 			return 0, nil
 		}
 		if len(s.TVs) == 0 {
-			return -1, errors.New("no TV is added: add one with cbb tv add")
+			return -1, errors.New("no TV is added: add one with cbb remote add")
 		}
 		return -1, errors.New("there are several TVs: name one")
 	}
@@ -170,7 +170,7 @@ func Type(ctx context.Context, t TV, client *androidtv.Client, text string) erro
 	switch t.Kind {
 	case AndroidTV:
 		if client == nil {
-			return errors.New("the TV is not paired: pair it again with cbb tv add")
+			return errors.New("the TV is not paired: pair it again with cbb remote add")
 		}
 		r, err := androidtv.Dial(ctx, t.Host, *client, t.Pin)
 		if err != nil {
