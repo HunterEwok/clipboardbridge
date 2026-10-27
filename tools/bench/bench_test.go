@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -332,6 +333,7 @@ func TestCatalogue(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
 		if rows := len(regexp.MustCompile(`(?m)`+f.row).FindAllIndex(b, -1)); rows != f.n {
 			t.Errorf("%s has %d rows, read %d", f.name, rows, f.n)
 		}

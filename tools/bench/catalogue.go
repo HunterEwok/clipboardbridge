@@ -128,7 +128,8 @@ func loadCatalogue(docs string) ([]catCase, []function, error) {
 		if err != nil {
 			return "", fmt.Errorf("cannot read the catalogue: %w (run from the repository's root, or give -docs)", err)
 		}
-		return string(b), nil
+		// A checkout on Windows may end lines with CR LF.
+		return strings.ReplaceAll(string(b), "\r\n", "\n"), nil
 	}
 	ct, err := read("testbench-catalogue.md")
 	if err != nil {
