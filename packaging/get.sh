@@ -106,9 +106,9 @@ Linux)
 	esac
 	if [ -f /etc/openwrt_release ]; then
 		os=openwrt
-		case $lite-$arch in
-		yes-mips*) fail "the lite member has no build for MIPS yet; install the full member" ;;
-		esac
+		if [ "$lite-${arch%le}" = yes-mips ]; then
+			echo "get.sh: the lite member for MIPS has no sync away from home yet (roadmap item 37); the full member has it." >&2
+		fi
 		[ -z "$console" ] || fail "--console is not for a router"
 		[ -z "$uinput" ] || fail "--uinput is not for a router"
 		[ -z "$cgnat" ] || fail "--home-cgnat is not for a router"

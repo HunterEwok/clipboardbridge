@@ -7,6 +7,10 @@
 //! phone, and syncs (docs/design.md, roadmap item 11).
 
 mod actions;
+#[cfg(feature = "tunnel")]
+mod away;
+#[cfg(not(feature = "tunnel"))]
+#[path = "away_off.rs"]
 mod away;
 mod control;
 mod device;
@@ -23,6 +27,7 @@ mod records;
 mod remotepaste;
 mod service;
 mod tls;
+#[cfg(feature = "tunnel")]
 mod tunnel;
 mod uptime;
 mod wire;

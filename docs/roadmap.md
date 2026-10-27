@@ -295,9 +295,11 @@ One pull request each, smaller ones together:
    in the secrets ([maintaining.md](maintaining.md#the-openwrt-feed)); CI installs from a
    feed signed with a test key.
 5. The lite member on OpenWrt. Done: the procd script runs `cbb run` for it, `get.sh
-   --lite` installs it on aarch64, armv7 and x86-64, and it takes `CBB_INTERFACES`. Still
-   to come: mips and mipsle with nightly Rust, without the tunnel in 0.6, since GotaTun
-   needs 64-bit atomics; the tunnel there is planned for 0.7 (item 37).
+   --lite` installs it on aarch64, armv7, x86-64, mips and mipsle, and it takes
+   `CBB_INTERFACES`. On mips and mipsle it is built with nightly Rust (`-Zbuild-std`,
+   `lite/packaging/mips.sh`) and without the tunnel in 0.6, since GotaTun needs 64-bit
+   atomics; CI runs its Go tests under qemu-mips; the tunnel there is planned for 0.7
+   (item 37).
 
 Later, if wanted: a LuCI page with the status and the QR code for joining.
 

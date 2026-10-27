@@ -150,8 +150,8 @@ turns the member port off (the device then only dials the computers).
 
 ### OpenWrt
 
-On a router with OpenWrt 25.12 or later (ARM64, ARMv7 or x86-64; MIPS routers take the full
-member for now), as root:
+On a router with OpenWrt 25.12 or later (ARM64, ARMv7, x86-64, MIPS or MIPSel; on MIPS the lite
+member syncs only at home for now, without sync away from home), as root:
 
 ```sh
 uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --lite

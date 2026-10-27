@@ -204,6 +204,38 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  litemips:
+    name: build (clipboardbridge-lite-linux-${{ matrix.name }}, no tunnel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - { target: mips-unknown-linux-musl, arch: mips, name: mips }
+          - { target: mipsel-unknown-linux-musl, arch: mipsel, name: mipsle }
+    env:
+      ARCHIVE: clipboardbridge-lite-linux-${{ matrix.name }}.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nightly Rust with the standard library's source, and zig
+        run: |
+          rustup toolchain install nightly-2026-10-26 --profile minimal --component rust-src
+          python3 -m venv "$RUNNER_TEMP/zig"
+          "$RUNNER_TEMP/zig/bin/pip" install -q ziglang==0.15.2 cargo-zigbuild==0.24.0
+          echo "$RUNNER_TEMP/zig/bin" >>"$GITHUB_PATH"
+      - name: build (static, soft float, without sync away from home; see lite/packaging/mips.sh)
+        run: CBB_VERSION="${GITHUB_REF_NAME#v}" sh lite/packaging/mips.sh ${{ matrix.arch }}
+      - name: archive, with the crates' licenses and the installer
+        run: sh lite/packaging/archive.sh lite/target/${{ matrix.target }}/release/cbb ${{ matrix.target }} ${{ matrix.name }} "$RUNNER_TEMP/dist"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: ${{ runner.temp }}/dist/${{ env.ARCHIVE }}
+          if-no-files-found: error
+          retention-days: 1
+
   openwrt-feed:
     # The apk feed for OpenWrt from the Linux archives above, signed with
     # the feed's ECDSA P-256 key (docs/maintaining.md, "The OpenWrt feed"),
@@ -248,7 +280,7 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [build, android, lite, codeql-swift, openwrt-feed]
+    needs: [build, android, lite, litemips, codeql-swift, openwrt-feed]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
