@@ -85,6 +85,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"T17-tv", func() { tvRemote(ctx, r, f, timeout) }},
 		{"G13-invitations", func() { invitations(ctx, r, f, timeout) }},
 		{"D17-mdns", func() { mdnsRecords(ctx, r, f, timeout) }},
+		{"D14-queue", func() { slowPeer(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
