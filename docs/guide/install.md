@@ -156,7 +156,8 @@ All installer options are in the [command reference](../reference/cli.md#install
 ## Updating
 
 `sudo cbb update` (on Windows `cbb update` in a terminal opened as administrator) installs
-the newest release on a computer installed with `get.sh`, `get.ps1` or a release archive;
+the newest release on a computer or a lite member installed with `get.sh`, `get.ps1` or a
+release archive;
 `cbb update -check` only says whether there is one. It takes only a release the project
 signed (docs/protocol.md, section 16), never an older one than this device has seen, and
 checks the archive and the programs in it against the signed list before it installs them.

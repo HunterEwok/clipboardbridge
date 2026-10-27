@@ -1300,6 +1300,56 @@ jobs:
               exit 1
             fi
           done
+      - name: the lite member's cbb update installs a newer signed release, puts the old one back, and sets the timer
+        working-directory: .
+        run: |
+          for v in 0.6.0 0.6.1; do
+            (cd lite && CBB_VERSION=$v cargo build --locked)
+            mkdir -p "$RUNNER_TEMP/lite-$v"
+            cp lite/target/debug/cbb "$RUNNER_TEMP/lite-$v/cbb"
+          done
+          sudo CBB_FIREWALL=no sh packaging/linux/install.sh --auto-update off "$RUNNER_TEMP/lite-0.6.0/cbb"
+          test "$(sudo cbb update -auto)" = off
+          if sudo cbb update 2>"$RUNNER_TEMP/err"; then echo "cbb update took a release without roots" >&2; exit 1; fi
+          grep -q 'pins no release keys' "$RUNNER_TEMP/err"
+          rel="$RUNNER_TEMP/lite-update"
+          sh lite/packaging/archive.sh "$RUNNER_TEMP/lite-0.6.1/cbb" x86_64-unknown-linux-gnu amd64 "$rel"
+          go run ./tools/release-sign drill -version 0.6.1 "$rel" "$RUNNER_TEMP/lite-update.pem"
+          export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/lite-update.pem"
+          cbb update -check | grep -q '0.6.1 is available'
+          sudo -E cbb update
+          cbb version | grep -q '^cbb 0.6.1 '
+          sudo -E cbb update | grep -q 'is the newest release'
+          # 0.6.2, whose service never starts: 0.6.1 goes back.
+          rel2="$RUNNER_TEMP/lite-update2"
+          mkdir -p "$RUNNER_TEMP/lite-0.6.2"
+          cat >"$RUNNER_TEMP/lite-0.6.2/cbb" <<'EOF'
+          #!/bin/sh
+          case $1 in
+          version) echo "cbb 0.6.2 (linux/x86_64), the lite member" ;;
+          run) exit 1 ;;
+          esac
+          EOF
+          chmod 0755 "$RUNNER_TEMP/lite-0.6.2/cbb"
+          sh lite/packaging/archive.sh "$RUNNER_TEMP/lite-0.6.2/cbb" x86_64-unknown-linux-gnu amd64 "$rel2"
+          go run ./tools/release-sign drill -version 0.6.2 "$rel2" "$RUNNER_TEMP/lite-update2.pem"
+          if sudo CBB_RELEASE_DIR="$rel2" CBB_RELEASE_ROOTS="$RUNNER_TEMP/lite-update2.pem" cbb update 2>"$RUNNER_TEMP/err"; then
+            echo "cbb update kept a release whose service does not start" >&2
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/err"
+          grep -q '0.6.1 is back' "$RUNNER_TEMP/err"
+          cbb version | grep -q '^cbb 0.6.1 '
+          systemctl is-active -q clipboardbridge.service
+          sudo grep -q '"0.6.2"' /var/lib/clipboardbridge-update/update.json
+          sudo cbb update -auto on
+          systemctl cat clipboardbridge-update.service | grep -qx 'ExecStart=/usr/local/bin/cbb update -timer'
+          sudo cbb update -auto off
+          test ! -e /etc/systemd/system/clipboardbridge-update.timer
+          sudo cbb update -auto on
+          sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
+          test ! -e /etc/systemd/system/clipboardbridge-update.timer
+          test ! -e /var/lib/clipboardbridge-update
       - name: the ESP32's network code joins by the phone on Linux, over a TAP interface
         working-directory: .
         run: |

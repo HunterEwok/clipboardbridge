@@ -39,6 +39,10 @@ bytes = { version = "1", optional = true }
 getrandom = { version = "0.4", features = ["std"] }
 smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"], optional = true }
 
+[dev-dependencies]
+# Signs the releases the update tests check.
+p256 = { version = "0.14", default-features = false, features = ["alloc", "arithmetic", "ecdsa", "pkcs8"] }
+
 # GotaTun's AEAD on RustCrypto instead of ring's C and assembly (ring-shim/src/lib.rs).
 [patch.crates-io]
 ring = { path = "ring-shim" }

@@ -381,13 +381,10 @@ if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away
 		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
 	fi
 fi
-# How this copy came, and automatic updates. The lite member has no cbb
-# update yet.
-if [ "$kind" = full ]; then
-	# shellcheck source=packaging/update.sh
-	. "$here/../update.sh"
-	update_setup /usr/local/bin/cbb "$bin" "$auto"
-fi
+# How this copy came, and automatic updates.
+# shellcheck source=packaging/update.sh
+. "$here/../update.sh"
+update_setup /usr/local/bin/cbb "$bin" "$auto"
 echo "Clipboard Bridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
 if [ "$kind" = lite ]; then
 	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."

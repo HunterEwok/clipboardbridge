@@ -127,13 +127,10 @@ port=$(uci -q get clipboardbridge.main.port || echo 8764)
 mkdir -p /etc/clipboardbridge/state
 chmod 0700 /etc/clipboardbridge/state
 chown clipboardbridge:clipboardbridge /etc/clipboardbridge/state
-# How this copy came, and automatic updates; the lite member has no cbb
-# update yet.
-if ! /usr/bin/cbb version 2>/dev/null | grep -q "lite member"; then
-	# shellcheck source=packaging/update.sh
-	. "$here/../update.sh"
-	update_setup /usr/bin/cbb "$bin" "$auto"
-fi
+# How this copy came, and automatic updates.
+# shellcheck source=packaging/update.sh
+. "$here/../update.sh"
+update_setup /usr/bin/cbb "$bin" "$auto"
 
 # The router is up and has set its clock long ago; the wait for NTP is for
 # the next boot.

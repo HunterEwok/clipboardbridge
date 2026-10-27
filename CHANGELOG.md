@@ -29,6 +29,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   checked. `cbb status` says when a newer release is out and lists each device's version,
   marking the older ones; the tray app offers "Update to X", which runs `cbb update` as the
   administrator.
+- The lite member's `cbb update` on Linux and OpenWrt, as the full member's: the signed
+  files checked with `lite/core`, the download through the system's curl, wget or
+  uclient-fetch, the archive's installer, the rollback, `-check`, `-auto on|off` and
+  `-mirror`; its installer now asks about automatic updates too.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
   layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into

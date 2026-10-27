@@ -154,7 +154,7 @@ The order may change.
     (`cbb relay -open`) with its limits, the choice in `cbb global relay`, the relay in both
     phone apps with the same choice, and the guide. Next: the project's relay on
     `cbb.tools`, and AmneziaWG and VLESS on the relay.**
-29. **Planned for 0.6; the code of steps 1, 3, 4 and most of 5 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
+29. **Planned for 0.6; the code of steps 1, 3, 4, most of 5 and the lite member's part of 7 is built; the keys wait for the owner.** Secure updates: every program updates itself, or is told to,
     from a release signed with the project's own keys (D-69), downloaded from GitHub or the
     `dl.cbb.tools` mirror, never to an older or unsigned version, and automatically where
     the user allows it. See "Secure updates" below.
@@ -885,7 +885,7 @@ token cannot slip in another build or an older one.
   runs `cbb update` through UAC or pkexec, like its other admin actions.
 - **The Mac app:** Sparkle with its EdDSA signature, once the app is signed and notarized
   (waits for the Apple developer account), with the same manifest feeding the appcast.
-- **The lite member on Linux:** `cbb update` the same way, for its own archive.
+- **The lite member on Linux:** `cbb update` the same way, for its own archive (built).
 - **The Nano ESP32:** OTA into the second app partition, checked against the manifest and
   the release key in the firmware, with a fallback to the old partition if the new one does
   not boot. Later, with the firmware's sync (item 15).
@@ -938,8 +938,11 @@ token cannot slip in another build or an older one.
    internet access.
 6. The Android app's own update for the sideloaded APK (`targetSdk` 37), after the owner's
    registration with Google's developer verification.
-7. The lite member; then the Nano ESP32: a new partition table and a bootloader with
-   rollback (one reflash over USB), and OTA from a member.
+7. **Built for Linux and OpenWrt:** the lite member's `cbb update` (`lite/src/update.rs`),
+   checked with `lite/core`'s verifier, downloading with the system's curl, wget or
+   uclient-fetch, installing and rolling back as step 3 does, with the same timers. Then
+   the Nano ESP32: a new partition table and a bootloader with rollback (one reflash over
+   USB), and OTA from a member.
 8. Sparkle in the Mac app, after the Apple account, with its own Ed25519 key and the appcast
    made by `tools/release-sign`.
 9. On the bench: an update from the previous release on every device (L9), a refused
