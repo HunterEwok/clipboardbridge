@@ -20,7 +20,8 @@
 // an order SEED picks (G31); hold stays connected for N seconds with a
 // hello that names SYSTEM (G35). The tunnel's cases are in tunnel.go, the
 // stand-in for a well-known site that VLESS borrows in site.go, the control
-// socket's in control.go, the TVs in tv.go, the mDNS records in mdns.go. It is
+// socket's in control.go, the TVs in tv.go, the mDNS records in mdns.go,
+// the renewals in cert.go. It is
 // never part of a release.
 package main
 
@@ -50,6 +51,7 @@ func main() {
 	hubState := flag.String("hub-state", "", "the tunnel's cases: the state directory whose hub's offer to use instead of -state's")
 	system := flag.String("os", "linux", "the system the forge's hello names")
 	socket := flag.String("socket", "", "the control socket's cases: its path, if not the default")
+	flag.StringVar(&targetState, "target-state", "", "the renewals' cases: the target's state directory, for its key")
 	flag.Parse()
 	if name, ok := strings.CutPrefix(flag.Arg(0), "site:"); ok {
 		// forge -addr :443 site:NAME serves as the well-known site NAME.
@@ -211,6 +213,17 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			}
 			sendAll(rs)
 			fmt.Printf("flood: sent %d records\n", len(rs))
+		case "cert":
+			// cert:KIND[:SIGNER] sends a certificate (cert.go).
+			by := admin
+			if len(parts) == 3 {
+				if by, err = group.Load(parts[2]); err != nil {
+					return err
+				}
+			}
+			if err := sendCert(n, to, parts[1], by); err != nil {
+				return err
+			}
 		case "hold":
 			// hold:N stays connected for N seconds, as the member.
 			secs, err := strconv.Atoi(parts[len(parts)-1])
@@ -278,7 +291,7 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			}
 			send("other-target 1", cmd, b.ID)
 		default:
-			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" {
+			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" && parts[0] != "cert" {
 				return fmt.Errorf("no case %q", c)
 			}
 		}

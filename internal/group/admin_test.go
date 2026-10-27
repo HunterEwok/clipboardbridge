@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	mrand "math/rand/v2"
+	"slices"
 	"testing"
 	"time"
 )
@@ -510,5 +511,60 @@ func TestFreeze(t *testing.T) {
 	// Its records count again, removing the laptop among them.
 	if got := names(s.Devices()); got != "pc1 pc2 phone tv" {
 		t.Errorf("devices after the thaw %q, want pc1 pc2 phone tv", got)
+	}
+}
+
+// TestStaying checks that removing an admin keeps a device it only renewed:
+// the root admitted the laptop and the admin renewed its certificate, which
+// stays valid with the keys Staying returns, and not with only the devices
+// the admin admitted; a certificate the admin issued for a key no record
+// lists stays refused.
+func TestStaying(t *testing.T) {
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	pc1, pc1Key := pg.a, KeyHashOf(pg.a.Cert)
+	m1 := member(t, pc1)
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := NewDeviceID()
+	laptop, err := pg.root.IssueMember(id, &key.PublicKey, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := pc1.IssueMember(id, &key.PublicKey, t0.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger := member(t, pc1)
+	base := []Record{
+		computerAdminRecord(t, pg, m1, "pc1", pc1Key),
+		deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
+	}
+	removed := []KeyHash{pc1Key, KeyHashOf(m1)}
+	for _, c := range []struct {
+		name  string
+		keep  func(*Records) []KeyHash
+		taken bool
+	}{
+		{"admitted", func(s *Records) []KeyHash { return s.Admitted(pc1Key) }, false},
+		{"staying", func(s *Records) []KeyHash { return s.Staying(pc1Key) }, true},
+	} {
+		s := NewRecords(g)
+		for _, r := range base {
+			mustAdd(t, s, r)
+		}
+		keep := slices.DeleteFunc(c.keep(s), func(k KeyHash) bool { return slices.Contains(removed, k) })
+		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, removed, keep))
+		if err := s.Refused([]*x509.Certificate{renewed, pc1.Cert}); (err == nil) != c.taken {
+			t.Errorf("%s: the laptop's renewed certificate refused: %v, want taken %v", c.name, err, c.taken)
+		}
+		if s.Refused([]*x509.Certificate{stranger, pc1.Cert}) == nil {
+			t.Errorf("%s: a certificate of the removed admin for a key no record lists is taken", c.name)
+		}
+		if got := names(s.Devices()); got != "laptop" {
+			t.Errorf("%s: devices %q, want laptop", c.name, got)
+		}
 	}
 }

@@ -367,7 +367,7 @@ func (s *Service) takeOver(target string) (string, error) {
 	s.addRecords("", []group.Record{rr})
 	s.recMu.Lock()
 	roots := s.records.Roots()
-	keep := s.records.Admitted(oldRoot)
+	keep := s.records.Staying(oldRoot)
 	devs := s.records.Devices()
 	s.recMu.Unlock()
 	s.mu.Lock()
@@ -396,7 +396,7 @@ func (s *Service) takeOver(target string) (string, error) {
 			keep = append(keep, *dev.AdminKey)
 		}
 	}
-	revoke.Keep = slices.DeleteFunc(keep, func(k group.KeyHash) bool { return slices.Contains(lostKeys, k) })
+	revoke.Keep = slices.DeleteFunc(keep, func(k group.KeyHash) bool { return slices.Contains(revoke.Keys, k) })
 	name := s.cfg.Name
 	if self != nil {
 		name = self.Name

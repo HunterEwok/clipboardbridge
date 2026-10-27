@@ -808,6 +808,21 @@ func (n *Node) SendAdmin(dev group.DeviceID, adminCA *x509.Certificate) bool {
 	return false
 }
 
+// SendCert sends the connected member dev a member certificate, and the
+// admin CA that issued it, nil for the group CA, as RenewPeers does with
+// one that is due. The member takes it only if it is a valid renewal of
+// its own; the bench sends ones that are not. It reports whether dev is
+// connected.
+func (n *Node) SendCert(dev group.DeviceID, cert, issuer *x509.Certificate) bool {
+	for _, c := range n.helloed() {
+		if c.id == dev {
+			c.enqueue(outgoing{cert: cert, issuer: issuer})
+			return true
+		}
+	}
+	return false
+}
+
 // SendEvidence sends the connected member dev an evidence message, as the
 // steps of a TPM's attestation (docs/protocol.md, section 17, "TPM
 // evidence"). It reports whether dev is connected.
