@@ -424,6 +424,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
+  left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
+  the hub's addresses.
+- A device whose third wrong attempt closes an invitation's window hears so at once; it
+  waited minutes, because the hub dropped its guest tunnel before the answer passed.
+- A second device using an invitation that was used hears that its pairing window is
+  closed, not "tls: internal error".
 - `cbb revoke`, `takeover`, `freeze`, `unfreeze` and `holder` with `-h` print their usage
   instead of asking the service about a device named `-h`.
 - The TV remote's errors name `cbb remote add`, the command that adds a TV, instead of

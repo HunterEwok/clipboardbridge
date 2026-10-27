@@ -83,6 +83,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G35-system", func() { otherSystem(ctx, r, f, timeout) }},
 		{"U11-socket", func() { controlSocket(ctx, r, f) }},
 		{"T17-tv", func() { tvRemote(ctx, r, f, timeout) }},
+		{"G13-invitations", func() { invitations(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
