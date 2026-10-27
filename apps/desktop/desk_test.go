@@ -113,3 +113,57 @@ func TestTranslations(t *testing.T) {
 		t.Errorf("found only %d texts; the patterns miss them", len(keys))
 	}
 }
+
+// The window's arrangement: kept in desktop.json for the group, never
+// overwritten by the window's other settings, pruned once the list is
+// whole, and a change that does not fit says so.
+func TestDeskArrange(t *testing.T) {
+	off := false
+	d := &Desk{tr: map[string]string{}, settingsPath: filepath.Join(t.TempDir(), "desktop.json")}
+	d.settings.Details = &off
+	d.status = &control.Status{Group: "g1"}
+	d.devices = []control.Device{{ID: "me", Self: true}, {ID: "a"}, {ID: "b"}, {ID: "c"}}
+	if st := d.snapshot(); st.Custom || len(st.Arranged) != 3 || st.Arranged[0].Device != "a" {
+		t.Fatalf("default: %+v", st.Arranged)
+	}
+	d.Arrange(ArrangeOp{Op: "new", Name: "Office", Devices: []string{"b", "c"}})
+	st := d.snapshot()
+	if !st.Custom || len(st.Arranged) != 2 || st.Arranged[1].Collection == nil || st.Arranged[1].Collection.Name != "Office" {
+		t.Fatalf("after new: %+v", st.Arranged)
+	}
+	if st.Settings.Arrangement != nil {
+		t.Error("the state hands the stored arrangement to the window")
+	}
+	// The window saves its other settings without the arrangement.
+	if err := d.SaveSettings(Settings{Layout: "list", Details: &off}); err != nil {
+		t.Fatal(err)
+	}
+	var saved Settings
+	data, err := os.ReadFile(d.settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Layout != "list" || saved.Arrangement == nil || saved.Arrangement.Group != "g1" || len(saved.Arrangement.Items) != 2 {
+		t.Fatalf("saved: %s", data)
+	}
+	d.Arrange(ArrangeOp{Op: "rename", Collection: "c1", Name: strings.Repeat("x", 65)})
+	if d.message != "The tiles stay as they were: that change does not fit." {
+		t.Errorf("refused: %q", d.message)
+	}
+	// b leaves the group: the stored arrangement drops it.
+	d.devices = []control.Device{{ID: "me", Self: true}, {ID: "a"}, {ID: "c"}}
+	if !d.pruneLocked() {
+		t.Error("nothing pruned")
+	}
+	if c := d.settings.Arrangement.Items[1].Collection; c == nil || len(c.Devices) != 1 || c.Devices[0] != "c" {
+		t.Errorf("pruned: %+v", d.settings.Arrangement.Items)
+	}
+	// Another group starts afresh.
+	d.status = &control.Status{Group: "g2"}
+	if st := d.snapshot(); st.Custom {
+		t.Error("another group's arrangement shows")
+	}
+}

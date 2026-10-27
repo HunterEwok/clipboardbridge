@@ -26,6 +26,7 @@
         <button data-layout="list" data-t-title="List">☰</button>
         <button data-layout="orbit" data-t-title="Orbit">◎</button>
       </div>
+      <button class="icon" id="arrange" data-t-title="Arrange devices" aria-pressed="false" hidden>⇅</button>
       <button class="icon" id="add" data-t-title="Add a device">＋</button>
       <button class="icon" id="settings" data-t-title="Settings">⚙</button>
     </div>
@@ -52,6 +53,13 @@
         <button value="cancel" class="glass" data-t>Cancel</button>
         <button value="ok" class="accent" id="confirm-ok"></button>
       </menu>
+    </form>
+  </dialog>
+
+  <dialog id="tile-menu">
+    <form method="dialog">
+      <div id="tile-menu-items" class="menu-items"></div>
+      <menu><button value="cancel" class="glass" data-t>Cancel</button></menu>
     </form>
   </dialog>
 

@@ -1,6 +1,276 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Arrange" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упорядочить"
+          }
+        }
+      }
+    },
+    "New collection…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новая коллекция…"
+          }
+        }
+      }
+    },
+    "Move to collection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В коллекцию"
+          }
+        }
+      }
+    },
+    "Take out of collection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать из коллекции"
+          }
+        }
+      }
+    },
+    "Rename collection…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переименовать коллекцию…"
+          }
+        }
+      }
+    },
+    "Ungroup" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разгруппировать"
+          }
+        }
+      }
+    },
+    "Move to start" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В начало"
+          }
+        }
+      }
+    },
+    "Move to end" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В конец"
+          }
+        }
+      }
+    },
+    "Move earlier" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переместить раньше"
+          }
+        }
+      }
+    },
+    "Move later" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переместить позже"
+          }
+        }
+      }
+    },
+    "Drag devices here" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перетащите сюда устройства"
+          }
+        }
+      }
+    },
+    "collection, %lld of %lld online, needs attention" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "коллекция, %lld из %lld в сети, требует внимания"
+          }
+        }
+      }
+    },
+    "collection, %lld of %lld online" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "коллекция, %lld из %lld в сети"
+          }
+        }
+      }
+    },
+    "Drag devices here, or add them with Move to collection in a device's menu." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перетащите сюда устройства или добавьте их пунктом «В коллекцию» в меню устройства."
+          }
+        }
+      }
+    },
+    "Drag to arrange. Drop a device on a collection to put it in." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перетаскивайте плитки, чтобы расставить их. Бросьте устройство на коллекцию, чтобы положить его туда."
+          }
+        }
+      }
+    },
+    "Collection name" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Название коллекции"
+          }
+        }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранить"
+          }
+        }
+      }
+    },
+    "Rename collection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переименовать коллекцию"
+          }
+        }
+      }
+    },
+    "New collection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новая коллекция"
+          }
+        }
+      }
+    },
+    "The tiles stay as they were: that change does not fit." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Плитки остались как были: такое изменение не подходит."
+          }
+        }
+      }
+    },
+    "No devices match." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подходящих устройств нет."
+          }
+        }
+      }
+    },
+    "Done arranging" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закончить расстановку"
+          }
+        }
+      }
+    },
+    "Arrange devices" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упорядочить устройства"
+          }
+        }
+      }
+    },
+    "Back to the group's order" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вернуть порядок группы"
+          }
+        }
+      }
+    },
+    "Search devices" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск устройств"
+          }
+        }
+      }
+    },
+    "Online" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В сети"
+          }
+        }
+      }
+    },
+    "Needs attention" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Требует внимания"
+          }
+        }
+      }
+    },
     "Apple Watch" : {
       "localizations" : {
         "ru" : {

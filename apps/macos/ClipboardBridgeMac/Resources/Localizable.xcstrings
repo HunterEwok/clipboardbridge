@@ -1310,6 +1310,296 @@
           }
         }
       }
+    },
+    "Arrange": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Упорядочить"
+          }
+        }
+      }
+    },
+    "Arrange devices": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Упорядочить устройства"
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
+          }
+        }
+      }
+    },
+    "Back to the group's order": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вернуть порядок группы"
+          }
+        }
+      }
+    },
+    "Collection name": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Название коллекции"
+          }
+        }
+      }
+    },
+    "Done arranging": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закончить расстановку"
+          }
+        }
+      }
+    },
+    "Drag devices here": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перетащите сюда устройства"
+          }
+        }
+      }
+    },
+    "Drag devices here, or add them with Move to collection in a device's menu.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перетащите сюда устройства или добавьте их пунктом «В коллекцию» в меню устройства."
+          }
+        }
+      }
+    },
+    "Drag to arrange. Drop a device on a collection to put it in. Option and the arrow keys move the focused tile.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перетаскивайте плитки, чтобы расставить их. Бросьте устройство на коллекцию, чтобы положить его туда. Option и стрелки двигают плитку в фокусе."
+          }
+        }
+      }
+    },
+    "Menu": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Меню"
+          }
+        }
+      }
+    },
+    "Move earlier": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переместить раньше"
+          }
+        }
+      }
+    },
+    "Move later": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переместить позже"
+          }
+        }
+      }
+    },
+    "Move to collection": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В коллекцию"
+          }
+        }
+      }
+    },
+    "Move to end": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В конец"
+          }
+        }
+      }
+    },
+    "Move to start": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В начало"
+          }
+        }
+      }
+    },
+    "Needs attention": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требует внимания"
+          }
+        }
+      }
+    },
+    "New collection": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая коллекция"
+          }
+        }
+      }
+    },
+    "New collection…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая коллекция…"
+          }
+        }
+      }
+    },
+    "No devices match.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подходящих устройств нет."
+          }
+        }
+      }
+    },
+    "Online": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В сети"
+          }
+        }
+      }
+    },
+    "Rename collection": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать коллекцию"
+          }
+        }
+      }
+    },
+    "Rename collection…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать коллекцию…"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить"
+          }
+        }
+      }
+    },
+    "Search devices": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск устройств"
+          }
+        }
+      }
+    },
+    "Take out of collection": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убрать из коллекции"
+          }
+        }
+      }
+    },
+    "The tiles stay as they were: that change does not fit.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Плитки остались как были: такое изменение не подходит."
+          }
+        }
+      }
+    },
+    "Ungroup": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разгруппировать"
+          }
+        }
+      }
+    },
+    "collection, %lld of %lld online": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "коллекция, %1$lld из %2$lld в сети"
+          }
+        }
+      }
+    },
+    "collection, %lld of %lld online, needs attention": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "коллекция, %1$lld из %2$lld в сети, требует внимания"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

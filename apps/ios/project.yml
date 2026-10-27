@@ -56,6 +56,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSBonjourServices: [_clipboardbridge._tcp]
+        # A dragged device tile (Views/Arrange.swift), which stays in the app.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.hunterewok.clipboardbridge.tile
+            UTTypeConformsTo: [public.data]
         NSLocalNetworkUsageDescription: Clipboard Bridge finds your computers on the home network and keeps their clipboard in sync with this phone.
         NSCameraUsageDescription: Clipboard Bridge scans the QR code a computer shows, to add it to your group.
         NSFaceIDUsageDescription: Clipboard Bridge asks for Face ID before it signs with your group's key, to add or remove a device.

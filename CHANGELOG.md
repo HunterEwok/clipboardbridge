@@ -12,6 +12,25 @@ All notable changes to clipboardbridge are documented in this file. The format f
   that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the
   Swift kit, checked against shared vectors in `testdata/arrangement`. It is kept on each
   installation and never sent to the group.
+- The iPhone and iPad app arranges the devices: Arrange devices in the "…" menu or
+  Arrange on a long press, then drag the tiles, drop a device on a collection to put it
+  in, or use the same changes in each tile's menu and VoiceOver's actions. A collection
+  is a tile with its devices' icons and how many are online, a section in the list, and
+  a page of its own. With more than 12 devices Home has a search and the filters Online
+  and Needs attention.
+- The Android app arranges the devices the same way: Arrange devices in the ⇅ menu or
+  Arrange on a long press; in Arrange mode a long press drags a tile to where it is
+  dropped, each tile has a ⋮ menu with every change, and TalkBack has the moves as
+  actions.
+- The tray app arranges the devices too: the ⇅ button turns Arrange mode on, where the
+  tiles and rows are dragged, a right click or a tile's ⋮ button opens its menu, and Alt
+  with the arrow keys moves the focused tile. A collection opens its own page; the
+  arrangement is kept in `desktop.json`.
+- The Mac app arranges the devices as well, with the Swift kit's model: Arrange devices
+  in the toolbar, drag and drop, the same changes in each tile's right-click menu and
+  VoiceOver's actions, and Option with the arrow keys for the focused tile.
+- The Apple Watch and the Wear OS watch list their phone's devices in its order: those
+  in no collection, then a section for each collection.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,
