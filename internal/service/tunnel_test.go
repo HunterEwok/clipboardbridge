@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	mrand "math/rand/v2"
@@ -321,7 +322,8 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := forward.Config{Listen: "127.0.0.1:0", Cert: cert, Logf: t.Logf}
+	state := filepath.Join(t.TempDir(), "state.json")
+	cfg := forward.Config{Listen: "127.0.0.1:0", Cert: cert, Logf: t.Logf, StateFile: state}
 	if overVLESS {
 		cfg.VLESS = &forward.VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t)}
 		rand.Read(cfg.VLESS.Key[:])
@@ -360,6 +362,16 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 	waitFor(t, "the hub registers with the forwarder", func() bool {
 		a := pi.status(t).Away
 		return a != nil && a.Forwarder != nil && a.Forwarder.Registered && a.Forwarder.Seen != ""
+	})
+	// The pi, the group's root, registered with the hubs' credential it
+	// signed, which the deck keeps too.
+	var kept map[string]json.RawMessage
+	if b, err := os.ReadFile(state); err != nil || json.Unmarshal(b, &kept) != nil || len(kept) != 1 {
+		t.Errorf("the forwarder's state after a registration with a credential: %v, %d entries", err, len(kept))
+	}
+	waitFor(t, "the deck keeps the credential", func() bool {
+		_, err := os.Stat(filepath.Join(deck.dir, group.CredentialsFileName))
+		return err == nil
 	})
 	piID := pi.status(t).Device
 	waitFor(t, "the deck keeps the hub's offer", func() bool {

@@ -289,7 +289,7 @@ Message object:
 
 | Field | Type | In | Meaning |
 |-------|------|----|---------|
-| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17), `get` or `missing` ("Content", below) |
+| `t` | string | all | `hello`, `event`, `ping`, `bye`, `cert`, `records`, `admin`, `phone_ca`, `tunnel` or `hubs` (section 11), `command` or `result` (section 15), `evidence` (section 17), `credentials` (section 18), `get` or `missing` ("Content", below) |
 | `role` | string | hello | `full` (a computer with the service: Linux, Windows or macOS), `phone` (a phone app) or `lite` (a lite member) |
 | `hello` | object | hello | Hello (below) |
 | `event` | object | event | Event (below) |
@@ -300,6 +300,7 @@ Message object:
 | `phone_ca` | string | phone_ca | from the root or an admin of a group a computer created: the group's iPhone CA, DER in base64 (section 10, "Admins") |
 | `phone_ca_key` | string | phone_ca | with `phone_ca`: its key, PKCS #8 DER in base64 |
 | `evidence` | object | evidence | an attestation of one of the sender's keys (section 17, "Evidence") |
+| `credentials` | array | credentials | the group's server credentials the sender keeps (section 18) |
 | `get` | object | get, missing | a range of a part of images or files: Get ("Content", below) |
 
 ```json
@@ -314,7 +315,8 @@ Message object:
 
 1. After the TLS handshake each side sends its hello first, without waiting for the other's.
 2. Then events follow, in any number, interleaved with pings, records messages, `admin`,
-   `phone_ca`, `tunnel`, `hubs`, `command` and `result` messages and at most one `cert`.
+   `phone_ca`, `tunnel`, `hubs`, `credentials` (section 18), `command` and `result` messages
+   and at most one `cert`.
 3. A side that has written nothing for 5 s sends `ping`. Every frame written resets that
    timer.
 4. A side that stops (service stop, Rejoin) sends what is queued and then `bye`, within one
@@ -1706,32 +1708,49 @@ not built.
 
 ### What the forwarder learns
 
-Accepted by design ([design.md](design.md), "The forwarder"): the group tag and root
-certificates, the hub's member certificate (device ID, validity, admin CA) and WireGuard
-public key, the group's obfuscation settings and VLESS user ID when set, the addresses of
-the hub and its clients, the group's authority records (which name the root's and the
-admins' devices, with their names and systems, and the removals), and the timing and sizes of
-their packets. It never sees a member key, a text, the other devices' records or names, or
-which client address is which device. On disk it keeps only each
-group's roots, removals and freezes.
+Accepted by design ([design.md](design.md), "The forwarder"): the group tag and group CA,
+the hub's WireGuard public key, the group's obfuscation settings and VLESS user ID when set,
+the addresses of the hub and its clients, and the timing and sizes of their packets. A hub
+that registers with a credential (section 18) shows besides a certificate of its member key
+that names no device, and the group's hubs' credentials: key hashes, padded, versions, an
+expiry, and after a handover the new roots. A hub that registers with records shows instead
+its member certificate (device ID, validity, admin CA), the group's root certificates and
+its authority records, which name the root's and the admins' devices, with their names and
+systems, and the removals. It never sees a member key, a text, the other devices' records or
+names, or which client address is which device. On disk it keeps only a keyed hash of each
+group's tag with the version of its newest credential and a hash of its root ("What it
+keeps").
 
 ### Registration
 
 1. The hub connects over TCP and runs TLS 1.3 with ALPN `clipboardbridge-forward/1` and no
-   server name. It accepts only the pinned key. It presents its member certificate, its
-   admin CA if it has one, and the group's roots (the group CA, then any `root` records'
-   CAs).
-2. The forwarder checks that the leaf names a device (section 1) and verifies it, for client
-   authentication, to a self-signed CA among the presented certificates. That root's tag
-   names the group (section 1). It knows no group beforehand: any group may register, but
-   only its root or an admin can (step 3).
+   server name. It accepts only the pinned key. A hub whose group's hubs' credential lists
+   its member key (section 18) presents a certificate of that key, self-signed, with the
+   subject `clipboardbridge hub`, no names, key usage digitalSignature and client use, then
+   the group CA. Any other hub presents its member certificate, its admin CA if it has one,
+   and the group's roots (the group CA, then any `root` records' CAs).
+2. The forwarder takes the hub's certificate as a member certificate when it names a device
+   (section 1), and verifies it, for client authentication, to a self-signed CA among the
+   presented certificates. Otherwise the second certificate must be a self-signed CA, the
+   group CA, and the hub must register with a credential. Either way that CA's tag names the
+   group (section 1). It knows no group beforehand: any group may register, but only its
+   hubs, its root or an admin can (step 3).
 3. The forwarder sends `{"e": bytes}`, a fresh X25519 public key. The hub answers
-   `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string, "admin": bytes,
-   "admin_sig": bytes, "records": [record]}`, at most 1 MiB with at most 1024 records:
+   `{"key": bytes, "proof": bytes, "obfuscation": object, "vless": string, "credentials":
+   [credential], "admin": bytes, "admin_sig": bytes, "records": [record]}`, at most 1 MiB
+   with at most 1024 records and 17 credentials:
    - `key` is its WireGuard public key, and `proof` is HMAC-SHA256 under X25519(the hub's
      WireGuard private key, `e`) of 32 bytes exported from the TLS session with the label
      `clipboardbridge forwarder key` and no context. So the hub proves it holds the key, on
      this connection only.
+   - A hub with a credential sends `credentials`, the chain from the group CA to the current
+     root (section 18, "The chain"), and neither `admin`, `admin_sig` nor `records`. The
+     forwarder checks the chain, that its last credential has not expired, that it lists the
+     key of the hub's certificate among the hubs, and that it is no older than what the
+     forwarder keeps for the group ("What it keeps"). It then keeps the last credential's
+     version and root for the group.
+   - Any other hub sends `admin`, `admin_sig` and `records`, and the forwarder refuses it
+     for a group that registered with a credential before.
    - `admin_sig` is an ECDSA signature (ASN.1) of SHA-256 over 32 bytes exported with the label
      `clipboardbridge forwarder admin` followed by `key`. The key of the group's root or of
      the hub's admin CA signs it. `admin` is that admin CA (DER), left out for a root. The
@@ -1752,20 +1771,20 @@ group's roots, removals and freezes.
      sent.
      The forwarder adds them to those it keeps for the group and refuses a hub whose signer
      or member certificate the records revoke or freeze. It keeps the merged authority
-     records after the registration ends, so a removed or demoted admin that registers later,
-     while the group's own hub is away, cannot leave its revocation out. Those that are no
-     `device` records (roots, removals, freezes, thaws, never a device's name) it also writes
-     to its state directory (`cbb forward -records`, one file per group tag), so a removal
-     outlives a restart; a demotion without removal lasts until a restart. Past 100,000
-     groups it forgets the one that registered least recently. The group CA for these records is the first
-     self-signed certificate the hub presented.
+     records in memory after the registration ends, so a removed or demoted admin that
+     registers later, while the group's own hub is away, cannot leave its revocation out,
+     until the forwarder restarts; it writes none of them to disk. Past 100,000 groups it
+     forgets the one that registered least recently. The group CA for these records is the
+     first self-signed certificate the hub presented.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
      a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS
      user ID as `vless` (section 11, "VLESS").
 4. The forwarder answers `{"id": number, "mask": bytes}`, a random 64-bit registration ID
    and the 32-byte key of the hellos' mask, the same for every hub, or `{"error": string}`
-   and closes: the proof is wrong, no root or admin signed the registration, the records
-   remove or freeze the hub, the obfuscation settings are outside their bounds,
+   and closes: the proof is wrong, the credentials do not verify, have expired, do not list
+   the hub or are older than the forwarder saw, no root or admin signed the registration,
+   the records remove or freeze the hub, the group registers with a credential and the hub
+   came with records, the obfuscation settings are outside their bounds,
    another group registered that key or that VLESS user ID, the forwarder has no VLESS
    and the hub asked for it, or the forwarder is full. To a hub that asked for VLESS the
    answer adds `"vless": {"port": number, "public_key": bytes, "short_id": string,
@@ -1775,7 +1794,8 @@ group's roots, removals and freezes.
 5. The registration lasts while the connection does; the hub sends nothing more on it. The
    forwarder sends `{"seen": "ip:port"}` whenever it learns a new address of the hub's
    WireGuard port. The hub registers again whenever the connection breaks, with a backoff of
-   1 s doubling to 60 s.
+   1 s doubling to 60 s, and at once when the group's hubs' credential changes, so that the
+   forwarder learns the new version.
 
 ### Hellos
 
@@ -1853,7 +1873,18 @@ whole budget, so one still passes now and then on a forwarder with more groups t
 
 ### What it keeps
 
-Only its own key file. Groups, addresses and sessions live in memory while the connections
+Its own key file, and a state file (`cbb forward -state`, `forward-state.json` next to the
+key by default, `none` for memory only): for each group that registered with a credential,
+under HMAC-SHA256 of the group tag, the version of the group's newest hubs' credential and
+HMAC-SHA256 of the tag and the SHA-256 of its root's SubjectPublicKeyInfo, with a counter for
+the bound of 100,000 groups. The HMAC key is HMAC-SHA256 under the forwarder's private key
+(PKCS #8) of `clipboardbridge forwarder state`, so the file names no group by itself. A
+registration with a credential is refused when its last version is below the one kept, or
+when no credential in its chain comes from the root kept with a version no lower than the
+one kept: so after a handover the old root's credentials and another heir's link count for
+nothing. At start it deletes the files earlier versions kept, one per group with its roots
+and removals (`-records`, `groups` next to the key by default). Groups, addresses, sessions
+and the records of the hubs that register with them live in memory while the connections
 last, and the forwarder logs none of them. With `CBB_DEBUG=1` it logs counts each minute.
 
 ## 14. The blind relay
@@ -2284,3 +2315,77 @@ serial number the last one revoked until its maintainer looks.
   yet) checks chains without it. The strict key level (roadmap, item 31) will prove nothing
   without one.
 
+
+## 18. Server credentials
+
+What a forwarder checks in place of the group's records, so that no device ID, name, system
+or date leaves the group ([design.md](design.md), D-67 and D-75). Implemented in Go
+(`internal/group/credential.go`, `internal/forward`, `internal/service/credentials.go`). Go
+members keep and pass on the credentials and a computer that is the group's root signs them;
+the phone kits do not keep them yet, so a phone's group has none and its hubs register with
+records (section 13). The vectors in `testdata/interop/go-credentials.json` (Go's
+`TestGoCredentialVectors`) give a group's records, the lists its hubs' credential must hold,
+a chain across a handover and chains a server refuses. The members' credential for a relay
+comes later.
+
+### The envelope
+
+A credential is `{"body": bytes, "sig": bytes, "key": bytes}`: the body, JSON, signed as
+these exact bytes; an ECDSA P-256 signature with SHA-256 over them, DER; and the signer's
+public key as a SubjectPublicKeyInfo, DER. Its ID is SHA-256 over `body`. Every body has
+`v` (1), `type` and `group` (the group tag), and nothing that names a device or a time of
+signing. Bodies are at most 16 KiB.
+
+| `type` | Fields | Signed by |
+|--------|--------|-----------|
+| `hubs` | `version` (a positive integer), `expires_ms`, `hubs`, `admins`, `heirs` (arrays of 32-byte key hashes) | a root of the group, its own key: `key` is that root's SubjectPublicKeyInfo |
+| `link` | `root`: the new root CA, DER, a self-signed CA with path length 1 and a P-256 key (section 10, rule 7) | an heir of the root it leaves: SHA-256 of `key` is among the `heirs` of that root's hubs' credential |
+
+### The hubs' credential
+
+The current root signs it from its records alone:
+
+- `hubs`: SHA-256 of the member key (the `key` of the device's record) of each device that
+  may be the hub, in the order of section 11, "Several hubs", at most 16.
+- `admins`: the admin CAs (`admin` of a device record) of the admins that are neither
+  removed nor frozen, the root's own device left out.
+- `heirs`: of those, the admin CAs that may hand the group to a new root (section 10, rule
+  2): an admin phone's, and in a group whose root is a computer, an admin computer's.
+- Each list is padded with random 32-byte strings to 4, 8, 16, 32 or 64 entries, the
+  smallest that holds it, so a server learns the number of devices only roughly.
+- `version` is one above the highest version of any hubs' credential the root keeps, or
+  the time in Unix seconds when that is more. `expires_ms` is 90 days after signing.
+
+The root signs a new one when it has none, when less than 60 days of it remain, or when the
+records call for other lists: a hub, an admin or an heir added or removed, a freeze, or
+another order. A list matches when its real entries come first in the records' order (the
+hubs) or in any order (the others), its length is the padded length, and no other entry is a
+key the records name (a device's key, an admin CA, a root, a revoked key). Go checks this
+when the group starts, every 12 hours, and after every new record; a phone's root will ask
+for Face ID for it.
+
+### Keeping and passing them on
+
+A member keeps, in `credentials.json` next to its identity, for each root on the group's
+path (section 10, rule 7) the newest hubs' credential that root signed, and the link to each
+root after the group CA. It takes a hubs' credential only when a root on the path signed it
+and its version is above the one it keeps for that root, and a link only when the next root
+on the path is its `root` and an heir of the credential it keeps for the root before signed
+it. After the hello, a member that keeps any sends `{"t":"credentials","credentials":
+[credential, ...]}` with all of them, at most 34; a receiver keeps the new valid ones,
+passes them on to its other peers the same way, and logs and drops the others.
+
+An admin that takes the group over signs the link to its new root with its admin CA's key
+as soon as the `root` record is in, and, as the root, its own hubs' credential right after
+(Go's `cbb takeover`).
+
+### The chain
+
+A hub presents its forwarder the chain from the group CA to the current root: the group
+CA's hubs' credential, then for each later root the link to it and that root's hubs'
+credential; at most 17 credentials, ending with a hubs' credential. A server checks it in
+order: each hubs' credential must be signed by the root reached so far, of the group, and
+have a version above the one before it; each link must be signed by an heir of the
+credential before it, and lead to a root not reached before. A hub uses the chain only when
+its last credential has not expired and lists the hub's member key; otherwise it registers
+with records.

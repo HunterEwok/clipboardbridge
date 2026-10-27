@@ -4,10 +4,14 @@
 package group
 
 import (
+	"crypto"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 )
 
@@ -178,4 +182,42 @@ func (id *Identity) groupPool() *x509.CertPool {
 func (id *Identity) verifyClock(opt TLSOptions) func() time.Time {
 	ca := id.Root()
 	return func() time.Time { return verifyTime(ca, opt.now()) }
+}
+
+// HubCertificateName is the subject of the certificate a hub registers
+// with on its forwarder when it has a credential: it names no device.
+const HubCertificateName = "clipboardbridge hub"
+
+// HubCertificate returns the certificate a hub registers with on its
+// forwarder when it has a credential (docs/protocol.md, section 18): a
+// certificate of its member key, signed by that key, that names no device,
+// then the group CA, which names the group.
+func (id *Identity) HubCertificate() (tls.Certificate, error) {
+	return HubCertificate(id.Key, id.GroupCA.Cert)
+}
+
+// HubCertificate returns a hub's certificate for key in the group of
+// groupCA, as Identity.HubCertificate.
+func HubCertificate(key crypto.Signer, groupCA *x509.Certificate) (tls.Certificate, error) {
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: HubCertificateName},
+		NotBefore:    time.Unix(0, 0).UTC(),
+		NotAfter:     time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der, groupCA.Raw}, PrivateKey: key, Leaf: leaf}, nil
 }

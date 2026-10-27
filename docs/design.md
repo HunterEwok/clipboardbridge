@@ -950,14 +950,20 @@ user can run `cbb forward` on a server of their own.
   WireGuard does. A packet is passed only to its own group's hub; there is no shared path
   between groups.
 - **Registration.** The hub keeps one connection out to the forwarder and registers its
-  WireGuard public key by proving its membership (its member key with the chain to the group
-  CA) and that it is the root or an admin (a signature by the root's or its admin CA's key).
-  It also sends the group's authority records, so the forwarder refuses an admin or device that
-  the group removed or froze. A member that is no admin, or a removed one, cannot take the hub's
-  place. The forwarder knows a group only by its tag, the hash of the CA certificate. Its
-  state is the open connections and, while a group is registered, its records; on disk it
-  keeps only each group's roots, removals and freezes (D-39). Planned for 0.6: in their place
-  only a hash of the tag and the version of the group's newest credential (D-75).
+  WireGuard public key with the group's hubs' credential (D-67, [protocol.md](protocol.md),
+  section 18): the member key hashes of the group's hubs, its admins and its heirs, with a
+  version and an expiry, signed by the root, and after a handover the links from each root to
+  the next. Its TLS shows a certificate of its member key that names no device, and the group
+  CA. The forwarder takes a hub the newest credential lists, so a member that is no hub, or
+  one the group removed, cannot take the hub's place. Its state is the open connections and,
+  on disk, under a keyed hash of each group's tag, the version of the group's newest
+  credential and a hash of its root (D-75), so an older credential, or one from a root that a
+  handover left behind, is refused even after a restart. The files of earlier versions, one
+  per group with its roots and removals, are deleted. Built in Go for groups whose root is a
+  computer; a phone's root signs no credential yet, and its hubs, like hubs from before the
+  credentials, still register with their member certificate, a signature by the root or an
+  admin CA, and the group's authority records, which the forwarder keeps in memory only. A
+  group that registered with a credential is never taken with records again.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
   memory. A group that reaches a limit is slowed down alone. Limits per source: registrations
   per address and per network (/24, /64), and a share of the budget for checking handshakes
@@ -967,15 +973,17 @@ user can run `cbb forward` on a server of their own.
   the network and can at most stop forwarding.
 - It learns the group tag, the hub's WireGuard public key, the addresses of the hub and its
   clients, and the timing and sizes of packets: any forwarder has to know which hub a client's
-  packets go to. From the registration it also learns the hub's member certificate (its
-  device ID, its validity and its admin CA if it has one), the group's root certificates,
-  the group's obfuscation settings and, with VLESS, the group's VLESS user ID; and from the
+  packets go to. From a registration with a credential it also learns the group CA, the
+  credential's key hashes, padded, its version and expiry, and after a handover the new roots
+  (D-67); from one with records, the hub's member certificate (its device ID, its validity and
+  its admin CA if it has one), the group's root certificates and authority records. It also
+  learns the group's obfuscation settings and, with VLESS, the group's VLESS user ID; and from the
   number of clients that send packets, roughly how many devices are away from home. It does
   not learn the texts, the devices' names, or which client address is which device. This
   metadata is accepted by design (owner decision, 2026-10-24): it reveals that a group
   exists and how busy it is, never what it syncs, and hiding it would need certificate-less
-  registration or a chain of relays. It writes nothing to disk, logs included; what it knows lives in memory while the
-  connections last. The clients' addresses cannot be hidden from it, since they are where its
+  registration or a chain of relays. It logs none of it; what it knows lives in memory while the
+  connections last, but for the credentials' versions above. The clients' addresses cannot be hidden from it, since they are where its
   answers go; a chain of relays in the manner of Tor would hide them at a cost in speed and
   complexity that the project does not take on.
 - **Optional, off by default:** the hub can change its WireGuard key on a schedule, for
@@ -1798,7 +1806,7 @@ which case of the test bench ([testbench.md](testbench.md)) answers it.
 | D-36 | A computer can be an admin of a phone group, with an admin key in a file that the root phone certifies on request, never by default: admitting from a terminal is worth a key outside a Secure Enclave only to a user who asks for it. |
 | D-37 | Windows runs the service as a Windows service plus a clipboard agent in each session, as on the Mac, since a service cannot reach a session's clipboard; the control socket stays an AF_UNIX socket, guarded by the access list of its directory, so the protocol and the client code are the same everywhere. |
 | D-38 | Away from home: a star of WireGuard tunnels to a hub, a member at home, with WireGuard in user space inside `cbb` and the apps and the member TLS inside; no third-party services; a feature that cannot keep the data fully protected is not built. |
-| D-39 | (On-disk part refined by D-75.) Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart; if that fails, by a port the group computes from its secret and the hour, never by a fixed port or a request naming the group), with limits per group. On disk it keeps only each group's roots, removals and freezes (so a removed device cannot register as its hub again), never a device's name. The hub registers with its member certificate; changing the hub's WireGuard key on a schedule and cover traffic are options, off by default. |
+| D-39 | (On-disk part replaced by D-75, built in 0.6: the hubs register with a credential, D-67.) Homes behind carrier-grade NAT use a forwarder run by the project that holds no keys and routes each packet to its own group's hub only (by WireGuard's `mac1`, so nothing on the wire tells groups apart; if that fails, by a port the group computes from its secret and the hour, never by a fixed port or a request naming the group), with limits per group. On disk it keeps only each group's roots, removals and freezes (so a removed device cannot register as its hub again), never a device's name. The hub registers with its member certificate; changing the hub's WireGuard key on a schedule and cover traffic are options, off by default. |
 | D-40 | Blocked networks: AmneziaWG first, then WireGuard inside VLESS with REALITY to the forwarder, so that traffic always stays inside the group's tunnel. |
 | D-41 | (Push refined by D-74.) Phones keep the tunnel inside the app, without a system VPN or push notifications, so the VPN slot stays free and no one else's server is involved. |
 | D-42 | The ESP32 stays on the home network until a mature WireGuard exists for it. |

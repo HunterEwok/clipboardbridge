@@ -354,6 +354,7 @@ func (s *Service) takeOver(target string) (string, error) {
 		return "", err
 	}
 	oldRoot, oldPhoneCA := group.KeyHashOf(id.Root()), group.KeyHashOf(id.PhoneCA.Cert)
+	admin, _ := id.Signer()
 	rr, err := s.signRecord(id, group.RecordBody{Type: group.RecordRoot, Root: newRoot.Cert.Raw})
 	if err != nil {
 		return "", err
@@ -376,6 +377,9 @@ func (s *Service) takeOver(target string) (string, error) {
 		return "", err
 	}
 	nd.SendRecords([]group.Record{rr})
+	// The link hands the forwarder's view of the group to the new root,
+	// whose own credential follows with the records below.
+	s.linkCredential(admin, newRoot.Cert)
 
 	revoke := group.RecordBody{Type: group.RecordRevoke, Keys: append(append([]group.KeyHash{oldRoot}, lostKeys...), oldPhoneCA)}
 	var self *group.Device

@@ -33,6 +33,8 @@ import (
 // a result message. A hub sends a hubs message to another device that may
 // be a hub, with its offer and its clients' keys. A device whose keys an
 // attestation proves sends an evidence message with it after the hello.
+// A member that keeps the group's server credentials sends them in a
+// credentials message after the hello, and passes new ones on.
 const (
 	typeHello   = "hello"
 	typeEvent   = "event"
@@ -47,6 +49,7 @@ const (
 	typeResult  = "result"
 	typeHubs    = "hubs"
 	typeEvid    = "evidence"
+	typeCreds   = "credentials"
 	typeGet     = "get"
 	typeMissing = "missing"
 	typeChunk   = "chunk" // a binary frame, never JSON
@@ -93,6 +96,9 @@ type message struct {
 	Issuer []byte `json:"issuer,omitempty"`
 
 	Records []group.Record `json:"records,omitempty"` // in a records message
+	// Credentials, in a credentials message, are the group's server
+	// credentials (docs/protocol.md, section 18).
+	Credentials []group.Credential `json:"credentials,omitempty"`
 	// AdminCA, in an admin message from the group's root, is the
 	// receiver's admin CA for the admin key its hello offered, DER.
 	AdminCA []byte `json:"admin_ca,omitempty"`

@@ -201,8 +201,9 @@ type Service struct {
 	tpmMu      sync.Mutex
 	tpmAtt     *tpmAttestation
 	tpmPending map[group.DeviceID]tpmPending
-	recMu      sync.Mutex     // guards records; taken after mu, never before
-	records    *group.Records // the group's device records; nil while in no group
+	recMu      sync.Mutex         // guards records; taken after mu, never before
+	records    *group.Records     // the group's device records; nil while in no group
+	creds      *group.Credentials // the group's server credentials, under recMu as records
 
 	// Images and files (media.go): the cache, which is nil until the
 	// service runs; mediaMu guards the rest, taken after mu, never before.
@@ -410,6 +411,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	eng := clip.New(clip.Config{Self: string(id.ID), Clock: s.clock, Mode: mode})
 	s.recMu.Lock()
 	s.records = s.loadRecords(id)
+	s.creds = s.loadCredentials(id, s.records)
 	s.recMu.Unlock()
 	tun := s.loadTunnel(id)
 	s.tunMu.Lock()
@@ -421,7 +423,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
 		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
-		Records: recordStore{s}, Allow: s.allow,
+		Records: recordStore{s}, Credentials: credentialStore{s}, Allow: s.allow,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
 		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived, Evidence: s.ownEvidence(id),
 	})
