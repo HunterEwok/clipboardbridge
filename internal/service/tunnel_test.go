@@ -344,12 +344,15 @@ func TestHubKeyRotation(t *testing.T) {
 		return st.Next.IsZero() && st.ServingKey().Public() == next
 	})
 	deck = restartService(t, &h, deck)
-	// The old key gets no answer for the handshake timeout first.
+	// The old key gets no answer for the handshake timeout first. The pi
+	// saves its state before its tunnel restarts with the new key, so the
+	// deck may still reach the old tunnel for a moment, lose it, and only
+	// then time out on the old key: both waits allow for that.
 	waitUpTo(t, 60*time.Second, "the deck reaches the hub with the new key", func() bool {
 		st := deck.status(t)
 		return st.Away != nil && st.Away.Through && len(st.Peers) == 1 && st.Peers[0].ID == piID
 	})
-	waitFor(t, "the deck keeps the new key", func() bool {
+	waitUpTo(t, 60*time.Second, "the deck keeps the new key", func() bool {
 		l := load(deck).Hub(piID)
 		return l != nil && l.PublicKey == next && l.Next.IsZero()
 	})
