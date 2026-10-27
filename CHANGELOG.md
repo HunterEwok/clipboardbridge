@@ -17,6 +17,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's `faults` suite: a bad network at the hub, a blocked member port, a hung and a
   stopped service, a damaged `identity.json`, each taken back by a timer on the device;
   every error it expects is checked with `CBB_DEBUG=0` and `1`.
+- The bench's `fleet` suite: full members in containers on the controller, thrown away after
+  each run, for the cases that need many devices or would harm the real ones: the pairing
+  window, admins and their limits, freezing, removal, a takeover, two groups side by side,
+  network splits, the modes, junk on the member port, restarts and up to 32 members.
 - The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
@@ -280,6 +284,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- After `cbb takeover` the new root could not admit a computer: the joiner refused the
+  member certificate it still had from its admin CA. The new root now issues its own
+  certificate from the new root at once. A pairing that fails a certificate check shows
+  the check's own words only with `CBB_DEBUG=1`.
+- `cbb revoke` names the device it refuses to remove, and `cbb pair -code` asks for the
+  code only on a terminal.
 - With the service stopped, `cbb` said "not running" followed by the system's error
   (`dial unix …: connect: no such file or directory`) in a release build. It now says how
   to start the service, and shows the system's error under it only with `CBB_DEBUG=1`.

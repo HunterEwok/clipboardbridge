@@ -21,9 +21,9 @@ var automated = map[string][]string{
 	"Y1": {"full"}, "Y2": {"full"}, "Y3": {"full"}, "Y4": {"full"}, "Y5": {"full"},
 	"Y10": {"full"}, "Y11": {"full"}, "Y30": {"full"},
 	// Groups and pairing.
-	"G1": {"full"}, "G3": {"smoke", "full"}, "G12": {"away"}, "G23": {"smoke", "full"},
+	"G1": {"full"}, "G3": {"smoke", "full"}, "G12": {"away"}, "G23": {"smoke", "full", "fleet"},
 	// Modes, installs, the command line.
-	"M1": {"full"}, "M5": {"full"}, "I16": {"full"},
+	"M1": {"full"}, "M5": {"full", "fleet"}, "I16": {"full"},
 	"U1": {"check", "smoke"}, "U3": {"full"}, "U4": {"full", "away", "relay", "faults"},
 	"U5": {"faults"}, "U6": {"faults"}, "U7": {"faults"}, "U10": {"full"},
 	"H6": {"full"}, "K8": {"full"},
@@ -34,10 +34,15 @@ var automated = map[string][]string{
 	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
 	// Load and faults.
 	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"},
+	// The fleet of containers.
+	"G5": {"fleet"}, "G6": {"fleet"}, "G9": {"fleet"}, "G20": {"fleet"}, "G21": {"fleet"},
+	"G22": {"fleet"}, "G26": {"fleet"}, "G30": {"fleet"}, "G42": {"fleet"}, "G43": {"fleet"},
+	"Y12": {"fleet"}, "Y16": {"fleet"}, "M3": {"fleet"}, "M6": {"fleet"}, "D15": {"fleet"},
+	"E3": {"fleet"}, "E5": {"fleet"}, "E9": {"fleet"}, "S13": {"fleet"}, "S14": {"fleet"},
 }
 
 // suites lists every suite `testbench` runs, in the order `all` runs them.
-var suites = []string{"check", "smoke", "full", "faults", "away", "relay"}
+var suites = []string{"check", "smoke", "full", "faults", "away", "relay", "fleet"}
 
 // catCase is one case of the catalogue.
 type catCase struct {

@@ -367,7 +367,7 @@ func (s *Service) takeOver(target string) (string, error) {
 	devs := s.records.Devices()
 	s.recMu.Unlock()
 	s.mu.Lock()
-	next, err := s.id.TakenOver(newRoot, roots)
+	next, err := s.id.TakenOver(newRoot, roots, now)
 	if err == nil {
 		err = s.setIdentityLocked(next)
 	}
