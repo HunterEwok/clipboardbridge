@@ -345,19 +345,21 @@ type Message struct {
 
 // Write sends a message.
 func Write(w io.Writer, m *Message) error {
-	m.Len = len(m.Payload)
-	if m.Len > maxPayload {
+	size := len(m.Payload)
+	if size > maxPayload {
 		return errors.New("control: the text is larger than 1 MiB")
 	}
+	m.Len = size
 	line, err := json.Marshal(m.Header)
 	if err != nil {
 		return err
 	}
-	if len(line) > maxHeader {
+	n := len(line)
+	if n > maxHeader {
 		return errors.New("control: header too long")
 	}
 	// Both parts are bounded above, so the size cannot overflow.
-	buf := make([]byte, 0, len(line)+1+m.Len)
+	buf := make([]byte, 0, n+1+size)
 	buf = append(append(append(buf, line...), '\n'), m.Payload...)
 	_, err = w.Write(buf)
 	return err
