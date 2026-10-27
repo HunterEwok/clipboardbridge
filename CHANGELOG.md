@@ -39,8 +39,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
   The start page leads with "One clipboard to rule them all" and what it does, then the
   platforms, a comparison with sending yourself a message and one with Apple's Universal
-  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet (from their makers' pages,
-  dated), three steps to start with a board each, uses and questions; every page ends with a
+  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet, platform by platform (from
+  their makers' pages, dated), three steps to start with a board each, uses and questions; every page ends with a
   next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
   light theme, following the system or the reader's choice in the header; the download page
   puts the reader's system first, and every command has a copy button. Short CSS-only
