@@ -36,6 +36,8 @@
   "Computer": "कंप्यूटर",
   "Computers": "कंप्यूटर",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "कंप्यूटर अपने-आप, दोनों दिशाओं में सिंक होते हैं। Linux पर यह किसी भी डेस्कटॉप के साथ, और बिना डेस्कटॉप के tmux में चलता है।",
+  "Copied": "कॉपी हो गया",
+  "Copy": "कॉपी करें",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "लैपटॉप पर कोई कमांड कॉपी करें और सर्वर के tmux में पेस्ट करें, या उल्टा।",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "फ़ोन या कंप्यूटर पर कॉपी करें, किसी भी दूसरे पर पेस्ट करें: iPhone, Android, Mac, Windows या Linux। डिवाइस आपके घरेलू नेटवर्क पर सीधे बात करते हैं, TLS से एन्क्रिप्टेड, बिना क्लाउड और बिना खाते के। घर से बाहर यह आपकी अपनी WireGuard सुरंग से काम करता है।",
   "Do I need a computer?": "क्या मुझे कंप्यूटर चाहिए?",

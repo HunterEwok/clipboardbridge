@@ -2,8 +2,9 @@
 //
 // The site's one script of its own, small enough to run before the page is
 // drawn: it puts the reader's theme on <html> at once, so a light page
-// never flashes dark, then wires the theme button and, on the download
-// page, points at the reader's own system. Without it the site works as
+// never flashes dark, then wires the theme button, adds a copy button to
+// each command and, on the download page, points at the reader's own
+// system. Without it the site works as
 // before: the theme follows the system and every way to download is shown.
 "use strict";
 (function () {
@@ -50,6 +51,24 @@
         } catch (e) { /* a browser that keeps nothing still switches for this page */ }
         apply(next);
         show(next);
+      });
+    }
+
+    // A button on each command that copies it.
+    var main = document.querySelector("main");
+    if (main && navigator.clipboard) {
+      document.querySelectorAll("pre > code").forEach(function (code) {
+        var copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "copy";
+        copy.textContent = main.getAttribute("data-copy");
+        copy.addEventListener("click", function () {
+          navigator.clipboard.writeText(code.textContent).then(function () {
+            copy.textContent = main.getAttribute("data-copied");
+            setTimeout(function () { copy.textContent = main.getAttribute("data-copy"); }, 1800);
+          });
+        });
+        code.parentNode.appendChild(copy);
       });
     }
 

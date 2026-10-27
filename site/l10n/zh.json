@@ -37,6 +37,8 @@
   "Computer": "电脑",
   "Computers": "电脑",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "电脑之间自动双向同步。在 Linux 上它支持任何桌面环境，没有桌面时可在 tmux 中使用。",
+  "Copied": "已复制",
+  "Copy": "复制",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "在笔记本上复制一条命令，粘贴到服务器上的 tmux 里，反过来也行。",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "在手机或电脑上复制，在任何另一台设备上粘贴：iPhone、Android、Mac、Windows 或 Linux。设备通过家庭网络直接通信，全程 TLS 加密，无需云端，也无需账号。出门在外，则通过你自己的 WireGuard 隧道连接。",
   "Do I need a computer?": "我需要电脑吗？",

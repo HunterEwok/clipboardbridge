@@ -85,7 +85,7 @@
 </header>
 {{/* The four walnut rails of a board's frame, meeting in mitred corners. */}}
 {{define "rails"}}<i class="rail t"></i><i class="rail b"></i><i class="rail l"></i><i class="rail r"></i>{{end}}
-<main id="main">
+<main id="main" data-copy="{{t "Copy"}}" data-copied="{{t "Copied"}}">
 {{template "content" .}}
 </main>
 <footer class="foot">

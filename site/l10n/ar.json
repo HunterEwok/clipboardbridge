@@ -37,6 +37,8 @@
   "Computer": "حاسوب",
   "Computers": "الحواسيب",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "تتزامن الحواسيب وحدها، في الاتجاهين. وعلى Linux يعمل مع أي سطح مكتب، ومن دونه داخل tmux.",
+  "Copied": "نُسخ",
+  "Copy": "انسخ",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "انسخ أمرًا على حاسوبك المحمول والصقه في tmux على الخادم، أو العكس.",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "انسخ على هاتف أو حاسوب، والصق على أي جهاز آخر: iPhone أو Android أو Mac أو Windows أو Linux. تتصل الأجهزة مباشرةً عبر شبكتك المنزلية، بتشفير TLS، بلا سحابة ولا حسابات. وخارج المنزل يعمل عبر نفق WireGuard الخاص بك.",
   "Do I need a computer?": "هل أحتاج إلى حاسوب؟",

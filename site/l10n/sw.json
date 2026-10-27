@@ -36,6 +36,8 @@
   "Computer": "Kompyuta",
   "Computers": "Kompyuta",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "Kompyuta husawazishana zenyewe, pande zote mbili. Kwenye Linux inafanya kazi na eneo-kazi lolote, na bila eneo-kazi ndani ya tmux.",
+  "Copied": "Imenakiliwa",
+  "Copy": "Nakili",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "Nakili amri kwenye kompyuta mpakato na uibandike kwenye tmux kwenye seva, au kinyume chake.",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "Nakili kwenye simu au kompyuta, bandika kwenye kifaa kingine chochote: iPhone, Android, Mac, Windows au Linux. Vifaa vinawasiliana moja kwa moja kupitia mtandao wako wa nyumbani, vikiwa vimesimbwa kwa TLS, bila wingu na bila akaunti. Ukiwa mbali na nyumbani, inafanya kazi kupitia handaki lako mwenyewe la WireGuard.",
   "Do I need a computer?": "Je, ninahitaji kompyuta?",

@@ -37,6 +37,8 @@
   "Computer": "מחשב",
   "Computers": "מחשבים",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "המחשבים מסתנכרנים מעצמם, בשני הכיוונים. ב-Linux זה עובד עם כל שולחן עבודה, ובלעדיו בתוך tmux.",
+  "Copied": "הועתק",
+  "Copy": "העתקה",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "מעתיקים פקודה במחשב הנייד ומדביקים אותה ב-tmux בשרת, או להפך.",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "מעתיקים בטלפון או במחשב ומדביקים בכל מכשיר אחר: iPhone, Android, Mac, Windows או Linux. המכשירים מדברים ישירות דרך הרשת הביתית, בהצפנת TLS, בלי ענן ובלי חשבונות. מחוץ לבית הכול עובד דרך מנהרת WireGuard משלכם.",
   "Do I need a computer?": "האם צריך מחשב?",

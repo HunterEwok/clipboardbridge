@@ -36,6 +36,8 @@
   "Computer": "Компьютер",
   "Computers": "Компьютеры",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "Компьютеры синхронизируются сами, в обе стороны. В Linux работает с любым рабочим столом, а без него — в tmux.",
+  "Copied": "Скопировано",
+  "Copy": "Копировать",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "Скопируйте команду на ноутбуке и вставьте её в tmux на сервере, или наоборот.",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "Копируйте на телефоне или компьютере, вставляйте на любом другом: iPhone, Android, Mac, Windows или Linux. Устройства общаются напрямую по домашней сети, с шифрованием TLS, без облака и без аккаунтов. Вне дома всё работает через ваш собственный туннель WireGuard.",
   "Do I need a computer?": "Нужен ли компьютер?",

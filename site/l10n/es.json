@@ -36,6 +36,8 @@
   "Computer": "Ordenador",
   "Computers": "Ordenadores",
   "Computers sync by themselves, both ways. On Linux it works with any desktop, and without one in tmux.": "Los ordenadores se sincronizan solos, en ambos sentidos. En Linux funciona con cualquier escritorio, y sin escritorio en tmux.",
+  "Copied": "Copiado",
+  "Copy": "Copiar",
   "Copy a command on your laptop and paste it in tmux on the server, or the other way round.": "Copia un comando en tu portátil y pégalo en tmux en el servidor, o al revés.",
   "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel.": "Copia en un teléfono o un ordenador y pega en cualquier otro: iPhone, Android, Mac, Windows o Linux. Los dispositivos se comunican directamente por tu red doméstica, cifrados con TLS, sin nube y sin cuentas. Fuera de casa funciona a través de tu propio túnel WireGuard.",
   "Do I need a computer?": "¿Necesito un ordenador?",
