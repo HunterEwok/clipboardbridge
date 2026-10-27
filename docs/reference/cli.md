@@ -98,6 +98,7 @@ Global flags, before the command: `-state DIR` (default `/var/lib/clipboardbridg
 | `cbb paste-receive [on [-enter] [-console] \| off]` | Shows remote paste here, or turns it on or off, as on a full member; setting it needs `sudo`. On, the group's admins may put a text into the tmux pane in use; `-console` lets it reach the active text console and root's tmux, `-enter` lets a paste press Enter. Any admin turns it off from afar. |
 | `cbb paste-helper tmux\|console` | The paste targets: tmux starts the one for tmux from clipboardbridge's `tmux.conf`, the `clipboardbridge-console` unit (`install.sh --console`) runs the one for the console. |
 | `cbb next paste [-max BYTES]`, `next copy LEN CRC32`, `next join [-name NAME] [-port PORT] [-addr HOST[:PORT]]...` | The same for the ZX Spectrum Next's `.cbb` dot command, in frames its Z80 reads; see [lite/README.md](../../lite/README.md#zx-spectrum-next). |
+| `cbb update [-check] \| -auto [on\|off] \| -mirror [URL\|default]` (with sudo) | As on a full member, for the lite member's own archive on Linux and OpenWrt: the signed files checked, the download through the system's curl, wget or uclient-fetch, the archive's installer, and the previous program put back when the service does not report the new version within a minute. |
 | `cbb version`, `cbb help` | The version and that this is the lite member; this help. |
 
 ## Installers
