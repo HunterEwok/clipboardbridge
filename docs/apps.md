@@ -503,6 +503,34 @@ meanwhile. The layouts are the same tables (`internal/keyboard`, checked against
 vectors). The tests run against a fake BlueZ on a private bus; a real adapter and host are
 not yet tried.
 
+## A computer as a TV's remote
+
+A computer can also type on a TV without Bluetooth, as the TV's own remote over the home
+network (roadmap item 25, way 2; `cbb remote` in docs/reference/cli.md;
+`internal/tvremote`). Nothing is installed on the TV, and the TV is a target of that
+computer, never a member: it holds no key of the group.
+
+- **Android TV and Google TV** speak the Android TV Remote v2 protocol of the Google TV app:
+  pairing on TCP 6467 shows a six-digit code on the TV, and the remote on TCP 6466 puts a
+  text into the open field through the TV's input method, with Enter as a key. Both run
+  inside TLS with the computer's own RSA certificate for the TV, kept in `tvs.json` in the
+  service's state; the TV's certificate is pinned at pairing, so a reset TV or another
+  device at its address is refused until it pairs again. The protocol is not documented;
+  `internal/tvremote/androidtv` follows its wire format as androidtvremote2 and AOSP's
+  pairing code use it.
+- **Roku** takes keys through its External Control Protocol, one HTTP request a character
+  on port 8060. It has no pairing and no encryption, so a Roku is added only with the
+  user's consent, and since Roku OS 14.1 it needs "Control by mobile apps" on.
+- **Only at home.** An address outside the home network is refused when the TV is added,
+  and every connection to it is checked again (`netguard.ControlHome`), whatever a name
+  resolves to later.
+- **Errors** name the TV and the protocol and say what to do: open a text field first, pair
+  again after a reset, or turn the Roku's setting on; the underlying error is the detail, as
+  everywhere.
+
+The tests run against a fake Android TV (`androidtv/atvtest`) and a fake Roku; a real TV is
+not yet tried. Samsung, LG and the Apple TV follow (roadmap item 25).
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,

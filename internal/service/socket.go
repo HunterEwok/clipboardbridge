@@ -178,6 +178,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpRemote:
+		if err := s.remote(ctx, m); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Status: s.status(), Done: true}, nil)
 	case control.OpReceive:
 		if err := s.setReceive(ctx, m); err != nil {
 			fail(c, err)
@@ -349,6 +355,7 @@ func (s *Service) status() *control.Status {
 	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder,
 		HoldSetting: s.holdSetting, HoldPriority: s.priorityLocked(s.id), Battery: s.battery}
 	st.Release, st.Update = s.releaseStatus()
+	st.TVs = s.tvStatus() // a TV's remote needs no group
 	if s.id == nil {
 		return st
 	}

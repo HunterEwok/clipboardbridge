@@ -76,6 +76,7 @@ const (
 	OpReleaseFile = "release-file"  // client → service: an archive of the held release that cbb update installed, Value its SHA-256 and Part its size, its bytes in data messages
 	OpReleaseGet  = "release-get"   // client → service: the archive of the held release whose SHA-256 is Value, from this device or its peers; a reply with Part, its bytes, then Done
 	OpKeyboard    = "keyboard"      // client → service: Name "on" (Keyboard the settings), "off", "pair", "type" (the payload) or "" (status): this computer as a Bluetooth keyboard
+	OpRemote      = "remote"        // client → service: Name "add" (Address, Value the kind, NewName, Consent), "code" (Code), "cancel", "remove", "pastes" (Value on or off), "type" (the payload), for the TV Device, or "" (status): this device as a TV's remote
 )
 
 // Kinds and the ways a text came, as Header.Kind and Header.Via carry them.
@@ -221,6 +222,8 @@ type Status struct {
 	// Keyboard is this computer as a Bluetooth keyboard; nil where there
 	// is none (not Linux) and it was never turned on.
 	Keyboard *Keyboard `json:"keyboard,omitempty"`
+	// TVs are the TVs this device is the remote of (cbb remote).
+	TVs []TV `json:"tvs,omitempty"`
 	// Actions are this device's quick actions, the presets first, as its
 	// user set them; empty when in no group.
 	Actions []Action `json:"actions,omitempty"`
@@ -283,6 +286,17 @@ type Keyboard struct {
 	VisibleUntilMS int64 `json:"visible_until_ms,omitempty"`
 	// Problem is why it is not running, when it is on.
 	Problem string `json:"problem,omitempty"`
+}
+
+// TV is a TV this device is the remote of: its kind (androidtv or roku),
+// its address, and whether remote pastes go to it. Pairing says it shows
+// a code that cbb remote code takes.
+type TV struct {
+	Name    string `json:"name,omitempty"`
+	Kind    string `json:"kind"`
+	Host    string `json:"host"`
+	Pastes  bool   `json:"pastes,omitempty"`
+	Pairing bool   `json:"pairing,omitempty"`
 }
 
 // Away describes sync away from home on this device.
