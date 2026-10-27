@@ -436,6 +436,8 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME && !model.isTv) AutoSend()
         if (model.phase == AppModel.Phase.HOME && !model.isTv) ShareAsk(model)
         if (model.phase == AppModel.Phase.HOME) RemotePasteSection(model.group.pastes, model.isTv)
+        // A TV has nothing near it to type into.
+        if (model.phase == AppModel.Phase.HOME && !model.isTv) KeyboardSection(model.group.keyboard, model.settings.showsErrorDetails)
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
@@ -948,7 +950,7 @@ internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit)
 }
 
 @Composable
-private fun Choice(title: String, selected: Boolean, select: () -> Unit) {
+internal fun Choice(title: String, selected: Boolean, select: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().focusRing().clickable(role = Role.RadioButton, onClick = select).padding(horizontal = Tokens.spacingMedium, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

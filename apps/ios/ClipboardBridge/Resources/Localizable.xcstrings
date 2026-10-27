@@ -1454,6 +1454,16 @@
         }
       }
     },
+    "The app notifies of these while it runs. It hears of an event when it next syncs with the group." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приложение сообщает об этом, пока работает. О событии оно узнаёт при следующей синхронизации с группой."
+          }
+        }
+      }
+    },
     "The app notifies of these while it runs, and a paired Apple Watch shows them too. It hears of an event when it next syncs with the group.": {
       "localizations": {
         "ru": {
