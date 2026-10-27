@@ -59,6 +59,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   download mode. A text with characters the layout cannot type is refused, naming them. The
   layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
   the keyboard follows the board's sync.
+- The Nano ESP32 as a Bluetooth LE keyboard (`ble on` on its console): HID over GATT with
+  trouble-host beside Wi-Fi, for TVs, tablets, phones and computers that take BLE
+  keyboards. `ble pair` makes it discoverable for two minutes; it keeps up to four paired
+  hosts in flash under an address made from its Bluetooth MAC, types only on a paired host
+  over an encrypted link, and `ble forget` forgets them. `type` goes to a connected
+  Bluetooth host first, else the USB keyboard.
 - The Android app on a TV (Android TV, Google TV, Fire OS; docs/apps.md, "Android TV"):
   a launcher banner, every control on the D-pad with a visible focus ring, and no touch
   screen or camera needed. A TV joins a phone's group by the QR code it shows, as a member
