@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -58,13 +59,70 @@ type udp struct {
 	joined6 map[int]bool
 	ifaces  []iface // the last list, to find a packet's interface without control messages
 	closed  bool
+	shared  bool // the sockets are copies of the preopened ones
 }
 
-// listen opens the sockets, which join the multicast groups on the
-// interfaces only allows (all if nil). Either family may be missing, for
-// example IPv6 on a host without it, but not both.
-func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
-	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+// preopened holds the sockets Preopen opened, which one responder of the
+// process at a time takes.
+var preopened struct {
+	sync.Mutex
+	f4, f6 *os.File
+	taken  bool
+}
+
+// Preopen opens the sockets on port 5353 now, with the privileges the
+// process has, for the responders it starts after it gives them up. On
+// FreeBSD a socket shares a port only with sockets of its own user unless
+// root opened it, so the service, which runs as its own user there, opens
+// them as root and shares the port with avahi (docs/design.md).
+func Preopen() error {
+	lc := listenConfig()
+	var errs []error
+	preopened.Lock()
+	defer preopened.Unlock()
+	for _, fam := range []struct {
+		network, addr string
+		f             **os.File
+	}{{"udp4", fmt.Sprintf("0.0.0.0:%d", Port), &preopened.f4}, {"udp6", fmt.Sprintf("[::]:%d", Port), &preopened.f6}} {
+		pc, err := lc.ListenPacket(context.Background(), fam.network, fam.addr)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		f, err := pc.(*net.UDPConn).File()
+		pc.Close()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		*fam.f = f
+	}
+	if preopened.f4 == nil && preopened.f6 == nil {
+		return fmt.Errorf("mdns: cannot listen on port %d: %w", Port, errors.Join(errs...))
+	}
+	return nil
+}
+
+// takePreopened returns copies of the preopened sockets, or nil ones when
+// there are none or another responder holds them.
+func takePreopened() (c4, c6 net.PacketConn) {
+	preopened.Lock()
+	defer preopened.Unlock()
+	if preopened.taken || preopened.f4 == nil && preopened.f6 == nil {
+		return nil, nil
+	}
+	if preopened.f4 != nil {
+		c4, _ = net.FilePacketConn(preopened.f4)
+	}
+	if preopened.f6 != nil {
+		c6, _ = net.FilePacketConn(preopened.f6)
+	}
+	preopened.taken = c4 != nil || c6 != nil
+	return c4, c6
+}
+
+func listenConfig() net.ListenConfig {
+	return net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
 		var serr error
 		err := c.Control(func(fd uintptr) { serr = reuse(fd) })
 		if err != nil {
@@ -72,9 +130,27 @@ func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
 		}
 		return serr
 	}}
+}
+
+// listen opens the sockets, which join the multicast groups on the
+// interfaces only allows (all if nil). Either family may be missing, for
+// example IPv6 on a host without it, but not both.
+func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
+	lc := listenConfig()
 	u := &udp{logf: logf, only: only, packets: make(chan packet, 64), done: make(chan struct{}), joined4: map[int]bool{}, joined6: map[int]bool{}}
 	var errs []error
-	if pc, err := lc.ListenPacket(context.Background(), "udp4", fmt.Sprintf("0.0.0.0:%d", Port)); err != nil {
+	pc4, pc6 := takePreopened()
+	u.shared = pc4 != nil || pc6 != nil
+	open := func(pc net.PacketConn, network, addr string) (net.PacketConn, error) {
+		if u.shared {
+			if pc == nil {
+				return nil, fmt.Errorf("mdns: no preopened %s socket", network)
+			}
+			return pc, nil
+		}
+		return lc.ListenPacket(context.Background(), network, addr)
+	}
+	if pc, err := open(pc4, "udp4", fmt.Sprintf("0.0.0.0:%d", Port)); err != nil {
 		errs = append(errs, err)
 	} else {
 		c := ipv4.NewPacketConn(pc)
@@ -85,7 +161,7 @@ func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
 			u.c4 = c
 		}
 	}
-	if pc, err := lc.ListenPacket(context.Background(), "udp6", fmt.Sprintf("[::]:%d", Port)); err != nil {
+	if pc, err := open(pc6, "udp6", fmt.Sprintf("[::]:%d", Port)); err != nil {
 		errs = append(errs, err)
 	} else {
 		c := ipv6.NewPacketConn(pc)
@@ -97,7 +173,8 @@ func listen(logf func(string, ...any), only func(string) bool) (*udp, error) {
 		}
 	}
 	if u.c4 == nil && u.c6 == nil {
-		return nil, fmt.Errorf("mdns: cannot listen on port %d: %w", Port, errors.Join(errs...))
+		u.release()
+		return nil, fmt.Errorf("mdns: cannot listen on port %d: %w%s", Port, errors.Join(errs...), holders())
 	}
 	var wg sync.WaitGroup
 	if u.c4 != nil {
@@ -335,6 +412,20 @@ func (u *udp) close() error {
 	}
 	u.closed = true
 	close(u.done)
+	// The preopened sockets outlive this responder, so it leaves the
+	// groups it joined on them for the next one to join.
+	if u.shared {
+		for i := range u.joined4 {
+			if ifi, err := net.InterfaceByIndex(i); err == nil {
+				u.c4.LeaveGroup(ifi, &net.UDPAddr{IP: group4.Addr().AsSlice()})
+			}
+		}
+		for i := range u.joined6 {
+			if ifi, err := net.InterfaceByIndex(i); err == nil {
+				u.c6.LeaveGroup(ifi, &net.UDPAddr{IP: group6.Addr().AsSlice()})
+			}
+		}
+	}
 	u.mu.Unlock()
 	var errs []error
 	if u.c4 != nil {
@@ -343,5 +434,15 @@ func (u *udp) close() error {
 	if u.c6 != nil {
 		errs = append(errs, u.c6.Close())
 	}
+	u.release()
 	return errors.Join(errs...)
+}
+
+// release lets the next responder take the preopened sockets.
+func (u *udp) release() {
+	if u.shared {
+		preopened.Lock()
+		preopened.taken = false
+		preopened.Unlock()
+	}
 }

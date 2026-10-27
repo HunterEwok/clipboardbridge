@@ -602,12 +602,18 @@ func cmdService(args []string, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	stateDir := fs.String("state", defaultStateDir(), "the directory for the identity and the clock mark")
 	socket := fs.String("socket", control.SocketPath(), "the control socket")
+	runUser := fs.String("user", "", "started as root, run as this user after opening the mDNS sockets (FreeBSD's rc script)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "cbb: service takes only flags")
 		return 2
+	}
+	if *runUser != "" {
+		if err := runAs(*runUser, func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }); err != nil {
+			return fail(stderr, err)
+		}
 	}
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
 		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
