@@ -30,6 +30,8 @@ For administrators: your own server, a router, a NAS.
 | Document | What is in it |
 |---|---|
 | [Running your own servers](admin/self-hosting.md) | a forwarder and a blind relay on your server, with Docker or systemd, and VLESS |
+| [Upgrades and backups](admin/upgrade-and-backup.md) | moving to a new release, what to back up, bringing a device or the root back, moving the hub |
+| [Hardening](admin/hardening.md) | the settings that make a group harder to attack, beyond the defaults |
 | [Docker image](../packaging/docker/README.md) | the image for a NAS, a home server or a server on the internet |
 | [Lite member](../lite/README.md) | the lite member for small Linux devices: build, install, use |
 
@@ -59,6 +61,8 @@ for security reviewers.
 | [Decisions](decisions.md) | every architecture decision, D-1 to D-78, with its status |
 | [Threat model](threat-model.md) | the assets, adversaries, trust boundaries, and each threat with its defence and code |
 | [Protocol](protocol.md) | the wire format, for anyone writing another implementation |
+| [Cryptography](cryptography.md) | every primitive, library, key, its size, lifetime and where it is kept |
+| [Testing](testing.md) | the test levels, the interop vectors, the cross tests and the bench |
 | [Platform parity](parity.md) | what each computer, phone and lite device can do, the gaps and the plan to close them |
 | [App specification](apps.md) | what the apps do and how they look |
 | [Roadmap](roadmap.md) | what comes next, the agreed plans not built yet, research |

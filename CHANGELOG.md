@@ -400,6 +400,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (ALPN IDs, exporter labels, certificate names, messages, values, addresses), and the
   security considerations in section 20. Stale notes about design.md's line numbers are
   gone.
+- New pages: docs/cryptography.md (every primitive, library and key, with its size,
+  lifetime and storage), docs/testing.md (the test levels, the interop vectors, the cross
+  tests, the bench), docs/admin/upgrade-and-backup.md and docs/admin/hardening.md. The
+  command reference lists `cbb global move`.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for
