@@ -23,9 +23,10 @@ import java.io.IOException
  * field of another app, through the accessibility service, once this
  * phone's user turned remote paste on. It keeps the switches, the limits
  * per sender and the log of the last pastes (never their text), and shows
- * a notification with the sender.
+ * a notification with the sender. When the user sends pastes to the
+ * Bluetooth keyboard instead, the keyboard types them on its host.
  */
-class PasteReceiver(private val context: Context, dir: File) {
+class PasteReceiver(private val context: Context, dir: File, private val keyboard: BluetoothKeyboard) {
     private val settingsFile = File(dir, "paste-receive")
     private val logFile = File(dir, "pastes.json")
     private val limiter = RemotePaste.Limiter()
@@ -79,6 +80,8 @@ class PasteReceiver(private val context: Context, dir: File) {
 
     private fun inject(body: Commands.Body, text: String): Member.CommandResult {
         if (text.isEmpty()) return refused(body, "the text has nothing that may be pasted: only control characters")
+        val k = keyboard.settings
+        if (k.on && k.pastes) return typeOnHost(body, text)
         val target = CopyWatcher.running ?: return refused(
             body,
             if (CopyWatcher.isOn(context)) {
@@ -92,6 +95,19 @@ class PasteReceiver(private val context: Context, dir: File) {
             null -> Member.CommandResult(body.id, "done")
             else -> Member.CommandResult(body.id, if (r.refused) "refused" else "failed", r.reason)
         }
+    }
+
+    /**
+     * Types the text on the Bluetooth keyboard's host. Keys go straight in
+     * there, so a line break presses Enter: a text with one is refused
+     * unless the user allowed Enter, as for a typed paste on a computer.
+     */
+    private fun typeOnHost(body: Commands.Body, text: String): Member.CommandResult {
+        if ('\n' in text && !settings.enter) {
+            return refused(body, "the text has a line break, which the Bluetooth keyboard types as Enter; this device's user allows Enter in the app's settings")
+        }
+        val f = keyboard.type(if (body.enter) text + "\n" else text) ?: return Member.CommandResult(body.id, "done")
+        return Member.CommandResult(body.id, if (f.refused) "refused" else "failed", f.reason)
     }
 
     private fun refused(body: Commands.Body, reason: String) = Member.CommandResult(body.id, "refused", reason)

@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
+  the clipboard, or remote pastes when the user sends them there, into a paired TV,
+  tablet, console or computer, which needs nothing installed. The user picks the device,
+  its layout (English (US) or Russian, the Nano ESP32's key tables) and the speed. A text
+  with characters the layout cannot type is refused, and the app names them. A phone whose
+  maker left the HID Device profile out says it cannot act as a keyboard.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the

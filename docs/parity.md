@@ -64,6 +64,7 @@ on every platform of the class, on the roadmap).
 | Error details switch without developer tools | yes | yes | seven taps on the version in Settings show it; `adb` and the Xcode launch argument still work |
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
 | Remote invitations, remote paste, images and files | planned | planned | roadmap items 12, 18, 20 |
+| Act as a Bluetooth keyboard for a TV, tablet or computer | yes | **OS** | iOS keeps the HID service to the system; some Android makers leave the profile out, which the app says |
 | Tested on a real phone | not yet | not yet | |
 
 ## Lite devices
