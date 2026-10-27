@@ -31,6 +31,9 @@ type Desk struct {
 	tr           map[string]string
 	settingsPath string
 
+	// settingsMu orders the writes of desktop.json.
+	settingsMu sync.Mutex
+
 	mu       sync.Mutex
 	settings Settings
 	status   *control.Status
@@ -50,6 +53,11 @@ type State struct {
 	Message  string           `json:"message,omitempty"`
 	Settings Settings         `json:"settings"`
 	Version  string           `json:"version"`
+	// Arranged is the devices and collections below this computer in the
+	// user's order (Arrangement.View); Custom whether the user changed
+	// the order, which Back to the group's order undoes.
+	Arranged []Item `json:"arranged"`
+	Custom   bool   `json:"custom"`
 	// ShowDetails is whether messages show the error underneath, as
 	// Settings.Details or else the build sets it.
 	ShowDetails bool `json:"show_details"`
@@ -64,6 +72,10 @@ type Settings struct {
 	// Details shows the error underneath each message; nil follows the
 	// build and CBB_DEBUG (showDetails).
 	Details *bool `json:"details,omitempty"`
+	// Arrangement is the user's order of the tiles and their collections
+	// (arrange.go); nil until the user changes something. The window never
+	// sends it: Arrange changes it.
+	Arrangement *Arrangement `json:"arrangement,omitempty"`
 }
 
 // NewDesk reads the settings and the language; it reaches the service only
@@ -100,8 +112,80 @@ func (d *Desk) snapshot() State {
 	details := d.showDetails()
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return State{Lang: d.lang, Problem: d.problem, Status: d.status, Devices: d.devices, Busy: d.busy,
+	st := State{Lang: d.lang, Problem: d.problem, Status: d.status, Devices: d.devices, Busy: d.busy,
 		Message: d.message, Settings: d.settings, Version: version.String(), ShowDetails: details}
+	if a, ids, self, ok := d.arrangementLocked(); ok {
+		st.Arranged = a.View(ids, self)
+		st.Custom = len(a.Items) > 0
+	}
+	st.Settings.Arrangement = nil
+	return st
+}
+
+// arrangementLocked is the arrangement for the group this computer is in,
+// with the devices' IDs and this computer's; ok is false outside a group.
+func (d *Desk) arrangementLocked() (a Arrangement, ids []string, self string, ok bool) {
+	if d.status == nil || d.status.Group == "" || d.status.Removed {
+		return Arrangement{}, nil, "", false
+	}
+	var stored Arrangement
+	if d.settings.Arrangement != nil {
+		stored = *d.settings.Arrangement
+	}
+	for _, dev := range d.devices {
+		ids = append(ids, dev.ID)
+		if dev.Self {
+			self = dev.ID
+		}
+	}
+	return arrangeFor(stored, d.status.Group), ids, self, true
+}
+
+// Arrange makes a change to the arrangement of the tiles and keeps it; one
+// that does not fit leaves it as it was and says so.
+func (d *Desk) Arrange(op ArrangeOp) {
+	d.mu.Lock()
+	a, ids, self, ok := d.arrangementLocked()
+	d.mu.Unlock()
+	if !ok {
+		return
+	}
+	if err := a.Apply(op, ids, self); err != nil {
+		msg := d.describe(err)
+		d.mu.Lock()
+		d.message = msg
+		d.mu.Unlock()
+		return
+	}
+	d.mu.Lock()
+	d.settings.Arrangement = &a
+	s := d.settings
+	d.message = ""
+	d.mu.Unlock()
+	if err := d.writeSettings(s); err != nil {
+		log.Printf("settings: %v", err)
+	}
+}
+
+// pruneLocked drops the devices that left the group from the stored
+// arrangement, once the list is whole: the group loaded, this computer in
+// it. It reports whether the settings changed.
+func (d *Desk) pruneLocked() bool {
+	if d.settings.Arrangement == nil {
+		return false
+	}
+	a, ids, self, ok := d.arrangementLocked()
+	if !ok || self == "" {
+		return false
+	}
+	before, _ := json.Marshal(a)
+	a.Prune(ids)
+	after, _ := json.Marshal(a)
+	if string(before) == string(after) {
+		return false
+	}
+	d.settings.Arrangement = &a
+	return true
 }
 
 func (d *Desk) refresh() {
@@ -124,6 +208,14 @@ func (d *Desk) refresh() {
 		return
 	}
 	d.problem, d.status, d.devices = "", st, devices
+	if d.pruneLocked() {
+		s := d.settings
+		go func() {
+			if err := d.writeSettings(s); err != nil {
+				log.Printf("settings: %v", err)
+			}
+		}()
+	}
 }
 
 // request sends one request on its own connection and returns the answer
@@ -244,8 +336,17 @@ func (d *Desk) act(work func() (string, error)) {
 // SaveSettings keeps the window's choices.
 func (d *Desk) SaveSettings(s Settings) error {
 	d.mu.Lock()
+	// The window does not send the arrangement; Arrange keeps it.
+	s.Arrangement = d.settings.Arrangement
 	d.settings = s
 	d.mu.Unlock()
+	return d.writeSettings(s)
+}
+
+// writeSettings writes the settings to desktop.json.
+func (d *Desk) writeSettings(s Settings) error {
+	d.settingsMu.Lock()
+	defer d.settingsMu.Unlock()
 	if d.settingsPath == "" {
 		return errors.New("no configuration folder")
 	}
@@ -302,6 +403,8 @@ func (d *Desk) summary(err error) (string, string) {
 		return req.Msg, req.Detail
 	case errors.As(err, &adm):
 		return d.T(adm.msg), adm.detail
+	case errors.Is(err, errArrange):
+		return d.T("The tiles stay as they were: that change does not fit."), err.Error()
 	}
 	return d.T("Something failed on this computer."), err.Error()
 }

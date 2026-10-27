@@ -22,6 +22,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Arrange on a long press; in Arrange mode a long press drags a tile to where it is
   dropped, each tile has a ⋮ menu with every change, and TalkBack has the moves as
   actions.
+- The tray app arranges the devices too: the ⇅ button turns Arrange mode on, where the
+  tiles and rows are dragged, a right click or a tile's ⋮ button opens its menu, and Alt
+  with the arrow keys moves the focused tile. A collection opens its own page; the
+  arrangement is kept in `desktop.json`.
 - The Android app can act as a Bluetooth keyboard (Settings, Bluetooth keyboard): it types
   the clipboard, or remote pastes when the user sends them there, into a paired TV,
   tablet, console or computer, which needs nothing installed. The user picks the device,

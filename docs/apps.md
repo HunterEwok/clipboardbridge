@@ -623,6 +623,21 @@ actions and the keyboard for each drag.
 - The collection tile, the list's sections, the collection's page, the search and filters
   and **Back to the group's order** are the iPhone's. The orbit keeps the group's order.
 
+**In the tray app** (`frontend/app.js`, the model in `arrange.go` through `Desk.Arrange`,
+kept as `arrangement` in `desktop.json`, which the window's other settings never
+overwrite):
+
+- The ⇅ button beside the views turns Arrange mode on and off, and Escape ends it. In it
+  a click does not open a tile, tiles and rows have a dashed outline and are dragged, a
+  device dropped on a collection goes into it, and the bar on top has **Back to the
+  group's order** and **Done**.
+- A right click on a tile, or its ⋮ button in Arrange mode, opens its menu with every
+  change. With the keyboard, Alt and the arrow keys move the focused tile, and Alt with
+  Home or End moves it to the start or the end.
+- A collection is a tile or a section in the list, and a click opens its page, with its
+  devices, Arrange mode for them and its menu. The search and filters come with more than
+  12 devices. The orbit keeps the group's order.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,
