@@ -555,3 +555,44 @@ func otherSystem(ctx context.Context, r *Report, f *Fleet, timeout time.Duration
 		return listsAs(ctx, []*Device{root, other}, m.Name, "Linux", false, time.Minute)
 	})
 }
+
+// controlSocket (U11): what no cbb sends on the control socket: junk, a
+// header too long or with a bad length, an unknown operation, one that
+// changes the group, a payload cut short and a hundred connections that
+// send nothing; the service answers or closes each, and still answers.
+func controlSocket(ctx context.Context, r *Report, f *Fleet) {
+	const p = "fleet/U11-socket/"
+	g := fleetGroup(ctx, r, f, "fleet/U11-socket", 2)
+	if g == nil {
+		return
+	}
+	d := g.members[1]
+	var out string
+	if r.Do(p+"forge", func() error {
+		bin, err := forgeOn(ctx, d)
+		if err != nil {
+			return err
+		}
+		out, err = RunFor(ctx, d, bin+" control:junk control:long control:big control:negative control:unknown control:admin control:short control:idle-100", "", 2*time.Minute)
+		return err
+	}) != nil {
+		return
+	}
+	for _, c := range []struct{ name, want string }{
+		{"junk", "closed"}, {"long", "closed"}, {"big", "closed"}, {"negative", "closed"},
+		{"unknown", "answered: "}, {"admin", "answered: \"revoke\" changes the group"}, {"short", "closed"},
+		{"idle-100", "100 open, status answered"}, {"status", "answered"},
+	} {
+		r.Do(p+c.name, func() error {
+			for _, l := range strings.Split(out, "\n") {
+				if rest, ok := strings.CutPrefix(l, c.name+": "); ok {
+					if !strings.HasPrefix(rest, c.want) {
+						return fmt.Errorf("the service %s, not %s", rest, c.want)
+					}
+					return nil
+				}
+			}
+			return fmt.Errorf("the forge printed nothing for %s: %q", c.name, out)
+		})
+	}
+}

@@ -19,7 +19,8 @@
 // devices at times out of order into FILE, and send sends FILE's records in
 // an order SEED picks (G31); hold stays connected for N seconds with a
 // hello that names SYSTEM (G35). The tunnel's cases are in tunnel.go, the
-// stand-in for a well-known site that VLESS borrows in site.go. It is
+// stand-in for a well-known site that VLESS borrows in site.go, the control
+// socket's in control.go. It is
 // never part of a release.
 package main
 
@@ -48,10 +49,18 @@ func main() {
 	endpoint := flag.String("endpoint", "", "the tunnel's cases: the hub's UDP address, HOST:PORT, instead of its first one")
 	hubState := flag.String("hub-state", "", "the tunnel's cases: the state directory whose hub's offer to use instead of -state's")
 	system := flag.String("os", "linux", "the system the forge's hello names")
+	socket := flag.String("socket", "", "the control socket's cases: its path, if not the default")
 	flag.Parse()
 	if name, ok := strings.CutPrefix(flag.Arg(0), "site:"); ok {
 		// forge -addr :443 site:NAME serves as the well-known site NAME.
 		if err := runSite(*addr, name); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && controlCase(flag.Arg(0)) {
+		if err := runControl(*socket, flag.Args()); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
 			os.Exit(1)
 		}
