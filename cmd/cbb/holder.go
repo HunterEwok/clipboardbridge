@@ -15,7 +15,7 @@ import (
 // cmdHolder shows or changes whether this computer holds
 // clipboardbridge.local first, only as a fallback, or never.
 func cmdHolder(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 1 {
+	if len(args) > 1 || len(args) == 1 && helpFlag(args[0]) {
 		fmt.Fprintln(stderr, "usage: cbb holder [auto|first|fallback|never]")
 		return 2
 	}

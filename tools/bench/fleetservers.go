@@ -630,13 +630,17 @@ func vlessAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 				return err
 			}
 		}
-		if err := cutOff(ctx, c, wait); err != nil {
-			return err
-		}
+		// With the offer the client goes over VLESS alone: the tunnel
+		// stays up, or comes back, with no UDP between it and the
+		// servers.
+		time.Sleep(30 * time.Second)
 		if err := connected(ctx, c, wait); err != nil {
 			return err
 		}
-		return syncs(ctx, a.benchGroup, c, hub, "over VLESS", 2*timeout)
+		if err := syncs(ctx, a.benchGroup, c, hub, "over VLESS", 2*timeout); err != nil {
+			return err
+		}
+		return syncs(ctx, a.benchGroup, hub, c, "back over VLESS", 2*timeout)
 	}) != nil {
 		return
 	}
