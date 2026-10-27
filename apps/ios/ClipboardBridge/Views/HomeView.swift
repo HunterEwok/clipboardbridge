@@ -339,7 +339,7 @@ struct DeviceSearch: ViewModifier {
     let on: Bool
     @Binding var query: String
 
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
         if on {
             content.searchable(text: $query, prompt: Text("Search devices"))
         } else {

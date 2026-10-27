@@ -215,7 +215,8 @@ struct ArrangeActions: ViewModifier {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var arrange: ArrangeState
 
-    func body(content: Content) -> some View {
+    // Self.Content: the kit has a type Content of its own.
+    @ViewBuilder func body(content: Self.Content) -> some View {
         let moves = Moves(ref: ref, level: level, model: model)
         if arrange.on {
             content
@@ -224,7 +225,7 @@ struct ArrangeActions: ViewModifier {
                 .accessibilityAction(named: Text("Move to start")) { moves.toStart() }
                 .accessibilityAction(named: Text("Move to end")) { moves.toEnd() }
                 .accessibilityAction(named: Text("Take out of collection")) {
-                    if case .device(let id) = ref, model.collection(holding: id) != nil { model.arrange(.out(device: id)) }
+                    if case .device(let id) = ref, model.collection(holding: id) != nil { _ = model.arrange(.out(device: id)) }
                 }
         } else {
             content
@@ -446,7 +447,7 @@ struct ArrangePrompts: ViewModifier {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var arrange: ArrangeState
 
-    func body(content: Content) -> some View {
+    func body(content: Self.Content) -> some View {
         content.alert(title, isPresented: Binding(get: { arrange.prompt != nil }, set: { if !$0 { arrange.prompt = nil } })) {
             TextField(text: $arrange.name) { Text("Collection name") }
             Button { save() } label: { Text("Save") }
@@ -462,7 +463,7 @@ struct ArrangePrompts: ViewModifier {
     private func save() {
         switch arrange.prompt {
         case .new(let ids): _ = model.newCollection(arrange.name, devices: ids)
-        case .rename(let id): model.arrange(.rename(collection: id, name: arrange.name))
+        case .rename(let id): _ = model.arrange(.rename(collection: id, name: arrange.name))
         case nil: break
         }
         arrange.prompt = nil
