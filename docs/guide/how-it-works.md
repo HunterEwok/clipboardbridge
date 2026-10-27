@@ -136,7 +136,7 @@ yourself.
 |---|---|---|---|
 | Hub | yes, it is your device | yes | yours |
 | Forwarder | no | no: it sees the addresses encrypted packets come from and go to your hub | yours, or the project's at `cbb.tools` |
-| Blind relay | no | yes | yours (the project's at `cbb.tools` in 0.5) |
+| Blind relay | no | yes | yours (one at `cbb.tools` is planned) |
 
 Nothing else is involved: no accounts, no cloud, no telemetry. With sync away from home on,
 a computer may reach only the home network and the group's own hub, forwarder and relay.

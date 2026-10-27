@@ -38,6 +38,8 @@ Complete and exact, without the reasons.
 | [Commands](reference/cli.md) | every `cbb` command, on a full and on the lite member, with every flag |
 | [Settings and environment variables](reference/config.md) | the settings files and every `CBB_*` variable |
 | [Devices, ports and files](reference/devices.md) | what each device can do, the ports, where the keys and logs are |
+| [Limits and lifetimes](reference/limits.md) | sizes, rates, timeouts, certificate lifetimes, the servers' limits |
+| [Error messages and details](reference/errors.md) | how each part shows errors and the switch that shows their details |
 | [Glossary](reference/glossary.md) | the words the documentation and the apps use |
 | [Changelog](../CHANGELOG.md) | what changed in each release |
 | [Security policy](../SECURITY.md) | how to report a vulnerability |

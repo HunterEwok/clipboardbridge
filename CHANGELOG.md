@@ -340,7 +340,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   pages for engineers and maintainers, each part with its own table in `docs/README.md`.
   New reference pages: `config.md`, every settings file and every `CBB_*` variable (moved
   out of `cli.md`, with the ones it lacked: `CBB_TPM`, `CBB_ADMIN_SOCKET`, the installers'
-  `CBB_VERIFY` and `CBB_ATTESTATION`, the test variables), and `glossary.md`.
+  `CBB_VERIFY` and `CBB_ATTESTATION`, the test variables); `limits.md`, every size, rate,
+  timeout and lifetime; `errors.md`, how each part shows errors and the switch that shows
+  their details; and `glossary.md`.
   `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
   in the TPM, FreeBSD and OpenWrt.
 - `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the

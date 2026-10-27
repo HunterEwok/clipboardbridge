@@ -4,14 +4,11 @@
 Start with `cbb status` on the device that misbehaves: it says whether the service runs, which
 group it is in, which members are connected and the state of sync away from home. Each
 message is short; `CBB_DEBUG=1 cbb status` (on Windows `$env:CBB_DEBUG = "1"` first) shows
-the underlying error under it. The service's log always has the details:
-
-| System | Log |
-|---|---|
-| Linux | `journalctl -u clipboardbridge`; the desktop connector logs to the session's journal, `journalctl --user` |
-| macOS | `/Library/Logs/clipboardbridge/service.log` |
-| Windows | `ProgramData\clipboardbridge\logs\service.log`, and the agent's `LocalAppData\clipboardbridge\agent.log` |
-| Lite member | `journalctl -u clipboardbridge`, as on Linux |
+the underlying error under it. The service's log always has the details: on Linux
+`journalctl -u clipboardbridge`, and the desktop connector's in the session's journal,
+`journalctl --user`; the other systems are in [files and logs](../reference/devices.md#files-and-logs).
+The details switch of every part, the apps and the installers included, is in
+[error messages and details](../reference/errors.md).
 
 ## Commands
 

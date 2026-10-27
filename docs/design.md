@@ -512,8 +512,10 @@ Not built yet (roadmap item 10); the design:
 ## Limits
 
 - Text: UTF-8, up to 1 MiB per item.
-- Images and files (planned for 0.6): up to 100 MiB per copy at home and 25 MiB away from
-  home by default, set on each device up to 1 GiB (see "Images and files").
+- Images and files: up to 100 MiB per copy at home and 25 MiB away from home by default,
+  set on each device up to 1 GiB (see "Images and files").
+
+Every limit, timeout and lifetime is listed in [limits and lifetimes](reference/limits.md).
 
 ## Images and files (planned for 0.6)
 
