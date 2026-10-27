@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -136,12 +137,10 @@ func Listen(cfg Config) (*Relay, error) {
 	// The relay keeps no logs about the devices: what it logs, wireguard-go's
 	// errors included, goes without the addresses in it.
 	logf = tunnel.Redacted(logf)
-	// The tunnel listens on the UDP port of the same number. Windows
-	// reserves ranges of ports, for TCP and for UDP apart, and its picks run
-	// in order, so a whole run of TCP picks may have their UDP twins in one
-	// reserved range. Where any free port will do, the port is therefore
-	// picked by TCP and by UDP in turn, as the forwarder does, and a pick
-	// whose other side is refused is given up for another.
+	// The tunnel listens on the UDP port of the same number. Where any free
+	// port will do, the UDP port is picked first, by the system, which never
+	// gives one of the ranges Windows keeps for Hyper-V; a TCP twin that is
+	// taken or reserved is given up for another.
 	host, wanted, _ := net.SplitHostPort(cfg.Listen)
 	var (
 		tcp net.Listener
@@ -149,12 +148,12 @@ func Listen(cfg Config) (*Relay, error) {
 	)
 	for try := 0; ; try++ {
 		listen := cfg.Listen
-		if wanted == "0" && try%2 == 1 {
-			port, err := freeUDP(host)
+		if wanted == "0" {
+			port, err := freeUDPPort(host)
 			if err != nil {
 				return nil, fmt.Errorf("relay: %w", err)
 			}
-			listen = net.JoinHostPort(host, fmt.Sprint(port))
+			listen = net.JoinHostPort(host, strconv.Itoa(port))
 		}
 		var err error
 		if tcp, err = net.Listen("tcp", listen); err == nil {
@@ -165,7 +164,7 @@ func Listen(cfg Config) (*Relay, error) {
 			}
 			tcp.Close()
 		}
-		if wanted != "0" || try == 39 {
+		if wanted != "0" || try == 19 {
 			return nil, fmt.Errorf("relay: %w", err)
 		}
 	}
@@ -177,6 +176,16 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r.tlsCfg = r.serverTLS()
 	return r, nil
+}
+
+// freeUDPPort returns a UDP port on host that is free at the moment.
+func freeUDPPort(host string) (int, error) {
+	c, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	return c.LocalAddr().(*net.UDPAddr).Port, nil
 }
 
 // Addr returns the address of the relay's port.
@@ -641,14 +650,4 @@ func splice(a, b net.Conn, limit *rate, stop <-chan struct{}) {
 	a.Close()
 	b.Close()
 	<-done
-}
-
-// freeUDP returns a UDP port of host that is free at the moment.
-func freeUDP(host string) (int, error) {
-	c, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return 0, err
-	}
-	defer c.Close()
-	return c.LocalAddr().(*net.UDPAddr).Port, nil
 }

@@ -74,6 +74,8 @@ These change nothing in a normal installation. How the tests use them is in
 | `CBB_TEST_UINPUT` | Go tests of the uinput helper | `1` makes a missing `/dev/uinput` a failure instead of a skip. |
 | `CBB_TEST_CLIPBOARD` | Go tests of the Windows clipboard | `1` allows the tests to overwrite the clipboard. |
 | `CBB_TEST_CLOCK` | the bench's time-scaled build (`-tags benchtime`) | What the build adds to the wall clock, so that certificates expire on the bench in minutes. Never in a release. |
+| `CBB_TEST_CLOCK_FILE` | the bench's time-scaled build | A file that holds the value of `CBB_TEST_CLOCK` when that is not set, so the bench moves a member's clock with a restart of the service. |
+| `CBB_TEST_SCALE` | the bench's time-scaled build | How many times faster long times run: 100000 by default, `1` for cases that move only the clock. |
 | `CBB_TPM_SIMULATOR` | the service, in tests | A TPM simulator's command port (`host:port`, the platform port the next one) used in place of the TPM. |
 | `CBB_TPM_REQUIRED` | Go tests of the TPM | Makes a missing `swtpm` a failure instead of a skip, as in CI. |
 | `CBB_LITE` | Go tests with the lite member | The lite member's binary (`cargo build` in `lite/`). |

@@ -25,18 +25,19 @@ import (
 // fleetImage is the image every fleet member runs: a plain Debian with the
 // tools the cases use inside (tc and iptables for network faults, tmux as a
 // remote paste target), and the cbb under test mounted from the controller.
-const fleetImage = "cbbbench-fleet:1"
+const fleetImage = "cbbbench-fleet:2"
 
 const fleetDockerfile = `FROM debian:stable-slim
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 iptables procps tmux ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 iptables procps tmux curl ca-certificates && rm -rf /var/lib/apt/lists/*
 `
 
 // Fleet is one run's containers and their network.
 type Fleet struct {
 	run, net, cbb string
 	members       []*Device
+	extra         []string // the run's other networks
 	mu            sync.Mutex
-	n             int
+	n, nets       int
 }
 
 // NewFleet makes the run's network; members come with Add. cbb is a static
@@ -78,34 +79,78 @@ func docker(ctx context.Context, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// Network makes another network of the run, such as one with addresses of
+// carrier-grade NAT or only IPv6; args go to docker network create.
+func (f *Fleet) Network(ctx context.Context, args ...string) (string, error) {
+	f.mu.Lock()
+	f.nets++
+	name := fmt.Sprintf("%s-net%d", f.run, f.nets)
+	f.mu.Unlock()
+	_, err := docker(ctx, append(append([]string{"network", "create", "--label", "cbbbench=fleet"}, args...), name)...)
+	if err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	f.extra = append(f.extra, name)
+	f.mu.Unlock()
+	return name, nil
+}
+
 // Add starts a new member in no group. env adds variables to the service's
 // environment, such as CBB_DEBUG=1.
 func (f *Fleet) Add(ctx context.Context, env ...string) (*Device, error) {
-	f.mu.Lock()
-	f.n++
-	n := f.n
-	f.mu.Unlock()
-	name := fmt.Sprintf("%s-%02d", f.run, n)
-	args := []string{"run", "-d", "--name", name, "--hostname", fmt.Sprintf("m%02d", n),
-		"--network", f.net, "--label", "cbbbench=fleet",
-		"--cap-add", "NET_ADMIN",
-		"-v", f.cbb + ":/usr/local/bin/cbb:ro"}
-	for _, e := range env {
-		args = append(args, "-e", e)
-	}
+	return f.AddOn(ctx, f.net, env...)
+}
+
+// AddOn starts a new member in no group on the network net.
+func (f *Fleet) AddOn(ctx context.Context, net string, env ...string) (*Device, error) {
+	return f.AddWith(ctx, net, nil, env...)
+}
+
+// AddWith starts a new member in no group on the network net, with more
+// arguments for docker run, such as a small tmpfs for its state.
+func (f *Fleet) AddWith(ctx context.Context, net string, run []string, env ...string) (*Device, error) {
 	// sh stands in for the service manager: it starts the service again
 	// a second after it dies, as systemd's Restart= does.
-	args = append(args, fleetImage, "sh", "-c", "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb service; sleep 1; done")
-	if _, err := docker(ctx, args...); err != nil {
+	d, err := f.container(ctx, net, run, env, "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb service; sleep 1; done")
+	if err != nil {
 		return nil, err
 	}
-	d := &Device{Name: fmt.Sprintf("m%02d", n), OS: "fleet", Clipboard: "none", Container: name, Roles: []string{"member"}}
 	if err := eventually(ctx, 20*time.Second, func() error {
 		_, err := Run(ctx, d, "cbb status", "")
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("%s did not start: %w", d.Name, err)
 	}
+	return d, nil
+}
+
+// addServer starts a container on the network net that runs cmd instead
+// of the service, such as a forwarder or the stand-in for the internet.
+func (f *Fleet) addServer(ctx context.Context, net string, run []string, cmd string) (*Device, error) {
+	return f.container(ctx, net, run, nil, cmd)
+}
+
+// container starts a container of the fleet's image that runs cmd with sh.
+func (f *Fleet) container(ctx context.Context, net string, run, env []string, cmd string) (*Device, error) {
+	f.mu.Lock()
+	f.n++
+	n := f.n
+	f.mu.Unlock()
+	name := fmt.Sprintf("%s-%02d", f.run, n)
+	args := []string{"run", "-d", "--name", name, "--hostname", fmt.Sprintf("m%02d", n),
+		"--network", net, "--label", "cbbbench=fleet",
+		"--cap-add", "NET_ADMIN",
+		"-v", f.cbb + ":/usr/local/bin/cbb:ro"}
+	args = append(args, run...)
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	args = append(args, fleetImage, "sh", "-c", cmd)
+	if _, err := docker(ctx, args...); err != nil {
+		return nil, err
+	}
+	d := &Device{Name: fmt.Sprintf("m%02d", n), OS: "fleet", Clipboard: "none", Container: name, Roles: []string{"member"}, Network: net}
 	f.mu.Lock()
 	f.members = append(f.members, d)
 	f.mu.Unlock()
@@ -141,7 +186,7 @@ func (f *Fleet) Close(ctx context.Context) {
 		}
 		docker(ctx, args...)
 	}
-	docker(ctx, "network", "rm", f.net)
+	docker(ctx, append([]string{"network", "rm", f.net}, f.extra...)...)
 }
 
 // cleanFleet removes what an earlier run left behind, as when the
@@ -198,10 +243,21 @@ func heal(ctx context.Context, ds ...*Device) error {
 	return errors.Join(errs...)
 }
 
-// fleetIP is a member's address on the fleet's network.
+// fleetIP is a member's address on the network it started on, its IPv6
+// address on a network with no IPv4.
 func fleetIP(ctx context.Context, d *Device) (string, error) {
-	out, err := docker(ctx, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", d.Container)
+	return fleetIPOn(ctx, d, d.Network)
+}
+
+// fleetIPOn is a member's address on the network net.
+func fleetIPOn(ctx context.Context, d *Device, net string) (string, error) {
+	at := fmt.Sprintf("{{with index .NetworkSettings.Networks %q}}", net)
+	out, err := docker(ctx, "inspect", "-f", at+"{{.IPAddress}}{{end}}", d.Container)
 	ip := strings.TrimSpace(out)
+	if err == nil && ip == "" {
+		out, err = docker(ctx, "inspect", "-f", at+"{{.GlobalIPv6Address}}{{end}}", d.Container)
+		ip = strings.TrimSpace(out)
+	}
 	if err == nil && ip == "" {
 		err = fmt.Errorf("%s has no address", d.Name)
 	}

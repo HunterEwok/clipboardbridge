@@ -115,11 +115,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's `fleet` suite: full members in containers on the controller, thrown away after
   each run, for the cases that need many devices or would harm the real ones: the pairing
   window, admins and their limits, freezing, removal, a takeover, two groups side by side,
-  network splits, the modes, junk on the member port, restarts and up to 32 members.
+  network splits, the modes, junk on the member port, restarts, remote paste into root's
+  tmux with each refusal and its reason, and up to 32 members.
 - The bench's time-scaled build (`go build -tags benchtime`, never released): certificates,
   their renewal and the server credentials' periods run 100000 times faster, and
   `CBB_TEST_CLOCK` moves a member's clock. The `time` suite runs it in the fleet: renewal,
-  new periods, and a certificate that ends while no admin is on.
+  new periods, and a certificate that ends while no admin is on; at the real pace
+  (`CBB_TEST_SCALE=1`), members whose clocks are in 1970, hours, days or years ahead.
 - The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.
@@ -513,7 +515,27 @@ All notable changes to clipboardbridge are documented in this file. The format f
   that it registers again.
 - `cbb status` says when this device's certificate has ended, or ends within 30 days with no
   admin to renew it; before, a member whose certificate ended while no admin was on was
-  refused by the group with no word why.
+  refused by the group with no word why. When the certificate has ended by this device's
+  clock, it names that date too, in case the clock is wrong.
+- A root computer that an admin took the group over from while it was away could not undo
+  the takeover, as docs/design.md says it does: the others refused its connections, so its
+  removal of that admin reached no one, and it gave up its root key when it heard of the
+  takeover. Full members now exchange records, and nothing else, with such an old root; it
+  keeps its root key and iPhone CA, `cbb status` there names the admin that took over, and
+  `cbb revoke` of that admin, before or after it heard, undoes the takeover
+  (docs/protocol.md, section 10). Going back to the group's first root no longer crashes
+  the service.
+- `cbb pair` on a new computer, with two pairing windows open on the network, could try the
+  code on whichever window answered first, a wrong code there that counts toward closing it,
+  when the other answered a moment later. It now listens two more seconds after finding one
+  window and, with two, asks for the address that `cbb pair` showed.
+- `cbb paste-receive on -enter` and `on -console`, as the usage and the refusals say, stopped
+  with the usage on a full member: the flags were taken only before `on`. Both orders work
+  now.
+- A device whose clock was more than 7 days ahead, and then set right, had its copies
+  refused by the group until real time caught up with the clock it had: its saved clock
+  mark kept it ahead. At the next start of the service, a full or lite member now drops
+  such a mark and goes by its clock.
 - After `cbb takeover` the new root could not admit a computer: the joiner refused the
   member certificate it still had from its admin CA. The new root now issues its own
   certificate from the new root at once. A pairing that fails a certificate check shows

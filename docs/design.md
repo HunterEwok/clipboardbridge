@@ -1842,7 +1842,9 @@ has no other way on. So there, and only there, an admin computer may hand the gr
 (`cbb takeover`), and the records limit it: the takeover counts only while the old root's
 own records leave that admin standing. If the old root is still there, it removes the
 admin and the takeover stops counting, so a thief cannot take a group from a root that is
-still in use. A frozen admin computer does not take over until the old root thaws it. In a phone's group an admin computer never takes over.
+still in use. The others refuse the old root's connections after the takeover but still
+exchange records with it, so that it hears of the takeover (`cbb status` names the admin)
+and its removal of that admin reaches them, before or after it heard. A frozen admin computer does not take over until the old root thaws it. In a phone's group an admin computer never takes over.
 
 **Why freezing, and not one of the two simpler rules.**
 

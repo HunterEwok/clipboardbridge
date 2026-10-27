@@ -27,10 +27,13 @@ func TestParseClock(t *testing.T) {
 
 func TestScale(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if Scale == 1 {
+	if !Enabled() {
 		if D(time.Hour) != time.Hour || !Years(now, 2).Equal(now.AddDate(2, 0, 0)) || Enabled() {
 			t.Error("the release build changes times")
 		}
+		return
+	}
+	if Scale == 1 {
 		return
 	}
 	if D(Scale*time.Second) != time.Second || !Years(now, 1).Equal(now.Add(365*24*time.Hour/Scale)) || !Enabled() {
