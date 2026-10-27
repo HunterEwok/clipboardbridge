@@ -989,13 +989,14 @@ Header fields (all omitted when empty):
 | `listen` | bool | `join`: listen for a member instead of dialing one |
 | `addrs` | array of strings | the first answer of a listening `join`: where it listens |
 | `port` | integer | `away hub`: the UDP port; 0 for 8764 |
-| `consent` | bool | `away on`: the user agreed to the warning about keys in files |
+| `consent` | bool | `away on`: the user agreed to the warning about keys in files; `join` with an invitation and `admin` of a device with keys in files: the user agreed to the warning; `remote add`: a Roku over plain HTTP; `answer`: yes |
 | `device` | string | `mode`, `paste-on`, `paste-receive`: another device, by name or device ID; `remote`: the TV, by its name |
 | `new_name` | string | `rename`: the device's new name; `remote add`: the TV's name here |
 | `method` | string | `paste-on`, `inject`: `paste` (the clipboard and the paste keys, the default) or `type` |
 | `enter` | bool | `paste-on`, `inject`: press Enter after the text; `paste-receive on`: allow that |
 | `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
-| `all` | bool | `paste-receive off`: on every device of the group |
+| `all` | bool | `paste-receive off`, `actions-off`: on every device of the group |
+| `actions` | array | `action-set`: one quick action, `{name, on?, by?, any_key?, command?}`: on or off, the admins it lets run it (by key), any admin, and for an action of the user's own its program and arguments; in `status`, this device's actions, the presets first |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
 | `paste_only` | bool | `watch`: the watcher holds no clipboard and only pastes, like the Mac app |
 | `images` | bool | `watch`: the watcher writes images, so the service sends it copies with images as a `write` of kind `media` |
@@ -1007,7 +1008,7 @@ Header fields (all omitted when empty):
 | `keyboard` | object | `keyboard on`: the Bluetooth keyboard's settings, `{layout?, rate?, pastes?}`; in `status`, also `{on?, connected?, visible_until_ms?, problem?}` |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
-| `part` | object | `copy-media`'s `part` messages and `paste-media`'s answers: `{type?, path?, dir?, size?}`, a part of images or files without its hash |
+| `part` | object | `copy-media`'s `part` messages and `paste-media`'s answers: `{type?, path?, dir?, size?}`, a part of images or files without its hash; `release-file` and `release-get`: the archive's `size` |
 | `value` | string | `config`: the setting's new value; `remote add`: the TV's kind, `androidtv` (the default) or `roku`; `remote pastes`: `on` or `off` |
 
 A connection carries one request: the service reads the first message and dispatches on
@@ -1035,6 +1036,17 @@ A connection carries one request: the service reads the first message and dispat
 | `paste-receive` | `{name, enter?, console?, device?, all?}`: `name` `on` or `off` | `{status, done}`: `on` saves the switches of remote paste here, only for this device; `off` turns it off here, or with `device` or `all` on another or every device through `paste-off` commands. Only on the admin socket |
 | `keyboard` | `{name?, keyboard?}` + payload for `type`: `name` `on`, `off`, `pair`, `type` or none | `{status, done}`: `on` saves the Bluetooth keyboard's settings and registers it with BlueZ (Linux only), `off` takes it off, `pair` makes it discoverable for two minutes, `type` types the payload on the connected device and answers once it is typed, none only answers the status. Only on the admin socket |
 | `remote` | `{name?, address?, value?, new_name?, consent?, code?, device?}` + payload for `type`: `name` `add`, `code`, `cancel`, `remove`, `pastes`, `type` or none | `{status, done}`: `add` pairs with the TV at `address` (an Android TV or a Google TV shows a code; a Roku, `value` `roku`, needs `consent`, as its control is plain HTTP), `code` finishes that pairing within two minutes, `cancel` ends it, `remove` forgets the TV `device`, `pastes` sends the group's remote pastes to it or not, `type` types the payload into the field open on the TV, none only answers the status; `status.tvs` = `[{name?, kind, host, pastes?, pairing?}]`. An address outside the home network fails. Only on the admin socket |
+| `rename` | `{name, new_name}`: `name` the device, by name or device ID | `{name, done}` with the old name: an admin signs a `device` record like the device's newest one with the new name (section 10). Only on the admin socket |
+| `holder` | `{name}`: `auto`, `first`, `fallback` or `never` | `{status, done}`: the holder setting of `clipboardbridge.local` saved (state file `holder`), its priority published and the holder elected again (section 7, "The holder of `clipboardbridge.local`"). Only on the admin socket |
+| `network` | none | `{status, done}`: the networks this device is on now become known ones, where it publishes itself and takes connections (`cbb network`). Only on the admin socket |
+| `answer` | `{consent?}` | none: during a request that asks the user, such as a listening `join` waiting for a phone or an `invite` asking whether to admit a device, the client's answer; `consent` is yes |
+| `action-set` | `{actions: [action]}`, exactly one | `{status, done}`: this device's user turns the quick action on or off and says who may run it (section 15); an action of the user's own carries its `command`. Only on the admin socket |
+| `action-remove` | `{name}` | `{status, done}`: the user's own action `name` is removed; a preset cannot be, only turned off. Only on the admin socket |
+| `action-on` | `{name, device}` | `{done}` once the member `device` answered the `action` command this admin signed (section 15), or an error with its reason. Only on an admin's admin socket |
+| `actions-off` | `{device}` or `{all}` | `{status, done}`: every quick action is turned off on that device, or on every device of the group, through signed commands; this device's own at once. Only on an admin's admin socket |
+| `release` | payload = the release in JSON, `{keys, channel, release}`, the three files of section 16 that `cbb update` fetched | `{done}`: the service checks the release as a `release` message (section 16, "In the group"), keeps it when it is newer than the one it holds, and passes it on to its peers |
+| `release-file` | `{value, part}`: the archive's SHA-256 and its `size`, then its bytes in `data` messages | `{done}`: `cbb update` hands the service an archive of the release it holds (section 16), which keeps it only whole and matching its hash, to pass on to its peers. Only on the admin socket |
+| `release-get` | `{value}`: an archive's SHA-256 | `{part}`, its bytes in `data` answers, then `{done}`: the archive of the held release, from this device or fetched from its peers |
 | `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
 ### Watcher protocol

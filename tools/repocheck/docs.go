@@ -29,7 +29,10 @@ import (
 //     read (CBB_*) is in docs/reference/config.md;
 //   - every page below docs/ is reached from docs/README.md, the index;
 //   - no page outside the changelog calls something "planned for" a version
-//     that is released already (the newest version in CHANGELOG.md).
+//     that is released already (the newest version in CHANGELOG.md);
+//   - every operation of the control socket (internal/control's Op
+//     constants) is named in section 8 of docs/protocol.md or has a row of
+//     its own in a table of the protocol, as section 10's do.
 
 var (
 	mdLink    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
@@ -430,6 +433,38 @@ func checkPorts(files map[string][]byte) []string {
 	for _, p := range sortedKeys(ports) {
 		if !regexp.MustCompile(`\b` + p + `\b`).MatchString(table) {
 			problems = append(problems, fmt.Sprintf("%s:1: the port %s (%s) is not in the ports table", devicesRef, p, ports[p]))
+		}
+	}
+	return problems
+}
+
+// controlOp is an operation of the control socket in internal/control.
+var controlOp = regexp.MustCompile(`(?m)^\tOp\w+\s+= "([a-z-]+)"`)
+
+// checkOps reports the operations of the control socket that section 8 of
+// docs/protocol.md, "Local control socket", does not name and no table row
+// of the protocol starts with.
+func checkOps(files map[string][]byte) []string {
+	const src, ref = "internal/control/control.go", "docs/protocol.md"
+	code, ok1 := files[src]
+	doc, ok2 := files[ref]
+	if !ok1 || !ok2 {
+		return nil
+	}
+	section := string(doc)
+	start := strings.Index(section, "\n## 8. ")
+	if start < 0 {
+		return []string{ref + ":1: section 8, the control socket, is missing"}
+	}
+	section = section[start+1:]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	var problems []string
+	for _, m := range controlOp.FindAllSubmatch(code, -1) {
+		op := string(m[1])
+		if !strings.Contains(section, "`"+op+"`") && !strings.Contains(string(doc), "\n| `"+op+"` |") {
+			problems = append(problems, fmt.Sprintf("%s:1: the control operation %s (%s) is not described in section 8", ref, op, src))
 		}
 	}
 	return problems

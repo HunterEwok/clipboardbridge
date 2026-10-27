@@ -182,3 +182,14 @@ func TestCheckPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckOps(t *testing.T) {
+	files := map[string][]byte{
+		"internal/control/control.go": []byte("const (\n\tOpCopy       = \"copy\" // a copy\n\tOpPasteOn = \"paste-on\"\n\tOpNew = \"new\"\n\tOpThaw = \"thaw\"\n)\n"),
+		"docs/protocol.md":            []byte("# P\n\n## 7. Before\n\n`new`\n\n## 8. Local control socket\n\n| `copy` | |\n\n- `paste-on`: a paste\n\n## 9. After\n\n| `thaw` | |\n"),
+	}
+	got := checkOps(files)
+	if len(got) != 1 || !strings.Contains(got[0], "operation new ") {
+		t.Fatalf("checkOps() = %q, want one problem naming new", got)
+	}
+}
