@@ -110,7 +110,7 @@ final class AppModel: ObservableObject {
         let id: String
         var name: String
         var online: Bool
-        /// "full", "phone", "lite" or "shortcut".
+        /// "full", "phone", "lite", "shortcut" or "watch".
         var role = "full"
         /// Its operating system; nil when its record does not tell.
         var os: String?

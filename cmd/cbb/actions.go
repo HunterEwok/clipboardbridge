@@ -16,9 +16,9 @@ import (
 )
 
 const actionUsage = `usage: cbb action                       list this device's quick actions
-       cbb action enable NAME [-by root,phone,computer] [-any-key] [-yes]
+       cbb action enable NAME [-by root,phone,computer,watch] [-any-key] [-yes]
        cbb action disable NAME
-       cbb action add NAME [-by root,phone,computer] [-yes] -- PROGRAM [ARGS...]
+       cbb action add NAME [-by root,phone,computer,watch] [-yes] -- PROGRAM [ARGS...]
        cbb action remove NAME
        cbb action -on DEVICE NAME        on an admin: run NAME on DEVICE
        cbb action off [-on DEVICE | -all]`

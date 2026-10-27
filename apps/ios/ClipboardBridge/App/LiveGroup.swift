@@ -808,9 +808,21 @@ final class LiveGroup: GroupController {
                                   Task { await nodeRef.value?.sendTunnels { hub.offers(for: $0, order: box.hubOrder) } }
                               },
                               mode: modeBox.mode,
-                              onCommand: { peer, c in
-                                  let (result, mode) = modeBox.take(c, from: peer, records: box, me: device)
-                                  if let mode { Task { await nodeRef.value?.set(mode: mode) } }
+                              onCommand: { [weak self] peer, c in
+                                  let (result, change) = modeBox.take(c, from: peer, records: box, me: device)
+                                  switch change {
+                                  case let .mode(mode)?: Task { await nodeRef.value?.set(mode: mode) }
+                                  case .awayOff?:
+                                      // Connects again once the result has gone back on the
+                                      // connection that brought the command.
+                                      Task { @MainActor in
+                                          try? await Task.sleep(for: .milliseconds(500))
+                                          do { try await self?.setAwayFromHome(false) } catch {
+                                              modeLog.error("cannot turn sync away from home off: \(String(reflecting: error), privacy: .public)")
+                                          }
+                                      }
+                                  case nil: break
+                                  }
                                   return result
                               },
                               onEvidence: { [weak self] peer, chain, e in
@@ -1235,13 +1247,17 @@ final class LiveGroup: GroupController {
             if !FileManager.default.fileExists(atPath: url.path) { try set("own") }
         }
 
-        /// Carries out a command a member sent: a mode command an admin of
-        /// the group signed for me, not expired and not carried out before.
-        /// A phone takes no hub command. Returns the result and the new
-        /// mode, if it changed.
-        func take(_ c: Member.Record, from peer: String?, records: RecordBox, me: String) -> (Member.CommandResult, String?) {
+        /// What a command that was taken changes beyond its result: the new
+        /// sync mode, or sync away from home turned off.
+        enum Change { case mode(String), awayOff }
+
+        /// Carries out a command a member sent: a mode or away-off command
+        /// an admin of the group signed for me, not expired and not carried
+        /// out before. A phone takes no hub command. Returns the result and
+        /// what the caller still has to change.
+        func take(_ c: Member.Record, from peer: String?, records: RecordBox, me: String) -> (Member.CommandResult, Change?) {
             let id = Commands.id(of: c) ?? ""
-            func refused(_ reason: String) -> (Member.CommandResult, String?) {
+            func refused(_ reason: String) -> (Member.CommandResult, Change?) {
                 modeLog.notice("refused a command from \(peer ?? "?", privacy: .public): \(reason, privacy: .public)")
                 return (Member.CommandResult(id: id, status: "refused", reason: reason), nil)
             }
@@ -1262,6 +1278,10 @@ final class LiveGroup: GroupController {
                 return nil
             }
             if let again { return refused(again) }
+            if body.type == "away-off" {
+                modeLog.notice("\(body.by, privacy: .public) turned sync away from home off")
+                return (Member.CommandResult(id: body.id, status: "done"), .awayOff)
+            }
             guard body.type == "mode" else {
                 return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
             }
@@ -1273,7 +1293,7 @@ final class LiveGroup: GroupController {
                 return (Member.CommandResult(id: body.id, status: "failed", reason: error.localizedDescription), nil)
             }
             modeLog.notice("\(body.by, privacy: .public) set the sync mode to \(mode, privacy: .public)")
-            return (Member.CommandResult(id: body.id, status: "done"), mode)
+            return (Member.CommandResult(id: body.id, status: "done"), .mode(mode))
         }
     }
 

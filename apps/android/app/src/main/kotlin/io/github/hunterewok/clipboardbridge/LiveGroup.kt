@@ -864,9 +864,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Carries out a command a member sent this phone (docs/protocol.md,
-     * section 15): a mode, paste or paste-off command an admin of the group
-     * signed for it, not expired and not carried out before. A phone takes
-     * no hub command.
+     * section 15): a mode, paste, paste-off or away-off command an admin of
+     * the group signed for it, not expired and not carried out before. A
+     * phone takes no hub command.
      */
     private fun command(peer: String?, c: Member.Record): Member.CommandResult {
         val id = Commands.idOf(c) ?: ""
@@ -892,6 +892,23 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             "paste-off" -> {
                 Log.i(TAG, "${body.by} turned remote paste off")
                 return pastes.turnOff()?.copy(id = body.id) ?: Member.CommandResult(body.id, "done")
+            }
+            "away-off" -> {
+                val a = awayFromHome ?: return Member.CommandResult(body.id, "done")
+                try {
+                    a.turnOff()
+                } catch (e: Exception) {
+                    Log.e(TAG, "cannot turn sync away from home off", e)
+                    return Member.CommandResult(body.id, "failed", e.message)
+                }
+                Log.i(TAG, "${body.by} turned sync away from home off")
+                // Connects again once the result has gone back on the
+                // connection that brought the command.
+                Thread {
+                    Thread.sleep(AWAY_OFF_RESTART_MS)
+                    restartSync()
+                }.apply { isDaemon = true }.start()
+                return Member.CommandResult(body.id, "done")
             }
         }
         if (body.type != "mode") return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
@@ -1498,6 +1515,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
         /** The most command IDs the replay cache keeps; a command lives at most 30 s, as Go's maxCommandIDs. */
         private const val MAX_COMMANDS = 4096
+
+        /** How long after an away-off command the phone connects again, as Go's restartAfter. */
+        private const val AWAY_OFF_RESTART_MS = 500L
 
         /** The forms of devices that are always on, as their hellos state them. */
         private val ALWAYS_ON = setOf("desktop", "server", "board", "router")

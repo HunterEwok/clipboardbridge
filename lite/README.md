@@ -198,7 +198,7 @@ sudo cbb action off                # all of them
 An admin phone's "Quick actions", or `cbb action -on DEVICE NAME` on an admin computer, runs
 one of them here, as on a full Linux member. The lite member has three presets: `reboot`, a
 minute after the admin asks, which `cancel-shutdown` stops, and `restart`, which restarts the
-service. Each is off until the device's own user turns it on; `-by root,phone,computer`
+service. Each is off until the device's own user turns it on; `-by root,phone,computer,watch`
 limits it to those kinds of admins, and a reboot takes only admins whose keys are in hardware
 unless `-any-key`. Turning `reboot` on writes a polkit rule that lets the service's user ask
 logind for a reboot and nothing else (`/etc/polkit-1/rules.d/60-clipboardbridge.rules`), so

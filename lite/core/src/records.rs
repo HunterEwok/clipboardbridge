@@ -29,6 +29,7 @@ pub const MAX_PER_ADMIN: usize = 1024;
 /// Bits of Records::named and Records::own.
 const NAMED_PHONE: u8 = 1;
 const NAMED_OTHER: u8 = 2;
+const NAMED_WATCH: u8 = 4;
 const MAX_BODY: usize = 8 << 10;
 const VERSION: i64 = 1;
 /// The most bytes of a command's body: a hub command carries up to 256
@@ -49,7 +50,8 @@ pub const COMMAND_AHEAD_MS: i64 = 60_000;
 pub struct Command {
     #[serde(default)]
     v: i64,
-    /// `mode`, `hub`, `paste`, `paste-off`, `action` or `actions-off`.
+    /// `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or
+    /// `away-off`.
     #[serde(rename = "type", default)]
     pub kind: String,
     #[serde(default)]
@@ -92,6 +94,14 @@ pub const MAX_ACTION_NAME: usize = 32;
 
 /// Whether name may name a quick action, as Go's ValidActionName: 1 to
 /// MAX_ACTION_NAME of a-z, 0-9 and -, starting with a letter.
+/// Whether a watch's admin key may sign a command of type `kind`, as Go's
+/// WatchCommand (docs/protocol.md, section 10, rule 8): one that turns
+/// remote paste, the quick actions or sync away from home off, or that runs
+/// a quick action.
+pub fn watch_command(kind: &str) -> bool {
+    matches!(kind, "paste-off" | "actions-off" | "away-off" | "action")
+}
+
 pub fn valid_action_name(name: &str) -> bool {
     let b = name.as_bytes();
     !b.is_empty()
@@ -119,7 +129,7 @@ impl Command {
         match self.kind.as_str() {
             "mode" if self.mode.is_empty() || hub => return Err(Error::msg("a mode command names no mode")),
             "hub" if !hub || !self.mode.is_empty() => return Err(Error::msg("a hub command has no order")),
-            "paste-off" | "actions-off" if hub || !self.mode.is_empty() => {
+            "paste-off" | "actions-off" | "away-off" if hub || !self.mode.is_empty() => {
                 return Err(Error::msg(format!("a {} command carries an order", self.kind)));
             }
             "action" if hub || !self.mode.is_empty() => {
@@ -132,7 +142,7 @@ impl Command {
                 )));
             }
             "paste" => self.check_paste(hub)?,
-            "mode" | "hub" | "paste-off" | "action" | "actions-off" => {}
+            "mode" | "hub" | "paste-off" | "action" | "actions-off" | "away-off" => {}
             k => return Err(Error::msg(format!("unknown command type {k:?}"))),
         }
         if !certs::is_id(&self.to) {
@@ -228,7 +238,7 @@ struct Body {
 
 /// Whether `os` names an operating system that device records know.
 pub fn valid_os(os: &str) -> bool {
-    matches!(os, "linux" | "windows" | "macos" | "ios" | "android" | "none")
+    matches!(os, "linux" | "windows" | "macos" | "ios" | "android" | "watchos" | "wearos" | "none")
 }
 
 /// The role a record names, with the roles of earlier records read as
@@ -247,7 +257,7 @@ fn role(r: &str) -> &str {
 pub fn store_of<'a>(store: &'a str, role: &str) -> &'a str {
     match store {
         "file" | "hardware" | "proven" => store,
-        _ if role == "phone" => "hardware",
+        _ if role == "phone" || role == "watch" => "hardware",
         _ => "file",
     }
 }
@@ -272,7 +282,7 @@ impl Body {
                 if !valid_name(&self.name) {
                     return Err(Error::msg("a device record has no valid name"));
                 }
-                if !matches!(role(&self.role), "full" | "phone" | "lite" | "shortcut") {
+                if !matches!(role(&self.role), "full" | "phone" | "lite" | "shortcut" | "watch") {
                     return Err(Error::msg(format!("unknown role {:?} in a device record", self.role)));
                 }
                 if !self.os.is_empty() && !valid_os(&self.os) {
@@ -330,7 +340,7 @@ struct Signed {
 pub struct Device {
     pub id: String,
     pub name: String,
-    /// `full`, `phone`, `lite` or `shortcut`.
+    /// `full`, `phone`, `lite`, `shortcut` or `watch`.
     pub role: String,
     /// Its operating system; empty when its record does not tell.
     pub os: String,
@@ -359,8 +369,8 @@ pub struct Records {
     roots: BTreeMap<KeyHash, Cert>,
     pending: Vec<[u8; 32]>,
     /// For each root, the admin CAs that device records its own key signed
-    /// name (NAMED_PHONE or NAMED_OTHER), and the roles of its own device
-    /// records.
+    /// name (NAMED_PHONE, NAMED_WATCH or NAMED_OTHER), and the roles of its
+    /// own device records.
     named: BTreeMap<(KeyHash, KeyHash), u8>,
     own: BTreeMap<KeyHash, u8>,
     /// The records each signer signed (MAX_PER_ADMIN).
@@ -377,6 +387,8 @@ struct Eval {
     /// The records that revoked each key, by record ID.
     revokers: BTreeMap<KeyHash, Vec<[u8; 32]>>,
     phone_admin: BTreeSet<KeyHash>,
+    /// The watches' admin CAs (rule 8).
+    watch: BTreeSet<KeyHash>,
     /// The known roots: the group CA and the new roots of the root records
     /// that a known root or an admin phone under one signed.
     roots: BTreeSet<KeyHash>,
@@ -457,7 +469,11 @@ impl Records {
         }
         *self.per_signer.entry(s.signer).or_insert(0) += 1;
         if s.body.kind == "device" && s.signer == s.anchor {
-            let bit = if role(&s.body.role) == "phone" { NAMED_PHONE } else { NAMED_OTHER };
+            let bit = match role(&s.body.role) {
+                "phone" => NAMED_PHONE,
+                "watch" => NAMED_WATCH,
+                _ => NAMED_OTHER,
+            };
             if let Some(a) = s.body.admin {
                 *self.named.entry((s.anchor, a)).or_insert(0) |= bit;
             }
@@ -713,7 +729,8 @@ impl Records {
             return false;
         }
         let root = r.anchor;
-        let (mut admins, mut revoked, mut thawed) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+        let (mut admins, mut freezers, mut revoked, mut thawed) =
+            (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
         let mut computer = false;
         for o in self.by_id.values() {
             let b = &o.body;
@@ -729,10 +746,15 @@ impl Records {
                         return false;
                     }
                     computer |= own && role(&b.role) == "full";
+                    // A watch freezes an admin computer as any admin does,
+                    // but never takes the group over.
                     if let Some(a) = b.admin
                         && role(&b.role) != "phone"
                     {
-                        admins.insert(a);
+                        freezers.insert(a);
+                        if role(&b.role) != "watch" {
+                            admins.insert(a);
+                        }
                     }
                 }
                 _ => {}
@@ -746,7 +768,7 @@ impl Records {
                 && o.anchor == root
                 && o.body.keys.contains(&r.signer)
                 && !thawed.contains(&o.id)
-                && (o.signer == root || (admins.contains(&o.signer) && !revoked.contains(&o.signer)))
+                && (o.signer == root || (freezers.contains(&o.signer) && !revoked.contains(&o.signer)))
         })
     }
 
@@ -765,6 +787,7 @@ impl Records {
             revoked: BTreeSet::new(),
             revokers: BTreeMap::new(),
             phone_admin: BTreeSet::new(),
+            watch: BTreeSet::new(),
             roots: self.known_roots(),
             freezes: BTreeMap::new(),
             frozen_keys: BTreeSet::new(),
@@ -793,6 +816,13 @@ impl Records {
                 if stands_for_roots(&r.signer, &a) {
                     ev.phone_admin.insert(a);
                 }
+            }
+            if let Some(a) = r.body.admin
+                && r.body.kind == "device"
+                && role(&r.body.role) == "watch"
+                && ev.root_signed(r)
+            {
+                ev.watch.insert(a);
             }
         }
         let mut disabled = BTreeSet::new();
@@ -900,11 +930,21 @@ impl Records {
         }
     }
 
+    /// Whether a device record counts, as Go's Records.counts: signed
+    /// under a root on the path by an admin CA that still stands under it
+    /// and is no watch's, which admits nobody (rule 8).
     fn counts(&self, r: &Signed, on: &[KeyHash]) -> bool {
         on.contains(&r.anchor)
             && self.signed_by_root(r)
             && r.body.key.is_some_and(|k| self.issued(&r.signer, &k))
             && self.kept_by_freezes(&self.ev(), r)
+            && !self.watch(&r.signer)
+    }
+
+    /// Whether k is a watch's admin CA (docs/protocol.md, section 10, rule
+    /// 8), as Go's Records.Watch.
+    pub fn watch(&self, k: &KeyHash) -> bool {
+        self.ev().watch.contains(k)
     }
 
     /// Reports whether a device record that counts names the key k.
@@ -934,6 +974,9 @@ impl Records {
                 return Some("the certificate's issuer is not in its chain");
             };
             let admin = issuer.key_hash();
+            if self.watch(&admin) {
+                return Some("a watch certifies no devices");
+            }
             if !self.issued(&admin, &leaf) {
                 return Some("the admin that admitted the device was removed");
             }
@@ -1079,14 +1122,15 @@ impl Records {
 
     /// Whether the device `dev` may be the group's hub by the records
     /// alone, as Go's Records.MayHost: the root's own device, whose key is
-    /// not revoked, or a device listed as an admin. For the hub that a hub
+    /// not revoked, or a device listed as an admin other than a watch. For
+    /// the hub that a hub
     /// moving names (docs/protocol.md, section 11, "Moving the hub"); a
     /// peer's own offer is checked with [`Records::admin_peer`].
     pub fn may_host(&self, dev: &str) -> bool {
         if self.root_member().is_some_and(|(id, k)| id == dev && !self.revoked(&k)) {
             return true;
         }
-        self.devices().iter().any(|d| d.id == dev && d.admin)
+        self.devices().iter().any(|d| d.id == dev && d.admin && d.role != "watch")
     }
 
     /// Checks a command for the member `me` at now_ms, as Go's
@@ -1118,6 +1162,9 @@ impl Records {
             || !(signer == anchor || self.issued(&anchor, &signer))
         {
             return Err(not_admin());
+        }
+        if self.watch(&signer) && !watch_command(&body.kind) {
+            return Err(Error::msg(format!("a watch does not sign {} commands", body.kind)));
         }
         if body.expires_ms <= now_ms {
             return Err(Error::msg("the command expired; check the clocks of both devices"));
@@ -1161,7 +1208,7 @@ impl Records {
         let mut hubs: Vec<(bool, bool, String)> = self
             .devices()
             .into_iter()
-            .filter(|d| d.admin || root.as_deref() == Some(d.id.as_str()))
+            .filter(|d| d.admin && d.role != "watch" || root.as_deref() == Some(d.id.as_str()))
             .map(|d| (d.role != "phone", root.as_deref() != Some(d.id.as_str()), d.id))
             .collect();
         hubs.sort();

@@ -431,8 +431,8 @@ impl Service {
     /// Carries out a command a member sent (docs/protocol.md, section 15):
     /// one that an admin signed for this device in its group, that has not
     /// expired and was not carried out before. The lite member takes mode,
-    /// paste and action commands; it is never the group's hub, so it
-    /// refuses hub commands.
+    /// paste, action and the commands that turn things off; it is never the
+    /// group's hub, so it refuses hub commands.
     fn command(&self, peer: &crate::certs::DeviceId, c: &crate::records::Record) -> wire::CommandResult {
         let refused = |id: &str, why: String| {
             (self.log)(&format!("cbb: refused a command from {peer}: {why}"));
@@ -469,6 +469,27 @@ impl Service {
                     Ok(()) => (self.log)(&format!("cbb: {} turned the quick actions off here", body.by)),
                     Err(e) => {
                         (self.log)(&format!("cbb: turning the quick actions off: {}", e.for_log()));
+                        res.status = "failed".into();
+                        res.reason = e.message().to_string();
+                    }
+                }
+                return res;
+            }
+            "away-off" => {
+                let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
+                match self.away().and_then(|a| a.turn_off()) {
+                    Ok(()) => {
+                        (self.log)(&format!("cbb: {} turned sync away from home off here", body.by));
+                        // The members connect again once the result has gone
+                        // back on the connection that brought the command.
+                        let node = node.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            node.set_tunnel_key(None);
+                        });
+                    }
+                    Err(e) => {
+                        (self.log)(&format!("cbb: turning sync away from home off: {}", e.for_log()));
                         res.status = "failed".into();
                         res.reason = e.message().to_string();
                     }
@@ -599,7 +620,7 @@ impl Service {
         }
         for k in &a.by {
             if !actions::KINDS.contains(&k.as_str()) {
-                return Err(Error::msg(format!("{k:?} is not a kind of admin: root, phone or computer")));
+                return Err(Error::msg(format!("{k:?} is not a kind of admin: root, phone, computer or watch")));
             }
         }
         let mut set = actions::load(&self.state_dir)?;

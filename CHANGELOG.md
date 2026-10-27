@@ -8,6 +8,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The `watch` role for a watch's admin key (docs/protocol.md, section 10, rule 8), in Go,
+  the lite member and both phone kits, with interop vectors: a watch freezes admin
+  computers, removes ordinary devices and signs only the commands that turn things off and
+  quick actions; it never admits devices, removes an admin, takes the group over or acts as
+  a hub. Any admin can freeze a watch; removing one takes the root or an admin phone.
+  Certifying a watch from the root phone follows.
+- The `away-off` command turns sync away from home off on a member (`cbb global off -on
+  DEVICE` on an admin computer); turning it on stays each device's own decision.
+- Quick actions take `watch` in `-by`, for actions a watch may run.
 - The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
   seconds, and it hears of the group's events then, without being opened. Push
   notifications follow with the Apple developer account.

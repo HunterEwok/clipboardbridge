@@ -9,7 +9,9 @@ import Foundation
 /// puts a text where the receiver's focus is, and paste-off turns remote
 /// paste off on the receiver (design.md, "Remote paste"); an action command
 /// runs one of the receiver's quick actions by its name, and actions-off
-/// turns them all off there (roadmap.md, "Quick actions").
+/// turns them all off there (roadmap.md, "Quick actions"); away-off turns
+/// sync away from home off on the receiver. A watch signs only those that
+/// turn things off and action (watchTypes).
 public enum Commands {
     /// How long after signing a command expires; the receivers take at most 30 s.
     public static let lifetimeMS: Int64 = 30_000
@@ -73,6 +75,19 @@ public enum Commands {
         guard validActionName(name) else { throw Failure.badAction(name) }
         let ms = Records.ms(now)
         return try sign(Body(type: "action", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, action: name),
+                        signer: signer, adminCA: adminCA)
+    }
+
+    /// The commands a watch's admin key may sign (docs/protocol.md, section
+    /// 10, rule 8), as Go's WatchCommand.
+    public static let watchTypes: Set<String> = ["paste-off", "actions-off", "away-off", "action"]
+
+    /// An away-off command for the device to: it turns sync away from home
+    /// off there, and its tunnel keys go. Signed as mode.
+    public static func awayOff(to: String, group: String, by: String, now: Date, signer: CertificateSigner,
+                               adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+        let ms = Records.ms(now)
+        return try sign(Body(type: "away-off", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS),
                         signer: signer, adminCA: adminCA)
     }
 
@@ -188,7 +203,7 @@ public enum Commands {
         switch b.type {
         case "mode": guard let m = b.mode, !m.isEmpty, b.hub == nil else { throw refuse("a mode command names no mode") }
         case "hub": guard b.hub != nil, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
-        case "paste-off", "actions-off": guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("a \(b.type) command carries an order") }
+        case "paste-off", "actions-off", "away-off": guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("a \(b.type) command carries an order") }
         case "action":
             guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("an action command carries an order") }
             guard validActionName(b.action ?? "") else { throw refuse("an action command names no valid action") }
@@ -208,6 +223,7 @@ public enum Commands {
         guard b.group == GroupCertificates.tag(groupCA: ca) else { throw refuse("the command is for another group") }
         guard b.to == me else { throw refuse("the command is for another device") }
         guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
+        guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
         guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
         guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
         return b

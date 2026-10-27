@@ -592,7 +592,7 @@ One pull request each, smaller ones together:
    (docs/apps.md, Apple Watch and Wear OS).
 3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
    Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
-   that turns sync away from home off on a member.
+   that turns sync away from home off on a member. Done but the certifying, which is next.
 4. Emergency actions on the watch, and the quick actions of item 27.
 5. Prompt iPhone notifications through an encrypted Apple push (D-74), after the Apple
    developer account.

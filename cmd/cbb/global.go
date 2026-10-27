@@ -56,6 +56,8 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usage := "usage: cbb global                     show sync away from home\n" +
 		"       cbb global on                  turn it on here\n" +
 		"       cbb global off [-yes]          turn it off here and forget its keys\n" +
+		"       cbb global off -on DEVICE      on an admin: turn it off on another device, whose own user\n" +
+		"                                      turns it on again\n" +
 		"       cbb global hub [-port N] [-firewall ask|yes|no] [-obfuscate] [-forwarder address:port -forwarder-key KEY [-vless]] [address:port...]\n" +
 		"                                      make this device the group's hub, reached at these addresses\n" +
 		"                                      or through the forwarder; -obfuscate for networks that block WireGuard,\n" +
@@ -98,12 +100,17 @@ func cmdGlobal(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("global off", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		yes := fs.Bool("yes", false, "turn it off without asking, even where it cuts this device off (for scripts)")
+		on := fs.String("on", "", "on an admin: the device, by name or ID, to turn it off on")
 		if fs.Parse(args[1:]) != nil {
 			return 2
 		}
 		if fs.NArg() != 0 {
 			fmt.Fprintln(stderr, usage)
 			return 2
+		}
+		if *on != "" {
+			h.Device = *on
+			break
 		}
 		if granted(grant{}).on {
 			if err := checkAwayNet(); err != nil {

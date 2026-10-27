@@ -59,11 +59,12 @@ public enum Records {
     /// Where a device's keys live, as its record's store field says
     /// (docs/protocol.md, section 17): file, hardware or proven. Without
     /// one, as before 0.6, or with one this version does not know, a
-    /// phone's keys are in hardware and any other device's in a file.
+    /// phone's and a watch's keys are in hardware and any other device's in
+    /// a file.
     public static func store(_ store: String?, role: String) -> String {
         switch store {
         case let s? where s == file || s == hardware || s == proven: s
-        default: role == "phone" ? hardware : file
+        default: role == "phone" || role == "watch" ? hardware : file
         }
     }
 
@@ -160,8 +161,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
     private var rootList: [Data] = []
     private var pending: [Pending] = []
     /// For each root, the admin CAs that device records its own key signed
-    /// name (namedPhone or namedOther), and the roles of its own device
-    /// records.
+    /// name (namedPhone, namedWatch or namedOther), and the roles of its
+    /// own device records.
     private var named: [Data: [Data: Int]] = [:]
     private var own: [Data: Int] = [:]
     /// The records each signer signed (maxPerAdmin).
@@ -173,7 +174,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         var signer: Data
     }
 
-    private static let namedPhone = 1, namedOther = 2
+    private static let namedPhone = 1, namedOther = 2, namedWatch = 4
 
     private enum CodingKeys: String, CodingKey { case records, groupCA }
 
@@ -204,8 +205,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
     public struct Device: Equatable, Sendable, Identifiable {
         public var id: String
         public var name: String
-        /// "full", "phone", "lite" or "shortcut"; earlier records' "linux"
-        /// and "mac" read as "full", "iphone" as "shortcut".
+        /// "full", "phone", "lite", "shortcut" or "watch"; earlier records'
+        /// "linux" and "mac" read as "full", "iphone" as "shortcut".
         public var role: String
         /// Its operating system; nil when its record does not tell.
         public var os: String?
@@ -256,7 +257,11 @@ public struct RecordSet: Codable, Equatable, Sendable {
         perSigner[signer] = n + 1
         records.append(r)
         if body.type == "device" && signer == anchorKey {
-            let bit = Records.role(body.role) == "phone" ? Self.namedPhone : Self.namedOther
+            let bit = switch Records.role(body.role) {
+            case "phone": Self.namedPhone
+            case "watch": Self.namedWatch
+            default: Self.namedOther
+            }
             if let a = body.admin { named[anchorKey, default: [:]][a, default: 0] |= bit }
             if body.device != nil && body.device == body.by { own[anchorKey, default: 0] |= bit }
         }
@@ -367,6 +372,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         var revokers: [Data: [Data]] = [:]
         /// The admin CAs of admin phones, which a root recorded.
         var phoneAdmin: Set<Data> = []
+        /// The admin CAs of watches, which a root recorded (rule 8).
+        var watch: Set<Data> = []
         /// The known roots: the group CA and the new roots that a known
         /// root or an admin phone under one handed the group to, or an
         /// admin computer under a root that is a computer.
@@ -430,7 +437,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         private static func computerHandOver(_ e: Entry, _ entries: [Entry]) -> Bool {
             guard e.body.root != nil, e.signer != e.anchor else { return false }
             let root = e.anchor
-            var admins: Set<Data> = [], revoked: Set<Data> = [], thawed: Set<Data> = []
+            var admins: Set<Data> = [], freezers: Set<Data> = [], revoked: Set<Data> = [], thawed: Set<Data> = []
             var computer = false
             for o in entries where o.signer == root && o.anchor == root {
                 let b = o.body
@@ -441,14 +448,19 @@ public struct RecordSet: Codable, Equatable, Sendable {
                     let own = b.device != nil && b.device == b.by
                     if own && Records.role(b.role) == "phone" { return false }
                     if own && Records.role(b.role) == "full" { computer = true }
-                    if let a = b.admin, Records.role(b.role) != "phone" { admins.insert(a) }
+                    // A watch freezes an admin computer as any admin does,
+                    // but never takes the group over.
+                    if let a = b.admin, Records.role(b.role) != "phone" {
+                        freezers.insert(a)
+                        if Records.role(b.role) != "watch" { admins.insert(a) }
+                    }
                 default: break
                 }
             }
             guard computer, admins.contains(e.signer), !revoked.contains(e.signer) else { return false }
             return !entries.contains { o in
                 o.body.type == "freeze" && o.anchor == root && (o.body.keys ?? []).contains(e.signer) && !thawed.contains(o.id)
-                    && (o.signer == root || (admins.contains(o.signer) && !revoked.contains(o.signer)))
+                    && (o.signer == root || (freezers.contains(o.signer) && !revoked.contains(o.signer)))
             }
         }
 
@@ -490,6 +502,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             }
             for e in entries {
                 if let a = Self.phoneAdmin(of: e, roots: known), standsForRoots(e.signer, a) { phoneAdmin.insert(a) }
+                if e.body.type == "device", Records.role(e.body.role) == "watch", rootSigned(e), let a = e.body.admin { watch.insert(a) }
             }
             var disabled: Set<Data> = []
             for e in entries where e.body.type == "revoke" && (rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor))) {
@@ -552,9 +565,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// frozen admin.
         func frozen(_ k: Data) -> Bool { freezes[k] != nil || frozenKeys.contains(k) }
 
-        /// Whether a device record counts.
+        /// Whether a device record counts; a watch's admits nobody (rule 8).
         func counts(_ e: Entry) -> Bool {
-            onPath.contains(e.anchor) && fromRoot(e) && issued(e.signer, e.body.key ?? Data()) && kept(e)
+            onPath.contains(e.anchor) && fromRoot(e) && issued(e.signer, e.body.key ?? Data()) && kept(e) && !watch.contains(e.signer)
         }
 
         /// Whether issuer is revoked only by records that keep the key k, as
@@ -585,6 +598,17 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return ev.onPath.contains(anchor) && !ev.revoked.contains(a.signer) && !ev.frozen(a.signer)
             && (a.signer == anchor || ev.issued(anchor, a.signer))
     }
+
+    /// Whether a watch's admin CA signed the record or command c
+    /// (docs/protocol.md, section 10, rule 8), whose powers are few.
+    public func signedByWatch(_ c: Member.Record) -> Bool {
+        guard let groupCA, let a = RecordSet.anchor(c, roots: knownRoots(groupCA)) else { return false }
+        return isWatch(a.signer)
+    }
+
+    /// Whether a key hash is a watch's admin CA (rule 8): one that a device
+    /// record of a watch, signed by a known root's own key, names.
+    public func isWatch(_ keyHash: Data) -> Bool { Eval(self).watch.contains(keyHash) }
 
     /// Whether a key hash is frozen (docs/protocol.md, section 10, rule 4): a
     /// computer's admin CA that a freeze names, or such an admin's device
@@ -620,6 +644,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
                   let admin = try? Records.keyHash(cert: issuer) else {
                 return "the certificate's issuer is not in its chain"
             }
+            if ev.watch.contains(admin) { return "a watch certifies no devices" }
             if !ev.issued(admin, leaf) { return "the admin that admitted the device was removed" }
             // A frozen admin's certificates hold only for devices the records
             // already list.
@@ -766,11 +791,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// Whether device may be the group's hub for sync away from home: the
     /// root (a device whose own record the current root's key signed, a
     /// phone or a computer, as Go's Records.RootMember) or a device listed as
-    /// an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+    /// an admin whose admin CA is not revoked, other than a watch, which never
+    /// connects to the group (docs/protocol.md, section 11).
     /// Only by device ID: MemberNode passes on an offer only from a peer that
     /// mayHost(_:chain:) takes, which also checks the key.
     public func mayHost(_ device: String) -> Bool {
-        if devices.contains(where: { $0.id == device && $0.admin }) { return true }
+        if devices.contains(where: { $0.id == device && $0.admin && $0.role != "watch" }) { return true }
         guard let root = rootMember() else { return false }
         return root.device == device && !Eval(self).revoked.contains(root.key)
     }
@@ -781,7 +807,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// device picks itself.
     public func mayHost(_ device: String, chain: [Data]) -> Bool {
         guard let leaf = chain.first, let key = try? Records.keyHash(cert: leaf) else { return false }
-        if devices.contains(where: { $0.id == device && $0.admin && $0.key == key }) { return true }
+        if devices.contains(where: { $0.id == device && $0.admin && $0.role != "watch" && $0.key == key }) { return true }
         guard let root = rootMember() else { return false }
         return root.device == device && root.key == key && !Eval(self).revoked.contains(key)
     }
@@ -792,7 +818,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// ID.
     public var hubOrder: [String] {
         let root = rootMember().flatMap { Eval(self).revoked.contains($0.key) ? nil : $0.device }
-        return devices.filter { $0.id == root || $0.admin }
+        return devices.filter { $0.id == root || ($0.admin && $0.role != "watch") }
             .sorted { a, b in
                 if (a.role == "phone") != (b.role == "phone") { return a.role == "phone" }
                 if (a.id == root) != (b.id == root) { return a.id == root }

@@ -52,13 +52,17 @@ const (
 	RecordThaw   = "thaw"
 )
 
-// Device roles in device records: the member roles, and shortcut for an
-// iPhone without the app that uses the shortcut and its token.
+// Device roles in device records: the member roles, shortcut for an
+// iPhone without the app that uses the shortcut and its token, and watch
+// for a watch with an admin key of its own, which the root certified and
+// which signs only a few emergency actions (docs/protocol.md, section 10,
+// rule 8).
 const (
 	RoleFull     = "full"
 	RolePhone    = "phone"
 	RoleLite     = "lite"
 	RoleShortcut = "shortcut"
+	RoleWatch    = "watch"
 )
 
 // Where a device's keys live, as its device record says (docs/protocol.md,
@@ -81,7 +85,7 @@ func StoreOf(store, role string) string {
 	case StoreFile, StoreHardware, StoreProven:
 		return store
 	}
-	if role == RolePhone {
+	if role == RolePhone || role == RoleWatch {
 		return StoreHardware
 	}
 	return StoreFile
@@ -103,20 +107,23 @@ const (
 	OSMacOS   = "macos"
 	OSiOS     = "ios"
 	OSAndroid = "android"
+	OSWatchOS = "watchos"
+	OSWearOS  = "wearos"
 	OSNone    = "none" // firmware without an operating system
 )
 
 // ValidOS reports whether os names a known operating system.
 func ValidOS(os string) bool {
 	switch os {
-	case OSLinux, OSWindows, OSMacOS, OSiOS, OSAndroid, OSNone:
+	case OSLinux, OSWindows, OSMacOS, OSiOS, OSAndroid, OSWatchOS, OSWearOS, OSNone:
 		return true
 	}
 	return false
 }
 
 // OSName names an operating system for the user: "Linux", "Windows",
-// "macOS", "iOS", "Android", "device" for firmware, "?" when unknown.
+// "macOS", "iOS", "Android", "watchOS", "Wear OS", "device" for firmware,
+// "?" when unknown.
 func OSName(os string) string {
 	switch os {
 	case OSLinux:
@@ -129,6 +136,10 @@ func OSName(os string) string {
 		return "iOS"
 	case OSAndroid:
 		return "Android"
+	case OSWatchOS:
+		return "watchOS"
+	case OSWearOS:
+		return "Wear OS"
 	case OSNone:
 		return "device"
 	}
@@ -282,7 +293,7 @@ func (b *RecordBody) check() error {
 			return errors.New("group: a device record has no valid name")
 		}
 		switch role(b.Role) {
-		case RoleFull, RolePhone, RoleLite, RoleShortcut:
+		case RoleFull, RolePhone, RoleLite, RoleShortcut, RoleWatch:
 		default:
 			return fmt.Errorf("group: unknown role %q in a device record", b.Role)
 		}
@@ -353,8 +364,9 @@ type Records struct {
 	roots   map[KeyHash]*x509.Certificate
 	pending []*signedRecord
 	// named holds, for each root, the admin CAs that device records signed
-	// by its own key name: namedPhone for a phone's record, namedOther for
-	// any other; own the roles of the root's own device records.
+	// by its own key name: namedPhone for a phone's record, namedWatch for
+	// a watch's, namedOther for any other; own the roles of the root's own
+	// device records.
 	named map[KeyHash]map[KeyHash]uint8
 	own   map[KeyHash]uint8
 	// perSigner counts the records each signer signed (MaxPerAdmin).
@@ -384,6 +396,7 @@ func NewRecords(groupCA *x509.Certificate) *Records {
 const (
 	namedPhone uint8 = 1 << iota
 	namedOther
+	namedWatch
 )
 
 // Len returns the number of records.
@@ -414,8 +427,11 @@ func (s *Records) Add(r Record) (bool, error) {
 	b := sr.body
 	if b.Type == RecordDevice && sr.signer == sr.anchor {
 		bit := namedOther
-		if role(b.Role) == RolePhone {
+		switch role(b.Role) {
+		case RolePhone:
 			bit = namedPhone
+		case RoleWatch:
+			bit = namedWatch
 		}
 		if b.Admin != nil {
 			if s.named[sr.anchor] == nil {
@@ -755,6 +771,13 @@ func checkAdminCA(c, root *x509.Certificate) error {
 // key named by a revocation from a root or an admin phone.
 func (s *Records) Revoked(k KeyHash) bool { return s.eval().revoked[k] }
 
+// Watch reports whether k is a watch's admin CA (docs/protocol.md, section
+// 10, rule 8): one that a device record of a watch, signed by a known
+// root's own key, names. Such an admin freezes admin computers, removes
+// ordinary devices and signs the commands that turn things off and run
+// quick actions, and nothing else.
+func (s *Records) Watch(k KeyHash) bool { return s.eval().watch[k] }
+
 // Frozen reports whether a key is frozen (docs/protocol.md, section 10,
 // rule 4): a computer's admin CA that a freeze that counts names, or the
 // device key of such an admin.
@@ -797,10 +820,11 @@ func (s *Records) mayHandOver(r *signedRecord) bool {
 // computerHandOver reports whether r, a root record, was signed by the
 // admin CA of a computer under its anchor, a root that is a computer
 // itself: the root's own key signed a device record that names that admin
-// CA, and the root's own device record is a computer's. Only that root's
+// CA, of a role other than a phone's or a watch's, and the root's own
+// device record is a computer's. Only that root's
 // own records can stop it: a revocation from its own key that names the
 // admin CA, or a freeze of it that the root's own key or another admin CA
-// it certified (and did not revoke) signed and the root's own key did not
+// it certified (and did not revoke), a watch's among them, signed and the root's own key did not
 // thaw. In a group whose root is a computer the root key sits in a file as
 // the admin's does, so an admin computer may take the group over from a
 // lost root; a root that is still there undoes it by removing that admin
@@ -810,7 +834,7 @@ func (s *Records) computerHandOver(r *signedRecord) bool {
 		return false
 	}
 	R := r.anchor
-	admins, revoked, thawed := map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}
+	admins, freezers, revoked, thawed := map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}
 	computer := false
 	for _, o := range s.byID {
 		b := o.body
@@ -834,7 +858,12 @@ func (s *Records) computerHandOver(r *signedRecord) bool {
 				computer = true
 			}
 			if b.Admin != nil && role(b.Role) != RolePhone {
-				admins[*b.Admin] = true
+				// A watch freezes an admin computer as any admin does, but
+				// never takes the group over.
+				freezers[*b.Admin] = true
+				if role(b.Role) != RoleWatch {
+					admins[*b.Admin] = true
+				}
 			}
 		}
 	}
@@ -845,7 +874,7 @@ func (s *Records) computerHandOver(r *signedRecord) bool {
 		if o.body.Type != RecordFreeze || o.anchor != R || !slices.Contains(o.body.Keys, r.signer) || thawed[o.id] {
 			continue
 		}
-		if o.signer == R || admins[o.signer] && !revoked[o.signer] {
+		if o.signer == R || freezers[o.signer] && !revoked[o.signer] {
 			return false
 		}
 	}
@@ -875,10 +904,15 @@ func (s *Records) computerHandOver(r *signedRecord) bool {
 //     disabled and still stands under its root, and, for a computer's
 //     admin CA, when it names no admin or root key; an admin phone's names
 //     no root key.
+//  7. A watch's admin CA, one that a device record of a watch signed by a
+//     root's own key names, counts as a computer's for revocations and
+//     freezes; its device and root records never count, and nor do the
+//     certificates it issues.
 type evaluation struct {
 	revoked    map[KeyHash]bool
 	revokers   map[KeyHash][]*signedRecord // the records that revoked each key
 	phoneAdmin map[KeyHash]bool
+	watch      map[KeyHash]bool            // the watches' admin CAs (rule 8)
 	roots      map[KeyHash]bool            // the known roots (knownRoots)
 	freezes    map[KeyHash][]*signedRecord // the freezes that count, for each frozen admin CA
 	frozenKeys map[KeyHash]bool            // the device keys of the frozen admins
@@ -900,7 +934,7 @@ func (s *Records) eval() *evaluation {
 		return s.ev
 	}
 	ev := &evaluation{revoked: map[KeyHash]bool{}, revokers: map[KeyHash][]*signedRecord{}, phoneAdmin: map[KeyHash]bool{},
-		roots: s.knownRoots(), freezes: map[KeyHash][]*signedRecord{}, frozenKeys: map[KeyHash]bool{}}
+		watch: map[KeyHash]bool{}, roots: s.knownRoots(), freezes: map[KeyHash][]*signedRecord{}, frozenKeys: map[KeyHash]bool{}}
 	byRoot := map[KeyHash][]*signedRecord{} // the root revocations of each key
 	privileged := map[KeyHash]bool{}        // the root and admin keys
 	for k := range s.roots {
@@ -932,6 +966,9 @@ func (s *Records) eval() *evaluation {
 	for _, r := range s.byID {
 		if a := phoneAdminOf(r, ev.roots); a != nil && standsForRoots(r.signer, *a) {
 			ev.phoneAdmin[*a] = true
+		}
+		if b := r.body; b.Type == RecordDevice && b.Admin != nil && role(b.Role) == RoleWatch && ev.rootSigned(r) {
+			ev.watch[*b.Admin] = true
 		}
 	}
 	disabled := map[KeyHash]bool{}
@@ -1066,12 +1103,14 @@ func (ev *evaluation) counts(r *signedRecord, disabled, privileged map[KeyHash]b
 }
 
 // counts reports whether a device record counts: it was signed under a
-// root on the path, by an admin CA that still stands under it, and its
+// root on the path, by an admin CA that still stands under it and is no
+// watch's, which admits nobody (rule 8), and its
 // signer's key is not revoked, or every record that revoked it keeps the
 // device's key, as when an admin is removed and the devices it admitted
 // stay.
 func (s *Records) counts(r *signedRecord, on map[KeyHash]bool) bool {
-	return on[r.anchor] && s.fromRoot(r) && s.issued(r.signer, *r.body.Key) && s.eval().kept(r)
+	ev := s.eval()
+	return on[r.anchor] && s.fromRoot(r) && s.issued(r.signer, *r.body.Key) && ev.kept(r) && !ev.watch[r.signer]
 }
 
 // kept reports whether admin is revoked only by records that keep the key
@@ -1121,6 +1160,9 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 			return errors.New("group: the certificate's issuer is not in its chain")
 		}
 		admin := KeyHashOf(issuer)
+		if s.eval().watch[admin] {
+			return errors.New("group: a watch certifies no devices")
+		}
 		if !s.issued(admin, leaf) {
 			return errors.New("group: the admin that admitted the device was removed")
 		}
@@ -1159,7 +1201,7 @@ func (s *Records) listed(k KeyHash) bool {
 type Device struct {
 	ID   DeviceID
 	Name string
-	Role string // RoleFull, RolePhone, RoleLite or RoleShortcut
+	Role string // RoleFull, RolePhone, RoleLite, RoleShortcut or RoleWatch
 	OS   string // "" when its record does not tell
 	Key  KeyHash
 	// Store is where its keys live (StoreOf); Kind and Proof name the
@@ -1305,7 +1347,8 @@ func (s *Records) RootMember() (DeviceID, KeyHash) {
 
 // MayHost reports whether the device dev may be the group's hub for sync
 // away from home by the records alone: the root's own device, whose key is
-// not revoked, or a device listed as an admin (docs/protocol.md, section
+// not revoked, or a device listed as an admin other than a watch, which
+// never connects to the group (docs/protocol.md, section
 // 11). A peer's offer is also checked against the key of its certificate;
 // this is for a hub that a hub moving names (section 11, "Moving the hub").
 func (s *Records) MayHost(dev DeviceID) bool {
@@ -1313,7 +1356,7 @@ func (s *Records) MayHost(dev DeviceID) bool {
 		return true
 	}
 	for _, d := range s.Devices() {
-		if d.ID == dev && d.Admin {
+		if d.ID == dev && d.Admin && d.Role != RoleWatch {
 			return true
 		}
 	}
@@ -1336,7 +1379,7 @@ func (s *Records) HubOrder() []DeviceID {
 	}
 	var hubs []hub
 	for _, d := range s.Devices() {
-		if d.ID == root || d.Admin {
+		if d.ID == root || d.Admin && d.Role != RoleWatch {
 			hubs = append(hubs, hub{d.ID, d.Role == RolePhone})
 		}
 	}

@@ -631,6 +631,9 @@ func (s *Service) away(ctx context.Context, m *control.Message) error {
 	if m.Name == "move" {
 		return s.moveHub(ctx, m.Device, m.Forwarder, m.ForwarderKey, m.Addrs)
 	}
+	if m.Name == "off" && m.Device != "" {
+		return s.awayOffOn(ctx, m.Device)
+	}
 	if m.Name == "hub" && !id.IsAdmin() {
 		return errors.New("only the group's root or an admin can be its hub, since the members take the hub's offer from them only; make this device an admin first (cbb admin on the root)")
 	}
@@ -843,4 +846,41 @@ func (s *Service) awayStatus() *control.Away {
 		}
 	}
 	return a
+}
+
+// awayOffOn serves cbb global off -on: it turns sync away from home
+// off on the member target with a command this admin signs; only that
+// device's own user turns it on again (D-45).
+func (s *Service) awayOffOn(ctx context.Context, target string) error {
+	d, err := s.findDevice(target)
+	if err != nil {
+		return err
+	}
+	if d.Self {
+		return errors.New("-on names this device; cbb global off turns it off here")
+	}
+	return s.commandOn(ctx, d, group.CommandBody{Type: group.CommandAwayOff})
+}
+
+// awayOff carries out an away-off command: sync away from home goes off
+// here and its keys go, as with cbb global off. The members connect again
+// only after the result has gone back on the connection that brought it.
+func (s *Service) awayOff(body group.CommandBody) node.Result {
+	res := node.Result{ID: body.ID, Status: node.ResultDone}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	reconnect, _, _, err := s.awayLocked(&control.Message{Header: control.Header{Op: control.OpAway, Name: "off"}}, group.Tag(id.GroupCA.Cert))
+	if err != nil {
+		res.Status, res.Reason = node.ResultFailed, err.Error()
+		return res
+	}
+	s.logf("cbb: %s turned sync away from home off here", body.By)
+	if reconnect && nd != nil {
+		time.AfterFunc(restartAfter, func() {
+			nd.SetTunnelKey(nil, nil)
+			nd.Reconnect()
+		})
+	}
+	return res
 }

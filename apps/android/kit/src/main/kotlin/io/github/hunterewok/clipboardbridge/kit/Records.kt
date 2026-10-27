@@ -149,11 +149,11 @@ object Records {
      * Where a device's keys live, as its record's store field says
      * (docs/protocol.md, section 17): FILE, HARDWARE or PROVEN. Without
      * one, as before 0.6, or with one this version does not know, a phone's
-     * keys are in hardware and any other device's in a file.
+     * and a watch's keys are in hardware and any other device's in a file.
      */
     fun storeOf(store: String?, role: String): String = when (store) {
         FILE, HARDWARE, PROVEN -> store
-        else -> if (role == "phone") HARDWARE else FILE
+        else -> if (role == "phone" || role == "watch") HARDWARE else FILE
     }
 
     /** The role a record names, with the roles of earlier records read as today's: "linux" and "mac" as "full", "iphone" as "shortcut". */
@@ -213,7 +213,7 @@ class RecordSet {
     private val rootList = mutableListOf<ByteArray>()
     private val pending = mutableListOf<Triple<ByteArray, Key, Key>>() // the new root, its anchor and its signer
 
-    /** For each root, the admin CAs that device records its own key signed name ([NAMED_PHONE] or [NAMED_OTHER]), and the roles of its own device records. */
+    /** For each root, the admin CAs that device records its own key signed name ([NAMED_PHONE], [NAMED_WATCH] or [NAMED_OTHER]), and the roles of its own device records. */
     private val named = mutableMapOf<Key, MutableMap<Key, Int>>()
     private val own = mutableMapOf<Key, Int>()
 
@@ -225,7 +225,7 @@ class RecordSet {
     data class Device(
         val id: String,
         val name: String,
-        /** "full", "phone", "lite" or "shortcut". */
+        /** "full", "phone", "lite", "shortcut" or "watch". */
         val role: String,
         val key: ByteArray,
         /** Whether it is an admin whose admin CA is not revoked. */
@@ -283,7 +283,11 @@ class RecordSet {
         perSigner[signer] = n + 1
         list.add(r)
         if (body.type == "device" && signer == anchorKey) {
-            val bit = if (Records.role(body.role) == "phone") NAMED_PHONE else NAMED_OTHER
+            val bit = when (Records.role(body.role)) {
+                "phone" -> NAMED_PHONE
+                "watch" -> NAMED_WATCH
+                else -> NAMED_OTHER
+            }
             body.admin?.let { a -> named.getOrPut(anchorKey) { mutableMapOf() }.merge(Key(a), bit) { x, y -> x or y } }
             if (body.device != null && body.device == body.by) own.merge(anchorKey, bit) { x, y -> x or y }
         }
@@ -375,6 +379,9 @@ class RecordSet {
         /** The admin CAs of admin phones, which a root recorded. */
         val phoneAdmin = mutableSetOf<Key>()
 
+        /** The admin CAs of watches, which a root recorded (rule 8). */
+        val watch = mutableSetOf<Key>()
+
         /**
          * The known roots: the group CA and the new roots that a known root or an admin phone under one handed the
          * group to, or an admin computer under a root that is a computer.
@@ -448,6 +455,7 @@ class RecordSet {
             if (e.body.root == null || e.signer == e.anchor) return false
             val root = e.anchor
             val admins = mutableSetOf<Key>()
+            val freezers = mutableSetOf<Key>()
             val revokedByRoot = mutableSetOf<Key>()
             val thawed = mutableSetOf<Key>()
             var computer = false
@@ -461,14 +469,19 @@ class RecordSet {
                         val own = b.device != null && b.device == b.by
                         if (own && Records.role(b.role) == "phone") return false
                         if (own && Records.role(b.role) == "full") computer = true
-                        if (b.admin != null && Records.role(b.role) != "phone") admins.add(Key(b.admin))
+                        // A watch freezes an admin computer as any admin does,
+                        // but never takes the group over.
+                        if (b.admin != null && Records.role(b.role) != "phone") {
+                            freezers.add(Key(b.admin))
+                            if (Records.role(b.role) != "watch") admins.add(Key(b.admin))
+                        }
                     }
                 }
             }
             if (!computer || e.signer !in admins || e.signer in revokedByRoot) return false
             return entries.none { o ->
                 o.body.type == "freeze" && o.anchor == root && o.body.keys.orEmpty().any { Key(it) == e.signer } &&
-                    o.id !in thawed && (o.signer == root || (o.signer in admins && o.signer !in revokedByRoot))
+                    o.id !in thawed && (o.signer == root || (o.signer in freezers && o.signer !in revokedByRoot))
             }
         }
 
@@ -512,6 +525,10 @@ class RecordSet {
             for (e in entries) {
                 val a = phoneAdminOf(e, known) ?: continue
                 if (standsForRoots(e.signer, a)) phoneAdmin.add(a)
+            }
+            for (e in entries) {
+                val a = e.body.admin ?: continue
+                if (e.body.type == "device" && Records.role(e.body.role) == "watch" && rootSigned(e)) watch.add(Key(a))
             }
             val disabled = mutableSetOf<Key>()
             for (e in entries) {
@@ -580,9 +597,9 @@ class RecordSet {
         /** Whether a key is frozen: a frozen admin CA, or the device key of a frozen admin. */
         fun frozen(k: Key): Boolean = k in freezes || k in frozenKeys
 
-        /** Whether a device record counts. */
+        /** Whether a device record counts; a watch's admits nobody (rule 8). */
         fun counts(e: Entry): Boolean =
-            e.anchor in onPath && fromRoot(e) && issued(e.signer, Key(e.body.key ?: ByteArray(0))) && kept(e)
+            e.anchor in onPath && fromRoot(e) && issued(e.signer, Key(e.body.key ?: ByteArray(0))) && kept(e) && e.signer !in watch
 
         /** Whether issuer is revoked only by records that keep the key k, as when an admin is removed and the devices it admitted stay. */
         fun kept(issuer: Key, k: Key): Boolean {
@@ -621,6 +638,19 @@ class RecordSet {
         return anchor in ev.onPath && e.signer !in ev.revoked && !ev.frozen(e.signer) && ev.fromRoot(e)
     }
 
+    /**
+     * Whether a watch's admin CA signed the record or command c
+     * (docs/protocol.md, section 10, rule 8), whose powers are few.
+     */
+    fun signedByWatch(c: Member.Record): Boolean {
+        val groupCA = groupCA ?: return false
+        val a = anchor(c, knownRoots(groupCA)) ?: return false
+        return isWatch(a.second)
+    }
+
+    /** Whether a key hash is a watch's admin CA (rule 8): one that a device record of a watch, signed by a known root's own key, names. */
+    fun isWatch(keyHash: ByteArray): Boolean = Key(keyHash) in Eval(this).watch
+
     /** The IDs of the freezes of the admin CA with key hash admin that count: what a thaw of it ends. */
     fun freezesOf(admin: ByteArray): List<ByteArray> =
         Eval(this).freezes[Key(admin)].orEmpty().map { Records.id(it.record) }.sortedWith { a, b -> compareBytes(a, b) }
@@ -650,6 +680,7 @@ class RecordSet {
                 ?: return "the certificate's issuer is not in its chain"
             val admin = runCatching { Key(Records.keyHashOfCert(issuer)) }.getOrNull()
                 ?: return "the certificate's issuer is not in its chain"
+            if (admin in ev.watch) return "a watch certifies no devices"
             if (!ev.issued(admin, leaf)) return "the admin that admitted the device was removed"
             // A frozen admin's certificates hold only for devices the records
             // already list.
@@ -812,12 +843,13 @@ class RecordSet {
      * Whether device may be the group's hub for sync away from home: the
      * root (a device whose own record the current root's key signed, a
      * phone or a computer, as Go's Records.RootMember) or a device listed as
-     * an admin whose admin CA is not revoked (docs/protocol.md, section 11).
+     * an admin whose admin CA is not revoked, other than a watch, which never
+     * connects to the group (docs/protocol.md, section 11).
      * Only by device ID: MemberNode passes on an offer only from a peer
      * that mayHost(device, chain) takes, which also checks the key.
      */
     fun mayHost(device: String): Boolean =
-        devices.any { it.id == device && it.admin } || rootMember()?.let { (id, key) -> id == device && key !in Eval(this).revoked } == true
+        devices.any { it.id == device && it.admin && it.role != "watch" } || rootMember()?.let { (id, key) -> id == device && key !in Eval(this).revoked } == true
 
     /**
      * mayHost for a peer whose verified certificate chain (leaf first) is
@@ -828,7 +860,7 @@ class RecordSet {
     fun mayHost(device: String, chain: List<ByteArray>): Boolean {
         val leaf = chain.firstOrNull() ?: return false
         val key = runCatching { Key(Records.keyHashOfCert(leaf)) }.getOrNull() ?: return false
-        if (devices.any { it.id == device && it.admin && Key(it.key) == key }) return true
+        if (devices.any { it.id == device && it.admin && it.role != "watch" && Key(it.key) == key }) return true
         val (id, own) = rootMember() ?: return false
         return id == device && own == key && key !in Eval(this).revoked
     }
@@ -841,7 +873,7 @@ class RecordSet {
     val hubOrder: List<String>
         get() {
             val root = rootMember()?.takeIf { (_, key) -> key !in Eval(this).revoked }?.first
-            return devices.filter { it.id == root || it.admin }
+            return devices.filter { it.id == root || (it.admin && it.role != "watch") }
                 .sortedWith(compareBy<Device>({ it.role != "phone" }, { it.id != root }, { it.id }))
                 .map { it.id }
         }
@@ -885,6 +917,7 @@ class RecordSet {
 
         private const val NAMED_PHONE = 1
         private const val NAMED_OTHER = 2
+        private const val NAMED_WATCH = 4
 
         /** A set kept with toJson; records that no longer verify are dropped. */
         fun fromJson(data: ByteArray): RecordSet {

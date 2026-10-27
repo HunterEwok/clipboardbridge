@@ -80,12 +80,15 @@ export function kindOf(d) {
   if (d.form && kinds[d.form]) return d.form;
   if (d.role === "phone" || d.role === "shortcut") return "phone";
   if (d.role === "lite") return "board";
+  if (d.role === "watch") return "watch";
   if (d.os === "macos") return "laptop";
   if (d.os === "ios" || d.os === "android") return "phone";
   return "desktop";
 }
 
-const systems = { linux: "Linux", windows: "Windows", macos: "macOS", ios: "iOS", android: "Android" };
+const systems = {
+  linux: "Linux", windows: "Windows", macos: "macOS", ios: "iOS", android: "Android", watchos: "watchOS", wearos: "Wear OS",
+};
 
 export function systemWithVersion(d) {
   const s = systems[d.os];

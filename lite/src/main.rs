@@ -68,7 +68,7 @@ Commands:
                        the group's admins may put a text into tmux, or with
                        -console into the active text console, here (-enter:
                        and press Enter after it).
-  action [enable NAME [-by root,phone,computer] [-any-key] [-yes] |
+  action [enable NAME [-by root,phone,computer,watch] [-any-key] [-yes] |
          disable NAME | off]
                        Show the quick actions here, or turn one on or off
                        for the group's admins: reboot (a minute later, and
@@ -627,7 +627,7 @@ fn paste_line(p: &control::Paste) -> String {
 }
 
 const ACTION_USAGE: &str =
-    "usage: cbb action [enable NAME [-by root,phone,computer] [-any-key] [-yes] | disable NAME | off]";
+    "usage: cbb action [enable NAME [-by root,phone,computer,watch] [-any-key] [-yes] | disable NAME | off]";
 
 /// cbb action: shows this device's quick actions and sets them, as on a
 /// full member (docs/design.md, "Quick actions"). Enabling says what it lets

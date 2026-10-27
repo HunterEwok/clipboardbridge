@@ -24,8 +24,8 @@ pub const RESTART: &str = "restart";
 pub const PRESETS: &[&str] = &[REBOOT, CANCEL, RESTART];
 
 /// The kinds of signers an action may allow: the group's root, an admin
-/// phone, an admin computer.
-pub const KINDS: &[&str] = &["root", "phone", "computer"];
+/// phone, an admin computer, a watch with an admin key of its own.
+pub const KINDS: &[&str] = &["root", "phone", "computer", "watch"];
 
 /// One action as this device's user set it: on or off, the kinds of admins
 /// that may run it (every kind when none), and whether a signer whose key
@@ -111,7 +111,7 @@ pub fn parse_kinds(s: &str) -> Result<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for k in s.split(',').map(str::trim).filter(|k| !k.is_empty()) {
         if !KINDS.contains(&k) {
-            return Err(Error::msg(format!("{k:?} is not a kind of admin: root, phone or computer")));
+            return Err(Error::msg(format!("{k:?} is not a kind of admin: root, phone, computer or watch")));
         }
         if !out.iter().any(|x| x == k) {
             out.push(k.to_string());
@@ -132,7 +132,7 @@ pub fn hardware_by_default(name: &str) -> bool {
 pub struct Signer {
     /// The group's root key signed it.
     pub root: bool,
-    /// The device's role, phone or full; empty when no record names it.
+    /// The device's role, phone, full or watch; empty when no record names it.
     pub role: String,
     /// Where its keys live; empty when unknown.
     pub store: String,
@@ -148,6 +148,7 @@ impl Signer {
         match self.role.as_str() {
             "phone" => out.push("phone"),
             "full" => out.push("computer"),
+            "watch" => out.push("watch"),
             _ => {}
         }
         out
