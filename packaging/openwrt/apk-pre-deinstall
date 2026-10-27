@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# Before apk removes the package (feed.sh): the service stops, and with it
+# its firewall rules. The keys in /etc/clipboardbridge and the user stay;
+# rm -r /etc/clipboardbridge removes the keys.
+if [ -x /etc/init.d/clipboardbridge ]; then
+	/etc/init.d/clipboardbridge stop >/dev/null 2>&1
+	/etc/init.d/clipboardbridge disable >/dev/null 2>&1
+	/etc/init.d/firewall reload >/dev/null 2>&1
+fi
+exit 0

@@ -63,8 +63,8 @@ func checkClock(ctx context.Context, d *Device) error {
 	cmd := "date +%s.%N"
 	if d.OS == "windows" {
 		cmd = "[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0"
-	} else if d.OS == "darwin" {
-		cmd = "date +%s" // BSD date has no %N
+	} else if coarseDate(d) {
+		cmd = "date +%s" // BSD's and busybox's date may have no %N
 	}
 	before := time.Now()
 	out, err := Run(ctx, d, cmd, "")
@@ -77,7 +77,7 @@ func checkClock(ctx context.Context, d *Device) error {
 	}
 	mid := before.Add(time.Since(before) / 2)
 	skew := time.Duration(sec*float64(time.Second)) - time.Duration(mid.UnixNano())
-	if d.OS == "darwin" {
+	if coarseDate(d) {
 		skew = skew.Truncate(time.Second)
 	}
 	if skew > maxSkew || skew < -maxSkew {
@@ -146,9 +146,9 @@ func formGroup(ctx context.Context, r *Report, suite string, devices []*Device) 
 			hub = d
 		}
 	}
-	if hub == nil || hub.OS != "linux" {
+	if hub == nil || (hub.OS != "linux" && hub.OS != "openwrt" && hub.OS != "freebsd") {
 		r.Do(suite+"/setup", func() error {
-			return errors.New(suite + " needs a Linux device with the role hub in the inventory: it makes the group with cbb new")
+			return errors.New(suite + " needs a Linux, OpenWrt or FreeBSD device with the role hub in the inventory: it makes the group with cbb new")
 		})
 		return nil
 	}
@@ -472,7 +472,7 @@ func setMode(ctx context.Context, d *Device, mode string) error {
 // administrator.
 func adminCmd(d *Device) string {
 	switch d.OS {
-	case "linux", "linux-lite", "darwin":
+	case "linux", "linux-lite", "darwin", "freebsd":
 		return "sudo -n " + cbbCmd(d)
 	}
 	return cbbCmd(d)

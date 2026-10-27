@@ -118,7 +118,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		return
 	}
 	if r.Do("away/P36/"+hub.Name+"/stop", func() error {
-		_, err := Run(ctx, hub, "sudo -n systemctl stop clipboardbridge", "")
+		_, err := Run(ctx, hub, serviceCmd(hub, "stop"), "")
 		return err
 	}) != nil {
 		return
@@ -137,7 +137,7 @@ func hubCases(ctx context.Context, r *Report, g *benchGroup, fwd *Host, joined [
 		}
 	}
 	r.Do("away/P36/"+hub.Name+"/start", func() error {
-		_, err := Run(context.WithoutCancel(ctx), hub, "sudo -n systemctl start clipboardbridge", "")
+		_, err := Run(context.WithoutCancel(ctx), hub, serviceCmd(hub, "start"), "")
 		return err
 	})
 	started := time.Now()

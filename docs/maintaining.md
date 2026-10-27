@@ -243,6 +243,25 @@ request. winget takes a package only by a pull request to
   it with `wingetcreate submit <folder>` (it asks for a GitHub token and opens the pull
   request under `manifests/h/HunterEwok/clipboardbridge/<version>`).
 
+## The OpenWrt feed
+
+The release workflow's `openwrt-feed` job wraps each Linux archive in an apk package for
+OpenWrt 25.12 and later (`packaging/openwrt/feed.sh`, run in the pinned `openwrt/rootfs`
+image, whose apk makes the packages), one feed per Go architecture, and signs each index
+with the feed's ECDSA P-256 key. It publishes them with the release as
+`openwrt-feed.tar.gz`: `<arch>/packages.adb`, `<arch>/clipboardbridge-<version>.apk` and
+the public key `clipboardbridge.pem`. CI's `openwrt` job builds a feed with a test key on
+every pull request and installs and removes the package from it. Setting it up, once:
+
+- [ ] Make the key on any computer: `openssl ecparam -name prime256v1 -genkey -noout -out
+  feed.pem`.
+- [ ] In this repository's Actions secrets: `CBB_OPENWRT_FEED_KEY`, the contents of
+  `feed.pem`. Keep a copy offline; a new key means every router fetches the new public key.
+
+For each release, unpack `openwrt-feed.tar.gz` into the site's `openwrt/` directory on
+cbb.tools (routers read `https://cbb.tools/openwrt/<arch>/packages.adb`). Without the
+secret the release still succeeds and warns that there is no feed.
+
 ## Signing for Windows
 
 The release workflow signs `cbb.exe` and `cbbw.exe` with Authenticode (`osslsigncode`, SHA-256,

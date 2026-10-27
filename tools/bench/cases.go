@@ -175,13 +175,13 @@ func modeIs(ctx context.Context, d *Device, mode string) error {
 
 func restartService(ctx context.Context, d *Device) error {
 	var cmd string
-	switch d.OS {
-	case "linux", "linux-lite":
-		cmd = "sudo -n systemctl restart clipboardbridge"
-	case "docker":
+	switch {
+	case d.OS == "docker":
 		cmd = "docker restart " + d.Container
+	case serviceCmd(d, "restart") != "":
+		cmd = serviceCmd(d, "restart")
 	default:
-		return Skipped("the bench restarts the service only on Linux and in the container")
+		return Skipped("the bench restarts the service only on Linux, OpenWrt, FreeBSD and in the container")
 	}
 	_, err := Run(ctx, d, cmd, "")
 	return noSudo(d, err)
@@ -192,8 +192,8 @@ func restartService(ctx context.Context, d *Device) error {
 // where the bench cannot (Windows so far).
 func asRoot(d *Device, cmd string) (string, bool) {
 	switch d.OS {
-	case "linux", "linux-lite", "docker":
-		return "sudo -n sh -c " + shellQuote(cmd), true
+	case "linux", "linux-lite", "docker", "openwrt", "freebsd":
+		return rootPrefix(d) + "sh -c " + shellQuote(cmd), true
 	}
 	return "", false
 }
@@ -206,6 +206,10 @@ func stateDir(ctx context.Context, d *Device) (string, error) {
 		return "/var/lib/clipboardbridge", nil
 	case "darwin":
 		return "/Library/Application Support/clipboardbridge/state", nil
+	case "openwrt":
+		return "/etc/clipboardbridge/state", nil
+	case "freebsd":
+		return "/var/db/clipboardbridge", nil
 	case "docker":
 		out, err := Run(ctx, d, "docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/var/lib/clipboardbridge\"}}{{.Source}}{{end}}{{end}}' "+d.Container, "")
 		if err != nil {

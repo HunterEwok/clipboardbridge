@@ -60,6 +60,8 @@ Devices are named by their role; the inventory (section 13) maps each role to a 
 | `mac` | a Mac | LAN | macOS member and agent; may host the Windows VM |
 | `win` | Windows, a VM will do | LAN, bridged | Windows service and `cbbw.exe` agent; reset by `uninstall.ps1 -Purge` and `install.ps1` before each run |
 | `phone` | an Android phone, or the emulator | its own NAT for the emulator | Android app: root of a phone group, sync; limited in the emulator, see below |
+| `router` | an OpenWrt 25.12 router, reached as root over SSH | the home network's router | the service in procd on the lan zone (P-series as an ordinary member), the hub at the router (its WireGuard port from wan, opened through the init script); the router behind another NAT reaches the away devices through the forwarder or a port forward |
+| `bsd` | FreeBSD 15, a VM will do, with `sudo` | LAN, bridged | the rc.d service and pf or ipfw rules; a headless member, may be the hub |
 | `remote` | a Linux server with a public address | internet | a headless Linux member away from home: no NAT, public IPv4/IPv6; also covers `cbb copy`/`paste` without a desktop |
 | `relay` | a Linux server with a public address | internet | the forwarder (`cbb forward`) and the open relay (`cbb relay -open`); packet capture point; never a group member |
 
@@ -344,7 +346,7 @@ the repository: it names the home network's addresses and the keys. Its shape:
 controller = "controller"
 
 [device.desktop]
-os = "linux"           # linux, linux-lite, darwin, windows, docker
+os = "linux"           # linux, linux-lite, darwin, windows, docker, openwrt, freebsd
 ssh = "user@desktop.lan"     # the user signed in on the desktop
 clipboard = "wayland"  # wayland, x11, none (cbb copy and paste), macos, windows
 roles = ["member", "hub", "away"]
@@ -354,6 +356,12 @@ os = "windows"
 ssh = "user@win.lan"
 clipboard = "windows"
 firewall = "yes"       # linux, windows: reset lets the installer open the member port; "no" leaves the firewall alone
+
+[device.router]
+os = "openwrt"         # ssh as root: OpenWrt has no sudo
+ssh = "root@router.lan"
+clipboard = "none"
+roles = ["member", "hub"]
 
 [device.nas]
 os = "docker"          # cbb in a container on the host ssh reaches
@@ -386,9 +394,11 @@ On the Mac the bench user runs two programs as root without a password: `cbb`, a
 bench's helper `cbbbench-root`, which `tools/bench/setup-mac.sh` installs with its sudoers
 rule (below).
 
-For `reset`, a Linux device names `firewall = "yes"` (the installer opens the member port,
+For `reset`, a Linux or FreeBSD device names `firewall = "yes"` (the installer opens the member port,
 as on a home computer) or `"no"` (it leaves the firewall alone, as on a server that does other
-work), and the container names `setup`, the path of `tools/bench/setup-docker.sh` on its
+work), and the container names `setup`. On OpenWrt the service's own rules come and go with
+it, so `firewall` does not apply; the bench sends the build to the router's `/tmp`, in RAM,
+not to its flash, the path of `tools/bench/setup-docker.sh` on its
 host.
 
 ### Setting the bench up, and taking it down

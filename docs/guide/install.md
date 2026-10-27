@@ -79,6 +79,19 @@ member port and mDNS from that zone while it runs, without changing
 `/etc/clipboardbridge`, which sysupgrade keeps; an attended sysupgrade (ASU, owut) leaves
 the program out, so run the command again after one.
 
+Or from our package feed, which `apk upgrade` then keeps current. The feed's architecture
+follows the router's CPU (`grep DISTRIB_ARCH /etc/openwrt_release`): `arm64` for
+`aarch64_*`, `armv7` for `arm_cortex-a*` with `neon` or `vfp` in the name, `mipsle` for
+`mipsel_*`, `mips` for `mips_*`, `amd64` for `x86_64`:
+
+```sh
+uclient-fetch -qO /etc/apk/keys/clipboardbridge.pem https://cbb.tools/openwrt/clipboardbridge.pem
+echo https://cbb.tools/openwrt/arm64/packages.adb >>/etc/apk/repositories.d/customfeeds.list
+apk update && apk add clipboardbridge
+```
+
+`apk del clipboardbridge` removes it and keeps the keys in `/etc/clipboardbridge`.
+
 ## FreeBSD
 
 FreeBSD 15, amd64 or arm64, as root (with `sudo` or `doas`):

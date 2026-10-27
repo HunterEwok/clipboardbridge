@@ -107,7 +107,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 	// F6: the hub's service stops; the away devices say the hub is
 	// unreachable, and sync comes back once it runs again.
 	if r.Do("away/F6/"+hub.Name+"/stop", func() error {
-		_, err := Run(ctx, hub, "sudo -n systemctl stop clipboardbridge", "")
+		_, err := Run(ctx, hub, serviceCmd(hub, "stop"), "")
 		return err
 	}) == nil {
 		for _, d := range joined {
@@ -125,7 +125,7 @@ func Away(ctx context.Context, r *Report, inv *Inventory, devices []*Device, tim
 			})
 		}
 		r.Do("away/F6/"+hub.Name+"/start", func() error {
-			_, err := Run(context.WithoutCancel(ctx), hub, "sudo -n systemctl start clipboardbridge", "")
+			_, err := Run(context.WithoutCancel(ctx), hub, serviceCmd(hub, "start"), "")
 			return err
 		})
 		for _, d := range joined {

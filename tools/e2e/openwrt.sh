@@ -6,13 +6,16 @@
 #
 #   sh tools/e2e/openwrt.sh rootfs RELEASE_DIR   # in openwrt/rootfs, with docker
 #   sh tools/e2e/openwrt.sh vm RELEASE_DIR       # OpenWrt booted in QEMU with KVM
+#   sh tools/e2e/openwrt.sh feed RELEASE_DIR     # the apk feed, in openwrt/rootfs
 #
 # RELEASE_DIR holds a linux-amd64 release archive, SHA256SUMS and get.sh, as
 # get.sh's CBB_RELEASE_DIR takes them. rootfs installs and removes it in
 # OpenWrt's root file system, without procd. vm boots OpenWrt's x86-64 image
 # with lan on a user-mode network that forwards SSH, installs it, and checks
 # the procd instance, the interface list, the hub's firewall rule (procd
-# service data that fw4 loads), the wait for NTP, and the removal.
+# service data that fw4 loads), the wait for NTP, and the removal. feed
+# builds the signed apk feed with packaging/openwrt/feed.sh and a key made
+# for the test, and installs and removes the package from it with apk.
 # The scripts in single quotes run on OpenWrt, which expands them.
 # shellcheck disable=SC2016
 set -eu
@@ -21,7 +24,7 @@ release=25.12.6
 image=openwrt/rootfs:x86_64-$release@sha256:14401c04218c2e0da0448f099710ada2460636a92395f353351cc616cf3f67af
 
 [ $# -eq 2 ] || {
-	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm RELEASE_DIR" >&2
+	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm|feed RELEASE_DIR" >&2
 	exit 2
 }
 mode=$1
@@ -30,8 +33,7 @@ work=${RUNNER_TEMP:-/tmp}/openwrt-e2e
 mkdir -p "$work"
 
 # The checks after an install, and after the removal, in OpenWrt's shell.
-installed='
-set -e
+installed_files='
 test -x /usr/bin/cbb
 test -x /etc/init.d/clipboardbridge
 test -f /etc/config/clipboardbridge
@@ -44,8 +46,12 @@ test "$(ls -ld /etc/clipboardbridge/state | awk "{print \$3}")" = clipboardbridg
 ls /etc/rc.d | grep -q clipboardbridge
 ash -n /etc/init.d/clipboardbridge
 ash -n /usr/share/clipboardbridge/firewall.sh
-test "$(uci get clipboardbridge.main.port)" = 9000
 '
+installed="
+set -e
+$installed_files
+test \"\$(uci get clipboardbridge.main.port)\" = 9000
+"
 removed='
 set -e
 for f in /usr/bin/cbb /etc/init.d/clipboardbridge /etc/config/clipboardbridge /etc/hotplug.d/ntp/50-clipboardbridge \
@@ -65,6 +71,33 @@ rootfs)
 		sh /usr/share/clipboardbridge/uninstall.sh --purge
 		$removed
 		echo 'rootfs: installed and removed'
+	"
+	;;
+feed)
+	src=$(cd "$(dirname "$0")/../.." && pwd)
+	mkdir -p "$work/key"
+	openssl ecparam -name prime256v1 -genkey -noout -out "$work/key/private.pem"
+	openssl ec -in "$work/key/private.pem" -pubout -out "$work/key/public.pem" 2>/dev/null
+	docker run --rm -v "$rel:/rel:ro" -v "$src:/src:ro" -v "$work/key:/key:ro" "$image" /bin/sh -c "
+		set -e
+		mkdir -p /var/lock /var/run /tmp
+		sh /src/packaging/openwrt/feed.sh v0.0.0-ci.1 /rel /feed /key/private.pem
+		test -f /feed/amd64/packages.adb
+		# Without our key apk refuses the feed.
+		if apk add --repositories-file /dev/null --repository /feed/amd64/packages.adb clipboardbridge 2>/dev/null; then
+			echo 'apk took a feed signed with an unknown key' >&2
+			exit 1
+		fi
+		cp /key/public.pem /etc/apk/keys/clipboardbridge.pem
+		apk add --repositories-file /dev/null --repository /feed/amd64/packages.adb clipboardbridge
+		apk info -e clipboardbridge
+		$installed_files
+		apk del clipboardbridge
+		for f in /usr/bin/cbb /etc/init.d/clipboardbridge /usr/share/clipboardbridge/firewall.sh; do
+			if [ -e \"\$f\" ]; then echo \"apk del left \$f\" >&2; exit 1; fi
+		done
+		if ls /etc/rc.d | grep -q clipboardbridge; then echo 'left enabled' >&2; exit 1; fi
+		echo 'feed: signed, installed and removed'
 	"
 	;;
 vm)
@@ -147,7 +180,7 @@ vm)
 	echo "vm: installed, checked and removed"
 	;;
 *)
-	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm RELEASE_DIR" >&2
+	echo "usage: sh tools/e2e/openwrt.sh rootfs|vm|feed RELEASE_DIR" >&2
 	exit 2
 	;;
 esac

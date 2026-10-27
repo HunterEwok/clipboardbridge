@@ -258,6 +258,8 @@ jobs:
           cp packaging/get.sh "$rel/"
       - name: get.sh installs it in OpenWrt's root file system, and uninstall.sh removes it
         run: sh tools/e2e/openwrt.sh rootfs "$RUNNER_TEMP/release"
+      - name: the apk feed, signed with a test key, installs and removes it
+        run: sh tools/e2e/openwrt.sh feed "$RUNNER_TEMP/release"
       - name: on OpenWrt booted in QEMU, the service, the hub's rule in fw4 and the wait for NTP
         run: |
           sudo apt-get update -q
@@ -361,7 +363,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
       - name: systemd-analyze verify
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/cbb" ./cmd/cbb

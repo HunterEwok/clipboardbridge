@@ -37,6 +37,12 @@ sudo cbb global hub 203.0.113.7:8764      # the address the internet reaches you
 - **The hub's firewall**: `cbb global hub` lists the rule it needs and asks before it adds
   it.
 
+**An OpenWrt router as the hub** needs no port forwarding: run the same commands on the
+router, as root without `sudo`. With Yes, the rule for the hub's UDP port from `wan` becomes
+part of the service's own firewall rules, which come and go with the service;
+`/etc/config/firewall` stays as it was. A router behind another router (double NAT) still
+needs the forwarding on the router in front, or a forwarder.
+
 No public address, because your provider puts you behind carrier-grade NAT? Then the
 router cannot help; use a forwarder instead (step 5).
 

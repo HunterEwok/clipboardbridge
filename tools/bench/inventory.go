@@ -25,7 +25,7 @@ type Inventory struct {
 // Device is one device under test.
 type Device struct {
 	Name      string   `toml:"-"`
-	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows, docker
+	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows, docker, openwrt, freebsd
 	SSH       string   `toml:"ssh"`       // user@host; the user is the one signed in on the desktop
 	Clipboard string   `toml:"clipboard"` // wayland, x11, none, macos, windows
 	Roles     []string `toml:"roles"`     // member, hub, away
@@ -55,7 +55,7 @@ type Host struct {
 }
 
 var (
-	knownOS        = []string{"linux", "linux-lite", "darwin", "windows", "docker"}
+	knownOS        = []string{"linux", "linux-lite", "darwin", "windows", "docker", "openwrt", "freebsd"}
 	knownClipboard = []string{"wayland", "x11", "none", "macos", "windows"}
 )
 

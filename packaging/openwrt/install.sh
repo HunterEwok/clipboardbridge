@@ -122,6 +122,11 @@ mkdir -p /var/state
 touch /var/state/clipboardbridge.time
 
 /etc/init.d/clipboardbridge enable
+if ! ubus call service list >/dev/null 2>&1; then
+	# A root file system without procd, such as a container.
+	echo "Clipboard Bridge is installed; procd is not running here, so it starts at the next boot."
+	exit 0
+fi
 /etc/init.d/clipboardbridge restart
 
 answers() { # cbb

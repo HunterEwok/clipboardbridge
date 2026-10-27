@@ -249,6 +249,12 @@ func killCmd(d *Device) string {
 	switch d.OS {
 	case "linux", "linux-lite":
 		return "sudo -n systemctl kill -s KILL clipboardbridge"
+	case "openwrt":
+		// procd starts it again (respawn).
+		return "kill -KILL $(pidof cbb)"
+	case "freebsd":
+		// daemon -r starts it again.
+		return "sudo -n pkill -KILL -f '^/usr/local/bin/cbb service'"
 	case "windows":
 		return `Get-CimInstance Win32_Service -Filter "Name='clipboardbridge'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
 	case "darwin":
